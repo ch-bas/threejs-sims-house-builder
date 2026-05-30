@@ -1,0 +1,23 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "import/order": [
+      "warn",
+      {
+        "groups": [
+          "builtin",
+          "external",
+          "internal",
+          "parent",
+          "sibling",
+          "index",
+          "type"
+        ],
+        "newlines-between": "never",
+        "alphabetize": { "order": "asc", "caseInsensitive": true }
+      }
+    ],
+    "react/self-closing-comp": "warn"
+  }
+}

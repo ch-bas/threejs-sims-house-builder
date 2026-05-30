@@ -1,0 +1,232 @@
+/* ===========================================================
+   PlotCraft — Colors, Type, Spacing, Radii, Shadows, Motion
+   Mirrors .claude/skills/plotcraft-design/colors_and_type.css.
+   =========================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Nunito:wght@500;600;700;800&display=swap");
+
+:root {
+  /* ---------- WORLD COLORS ---------- */
+  --pc-grass:           #6FB23A;
+  --pc-grass-bright:    #8DCC4C;
+  --pc-grass-dark:      #4A8826;
+  --pc-soil:            #6B4A2B;
+  --pc-sky:             #9DD4E8;
+  --pc-wood:            #B98551;
+  --pc-wood-dark:       #7A4F2A;
+  --pc-wall-cream:      #D9C9A8;
+  --pc-wall-shadow:     #A8967A;
+  --pc-brick:           #B3563D;
+  --pc-lampshade:       #E8B85A;
+
+  /* ---------- HUD / GLASS ---------- */
+  --pc-glass-tint:      rgba(110, 150, 165, 0.42);
+  --pc-glass-tint-dark: rgba(60,  90, 105, 0.55);
+  --pc-glass-stroke:    rgba(255, 255, 255, 0.45);
+  --pc-glass-inner:     rgba(255, 255, 255, 0.18);
+  --pc-glass-shadow:    rgba(20, 40, 60, 0.25);
+
+  /* ---------- ACCENT ---------- */
+  --pc-cyan-glow:       #7FF3FF;
+  --pc-cyan-glow-deep:  #2BC7E0;
+  --pc-cyan-halo:       color-mix(in oklch, #7FF3FF 60%, transparent);
+
+  /* ---------- TYPE / NEUTRALS ---------- */
+  --pc-ink:             #1A2A33;
+  --pc-ink-soft:        rgba(26, 42, 51, 0.7);
+  --pc-paper:           #FFFFFF;
+  --pc-paper-soft:      rgba(255, 255, 255, 0.78);
+  --pc-paper-faint:     rgba(255, 255, 255, 0.45);
+
+  /* ---------- SEMANTIC ---------- */
+  --pc-money:           #FBF7E8;
+  --pc-demolish:        #E45248;
+  --pc-warn-amber:      #F2B53D;
+  --pc-confirm-green:   #6FCB58;
+
+  /* ---------- SPACING (8px grid) ---------- */
+  --pc-s-1: 4px;  --pc-s-2: 8px;  --pc-s-3: 12px;
+  --pc-s-4: 16px; --pc-s-5: 24px; --pc-s-6: 32px;
+  --pc-s-7: 40px; --pc-s-8: 48px; --pc-s-10: 80px;
+
+  /* ---------- RADII ---------- */
+  --pc-r-xs: 4px;  --pc-r-sm: 8px;  --pc-r-md: 12px;
+  --pc-r-lg: 20px; --pc-r-xl: 28px; --pc-r-pill: 999px;
+
+  /* ---------- SHADOWS ---------- */
+  --pc-shadow-glass:
+    0 8px 32px var(--pc-glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.40);
+  --pc-shadow-tile:
+    0 4px 10px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.40);
+  --pc-shadow-tile-press:
+    0 1px 4px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  --pc-halo-cyan:
+    0 0 0 1px var(--pc-cyan-glow),
+    0 0 18px 2px var(--pc-cyan-halo);
+  --pc-halo-cyan-soft:
+    0 0 0 1px color-mix(in oklch, var(--pc-cyan-glow) 70%, transparent),
+    0 0 12px 1px var(--pc-cyan-halo);
+
+  /* ---------- GLASS RECIPE ---------- */
+  --pc-glass-blur: blur(24px) saturate(160%);
+
+  /* ---------- MOTION ---------- */
+  --pc-ease-snap: cubic-bezier(.2, .9, .25, 1);
+  --pc-t-micro: 120ms;
+  --pc-t-base: 200ms;
+  --pc-t-big: 320ms;
+
+  /* ---------- TYPE ---------- */
+  --pc-font-display: "Sora", system-ui, sans-serif;
+  --pc-font-body:    "Nunito", system-ui, sans-serif;
+  --pc-tr-caps: 0.06em;
+  --pc-tr-mode: 0.10em;
+}
+
+/* ===========================================================
+   GLASS HUD recipe
+   =========================================================== */
+.pc-glass {
+  background-color: var(--pc-glass-tint);
+  backdrop-filter: var(--pc-glass-blur);
+  -webkit-backdrop-filter: var(--pc-glass-blur);
+  border: 1px solid var(--pc-glass-stroke);
+  border-radius: var(--pc-r-lg);
+  box-shadow: var(--pc-shadow-glass);
+  color: var(--pc-paper);
+}
+.pc-glass--dark { background-color: var(--pc-glass-tint-dark); }
+
+/* ===========================================================
+   Typography helpers (scoped — don't fight Tailwind defaults)
+   =========================================================== */
+.pc-hud-header {
+  font-family: var(--pc-font-display);
+  font-weight: 800;
+  letter-spacing: var(--pc-tr-caps);
+  text-transform: uppercase;
+  color: var(--pc-paper);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.15);
+}
+.pc-mode-label {
+  font-family: var(--pc-font-display);
+  font-weight: 800;
+  letter-spacing: var(--pc-tr-mode);
+  text-transform: uppercase;
+  color: var(--pc-paper);
+}
+.pc-mode-label--active {
+  color: var(--pc-cyan-glow);
+  text-shadow: 0 0 12px var(--pc-cyan-halo);
+}
+.pc-money {
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  color: var(--pc-money);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.18);
+}
+.pc-body {
+  font-family: var(--pc-font-body);
+  font-weight: 500;
+  color: var(--pc-paper);
+}
+.pc-blurb {
+  font-family: var(--pc-font-body);
+  font-weight: 500;
+  color: var(--pc-paper-soft);
+}
+
+/* ===========================================================
+   Tile recipes — used by panel tiles + buttons
+   =========================================================== */
+.pc-tile {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--pc-r-md);
+  box-shadow: var(--pc-shadow-tile);
+  color: var(--pc-paper);
+  transition:
+    transform var(--pc-t-micro) var(--pc-ease-snap),
+    background var(--pc-t-micro) var(--pc-ease-snap),
+    box-shadow var(--pc-t-base) var(--pc-ease-snap),
+    border-color var(--pc-t-micro) var(--pc-ease-snap);
+}
+.pc-tile:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(127, 243, 255, 0.45);
+  transform: translateY(-2px);
+}
+.pc-tile:active:not(:disabled) {
+  transform: scale(0.96);
+  box-shadow: var(--pc-shadow-tile-press);
+}
+.pc-tile--active {
+  background: rgba(127, 243, 255, 0.18);
+  border-color: var(--pc-cyan-glow);
+  box-shadow: var(--pc-halo-cyan);
+  color: var(--pc-cyan-glow);
+}
+.pc-tile--active:hover:not(:disabled) {
+  background: rgba(127, 243, 255, 0.22);
+  border-color: var(--pc-cyan-glow);
+  transform: translateY(-2px);
+}
+.pc-tile--ghost {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+  cursor: default;
+}
+.pc-tile--ghost:hover { background: rgba(255, 255, 255, 0.06); transform: none; }
+
+/* Selected halo helper for selected catalog tiles in BUY mode */
+.pc-halo-pulse {
+  animation: pcHaloPulse 1.6s ease-in-out infinite;
+}
+@keyframes pcHaloPulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--pc-cyan-glow), 0 0 14px 2px var(--pc-cyan-halo); }
+  50%      { box-shadow: 0 0 0 1px var(--pc-cyan-glow), 0 0 22px 4px var(--pc-cyan-halo); }
+}
+
+/* ===========================================================
+   Mode toggle pill cell
+   =========================================================== */
+.pc-mode-pill {
+  display: inline-flex; gap: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: var(--pc-r-md);
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+.pc-mode-pill__cell {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 12px;
+  border-radius: var(--pc-r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--pc-paper);
+  transition: all var(--pc-t-micro) var(--pc-ease-snap);
+}
+.pc-mode-pill__cell:hover { background: rgba(255, 255, 255, 0.10); }
+.pc-mode-pill__cell--active {
+  background: rgba(127, 243, 255, 0.16);
+  border-color: var(--pc-cyan-glow);
+  box-shadow: var(--pc-halo-cyan-soft);
+}
+
+/* ===========================================================
+   World background (grass + cyan lattice)
+   =========================================================== */
+.pc-world {
+  background-color: var(--pc-grass);
+  background-image:
+    linear-gradient(rgba(127, 243, 255, 0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(127, 243, 255, 0.10) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% 30%, var(--pc-grass-bright) 0%, var(--pc-grass) 55%, var(--pc-grass-dark) 100%);
+  background-size: 64px 64px, 64px 64px, 100% 100%;
+}
