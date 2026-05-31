@@ -6,10 +6,10 @@ This repository provides a polished, grid-based architecture and interior design
 
 Built with Next.js 15, React 18, Three.js, and Tailwind CSS. No backend, no authentication — everything runs client-side.
 
+**[Live Demo](https://ch-bas.github.io/threejs-sims-house-builder/)** 
 ## Run it
 
 ```bash
-cd standalone-room-organizer
 npm install
 npm run dev          # http://localhost:3000
 ```
