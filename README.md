@@ -1,5 +1,9 @@
 # Threejs Sims House Builder
-
+[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://ch-bas.github.io/threejs-sims-house-builder/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org)
+ 
 A lightweight, open-source Sims-like house builder built entirely in the browser using Three.js.
 
 This repository provides a polished, grid-based architecture and interior design system featuring wall patterns, floor styles, modular stairs, and dynamic UI panels.
