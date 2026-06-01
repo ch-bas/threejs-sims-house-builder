@@ -87,6 +87,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
             width: '100%',
             height: '100%',
             display: props.view2D ? 'none' : 'block',
+            touchAction: 'none',
           }}
           onDragOver={handleDragOver}
           onDrop={handleDrop}

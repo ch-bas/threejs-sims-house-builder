@@ -34,48 +34,210 @@
   body {
     @apply bg-background text-foreground;
   }
+}
 
-  /* Responsive bottom HUD — collapse on narrow screens */
-  @media (max-width: 1100px) {
-    .pc-bottom-hud {
-      flex-wrap: wrap;
-      gap: 8px;
-      padding: 10px;
-    }
-    /* Hide the catalog strip on narrow screens — users can still
-       access the full catalog from the sidebar's Buy tab. */
-    .pc-bottom-hud .pc-catalog-strip {
-      display: none;
-    }
+/* ================================================================
+   Dark overrides inside frosted-glass sidebar
+   ================================================================ */
+.pc-glass--dark {
+  --background: 215 25% 12%;
+  --foreground: 210 20% 90%;
+  --card: 215 25% 14%;
+  --card-foreground: 210 20% 90%;
+  --popover: 215 25% 14%;
+  --popover-foreground: 210 20% 90%;
+  --muted: 215 20% 20%;
+  --muted-foreground: 215 15% 60%;
+  --border: 215 20% 25%;
+  --input: 215 20% 18%;
+  --ring: 186 100% 69%;
+  --accent: 215 20% 20%;
+  --accent-foreground: 210 20% 90%;
+  --primary: 186 100% 69%;
+  --primary-foreground: 215 25% 10%;
+  --secondary: 215 20% 18%;
+  --secondary-foreground: 210 20% 90%;
+}
+
+/* Cards inside dark glass panels: inherit dark theme */
+.pc-glass--dark .rounded-lg.border.bg-card {
+  background: hsl(215 25% 14%) !important;
+  color: hsl(210 20% 90%) !important;
+  border-color: hsl(215 20% 25%) !important;
+}
+
+/* Sidebar close button: hidden on desktop, visible on mobile */
+.pc-sidebar-close {
+  display: none;
+}
+
+/* ================================================================
+   Responsive: tablet (<1100px)
+   ================================================================ */
+@media (max-width: 1100px) {
+  .pc-bottom-hud {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+  }
+}
+
+/* ================================================================
+   Responsive: mobile (<768px)
+   ================================================================ */
+@media (max-width: 768px) {
+  /* Bottom HUD: single column */
+  .pc-bottom-hud {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 8px !important;
+    gap: 6px !important;
+  }
+  /* Catalog strip: full width, compact */
+  .pc-bottom-hud .pc-catalog-strip {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 6px 8px 8px !important;
+    order: -1;
+  }
+  /* Left column wraps horizontally */
+  .pc-bottom-hud > div:first-child {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
-  @media (max-width: 768px) {
-    .pc-bottom-hud {
-      flex-direction: column;
-      align-items: stretch;
-    }
+  /* Lot badge: compact */
+  .pc-lot-badge {
+    top: 8px !important;
+    left: 8px !important;
+    gap: 4px !important;
   }
 
-  /* Dark overrides inside the frosted-glass sidebar — covers cards,
-     inputs, selects, labels, and any shadcn component that reads these
-     CSS custom properties. */
-  .pc-glass--dark {
-    --background: 215 25% 12%;
-    --foreground: 210 20% 90%;
-    --card: 215 25% 14%;
-    --card-foreground: 210 20% 90%;
-    --popover: 215 25% 14%;
-    --popover-foreground: 210 20% 90%;
-    --muted: 215 20% 20%;
-    --muted-foreground: 215 15% 60%;
-    --border: 215 20% 25%;
-    --input: 215 20% 18%;
-    --ring: 186 100% 69%;
-    --accent: 215 20% 20%;
-    --accent-foreground: 210 20% 90%;
-    --primary: 186 100% 69%;
-    --primary-foreground: 215 25% 10%;
-    --secondary: 215 20% 18%;
-    --secondary-foreground: 210 20% 90%;
+  /* Header stats: hide on mobile */
+  .pc-header-stats {
+    display: none !important;
+  }
+
+  /* Top-right controls: tighter */
+  .pc-top-right {
+    top: 8px !important;
+    right: 8px !important;
+    gap: 4px !important;
+  }
+
+  /* Item popover: bottom sheet */
+  .pc-item-popover {
+    top: auto !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 50vh !important;
+    overflow-y: auto !important;
+    border-radius: 16px 16px 0 0 !important;
+  }
+
+  /* Sidebar: full screen */
+  .pc-sidebar {
+    width: 100% !important;
+    left: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    border-radius: 0 !important;
+  }
+  .pc-sidebar-close {
+    display: flex !important;
+  }
+
+  /* Build tools: horizontal icon strip on mobile */
+  .pc-build-tools {
+    width: auto !important;
+    padding: 6px !important;
+  }
+  .pc-build-tools-header {
+    display: none !important;
+  }
+  .pc-build-tools-grid {
+    display: flex !important;
+    overflow-x: auto !important;
+    gap: 3px !important;
+    padding: 4px !important;
+    border-radius: 10px !important;
+    scrollbar-width: none;
+  }
+  .pc-build-tools-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .pc-build-tools-grid .pc-tile {
+    height: 38px !important;
+    width: 38px !important;
+    min-width: 38px !important;
+    padding: 4px !important;
+    border-radius: 8px !important;
+  }
+  .pc-build-tools-label {
+    display: none !important;
+  }
+
+  /* Mode panel: fixed bottom footer on mobile */
+  .pc-mode-panel {
+    width: 100% !important;
+    padding: 6px 10px 10px !important;
+    gap: 4px !important;
+    border-radius: 0 !important;
+  }
+  /* Dollar amount: compact single line */
+  .pc-mode-panel > div:first-child {
+    text-align: center !important;
+  }
+  .pc-mode-panel > div:first-child .pc-money {
+    font-size: 18px !important;
+    display: inline !important;
+  }
+  .pc-mode-panel > div:first-child .pc-hud-header {
+    display: inline !important;
+    margin-left: 6px !important;
+    font-size: 9px !important;
+  }
+  /* Hide action buttons row on mobile — in sidebar */
+  .pc-mode-panel > div:last-child {
+    display: none !important;
+  }
+  /* Mode pill: compact */
+  .pc-mode-pill {
+    gap: 2px !important;
+  }
+  .pc-mode-pill__cell {
+    padding: 4px 6px !important;
+  }
+  .pc-wall-paint {
+    width: auto !important;
+    max-width: calc(100vw - 32px) !important;
+  }
+
+  /* Camera pad: hide — touch orbit works */
+  .pc-camera-pad {
+    display: none !important;
+  }
+
+  /* Constrain glass panels */
+  .pc-glass {
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* ================================================================
+   Responsive: small mobile (<480px)
+   ================================================================ */
+@media (max-width: 480px) {
+  .pc-mode-panel {
+    min-width: 120px !important;
+  }
+  /* Lot badge: icon only */
+  .pc-lot-badge .pc-glass > div:last-child {
+    display: none !important;
   }
 }

@@ -13,6 +13,7 @@ export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): 
 
   return (
     <div
+      className="pc-lot-badge"
       style={{
         position: 'absolute',
         top: 16,

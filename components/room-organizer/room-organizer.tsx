@@ -33,6 +33,7 @@ import { LotBadge } from './panels/lot-badge';
 import { SidebarDrawer } from './panels/sidebar-drawer';
 import { HeaderStats } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
+import { TouchModeToggle } from './panels/touch-mode-toggle';
 import { WelcomeBanner } from './panels/welcome-banner';
 import { FloorPill } from './panels/floor-pill';
 import { WallDisplayPill } from './panels/wall-display-pill';
@@ -807,6 +808,7 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Top-center: live stats */}
       <div
+        className="pc-header-stats"
         style={{
           position: 'absolute',
           top: 16,
@@ -829,6 +831,7 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Top-right: floor pill + wall display */}
       <div
+        className="pc-top-right"
         style={{
           position: 'absolute',
           top: 16,
@@ -887,6 +890,9 @@ export function RoomOrganizer(): JSX.Element {
         onFit={fitToRoom}
         placeCatalogItem={placeCatalogItem}
       />
+
+      {/* Touch mode toggle — visible on mobile only */}
+      <TouchModeToggle controlsRef={controlsRef} onFit={fitToRoom} />
 
       {/* Welcome modal — auto-shows once, dismissible */}
       <WelcomeBanner />
