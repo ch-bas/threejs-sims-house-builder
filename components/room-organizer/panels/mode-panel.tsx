@@ -33,7 +33,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
 
   return (
     <div
-      className="pointer-events-auto pc-glass"
+      className="pointer-events-auto pc-glass pc-mode-panel"
       style={{
         width: 248,
         padding: '14px 16px',

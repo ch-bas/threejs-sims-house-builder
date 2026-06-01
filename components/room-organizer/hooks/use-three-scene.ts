@@ -167,6 +167,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
       controls.maxPolarAngle = Math.PI / 2.5;
+      controls.screenSpacePanning = true;
       controlsRef.current = controls;
       cleanup.push(() => {
         controls.dispose();

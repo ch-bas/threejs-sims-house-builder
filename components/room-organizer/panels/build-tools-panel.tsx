@@ -32,17 +32,22 @@ export interface BuildToolsPanelProps {
 export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
   return (
     <div
-      className="pointer-events-auto pc-glass"
+      className="pointer-events-auto pc-glass pc-build-tools"
       style={{ width: 232, padding: 'var(--pc-s-3)' }}
     >
-      <div
-        className="pc-hud-header"
-        style={{ fontSize: 11, marginBottom: 8, paddingLeft: 2 }}
-      >
-        Build Tools
+      {/* Desktop: header + 3x3 grid */}
+      <div className="pc-build-tools-header">
+        <div
+          className="pc-hud-header"
+          style={{ fontSize: 11, marginBottom: 8, paddingLeft: 2 }}
+        >
+          Build Tools
+        </div>
       </div>
 
+      {/* Desktop: 3-col grid */}
       <div
+        className="pc-build-tools-grid"
         style={{
           background: 'rgba(0, 0, 0, 0.20)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -78,6 +83,7 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
             >
               <Icon name={tool.icon} size={18} />
               <span
+                className="pc-build-tools-label"
                 style={{
                   fontFamily: 'var(--pc-font-display)',
                   fontWeight: 600,

@@ -51,7 +51,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   const { onClose } = props;
   return (
     <div
-      className="pc-glass pc-glass--dark"
+      className="pc-glass pc-glass--dark pc-item-popover"
       role="dialog"
       aria-label={`Edit ${item.name}`}
       style={{

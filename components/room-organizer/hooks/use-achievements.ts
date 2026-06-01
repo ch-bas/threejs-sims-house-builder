@@ -9,12 +9,18 @@ export interface UseAchievementsResult {
   dismiss(): void;
 }
 
-export function useAchievements(layout: RoomLayout): UseAchievementsResult {
-  const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => loadUnlocked());
+const EMPTY_SET: ReadonlySet<string> = new Set();
+const EMPTY_ARRAY: readonly Achievement[] = [];
+const NOOP = () => {};
+
+export function useAchievements(layout: RoomLayout, enabled = false): UseAchievementsResult {
+  const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => enabled ? loadUnlocked() : new Set());
   const [pending, setPending] = useState<readonly Achievement[]>([]);
   const initialisedRef = useRef(false);
 
   useEffect(() => {
+    if (!enabled) return;
+
     const next: Achievement[] = [];
     let mutated = false;
     const newUnlocked = new Set(unlocked);
@@ -33,14 +39,12 @@ export function useAchievements(layout: RoomLayout): UseAchievementsResult {
     setUnlocked(newUnlocked);
     saveUnlocked(newUnlocked);
 
-    // Skip the initial flood of unlocks when an existing layout is hydrated —
-    // they were earned in a previous session and shouldn't pop again.
     if (!initialisedRef.current) {
       initialisedRef.current = true;
       return;
     }
     setPending((current) => [...current, ...next]);
-  }, [layout, unlocked]);
+  }, [layout, unlocked, enabled]);
 
   // Mark initialised after the first paint so the very first user-driven
   // change still triggers a toast even on a fresh slate.

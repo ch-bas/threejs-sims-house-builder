@@ -8,6 +8,7 @@ import { hasCollisions } from '../lib/geometry';
 import { applyTheme } from '../lib/themes';
 import { buildFurnitureSet } from '../lib/furniture-sets';
 import { readImageAsDataUrl } from '../lib/file-io';
+import { Icon } from '../plotcraft/icon';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { SidebarTabs, type SidebarTab } from './sidebar-tabs';
@@ -103,7 +104,7 @@ export function SidebarDrawer({
       />
       <aside
         aria-label="Side panels"
-        className="pc-glass pc-glass--dark"
+        className="pc-glass pc-glass--dark pc-sidebar"
         style={{
           position: 'absolute',
           top: 72,
@@ -117,7 +118,26 @@ export function SidebarDrawer({
           overflow: 'hidden',
         }}
       >
-        <SidebarTabs active={sidebarTab} onChange={setSidebarTab} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <SidebarTabs active={sidebarTab} onChange={setSidebarTab} />
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="Close panels"
+            className="pc-tile pc-sidebar-close"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </div>
 
         <div
           style={{

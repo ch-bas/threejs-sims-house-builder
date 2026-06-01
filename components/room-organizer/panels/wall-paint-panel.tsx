@@ -172,7 +172,7 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
 
   return (
     <div
-      className="pointer-events-auto pc-glass"
+      className="pointer-events-auto pc-glass pc-wall-paint"
       style={{ width: 280, padding: '10px 12px' }}
     >
       {/* Title + Surface toggle */}

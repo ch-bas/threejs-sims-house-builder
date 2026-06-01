@@ -22,7 +22,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
 
   return (
     <div
-      className="pointer-events-auto"
+      className="pointer-events-auto pc-camera-pad"
       style={{
         background: 'rgba(60, 90, 105, 0.32)',
         backdropFilter: 'var(--pc-glass-blur)',
