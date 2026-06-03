@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
+import { CCTV_MODELS } from '../lib/cctv-models';
+import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, CategoryMeta, FurnitureCategory } from '../lib/types';
 
 type FilterKey = 'all' | FurnitureCategory;
@@ -61,7 +63,9 @@ export function FurnitureCatalogPanel({
         <CategoryRail filter={filter} onSelect={setFilter} />
       </CardHeader>
       <CardContent className="pt-3">
-        {filtered.length === 0 ? (
+        {filter === 'security' ? (
+          <CctvMenu variant="panel" onAdd={onAdd} />
+        ) : filtered.length === 0 ? (
           <p className="text-xs text-muted-foreground py-8 text-center">
             No items match this filter.
             <br />
@@ -103,7 +107,7 @@ function CategoryRail({ filter, onSelect }: CategoryRailProps): JSX.Element {
           active={filter === category.key}
           icon={category.icon}
           label={category.label}
-          count={COUNTS_BY_CATEGORY.get(category.key) ?? 0}
+          count={category.key === 'security' ? CCTV_MODELS.length : (COUNTS_BY_CATEGORY.get(category.key) ?? 0)}
           onClick={() => onSelect(category.key)}
         />
       ))}

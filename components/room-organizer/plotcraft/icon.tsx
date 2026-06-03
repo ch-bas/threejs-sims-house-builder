@@ -84,7 +84,8 @@ export type PlotcraftIconName =
   // HUD toggles
   | 'minimap'
   | 'grid'
-  | 'sound';
+  | 'sound'
+  | 'vision';
 
 const PATHS: Record<PlotcraftIconName, ReactNode> = {
   wall: (
@@ -557,6 +558,12 @@ const PATHS: Record<PlotcraftIconName, ReactNode> = {
       <path d="M18 5a8 8 0 0 1 0 14" />
     </>
   ),
+  vision: (
+    <>
+      <path d="M5 4l8 7l-8 7z" />
+      <path d="M13 11h6M13 7l5 -1M13 15l5 1" />
+    </>
+  ),
 };
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
@@ -607,7 +614,7 @@ const TYPE_TO_ICON: Record<string, PlotcraftIconName> = {
   toilet: 'toilet', bathtub: 'bath', shower: 'shower', 'bathroom-sink': 'sink',
   // electronics
   tv: 'tv', computer: 'computer', lamp: 'lamp', 'floor-lamp': 'light',
-  router: 'router', wifi: 'wifi', cctv: 'cctv',
+  router: 'router', wifi: 'wifi', cctv: 'cctv', 'security-camera': 'vision',
   // decor
   plant: 'plant', flowerpot: 'vase', vase: 'vase',
   painting: 'painting', mirror: 'mirror', rug: 'rug',
@@ -629,7 +636,7 @@ const TYPE_TO_ICON: Record<string, PlotcraftIconName> = {
 const CATEGORY_TO_ICON: Record<string, PlotcraftIconName> = {
   seating: 'chair', tables: 'table', bedroom: 'bed', storage: 'box',
   kitchen: 'fireplace', bathroom: 'bath', electronics: 'light',
-  decor: 'plant', outdoor: 'tree', people: 'person', structure: 'window',
+  security: 'vision', decor: 'plant', outdoor: 'tree', people: 'person', structure: 'window',
 };
 
 export function iconForItem(type: string, category?: string): PlotcraftIconName {

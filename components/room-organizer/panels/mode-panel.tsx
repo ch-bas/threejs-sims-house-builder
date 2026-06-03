@@ -150,6 +150,12 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           active={view.soundsEnabled}
           onClick={() => toggle('soundsEnabled')}
         />
+        <ActionButton
+          label={view.showCameraVision ? 'Hide camera cones' : 'Show camera cones'}
+          icon="vision"
+          active={view.showCameraVision}
+          onClick={() => toggle('showCameraVision')}
+        />
       </div>
     </div>
   );

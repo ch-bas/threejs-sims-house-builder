@@ -6,7 +6,7 @@ import { buildTableOrDesk } from './builders/builders-tables';
 import { buildBookshelf, buildCabinet } from './builders/builders-storage';
 import { buildFridge, buildStove, buildSink, buildCounter } from './builders/builders-kitchen';
 import { buildToilet, buildBathtub, buildShower } from './builders/builders-bathroom';
-import { buildTV, buildComputer, buildWiFi, buildRouter, buildCCTV } from './builders/builders-electronics';
+import { buildTV, buildComputer, buildWiFi, buildRouter, buildCCTV, buildSecurityCamera } from './builders/builders-electronics';
 import { buildLamp, buildPendantLight, buildLamppost } from './builders/builders-lighting';
 import {
   buildRug, buildPainting, buildVase, buildMirror, buildCurtains,
@@ -50,6 +50,7 @@ const BUILDERS: Record<string, FurnitureBuilder> = {
   wifi: buildWiFi,
   router: buildRouter,
   cctv: buildCCTV,
+  'security-camera': buildSecurityCamera,
   fridge: buildFridge,
   stove: buildStove,
   dishwasher: buildCabinet,
