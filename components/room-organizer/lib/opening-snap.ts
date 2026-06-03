@@ -116,3 +116,71 @@ function projectOntoSegment(
 export function isOpening(type: string): boolean {
   return type === 'door' || type === 'window';
 }
+
+
+/**
+ * Items that belong flush against a wall. Openings (doors/windows) cut through
+ * the wall; surface-mounted items (security cameras) sit against it and face
+ * into the room.
+ */
+export function isWallMounted(type: string): boolean {
+  return isOpening(type) || type === 'security-camera';
+}
+
+/**
+ * Snap a surface-mounted item (e.g. a security camera) to the nearest wall,
+ * then inset its centre into the room by half its depth so the body's back
+ * face rests on the wall and the footprint stays in-bounds (otherwise
+ * `itemInBounds` would flag a false collision). The returned rotation faces
+ * the item's local +Z axis into the room, matching how the camera and its
+ * vision cone are modelled.
+ */
+export function snapWallMountedItem(options: SnapOpeningOptions & { itemDepth: number }): OpeningSnap {
+  const snap = snapOpeningToWall(options);
+  const inset = options.itemDepth / 2 + 0.02;
+  // Three.js rotation.y maps the local +Z axis to (sin θ, cos θ) in world XZ;
+  // that direction points into the room for every wall snapOpeningToWall picks.
+  const forwardX = Math.sin(snap.rotation);
+  const forwardZ = Math.cos(snap.rotation);
+  return {
+    ...snap,
+    position: {
+      x: snap.position.x + forwardX * inset,
+      z: snap.position.z + forwardZ * inset,
+    },
+  };
+}
+
+/**
+ * Re-seat a wall-mounted item against the nearest wall.
+ *
+ * - Default (flush): the item's back rests on the wall and its body sits on
+ *   whichever side it currently *faces*, so a camera turned to face outside
+ *   moves to the exterior side and its cone starts at the wall surface instead
+ *   of passing through it.
+ * - With `bracketArm`: the item stands off the wall by that distance along the
+ *   wall's inward normal (a stand-off mount), independent of facing — so a
+ *   bracketed camera can pan freely while its base stays on the wall.
+ */
+export function reseatWallMountedItem(
+  options: SnapOpeningOptions & { itemDepth: number; rotation: number; bracketArm?: number }
+): { x: number; z: number } {
+  const snap = snapOpeningToWall(options); // wall-plane point + inward-facing rotation
+  const inwardX = Math.sin(snap.rotation);
+  const inwardZ = Math.cos(snap.rotation);
+  if (options.bracketArm != null) {
+    return {
+      x: snap.position.x + inwardX * options.bracketArm,
+      z: snap.position.z + inwardZ * options.bracketArm,
+    };
+  }
+  const facingX = Math.sin(options.rotation);
+  const facingZ = Math.cos(options.rotation);
+  // +1 if the item faces the room interior, −1 if it faces the exterior.
+  const side = facingX * inwardX + facingZ * inwardZ >= 0 ? 1 : -1;
+  const inset = options.itemDepth / 2 + 0.02;
+  return {
+    x: snap.position.x + inwardX * side * inset,
+    z: snap.position.z + inwardZ * side * inset,
+  };
+}

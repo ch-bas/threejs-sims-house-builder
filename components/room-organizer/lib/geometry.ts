@@ -29,6 +29,9 @@ export function hasCollisions(
   roomDepth: number
 ): boolean {
   if (!item.position) return false;
+  // Security cameras mount on the wall plane and may sit on its exterior side
+  // when aimed outward, so the room-bounds test doesn't apply to them.
+  if (item.type === 'security-camera') return false;
   if (!itemInBounds(item, roomWidth, roomDepth)) return true;
   return allItems.some((other) => other.id !== item.id && itemsOverlap(item, other));
 }

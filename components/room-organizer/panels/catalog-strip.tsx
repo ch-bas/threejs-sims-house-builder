@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
+import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, FurnitureCategory } from '../lib/types';
 
 const PAGE_SIZE = 8;
@@ -15,6 +16,35 @@ export interface CatalogStripProps {
 
 export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Element {
   const [page, setPage] = useState(0);
+
+  // Cameras get a dedicated, type-grouped menu rather than the paged grid.
+  if (category === 'security') {
+    return (
+      <div
+        className="pointer-events-auto pc-glass pc-catalog-strip"
+        style={{ width: 540, maxWidth: '100%', padding: '10px 14px 12px' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <div className="pc-hud-header" style={{ fontSize: 12 }}>
+            Security Cameras
+          </div>
+          <div style={{ flex: 1, height: 1, background: 'var(--pc-glass-inner)' }} />
+        </div>
+        <div
+          style={{
+            background: 'rgba(0, 0, 0, 0.20)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: 14,
+            padding: 8,
+            boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.35)',
+          }}
+        >
+          <CctvMenu variant="strip" onAdd={onAdd} />
+        </div>
+      </div>
+    );
+  }
+
   const items =
     category === 'all'
       ? FURNITURE_CATALOG

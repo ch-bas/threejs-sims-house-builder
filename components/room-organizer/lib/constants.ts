@@ -9,6 +9,9 @@ export const CURRENCY_SYMBOL = '$';
 
 export const MAX_FLOORS = 4;
 
+/** How far a bracketed security camera stands off the wall, in metres. */
+export const CAMERA_BRACKET_ARM = 0.22;
+
 export const CATEGORIES: readonly CategoryMeta[] = [
   { key: 'seating', label: 'Seating', icon: '🪑' },
   { key: 'tables', label: 'Tables', icon: '🟫' },
@@ -17,6 +20,7 @@ export const CATEGORIES: readonly CategoryMeta[] = [
   { key: 'kitchen', label: 'Kitchen', icon: '🍳' },
   { key: 'bathroom', label: 'Bathroom', icon: '🛁' },
   { key: 'electronics', label: 'Electronics', icon: '📺' },
+  { key: 'security', label: 'Security', icon: '🎥' },
   { key: 'decor', label: 'Decor', icon: '🪴' },
   { key: 'outdoor', label: 'Outdoor', icon: '🌳' },
   { key: 'people', label: 'People', icon: '🧍' },
@@ -69,6 +73,10 @@ export const FURNITURE_CATALOG = [
   { type: 'wifi', category: 'electronics', name: 'Wi-Fi AP', width: 0.2, depth: 0.2, height: 0.1, color: '#0088FF', icon: '📶', price: 140, isWiFiAccessPoint: true, signalRange: 10 },
   { type: 'router', category: 'electronics', name: 'Router', width: 0.3, depth: 0.2, height: 0.1, color: '#1a1a1a', icon: '🌐', price: 160 },
   { type: 'cctv', category: 'electronics', name: 'CCTV Camera', width: 0.15, depth: 0.15, height: 0.2, color: '#2C2C2C', icon: '📹', price: 230, isCCTV: true, signalRange: 8 },
+  // Security — cameras live in their own category and are browsed via the
+  // dedicated CctvMenu (grouped by type); this base entry backs every model.
+  // Defaults mirror the Hikvision DS-2CD2143G2-I dome (see lib/cctv-models); height doubles as the wall-mount height (≈2.4 m).
+  { type: 'security-camera', category: 'security', name: 'Security Camera', width: 0.25, depth: 0.2, height: 2.4, color: '#1F2933', icon: '🎥', price: 380, hasVisionCone: true, visionRange: 30, visionFov: 103, cctvModelId: 'hik-2cd2143g2' },
 
   // Decor
   { type: 'plant', category: 'decor', name: 'House Plant', width: 0.4, depth: 0.4, height: 1.0, color: '#228B22', icon: '🪴', price: 60 },

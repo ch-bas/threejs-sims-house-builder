@@ -11,6 +11,7 @@ export const ROOM_OBJECT_TAGS = {
   Wall: 'wall',
   Furniture: 'furniture',
   Signal: 'wifi-signal',
+  CameraVision: 'camera-vision',
 } as const;
 
 export type RoomObjectTag = (typeof ROOM_OBJECT_TAGS)[keyof typeof ROOM_OBJECT_TAGS];

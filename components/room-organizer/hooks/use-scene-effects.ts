@@ -16,6 +16,7 @@ import { clearMeasurement, measurementDistance, renderMeasurement } from '../thr
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildRoof, removeRoof } from '../three/roof';
 import { addSignalOverlays } from '../three/signal-overlay';
+import { addVisionCones } from '../three/camera-vision';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, removeTagged } from '../three/room-builder';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
 import { createFurnitureModel } from '../three/furniture-builders';
@@ -225,7 +226,7 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    removeTagged(scene, ROOM_OBJECT_TAGS.Furniture, ROOM_OBJECT_TAGS.Signal);
+    removeTagged(scene, ROOM_OBJECT_TAGS.Furniture, ROOM_OBJECT_TAGS.Signal, ROOM_OBJECT_TAGS.CameraVision);
 
     const floorsToRender = view.showAllFloors
       ? layout.floors.map((floor, index) => ({ floor, index }))
@@ -280,13 +281,16 @@ export function useSceneEffects({
       if (view.showWiFiSignals) {
         addSignalOverlays(THREE, scene, floor.items, floorY);
       }
+      if (view.showCameraVision) {
+        addVisionCones(THREE, scene, floor.items, floorY);
+      }
     }
   }, [
     isReady, threeModuleRef, sceneRef,
     layout.floors, layout.width, layout.height,
     activeFloor, activeFloorIndex,
     selectedItemId, extraSelectedIds, highlightedIds,
-    view.showWiFiSignals, view.showAllFloors,
+    view.showWiFiSignals, view.showCameraVision, view.showAllFloors,
   ]);
 
   // Lighting

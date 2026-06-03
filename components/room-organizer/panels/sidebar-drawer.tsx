@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { CameraPreset, RoomLayout } from '../lib/types';
+import type { CameraPreset, CatalogItem, RoomLayout } from '../lib/types';
 import type { AlignEdge, DistributeAxis } from '../lib/alignment';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { hasCollisions } from '../lib/geometry';
@@ -42,6 +42,8 @@ export interface SidebarDrawerProps {
   onImport(file: File): void;
   onExportGlb(): void;
   onShareLink(): void;
+  /** Wall-aware placement (snaps doors/windows/cameras to walls) shared with the bottom catalog. */
+  placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
 }
 
 export function SidebarDrawer({
@@ -54,6 +56,7 @@ export function SidebarDrawer({
   onImport,
   onExportGlb,
   onShareLink,
+  placeCatalogItem,
 }: SidebarDrawerProps): JSX.Element {
   const { layout, activeFloor, actions, view, isReady, playCue, history, catalogQuery, setCatalogQuery } = useRoomEditor();
   const { selectedItem, setSelectedItemId, allSelectedIds } = useSelection();
@@ -71,11 +74,6 @@ export function SidebarDrawer({
     actions.removeItem(id);
     playCue('remove');
     setSelectedItemId((current) => (current === id ? null : current));
-  };
-
-  const placeCatalogItem = (catalogItem: Parameters<typeof actions.addCatalogItem>[0]) => {
-    const id = actions.addCatalogItem(catalogItem);
-    return id;
   };
 
   const handleFloorPlanUpload = async (file: File) => {

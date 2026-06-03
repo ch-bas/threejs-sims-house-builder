@@ -46,6 +46,7 @@ export interface LayoutActions {
   rotateItem(id: string): void;
   moveItem(id: string, x: number, z: number): void;
   resizeItem(id: string, dimension: 'width' | 'depth' | 'height', value: number): void;
+  updateItem(id: string, patch: Partial<FurnitureItem>): void;
   setSofaShape(id: string, shape: SofaShape): void;
   setSignalRange(id: string, range: number): void;
   setColor(id: string, color: string): void;
@@ -117,6 +118,7 @@ export function useLayoutState(initial: RoomLayout = INITIAL_LAYOUT): UseLayoutS
       rotateItem: (id) => dispatch({ type: 'rotateItem', id }),
       moveItem: (id, x, z) => dispatch({ type: 'moveItem', id, x, z }),
       resizeItem: (id, dimension, value) => dispatch({ type: 'resizeItem', id, dimension, value }),
+      updateItem: (id, patch) => dispatch({ type: 'updateItem', id, patch }),
       setSofaShape: (id, shape) => dispatch({ type: 'setSofaShape', id, shape }),
       setSignalRange: (id, range) => dispatch({ type: 'setSignalRange', id, range }),
       setColor: (id, color) => dispatch({ type: 'setColor', id, color }),

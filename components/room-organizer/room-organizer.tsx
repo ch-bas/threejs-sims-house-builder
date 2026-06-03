@@ -10,16 +10,17 @@ import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
 import { useNpcs } from './hooks/use-npcs';
+import { useCameraVision } from './hooks/use-camera-vision';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
-import { GRID_SIZE_METERS } from './lib/constants';
+import { CAMERA_BRACKET_ARM, GRID_SIZE_METERS } from './lib/constants';
 import {
   snapToGrid as snapValueToGrid,
   snapToNeighbors,
   snapToWall as snapPositionToWall,
 } from './lib/geometry';
-import { isOpening, snapOpeningToWall } from './lib/opening-snap';
+import { isOpening, snapOpeningToWall, snapWallMountedItem, reseatWallMountedItem } from './lib/opening-snap';
 import {
   downloadCanvasAsPng,
   downloadSceneAsGlb,
@@ -113,6 +114,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   showHeatmap: false,
   showItemLabels: false,
   showNpcs: false,
+  showCameraVision: true,
 };
 
 export function RoomOrganizer(): JSX.Element {
@@ -336,9 +338,110 @@ export function RoomOrganizer(): JSX.Element {
     [actions]
   );
 
-  const handleDragEnd = useCallback(() => {
-    dragOriginsRef.current = null;
-  }, []);
+  const handleDragEnd = useCallback(
+    (id: string) => {
+      dragOriginsRef.current = null;
+      // On release, click a security camera onto the nearest wall and turn it to
+      // face into the room. Doing this on drop (not per drag frame) keeps the
+      // drag itself smooth instead of flipping between walls.
+      const item = activeFloor.items.find((entry) => entry.id === id);
+      if (item?.type === 'security-camera' && item.position) {
+        const snapped = snapWallMountedItem({
+          position: item.position,
+          itemWidth: item.width,
+          itemDepth: item.depth,
+          roomWidth: layout.width,
+          roomDepth: layout.height,
+          interiorWalls: activeFloor.interiorWalls ?? [],
+        });
+        // Record the wall's inward-normal yaw so rotation can be locked to the
+        // in/out axis, then re-seat for the camera's current mount style.
+        actions.updateItem(id, { wallRotation: snapped.rotation });
+        if (item.cameraBracket) {
+          const pos = reseatWallMountedItem({
+            position: item.position,
+            itemWidth: item.width,
+            itemDepth: item.depth,
+            roomWidth: layout.width,
+            roomDepth: layout.height,
+            interiorWalls: activeFloor.interiorWalls ?? [],
+            rotation: item.rotation ?? snapped.rotation,
+            bracketArm: CAMERA_BRACKET_ARM,
+          });
+          actions.moveItem(id, pos.x, pos.z);
+        } else {
+          actions.moveItem(id, snapped.position.x, snapped.position.z);
+          if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) {
+            actions.setRotation(id, snapped.rotation);
+          }
+        }
+      }
+    },
+    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
+  );
+
+  // Re-seat a wall-mounted camera against its wall. A flush camera's body moves
+  // to whichever side it faces (so the body + cone start at the wall surface
+  // instead of passing through it); a bracketed camera stands off the wall by a
+  // fixed arm, independent of facing, so it can pan freely. `bracket` overrides
+  // the stored flag for the moment a user toggles the mount style.
+  const reseatCamera = useCallback(
+    (id: string, rotation: number, bracket?: boolean) => {
+      const item = activeFloor.items.find((entry) => entry.id === id);
+      if (item?.type !== 'security-camera' || !item.position) return;
+      const bracketed = bracket ?? item.cameraBracket ?? false;
+      const pos = reseatWallMountedItem({
+        position: item.position,
+        itemWidth: item.width,
+        itemDepth: item.depth,
+        roomWidth: layout.width,
+        roomDepth: layout.height,
+        interiorWalls: activeFloor.interiorWalls ?? [],
+        rotation,
+        ...(bracketed ? { bracketArm: CAMERA_BRACKET_ARM } : {}),
+      });
+      actions.moveItem(id, pos.x, pos.z);
+    },
+    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
+  );
+
+  const rotateItemHandler = useCallback(
+    (id: string) => {
+      if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
+        actions.rotateSelection(allSelectedIds, Math.PI / 2);
+        return;
+      }
+      const item = activeFloor.items.find((entry) => entry.id === id);
+      if (item?.type === 'security-camera') {
+        // A flush camera can only face into the room or straight out, so Rotate
+        // flips 180° along its wall's in/out axis. A bracketed camera pans freely.
+        const step = item.cameraBracket ? Math.PI / 2 : Math.PI;
+        const next = ((item.rotation ?? 0) + step) % (Math.PI * 2);
+        actions.setRotation(id, next);
+        reseatCamera(id, next);
+        return;
+      }
+      const next = ((item?.rotation ?? 0) + Math.PI / 2) % (Math.PI * 2);
+      actions.setRotation(id, next);
+    },
+    [allSelectedIds, activeFloor.items, actions, reseatCamera]
+  );
+
+  // Toggle a camera's stand-off bracket. Enabling it keeps the current facing
+  // and lifts the camera onto the arm; disabling it snaps the camera back flush
+  // and re-locks facing to the wall's inward normal.
+  const toggleCameraBracket = useCallback(
+    (id: string) => {
+      const item = activeFloor.items.find((entry) => entry.id === id);
+      if (item?.type !== 'security-camera') return;
+      const next = !item.cameraBracket;
+      actions.updateItem(id, { cameraBracket: next });
+      const rotation = next ? item.rotation ?? 0 : item.wallRotation ?? item.rotation ?? 0;
+      if (!next) actions.setRotation(id, rotation);
+      reseatCamera(id, rotation, next);
+    },
+    [activeFloor.items, actions, reseatCamera]
+  );
 
   // Wrap layout actions with the side-effect of clearing the selection when
   // the targeted item disappears.
@@ -413,6 +516,10 @@ export function RoomOrganizer(): JSX.Element {
         return snapped.position;
       }
 
+      // Security cameras follow the cursor freely while dragging (no per-frame
+      // wall-snap — that made them teleport/flip between walls). They snap onto
+      // the nearest wall and orient into the room on release, in handleDragEnd.
+
       if (view.snapToGrid) {
         result = {
           x: snapValueToGrid(result.x, GRID_SIZE_METERS),
@@ -467,6 +574,20 @@ export function RoomOrganizer(): JSX.Element {
         });
         const id = actions.addCatalogItem(catalogItem, snapped.position);
         actions.setRotation(id, snapped.rotation);
+        return id;
+      }
+      if (catalogItem.type === 'security-camera') {
+        const snapped = snapWallMountedItem({
+          position: position ?? { x: 0, z: 0 },
+          itemWidth: catalogItem.width,
+          itemDepth: catalogItem.depth,
+          roomWidth: layout.width,
+          roomDepth: layout.height,
+          interiorWalls: activeFloor.interiorWalls ?? [],
+        });
+        const id = actions.addCatalogItem(catalogItem, snapped.position);
+        actions.setRotation(id, snapped.rotation);
+        actions.updateItem(id, { wallRotation: snapped.rotation });
         return id;
       }
       return actions.addCatalogItem(catalogItem, position);
@@ -530,6 +651,12 @@ export function RoomOrganizer(): JSX.Element {
     roomWidth: layout.width,
     roomDepth: layout.height,
     floorY: activeFloorY,
+  });
+
+  useCameraVision({
+    enabled: isReady && view.showCameraVision && !view.view2D,
+    threeModuleRef,
+    sceneRef,
   });
 
   const { applyPreset, focusOn, fitToRoom } = useCameraPresets({
@@ -613,13 +740,7 @@ export function RoomOrganizer(): JSX.Element {
         const newId = actions.duplicateItem(id);
         setSelectedItemId(newId);
       },
-      rotateItem: (id: string) => {
-        if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
-          actions.rotateSelection(allSelectedIds, Math.PI / 2);
-        } else {
-          actions.rotateItem(id);
-        }
-      },
+      rotateItem: rotateItemHandler,
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
           actions.rotateSelection(allSelectedIds, radians);
@@ -629,6 +750,7 @@ export function RoomOrganizer(): JSX.Element {
         if (!item) return;
         const next = ((item.rotation ?? 0) + radians) % (Math.PI * 2);
         actions.setRotation(id, next);
+        reseatCamera(id, next);
       },
       moveItem: actions.moveItem,
       toggle2D: () => toggle('view2D'),
@@ -671,6 +793,8 @@ export function RoomOrganizer(): JSX.Element {
       history.redo,
       selectedItem,
       focusOn,
+      rotateItemHandler,
+      reseatCamera,
     ]
   );
 
@@ -857,9 +981,10 @@ export function RoomOrganizer(): JSX.Element {
             layout.height
           )}
           onRotate={(id: string) => {
-            actions.rotateItem(id);
+            rotateItemHandler(id);
             playCue('rotate');
           }}
+          onToggleCameraBracket={toggleCameraBracket}
           onDuplicate={(id: string) => {
             const newId = actions.duplicateItem(id);
             setSelectedItemId(newId);
@@ -913,6 +1038,7 @@ export function RoomOrganizer(): JSX.Element {
         onImport={handleImport}
         onExportGlb={handleExportGlb}
         onShareLink={handleShareLink}
+        placeCatalogItem={placeCatalogItem}
       />
     </div>
     </SelectionProvider>

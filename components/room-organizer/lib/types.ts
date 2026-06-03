@@ -27,6 +27,7 @@ export type FurnitureType =
   | 'wifi'
   | 'router'
   | 'cctv'
+  | 'security-camera'
   | 'fridge'
   | 'stove'
   | 'dishwasher'
@@ -62,6 +63,7 @@ export type FurnitureCategory =
   | 'kitchen'
   | 'bathroom'
   | 'electronics'
+  | 'security'
   | 'decor'
   | 'outdoor'
   | 'people'
@@ -90,6 +92,25 @@ export interface FurnitureItem {
   isWiFiAccessPoint?: boolean;
   isCCTV?: boolean;
   signalRange?: number;
+  /** When true, this item projects a Desperados-style directional vision cone. */
+  hasVisionCone?: boolean;
+  /** How far the vision cone reaches into the room, in metres. */
+  visionRange?: number;
+  /** Horizontal field of view of the vision cone, in degrees. */
+  visionFov?: number;
+  /** Id of the real-world CCTV model this camera mimics (see lib/cctv-models). */
+  cctvModelId?: string;
+  /**
+   * Yaw (radians) of the inward normal of the wall a camera is mounted on — its
+   * in/out axis. A flush camera's rotation is locked to this or this + π.
+   */
+  wallRotation?: number;
+  /**
+   * When true, a security camera sits on a stand-off bracket arm and can pan
+   * left/right freely; otherwise it is flush-mounted and locked to facing
+   * straight into the room or straight out.
+   */
+  cameraBracket?: boolean;
   sofaShape?: SofaShape;
   locked?: boolean;
   mirrored?: boolean;
@@ -195,6 +216,8 @@ export interface ViewSettings {
   showItemLabels: boolean;
   /** When true, animated NPCs wander the active floor. */
   showNpcs: boolean;
+  /** When true, security cameras project an animated vision cone on the floor. */
+  showCameraVision: boolean;
 }
 
 export type ThemeKey = 'modern' | 'rustic' | 'minimalist' | 'cozy' | 'tropical';
