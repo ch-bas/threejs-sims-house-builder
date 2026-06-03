@@ -26,7 +26,7 @@
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - run: npm ci
+      - run: npm install
       - run: npx tsc --noEmit
       - run: npm run build                                                                                                                                                         
         env:
