@@ -1,38 +1,72 @@
 ---
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
+name: Bug Report
+about: Report something that isn't working correctly
+title: "[Bug] "
+labels: bug
 assignees: ''
-
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## Describe the Bug
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+<!-- A clear and concise description of what the bug is. -->
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Steps to Reproduce
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+1. Open the app at `http://localhost:3000` (or the [live demo](https://ch-bas.github.io/threejs-sims-house-builder/))
+2. <!-- e.g. Place a window item near the north wall -->
+3. <!-- e.g. Press Delete while the item is selected -->
+4. <!-- Describe what you observe that is wrong -->
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+## Expected Behavior
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+<!-- What should happen instead? -->
 
-**Additional context**
-Add any other context about the problem here.
+## Actual Behavior
+
+<!-- What actually happens? Include any error messages from the browser console (F12 > Console). -->
+
+## Screenshots / Recordings
+
+<!-- If applicable, add screenshots or a short screen recording showing the problem. For 3D rendering issues, include both the 3D and 2D views if possible. -->
+
+## Environment
+
+- **Browser & version:** <!-- e.g. Chrome 125, Safari 18, Firefox 127 -->
+- **OS:** <!-- e.g. macOS 15.3, Windows 11, Ubuntu 24.04 -->
+- **Device:** <!-- e.g. Desktop, MacBook Pro M3, iPhone 15, iPad Air -->
+- **Screen size:** <!-- e.g. 1920x1080, mobile viewport -->
+- **Node version (if running locally):** <!-- run `node --version` -->
+
+## Area of the App
+
+<!-- Check all that apply -->
+
+- [ ] 3D viewport / rendering
+- [ ] 2D top-down view
+- [ ] Walkthrough mode
+- [ ] Furniture placement / drag & drop
+- [ ] Catalog / sidebar panels
+- [ ] Walls (exterior / interior / openings)
+- [ ] Floor management (multi-floor / switcher)
+- [ ] Save / load / import / export
+- [ ] Share URL
+- [ ] Themes / styles / patterns
+- [ ] Time of day / lighting
+- [ ] Keyboard shortcuts
+- [ ] Mobile / touch input
+- [ ] Performance
+- [ ] Other
+
+## Reproducibility
+
+- [ ] Always happens
+- [ ] Happens intermittently
+- [ ] Happened once
+
+## Additional Context
+
+<!-- Any other details that might help: layout JSON export, console errors, network tab info, specific furniture items involved, etc. -->
+
+## Possible Fix
+
+<!-- Optional: if you have an idea of what might be causing it or how to fix it. -->
