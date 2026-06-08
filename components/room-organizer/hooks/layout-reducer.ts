@@ -152,6 +152,7 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       const newItem: FurnitureItem = {
         ...action.catalogItem,
         id: action.id,
+        locked: true,
         position: action.position ?? { x: 0, z: 0 },
         rotation: 0,
         ...(action.catalogItem.type === 'sofa' ? { sofaShape: 'standard' as const } : {}),
