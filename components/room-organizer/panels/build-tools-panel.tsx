@@ -22,6 +22,8 @@ const TOOLS: readonly ToolSpec[] = [
   { key: 'decor',       icon: 'plant',     label: 'Decor'    },
   { key: 'electronics', icon: 'light',     label: 'Tech'     },
   { key: 'security',    icon: 'vision',    label: 'Security' },
+  { key: 'outdoor',     icon: 'tree',      label: 'Outdoor'  },
+  { key: 'people',      icon: 'person',    label: 'People'   },
 ];
 
 export interface BuildToolsPanelProps {
