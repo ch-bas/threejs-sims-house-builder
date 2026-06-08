@@ -102,7 +102,7 @@ export const FURNITURE_CATALOG = [
   { type: 'sunflower', category: 'outdoor', name: 'Sunflower', width: 0.4, depth: 0.4, height: 1.6, color: '#FFC107', icon: '🌻', price: 45 },
   { type: 'rose-bush', category: 'outdoor', name: 'Rose Bush', width: 0.6, depth: 0.6, height: 0.9, color: '#C2185B', icon: '🌹', price: 75 },
   { type: 'fence', category: 'outdoor', name: 'Fence Section', width: 2.0, depth: 0.15, height: 1.2, color: '#8D6E63', icon: '🪵', price: 120 },
-  { type: 'pool', category: 'outdoor', name: 'Pool', width: 4.0, depth: 2.5, height: 0.3, color: '#03A9F4', icon: '🏊', price: 4500 },
+  { type: 'pool', category: 'outdoor', name: 'Swimming Pool', width: 4.0, depth: 2.5, height: 0.1, color: '#03A9F4', icon: '🏊', price: 4500 },
   { type: 'bbq', category: 'outdoor', name: 'BBQ Grill', width: 0.8, depth: 0.6, height: 1.1, color: '#37474F', icon: '🍖', price: 320 },
   { type: 'mailbox', category: 'outdoor', name: 'Mailbox', width: 0.4, depth: 0.3, height: 1.1, color: '#1976D2', icon: '📬', price: 60 },
   { type: 'birdbath', category: 'outdoor', name: 'Birdbath', width: 0.7, depth: 0.7, height: 0.9, color: '#B0BEC5', icon: '🐦', price: 140 },
