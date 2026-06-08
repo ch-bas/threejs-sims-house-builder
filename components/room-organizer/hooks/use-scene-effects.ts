@@ -174,6 +174,7 @@ export function useSceneEffects({
         wallPattern: floor.wallPattern,
         wallColors: floor.wallColors,
         wallOpenings,
+        hiddenWalls: floor.hiddenWalls,
         floorOpenings,
         floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
         floorPlanOpacity: layout.floorPlanOpacity ?? 0.5,

@@ -28,7 +28,7 @@ import {
 } from './lib/file-io';
 import { hasCollisions } from './lib/geometry';
 import { FURNITURE_CATALOG } from './lib/constants';
-import type { CatalogItem, RoomLayout, ViewSettings } from './lib/types';
+import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 import { BottomHud } from './panels/bottom-hud';
 import { LotBadge } from './panels/lot-badge';
 import { SidebarDrawer } from './panels/sidebar-drawer';
@@ -607,7 +607,6 @@ export function RoomOrganizer(): JSX.Element {
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
       onWallSelect: ({ wallId, kind }) => {
-        if (!view.drawWallMode) return;
         setSelectedWall({ id: wallId, kind });
       },
       onFloorPointerMove: handleFloorPointerMove,
@@ -781,6 +780,14 @@ export function RoomOrganizer(): JSX.Element {
         actions.setActiveFloorIndex(next);
       },
       toggleSidebar: () => setSidebarCollapsed((c) => !c),
+      removeInteriorWall: (id: string) => {
+        actions.removeInteriorWall(id);
+        setSelectedWall(null);
+      },
+      toggleExteriorWall: (id: string) => {
+        actions.toggleExteriorWall(id as WallId);
+        setSelectedWall(null);
+      },
     }),
     [
       removeItem,
@@ -802,6 +809,7 @@ export function RoomOrganizer(): JSX.Element {
 
   useKeyboardShortcuts({
     selectedItem,
+    selectedWall,
     hasSignalItems,
     handlers: shortcutHandlers,
   });

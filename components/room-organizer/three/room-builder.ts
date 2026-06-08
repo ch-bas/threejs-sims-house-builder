@@ -103,6 +103,8 @@ export interface RoomBuilderOptions {
   wallColors?: Partial<Record<WallId, string>>;
   /** Door / window cutouts to punch through the relevant walls. */
   wallOpenings?: ReadonlyMap<WallId, WallOpening[]>;
+  /** Exterior walls that have been removed (open sides). */ 
+  hiddenWalls?: readonly WallId[]; 
   /** Stairwell openings to cut through this floor's plane. */
   floorOpenings?: readonly FloorOpening[];
   floorPlanImage: string | null;
@@ -168,7 +170,8 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
       options.wallPattern,
       yOffset,
       isGhost ? options.ghostOpacity : undefined,
-      options.wallOpenings
+      options.wallOpenings,
+      options.hiddenWalls
     );
   }
 }
@@ -308,7 +311,8 @@ function buildWalls(
   pattern?: WallPattern,
   yOffset = 0,
   ghostOpacity?: number,
-  openings?: ReadonlyMap<WallId, WallOpening[]>
+  openings?: ReadonlyMap<WallId, WallOpening[]>,
+  hiddenWalls?: readonly WallId[]
 ): void {
   const wallHeight = 3;
   const centerY = yOffset + wallHeight / 2;
@@ -326,6 +330,7 @@ function buildWalls(
   ];
 
   for (const spec of wallSpecs) {
+    if (hiddenWalls?.includes(spec.id)) continue;
     const color = colors?.[spec.id] ?? hexFromInt(DEFAULT_WALL_COLOR);
     const material = buildWallMaterial(THREE, {
       pattern: pattern ?? 'solid',

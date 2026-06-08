@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.3.0] - 2026-06-08
 
 ### Fixed
+- Fix selection of internal/external walls.
+- Enable all mitems in build menu [sill height](https://github.com/ch-bas/threejs-sims-house-builder/issues/12).
 - Elements should be locked after they were [positioned](https://github.com/ch-bas/threejs-sims-house-builder/issues/11).
 - Correct window glass color and [sill height](https://github.com/ch-bas/threejs-sims-house-builder/issues/14).
 

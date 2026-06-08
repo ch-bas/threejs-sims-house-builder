@@ -59,6 +59,7 @@ export interface LayoutActions {
   addInteriorWall(wall: InteriorWall): void;
   removeInteriorWall(id: string): void;
   clearInteriorWalls(): void;
+  toggleExteriorWall(wallId: WallId): void;
   rotateSelection(ids: ReadonlySet<string>, radians: number): void;
   setLockAll(locked: boolean): void;
   clearItems(): void;
@@ -130,6 +131,7 @@ export function useLayoutState(initial: RoomLayout = INITIAL_LAYOUT): UseLayoutS
       bulkSetPositions: (positions) => dispatch({ type: 'bulkSetPositions', positions }),
       addInteriorWall: (wall) => dispatch({ type: 'addInteriorWall', wall }),
       removeInteriorWall: (id) => dispatch({ type: 'removeInteriorWall', id }),
+      toggleExteriorWall: (wallId) => dispatch({ type: 'toggleExteriorWall', wallId }),
       clearInteriorWalls: () => dispatch({ type: 'clearInteriorWalls' }),
       rotateSelection: (ids, radians) => dispatch({ type: 'rotateSelection', ids, radians }),
       setLockAll: (locked) => dispatch({ type: 'setLockAll', locked }),
