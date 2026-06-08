@@ -341,6 +341,8 @@ export function RoomOrganizer(): JSX.Element {
   const handleDragEnd = useCallback(
     (id: string) => {
       dragOriginsRef.current = null;
+      // Lock the item after positioning so it can't be accidentally moved.  
+      actions.setLocked(id, true); 
       // On release, click a security camera onto the nearest wall and turn it to
       // face into the room. Doing this on drop (not per drag frame) keeps the
       // drag itself smooth instead of flipping between walls.
