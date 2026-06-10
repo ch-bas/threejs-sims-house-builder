@@ -35,9 +35,9 @@ npm run typecheck
 
 ### Building
 
-- **67 furniture items** across 11 categories (Seating, Tables, Bedroom,
-  Storage, Kitchen, Bathroom, Electronics, Decor, Outdoor, People,
-  Structure).
+- **68 furniture items** across 12 categories (Seating, Tables, Bedroom,
+  Storage, Kitchen, Bathroom, Electronics, Security, Decor, Outdoor,
+  People, Structure).
 - **Multi-floor buildings** up to 4 levels — ground floor + up to three
   upper floors, with a FloorSwitcher to select, add, remove, rename
   (double-click), reorder, and **clone** the active floor. Each floor
@@ -48,8 +48,23 @@ npm run typecheck
 - **Roof** on top of the highest floor: Flat, Gable, or Hipped, with a
   per-roof colour picker.
 - **Categorised catalog** with search, filter chips, and price tags ($).
+- **Security cameras with vision cones**: wall-mounted CCTV that mimics
+  real-world camera models (`lib/cctv-models`), flush or bracket
+  mounting, and a Desperados-style directional vision cone with
+  configurable range and FOV — rendered as a coverage overlay alongside
+  Wi-Fi signal rings. The cone **detects objects**: furniture or NPCs
+  inside the field of view flip it from cyan to alert red, the wedge
+  pulses faster, and the sweeping scan line flares as it passes over the
+  target. The overlay renders depth-test-free so walls and furniture
+  never occlude it.
 - **Drag-from-catalog placement**: drag an item directly onto the 3D
-  viewport to drop it where you release.
+  viewport to drop it where you release. Items **auto-lock** on placement
+  and re-lock after every drag, so finished furniture can't be nudged by
+  accident; unlock from the item editor to reposition.
+- **Outdoor items stay outdoors**: trees, fences, pools, BBQs, and other
+  garden items flag a collision when any part of their footprint pokes
+  into the building, and catalog drops default to just outside the south
+  wall.
 - **3D mesh builders** for every type — beds, sofas (standard/L/U-shape),
   fridges, stoves, sinks, toilets, bathtubs, showers, trees, fences,
   pools, stairs, people / pets for scale, and more.
@@ -99,6 +114,12 @@ npm run typecheck
   previous segment), and a live preview of the next segment. Doors and
   windows near an interior wall cut through it via ExtrudeGeometry with
   holes.
+- **Click-to-select walls** in any mode: clicking a wall in 3D outlines
+  it and auto-opens the Paint panel targeting it. **Delete** removes a
+  selected interior wall permanently, or toggles an exterior wall hidden
+  (open side). The panel's **Wall Visibility** row (N/E/S/W) shows hidden
+  walls crossed out and restores them with a click; hidden walls persist
+  per floor.
 
 ### View
 
@@ -111,6 +132,9 @@ npm run typecheck
 - **Sun-arc time-of-day** (continuous 0–24) drives ambient and sun
   colour, intensity, and position. Lamps light up at night. Dawn / Noon /
   Dusk / Midnight presets plus a ▶ button advances time in real-time.
+- **Gradient sky** — a vertical zenith-to-horizon gradient backdrop that
+  follows the time of day: deep blue over pale at noon, lavender over
+  warm orange at dawn/dusk, near-black over navy at night.
 - **Outdoor garden mode**: grass, stone path ring, scattered bushes.
 - **Top-down minimap** overlay (active floor).
 - **Hover tooltips** showing item icon, name, price ($), and dimensions.
@@ -179,7 +203,7 @@ npm run typecheck
 | Action            | Key                |
 | ----------------- | ------------------ |
 | Undo / Redo       | Ctrl+Z / Ctrl+Shift+Z |
-| Delete item       | Delete             |
+| Delete item / wall | Delete            |
 | Duplicate         | Ctrl+D             |
 | Rotate            | R (Shift+R = 15°)  |
 | Move              | Arrow keys (Shift = 1 m) |
@@ -214,6 +238,7 @@ components/
     │   ├── geometry.ts                  Collision, bounds, snap, auto-organize
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements
+    │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── persistence.ts               Active-layout localStorage I/O
     │   ├── library.ts                   Named-layout library I/O
     │   ├── share.ts                     Share-URL encode/decode (base64url)
@@ -253,6 +278,7 @@ components/
     │   ├── floor-patterns.ts            Procedural CanvasTexture floors
     │   ├── wall-patterns.ts             Procedural CanvasTexture walls
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
+    │   ├── camera-vision.ts             Directional CCTV vision-cone overlays
     │   ├── lighting.ts                  Sun-arc continuous time of day
     │   └── outdoor.ts                   Garden / path / bush scenery
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
@@ -324,8 +350,26 @@ components/
 - **Three.js init / teardown is encapsulated.** `useThreeScene` owns the
   renderer, camera, controls, animation loop, resize listener, drag,
   hover, and the parameterised drag-plane Y. It always returns a
-  cleanup, cancels the RAF, and turns on `preserveDrawingBuffer` so PNG
-  and GLB exports work. Scene rebuilds live in `useSceneEffects`.
+  cleanup and cancels the RAF. PNG capture renders a fresh frame
+  synchronously before reading the canvas, so `preserveDrawingBuffer`
+  stays off and the renderer keeps its buffer optimisations. Scene rebuilds live in `useSceneEffects`.
+- **Filmic rendering pipeline.** ACES tone mapping, explicit sRGB output,
+  device-pixel-ratio-aware rendering (capped at 2×), PCF soft shadows, and
+  image-based lighting from a PMREM-filtered `RoomEnvironment`. The
+  environment intensity is driven by the time-of-day system so nights stay
+  dark, and procedural CanvasTextures get max anisotropy + sRGB tagging so
+  floors and walls don't shimmer at grazing angles in walkthrough mode.
+- **Render-on-demand.** The animation loop only renders when OrbitControls
+  report movement or something marks the scene dirty (`invalidate()` is
+  threaded through the scene-effect, walkthrough, NPC, and camera-preset
+  hooks). An idle editor draws zero frames.
+- **Drag fast-path.** While dragging, meshes are moved directly and the
+  single state dispatch is deferred to drag end — no per-mousemove scene
+  rebuild. Collision feedback stays live via an emissive tint on the dragged
+  group, and each drag gesture lands as one undo entry.
+- **OBB collision.** Item overlap uses a separating-axis test on rotated
+  footprints, with the old bounding-circle check kept as a broad phase — no
+  more false positives on long thin items placed diagonally.
 - **Context over props.** `RoomEditorContext` and `SelectionContext`
   distribute state to panels — ~90 drilled props eliminated. Props are
   reserved for one-off callbacks with side effects (scene-ref closures,
@@ -346,10 +390,12 @@ components/
 7. `importLayout` structurally validates JSON before applying it.
 8. Floor-plan fit-mode select is exposed in the UI.
 9. `URL.revokeObjectURL` after JSON / GLB / PNG / CSV download.
+10. Every scene-removal path disposes GPU resources (geometries,
+    materials, textures, light shadow maps) via a shared
+    `disposeObject` helper — scene rebuilds no longer leak GPU memory.
 
 ## Known limitations
 
-- Collision still uses bounding-circle approximation.
 - A large floor-plan image stored as base64 can exhaust the ~5 MB
   `localStorage` quota; the save call catches and warns instead of crashing.
 - Walkthrough requires a click on the canvas to engage pointer lock.

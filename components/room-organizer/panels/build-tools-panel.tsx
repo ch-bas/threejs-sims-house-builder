@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { FurnitureCategory } from '../lib/types';
 
@@ -33,22 +34,56 @@ export interface BuildToolsPanelProps {
 }
 
 export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <div
       className="pointer-events-auto pc-glass pc-build-tools"
       style={{ width: 232, padding: 'var(--pc-s-3)' }}
     >
-      {/* Desktop: header + 3x3 grid */}
+      {/* Header doubles as the show/hide toggle. */}
       <div className="pc-build-tools-header">
-        <div
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Show build tools' : 'Hide build tools'}
           className="pc-hud-header"
-          style={{ fontSize: 11, marginBottom: 8, paddingLeft: 2 }}
+          style={{
+            fontSize: 11,
+            marginBottom: collapsed ? 0 : 8,
+            paddingLeft: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'inherit',
+          }}
         >
-          Build Tools
-        </div>
+          <span>Build Tools</span>
+          <span
+            aria-hidden
+            className="pc-tile"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 24,
+              height: 24,
+              borderRadius: 6,
+              fontSize: 12,
+              color: 'var(--pc-cyan-glow)',
+            }}
+          >
+            {collapsed ? '▸' : '▾'}
+          </span>
+        </button>
       </div>
 
       {/* Desktop: 3-col grid */}
+      {!collapsed && (
       <div
         className="pc-build-tools-grid"
         style={{
@@ -107,6 +142,7 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

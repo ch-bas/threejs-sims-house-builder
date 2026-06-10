@@ -242,6 +242,12 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
             }}
           />
 
+          <SectionLabel>Wall Visibility</SectionLabel>
+          <WallVisibilityToggle
+            hiddenWalls={floor.hiddenWalls ?? []}
+            onToggle={(wallId) => actions.toggleExteriorWall(wallId)}
+          />
+
           <SectionLabel>Wall Colour · {activeWallPalette.label}</SectionLabel>
           <GroupTabs
             groups={WALL_PALETTES}
@@ -387,6 +393,64 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
             }}
           >
             {target.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface WallVisibilityToggleProps {
+  hiddenWalls: readonly WallId[];
+  onToggle(wallId: WallId): void;
+}
+
+const VISIBILITY_WALLS: ReadonlyArray<{ id: WallId; label: string }> = [
+  { id: 'north', label: 'N' },
+  { id: 'east',  label: 'E' },
+  { id: 'south', label: 'S' },
+  { id: 'west',  label: 'W' },
+];
+
+function WallVisibilityToggle({ hiddenWalls, onToggle }: WallVisibilityToggleProps): JSX.Element {
+  return (
+    <div
+      role="group"
+      aria-label="Wall visibility"
+      style={{
+        display: 'flex',
+        gap: 3,
+        background: 'rgba(0,0,0,0.20)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 8,
+        padding: 3,
+        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.30)',
+      }}
+    >
+      {VISIBILITY_WALLS.map((wall) => {
+        const hidden = hiddenWalls.includes(wall.id);
+        return (
+          <button
+            key={wall.id}
+            type="button"
+            aria-pressed={!hidden}
+            onClick={() => onToggle(wall.id)}
+            title={hidden ? `Restore ${wall.id} wall` : `Remove ${wall.id} wall (open side)`}
+            className={`pc-tile${!hidden ? ' pc-tile--active' : ''}`}
+            style={{
+              flex: 1,
+              height: 22,
+              borderRadius: 6,
+              fontFamily: 'var(--pc-font-display)',
+              fontWeight: 800,
+              fontSize: 9,
+              letterSpacing: 'var(--pc-tr-caps)',
+              textTransform: 'uppercase',
+              opacity: hidden ? 0.45 : 1,
+              textDecoration: hidden ? 'line-through' : 'none',
+            }}
+          >
+            {wall.label}
           </button>
         );
       })}

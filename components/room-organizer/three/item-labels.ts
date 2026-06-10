@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { disposeObject } from './builder-utils';
 import type { FurnitureItem } from '../lib/types';
 
 type ThreeModule = typeof import('three');
@@ -8,7 +9,7 @@ const LABEL_TAG = 'item-label';
 export function clearItemLabels(scene: ThreeNS.Scene): void {
   for (const obj of scene.children.filter((child) => child.userData.type === LABEL_TAG)) {
     scene.remove(obj);
-    disposeSprite(obj);
+    disposeObject(obj);
   }
 }
 
@@ -54,6 +55,7 @@ function createLabelSprite(THREE: ThreeModule, text: string): ThreeNS.Sprite {
   }
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
   // Crisper sampling at oblique angles.
   texture.minFilter = THREE.LinearFilter;
@@ -75,17 +77,3 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
   return `${truncated}…`;
 }
 
-function disposeSprite(obj: ThreeNS.Object3D): void {
-  const sprite = obj as ThreeNS.Sprite;
-  if (sprite.material instanceof Array) {
-    sprite.material.forEach((material) => disposeMaterial(material));
-  } else if (sprite.material) {
-    disposeMaterial(sprite.material);
-  }
-}
-
-function disposeMaterial(material: ThreeNS.Material | ThreeNS.SpriteMaterial): void {
-  const spriteMat = material as ThreeNS.SpriteMaterial;
-  if (spriteMat.map) spriteMat.map.dispose();
-  material.dispose();
-}

@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { removeAndDispose } from './builder-utils';
 
 type ThreeModule = typeof import('three');
 
@@ -42,7 +43,16 @@ export function applyTimeOfDay(
   const time = ((hour % 24) + 24) % 24;
   const profile = computeSkyProfile(time);
 
-  scene.background = new THREE.Color(profile.background);
+  // Vertical sky gradient (zenith → horizon) instead of a flat colour. The
+  // texture is screen-space, so it reads as atmosphere without a sky dome.
+  const previousBackground = scene.background;
+  scene.background = makeSkyGradientTexture(THREE, profile.backgroundTop, profile.background);
+  if (previousBackground && (previousBackground as ThreeNS.Texture).isTexture) {
+    (previousBackground as ThreeNS.Texture).dispose();
+  }
+  // Scale image-based lighting with the ambient profile so the environment
+  // map brightens days without washing out nights (0.18 night .. 0.65 noon).
+  scene.environmentIntensity = profile.ambient.intensity * 0.9;
 
   for (const obj of scene.children) {
     const tag = obj.userData.type as string | undefined;
@@ -61,7 +71,7 @@ export function applyTimeOfDay(
   // Replace any prior lamp point-lights with a fresh set for the current time.
   scene.children
     .filter((obj) => obj.userData.type === LIGHTING_TAGS.Lamp)
-    .forEach((obj) => scene.remove(obj));
+    .forEach((obj) => removeAndDispose(scene, obj));
 
   const nightFactor = nightIntensity(time);
   if (nightFactor > 0 && lampPositions.length > 0) {
@@ -80,7 +90,10 @@ export function applyTimeOfDay(
 interface SkyProfile {
   ambient: { color: number; intensity: number };
   sun: { color: number; intensity: number; position: readonly [number, number, number] };
+  /** Horizon colour (bottom of the sky gradient). */
   background: number;
+  /** Zenith colour (top of the sky gradient). */
+  backgroundTop: number;
 }
 
 /**
@@ -116,24 +129,65 @@ function computeSkyProfile(hour: number): SkyProfile {
   const ambientColor = sunAboveHorizon ? dayAmbient : nightAmbient;
   const ambientIntensity = sunAboveHorizon ? 0.35 + noonness * 0.3 : 0.18;
 
+  // Horizon (bottom) and zenith (top) pairs per phase. The zenith is always
+  // deeper/more saturated than the horizon, which is what makes a sky read
+  // as a sky instead of a flat backdrop.
   const horizonNight = 0x1a1f3a;
-  const horizonDay = 0xb3d7ff;
+  const horizonDay = 0xdceefb;
   const horizonDusk = 0xfdd9b0;
+  const zenithNight = 0x0a0e22;
+  const zenithDay = 0x5d9fe2;
+  const zenithDusk = 0x8478c0;
   let background = horizonNight;
+  let backgroundTop = zenithNight;
   if (sunAboveHorizon) {
     background = mixHex(horizonDusk, horizonDay, noonness);
+    backgroundTop = mixHex(zenithDusk, zenithDay, noonness);
   } else {
     // 18..22 = darkening; 22..6 = full night; 4..6 = lifting
     const timeToDawn = hour < 6 ? hour : 24 - hour + 6;
     const dawnNess = clamp01(1 - timeToDawn / 6);
     background = mixHex(horizonNight, horizonDusk, dawnNess * 0.5);
+    backgroundTop = mixHex(zenithNight, zenithDusk, dawnNess * 0.5);
   }
 
   return {
     ambient: { color: ambientColor, intensity: ambientIntensity },
     sun: { color: sunColor, intensity: sunIntensity, position },
     background,
+    backgroundTop,
   };
+}
+
+/**
+ * 1×256 vertical-gradient CanvasTexture used as the screen-space scene
+ * background. Rebuilt on every time-of-day change; the previous texture is
+ * disposed by the caller.
+ */
+function makeSkyGradientTexture(
+  THREE: ThreeModule,
+  top: number,
+  bottom: number
+): ThreeNS.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, hexToCss(top));
+  // Bias the blend toward the horizon colour in the lower third so the
+  // horizon glow sits where the ground line actually is on screen.
+  gradient.addColorStop(0.65, hexToCss(mixHex(top, bottom, 0.7)));
+  gradient.addColorStop(1, hexToCss(bottom));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function hexToCss(hex: number): string {
+  return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
 function nightIntensity(hour: number): number {

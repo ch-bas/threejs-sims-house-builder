@@ -4,21 +4,96 @@ export function boundingRadius(item: Pick<FurnitureItem, 'width' | 'depth'>): nu
   return Math.hypot(item.width / 2, item.depth / 2);
 }
 
+/**
+ * Oriented-bounding-box overlap via the separating-axis theorem (SAT) in the
+ * XZ plane. The cheap bounding-circle test runs first as a broad phase; SAT
+ * then eliminates the false positives circles produce on long, thin items
+ * (sofas, fences, counters) sitting diagonally near each other.
+ */
 export function itemsOverlap(a: FurnitureItem, b: FurnitureItem): boolean {
   if (!a.position || !b.position) return false;
   const distance = Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z);
-  return distance < boundingRadius(a) + boundingRadius(b);
+  if (distance >= boundingRadius(a) + boundingRadius(b)) return false;
+  return obbOverlap(toObb(a), toObb(b));
+}
+
+interface Obb {
+  cx: number;
+  cz: number;
+  hw: number;
+  hd: number;
+  /** Unit axis of the width dimension. */
+  ax: number;
+  az: number;
+  /** Unit axis of the depth dimension. */
+  bx: number;
+  bz: number;
+}
+
+function toObb(item: FurnitureItem): Obb {
+  const rotation = item.rotation ?? 0;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  return {
+    cx: item.position?.x ?? 0,
+    cz: item.position?.z ?? 0,
+    hw: item.width / 2,
+    hd: item.depth / 2,
+    ax: cos,
+    az: sin,
+    bx: -sin,
+    bz: cos,
+  };
+}
+
+function obbOverlap(a: Obb, b: Obb): boolean {
+  // SAT: two convex boxes are disjoint iff a separating axis exists among the
+  // four face normals. Project each box's half-extents and the centre delta
+  // onto every axis and compare.
+  const axes: ReadonlyArray<readonly [number, number]> = [
+    [a.ax, a.az],
+    [a.bx, a.bz],
+    [b.ax, b.az],
+    [b.bx, b.bz],
+  ];
+  const dx = b.cx - a.cx;
+  const dz = b.cz - a.cz;
+  for (const [x, z] of axes) {
+    const projectedDistance = Math.abs(dx * x + dz * z);
+    const extentA = a.hw * Math.abs(a.ax * x + a.az * z) + a.hd * Math.abs(a.bx * x + a.bz * z);
+    const extentB = b.hw * Math.abs(b.ax * x + b.az * z) + b.hd * Math.abs(b.bx * x + b.bz * z);
+    if (projectedDistance >= extentA + extentB) return false;
+  }
+  return true;
 }
 
 export function itemInBounds(item: FurnitureItem, roomWidth: number, roomDepth: number): boolean {
   if (!item.position) return false;
-  const halfW = item.width / 2;
-  const halfD = item.depth / 2;
+  // Rotation-aware AABB of the item's oriented footprint.
+  const cos = Math.abs(Math.cos(item.rotation ?? 0));
+  const sin = Math.abs(Math.sin(item.rotation ?? 0));
+  const halfW = (item.width * cos + item.depth * sin) / 2;
+  const halfD = (item.width * sin + item.depth * cos) / 2;
   return (
     item.position.x - halfW >= -roomWidth / 2 &&
     item.position.x + halfW <= roomWidth / 2 &&
     item.position.z - halfD >= -roomDepth / 2 &&
     item.position.z + halfD <= roomDepth / 2
+  );
+}
+
+/** True when the item's rotation-aware AABB is entirely beyond the room rect. */
+export function itemFullyOutside(item: FurnitureItem, roomWidth: number, roomDepth: number): boolean {
+  if (!item.position) return false;
+  const cos = Math.abs(Math.cos(item.rotation ?? 0));
+  const sin = Math.abs(Math.sin(item.rotation ?? 0));
+  const halfW = (item.width * cos + item.depth * sin) / 2;
+  const halfD = (item.width * sin + item.depth * cos) / 2;
+  return (
+    item.position.x + halfW <= -roomWidth / 2 ||
+    item.position.x - halfW >= roomWidth / 2 ||
+    item.position.z + halfD <= -roomDepth / 2 ||
+    item.position.z - halfD >= roomDepth / 2
   );
 }
 
@@ -32,6 +107,13 @@ export function hasCollisions(
   // Security cameras mount on the wall plane and may sit on its exterior side
   // when aimed outward, so the room-bounds test doesn't apply to them.
   if (item.type === 'security-camera') return false;
+  // Outdoor items belong outside the building footprint — flag them when any
+  // part of their footprint pokes into the room. They still collide with
+  // other items (e.g. two trees on the same spot).
+  if (item.category === 'outdoor') {
+    if (!itemFullyOutside(item, roomWidth, roomDepth)) return true;
+    return allItems.some((other) => other.id !== item.id && itemsOverlap(item, other));
+  }
   if (!itemInBounds(item, roomWidth, roomDepth)) return true;
   return allItems.some((other) => other.id !== item.id && itemsOverlap(item, other));
 }

@@ -13,6 +13,8 @@ export interface UseWalkthroughOptions {
   orbitRef: React.MutableRefObject<OrbitControlsType | null>;
   eyeHeight?: number;
   walkSpeed?: number;
+  /** Request a render on the next animation frame (render-on-demand). */
+  invalidate?: () => void;
 }
 
 const MOVEMENT_KEYS = new Set([
@@ -47,6 +49,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
     orbitRef,
     eyeHeight = 1.6,
     walkSpeed = 3.0,
+    invalidate,
   } = options;
 
   useEffect(() => {
@@ -103,6 +106,9 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
         lastTime = now;
 
         if (!controls?.isLocked) return;
+        // Walkthrough is an active mode: mouse-look mutates the camera outside
+        // this loop, so render every frame while pointer lock is engaged.
+        invalidate?.();
 
         const sprint = pressed.has('ShiftLeft') || pressed.has('ShiftRight');
         const speed = walkSpeed * (sprint ? 2 : 1);

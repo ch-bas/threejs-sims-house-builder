@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type * as ThreeNS from 'three';
+import { disposeObject } from '../three/builder-utils';
 
 type ThreeModule = typeof import('three');
 
@@ -24,6 +25,8 @@ export interface UseNpcsOptions {
   roomDepth: number;
   /** Y-offset to plant the NPCs on the active floor. */
   floorY: number;
+  /** Request a render on the next animation frame (render-on-demand). */
+  invalidate?: () => void;
 }
 
 /**
@@ -32,7 +35,7 @@ export interface UseNpcsOptions {
  * down all NPC meshes and the RAF loop on every dependency change.
  */
 export function useNpcs(options: UseNpcsOptions): void {
-  const { enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY } = options;
+  const { enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, invalidate } = options;
   const stateRef = useRef<NpcState[]>([]);
 
   useEffect(() => {
@@ -60,6 +63,7 @@ export function useNpcs(options: UseNpcsOptions): void {
       const delta = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
       stepNpcs(stateRef.current, delta, halfW, halfD, floorY);
+      invalidate?.();
     };
     rafId = requestAnimationFrame(tick);
 
@@ -67,7 +71,7 @@ export function useNpcs(options: UseNpcsOptions): void {
       cancelAnimationFrame(rafId);
       for (const npc of stateRef.current) {
         scene.remove(npc.group);
-        disposeGroup(npc.group);
+        disposeObject(npc.group);
       }
       stateRef.current = [];
     };
@@ -172,17 +176,6 @@ function stepNpcs(
     if (npc.legs[1]) npc.legs[1].position.y = 0.4 - swing;
     npc.group.position.y = floorY + Math.abs(swing) * 0.5;
   }
-}
-
-function disposeGroup(group: ThreeNS.Object3D): void {
-  group.traverse((node) => {
-    const mesh = node as ThreeNS.Mesh;
-    if (mesh.geometry) mesh.geometry.dispose();
-    const material = mesh.material;
-    if (!material) return;
-    if (Array.isArray(material)) material.forEach((m) => m.dispose());
-    else material.dispose();
-  });
 }
 
 function rand(min: number, max: number): number {

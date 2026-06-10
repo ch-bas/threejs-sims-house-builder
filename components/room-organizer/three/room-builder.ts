@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
 import { buildWallMaterial } from './wall-patterns';
 import { openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
@@ -90,7 +91,7 @@ const DEFAULT_WALL_COLOR = 0xe8dcc4;
 export function removeTagged(scene: ThreeNS.Scene, ...tags: RoomObjectTag[]): void {
   const tagSet = new Set<string>(tags);
   const toRemove = scene.children.filter((obj) => tagSet.has(obj.userData.type as string));
-  toRemove.forEach((obj) => scene.remove(obj));
+  toRemove.forEach((obj) => removeAndDispose(scene, obj));
 }
 
 export interface RoomBuilderOptions {

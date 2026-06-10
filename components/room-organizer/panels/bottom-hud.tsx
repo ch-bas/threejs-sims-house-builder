@@ -59,12 +59,15 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
             scrollbarWidth: 'thin',
           }}
         >
+          {/* Paint panel opens with the wall tool OR when any wall is clicked in 3D. */}
+          {(view.drawWallMode || selectedWall !== null) && (
+            <WallPaintPanel
+              selectedWall={selectedWall}
+              onSelectedWallChange={onSelectedWallChange}
+            />
+          )}
           {view.drawWallMode && (
             <>
-              <WallPaintPanel
-                selectedWall={selectedWall}
-                onSelectedWallChange={onSelectedWallChange}
-              />
               <RoomShapesPanel
                 maxWidth={layout.width}
                 maxDepth={layout.height}

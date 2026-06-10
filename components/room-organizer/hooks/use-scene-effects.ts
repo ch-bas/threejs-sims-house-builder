@@ -1,6 +1,7 @@
 import { useEffect, type RefObject, type MutableRefObject } from 'react';
 import type * as ThreeNS from 'three';
 import { render2DTopDown } from '../canvas-2d/render';
+import { removeAndDispose } from '../three/builder-utils';
 import { hasCollisions } from '../lib/geometry';
 import type { FloorLayout, RoomLayout, ViewSettings } from '../lib/types';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
@@ -48,6 +49,8 @@ function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
 
 export interface UseSceneEffectsParams {
   isReady: boolean;
+  /** Request a render on the next animation frame (render-on-demand). */
+  invalidate: () => void;
   threeModuleRef: MutableRefObject<typeof import('three') | null>;
   sceneRef: MutableRefObject<ThreeNS.Scene | null>;
   rendererRef: MutableRefObject<ThreeNS.WebGLRenderer | null>;
@@ -69,6 +72,7 @@ export interface UseSceneEffectsParams {
 
 export function useSceneEffects({
   isReady,
+  invalidate,
   threeModuleRef,
   sceneRef,
   rendererRef,
@@ -91,6 +95,7 @@ export function useSceneEffects({
 
   // Wall preview during draw mode
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -105,13 +110,14 @@ export function useSceneEffects({
 
   // Cyan outline on selected wall
   useEffect(() => {
+    invalidate();
     if (!isReady) return undefined;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
     if (!THREE || !scene) return undefined;
 
     for (const child of [...scene.children]) {
-      if (child.userData.type === 'wall-selection') scene.remove(child);
+      if (child.userData.type === 'wall-selection') removeAndDispose(scene, child);
     }
     if (!selectedWall) return undefined;
 
@@ -148,6 +154,7 @@ export function useSceneEffects({
 
   // Build floor + walls
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -204,6 +211,7 @@ export function useSceneEffects({
 
   // Cutaway on orbit
   useEffect(() => {
+    invalidate();
     if (!isReady) return undefined;
     const scene = sceneRef.current;
     const camera = cameraRef.current;
@@ -222,6 +230,7 @@ export function useSceneEffects({
 
   // Furniture meshes
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -283,7 +292,7 @@ export function useSceneEffects({
         addSignalOverlays(THREE, scene, floor.items, floorY);
       }
       if (view.showCameraVision) {
-        addVisionCones(THREE, scene, floor.items, floorY);
+        addVisionCones(THREE, scene, floor.items, floorY, index);
       }
     }
   }, [
@@ -296,6 +305,7 @@ export function useSceneEffects({
 
   // Lighting
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -316,6 +326,7 @@ export function useSceneEffects({
 
   // Outdoor
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -325,6 +336,7 @@ export function useSceneEffects({
 
   // Interior walls
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -350,6 +362,7 @@ export function useSceneEffects({
 
   // Measurement markers
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -363,6 +376,7 @@ export function useSceneEffects({
 
   // Item labels
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -376,6 +390,7 @@ export function useSceneEffects({
 
   // Roof
   useEffect(() => {
+    invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
@@ -403,6 +418,7 @@ export function useSceneEffects({
 
   // 2D top-down view
   useEffect(() => {
+    invalidate();
     if (!view.view2D) return;
     const canvas = canvas2DRef.current;
     if (!canvas) return;

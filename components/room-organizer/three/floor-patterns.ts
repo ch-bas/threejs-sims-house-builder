@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { getMaxAnisotropy } from './texture-settings';
 import type { FloorPattern } from '../lib/types';
 
 type ThreeModule = typeof import('three');
@@ -156,6 +157,8 @@ export function buildFloorMaterial(
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = getMaxAnisotropy();
   texture.repeat.set(
     options.roomWidth * renderer.repeatPerMeter,
     options.roomDepth * renderer.repeatPerMeter

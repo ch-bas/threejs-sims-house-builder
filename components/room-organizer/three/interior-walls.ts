@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { removeAndDispose } from './builder-utils';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 
 type ThreeModule = typeof import('three');
@@ -19,7 +20,7 @@ interface SegmentOpening {
 export function clearInteriorWalls(scene: ThreeNS.Scene): void {
   scene.children
     .filter((obj) => obj.userData.type === INTERIOR_WALL_TAG)
-    .forEach((obj) => scene.remove(obj));
+    .forEach((obj) => removeAndDispose(scene, obj));
 }
 
 export interface RenderInteriorWallsOptions {
@@ -195,5 +196,5 @@ export function renderInteriorWallPreview(
 export function clearPreview(scene: ThreeNS.Scene): void {
   scene.children
     .filter((obj) => obj.userData.type === `${INTERIOR_WALL_TAG}-preview`)
-    .forEach((obj) => scene.remove(obj));
+    .forEach((obj) => removeAndDispose(scene, obj));
 }
