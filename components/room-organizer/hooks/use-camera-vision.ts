@@ -6,6 +6,8 @@ type ThreeModule = typeof import('three');
 
 export interface UseCameraVisionOptions {
   enabled: boolean;
+  /** Requests a repaint from the on-demand render loop after each step. */
+  invalidate?: () => void;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
 }
@@ -14,10 +16,11 @@ export interface UseCameraVisionOptions {
  * Animates the security cameras' vision cones — sweeping the scan line across
  * each field of view and pulsing the wedge — every animation frame. The cone
  * meshes themselves are created/torn down in `useSceneEffects`; this hook only
- * drives them, so it stays correct across scene rebuilds. The shared render
- * loop in `useThreeScene` paints the updated transforms.
+ * drives them. The renderer is on-demand, so each step must invalidate to get
+ * painted — without it the sweep only advances when something else (camera
+ * orbit, drag) happens to request frames.
  */
-export function useCameraVision({ enabled, threeModuleRef, sceneRef }: UseCameraVisionOptions): void {
+export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef }: UseCameraVisionOptions): void {
   useEffect(() => {
     if (!enabled) return undefined;
     const scene = sceneRef.current;
@@ -28,9 +31,10 @@ export function useCameraVision({ enabled, threeModuleRef, sceneRef }: UseCamera
     const tick = () => {
       rafId = requestAnimationFrame(tick);
       stepVisionCones(scene, (performance.now() - start) / 1000);
+      invalidate?.();
     };
     rafId = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(rafId);
-  }, [enabled, threeModuleRef, sceneRef]);
+  }, [enabled, invalidate, threeModuleRef, sceneRef]);
 }

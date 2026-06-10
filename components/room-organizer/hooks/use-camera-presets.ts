@@ -21,9 +21,11 @@ export interface UseCameraPresetsOptions {
   roomSize: number;
   /** Total stacked building height in metres (floors × 3). */
   buildingHeight?: number;
+  /** Request a render on the next animation frame (render-on-demand). */
+  invalidate?: () => void;
 }
 
-export function useCameraPresets({ cameraRef, controlsRef, roomSize, buildingHeight = 3 }: UseCameraPresetsOptions): {
+export function useCameraPresets({ cameraRef, controlsRef, roomSize, buildingHeight = 3, invalidate }: UseCameraPresetsOptions): {
   applyPreset(preset: CameraPreset): void;
   focusOn(target: { x: number; z: number }, distance?: number): void;
   fitToRoom(): void;
@@ -42,8 +44,9 @@ export function useCameraPresets({ cameraRef, controlsRef, roomSize, buildingHei
         controls.target.set(view.target[0], view.target[1], view.target[2]);
         controls.update();
       }
+      invalidate?.();
     },
-    [cameraRef, controlsRef, roomSize]
+    [cameraRef, controlsRef, roomSize, invalidate]
   );
 
   const focusOn = useCallback(
@@ -59,8 +62,9 @@ export function useCameraPresets({ cameraRef, controlsRef, roomSize, buildingHei
         controls.target.set(target.x, 0, target.z);
         controls.update();
       }
+      invalidate?.();
     },
-    [cameraRef, controlsRef]
+    [cameraRef, controlsRef, invalidate]
   );
 
   const fitToRoom = useCallback(() => {
@@ -80,7 +84,8 @@ export function useCameraPresets({ cameraRef, controlsRef, roomSize, buildingHei
       controls.target.set(0, targetY, 0);
       controls.update();
     }
-  }, [cameraRef, controlsRef, roomSize, buildingHeight]);
+    invalidate?.();
+  }, [cameraRef, controlsRef, roomSize, buildingHeight, invalidate]);
 
   return { applyPreset, focusOn, fitToRoom };
 }

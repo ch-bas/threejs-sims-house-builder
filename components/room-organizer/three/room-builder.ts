@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
 import { buildWallMaterial } from './wall-patterns';
 import { openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
@@ -90,7 +91,7 @@ const DEFAULT_WALL_COLOR = 0xe8dcc4;
 export function removeTagged(scene: ThreeNS.Scene, ...tags: RoomObjectTag[]): void {
   const tagSet = new Set<string>(tags);
   const toRemove = scene.children.filter((obj) => tagSet.has(obj.userData.type as string));
-  toRemove.forEach((obj) => scene.remove(obj));
+  toRemove.forEach((obj) => removeAndDispose(scene, obj));
 }
 
 export interface RoomBuilderOptions {
@@ -103,6 +104,8 @@ export interface RoomBuilderOptions {
   wallColors?: Partial<Record<WallId, string>>;
   /** Door / window cutouts to punch through the relevant walls. */
   wallOpenings?: ReadonlyMap<WallId, WallOpening[]>;
+  /** Exterior walls that have been removed (open sides). */ 
+  hiddenWalls?: readonly WallId[]; 
   /** Stairwell openings to cut through this floor's plane. */
   floorOpenings?: readonly FloorOpening[];
   floorPlanImage: string | null;
@@ -168,7 +171,8 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
       options.wallPattern,
       yOffset,
       isGhost ? options.ghostOpacity : undefined,
-      options.wallOpenings
+      options.wallOpenings,
+      options.hiddenWalls
     );
   }
 }
@@ -308,7 +312,8 @@ function buildWalls(
   pattern?: WallPattern,
   yOffset = 0,
   ghostOpacity?: number,
-  openings?: ReadonlyMap<WallId, WallOpening[]>
+  openings?: ReadonlyMap<WallId, WallOpening[]>,
+  hiddenWalls?: readonly WallId[]
 ): void {
   const wallHeight = 3;
   const centerY = yOffset + wallHeight / 2;
@@ -326,6 +331,7 @@ function buildWalls(
   ];
 
   for (const spec of wallSpecs) {
+    if (hiddenWalls?.includes(spec.id)) continue;
     const color = colors?.[spec.id] ?? hexFromInt(DEFAULT_WALL_COLOR);
     const material = buildWallMaterial(THREE, {
       pattern: pattern ?? 'solid',

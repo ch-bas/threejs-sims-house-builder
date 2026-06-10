@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { removeAndDispose } from './builder-utils';
 
 type ThreeModule = typeof import('three');
 
@@ -24,7 +25,7 @@ export function setOutdoorVisible(
 ): void {
   scene.children
     .filter((obj) => obj.userData.type === OUTDOOR_TAG)
-    .forEach((obj) => scene.remove(obj));
+    .forEach((obj) => removeAndDispose(scene, obj));
 
   if (!visible) return;
 

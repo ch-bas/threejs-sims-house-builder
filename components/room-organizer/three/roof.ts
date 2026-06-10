@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { removeAndDispose } from './builder-utils';
 import type { RoofSpec, RoofStyle } from '../lib/types';
 
 type ThreeModule = typeof import('three');
@@ -46,7 +47,7 @@ export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
 export function removeRoof(scene: ThreeNS.Scene): void {
   scene.children
     .filter((obj) => obj.userData.type === ROOF_TAG)
-    .forEach((obj) => scene.remove(obj));
+    .forEach((obj) => removeAndDispose(scene, obj));
 }
 
 function defaultRoofColor(style: RoofStyle): string {

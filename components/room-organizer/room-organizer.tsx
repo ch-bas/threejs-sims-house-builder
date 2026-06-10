@@ -28,7 +28,7 @@ import {
 } from './lib/file-io';
 import { hasCollisions } from './lib/geometry';
 import { FURNITURE_CATALOG } from './lib/constants';
-import type { CatalogItem, RoomLayout, ViewSettings } from './lib/types';
+import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 import { BottomHud } from './panels/bottom-hud';
 import { LotBadge } from './panels/lot-badge';
 import { SidebarDrawer } from './panels/sidebar-drawer';
@@ -295,59 +295,135 @@ export function RoomOrganizer(): JSX.Element {
     return set;
   }, [selectedItemId, extraSelectedIds]);
 
-  // Per-drag snapshot of every selected item's starting position, used to
-  // translate the whole selection by the same delta during a group drag.
-  const dragOriginsRef = useRef<{ primaryId: string; positions: Map<string, { x: number; z: number }> } | null>(null);
+  // useThreeScene is called further down (its options include the drag
+  // callbacks below), so its scene ref and invalidate fn are late-bound
+  // through these boxes for use in the fast-path helpers.
+  const sceneBoxRef = useRef<React.MutableRefObject<import('three').Scene | null> | null>(null);
+  const invalidateBoxRef = useRef<() => void>(() => {});
+
+  // Drag fast-path. While a drag is in progress the Three.js groups are moved
+  // directly and the single state dispatch is deferred to drag end —
+  // dispatching per mousemove (the old behaviour) tore down and rebuilt every
+  // furniture mesh on each pointer event. `origins` snapshots the selection's
+  // starting positions for group drags; `latest` accumulates in-flight
+  // positions and becomes one bulkSetPositions on release (which also gives
+  // undo a single entry per gesture instead of one per mousemove).
+  const dragSessionRef = useRef<{
+    primaryId: string;
+    origins: Map<string, { x: number; z: number }>;
+    latest: Map<string, { x: number; z: number }>;
+  } | null>(null);
+
+  const findFurnitureGroup = useCallback(
+    (itemId: string) =>
+      sceneBoxRef.current?.current?.children.find(
+        (obj) =>
+          obj.userData.type === 'furniture' &&
+          obj.userData.id === itemId &&
+          obj.userData.floorIndex === activeFloorIndex
+      ) ?? null,
+    [activeFloorIndex]
+  );
+
+  // Live collision feedback during the fast-path: tint the dragged group's
+  // emissive channel instead of rebuilding its meshes. Original emissive
+  // values (lamp glow, TV screens) are stashed on material.userData and
+  // restored on release.
+  const setDragCollisionTint = useCallback((group: import('three').Object3D, colliding: boolean) => {
+    group.traverse((node) => {
+      const material = (node as import('three').Mesh).material;
+      const materials = Array.isArray(material) ? material : material ? [material] : [];
+      for (const mat of materials) {
+        const std = mat as import('three').MeshStandardMaterial;
+        if (!std.emissive) continue;
+        if (colliding) {
+          if (std.userData.dragTint === undefined) std.userData.dragTint = std.emissive.getHex();
+          std.emissive.setHex(0x7f1d1d);
+        } else if (std.userData.dragTint !== undefined) {
+          std.emissive.setHex(std.userData.dragTint as number);
+          delete std.userData.dragTint;
+        }
+      }
+    });
+  }, []);
 
   const handleDragStart = useCallback(
     (primaryId: string) => {
-      if (allSelectedIds.size <= 1) {
-        dragOriginsRef.current = null;
-        return;
-      }
-      const positions = new Map<string, { x: number; z: number }>();
-      for (const id of allSelectedIds) {
+      const ids = allSelectedIds.size > 1 ? allSelectedIds : new Set([primaryId]);
+      const origins = new Map<string, { x: number; z: number }>();
+      for (const id of ids) {
         const item = activeFloor.items.find((entry) => entry.id === id);
-        if (item?.position) positions.set(id, { x: item.position.x, z: item.position.z });
+        if (item?.position) origins.set(id, { x: item.position.x, z: item.position.z });
       }
-      dragOriginsRef.current = { primaryId, positions };
+      dragSessionRef.current = { primaryId, origins, latest: new Map(origins) };
     },
     [allSelectedIds, activeFloor.items]
   );
 
   const handleDrag = useCallback(
     (id: string, x: number, z: number) => {
-      const origins = dragOriginsRef.current;
-      if (origins && origins.primaryId === id && origins.positions.size > 1) {
-        const primaryOrigin = origins.positions.get(id);
-        if (!primaryOrigin) {
-          actions.moveItem(id, x, z);
-          return;
-        }
-        const dx = x - primaryOrigin.x;
-        const dz = z - primaryOrigin.z;
-        const updates = new Map<string, { x: number; z: number }>();
-        for (const [otherId, origin] of origins.positions) {
-          updates.set(otherId, { x: origin.x + dx, z: origin.z + dz });
-        }
-        actions.bulkSetPositions(updates);
+      const session = dragSessionRef.current;
+      if (!session || session.primaryId !== id) {
+        // No drag session (programmatic move) — dispatch directly.
+        actions.moveItem(id, x, z);
         return;
       }
-      actions.moveItem(id, x, z);
+      session.latest.set(id, { x, z });
+
+      // Group drag: translate every other selected group by the same delta.
+      // The primary group was already moved by the canvas drag handler.
+      const primaryOrigin = session.origins.get(id);
+      if (primaryOrigin && session.origins.size > 1) {
+        const dx = x - primaryOrigin.x;
+        const dz = z - primaryOrigin.z;
+        for (const [otherId, origin] of session.origins) {
+          if (otherId === id) continue;
+          const next = { x: origin.x + dx, z: origin.z + dz };
+          session.latest.set(otherId, next);
+          const group = findFurnitureGroup(otherId);
+          if (group) {
+            group.position.x = next.x;
+            group.position.z = next.z;
+          }
+        }
+      }
+
+      const candidateItems = activeFloor.items.map((item) => {
+        const moved = session.latest.get(item.id);
+        return moved ? { ...item, position: moved } : item;
+      });
+      const dragged = candidateItems.find((item) => item.id === id);
+      const primaryGroup = findFurnitureGroup(id);
+      if (dragged && primaryGroup) {
+        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, layout.width, layout.height));
+      }
+      invalidateBoxRef.current();
     },
-    [actions]
+    [actions, activeFloor.items, layout.width, layout.height, findFurnitureGroup, setDragCollisionTint]
   );
 
   const handleDragEnd = useCallback(
     (id: string) => {
-      dragOriginsRef.current = null;
+      const session = dragSessionRef.current;
+      dragSessionRef.current = null;
+      const finalPos = session?.latest.get(id);
+      if (session && finalPos) {
+        const primaryGroup = findFurnitureGroup(id);
+        if (primaryGroup) setDragCollisionTint(primaryGroup, false);
+        // Single dispatch for the whole gesture; the rebuild effect runs once.
+        actions.bulkSetPositions(session.latest);
+      }
+      // Lock the item after positioning so it can't be accidentally moved.
+      actions.setLocked(id, true);
       // On release, click a security camera onto the nearest wall and turn it to
       // face into the room. Doing this on drop (not per drag frame) keeps the
-      // drag itself smooth instead of flipping between walls.
+      // drag itself smooth instead of flipping between walls. Note: read the
+      // position from the drag session — state is one dispatch behind here.
       const item = activeFloor.items.find((entry) => entry.id === id);
-      if (item?.type === 'security-camera' && item.position) {
+      const releasePos = finalPos ?? item?.position;
+      if (item?.type === 'security-camera' && releasePos) {
         const snapped = snapWallMountedItem({
-          position: item.position,
+          position: releasePos,
           itemWidth: item.width,
           itemDepth: item.depth,
           roomWidth: layout.width,
@@ -359,7 +435,7 @@ export function RoomOrganizer(): JSX.Element {
         actions.updateItem(id, { wallRotation: snapped.rotation });
         if (item.cameraBracket) {
           const pos = reseatWallMountedItem({
-            position: item.position,
+            position: releasePos,
             itemWidth: item.width,
             itemDepth: item.depth,
             roomWidth: layout.width,
@@ -377,7 +453,7 @@ export function RoomOrganizer(): JSX.Element {
         }
       }
     },
-    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
+    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions, findFurnitureGroup, setDragCollisionTint]
   );
 
   // Re-seat a wall-mounted camera against its wall. A flush camera's body moves
@@ -402,7 +478,7 @@ export function RoomOrganizer(): JSX.Element {
       });
       actions.moveItem(id, pos.x, pos.z);
     },
-    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
+    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions, findFurnitureGroup, setDragCollisionTint]
   );
 
   const rotateItemHandler = useCallback(
@@ -590,12 +666,18 @@ export function RoomOrganizer(): JSX.Element {
         actions.updateItem(id, { wallRotation: snapped.rotation });
         return id;
       }
+      // Outdoor items belong outside the building — default them just past
+      // the south wall instead of the room centre when no position is given.
+      if (catalogItem.category === 'outdoor' && !position) {
+        const outsidePos = { x: 0, z: layout.height / 2 + catalogItem.depth / 2 + 0.5 };
+        return actions.addCatalogItem(catalogItem, outsidePos);
+      }
       return actions.addCatalogItem(catalogItem, position);
     },
     [actions, activeFloor.interiorWalls, layout.width, layout.height]
   );
 
-  const { isReady, error, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
+  const { isReady, error, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       onItemSelect: handleSelect,
@@ -605,7 +687,6 @@ export function RoomOrganizer(): JSX.Element {
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
       onWallSelect: ({ wallId, kind }) => {
-        if (!view.drawWallMode) return;
         setSelectedWall({ id: wallId, kind });
       },
       onFloorPointerMove: handleFloorPointerMove,
@@ -614,8 +695,12 @@ export function RoomOrganizer(): JSX.Element {
       getDragPlaneY,
     });
 
+  sceneBoxRef.current = sceneRef;
+  invalidateBoxRef.current = invalidate;
+
   useWalkthrough({
     enabled: isReady && view.walkthroughMode && !view.view2D,
+    invalidate,
     canvasRef,
     threeModuleRef,
     cameraRef,
@@ -625,6 +710,7 @@ export function RoomOrganizer(): JSX.Element {
 
   useSceneEffects({
     isReady,
+    invalidate,
     threeModuleRef,
     sceneRef,
     rendererRef,
@@ -646,6 +732,7 @@ export function RoomOrganizer(): JSX.Element {
 
   useNpcs({
     enabled: isReady && view.showNpcs && !view.view2D,
+    invalidate,
     threeModuleRef,
     sceneRef,
     roomWidth: layout.width,
@@ -655,6 +742,7 @@ export function RoomOrganizer(): JSX.Element {
 
   useCameraVision({
     enabled: isReady && view.showCameraVision && !view.view2D,
+    invalidate,
     threeModuleRef,
     sceneRef,
   });
@@ -662,6 +750,7 @@ export function RoomOrganizer(): JSX.Element {
   const { applyPreset, focusOn, fitToRoom } = useCameraPresets({
     cameraRef,
     controlsRef,
+    invalidate,
     roomSize: Math.max(layout.width, layout.height),
     buildingHeight: layout.floors.length * FLOOR_HEIGHT_METERS,
   });
@@ -669,8 +758,13 @@ export function RoomOrganizer(): JSX.Element {
   const handleScreenshot = useCallback(() => {
     const canvas = view.view2D ? canvas2DRef.current : canvasRef.current;
     if (!canvas) return;
+    // The renderer runs without preserveDrawingBuffer, so render a fresh
+    // frame synchronously — the buffer is valid within the same task.
+    if (!view.view2D && rendererRef.current && sceneRef.current && cameraRef.current) {
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+    }
     downloadCanvasAsPng(canvas, layout.name || 'room-layout');
-  }, [view.view2D, layout.name]);
+  }, [view.view2D, layout.name, rendererRef, sceneRef, cameraRef]);
 
   const handleExportGlb = useCallback(async () => {
     const scene = sceneRef.current;
@@ -779,6 +873,15 @@ export function RoomOrganizer(): JSX.Element {
         actions.setActiveFloorIndex(next);
       },
       toggleSidebar: () => setSidebarCollapsed((c) => !c),
+      removeInteriorWall: (id: string) => {
+        actions.removeInteriorWall(id);
+        setSelectedWall(null);
+      },
+      // Keep the selection (and the auto-opened paint panel) after hiding an
+      // exterior wall so the Wall Visibility toggles stay reachable to restore it.
+      toggleExteriorWall: (id: string) => {
+        actions.toggleExteriorWall(id as WallId);
+      },
     }),
     [
       removeItem,
@@ -800,6 +903,7 @@ export function RoomOrganizer(): JSX.Element {
 
   useKeyboardShortcuts({
     selectedItem,
+    selectedWall,
     hasSignalItems,
     handlers: shortcutHandlers,
   });

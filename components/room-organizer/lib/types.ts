@@ -159,6 +159,7 @@ export interface FloorLayout {
   floorPattern?: FloorPattern;
   wallPattern?: WallPattern;
   wallColors?: Partial<Record<WallId, string>>;
+  hiddenWalls?: WallId[]; 
   interiorWalls?: InteriorWall[];
 }
 

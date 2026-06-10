@@ -3,6 +3,8 @@ import type { FurnitureItem } from '../lib/types';
 
 export interface KeyboardShortcutHandlers {
   removeItem(id: string): void;
+  removeInteriorWall(id: string): void; 
+  toggleExteriorWall(id: string): void;
   duplicateItem(id: string): void;
   rotateItem(id: string): void;
   rotateItemBy(id: string, radians: number): void;
@@ -22,6 +24,7 @@ export interface KeyboardShortcutHandlers {
 
 export interface UseKeyboardShortcutsOptions {
   selectedItem: FurnitureItem | null;
+  selectedWall: { id: string; kind: 'exterior' | 'interior' } | null; 
   hasSignalItems: boolean;
   handlers: KeyboardShortcutHandlers;
 }
@@ -35,6 +38,7 @@ const ARROW_DELTAS: Record<string, readonly [number, number]> = {
 
 export function useKeyboardShortcuts({
   selectedItem,
+  selectedWall,
   hasSignalItems,
   handlers,
 }: UseKeyboardShortcutsOptions): void {
@@ -70,6 +74,16 @@ export function useKeyboardShortcuts({
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedItem) {
         event.preventDefault();
         handlers.removeItem(selectedItem.id);
+        return;
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedWall) {
+        event.preventDefault();
+        if (selectedWall.kind === 'interior') {
+          handlers.removeInteriorWall(selectedWall.id);
+        } else {
+          handlers.toggleExteriorWall(selectedWall.id);
+        }
         return;
       }
 
@@ -157,7 +171,7 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedItem, hasSignalItems, handlers]);
+  }, [selectedItem, selectedWall, hasSignalItems, handlers]);
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {

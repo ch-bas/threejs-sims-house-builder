@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { removeAndDispose } from './builder-utils';
 import type { Vec2 } from '../lib/types';
 
 type ThreeModule = typeof import('three');
@@ -8,7 +9,7 @@ const MEASUREMENT_TAG = 'measurement';
 export function clearMeasurement(scene: ThreeNS.Scene): void {
   scene.children
     .filter((obj) => obj.userData.type === MEASUREMENT_TAG)
-    .forEach((obj) => scene.remove(obj));
+    .forEach((obj) => removeAndDispose(scene, obj));
 }
 
 /**

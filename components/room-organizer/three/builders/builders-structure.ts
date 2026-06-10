@@ -71,30 +71,31 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     transparent: true,
     opacity: hasCollision ? 0.5 : 0.4,
   });
-
+  // Windows sit at sill height (~0.9m), not on the floor.                                                                                                         
+  const sillHeight = 0.9;                                                                                                                                  
+  const frameThickness = 0.06;                            
   // Glass pane.
   const glass = mesh(
     THREE,
-    new THREE.BoxGeometry(item.width * 0.95, item.height * 0.95, item.depth * 0.2),
+    new THREE.BoxGeometry(item.width * 0.93, item.height * 0.93, item.depth * 0.2),
     glassMat
   );
-  glass.position.set(0, item.height / 2, 0);
+  glass.position.set(0, sillHeight + item.height / 2, 0); 
   group.add(glass);
 
   // Outer frame (4 sides).
-  const frameThickness = 0.06;
   const horizGeo = new THREE.BoxGeometry(item.width, frameThickness, item.depth);
   const top = mesh(THREE, horizGeo, frameMat);
-  top.position.set(0, item.height - frameThickness / 2, 0);
+  top.position.set(0, sillHeight + item.height - frameThickness / 2, 0);
   group.add(top);
   const bottom = mesh(THREE, horizGeo, frameMat);
-  bottom.position.set(0, frameThickness / 2, 0);
+  bottom.position.set(0, sillHeight + frameThickness / 2, 0);
   group.add(bottom);
 
   const vertGeo = new THREE.BoxGeometry(frameThickness, item.height, item.depth);
   for (const dx of [-1, 1]) {
     const side = mesh(THREE, vertGeo, frameMat);
-    side.position.set(dx * (item.width / 2 - frameThickness / 2), item.height / 2, 0);
+    side.position.set(dx * (item.width / 2 - frameThickness / 2), sillHeight + item.height / 2, 0);
     group.add(side);
   }
 
@@ -102,28 +103,41 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   const mullionThickness = frameThickness * 0.5;
   const vMullion = mesh(
     THREE,
-    new THREE.BoxGeometry(mullionThickness, item.height * 0.95, item.depth * 0.55),
+    new THREE.BoxGeometry(mullionThickness, item.height * 0.93, item.depth * 0.55),
     frameMat
   );
-  vMullion.position.set(0, item.height / 2, 0);
+  vMullion.position.set(0, sillHeight + item.height / 2, 0);
   group.add(vMullion);
   const hMullion = mesh(
     THREE,
-    new THREE.BoxGeometry(item.width * 0.95, mullionThickness, item.depth * 0.55),
+    new THREE.BoxGeometry(item.width * 0.93, mullionThickness, item.depth * 0.55),
     frameMat
   );
-  hMullion.position.set(0, item.height / 2, 0);
+  hMullion.position.set(0, sillHeight + item.height / 2, 0);
   group.add(hMullion);
 
-  // Outer sill projecting beyond the wall plane — the little ledge under
-  // every window.
+  // Outer sill — the ledge under the window. 
   const sill = mesh(
     THREE,
     new THREE.BoxGeometry(item.width + 0.08, frameThickness * 1.2, item.depth * 2.2),
     sillMat
   );
-  sill.position.set(0, frameThickness * 0.6, 0);
+  sill.position.set(0, sillHeight, 0);
   group.add(sill);
+
+// Wall fill below the window (the wall section from floor to sill).
+  const wallBelow = mesh(
+    THREE,
+    new THREE.BoxGeometry(item.width, sillHeight, item.depth),
+    new THREE.MeshStandardMaterial({
+      color: 0xcccccc,
+      roughness: 0.8,
+      transparent: hasCollision,
+      opacity,
+    })
+  );
+  wallBelow.position.set(0, sillHeight / 2, 0);
+  group.add(wallBelow);
 
   return group;
 }

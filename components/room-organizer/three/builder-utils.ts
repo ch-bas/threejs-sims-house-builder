@@ -13,6 +13,46 @@ export interface BuilderContext {
 
 export type FurnitureBuilder = (ctx: BuilderContext) => ThreeNS.Group;
 
+/**
+ * Free the GPU resources owned by an object and all its descendants.
+ *
+ * `scene.remove()` only detaches an object from the graph — geometries,
+ * materials, and textures (including our procedural CanvasTextures) stay
+ * resident on the GPU until explicitly disposed. Every removal path must
+ * call this, otherwise repeated scene rebuilds leak GPU memory.
+ */
+export function disposeObject(obj: ThreeNS.Object3D): void {
+  obj.traverse((node) => {
+    const mesh = node as ThreeNS.Mesh;
+    if (mesh.geometry) mesh.geometry.dispose();
+
+    const material = mesh.material as ThreeNS.Material | ThreeNS.Material[] | undefined;
+    if (material) {
+      if (Array.isArray(material)) material.forEach(disposeMaterial);
+      else disposeMaterial(material);
+    }
+
+    // Lights own shadow-map render targets.
+    const light = node as ThreeNS.Light;
+    if (light.isLight && typeof light.dispose === 'function') light.dispose();
+  });
+}
+
+function disposeMaterial(material: ThreeNS.Material): void {
+  // Dispose every texture slot (map, normalMap, sprite map, …) generically.
+  for (const value of Object.values(material)) {
+    const texture = value as ThreeNS.Texture | null;
+    if (texture && typeof texture === 'object' && texture.isTexture) texture.dispose();
+  }
+  material.dispose();
+}
+
+/** Remove an object from the scene and free its GPU resources. */
+export function removeAndDispose(scene: ThreeNS.Scene, obj: ThreeNS.Object3D): void {
+  scene.remove(obj);
+  disposeObject(obj);
+}
+
 export function mesh(THREE: ThreeModule, geometry: ThreeNS.BufferGeometry, material: ThreeNS.Material): ThreeNS.Mesh {
   const m = new THREE.Mesh(geometry, material);
   m.castShadow = true;

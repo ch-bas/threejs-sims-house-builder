@@ -16,6 +16,7 @@ export interface CatalogStripProps {
 
 export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Element {
   const [page, setPage] = useState(0);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Cameras get a dedicated, type-grouped menu rather than the paged grid.
   if (category === 'security') {
@@ -24,12 +25,15 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         className="pointer-events-auto pc-glass pc-catalog-strip"
         style={{ width: 540, maxWidth: '100%', padding: '10px 14px 12px' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div className="pc-hud-header" style={{ fontSize: 12 }}>
-            Security Cameras
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: collapsed ? 0 : 8 }}>
+          <StripToggle
+            label="Security Cameras"
+            collapsed={collapsed}
+            onToggle={() => setCollapsed((c) => !c)}
+          />
           <div style={{ flex: 1, height: 1, background: 'var(--pc-glass-inner)' }} />
         </div>
+        {!collapsed && (
         <div
           style={{
             background: 'rgba(0, 0, 0, 0.20)',
@@ -41,6 +45,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         >
           <CctvMenu variant="strip" onAdd={onAdd} />
         </div>
+        )}
       </div>
     );
   }
@@ -67,12 +72,14 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          marginBottom: 8,
+          marginBottom: collapsed ? 0 : 8,
         }}
       >
-        <div className="pc-hud-header" style={{ fontSize: 12 }}>
-          Build Tools: {categoryLabel}
-        </div>
+        <StripToggle
+          label={`Build Tools: ${categoryLabel}`}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((c) => !c)}
+        />
         <div
           style={{ flex: 1, height: 1, background: 'var(--pc-glass-inner)' }}
         />
@@ -89,6 +96,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         </div>
       </div>
 
+      {!collapsed && (
       <div
         style={{
           display: 'grid',
@@ -157,7 +165,56 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
           disabled={safePage >= pages - 1}
         />
       </div>
+      )}
     </div>
+  );
+}
+
+interface StripToggleProps {
+  label: string;
+  collapsed: boolean;
+  onToggle(): void;
+}
+
+/** Strip header that doubles as the show/hide toggle. */
+function StripToggle({ label, collapsed, onToggle }: StripToggleProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      title={collapsed ? 'Show catalog' : 'Hide catalog'}
+      className="pc-hud-header"
+      style={{
+        fontSize: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        color: 'inherit',
+        padding: 0,
+      }}
+    >
+      <span>{label}</span>
+      <span
+        aria-hidden
+        className="pc-tile"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 24,
+          height: 24,
+          borderRadius: 6,
+          fontSize: 12,
+          color: 'var(--pc-cyan-glow)',
+        }}
+      >
+        {collapsed ? '▸' : '▾'}
+      </span>
+    </button>
   );
 }
 

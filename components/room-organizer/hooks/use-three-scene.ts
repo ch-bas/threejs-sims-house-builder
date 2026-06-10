@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
+import { setMaxAnisotropy } from '../three/texture-settings';
 
 type ThreeModule = typeof import('three');
 
@@ -36,6 +37,8 @@ export interface UseThreeSceneOptions {
 export interface UseThreeSceneResult {
   isReady: boolean;
   error: string | null;
+  /** Mark the scene dirty so the next animation frame renders. */
+  invalidate: () => void;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
@@ -64,8 +67,16 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Render-on-demand: the RAF loop only renders when OrbitControls report
+  // movement or something marked the scene dirty. Starts dirty for frame 1.
+  const dirtyRef = useRef(true);
+  const invalidateRef = useRef(() => {
+    dirtyRef.current = true;
+  });
+
   const threeModuleRef = useRef<ThreeModule | null>(null);
   const orbitCtorRef = useRef<typeof OrbitControlsType | null>(null);
+  const roomEnvCtorRef = useRef<(new () => ThreeNS.Scene) | null>(null);
   const sceneRef = useRef<ThreeNS.Scene | null>(null);
   const cameraRef = useRef<ThreeNS.PerspectiveCamera | null>(null);
   const rendererRef = useRef<ThreeNS.WebGLRenderer | null>(null);
@@ -106,13 +117,15 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     let cancelled = false;
     (async () => {
       try {
-        const [three, controls] = await Promise.all([
+        const [three, controls, environments] = await Promise.all([
           import('three'),
           import('three/examples/jsm/controls/OrbitControls.js'),
+          import('three/examples/jsm/environments/RoomEnvironment.js'),
         ]);
         if (cancelled) return;
         threeModuleRef.current = three;
         orbitCtorRef.current = controls.OrbitControls;
+        roomEnvCtorRef.current = environments.RoomEnvironment;
         setModuleLoaded(true);
       } catch (err) {
         if (cancelled) return;
@@ -143,7 +156,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       }
 
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0xf5f5f5);
+      // Day-sky horizon tone; replaced by the gradient texture as soon as
+      // applyTimeOfDay runs (avoids a white flash on first paint).
+      scene.background = new THREE.Color(0xdceefb);
       sceneRef.current = scene;
 
       const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
@@ -151,17 +166,42 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       camera.lookAt(0, 0, 0);
       cameraRef.current = camera;
 
+      // No `preserveDrawingBuffer` — it disables buffer optimisations on
+      // every frame for a once-per-session feature. PNG capture instead
+      // renders a fresh frame synchronously right before reading the canvas.
       const renderer = new THREE.WebGLRenderer({
         canvas,
         antialias: true,
         failIfMajorPerformanceCaveat: false,
-        // Keep the frame buffer so toBlob/toDataURL can capture the canvas.
-        preserveDrawingBuffer: true,
       });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(canvas.clientWidth, canvas.clientHeight);
       renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      // Filmic colour pipeline: ACES tone mapping + explicit sRGB output.
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.15;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
       rendererRef.current = renderer;
       cleanup.push(() => renderer.dispose());
+
+      // Image-based lighting from a neutral studio environment. This is what
+      // makes MeshStandardMaterial respond with believable specular/diffuse
+      // bounce instead of the flat sun+ambient-only look. Intensity is
+      // re-scaled by applyTimeOfDay so nights stay dark.
+      const RoomEnvironment = roomEnvCtorRef.current;
+      if (RoomEnvironment) {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        pmrem.dispose();
+        scene.environment = envTexture;
+        scene.environmentIntensity = 0.5;
+        cleanup.push(() => {
+          scene.environment = null;
+          envTexture.dispose();
+        });
+      }
 
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -179,7 +219,12 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       let rafId = 0;
       const tick = () => {
         rafId = requestAnimationFrame(tick);
-        controls.update();
+        // OrbitControls.update() returns true while the camera is moving
+        // (including damping glide). Skip rendering entirely when nothing
+        // changed — an editor sits idle most of the time.
+        const controlsMoved = controls.update();
+        if (!controlsMoved && !dirtyRef.current) return;
+        dirtyRef.current = false;
         renderer.render(scene, camera);
       };
       rafId = requestAnimationFrame(tick);
@@ -188,7 +233,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       const onResize = () => {
         camera.aspect = canvas.clientWidth / canvas.clientHeight;
         camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        dirtyRef.current = true;
       };
       window.addEventListener('resize', onResize);
       cleanup.push(() => window.removeEventListener('resize', onResize));
@@ -198,6 +245,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         canvas,
         camera,
         scene,
+        markDirty: () => {
+          dirtyRef.current = true;
+        },
         controls,
         handlersRef,
       });
@@ -246,6 +296,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   return {
     isReady,
     error,
+    invalidate: invalidateRef.current,
     threeModuleRef,
     sceneRef,
     cameraRef,
@@ -299,6 +350,7 @@ interface DragHandlersOptions {
   camera: ThreeNS.PerspectiveCamera;
   scene: ThreeNS.Scene;
   controls: OrbitControlsType;
+  markDirty: () => void;
   handlersRef: React.MutableRefObject<{
     onItemSelect: (id: string, mode: SelectionMode) => void;
     onItemDragStart?: (id: string) => void;
@@ -320,6 +372,7 @@ function attachDragHandlers({
   camera,
   scene,
   controls,
+  markDirty,
   handlersRef,
 }: DragHandlersOptions): () => void {
   const raycaster = new THREE.Raycaster();
@@ -432,6 +485,7 @@ function attachDragHandlers({
 
     dragTarget.position.x = snapped.x;
     dragTarget.position.z = snapped.z;
+    markDirty();
     handlersRef.current.onItemDrag(itemId, snapped.x, snapped.z);
   };
 

@@ -1,4 +1,5 @@
 import type * as ThreeNS from 'three';
+import { getMaxAnisotropy } from './texture-settings';
 import type { WallPattern } from '../lib/types';
 
 type ThreeModule = typeof import('three');
@@ -183,6 +184,8 @@ export function buildWallMaterial(
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = getMaxAnisotropy();
   texture.repeat.set(options.width * renderer.repeatPerMeter, options.height * renderer.repeatPerMeter * 0.6);
 
   return new THREE.MeshStandardMaterial({

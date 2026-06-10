@@ -45,6 +45,7 @@ export type LayoutAction =
   | { type: 'bulkSetPositions'; positions: ReadonlyMap<string, { x: number; z: number }> }
   | { type: 'addInteriorWall'; wall: InteriorWall }
   | { type: 'removeInteriorWall'; id: string }
+  | { type: 'toggleExteriorWall'; wallId: WallId }
   | { type: 'clearInteriorWalls' }
   | { type: 'rotateSelection'; ids: ReadonlySet<string>; radians: number }
   | { type: 'setLockAll'; locked: boolean }
@@ -152,6 +153,7 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       const newItem: FurnitureItem = {
         ...action.catalogItem,
         id: action.id,
+        locked: true,
         position: action.position ?? { x: 0, z: 0 },
         rotation: 0,
         ...(action.catalogItem.type === 'sofa' ? { sofaShape: 'standard' as const } : {}),
@@ -266,6 +268,18 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         ...floor,
         interiorWalls: (floor.interiorWalls ?? []).filter((wall) => wall.id !== action.id),
       }));
+
+    case 'toggleExteriorWall':
+      return withActiveFloor(state, (floor) => {
+        const hidden = floor.hiddenWalls ?? [];
+        const isHidden = hidden.includes(action.wallId);
+        return {
+          ...floor,
+          hiddenWalls: isHidden
+            ? hidden.filter((w) => w !== action.wallId)
+            : [...hidden, action.wallId],
+        };
+    });
 
     case 'clearInteriorWalls':
       return withActiveFloor(state, (floor) => ({ ...floor, interiorWalls: [] }));
