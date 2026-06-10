@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { setMaxAnisotropy } from '../three/texture-settings';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
-import { setMaxAnisotropy } from '../three/texture-settings';
 
 type ThreeModule = typeof import('three');
 

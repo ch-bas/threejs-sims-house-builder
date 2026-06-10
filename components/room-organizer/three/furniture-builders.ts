@@ -1,27 +1,27 @@
-import type { FurnitureItem } from '../lib/types';
 import { type BuilderContext, type FurnitureBuilder, type ThreeModule, buildFallback } from './builder-utils';
-import { buildChair, buildArmchair, buildBench, buildSofa } from './builders/builders-seating';
-import { buildBed, buildNightstand, buildDresser } from './builders/builders-bedroom';
-import { buildTableOrDesk } from './builders/builders-tables';
-import { buildBookshelf, buildCabinet } from './builders/builders-storage';
-import { buildFridge, buildStove, buildSink, buildCounter } from './builders/builders-kitchen';
 import { buildToilet, buildBathtub, buildShower } from './builders/builders-bathroom';
-import { buildTV, buildComputer, buildWiFi, buildRouter, buildCCTV, buildSecurityCamera } from './builders/builders-electronics';
-import { buildLamp, buildPendantLight, buildLamppost } from './builders/builders-lighting';
+import { buildBed, buildNightstand, buildDresser } from './builders/builders-bedroom';
 import {
   buildRug, buildPainting, buildVase, buildMirror, buildCurtains,
   buildWallShelf, buildWallClock, buildCandles, buildBooksStack,
 } from './builders/builders-decor';
-import {
-  buildPlant, buildFlowerpot, buildTree, buildPineTree, buildBush,
-  buildHedge, buildFlowerBed, buildTulips, buildSunflower, buildRoseBush,
-} from './builders/builders-plants';
+import { buildTV, buildComputer, buildWiFi, buildRouter, buildCCTV, buildSecurityCamera } from './builders/builders-electronics';
+import { buildFridge, buildStove, buildSink, buildCounter } from './builders/builders-kitchen';
+import { buildLamp, buildPendantLight, buildLamppost } from './builders/builders-lighting';
 import {
   buildFence, buildPool, buildBbq, buildMailbox, buildBirdbath,
   buildSteppingStone, buildGardenBench, buildPicnicTable, buildPond,
 } from './builders/builders-outdoor';
 import { buildPerson, buildPet } from './builders/builders-people';
+import {
+  buildPlant, buildFlowerpot, buildTree, buildPineTree, buildBush,
+  buildHedge, buildFlowerBed, buildTulips, buildSunflower, buildRoseBush,
+} from './builders/builders-plants';
+import { buildChair, buildArmchair, buildBench, buildSofa } from './builders/builders-seating';
+import { buildBookshelf, buildCabinet } from './builders/builders-storage';
 import { buildDoor, buildWindow, buildStairs } from './builders/builders-structure';
+import { buildTableOrDesk } from './builders/builders-tables';
+import type { FurnitureItem } from '../lib/types';
 
 const BUILDERS: Record<string, FurnitureBuilder> = {
   bed: buildBed,

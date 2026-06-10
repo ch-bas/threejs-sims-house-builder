@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState, type MutableRefObject } from 'react';
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 type TouchMode = 'orbit' | 'pan';
 

@@ -1,11 +1,11 @@
 'use client';
 
 import { useId } from 'react';
-import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
-import type { SofaShape } from '../lib/types';
-import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
+import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
+import type { SofaShape } from '../lib/types';
 
 const COLOR_SWATCHES = [
   '#8B4513',

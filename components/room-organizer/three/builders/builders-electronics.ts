@@ -1,8 +1,8 @@
-import type * as ThreeNS from 'three';
+import { type CctvModel, getCctvModel } from '../../lib/cctv-models';
+import { CAMERA_BRACKET_ARM } from '../../lib/constants';
 import { type BuilderContext, mesh } from '../builder-utils';
 import { CAMERA_MOUNT_HEIGHT } from '../camera-vision';
-import { CAMERA_BRACKET_ARM } from '../../lib/constants';
-import { type CctvModel, getCctvModel } from '../../lib/cctv-models';
+import type * as ThreeNS from 'three';
 
 export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
@@ -484,10 +484,10 @@ function buildPtzHead({ THREE, mountY, wallZ, bodyMat, trimMat, glassMat, ledMat
   head.add(bubble);
 
   // Inner lens module aimed forward-down inside the bubble.
-  const module = mesh(THREE, new THREE.CylinderGeometry(0.05, 0.065, 0.11, 20), trimMat);
-  module.rotation.x = Math.PI / 2 - 0.55;
-  module.position.set(0, mountY - 0.13, domeZ + 0.06);
-  head.add(module);
+  const lensModule = mesh(THREE, new THREE.CylinderGeometry(0.05, 0.065, 0.11, 20), trimMat);
+  lensModule.rotation.x = Math.PI / 2 - 0.55;
+  lensModule.position.set(0, mountY - 0.13, domeZ + 0.06);
+  head.add(lensModule);
 
   const led = mesh(THREE, new THREE.SphereGeometry(0.012, 10, 10), ledMat);
   led.position.set(0.12, mountY - 0.05, domeZ);

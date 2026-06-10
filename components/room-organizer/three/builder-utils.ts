@@ -1,5 +1,5 @@
-import type * as ThreeNS from 'three';
 import type { FurnitureItem } from '../lib/types';
+import type * as ThreeNS from 'three';
 
 export type ThreeModule = typeof import('three');
 

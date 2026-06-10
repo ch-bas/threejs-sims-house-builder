@@ -1,6 +1,6 @@
-import type * as ThreeNS from 'three';
 import { getMaxAnisotropy } from './texture-settings';
 import type { WallPattern } from '../lib/types';
+import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 

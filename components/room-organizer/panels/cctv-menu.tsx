@@ -1,6 +1,5 @@
 'use client';
 
-import { FURNITURE_CATALOG } from '../lib/constants';
 import {
   CCTV_TYPE_ORDER,
   CCTV_TYPE_BLURB,
@@ -9,6 +8,7 @@ import {
   modelsOfType,
   type CctvModelType,
 } from '../lib/cctv-models';
+import { FURNITURE_CATALOG } from '../lib/constants';
 import { Icon } from '../plotcraft/icon';
 import type { CatalogItem } from '../lib/types';
 

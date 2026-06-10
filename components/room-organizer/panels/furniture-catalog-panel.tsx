@@ -3,9 +3,9 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
+import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, CategoryMeta, FurnitureCategory } from '../lib/types';
 

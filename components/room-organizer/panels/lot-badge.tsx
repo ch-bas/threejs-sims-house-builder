@@ -1,7 +1,7 @@
 'use client';
 
-import { Icon } from '../plotcraft/icon';
 import { useRoomEditor } from '../contexts';
+import { Icon } from '../plotcraft/icon';
 
 export interface LotBadgeProps {
   sidebarCollapsed: boolean;
