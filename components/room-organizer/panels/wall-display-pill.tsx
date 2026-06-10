@@ -1,8 +1,8 @@
 'use client';
 
+import { useRoomEditor } from '../contexts';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { ViewSettings } from '../lib/types';
-import { useRoomEditor } from '../contexts';
 
 type WallDisplay = ViewSettings['wallDisplay'];
 

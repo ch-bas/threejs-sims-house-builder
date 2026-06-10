@@ -1,4 +1,11 @@
 import { useMemo, useReducer } from 'react';
+import {
+  layoutReducer,
+  INITIAL_GROUND_FLOOR,
+  INITIAL_LAYOUT,
+  type LayoutAction,
+  type LayoutState,
+} from './layout-reducer';
 import type {
   CatalogItem,
   FloorLayout,
@@ -12,13 +19,6 @@ import type {
   WallId,
   WallPattern,
 } from '../lib/types';
-import {
-  layoutReducer,
-  INITIAL_GROUND_FLOOR,
-  INITIAL_LAYOUT,
-  type LayoutAction,
-  type LayoutState,
-} from './layout-reducer';
 
 export type { LayoutAction, LayoutState };
 export { INITIAL_LAYOUT };

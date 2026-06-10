@@ -1,9 +1,9 @@
-import type * as ThreeNS from 'three';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
-import { buildWallMaterial } from './wall-patterns';
 import { openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
+import { buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, WallId, WallPattern } from '../lib/types';
+import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 

@@ -1,17 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import type { CatalogItem } from '../lib/types';
-import { generateRoomShape } from '../lib/room-shapes';
-import { surpriseLayout } from '../lib/surprise';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { generateRoomShape } from '../lib/room-shapes';
+import { surpriseLayout } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
 import { CameraPad } from './camera-pad';
 import { CatalogStrip } from './catalog-strip';
 import { ModePanel } from './mode-panel';
 import { RoomShapesPanel } from './room-shapes-panel';
 import { WallPaintPanel } from './wall-paint-panel';
+import type { CatalogItem } from '../lib/types';
 
 export interface BottomHudProps {
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;

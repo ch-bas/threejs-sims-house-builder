@@ -1,6 +1,6 @@
 import { render2DTopDown } from '../canvas-2d/render';
-import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
+import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
 import type { FloorLayout, RoomLayout } from './types';
 
 const PAGE_WIDTH = 1200;

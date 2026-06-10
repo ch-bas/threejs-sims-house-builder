@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useRoomEditor } from '../contexts';
 import { MAX_FLOORS } from '../lib/constants';
 import { Icon } from '../plotcraft/icon';
-import { useRoomEditor } from '../contexts';
 
 export function FloorSwitcher(): JSX.Element {
   const { layout, activeFloorIndex, actions, view, toggle } = useRoomEditor();

@@ -1,5 +1,5 @@
-import type * as ThreeNS from 'three';
 import { type BuilderContext, mesh } from '../builder-utils';
+import type * as ThreeNS from 'three';
 
 export function buildToilet({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();

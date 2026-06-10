@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useRoomEditor } from '../contexts';
 import { ROOF_LABELS } from '../three/roof';
 import type { RoofStyle } from '../lib/types';
-import { useRoomEditor } from '../contexts';
 
 const ROOF_STYLES: ReadonlyArray<RoofStyle> = ['none', 'flat', 'gable', 'hipped'];
 const DEFAULT_COLOR = '#8d6e63';

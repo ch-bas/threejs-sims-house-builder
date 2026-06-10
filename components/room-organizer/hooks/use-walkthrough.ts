@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type * as ThreeNS from 'three';
-import type { PointerLockControls as PointerLockControlsType } from 'three/examples/jsm/controls/PointerLockControls.js';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { PointerLockControls as PointerLockControlsType } from 'three/examples/jsm/controls/PointerLockControls.js';
 
 type ThreeModule = typeof import('three');
 
@@ -80,10 +80,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
     cleanup.push(() => window.removeEventListener('keyup', onKeyUp));
 
     void (async () => {
-      const module = await import('three/examples/jsm/controls/PointerLockControls.js');
+      const controlsModule = await import('three/examples/jsm/controls/PointerLockControls.js');
       if (cancelled) return;
 
-      controls = new module.PointerLockControls(camera, canvas);
+      controls = new controlsModule.PointerLockControls(camera, canvas);
       savedCameraPosition = camera.position.clone();
       camera.position.set(0, eyeHeight, 3);
       camera.lookAt(0, eyeHeight, 0);

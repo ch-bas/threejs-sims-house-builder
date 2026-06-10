@@ -1,6 +1,6 @@
 {
   "name": "threejs-sims-house-builder",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "A lightweight, open-source Sims-like house builder built entirely in the browser using Three.js.",
   "author": "Bassem Chagra",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint --ext .ts,.tsx app components",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -34,6 +34,8 @@
     "@types/react-dom": "^18.3.0",
     "@types/three": "^0.169.0",
     "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.19",
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.13",
     "tailwindcss-animate": "^1.0.7",

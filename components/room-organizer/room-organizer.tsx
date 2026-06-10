@@ -1,38 +1,34 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { HoverInfo } from './hooks/use-three-scene';
-import { useCameraPresets } from './hooks/use-camera-presets';
+import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
+import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
 import { useAchievements } from './hooks/use-achievements';
+import { useCameraPresets } from './hooks/use-camera-presets';
+import { useNpcs } from './hooks/use-npcs';
+import { useCameraVision } from './hooks/use-camera-vision';
 import { useHistory } from './hooks/use-history';
-import { useRecentColors } from './hooks/use-recent-colors';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
-import { useNpcs } from './hooks/use-npcs';
-import { useCameraVision } from './hooks/use-camera-vision';
+import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
 import { CAMERA_BRACKET_ARM, GRID_SIZE_METERS } from './lib/constants';
-import {
-  snapToGrid as snapValueToGrid,
-  snapToNeighbors,
-  snapToWall as snapPositionToWall,
-} from './lib/geometry';
-import { isOpening, snapOpeningToWall, snapWallMountedItem, reseatWallMountedItem } from './lib/opening-snap';
+import { FURNITURE_CATALOG } from './lib/constants';
 import {
   downloadCanvasAsPng,
   downloadSceneAsGlb,
   readLayoutFromFile,
 } from './lib/file-io';
 import { hasCollisions } from './lib/geometry';
-import { FURNITURE_CATALOG } from './lib/constants';
-import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
-import { BottomHud } from './panels/bottom-hud';
-import { LotBadge } from './panels/lot-badge';
-import { SidebarDrawer } from './panels/sidebar-drawer';
-import { HeaderStats } from './panels/header-stats';
+import {
+  snapToGrid as snapValueToGrid,
+  snapToNeighbors,
+  snapToWall as snapPositionToWall,
+} from './lib/geometry';
+import { isOpening, snapOpeningToWall, snapWallMountedItem, reseatWallMountedItem } from './lib/opening-snap';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { TouchModeToggle } from './panels/touch-mode-toggle';
 import { WelcomeBanner } from './panels/welcome-banner';
@@ -44,9 +40,13 @@ import { snapWallEndpoint } from './lib/wall-snap';
 import { encodeShareUrl, isShareUrlReasonablySized } from './lib/share';
 import { playSound, type SoundCue } from './lib/sounds';
 import { FLOOR_HEIGHT_METERS } from './lib/types';
-import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
-import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
 import { AchievementToast } from './panels/achievement-toast';
+import { BottomHud } from './panels/bottom-hud';
+import { HeaderStats } from './panels/header-stats';
+import { LotBadge } from './panels/lot-badge';
+import { SidebarDrawer } from './panels/sidebar-drawer';
+import type { HoverInfo } from './hooks/use-three-scene';
+import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
   THREE: typeof import('three'),

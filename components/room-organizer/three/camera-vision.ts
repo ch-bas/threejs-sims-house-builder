@@ -1,6 +1,6 @@
-import type * as ThreeNS from 'three';
-import type { FurnitureItem } from '../lib/types';
 import { ROOM_OBJECT_TAGS } from './room-builder';
+import type { FurnitureItem } from '../lib/types';
+import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type * as ThreeNS from 'three';
 import { disposeObject } from '../three/builder-utils';
+import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 

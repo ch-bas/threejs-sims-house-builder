@@ -1,6 +1,6 @@
-import type * as ThreeNS from 'three';
 import { removeAndDispose } from './builder-utils';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
+import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 

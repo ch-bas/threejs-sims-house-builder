@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { useRoomEditor } from '../contexts';
+import { Icon } from '../plotcraft/icon';
 import type {
   FloorPattern,
   WallId,
   WallPattern,
 } from '../lib/types';
-import { Icon } from '../plotcraft/icon';
-import { useRoomEditor } from '../contexts';
 
 // ============================================================================
 // Pattern + style metadata

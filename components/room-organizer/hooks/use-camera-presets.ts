@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
+import type { CameraPreset } from '../lib/types';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { CameraPreset } from '../lib/types';
 
 interface PresetView {
   position: readonly [number, number, number];

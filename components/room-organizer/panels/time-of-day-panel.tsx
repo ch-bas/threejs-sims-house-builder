@@ -3,8 +3,8 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { TIME_PRESETS, type TimePresetKey } from '../three/lighting';
 import { useRoomEditor } from '../contexts';
+import { TIME_PRESETS, type TimePresetKey } from '../three/lighting';
 
 const PRESETS: ReadonlyArray<{ key: TimePresetKey; label: string; icon: string }> = [
   { key: 'dawn', label: 'Dawn', icon: '🌅' },

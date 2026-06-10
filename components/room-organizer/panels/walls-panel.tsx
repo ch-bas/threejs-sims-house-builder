@@ -4,10 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useRoomEditor } from '../contexts';
 import { FLOOR_PATTERN_LABELS } from '../three/floor-patterns';
 import { WALL_PATTERN_LABELS } from '../three/wall-patterns';
 import type { FloorPattern, WallId, WallPattern } from '../lib/types';
-import { useRoomEditor } from '../contexts';
 
 const WALL_LABELS: Record<WallId, string> = {
   north: 'North wall',

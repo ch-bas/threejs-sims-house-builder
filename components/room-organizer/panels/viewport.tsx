@@ -2,9 +2,9 @@
 
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { Icon, iconForItem } from '../plotcraft/icon';
+import { Minimap } from './minimap';
 import type { FurnitureItem, RoomLayout } from '../lib/types';
 import type { FloorLayout } from '../lib/types';
-import { Minimap } from './minimap';
 
 export interface HoverState {
   item: FurnitureItem;

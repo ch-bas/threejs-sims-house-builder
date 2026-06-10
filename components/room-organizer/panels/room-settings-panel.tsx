@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { FloorPlanFitMode } from '../lib/types';
 import { useRoomEditor } from '../contexts';
+import type { FloorPlanFitMode } from '../lib/types';
 
 const FIT_MODE_HINTS: Record<FloorPlanFitMode, string> = {
   stretch: '↔️ Stretches image to fill entire room',

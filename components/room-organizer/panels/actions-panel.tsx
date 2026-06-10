@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
-import { autoOrganize } from '../lib/geometry';
-import { surpriseLayout } from '../lib/surprise';
-import { downloadLayoutAsJson, downloadInventoryCsv } from '../lib/file-io';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
+import { downloadLayoutAsJson, downloadInventoryCsv } from '../lib/file-io';
+import { autoOrganize } from '../lib/geometry';
 import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
+import { surpriseLayout } from '../lib/surprise';
 
 export interface ActionsPanelProps {
   onImport(file: File): void;

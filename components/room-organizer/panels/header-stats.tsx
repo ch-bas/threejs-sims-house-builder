@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRoomEditor } from '../contexts';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
-import { useRoomEditor } from '../contexts';
 
 export interface HeaderStatsProps {
   lastSavedAt?: number | null;

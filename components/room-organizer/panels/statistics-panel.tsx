@@ -2,9 +2,9 @@
 
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useRoomEditor } from '../contexts';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory, totalCost } from '../lib/geometry';
-import { useRoomEditor } from '../contexts';
 
 export function StatisticsPanel(): JSX.Element {
   const { layout, collidingIds } = useRoomEditor();

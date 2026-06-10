@@ -1,10 +1,10 @@
 import { useEffect, type RefObject, type MutableRefObject } from 'react';
-import type * as ThreeNS from 'three';
 import { render2DTopDown } from '../canvas-2d/render';
-import { removeAndDispose } from '../three/builder-utils';
 import { hasCollisions } from '../lib/geometry';
-import type { FloorLayout, RoomLayout, ViewSettings } from '../lib/types';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
+import { removeAndDispose } from '../three/builder-utils';
+import { addVisionCones } from '../three/camera-vision';
+import { createFurnitureModel } from '../three/furniture-builders';
 import {
   clearInteriorWalls,
   clearPreview as clearWallPreview,
@@ -16,11 +16,11 @@ import { applyTimeOfDay } from '../three/lighting';
 import { clearMeasurement, measurementDistance, renderMeasurement } from '../three/measurement';
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildRoof, removeRoof } from '../three/roof';
-import { addSignalOverlays } from '../three/signal-overlay';
-import { addVisionCones } from '../three/camera-vision';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, removeTagged } from '../three/room-builder';
+import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
-import { createFurnitureModel } from '../three/furniture-builders';
+import type { FloorLayout, RoomLayout, ViewSettings } from '../lib/types';
+import type * as ThreeNS from 'three';
 
 interface MaterialLike {
   transparent: boolean;

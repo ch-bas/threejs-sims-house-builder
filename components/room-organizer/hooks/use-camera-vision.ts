@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import type * as ThreeNS from 'three';
 import { stepVisionCones } from '../three/camera-vision';
+import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 
