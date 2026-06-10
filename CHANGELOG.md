@@ -4,13 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.3.0] - 2026-06-08
+## [1.3.0] - 2026-06-10
+
+### Added
+- CCTV vision cones detect objects: furniture or NPCs in the field of view turn the cone alert red, pulse the wedge, and flare the scan line as it sweeps over the target
+- Gradient sky (zenith-to-horizon) driven by the time-of-day system
+- Wall Visibility row (N/E/S/W) in the Paint panel to hide/restore exterior walls
+- Click any wall in 3D to select it and auto-open the Paint panel; Delete removes interior walls or toggles exterior walls hidden
+- Collapsible Build Tools panel and bottom catalog strip
+- Outdoor items restricted to outside the building footprint; catalog drops default past the south wall
+- Filmic rendering pipeline: ACES tone mapping, PCF soft shadows, image-based lighting, render-on-demand, drag fast-path, OBB collision, GPU resource disposal
 
 ### Fixed
 - Fix selection of internal/external walls.
 - Enable all mitems in build menu [sill height](https://github.com/ch-bas/threejs-sims-house-builder/issues/12).
 - Elements should be locked after they were [positioned](https://github.com/ch-bas/threejs-sims-house-builder/issues/11).
 - Correct window glass color and [sill height](https://github.com/ch-bas/threejs-sims-house-builder/issues/14).
+- Vision-cone animation now runs while the mouse is idle (render-on-demand invalidation)
+- Vision cones are no longer occluded by walls, furniture, or rugs
 
 ## [1.2.0] - 2026-06-01
 
