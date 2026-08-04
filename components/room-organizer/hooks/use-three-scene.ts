@@ -451,15 +451,13 @@ function attachDragHandlers({
     const target = ascendToFurniture(hits[0]?.object);
     const id = target ? (target.userData.id as string) : null;
 
-    if (id !== lastHoverId) {
-      lastHoverId = id;
-      canvas.style.cursor = id ? 'pointer' : '';
-    }
-    if (id) {
-      hoverCallback({ id, clientX: event.clientX, clientY: event.clientY });
-    } else {
-      hoverCallback(null);
-    }
+    // Only notify on hover changes — a fresh payload per mousemove would
+    // re-render React for every pixel of travel. The tooltip anchors at the
+    // point where the hover began.
+    if (id === lastHoverId) return;
+    lastHoverId = id;
+    canvas.style.cursor = id ? 'pointer' : '';
+    hoverCallback(id ? { id, clientX: event.clientX, clientY: event.clientY } : null);
   };
 
   const onMouseMove = (event: MouseEvent): void => {

@@ -245,6 +245,7 @@ export function RoomOrganizer(): JSX.Element {
     if (!view.drawWallMode) {
       setWallDraft(null);
       setSelectedWall(null);
+      setPointerWorld(null);
     }
   }, [view.drawWallMode]);
 
@@ -689,7 +690,10 @@ export function RoomOrganizer(): JSX.Element {
       onWallSelect: ({ wallId, kind }) => {
         setSelectedWall({ id: wallId, kind });
       },
-      onFloorPointerMove: handleFloorPointerMove,
+      // Only track the floor pointer while wall-draw mode consumes it — the
+      // handler writes React state per mousemove, re-rendering the whole tree,
+      // and the hook skips the floor raycast when the handler is absent.
+      onFloorPointerMove: view.drawWallMode ? handleFloorPointerMove : undefined,
       onFloorPointerLeave: handleFloorPointerLeave,
       snapPosition,
       getDragPlaneY,
