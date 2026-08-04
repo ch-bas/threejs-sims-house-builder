@@ -6,8 +6,16 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isPositiveNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value > 0;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isVec2(value: unknown): boolean {
+  return isPlainObject(value) && isFiniteNumber(value.x) && isFiniteNumber(value.z);
 }
 
 export function isFurnitureItem(value: unknown): value is FurnitureItem {
@@ -17,9 +25,9 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
     typeof v.id !== 'string' ||
     typeof v.type !== 'string' ||
     typeof v.name !== 'string' ||
-    !isFiniteNumber(v.width) ||
-    !isFiniteNumber(v.depth) ||
-    !isFiniteNumber(v.height) ||
+    !isPositiveNumber(v.width) ||
+    !isPositiveNumber(v.depth) ||
+    !isPositiveNumber(v.height) ||
     typeof v.color !== 'string' ||
     typeof v.icon !== 'string'
   ) {
@@ -27,6 +35,12 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   }
   if (v.price !== undefined && !isFiniteNumber(v.price)) return false;
   if (v.category !== undefined && typeof v.category !== 'string') return false;
+  if (v.position !== undefined && !isVec2(v.position)) return false;
+  if (v.rotation !== undefined && !isFiniteNumber(v.rotation)) return false;
+  if (v.signalRange !== undefined && !isFiniteNumber(v.signalRange)) return false;
+  if (v.visionRange !== undefined && !isFiniteNumber(v.visionRange)) return false;
+  if (v.visionFov !== undefined && !isFiniteNumber(v.visionFov)) return false;
+  if (v.wallRotation !== undefined && !isFiniteNumber(v.wallRotation)) return false;
   return true;
 }
 
@@ -39,7 +53,14 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   if (!Array.isArray(v.items) || !v.items.every(isFurnitureItem)) return false;
   if (v.floorPattern !== undefined && typeof v.floorPattern !== 'string') return false;
   if (v.wallPattern !== undefined && typeof v.wallPattern !== 'string') return false;
-  if (v.wallColors !== undefined && !isPlainObject(v.wallColors)) return false;
+  if (v.wallColors !== undefined) {
+    if (!isPlainObject(v.wallColors)) return false;
+    if (!Object.values(v.wallColors).every((color) => typeof color === 'string')) return false;
+  }
+  if (v.hiddenWalls !== undefined) {
+    if (!Array.isArray(v.hiddenWalls)) return false;
+    if (!v.hiddenWalls.every((wall) => typeof wall === 'string')) return false;
+  }
   if (v.interiorWalls !== undefined) {
     if (!Array.isArray(v.interiorWalls)) return false;
     for (const wall of v.interiorWalls) {
@@ -125,6 +146,9 @@ function isLegacySingleFloorLayout(value: unknown): value is LegacySingleFloorLa
     typeof v.floorColor === 'string' &&
     Array.isArray(v.items) &&
     v.items.every(isFurnitureItem) &&
+    (v.wallColors === undefined ||
+      (isPlainObject(v.wallColors) &&
+        Object.values(v.wallColors).every((color) => typeof color === 'string'))) &&
     !('floors' in v)
   );
 }
