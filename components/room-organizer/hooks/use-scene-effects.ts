@@ -141,9 +141,7 @@ export function useSceneEffects({
     outline.renderOrder = 999;
     outline.userData.type = 'wall-selection';
     scene.add(outline);
-    const renderer = rendererRef.current;
-    const camera = cameraRef.current;
-    if (renderer && camera) renderer.render(scene, camera);
+    invalidate();
 
     return () => {
       scene.remove(outline);
@@ -189,11 +187,7 @@ export function useSceneEffects({
         floorPlan3DEffect: view.floorPlan3DEffect,
         yOffset: index * FLOOR_HEIGHT_METERS,
         ghostOpacity: view.showAllFloors && !isActive ? 0.25 : undefined,
-        onTextureLoaded: () => {
-          const renderer = rendererRef.current;
-          const camera = cameraRef.current;
-          if (renderer && camera) renderer.render(scene, camera);
-        },
+        onTextureLoaded: invalidate,
       });
     }
 
@@ -218,10 +212,12 @@ export function useSceneEffects({
     const controls = controlsRef.current;
     if (!scene || !camera || !controls) return undefined;
 
+    // Mark dirty instead of rendering here — the change listener fires every
+    // interaction frame, and the RAF loop renders that same frame anyway, so a
+    // direct render would draw the full scene twice per frame while orbiting.
     const apply = () => {
       applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
-      const renderer = rendererRef.current;
-      if (renderer) renderer.render(scene, camera);
+      invalidate();
     };
     apply();
     controls.addEventListener('change', apply);
