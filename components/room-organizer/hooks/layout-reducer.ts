@@ -326,9 +326,13 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
     case 'removeFloor': {
       if (state.layout.floors.length <= 1) return state;
       const floors = state.layout.floors.filter((_, index) => index !== action.index);
+      // Removing a floor below the active one shifts the active floor down a
+      // slot; without the adjustment the editor silently switches floors.
+      const nextActive =
+        action.index < state.activeFloorIndex ? state.activeFloorIndex - 1 : state.activeFloorIndex;
       return {
         layout: { ...state.layout, floors },
-        activeFloorIndex: clampActiveIndex(state.activeFloorIndex, floors.length),
+        activeFloorIndex: clampActiveIndex(nextActive, floors.length),
       };
     }
 
@@ -346,15 +350,29 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       const floors = [...state.layout.floors];
       const [moved] = floors.splice(from, 1);
       if (moved !== undefined) floors.splice(to, 0, moved);
+      // The same floor stays active through the move — reordering a different
+      // floor must not jump the editor to it.
+      let active = state.activeFloorIndex;
+      if (from === active) {
+        active = to;
+      } else {
+        if (from < active) active -= 1;
+        if (to <= active) active += 1;
+      }
       return {
         layout: { ...state.layout, floors },
-        activeFloorIndex: clampActiveIndex(to, floors.length),
+        activeFloorIndex: clampActiveIndex(active, floors.length),
       };
     }
 
     case 'applyLayout': {
       const layout = normaliseLayout(action.layout);
-      return { layout, activeFloorIndex: 0 };
+      // Clamp instead of resetting to 0 so undo/redo of an edit made on an
+      // upper floor doesn't jump the view back to the ground floor.
+      return {
+        layout,
+        activeFloorIndex: clampActiveIndex(state.activeFloorIndex, layout.floors.length),
+      };
     }
 
     default:
