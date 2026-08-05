@@ -43,7 +43,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     if (layoutSlugExists(trimmed) && !window.confirm(`Overwrite the existing layout "${trimmed}"?`)) {
       return;
     }
-    saveNamedLayout(currentLayout, trimmed);
+    const result = saveNamedLayout(currentLayout, trimmed);
+    if (!result) {
+      window.alert(
+        'Could not save the layout — browser storage is full. Delete some saved layouts or remove the floor-plan image and try again.'
+      );
+      return;
+    }
     refresh();
   };
 

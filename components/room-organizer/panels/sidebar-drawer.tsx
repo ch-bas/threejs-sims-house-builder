@@ -44,6 +44,11 @@ export interface SidebarDrawerProps {
   onShareLink(): void;
   /** Wall-aware placement (snaps doors/windows/cameras to walls) shared with the bottom catalog. */
   placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
+  /**
+   * The orchestrator's removeItem — it also clears the id from the
+   * multi-select set, which a local reimplementation here used to miss.
+   */
+  removeItem(id: string): void;
 }
 
 export function SidebarDrawer({
@@ -57,6 +62,7 @@ export function SidebarDrawer({
   onExportGlb,
   onShareLink,
   placeCatalogItem,
+  removeItem,
 }: SidebarDrawerProps): JSX.Element {
   const { layout, activeFloor, actions, view, isReady, playCue, history, catalogQuery, setCatalogQuery } = useRoomEditor();
   const { selectedItem, setSelectedItemId, allSelectedIds } = useSelection();
@@ -68,12 +74,6 @@ export function SidebarDrawer({
   const setSidebarTab = (tab: SidebarTab) => {
     setSidebarTabRaw(tab);
     localStorage.setItem('room-organizer-sidebar-tab', tab);
-  };
-
-  const removeItem = (id: string) => {
-    actions.removeItem(id);
-    playCue('remove');
-    setSelectedItemId((current) => (current === id ? null : current));
   };
 
   const handleFloorPlanUpload = async (file: File) => {

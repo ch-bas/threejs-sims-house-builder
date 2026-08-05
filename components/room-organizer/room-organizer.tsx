@@ -1143,6 +1143,7 @@ export function RoomOrganizer(): JSX.Element {
         onExportGlb={handleExportGlb}
         onShareLink={handleShareLink}
         placeCatalogItem={placeCatalogItem}
+        removeItem={removeItem}
       />
     </div>
     </SelectionProvider>
