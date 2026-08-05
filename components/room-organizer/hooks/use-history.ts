@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface UseHistoryOptions {
   /** Debounce window for committing a snapshot, in milliseconds. */
@@ -77,17 +77,21 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     });
   }, [apply]);
 
+  // Call this alongside (or right after) applying a new baseline value, e.g.
+  // hydration. `skipNextRef` makes the commit effect adopt the upcoming value
+  // as the baseline instead of diffing it against the stale one — otherwise
+  // undo right after hydration would revert to the pre-hydration state.
   const clear = useCallback(() => {
     setPast([]);
     setFuture([]);
-    lastCommittedRef.current = value;
-  }, [value]);
+    skipNextRef.current = true;
+  }, []);
 
-  return {
-    canUndo: past.length > 0,
-    canRedo: future.length > 0,
-    undo,
-    redo,
-    clear,
-  };
+  const canUndo = past.length > 0;
+  const canRedo = future.length > 0;
+
+  return useMemo(
+    () => ({ canUndo, canRedo, undo, redo, clear }),
+    [canUndo, canRedo, undo, redo, clear]
+  );
 }
