@@ -902,6 +902,7 @@ export function RoomOrganizer(): JSX.Element {
       focusOn,
       rotateItemHandler,
       reseatCamera,
+      wallDraft,
     ]
   );
 
@@ -1147,6 +1148,7 @@ export function RoomOrganizer(): JSX.Element {
         onExportGlb={handleExportGlb}
         onShareLink={handleShareLink}
         placeCatalogItem={placeCatalogItem}
+        removeItem={removeItem}
       />
     </div>
     </SelectionProvider>

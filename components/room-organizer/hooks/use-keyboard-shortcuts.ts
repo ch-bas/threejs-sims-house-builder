@@ -59,11 +59,21 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      if (ctrlOrCmd && event.key.toLowerCase() === 'd' && selectedItem) {
+        event.preventDefault();
+        handlers.duplicateItem(selectedItem.id);
+        return;
+      }
+
       if (event.key === 'Escape') {
         event.preventDefault();
         handlers.deselect();
         return;
       }
+
+      // Everything below is a bare single-key shortcut. Never swallow browser
+      // shortcuts like Cmd/Ctrl+F (find), Ctrl+R (reload), or Cmd+M.
+      if (ctrlOrCmd || event.altKey) return;
 
       if (event.key === 'f' && selectedItem) {
         event.preventDefault();
@@ -73,7 +83,8 @@ export function useKeyboardShortcuts({
 
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedItem) {
         event.preventDefault();
-        handlers.removeItem(selectedItem.id);
+        // Locked items can't be deleted from the keyboard, matching 3D drag.
+        if (!selectedItem.locked) handlers.removeItem(selectedItem.id);
         return;
       }
 
@@ -84,12 +95,6 @@ export function useKeyboardShortcuts({
         } else {
           handlers.toggleExteriorWall(selectedWall.id);
         }
-        return;
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key === 'd' && selectedItem) {
-        event.preventDefault();
-        handlers.duplicateItem(selectedItem.id);
         return;
       }
 
@@ -150,14 +155,14 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if (event.key === 'p' && !ctrlOrCmd) {
+      if (event.key === 'p') {
         event.preventDefault();
         handlers.toggleSidebar();
         return;
       }
 
       const delta = ARROW_DELTAS[event.key];
-      if (delta && selectedItem?.position) {
+      if (delta && selectedItem?.position && !selectedItem.locked) {
         event.preventDefault();
         const step = event.shiftKey ? 1.0 : 0.1;
         const [dx, dz] = delta;
@@ -175,5 +180,11 @@ export function useKeyboardShortcuts({
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target.isContentEditable
+  );
 }

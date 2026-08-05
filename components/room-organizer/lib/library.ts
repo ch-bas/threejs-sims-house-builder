@@ -60,7 +60,13 @@ function totalItemCount(layout: RoomLayout): number {
   return layout.floors.reduce((sum, floor) => sum + floor.items.length, 0);
 }
 
-export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult {
+/**
+ * Returns `null` when localStorage rejects the write (typically
+ * QuotaExceededError — library entries embed the base64 floor-plan image, so
+ * running out of the ~5MB quota is realistic). The layout blob and the index
+ * are kept consistent: if the index write fails, the blob is rolled back.
+ */
+export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | null {
   const trimmed = name.trim() || layout.name || 'Untitled';
   const id = slugify(trimmed);
   const index = readIndex();
@@ -75,14 +81,25 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult {
   };
 
   const layoutCopy: RoomLayout = { ...layout, id, name: trimmed };
-  window.localStorage.setItem(layoutKey(id), JSON.stringify(layoutCopy));
+  const previousBlob = window.localStorage.getItem(layoutKey(id));
+  try {
+    window.localStorage.setItem(layoutKey(id), JSON.stringify(layoutCopy));
+  } catch {
+    return null;
+  }
 
   if (existingIndex >= 0) {
     index.entries[existingIndex] = entry;
   } else {
     index.entries.push(entry);
   }
-  writeIndex(index);
+  try {
+    writeIndex(index);
+  } catch {
+    if (previousBlob === null) window.localStorage.removeItem(layoutKey(id));
+    else window.localStorage.setItem(layoutKey(id), previousBlob);
+    return null;
+  }
 
   return { entry, overwrote: existingIndex >= 0 };
 }

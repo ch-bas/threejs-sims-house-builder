@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.0] - 2026-08-05
+
+Bug-fix release resolving all twelve confirmed findings from the August 2026 code audit.
+
+### Fixed
+- Undo immediately after page load no longer reverts the house to the blank default and auto-saves the wipe ([#21](https://github.com/ch-bas/threejs-sims-house-builder/issues/21))
+- Opening a share link no longer overwrites the locally saved house ([#22](https://github.com/ch-bas/threejs-sims-house-builder/issues/22))
+- Achievements re-enabled — unlock detection had been silently disabled since the architecture refactor ([#23](https://github.com/ch-bas/threejs-sims-house-builder/issues/23))
+- Layout schema validation hardened: corrupt share URLs or localStorage entries can no longer crash the app or produce NaN-corrupted items ([#24](https://github.com/ch-bas/threejs-sims-house-builder/issues/24))
+- Single-key shortcuts no longer hijack browser shortcuts like Ctrl+R and Cmd+F; Delete and arrow-nudge respect locked items ([#25](https://github.com/ch-bas/threejs-sims-house-builder/issues/25))
+- Removing or reordering floors keeps the same floor active instead of silently switching the edit target; undo no longer jumps to the ground floor ([#26](https://github.com/ch-bas/threejs-sims-house-builder/issues/26))
+- Escape now cancels an in-progress interior wall draft ([#27](https://github.com/ch-bas/threejs-sims-house-builder/issues/27))
+- Undo within the debounce window reverts the pending edit instead of discarding it; undo/redo stacks are StrictMode-safe ([#28](https://github.com/ch-bas/threejs-sims-house-builder/issues/28))
+- Auto-organize leaves doors, windows, security cameras, and outdoor items anchored instead of tearing them off walls ([#29](https://github.com/ch-bas/threejs-sims-house-builder/issues/29))
+- Pending auto-saves flush on tab close; library saves survive storage-quota errors with rollback and feedback; sidebar delete no longer leaves ghost ids in multi-select ([#30](https://github.com/ch-bas/threejs-sims-house-builder/issues/30))
+
+### Performance
+- Mousemove over the canvas no longer re-renders the whole React tree; editor context identity is stable ([#31](https://github.com/ch-bas/threejs-sims-house-builder/issues/31))
+- One render per frame while orbiting instead of two ([#33](https://github.com/ch-bas/threejs-sims-house-builder/issues/33))
+
 ## [1.3.1] - 2026-06-10
 
 ### Added

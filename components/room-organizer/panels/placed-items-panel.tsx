@@ -31,7 +31,9 @@ export function PlacedItemsPanel({
     <Card>
       <CardHeader className="space-y-2">
         <CardTitle>Placed Items ({items.length})</CardTitle>
-        {items.length > 4 && (
+        {/* Keep the input visible while a query is set, or deleting items
+            below the threshold would trap the panel in "no items match". */}
+        {(items.length > 4 || query !== '') && (
           <Input
             placeholder="Filter items…"
             value={query}
