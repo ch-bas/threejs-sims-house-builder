@@ -106,7 +106,7 @@ export function useSceneEffects({
       return;
     }
     renderInteriorWallPreview(THREE, scene, wallDraft, wallSnapResult.point, activeFloorY);
-  }, [isReady, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallSnapResult, activeFloorY]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallSnapResult, activeFloorY]);
 
   // Cyan outline on selected wall
   useEffect(() => {
@@ -148,7 +148,7 @@ export function useSceneEffects({
       edges.dispose();
       material.dispose();
     };
-  }, [isReady, threeModuleRef, sceneRef, rendererRef, cameraRef, selectedWall, layout.floors, activeFloorIndex]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, selectedWall, layout.floors, activeFloorIndex]);
 
   // Build floor + walls
   useEffect(() => {
@@ -196,7 +196,7 @@ export function useSceneEffects({
       applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
     }
   }, [
-    isReady, threeModuleRef, sceneRef, rendererRef, cameraRef,
+    isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
     layout.width, layout.height, layout.floors,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, view.showAllFloors, view.wallDisplay,
@@ -222,7 +222,7 @@ export function useSceneEffects({
     apply();
     controls.addEventListener('change', apply);
     return () => controls.removeEventListener('change', apply);
-  }, [isReady, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, view.wallDisplay, layout.width, layout.height]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, view.wallDisplay, layout.width, layout.height]);
 
   // Furniture meshes
   useEffect(() => {
@@ -292,7 +292,7 @@ export function useSceneEffects({
       }
     }
   }, [
-    isReady, threeModuleRef, sceneRef,
+    isReady, invalidate, threeModuleRef, sceneRef,
     layout.floors, layout.width, layout.height,
     activeFloor, activeFloorIndex,
     selectedItemId, extraSelectedIds, highlightedIds,
@@ -318,7 +318,7 @@ export function useSceneEffects({
     );
 
     applyTimeOfDay(THREE, scene, view.timeOfDay, lampPositions);
-  }, [isReady, threeModuleRef, sceneRef, view.timeOfDay, layout.floors]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.timeOfDay, layout.floors]);
 
   // Outdoor
   useEffect(() => {
@@ -328,7 +328,7 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
     setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height);
-  }, [isReady, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height]);
 
   // Interior walls
   useEffect(() => {
@@ -354,7 +354,7 @@ export function useSceneEffects({
         { openingCandidates: floor.items }
       );
     }
-  }, [isReady, threeModuleRef, sceneRef, layout.floors, activeFloor, activeFloorIndex, view.showAllFloors]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, layout.floors, activeFloor, activeFloorIndex, view.showAllFloors]);
 
   // Measurement markers
   useEffect(() => {
@@ -368,7 +368,7 @@ export function useSceneEffects({
       return;
     }
     renderMeasurement(THREE, scene, measurementPoints, activeFloorY);
-  }, [isReady, threeModuleRef, sceneRef, view.measurementMode, measurementPoints, activeFloorY]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.measurementMode, measurementPoints, activeFloorY]);
 
   // Item labels
   useEffect(() => {
@@ -382,7 +382,7 @@ export function useSceneEffects({
       return;
     }
     renderItemLabels(THREE, scene, activeFloor.items, activeFloorY);
-  }, [isReady, threeModuleRef, sceneRef, view.showItemLabels, activeFloor.items, activeFloorY]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, activeFloor.items, activeFloorY]);
 
   // Roof
   useEffect(() => {
@@ -410,7 +410,7 @@ export function useSceneEffects({
       baseY: layout.floors.length * FLOOR_HEIGHT_METERS,
       spec: layout.roof,
     });
-  }, [isReady, threeModuleRef, sceneRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors]);
 
   // 2D top-down view
   useEffect(() => {
@@ -428,7 +428,7 @@ export function useSceneEffects({
       showHeatmap: view.showHeatmap,
       hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height),
     });
-  }, [view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, selectedItemId]);
+  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, selectedItemId]);
 }
 
 export { measurementDistance } from '../three/measurement';

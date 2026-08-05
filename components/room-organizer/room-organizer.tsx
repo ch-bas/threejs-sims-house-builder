@@ -5,12 +5,12 @@ import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room
 import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
 import { useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
-import { useNpcs } from './hooks/use-npcs';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useHistory } from './hooks/use-history';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
+import { useNpcs } from './hooks/use-npcs';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
@@ -29,23 +29,23 @@ import {
   snapToWall as snapPositionToWall,
 } from './lib/geometry';
 import { isOpening, snapOpeningToWall, snapWallMountedItem, reseatWallMountedItem } from './lib/opening-snap';
-import { ItemContextPopover } from './panels/item-context-popover';
-import { TouchModeToggle } from './panels/touch-mode-toggle';
-import { WelcomeBanner } from './panels/welcome-banner';
-import { FloorPill } from './panels/floor-pill';
-import { WallDisplayPill } from './panels/wall-display-pill';
-import type { GameMode } from './lib/types';
-import { Viewport } from './panels/viewport';
-import { snapWallEndpoint } from './lib/wall-snap';
 import { encodeShareUrl, isShareUrlReasonablySized } from './lib/share';
 import { playSound, type SoundCue } from './lib/sounds';
 import { FLOOR_HEIGHT_METERS } from './lib/types';
+import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
+import { FloorPill } from './panels/floor-pill';
 import { HeaderStats } from './panels/header-stats';
+import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
 import { SidebarDrawer } from './panels/sidebar-drawer';
+import { TouchModeToggle } from './panels/touch-mode-toggle';
+import { Viewport } from './panels/viewport';
+import { WallDisplayPill } from './panels/wall-display-pill';
+import { WelcomeBanner } from './panels/welcome-banner';
 import type { HoverInfo } from './hooks/use-three-scene';
+import type { GameMode } from './lib/types';
 import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
@@ -267,6 +267,9 @@ export function RoomOrganizer(): JSX.Element {
     controls.update();
     const renderer = rendererRef.current;
     if (renderer) renderer.render(sceneRef.current!, camera);
+    // The scene refs are declared below (useThreeScene) so they can't appear
+    // in this dep array without a TDZ error; they're stable ref objects anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFloorIndex]);
 
   const handleSelect = useCallback((id: string, mode: 'replace' | 'toggle') => {
@@ -479,7 +482,7 @@ export function RoomOrganizer(): JSX.Element {
       });
       actions.moveItem(id, pos.x, pos.z);
     },
-    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions, findFurnitureGroup, setDragCollisionTint]
+    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
   );
 
   const rotateItemHandler = useCallback(

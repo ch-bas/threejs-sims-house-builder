@@ -75,7 +75,7 @@ export function useNpcs(options: UseNpcsOptions): void {
       }
       stateRef.current = [];
     };
-  }, [enabled, count, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
+  }, [enabled, count, invalidate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
 }
 
 function createNpc(

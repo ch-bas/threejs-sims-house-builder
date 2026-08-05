@@ -59,6 +59,9 @@ export interface RoomEditorProviderProps {
 }
 
 export function RoomEditorProvider({ value, children }: RoomEditorProviderProps): JSX.Element {
+  // The parent rebuilds `value` every render, so depending on it would make
+  // this memo a no-op; the enumerated fields are the real invalidation keys.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const memoised = useMemo(() => value, [
     value.layout,
     value.activeFloor,
