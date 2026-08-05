@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { stepVisionCones } from '../three/camera-vision';
+import { ROOM_OBJECT_TAGS } from '../three/room-builder';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -30,6 +31,13 @@ export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef 
     const start = performance.now();
     const tick = () => {
       rafId = requestAnimationFrame(tick);
+      // With no cones in the scene there is nothing to animate — skip the
+      // step and, crucially, the invalidate, so an idle editor with the
+      // toggle on doesn't render every frame for nothing.
+      const hasCones = scene.children.some(
+        (child) => child.userData.type === ROOM_OBJECT_TAGS.CameraVision
+      );
+      if (!hasCones) return;
       stepVisionCones(scene, (performance.now() - start) / 1000);
       invalidate?.();
     };
