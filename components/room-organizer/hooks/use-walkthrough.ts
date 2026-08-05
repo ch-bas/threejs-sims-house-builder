@@ -150,5 +150,5 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
       }
       if (orbit) orbit.enabled = true;
     };
-  }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef, eyeHeight, walkSpeed]);
+  }, [enabled, invalidate, canvasRef, threeModuleRef, cameraRef, orbitRef, eyeHeight, walkSpeed]);
 }
