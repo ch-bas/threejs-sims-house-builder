@@ -7,9 +7,11 @@ import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { downloadLayoutAsJson, downloadInventoryCsv } from '../lib/file-io';
-import { autoOrganize } from '../lib/geometry';
+import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
+import { isWallMounted } from '../lib/opening-snap';
 import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
 import { surpriseLayout } from '../lib/surprise';
+import type { FurnitureItem } from '../lib/types';
 
 export interface ActionsPanelProps {
   onImport(file: File): void;
@@ -25,6 +27,19 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const hasItems = activeFloor.items.length > 0;
   const allLocked = hasItems && activeFloor.items.every((item) => item.locked === true);
 
+  // Doors/windows/cameras must stay on their walls and outdoor items must stay
+  // outside the building — organizing them into the room grid tears openings
+  // off their cutouts and drags garden items indoors as permanent collisions.
+  const organize = (strategy: AutoOrganizeStrategy) => {
+    const anchored: FurnitureItem[] = [];
+    const movable: FurnitureItem[] = [];
+    for (const item of activeFloor.items) {
+      if (isWallMounted(item.type) || item.category === 'outdoor') anchored.push(item);
+      else movable.push(item);
+    }
+    actions.replaceItems([...anchored, ...autoOrganize(movable, layout.width, layout.height, strategy)]);
+  };
+
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) props.onImport(file);
@@ -39,20 +54,11 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
       <CardContent className="space-y-3">
         <Section title="Arrange">
           <div className="grid grid-cols-3 gap-1">
-            <Button
-              onClick={() =>
-                actions.replaceItems(autoOrganize(activeFloor.items, layout.width, layout.height, 'shelf'))
-              }
-              disabled={!hasItems}
-              size="sm"
-              className="text-xs"
-            >
+            <Button onClick={() => organize('shelf')} disabled={!hasItems} size="sm" className="text-xs">
               🎯 Pack
             </Button>
             <Button
-              onClick={() =>
-                actions.replaceItems(autoOrganize(activeFloor.items, layout.width, layout.height, 'by-category'))
-              }
+              onClick={() => organize('by-category')}
               variant="outline"
               disabled={!hasItems}
               size="sm"
@@ -61,9 +67,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               🏷 By cat
             </Button>
             <Button
-              onClick={() =>
-                actions.replaceItems(autoOrganize(activeFloor.items, layout.width, layout.height, 'by-size'))
-              }
+              onClick={() => organize('by-size')}
               variant="outline"
               disabled={!hasItems}
               size="sm"
