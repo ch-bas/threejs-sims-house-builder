@@ -28,6 +28,9 @@ export function useLayoutPersistence({
   // stops a freshly opened share link (or a plain reload) from overwriting the
   // local save before the user has actually edited anything.
   const hydrationBaseRef = useRef<RoomLayout | null>(null);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const pendingRef = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -66,13 +69,31 @@ export function useLayoutPersistence({
       return;
     }
     setSaving(true);
+    pendingRef.current = true;
     const handle = window.setTimeout(() => {
+      pendingRef.current = false;
       saveLayout(layout);
       setLastSavedAt(Date.now());
       setSaving(false);
     }, debounceMs);
     return () => window.clearTimeout(handle);
   }, [layout, debounceMs]);
+
+  // Flush a still-debouncing save when the editor unmounts or the page goes
+  // away — without this, edits made in the last debounceMs are silently lost
+  // on tab close.
+  useEffect(() => {
+    const flush = () => {
+      if (!pendingRef.current) return;
+      pendingRef.current = false;
+      saveLayout(layoutRef.current);
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, []);
 
   return { lastSavedAt, saving };
 }
