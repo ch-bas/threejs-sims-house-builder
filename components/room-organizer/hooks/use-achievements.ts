@@ -13,14 +13,12 @@ const EMPTY_SET: ReadonlySet<string> = new Set();
 const EMPTY_ARRAY: readonly Achievement[] = [];
 const NOOP = () => {};
 
-export function useAchievements(layout: RoomLayout, enabled = false): UseAchievementsResult {
-  const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => enabled ? loadUnlocked() : new Set());
+export function useAchievements(layout: RoomLayout): UseAchievementsResult {
+  const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => loadUnlocked());
   const [pending, setPending] = useState<readonly Achievement[]>([]);
   const initialisedRef = useRef(false);
 
   useEffect(() => {
-    if (!enabled) return;
-
     const next: Achievement[] = [];
     let mutated = false;
     const newUnlocked = new Set(unlocked);
@@ -44,7 +42,7 @@ export function useAchievements(layout: RoomLayout, enabled = false): UseAchieve
       return;
     }
     setPending((current) => [...current, ...next]);
-  }, [layout, unlocked, enabled]);
+  }, [layout, unlocked]);
 
   // Mark initialised after the first paint so the very first user-driven
   // change still triggers a toast even on a fresh slate.
