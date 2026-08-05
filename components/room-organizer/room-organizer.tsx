@@ -902,6 +902,7 @@ export function RoomOrganizer(): JSX.Element {
       focusOn,
       rotateItemHandler,
       reseatCamera,
+      wallDraft,
     ]
   );
 
