@@ -88,12 +88,6 @@ function zoomCamera(
   controls.update();
 }
 
-function formatClock(hour: number): string {
-  const h = Math.floor(hour);
-  const m = Math.floor((hour - h) * 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
 const INITIAL_VIEW_SETTINGS: ViewSettings = {
   view2D: false,
   showMeasurements: true,

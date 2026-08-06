@@ -13,7 +13,7 @@ import {
 } from '../three/interior-walls';
 import { clearItemLabels, renderItemLabels } from '../three/item-labels';
 import { applyTimeOfDay } from '../three/lighting';
-import { clearMeasurement, measurementDistance, renderMeasurement } from '../three/measurement';
+import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildRoof, removeRoof } from '../three/roof';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, removeTagged } from '../three/room-builder';

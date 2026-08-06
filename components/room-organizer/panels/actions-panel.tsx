@@ -9,7 +9,6 @@ import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { downloadLayoutAsJson, downloadInventoryCsv } from '../lib/file-io';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
-import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
 import { surpriseLayout } from '../lib/surprise';
 import type { FurnitureItem } from '../lib/types';
 

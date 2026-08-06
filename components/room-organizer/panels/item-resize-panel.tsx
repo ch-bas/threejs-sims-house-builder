@@ -63,7 +63,7 @@ export interface ItemResizePanelProps {
 }
 
 export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
-  const { actions, recentColors, pushColor, layout, activeFloor } = useRoomEditor();
+  const { actions, recentColors, pushColor } = useRoomEditor();
   const { selectedItem } = useSelection();
   if (!selectedItem) return <></>;
   const item = selectedItem;

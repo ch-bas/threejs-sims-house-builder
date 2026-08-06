@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { alignSelection, distributeSelection } from '../lib/alignment';
@@ -29,7 +29,7 @@ import { ThemesPanel } from './themes-panel';
 import { TimeOfDayPanel } from './time-of-day-panel';
 import { WallsPanel } from './walls-panel';
 import type { AlignEdge, DistributeAxis } from '../lib/alignment';
-import type { CameraPreset, CatalogItem, RoomLayout } from '../lib/types';
+import type { CameraPreset, CatalogItem } from '../lib/types';
 
 export interface SidebarDrawerProps {
   collapsed: boolean;
