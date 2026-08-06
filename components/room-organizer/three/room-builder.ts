@@ -230,13 +230,32 @@ function addFoundation(
   scene.add(foundation);
 }
 
+// Data-URL floor plans are multi-MB and decoding them dominates a shell
+// rebuild. Cache the decoded image element (not the Texture — textures are
+// disposed along with their meshes) keyed on the URL; single entry, since a
+// building has one floor plan.
+let floorPlanImageCache: { url: string; image: HTMLImageElement } | null = null;
+
 function buildFloorPlanMaterial(
   THREE: ThreeModule,
   options: RoomBuilderOptions,
   imageUrl: string
 ): ThreeNS.MeshStandardMaterial {
-  const loader = new THREE.TextureLoader();
-  const texture = loader.load(imageUrl, (loaded) => {
+  const acquireTexture = (onLoad?: (texture: ThreeNS.Texture) => void): ThreeNS.Texture => {
+    if (floorPlanImageCache?.url === imageUrl) {
+      const texture = new THREE.Texture(floorPlanImageCache.image);
+      texture.needsUpdate = true;
+      onLoad?.(texture);
+      return texture;
+    }
+    const loader = new THREE.TextureLoader();
+    return loader.load(imageUrl, (loaded) => {
+      floorPlanImageCache = { url: imageUrl, image: loaded.image as HTMLImageElement };
+      onLoad?.(loaded);
+    });
+  };
+
+  const texture = acquireTexture((loaded) => {
     fitTextureToRoom(loaded, options.width, options.depth, options.floorPlanFitMode);
     options.onTextureLoaded?.();
   });
@@ -252,7 +271,7 @@ function buildFloorPlanMaterial(
   };
 
   if (options.floorPlan3DEffect) {
-    const displacement = loader.load(imageUrl);
+    const displacement = acquireTexture();
     displacement.wrapS = THREE.ClampToEdgeWrapping;
     displacement.wrapT = THREE.ClampToEdgeWrapping;
     params.displacementMap = displacement;

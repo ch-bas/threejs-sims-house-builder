@@ -1,8 +1,8 @@
-import { useEffect, type RefObject, type MutableRefObject } from 'react';
+import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
 import { render2DTopDown } from '../canvas-2d/render';
 import { hasCollisions } from '../lib/geometry';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
-import { removeAndDispose } from '../three/builder-utils';
+import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
 import { createFurnitureModel } from '../three/furniture-builders';
 import {
@@ -92,6 +92,62 @@ export function useSceneEffects({
   measurementPoints,
 }: UseSceneEffectsParams): void {
   const activeFloorY = activeFloorIndex * FLOOR_HEIGHT_METERS;
+
+  // Serialized signatures of exactly the item-derived inputs the structural
+  // effects consume. `layout.floors` gets a new identity on every item action,
+  // so keying the effects on it rebuilt walls, floors, procedural textures,
+  // and lights each time a chair moved; these keys only change when something
+  // the structure actually depends on changes.
+  const wallOpeningsKey = useMemo(
+    () =>
+      JSON.stringify(
+        layout.floors.map((floor) =>
+          floor.items
+            .filter((item) => item.type === 'door' || item.type === 'window' || item.type === 'stairs')
+            .map((item) => [
+              item.type,
+              item.position?.x,
+              item.position?.z,
+              item.width,
+              item.height,
+              item.depth,
+              item.rotation,
+            ])
+        )
+      ),
+    [layout.floors]
+  );
+
+  const shellFinishesKey = useMemo(
+    () =>
+      JSON.stringify(
+        layout.floors.map((floor) => [
+          floor.floorColor,
+          floor.floorPattern,
+          floor.wallPattern,
+          floor.wallColors,
+          floor.hiddenWalls,
+        ])
+      ),
+    [layout.floors]
+  );
+
+  const interiorWallsKey = useMemo(
+    () => JSON.stringify(layout.floors.map((floor) => floor.interiorWalls ?? [])),
+    [layout.floors]
+  );
+
+  const lampsKey = useMemo(
+    () =>
+      JSON.stringify(
+        layout.floors.map((floor) =>
+          floor.items
+            .filter((item) => (item.type === 'lamp' || item.type === 'floor-lamp') && item.position)
+            .map((item) => [item.position!.x, item.position!.z, item.height])
+        )
+      ),
+    [layout.floors]
+  );
 
   // Wall preview during draw mode
   useEffect(() => {
@@ -195,12 +251,17 @@ export function useSceneEffects({
     if (camera) {
       applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
     }
+    // The shell reads layout.floors/activeFloor but depends on them only
+    // through the finishes and openings keys — depending on their identity
+    // would rebuild walls, floor meshes, and procedural textures on every
+    // item edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
-    layout.width, layout.height, layout.floors,
+    layout.width, layout.height, shellFinishesKey, wallOpeningsKey,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, view.showAllFloors, view.wallDisplay,
-    activeFloor, activeFloorIndex,
+    activeFloorIndex,
   ]);
 
   // Cutaway on orbit
@@ -232,7 +293,7 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    removeTagged(scene, ROOM_OBJECT_TAGS.Furniture, ROOM_OBJECT_TAGS.Signal, ROOM_OBJECT_TAGS.CameraVision);
+    removeTagged(scene, ROOM_OBJECT_TAGS.Furniture);
 
     const floorsToRender = view.showAllFloors
       ? layout.floors.map((floor, index) => ({ floor, index }))
@@ -259,31 +320,92 @@ export function useSceneEffects({
           ghostifyGroup(group);
         }
 
-        if (isActive) {
-          const isSelected = selectedItemId === item.id || extraSelectedIds.has(item.id);
-          const isHighlighted = highlightedIds.has(item.id);
-          if (isSelected || isHighlighted) {
-            const geometry = new THREE.BoxGeometry(item.width, item.height, item.depth);
-            const edges = new THREE.EdgesGeometry(geometry);
-            const accent = isSelected
-              ? selectedItemId === item.id
-                ? collision
-                  ? 0xff6666
-                  : 0x00ff00
-                : 0x42a5f5
-              : 0xfacc15;
-            const outline = new THREE.LineSegments(
-              edges,
-              new THREE.LineBasicMaterial({ color: accent, linewidth: 2 })
-            );
-            outline.position.y = item.height / 2;
-            group.add(outline);
-          }
-        }
-
         scene.add(group);
       }
+    }
+  }, [
+    isReady, invalidate, threeModuleRef, sceneRef,
+    layout.floors, layout.width, layout.height,
+    activeFloor, activeFloorIndex, view.showAllFloors,
+  ]);
 
+  // Selection / highlight outlines. Kept out of the furniture effect above so
+  // a selection click only swaps the outline LineSegments instead of
+  // destroying and rebuilding every furniture mesh on the floor.
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+
+    for (const group of scene.children) {
+      if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
+      for (const child of [...group.children]) {
+        if (child.userData.type === 'selection-outline') {
+          group.remove(child);
+          disposeObject(child);
+        }
+      }
+    }
+
+    const outlineIds = new Set<string>([...extraSelectedIds, ...highlightedIds]);
+    if (selectedItemId) outlineIds.add(selectedItemId);
+    if (outlineIds.size === 0) return;
+
+    const itemsById = new Map(activeFloor.items.map((item) => [item.id, item]));
+    for (const group of scene.children) {
+      if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
+      if (group.userData.floorIndex !== activeFloorIndex) continue;
+      const id = group.userData.id as string;
+      if (!outlineIds.has(id)) continue;
+      const item = itemsById.get(id);
+      if (!item) continue;
+
+      const isSelected = selectedItemId === id || extraSelectedIds.has(id);
+      const collision = hasCollisions(item, activeFloor.items, layout.width, layout.height);
+      const accent = isSelected
+        ? selectedItemId === id
+          ? collision
+            ? 0xff6666
+            : 0x00ff00
+          : 0x42a5f5
+        : 0xfacc15;
+      const geometry = new THREE.BoxGeometry(item.width, item.height, item.depth);
+      const edges = new THREE.EdgesGeometry(geometry);
+      geometry.dispose();
+      const outline = new THREE.LineSegments(
+        edges,
+        new THREE.LineBasicMaterial({ color: accent, linewidth: 2 })
+      );
+      outline.position.y = item.height / 2;
+      outline.userData.type = 'selection-outline';
+      group.add(outline);
+    }
+  }, [
+    isReady, invalidate, threeModuleRef, sceneRef,
+    activeFloor, activeFloorIndex, layout.width, layout.height,
+    selectedItemId, extraSelectedIds, highlightedIds,
+  ]);
+
+  // Wi-Fi rings + camera vision cones. Independently tagged overlays, so
+  // toggling them (or editing items) never touches the furniture meshes.
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+
+    removeTagged(scene, ROOM_OBJECT_TAGS.Signal, ROOM_OBJECT_TAGS.CameraVision);
+    if (!view.showWiFiSignals && !view.showCameraVision) return;
+
+    const floorsToRender = view.showAllFloors
+      ? layout.floors.map((floor, index) => ({ floor, index }))
+      : [{ floor: activeFloor, index: activeFloorIndex }];
+
+    for (const { floor, index } of floorsToRender) {
+      const floorY = index * FLOOR_HEIGHT_METERS;
       if (view.showWiFiSignals) {
         addSignalOverlays(THREE, scene, floor.items, floorY);
       }
@@ -293,9 +415,7 @@ export function useSceneEffects({
     }
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
-    layout.floors, layout.width, layout.height,
-    activeFloor, activeFloorIndex,
-    selectedItemId, extraSelectedIds, highlightedIds,
+    layout.floors, activeFloor, activeFloorIndex,
     view.showWiFiSignals, view.showCameraVision, view.showAllFloors,
   ]);
 
@@ -318,7 +438,10 @@ export function useSceneEffects({
     );
 
     applyTimeOfDay(THREE, scene, view.timeOfDay, lampPositions);
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.timeOfDay, layout.floors]);
+    // layout.floors is read for lamp positions only; lampsKey covers exactly
+    // that, so a non-lamp item edit doesn't rebuild the sky and lights.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.timeOfDay, lampsKey]);
 
   // Outdoor
   useEffect(() => {
@@ -354,7 +477,11 @@ export function useSceneEffects({
         { openingCandidates: floor.items }
       );
     }
-  }, [isReady, invalidate, threeModuleRef, sceneRef, layout.floors, activeFloor, activeFloorIndex, view.showAllFloors]);
+    // layout.floors/activeFloor are read for the wall segments and the
+    // door/window opening candidates only; the two keys cover exactly that,
+    // so a furniture edit doesn't re-extrude every interior wall.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors]);
 
   // Measurement markers
   useEffect(() => {
