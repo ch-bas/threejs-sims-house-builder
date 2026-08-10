@@ -5,22 +5,9 @@ import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
+import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
+import { SliderRow } from './slider-row';
 import type { SofaShape } from '../lib/types';
-
-const COLOR_SWATCHES = [
-  '#8B4513',
-  '#4A5568',
-  '#E8E8E8',
-  '#2C3E50',
-  '#C62828',
-  '#1976D2',
-  '#388E3C',
-  '#FFB300',
-  '#6A1B9A',
-  '#5D4037',
-  '#0D47A1',
-  '#FAFAFA',
-];
 
 type ResizableDimension = 'width' | 'depth' | 'height';
 
@@ -246,11 +233,17 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {DIMENSIONS.map((dimension) => (
-            <DimensionRow
+            <SliderRow
               key={dimension.key}
-              dimension={dimension}
+              label={dimension.label}
+              min={dimension.min}
+              max={dimension.max}
+              step={0.1}
               value={item[dimension.key]}
+              format={(v) => `${v.toFixed(2)} m`}
               onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
+              labelWidth={14}
+              uppercaseLabel={false}
             />
           ))}
         </div>
@@ -263,18 +256,22 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         )}
 
         {(item.isWiFiAccessPoint || item.isCCTV) && (
-          <SignalRangeRow
+          <SliderRow
             label={item.isWiFiAccessPoint ? 'Signal' : 'Coverage'}
             value={item.signalRange ?? (item.isWiFiAccessPoint ? 10 : 8)}
             min={2}
             max={item.isWiFiAccessPoint ? 20 : 15}
+            step={0.5}
+            format={(v) => `${v.toFixed(1)} m`}
             onChange={(value) => actions.setSignalRange(item.id, value)}
           />
         )}
 
-        <CompactColorPicker
+        <ColorSwatchPicker
+          variant="glass"
           value={item.color}
-          recent={recentColors}
+          swatches={COLOR_SWATCHES.slice(0, 8)}
+          recent={recentColors.slice(0, 6)}
           onChange={(color) => actions.setColor(item.id, color)}
           onCommit={(color) => pushColor(color)}
         />
@@ -350,55 +347,6 @@ function ActionTile({ icon, label, onClick, active }: ActionTileProps): JSX.Elem
   );
 }
 
-interface DimensionRowProps {
-  dimension: DimensionConfig;
-  value: number;
-  onChange(value: number): void;
-}
-
-function DimensionRow({ dimension, value, onChange }: DimensionRowProps): JSX.Element {
-  const id = useId();
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <label
-        htmlFor={id}
-        style={{
-          width: 14,
-          fontFamily: 'var(--pc-font-display)',
-          fontWeight: 700,
-          fontSize: 10,
-          color: 'var(--pc-paper-soft)',
-        }}
-      >
-        {dimension.label}
-      </label>
-      <input
-        id={id}
-        type="range"
-        min={dimension.min}
-        max={dimension.max}
-        step="0.1"
-        value={value}
-        onChange={(event) => onChange(parseFloat(event.target.value))}
-        style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)' }}
-      />
-      <span
-        style={{
-          width: 48,
-          textAlign: 'right',
-          fontFamily: 'var(--pc-font-display)',
-          fontWeight: 600,
-          fontSize: 10,
-          fontVariantNumeric: 'tabular-nums',
-          color: 'var(--pc-paper)',
-        }}
-      >
-        {value.toFixed(2)} m
-      </span>
-    </div>
-  );
-}
-
 interface SofaShapeSegmentedProps {
   value: SofaShape;
   onChange(value: SofaShape): void;
@@ -450,59 +398,6 @@ function SofaShapeSegmented({ value, onChange }: SofaShapeSegmentedProps): JSX.E
   );
 }
 
-interface SignalRangeRowProps {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  onChange(value: number): void;
-}
-
-function SignalRangeRow({ label, value, min, max, onChange }: SignalRangeRowProps): JSX.Element {
-  const id = useId();
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <label
-        htmlFor={id}
-        style={{
-          width: 48,
-          fontFamily: 'var(--pc-font-display)',
-          fontWeight: 600,
-          fontSize: 10,
-          letterSpacing: 'var(--pc-tr-caps)',
-          textTransform: 'uppercase',
-          color: 'var(--pc-paper-soft)',
-        }}
-      >
-        {label}
-      </label>
-      <input
-        id={id}
-        type="range"
-        min={min}
-        max={max}
-        step="0.5"
-        value={value}
-        onChange={(event) => onChange(parseFloat(event.target.value))}
-        style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)' }}
-      />
-      <span
-        style={{
-          width: 48,
-          textAlign: 'right',
-          fontFamily: 'var(--pc-font-display)',
-          fontWeight: 600,
-          fontSize: 10,
-          fontVariantNumeric: 'tabular-nums',
-          color: 'var(--pc-paper)',
-        }}
-      >
-        {value.toFixed(1)} m
-      </span>
-    </div>
-  );
-}
-
 interface CameraModelCardProps {
   modelId: string;
   fov: number;
@@ -542,7 +437,7 @@ function CameraModelCard({ modelId, fov, range, onPickModel, onSetFov, onSetRang
         </span>
       </div>
       <CctvModelRow value={modelId} onChange={onPickModel} />
-      <VisionSliderRow
+      <SliderRow
         label="FOV"
         value={fov}
         min={20}
@@ -551,7 +446,7 @@ function CameraModelCard({ modelId, fov, range, onPickModel, onSetFov, onSetRang
         format={(v) => `${Math.round(v)}°`}
         onChange={onSetFov}
       />
-      <VisionSliderRow
+      <SliderRow
         label="Range"
         value={range}
         min={2}
@@ -636,158 +531,3 @@ function CctvModelRow({ value, onChange }: CctvModelRowProps): JSX.Element {
   );
 }
 
-interface VisionSliderRowProps {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  format(value: number): string;
-  onChange(value: number): void;
-}
-
-function VisionSliderRow({ label, value, min, max, step, format, onChange }: VisionSliderRowProps): JSX.Element {
-  const id = useId();
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <label
-        htmlFor={id}
-        style={{
-          width: 48,
-          fontFamily: 'var(--pc-font-display)',
-          fontWeight: 600,
-          fontSize: 10,
-          letterSpacing: 'var(--pc-tr-caps)',
-          textTransform: 'uppercase',
-          color: 'var(--pc-paper-soft)',
-        }}
-      >
-        {label}
-      </label>
-      <input
-        id={id}
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(parseFloat(event.target.value))}
-        style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)' }}
-      />
-      <span
-        style={{
-          width: 48,
-          textAlign: 'right',
-          fontFamily: 'var(--pc-font-display)',
-          fontWeight: 600,
-          fontSize: 10,
-          fontVariantNumeric: 'tabular-nums',
-          color: 'var(--pc-paper)',
-        }}
-      >
-        {format(value)}
-      </span>
-    </div>
-  );
-}
-
-interface CompactColorPickerProps {
-  value: string;
-  recent: readonly string[];
-  onChange(color: string): void;
-  onCommit(color: string): void;
-}
-
-function CompactColorPicker({
-  value,
-  recent,
-  onChange,
-  onCommit,
-}: CompactColorPickerProps): JSX.Element {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span
-          style={{
-            width: 48,
-            fontFamily: 'var(--pc-font-display)',
-            fontWeight: 600,
-            fontSize: 10,
-            letterSpacing: 'var(--pc-tr-caps)',
-            textTransform: 'uppercase',
-            color: 'var(--pc-paper-soft)',
-          }}
-        >
-          Colour
-        </span>
-        <input
-          type="color"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onBlur={(event) => onCommit(event.target.value)}
-          style={{
-            width: 30,
-            height: 26,
-            borderRadius: 6,
-            border: '1px solid var(--pc-glass-stroke)',
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-        />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1 }}>
-          {COLOR_SWATCHES.slice(0, 8).map((swatch) => {
-            const selected = value.toLowerCase() === swatch.toLowerCase();
-            return (
-              <button
-                key={swatch}
-                type="button"
-                aria-label={`Use color ${swatch}`}
-                onClick={() => onChange(swatch)}
-                style={{
-                  height: 16,
-                  width: 16,
-                  borderRadius: 999,
-                  border: '1px solid var(--pc-glass-stroke)',
-                  backgroundColor: swatch,
-                  cursor: 'pointer',
-                  boxShadow: selected ? 'var(--pc-halo-cyan-soft)' : 'none',
-                  outline: selected ? '1px solid var(--pc-cyan-glow)' : 'none',
-                  padding: 0,
-                }}
-              />
-            );
-          })}
-        </div>
-      </div>
-      {recent.length > 0 && (
-        <div
-          style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 56 }}
-        >
-          {recent.slice(0, 6).map((swatch) => {
-            const selected = value.toLowerCase() === swatch.toLowerCase();
-            return (
-              <button
-                key={swatch}
-                type="button"
-                aria-label={`Reuse colour ${swatch}`}
-                onClick={() => onChange(swatch)}
-                style={{
-                  height: 14,
-                  width: 14,
-                  borderRadius: 4,
-                  border: '1px solid var(--pc-glass-stroke)',
-                  backgroundColor: swatch,
-                  cursor: 'pointer',
-                  boxShadow: selected ? 'var(--pc-halo-cyan-soft)' : 'none',
-                  outline: selected ? '1px solid var(--pc-cyan-glow)' : 'none',
-                  padding: 0,
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
