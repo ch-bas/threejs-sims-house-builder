@@ -60,6 +60,22 @@ export function mesh(THREE: ThreeModule, geometry: ThreeNS.BufferGeometry, mater
   return m;
 }
 
+/**
+ * The standard builder material: `color` plus the collision-tint plumbing
+ * (`transparent: hasCollision, opacity`) that nearly every part shares.
+ * Remaining MeshStandardMaterial params (roughness, metalness, emissive, …)
+ * go in `extra`.
+ */
+export function material(
+  THREE: ThreeModule,
+  color: ThreeNS.ColorRepresentation,
+  hasCollision: boolean,
+  opacity: number,
+  extra: Omit<ThreeNS.MeshStandardMaterialParameters, 'color' | 'transparent' | 'opacity'> = {}
+): ThreeNS.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color, transparent: hasCollision, opacity, ...extra });
+}
+
 export function cornerPositions(x: number, y: number, z: number): ReadonlyArray<readonly [number, number, number]> {
   return [
     [x, y, z],
@@ -117,13 +133,7 @@ export function buildOrganicBlob(
   geom.computeVertexNormals();
   const m = new THREE.Mesh(
     geom,
-    new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.95,
-      flatShading: true,
-      transparent: hasCollision,
-      opacity,
-    })
+    material(THREE, color, hasCollision, opacity, { roughness: 0.95, flatShading: true })
   );
   m.castShadow = true;
   m.receiveShadow = true;
@@ -135,7 +145,7 @@ export function buildFallback({ THREE, item, hasCollision, baseColor, opacity }:
   const block = mesh(
     THREE,
     new THREE.BoxGeometry(item.width, item.height, item.depth),
-    new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, metalness: 0.3, transparent: hasCollision, opacity })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7, metalness: 0.3 })
   );
   block.position.y = item.height / 2;
   group.add(block);

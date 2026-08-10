@@ -1,6 +1,6 @@
 import { type CctvModel, getCctvModel } from '../../lib/cctv-models';
 import { CAMERA_BRACKET_ARM } from '../../lib/constants';
-import { type BuilderContext, mesh } from '../builder-utils';
+import { type BuilderContext, material, mesh } from '../builder-utils';
 import { CAMERA_MOUNT_HEIGHT } from '../camera-vision';
 import type * as ThreeNS from 'three';
 
@@ -10,7 +10,7 @@ export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: Build
   const base = mesh(
     THREE,
     new THREE.BoxGeometry(item.width, item.height * 0.6, item.depth),
-    new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.6, metalness: 0.2, transparent: hasCollision, opacity })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 0.2 })
   );
   base.position.y = item.height * 0.3;
   group.add(base);
@@ -18,13 +18,7 @@ export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: Build
   const screen = mesh(
     THREE,
     new THREE.BoxGeometry(item.width * 0.7, item.height * 0.8, item.depth * 0.1),
-    new THREE.MeshStandardMaterial({
-      color: hasCollision ? 0xff0000 : 0x1a1a1a,
-      roughness: 0.1,
-      metalness: 0.8,
-      transparent: hasCollision,
-      opacity,
-    })
+    material(THREE, hasCollision ? 0xff0000 : 0x1a1a1a, hasCollision, opacity, { roughness: 0.1, metalness: 0.8 })
   );
   screen.position.set(0, item.height * 0.9, -item.depth * 0.35);
   group.add(screen);
@@ -32,7 +26,7 @@ export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: Build
   const bezel = mesh(
     THREE,
     new THREE.BoxGeometry(item.width * 0.75, item.height * 0.85, item.depth * 0.08),
-    new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.6, transparent: hasCollision, opacity })
+    material(THREE, 0x333333, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 })
   );
   bezel.position.set(0, item.height * 0.9, -item.depth * 0.36);
   group.add(bezel);
@@ -42,8 +36,8 @@ export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: Build
 
 export function buildComputer({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.5, metalness: 0.4, transparent: hasCollision, opacity });
-  const screenMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.1, metalness: 0.9, emissive: 0x0d47a1, emissiveIntensity: 0.4, transparent: hasCollision, opacity });
+  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 0.4 });
+  const screenMat = material(THREE, 0x1a1a1a, hasCollision, opacity, { roughness: 0.1, metalness: 0.9, emissive: 0x0d47a1, emissiveIntensity: 0.4 });
 
   const tower = mesh(THREE, new THREE.BoxGeometry(item.width * 0.4, item.height * 0.8, item.depth * 0.7), bodyMat);
   tower.position.set(-item.width * 0.25, item.height * 0.4, 0);
@@ -65,18 +59,12 @@ export function buildWiFi({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const body = mesh(
     THREE,
     new THREE.BoxGeometry(item.width, item.height, item.depth),
-    new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, metalness: 0.3, transparent: hasCollision, opacity })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.3 })
   );
   body.position.y = item.height / 2;
   group.add(body);
 
-  const antennaMat = new THREE.MeshStandardMaterial({
-    color: 0x333333,
-    roughness: 0.5,
-    metalness: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
+  const antennaMat = material(THREE, 0x333333, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 });
   const antennaGeo = new THREE.CylinderGeometry(0.01, 0.01, item.height * 3, 8);
   for (const dx of [-item.width * 0.3, item.width * 0.3]) {
     const antenna = mesh(THREE, antennaGeo, antennaMat);
@@ -86,13 +74,7 @@ export function buildWiFi({ THREE, item, hasCollision, baseColor, opacity }: Bui
   }
 
   const ledGeo = new THREE.SphereGeometry(0.015, 8, 8);
-  const ledMat = new THREE.MeshStandardMaterial({
-    color: 0x00ff00,
-    emissive: 0x00ff00,
-    emissiveIntensity: 0.8,
-    transparent: hasCollision,
-    opacity,
-  });
+  const ledMat = material(THREE, 0x00ff00, hasCollision, opacity, { emissive: 0x00ff00, emissiveIntensity: 0.8 });
   for (let i = 0; i < 3; i++) {
     const led = mesh(THREE, ledGeo, ledMat);
     led.position.set(-item.width * 0.2 + i * item.width * 0.2, item.height * 0.6, item.depth * 0.51);
@@ -108,18 +90,12 @@ export function buildRouter({ THREE, item, hasCollision, baseColor, opacity }: B
   const body = mesh(
     THREE,
     new THREE.BoxGeometry(item.width, item.height, item.depth),
-    new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, metalness: 0.2, transparent: hasCollision, opacity })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.2 })
   );
   body.position.y = item.height / 2;
   group.add(body);
 
-  const antennaMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1a1a,
-    roughness: 0.6,
-    metalness: 0.5,
-    transparent: hasCollision,
-    opacity,
-  });
+  const antennaMat = material(THREE, 0x1a1a1a, hasCollision, opacity, { roughness: 0.6, metalness: 0.5 });
   const antennaGeo = new THREE.CylinderGeometry(0.008, 0.008, item.height * 4, 8);
   const antennaXs = [-item.width * 0.35, -item.width * 0.15, item.width * 0.15, item.width * 0.35];
   antennaXs.forEach((x, index) => {
@@ -129,13 +105,7 @@ export function buildRouter({ THREE, item, hasCollision, baseColor, opacity }: B
     group.add(antenna);
   });
 
-  const ledMat = new THREE.MeshStandardMaterial({
-    color: 0x00ff00,
-    emissive: 0x00ff00,
-    emissiveIntensity: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
+  const ledMat = material(THREE, 0x00ff00, hasCollision, opacity, { emissive: 0x00ff00, emissiveIntensity: 0.6 });
   const ledGeo = new THREE.SphereGeometry(0.012, 8, 8);
   for (let i = 0; i < 5; i++) {
     const led = mesh(THREE, ledGeo, ledMat);
@@ -143,13 +113,7 @@ export function buildRouter({ THREE, item, hasCollision, baseColor, opacity }: B
     group.add(led);
   }
 
-  const portMat = new THREE.MeshStandardMaterial({
-    color: 0xffd700,
-    roughness: 0.3,
-    metalness: 0.7,
-    transparent: hasCollision,
-    opacity,
-  });
+  const portMat = material(THREE, 0xffd700, hasCollision, opacity, { roughness: 0.3, metalness: 0.7 });
   const portGeo = new THREE.BoxGeometry(0.02, 0.015, 0.01);
   for (let i = 0; i < 4; i++) {
     const port = mesh(THREE, portGeo, portMat);
@@ -166,7 +130,7 @@ export function buildCCTV({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const base = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.3, item.width * 0.4, item.height * 0.2, 16),
-    new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.5, metalness: 0.4, transparent: hasCollision, opacity })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 0.4 })
   );
   base.position.y = item.height * 0.1;
   group.add(base);
@@ -174,7 +138,7 @@ export function buildCCTV({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const body = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.5, item.width * 0.5, item.height * 0.6, 16),
-    new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, metalness: 0.5, transparent: hasCollision, opacity })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.5 })
   );
   body.position.y = item.height * 0.55;
   body.rotation.z = Math.PI / 2;
@@ -183,7 +147,7 @@ export function buildCCTV({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const lens = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.3, item.width * 0.35, item.height * 0.15, 16),
-    new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.1, metalness: 0.9, transparent: hasCollision, opacity })
+    material(THREE, 0x1a1a1a, hasCollision, opacity, { roughness: 0.1, metalness: 0.9 })
   );
   lens.position.set(item.width * 0.3, item.height * 0.55, 0);
   lens.rotation.z = Math.PI / 2;
@@ -192,18 +156,12 @@ export function buildCCTV({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const led = mesh(
     THREE,
     new THREE.SphereGeometry(0.01, 8, 8),
-    new THREE.MeshStandardMaterial({
-      color: 0xff0000,
-      emissive: 0xff0000,
-      emissiveIntensity: 0.8,
-      transparent: hasCollision,
-      opacity,
-    })
+    material(THREE, 0xff0000, hasCollision, opacity, { emissive: 0xff0000, emissiveIntensity: 0.8 })
   );
   led.position.set(-item.width * 0.3, item.height * 0.65, 0);
   group.add(led);
 
-  const irMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8, transparent: hasCollision, opacity });
+  const irMat = material(THREE, 0x1a1a1a, hasCollision, opacity, { roughness: 0.8 });
   const irGeo = new THREE.SphereGeometry(0.008, 8, 8);
   for (const offset of [-0.015, 0, 0.015]) {
     const ir = mesh(THREE, irGeo, irMat);
@@ -227,8 +185,8 @@ export function buildCCTV({ THREE, item, hasCollision, baseColor, opacity }: Bui
  */
 export function buildSecurityCamera({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.35, metalness: 0.5, transparent: hasCollision, opacity });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0x0e1116, roughness: 0.3, metalness: 0.65, transparent: hasCollision, opacity });
+  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.35, metalness: 0.5 });
+  const trimMat = material(THREE, 0x0e1116, hasCollision, opacity, { roughness: 0.3, metalness: 0.65 });
   const glassMat = new THREE.MeshStandardMaterial({
     color: 0x05080d,
     roughness: 0.05,
@@ -236,7 +194,7 @@ export function buildSecurityCamera({ THREE, item, hasCollision, baseColor, opac
     transparent: true,
     opacity: hasCollision ? 0.5 : 0.45,
   });
-  const ledMat = new THREE.MeshStandardMaterial({ color: 0xff3b30, emissive: 0xff3b30, emissiveIntensity: 0.9, transparent: hasCollision, opacity });
+  const ledMat = material(THREE, 0xff3b30, hasCollision, opacity, { emissive: 0xff3b30, emissiveIntensity: 0.9 });
 
   const mountY = CAMERA_MOUNT_HEIGHT;
   const model = getCctvModel(item.cctvModelId);

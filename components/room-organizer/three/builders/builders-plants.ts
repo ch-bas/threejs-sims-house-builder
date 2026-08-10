@@ -1,4 +1,4 @@
-import { type BuilderContext, mesh, lightenHex, buildOrganicBlob } from '../builder-utils';
+import { type BuilderContext, material, mesh, lightenHex, buildOrganicBlob } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildPlant({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
@@ -7,17 +7,12 @@ export function buildPlant({ THREE, item, hasCollision, baseColor, opacity }: Bu
   const pot = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.6, item.width * 0.8, item.height * 0.3, 16),
-    new THREE.MeshStandardMaterial({ color: 0xa0522d, roughness: 0.8, transparent: hasCollision, opacity })
+    material(THREE, 0xa0522d, hasCollision, opacity, { roughness: 0.8 })
   );
   pot.position.y = item.height * 0.15;
   group.add(pot);
 
-  const foliageMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.9,
-    transparent: hasCollision,
-    opacity,
-  });
+  const foliageMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.9 });
   const foliage = mesh(THREE, new THREE.SphereGeometry(item.width * 0.8, 12, 12), foliageMat);
   foliage.position.y = item.height * 0.6;
   group.add(foliage);
@@ -39,8 +34,8 @@ export function buildPlant({ THREE, item, hasCollision, baseColor, opacity }: Bu
 
 export function buildFlowerpot({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const potMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.6, transparent: hasCollision, opacity });
-  const flowerMat = new THREE.MeshStandardMaterial({ color: 0xff80ab, roughness: 0.8, transparent: hasCollision, opacity });
+  const potMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
+  const flowerMat = material(THREE, 0xff80ab, hasCollision, opacity, { roughness: 0.8 });
 
   const pot = mesh(THREE, new THREE.CylinderGeometry(item.width * 0.5, item.width * 0.4, item.height * 0.6, 12), potMat);
   pot.position.y = item.height * 0.3;
@@ -56,12 +51,7 @@ export function buildFlowerpot({ THREE, item, hasCollision, baseColor, opacity }
 
 export function buildTree({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const trunkMat = new THREE.MeshStandardMaterial({
-    color: 0x5d4037,
-    roughness: 0.95,
-    transparent: hasCollision,
-    opacity,
-  });
+  const trunkMat = material(THREE, 0x5d4037, hasCollision, opacity, { roughness: 0.95 });
 
   // Tapered trunk with a small flare at the base.
   const trunkH = item.height * 0.4;
@@ -130,12 +120,7 @@ export function buildTree({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildPineTree({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const trunkMat = new THREE.MeshStandardMaterial({
-    color: 0x4e342e,
-    roughness: 0.9,
-    transparent: hasCollision,
-    opacity,
-  });
+  const trunkMat = material(THREE, 0x4e342e, hasCollision, opacity, { roughness: 0.9 });
 
   // Tapered trunk peeking out from the bottom of the foliage.
   const trunkH = item.height * 0.22;
@@ -159,13 +144,7 @@ export function buildPineTree({ THREE, item, hasCollision, baseColor, opacity }:
     { y: 0.86, r: 0.16, h: 0.18, alt: false },
   ];
   for (const t of tiers) {
-    const mat = new THREE.MeshStandardMaterial({
-      color: t.alt ? altHex : (baseColor as ThreeNS.ColorRepresentation),
-      roughness: 0.95,
-      flatShading: true,
-      transparent: hasCollision,
-      opacity,
-    });
+    const mat = material(THREE, t.alt ? altHex : (baseColor as ThreeNS.ColorRepresentation), hasCollision, opacity, { roughness: 0.95, flatShading: true });
     const cone = mesh(
       THREE,
       new THREE.ConeGeometry(item.width * t.r, item.height * t.h, 16),
@@ -205,7 +184,7 @@ export function buildBush({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildHedge({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const leafMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.9, transparent: hasCollision, opacity });
+  const leafMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.9 });
   const body = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), leafMat);
   body.position.y = item.height / 2;
   group.add(body);
@@ -222,8 +201,8 @@ export function buildHedge({ THREE, item, hasCollision, baseColor, opacity }: Bu
 
 export function buildFlowerBed({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const soilMat = new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.95, transparent: hasCollision, opacity });
-  const rimMat = new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.7, transparent: hasCollision, opacity });
+  const soilMat = material(THREE, 0x5d4037, hasCollision, opacity, { roughness: 0.95 });
+  const rimMat = material(THREE, 0x8d6e63, hasCollision, opacity, { roughness: 0.7 });
   const flowerColors = [baseColor, 0xffeb3b, 0xfff59d, 0xba68c8, 0xf06292];
 
   const rim = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.5, item.depth), rimMat);
@@ -244,7 +223,7 @@ export function buildFlowerBed({ THREE, item, hasCollision, baseColor, opacity }
       const px = ((c + 0.5) / cols - 0.5) * item.width * 0.85;
       const pz = ((r + 0.5) / rows - 0.5) * item.depth * 0.7;
       const color = flowerColors[(r * cols + c) % flowerColors.length]!;
-      const headMat = new THREE.MeshStandardMaterial({ color, roughness: 0.7, transparent: hasCollision, opacity });
+      const headMat = material(THREE, color, hasCollision, opacity, { roughness: 0.7 });
       const head = mesh(THREE, new THREE.SphereGeometry(0.07, 8, 8), headMat);
       head.position.set(px, item.height * 0.78, pz);
       group.add(head);
@@ -263,9 +242,9 @@ export function buildSingleFlower({
   petals,
 }: BuilderContext & { headRadius: number; petals: number }): ThreeNS.Group {
   const group = new THREE.Group();
-  const stemMat = new THREE.MeshStandardMaterial({ color: 0x33691e, roughness: 0.9, transparent: hasCollision, opacity });
-  const petalMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
-  const centreMat = new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.9, transparent: hasCollision, opacity });
+  const stemMat = material(THREE, 0x33691e, hasCollision, opacity, { roughness: 0.9 });
+  const petalMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const centreMat = material(THREE, 0x6d4c41, hasCollision, opacity, { roughness: 0.9 });
 
   const stem = mesh(THREE, new THREE.CylinderGeometry(0.015, 0.02, item.height * 0.85, 6), stemMat);
   stem.position.y = item.height * 0.425;
@@ -292,8 +271,8 @@ export function buildSingleFlower({
 export function buildTulips(ctx: BuilderContext): ThreeNS.Group {
   const { THREE, item, hasCollision, opacity } = ctx;
   const group = new THREE.Group();
-  const stemMat = new THREE.MeshStandardMaterial({ color: 0x33691e, roughness: 0.9, transparent: hasCollision, opacity });
-  const petalMat = new THREE.MeshStandardMaterial({ color: ctx.baseColor, roughness: 0.7, transparent: hasCollision, opacity });
+  const stemMat = material(THREE, 0x33691e, hasCollision, opacity, { roughness: 0.9 });
+  const petalMat = material(THREE, ctx.baseColor, hasCollision, opacity, { roughness: 0.7 });
 
   const positions: ReadonlyArray<readonly [number, number]> = [
     [-0.15, -0.1],
@@ -319,8 +298,8 @@ export function buildSunflower(ctx: BuilderContext): ThreeNS.Group {
 
 export function buildRoseBush({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.9, transparent: hasCollision, opacity });
-  const roseMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
+  const leafMat = material(THREE, 0x2e7d32, hasCollision, opacity, { roughness: 0.9 });
+  const roseMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
 
   const body = mesh(THREE, new THREE.SphereGeometry(item.width * 0.45, 10, 10), leafMat);
   body.position.y = item.height * 0.55;

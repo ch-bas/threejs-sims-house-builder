@@ -1,15 +1,9 @@
-import { type BuilderContext, mesh, cornerPositions } from '../builder-utils';
+import { type BuilderContext, material, mesh, cornerPositions } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildTableOrDesk({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const woodMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.6,
-    metalness: 0.1,
-    transparent: hasCollision,
-    opacity,
-  });
+  const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 0.1 });
 
   const top = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.1, item.depth), woodMat);
   top.position.y = item.height * 0.95;
@@ -34,13 +28,7 @@ export function buildTableOrDesk({ THREE, item, hasCollision, baseColor, opacity
     const handle = mesh(
       THREE,
       new THREE.CylinderGeometry(0.02, 0.02, item.width * 0.1, 8),
-      new THREE.MeshStandardMaterial({
-        color: 0x444444,
-        metalness: 0.8,
-        roughness: 0.2,
-        transparent: hasCollision,
-        opacity,
-      })
+      material(THREE, 0x444444, hasCollision, opacity, { metalness: 0.8, roughness: 0.2 })
     );
     handle.position.set(item.width * 0.25, item.height * 0.7, item.depth * 0.42);
     handle.rotation.z = Math.PI / 2;

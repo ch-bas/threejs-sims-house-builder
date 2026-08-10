@@ -1,10 +1,10 @@
-import { type BuilderContext, mesh } from '../builder-utils';
+import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildFridge({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.35, metalness: 0.6, transparent: hasCollision, opacity });
-  const accentMat = new THREE.MeshStandardMaterial({ color: 0x424242, metalness: 0.8, roughness: 0.3, transparent: hasCollision, opacity });
+  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.35, metalness: 0.6 });
+  const accentMat = material(THREE, 0x424242, hasCollision, opacity, { metalness: 0.8, roughness: 0.3 });
 
   const body = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), bodyMat);
   body.position.y = item.height / 2;
@@ -26,9 +26,9 @@ export function buildFridge({ THREE, item, hasCollision, baseColor, opacity }: B
 
 export function buildStove({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.5, metalness: 0.5, transparent: hasCollision, opacity });
-  const burnerMat = new THREE.MeshStandardMaterial({ color: 0x212121, roughness: 0.3, metalness: 0.7, transparent: hasCollision, opacity });
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0x616161, roughness: 0.2, metalness: 0.8, transparent: hasCollision, opacity });
+  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 0.5 });
+  const burnerMat = material(THREE, 0x212121, hasCollision, opacity, { roughness: 0.3, metalness: 0.7 });
+  const doorMat = material(THREE, 0x616161, hasCollision, opacity, { roughness: 0.2, metalness: 0.8 });
 
   const body = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), bodyMat);
   body.position.y = item.height / 2;
@@ -55,8 +55,8 @@ export function buildStove({ THREE, item, hasCollision, baseColor, opacity }: Bu
 
 export function buildSink({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const baseMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.5, transparent: hasCollision, opacity });
-  const metalMat = new THREE.MeshStandardMaterial({ color: 0xb0bec5, metalness: 0.9, roughness: 0.15, transparent: hasCollision, opacity });
+  const baseMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5 });
+  const metalMat = material(THREE, 0xb0bec5, hasCollision, opacity, { metalness: 0.9, roughness: 0.15 });
 
   const counter = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.95, item.depth), baseMat);
   counter.position.y = item.height * 0.475;
@@ -66,7 +66,7 @@ export function buildSink({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const basin = mesh(
     THREE,
     new THREE.BoxGeometry(item.width * 0.7, item.height * 0.1, item.depth * 0.65),
-    new THREE.MeshStandardMaterial({ color: 0x212121, roughness: 0.4, transparent: hasCollision, opacity })
+    material(THREE, 0x212121, hasCollision, opacity, { roughness: 0.4 })
   );
   basin.position.set(0, item.height * 0.99, 0);
   group.add(basin);
@@ -85,8 +85,8 @@ export function buildSink({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildCounter({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const baseMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.7, transparent: hasCollision, opacity });
-  const topMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, metalness: 0.1, transparent: hasCollision, opacity });
+  const baseMat = material(THREE, 0xf5f5f5, hasCollision, opacity, { roughness: 0.7 });
+  const topMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.1 });
 
   const base = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.92, item.depth), baseMat);
   base.position.y = item.height * 0.46;

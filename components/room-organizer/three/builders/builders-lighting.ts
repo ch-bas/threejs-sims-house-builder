@@ -1,4 +1,4 @@
-import { type BuilderContext, mesh } from '../builder-utils';
+import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
@@ -7,13 +7,7 @@ export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const base = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.8, item.width, item.height * 0.1, 16),
-    new THREE.MeshStandardMaterial({
-      color: 0x444444,
-      roughness: 0.5,
-      metalness: 0.6,
-      transparent: hasCollision,
-      opacity,
-    })
+    material(THREE, 0x444444, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 })
   );
   base.position.y = item.height * 0.05;
   group.add(base);
@@ -21,13 +15,7 @@ export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const stand = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.1, item.width * 0.1, item.height * 0.7, 12),
-    new THREE.MeshStandardMaterial({
-      color: baseColor,
-      roughness: 0.6,
-      metalness: 0.4,
-      transparent: hasCollision,
-      opacity,
-    })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 0.4 })
   );
   stand.position.y = item.height * 0.45;
   group.add(stand);
@@ -52,29 +40,9 @@ export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const cordMat = new THREE.MeshStandardMaterial({
-    color: 0x222222,
-    roughness: 0.8,
-    transparent: hasCollision,
-    opacity,
-  });
-  const shadeMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.6,
-    metalness: 0.3,
-    emissive: baseColor,
-    emissiveIntensity: 0.25,
-    transparent: hasCollision,
-    opacity,
-  });
-  const bulbMat = new THREE.MeshStandardMaterial({
-    color: 0xfff8c0,
-    roughness: 0.1,
-    emissive: 0xfff066,
-    emissiveIntensity: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
+  const cordMat = material(THREE, 0x222222, hasCollision, opacity, { roughness: 0.8 });
+  const shadeMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 0.3, emissive: baseColor, emissiveIntensity: 0.25 });
+  const bulbMat = material(THREE, 0xfff8c0, hasCollision, opacity, { roughness: 0.1, emissive: 0xfff066, emissiveIntensity: 0.6 });
 
   // Ceiling rosette / canopy.
   const canopy = mesh(
@@ -114,16 +82,8 @@ export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacit
 
 export function buildLamppost({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const metalMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, metalness: 0.6, transparent: hasCollision, opacity });
-  const glassMat = new THREE.MeshStandardMaterial({
-    color: 0xfff59d,
-    roughness: 0.1,
-    metalness: 0.0,
-    emissive: 0xfff176,
-    emissiveIntensity: 0.4,
-    transparent: hasCollision,
-    opacity,
-  });
+  const metalMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.6 });
+  const glassMat = material(THREE, 0xfff59d, hasCollision, opacity, { roughness: 0.1, metalness: 0.0, emissive: 0xfff176, emissiveIntensity: 0.4 });
 
   const base = mesh(THREE, new THREE.CylinderGeometry(item.width * 0.4, item.width * 0.5, item.height * 0.05, 12), metalMat);
   base.position.y = item.height * 0.025;
