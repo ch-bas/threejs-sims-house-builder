@@ -6,8 +6,42 @@ type ThreeModule = typeof import('three');
 export const LIGHTING_TAGS = {
   Ambient: 'light:ambient',
   Directional: 'light:directional',
+  Hemisphere: 'light:hemi',
   Lamp: 'light:lamp',
 } as const;
+
+/**
+ * Base scene lights, tagged so `applyTimeOfDay` below can find and re-drive
+ * them — this module owns both ends of the `light:*` tag protocol.
+ */
+export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
+  // Hemisphere fill gives the bright sky / warm ground bounce a suburban lot
+  // reads with — without it everything in shadow goes flat-grey.
+  const hemi = new THREE.HemisphereLight(0xbfe5ff, 0xa07a48, 0.55);
+  hemi.userData.type = LIGHTING_TAGS.Hemisphere;
+  scene.add(hemi);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+  ambient.userData.type = LIGHTING_TAGS.Ambient;
+  scene.add(ambient);
+
+  const directional = new THREE.DirectionalLight(0xfff4d1, 1.05);
+  directional.position.set(7, 14, 6);
+  directional.castShadow = true;
+  // Frustum large enough to cover the lot + the outdoor perimeter so trees
+  // and the room walls all cast contact shadows on the grass.
+  const shadowExtent = 24;
+  directional.shadow.camera.left = -shadowExtent;
+  directional.shadow.camera.right = shadowExtent;
+  directional.shadow.camera.top = shadowExtent;
+  directional.shadow.camera.bottom = -shadowExtent;
+  directional.shadow.camera.near = 1;
+  directional.shadow.camera.far = 60;
+  directional.shadow.mapSize.set(2048, 2048);
+  directional.shadow.bias = -0.0005;
+  directional.userData.type = LIGHTING_TAGS.Directional;
+  scene.add(directional);
+}
 
 /**
  * Hour-of-day presets, named for convenience. Continuous values are also
