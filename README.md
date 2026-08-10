@@ -225,7 +225,7 @@ app/                                     Next.js entry, no auth wrapper
 components/
 ├── ui/                                  shadcn-style primitives
 └── room-organizer/
-    ├── room-organizer.tsx               Orchestrator (~1030 lines)
+    ├── room-organizer.tsx               Orchestrator (~850 lines)
     ├── index.ts                         Barrel export
     ├── contexts/                        React Context (eliminates prop drilling)
     │   ├── room-editor-context.tsx      Layout, actions, view, history, game state
@@ -233,7 +233,7 @@ components/
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
-    │   ├── constants.ts                 Catalog (67 items), templates, MAX_FLOORS
+    │   ├── constants.ts                 Catalog (68 items), templates, MAX_FLOORS
     │   ├── schema.ts                    Type guards + legacy migration
     │   ├── geometry.ts                  Collision, bounds, snap, auto-organize
     │   ├── alignment.ts                 Align/distribute pure functions
@@ -254,7 +254,8 @@ components/
     │   └── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory (~110 lines)
-    │   ├── builder-utils.ts             Shared types + helpers
+    │   ├── builder-utils.ts             Shared types + mesh()/material() helpers
+    │   ├── drag-handlers.ts             Canvas mouse events: select/drag/hover/wall-pick
     │   ├── builders/                    Per-category builder functions
     │   │   ├── builders-seating.ts      Chair, armchair, bench, sofa
     │   │   ├── builders-bedroom.ts      Bed, nightstand, dresser
@@ -284,12 +285,17 @@ components/
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── plotcraft/icon.tsx                Lucide-react icon wrapper for UI panels
     ├── hooks/
+    │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)
     │   ├── use-layout-state.ts          useReducer + activeFloorIndex
-    │   ├── use-three-scene.ts           Renderer / controls / RAF / drag / hover
-    │   ├── use-scene-effects.ts         13 useEffects for scene rebuilds
+    │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
+    │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
+    │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop
+    │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
+    │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-walkthrough.ts           PointerLock + WASD movement
     │   ├── use-npcs.ts                  Animated wandering pedestrians
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus
+    │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Diffed unlock detection
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
@@ -303,6 +309,8 @@ components/
         ├── catalog-strip.tsx            Bottom-centre drag-source tile row
         ├── mode-panel.tsx               Bottom-right LIVE / BUILD / BUY + stats
         ├── item-context-popover.tsx     Floating per-item editor on selection
+        ├── color-swatch-picker.tsx      Shared swatch + recent-colours picker
+        ├── slider-row.tsx               Shared label + range + readout row
         ├── floor-switcher.tsx
         ├── walls-panel.tsx
         ├── roof-panel.tsx
