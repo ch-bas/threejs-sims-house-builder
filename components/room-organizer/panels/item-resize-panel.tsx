@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import type { FurnitureItem, SofaShape } from '../lib/types';
 
 type ResizableDimension = 'width' | 'depth' | 'height';
@@ -41,21 +42,6 @@ function hslToHex(h: number, s: number, l: number): string {
   const toHex = (value: number) => Math.round(value * 255).toString(16).padStart(2, '0');
   return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
 }
-
-const COLOR_SWATCHES = [
-  '#8B4513',
-  '#4A5568',
-  '#E8E8E8',
-  '#2C3E50',
-  '#C62828',
-  '#1976D2',
-  '#388E3C',
-  '#FFB300',
-  '#6A1B9A',
-  '#5D4037',
-  '#0D47A1',
-  '#FAFAFA',
-];
 
 export interface ItemResizePanelProps {
   hasCollision: boolean;
@@ -119,8 +105,10 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
           🎯 Centre in room
         </Button>
 
-        <ColorPicker
+        <ColorSwatchPicker
+          variant="card"
           value={item.color}
+          swatches={COLOR_SWATCHES}
           recent={recentColors}
           onChange={(color) => actions.setColor(item.id, color)}
           onCommit={(color) => pushColor(color)}
@@ -247,67 +235,6 @@ function RotationInput({ value, onChange }: RotationInputProps): JSX.Element {
           if (Number.isFinite(parsed)) onChange(((parsed % 360) + 360) % 360);
         }}
       />
-    </div>
-  );
-}
-
-interface ColorPickerProps {
-  value: string;
-  recent: readonly string[];
-  onChange(color: string): void;
-  onCommit(color: string): void;
-}
-
-function ColorPicker({ value, recent, onChange, onCommit }: ColorPickerProps): JSX.Element {
-  const inputId = useId();
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={inputId} className="text-xs">
-        Color
-      </Label>
-      <div className="flex items-center gap-2">
-        <input
-          id={inputId}
-          type="color"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onBlur={(event) => onCommit(event.target.value)}
-          className="h-8 w-10 rounded border cursor-pointer"
-        />
-        <div className="flex flex-wrap gap-1">
-          {COLOR_SWATCHES.map((swatch) => (
-            <button
-              key={swatch}
-              type="button"
-              aria-label={`Use color ${swatch}`}
-              onClick={() => onChange(swatch)}
-              className={`h-5 w-5 rounded-full border ${
-                value.toLowerCase() === swatch.toLowerCase() ? 'ring-2 ring-primary' : ''
-              }`}
-              style={{ backgroundColor: swatch }}
-            />
-          ))}
-        </div>
-      </div>
-      {recent.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recent</p>
-          <div className="flex flex-wrap gap-1 mt-1">
-            {recent.map((swatch) => (
-              <button
-                key={swatch}
-                type="button"
-                aria-label={`Reuse colour ${swatch}`}
-                onClick={() => onChange(swatch)}
-                className={`h-5 w-5 rounded border ${
-                  value.toLowerCase() === swatch.toLowerCase() ? 'ring-2 ring-primary' : ''
-                }`}
-                style={{ backgroundColor: swatch }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

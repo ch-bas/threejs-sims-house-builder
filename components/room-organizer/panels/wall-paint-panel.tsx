@@ -311,14 +311,10 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
   return (
     <div
       role="tablist"
+      className="pc-glass--inset"
       style={{
         display: 'inline-flex',
         gap: 3,
-        background: 'rgba(0,0,0,0.20)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 8,
-        padding: 3,
-        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.30)',
       }}
     >
       {tabs.map((t) => {
@@ -360,14 +356,10 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
     <div
       role="radiogroup"
       aria-label="Apply paint to"
+      className="pc-glass--inset"
       style={{
         display: 'flex',
         gap: 3,
-        background: 'rgba(0,0,0,0.20)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 8,
-        padding: 3,
-        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.30)',
       }}
     >
       {APPLY_TARGETS.map((target) => {
@@ -417,14 +409,10 @@ function WallVisibilityToggle({ hiddenWalls, onToggle }: WallVisibilityTogglePro
     <div
       role="group"
       aria-label="Wall visibility"
+      className="pc-glass--inset"
       style={{
         display: 'flex',
         gap: 3,
-        background: 'rgba(0,0,0,0.20)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 8,
-        padding: 3,
-        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.30)',
       }}
     >
       {VISIBILITY_WALLS.map((wall) => {
@@ -524,9 +512,8 @@ function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element 
 function PatternGrid({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <div
+      className="pc-glass--inset"
       style={{
-        background: 'rgba(0,0,0,0.20)',
-        border: '1px solid rgba(255,255,255,0.08)',
         borderRadius: 10,
         padding: 4,
         boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.35)',
@@ -680,9 +667,8 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
   const normalized = (value ?? '').toLowerCase();
   return (
     <div
+      className="pc-glass--inset"
       style={{
-        background: 'rgba(0,0,0,0.20)',
-        border: '1px solid rgba(255,255,255,0.08)',
         borderRadius: 10,
         padding: 4,
         boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.35)',
