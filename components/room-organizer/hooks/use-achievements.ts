@@ -9,10 +9,6 @@ export interface UseAchievementsResult {
   dismiss(): void;
 }
 
-const EMPTY_SET: ReadonlySet<string> = new Set();
-const EMPTY_ARRAY: readonly Achievement[] = [];
-const NOOP = () => {};
-
 export function useAchievements(layout: RoomLayout): UseAchievementsResult {
   const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => loadUnlocked());
   const [pending, setPending] = useState<readonly Achievement[]>([]);

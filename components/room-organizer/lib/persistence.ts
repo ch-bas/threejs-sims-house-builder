@@ -26,12 +26,3 @@ export function saveLayout(layout: RoomLayout): void {
     console.warn('Failed to persist layout to localStorage:', error);
   }
 }
-
-export function clearLayout(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-}

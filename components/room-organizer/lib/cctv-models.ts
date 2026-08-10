@@ -54,9 +54,6 @@ export const CCTV_MODELS: readonly CctvModel[] = [
   { id: 'blink-outdoor-4', brand: 'Blink', model: 'Outdoor 4', type: 'Battery', fov: 124, range: 8, resolution: '1080p', note: '143° diagonal' },
 ];
 
-/** Default model a freshly-placed Security Camera adopts. */
-export const DEFAULT_CCTV_MODEL_ID = 'hik-2cd2143g2';
-
 export function getCctvModel(id: string | undefined): CctvModel | undefined {
   if (!id) return undefined;
   return CCTV_MODELS.find((entry) => entry.id === id);
