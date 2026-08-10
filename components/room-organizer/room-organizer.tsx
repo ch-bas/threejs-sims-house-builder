@@ -7,6 +7,9 @@ import { useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useHistory } from './hooks/use-history';
+import { useImportExport } from './hooks/use-import-export';
+import { useItemDrag } from './hooks/use-item-drag';
+import { useItemPlacement } from './hooks/use-item-placement';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
@@ -15,21 +18,9 @@ import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
-import { CAMERA_BRACKET_ARM, GRID_SIZE_METERS } from './lib/constants';
-import { FURNITURE_CATALOG } from './lib/constants';
-import {
-  downloadCanvasAsPng,
-  downloadSceneAsGlb,
-  readLayoutFromFile,
-} from './lib/file-io';
+import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { hasCollisions } from './lib/geometry';
-import {
-  snapToGrid as snapValueToGrid,
-  snapToNeighbors,
-  snapToWall as snapPositionToWall,
-} from './lib/geometry';
-import { isOpening, snapOpeningToWall, snapWallMountedItem, reseatWallMountedItem } from './lib/opening-snap';
-import { encodeShareUrl, isShareUrlReasonablySized } from './lib/share';
+import { reseatWallMountedItem } from './lib/opening-snap';
 import { playSound, type SoundCue } from './lib/sounds';
 import { FLOOR_HEIGHT_METERS } from './lib/types';
 import { snapWallEndpoint } from './lib/wall-snap';
@@ -46,7 +37,7 @@ import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { GameMode } from './lib/types';
-import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
+import type { RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
   THREE: typeof import('three'),
@@ -293,166 +284,14 @@ export function RoomOrganizer(): JSX.Element {
     return set;
   }, [selectedItemId, extraSelectedIds]);
 
-  // useThreeScene is called further down (its options include the drag
-  // callbacks below), so its scene ref and invalidate fn are late-bound
-  // through these boxes for use in the fast-path helpers.
-  const sceneBoxRef = useRef<React.MutableRefObject<import('three').Scene | null> | null>(null);
-  const invalidateBoxRef = useRef<() => void>(() => {});
-
-  // Drag fast-path. While a drag is in progress the Three.js groups are moved
-  // directly and the single state dispatch is deferred to drag end —
-  // dispatching per mousemove (the old behaviour) tore down and rebuilt every
-  // furniture mesh on each pointer event. `origins` snapshots the selection's
-  // starting positions for group drags; `latest` accumulates in-flight
-  // positions and becomes one bulkSetPositions on release (which also gives
-  // undo a single entry per gesture instead of one per mousemove).
-  const dragSessionRef = useRef<{
-    primaryId: string;
-    origins: Map<string, { x: number; z: number }>;
-    latest: Map<string, { x: number; z: number }>;
-  } | null>(null);
-
-  const findFurnitureGroup = useCallback(
-    (itemId: string) =>
-      sceneBoxRef.current?.current?.children.find(
-        (obj) =>
-          obj.userData.type === 'furniture' &&
-          obj.userData.id === itemId &&
-          obj.userData.floorIndex === activeFloorIndex
-      ) ?? null,
-    [activeFloorIndex]
-  );
-
-  // Live collision feedback during the fast-path: tint the dragged group's
-  // emissive channel instead of rebuilding its meshes. Original emissive
-  // values (lamp glow, TV screens) are stashed on material.userData and
-  // restored on release.
-  const setDragCollisionTint = useCallback((group: import('three').Object3D, colliding: boolean) => {
-    group.traverse((node) => {
-      const material = (node as import('three').Mesh).material;
-      const materials = Array.isArray(material) ? material : material ? [material] : [];
-      for (const mat of materials) {
-        const std = mat as import('three').MeshStandardMaterial;
-        if (!std.emissive) continue;
-        if (colliding) {
-          if (std.userData.dragTint === undefined) std.userData.dragTint = std.emissive.getHex();
-          std.emissive.setHex(0x7f1d1d);
-        } else if (std.userData.dragTint !== undefined) {
-          std.emissive.setHex(std.userData.dragTint as number);
-          delete std.userData.dragTint;
-        }
-      }
-    });
-  }, []);
-
-  const handleDragStart = useCallback(
-    (primaryId: string) => {
-      const ids = allSelectedIds.size > 1 ? allSelectedIds : new Set([primaryId]);
-      const origins = new Map<string, { x: number; z: number }>();
-      for (const id of ids) {
-        const item = activeFloor.items.find((entry) => entry.id === id);
-        if (item?.position) origins.set(id, { x: item.position.x, z: item.position.z });
-      }
-      dragSessionRef.current = { primaryId, origins, latest: new Map(origins) };
-    },
-    [allSelectedIds, activeFloor.items]
-  );
-
-  const handleDrag = useCallback(
-    (id: string, x: number, z: number) => {
-      const session = dragSessionRef.current;
-      if (!session || session.primaryId !== id) {
-        // No drag session (programmatic move) — dispatch directly.
-        actions.moveItem(id, x, z);
-        return;
-      }
-      session.latest.set(id, { x, z });
-
-      // Group drag: translate every other selected group by the same delta.
-      // The primary group was already moved by the canvas drag handler.
-      const primaryOrigin = session.origins.get(id);
-      if (primaryOrigin && session.origins.size > 1) {
-        const dx = x - primaryOrigin.x;
-        const dz = z - primaryOrigin.z;
-        for (const [otherId, origin] of session.origins) {
-          if (otherId === id) continue;
-          const next = { x: origin.x + dx, z: origin.z + dz };
-          session.latest.set(otherId, next);
-          const group = findFurnitureGroup(otherId);
-          if (group) {
-            group.position.x = next.x;
-            group.position.z = next.z;
-          }
-        }
-      }
-
-      const candidateItems = activeFloor.items.map((item) => {
-        const moved = session.latest.get(item.id);
-        return moved ? { ...item, position: moved } : item;
-      });
-      const dragged = candidateItems.find((item) => item.id === id);
-      const primaryGroup = findFurnitureGroup(id);
-      if (dragged && primaryGroup) {
-        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, layout.width, layout.height));
-      }
-      invalidateBoxRef.current();
-    },
-    [actions, activeFloor.items, layout.width, layout.height, findFurnitureGroup, setDragCollisionTint]
-  );
-
-  const handleDragEnd = useCallback(
-    (id: string) => {
-      const session = dragSessionRef.current;
-      dragSessionRef.current = null;
-      const finalPos = session?.latest.get(id);
-      if (session && finalPos) {
-        const primaryGroup = findFurnitureGroup(id);
-        if (primaryGroup) setDragCollisionTint(primaryGroup, false);
-        // Single dispatch for the whole gesture; the rebuild effect runs once.
-        actions.bulkSetPositions(session.latest);
-      }
-      // Lock the item after positioning so it can't be accidentally moved.
-      actions.setLocked(id, true);
-      // On release, click a security camera onto the nearest wall and turn it to
-      // face into the room. Doing this on drop (not per drag frame) keeps the
-      // drag itself smooth instead of flipping between walls. Note: read the
-      // position from the drag session — state is one dispatch behind here.
-      const item = activeFloor.items.find((entry) => entry.id === id);
-      const releasePos = finalPos ?? item?.position;
-      if (item?.type === 'security-camera' && releasePos) {
-        const snapped = snapWallMountedItem({
-          position: releasePos,
-          itemWidth: item.width,
-          itemDepth: item.depth,
-          roomWidth: layout.width,
-          roomDepth: layout.height,
-          interiorWalls: activeFloor.interiorWalls ?? [],
-        });
-        // Record the wall's inward-normal yaw so rotation can be locked to the
-        // in/out axis, then re-seat for the camera's current mount style.
-        actions.updateItem(id, { wallRotation: snapped.rotation });
-        if (item.cameraBracket) {
-          const pos = reseatWallMountedItem({
-            position: releasePos,
-            itemWidth: item.width,
-            itemDepth: item.depth,
-            roomWidth: layout.width,
-            roomDepth: layout.height,
-            interiorWalls: activeFloor.interiorWalls ?? [],
-            rotation: item.rotation ?? snapped.rotation,
-            bracketArm: CAMERA_BRACKET_ARM,
-          });
-          actions.moveItem(id, pos.x, pos.z);
-        } else {
-          actions.moveItem(id, snapped.position.x, snapped.position.z);
-          if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) {
-            actions.setRotation(id, snapped.rotation);
-          }
-        }
-      }
-    },
-    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions, findFurnitureGroup, setDragCollisionTint]
-  );
+  const { sceneBoxRef, invalidateBoxRef, handleDragStart, handleDrag, handleDragEnd } = useItemDrag({
+    activeFloor,
+    activeFloorIndex,
+    roomWidth: layout.width,
+    roomDepth: layout.height,
+    actions,
+    allSelectedIds,
+  });
 
   // Re-seat a wall-mounted camera against its wall. A flush camera's body moves
   // to whichever side it faces (so the body + cone start at the wall surface
@@ -572,108 +411,14 @@ export function RoomOrganizer(): JSX.Element {
     [activeFloor.items]
   );
 
-  const snapPosition = useCallback(
-    (itemId: string, x: number, z: number) => {
-      let result = { x, z };
-      const item = activeFloor.items.find((entry) => entry.id === itemId);
-
-      // Doors and windows have to live on a wall — there's no such thing as
-      // a "free-floating" opening. Force-snap them regardless of the toggle.
-      if (item && isOpening(item.type)) {
-        const snapped = snapOpeningToWall({
-          position: result,
-          itemWidth: item.width,
-          roomWidth: layout.width,
-          roomDepth: layout.height,
-          interiorWalls: activeFloor.interiorWalls ?? [],
-        });
-        return snapped.position;
-      }
-
-      // Security cameras follow the cursor freely while dragging (no per-frame
-      // wall-snap — that made them teleport/flip between walls). They snap onto
-      // the nearest wall and orient into the room on release, in handleDragEnd.
-
-      if (view.snapToGrid) {
-        result = {
-          x: snapValueToGrid(result.x, GRID_SIZE_METERS),
-          z: snapValueToGrid(result.z, GRID_SIZE_METERS),
-        };
-      }
-      if (view.snapToItems && item) {
-        result = snapToNeighbors({
-          position: result,
-          movingItem: item,
-          otherItems: activeFloor.items,
-        });
-      }
-      if (view.snapToWall && item) {
-        result = snapPositionToWall({
-          position: result,
-          item,
-          roomWidth: layout.width,
-          roomDepth: layout.height,
-        });
-      }
-      return result;
-    },
-    [
-      view.snapToGrid,
-      view.snapToWall,
-      view.snapToItems,
-      activeFloor.items,
-      activeFloor.interiorWalls,
-      layout.width,
-      layout.height,
-    ]
-  );
-
-  const getDragPlaneY = useCallback(() => activeFloorY, [activeFloorY]);
-
-  /**
-   * Add an item from the catalog. For doors and windows, the requested
-   * position is force-snapped to the nearest wall (exterior or interior)
-   * and a default rotation aligned with that wall is applied — these
-   * openings only make sense embedded in a wall.
-   */
-  const placeCatalogItem = useCallback(
-    (catalogItem: CatalogItem, position?: { x: number; z: number }) => {
-      if (isOpening(catalogItem.type)) {
-        const snapped = snapOpeningToWall({
-          position: position ?? { x: 0, z: 0 },
-          itemWidth: catalogItem.width,
-          roomWidth: layout.width,
-          roomDepth: layout.height,
-          interiorWalls: activeFloor.interiorWalls ?? [],
-        });
-        const id = actions.addCatalogItem(catalogItem, snapped.position);
-        actions.setRotation(id, snapped.rotation);
-        return id;
-      }
-      if (catalogItem.type === 'security-camera') {
-        const snapped = snapWallMountedItem({
-          position: position ?? { x: 0, z: 0 },
-          itemWidth: catalogItem.width,
-          itemDepth: catalogItem.depth,
-          roomWidth: layout.width,
-          roomDepth: layout.height,
-          interiorWalls: activeFloor.interiorWalls ?? [],
-        });
-        const id = actions.addCatalogItem(catalogItem, snapped.position);
-        actions.setRotation(id, snapped.rotation);
-        actions.updateItem(id, { wallRotation: snapped.rotation });
-        return id;
-      }
-      // Outdoor items belong outside the building — default them just past
-      // the south wall instead of the room centre when no position is given.
-      if (catalogItem.category === 'outdoor' && !position) {
-        const outsidePos = { x: 0, z: layout.height / 2 + catalogItem.depth / 2 + 0.5 };
-        return actions.addCatalogItem(catalogItem, outsidePos);
-      }
-      return actions.addCatalogItem(catalogItem, position);
-    },
-    [actions, activeFloor.interiorWalls, layout.width, layout.height]
-  );
+  const { snapPosition, getDragPlaneY, placeCatalogItem } = useItemPlacement({
+    activeFloor,
+    activeFloorY,
+    roomWidth: layout.width,
+    roomDepth: layout.height,
+    actions,
+    view,
+  });
 
   const { isReady, error, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
@@ -756,48 +501,17 @@ export function RoomOrganizer(): JSX.Element {
     buildingHeight: layout.floors.length * FLOOR_HEIGHT_METERS,
   });
 
-  const handleScreenshot = useCallback(() => {
-    const canvas = view.view2D ? canvas2DRef.current : canvasRef.current;
-    if (!canvas) return;
-    // The renderer runs without preserveDrawingBuffer, so render a fresh
-    // frame synchronously — the buffer is valid within the same task.
-    if (!view.view2D && rendererRef.current && sceneRef.current && cameraRef.current) {
-      rendererRef.current.render(sceneRef.current, cameraRef.current);
-    }
-    downloadCanvasAsPng(canvas, layout.name || 'room-layout');
-  }, [view.view2D, layout.name, rendererRef, sceneRef, cameraRef]);
-
-  const handleExportGlb = useCallback(async () => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    try {
-      await downloadSceneAsGlb(scene, layout.name || 'room-layout');
-    } catch (exportError) {
-      window.alert(exportError instanceof Error ? exportError.message : 'GLB export failed.');
-    }
-  }, [sceneRef, layout.name]);
-
-  const handleShareLink = useCallback(async () => {
-    const origin = window.location.origin + window.location.pathname;
-    const { url, strippedFloorPlan } = encodeShareUrl(layout, origin);
-
-    if (!isShareUrlReasonablySized(url)) {
-      window.alert(
-        'This layout is too large to fit in a share link. Try exporting it as JSON and sharing the file instead.'
-      );
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(url);
-      const note = strippedFloorPlan
-        ? '\n\n(The floor-plan image was removed from the link to keep it short.)'
-        : '';
-      window.alert(`Share link copied to clipboard.${note}`);
-    } catch {
-      window.prompt('Copy this share link:', url);
-    }
-  }, [layout]);
+  const { handleScreenshot, handleExportGlb, handleShareLink, handleImport } = useImportExport({
+    layout,
+    actions,
+    view2D: view.view2D,
+    canvasRef,
+    canvas2DRef,
+    rendererRef,
+    sceneRef,
+    cameraRef,
+    onImported: useCallback(() => setSelectedItemId(null), []),
+  });
 
   // Advance the time-of-day at roughly 1 in-game hour per second when on.
   useEffect(() => {
@@ -910,22 +624,6 @@ export function RoomOrganizer(): JSX.Element {
     handlers: shortcutHandlers,
   });
 
-  const handleImport = useCallback(
-    async (file: File) => {
-      try {
-        const next = await readLayoutFromFile(file);
-        actions.applyLayout(next);
-        setSelectedItemId(null);
-      } catch (importError) {
-        const message =
-          importError instanceof Error
-            ? importError.message
-            : 'Failed to import layout. Please check the file format.';
-        window.alert(message);
-      }
-    },
-    [actions]
-  );
 
 
   const roomEditorValue = useMemo<RoomEditorContextValue>(
