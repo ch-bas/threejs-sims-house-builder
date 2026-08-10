@@ -1,11 +1,11 @@
-import { type BuilderContext, mesh } from '../builder-utils';
+import { type BuilderContext, cornerPositions, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildPerson({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const skinMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
-  const clothesMat = new THREE.MeshStandardMaterial({ color: 0x3949ab, roughness: 0.8, transparent: hasCollision, opacity });
-  const trouserMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8, transparent: hasCollision, opacity });
+  const skinMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const clothesMat = material(THREE, 0x3949ab, hasCollision, opacity, { roughness: 0.8 });
+  const trouserMat = material(THREE, 0x1f2937, hasCollision, opacity, { roughness: 0.8 });
 
   // Legs (cylinders)
   const legGeo = new THREE.CylinderGeometry(0.08, 0.08, item.height * 0.45, 10);
@@ -42,8 +42,8 @@ export function buildPerson({ THREE, item, hasCollision, baseColor, opacity }: B
 
 export function buildPet({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const furMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.85, transparent: hasCollision, opacity });
-  const noseMat = new THREE.MeshStandardMaterial({ color: 0x1b1b1b, roughness: 0.6, transparent: hasCollision, opacity });
+  const furMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
+  const noseMat = material(THREE, 0x1b1b1b, hasCollision, opacity, { roughness: 0.6 });
 
   // Body
   const body = mesh(
@@ -76,12 +76,10 @@ export function buildPet({ THREE, item, hasCollision, baseColor, opacity }: Buil
 
   // Legs
   const legGeo = new THREE.CylinderGeometry(0.04, 0.05, item.height * 0.45, 8);
-  for (const dx of [-1, 1]) {
-    for (const dz of [-1, 1]) {
-      const leg = mesh(THREE, legGeo, furMat);
-      leg.position.set(dx * item.width * 0.25, item.height * 0.225, dz * item.depth * 0.55);
-      group.add(leg);
-    }
+  for (const [x, y, z] of cornerPositions(item.width * 0.25, item.height * 0.225, item.depth * 0.55)) {
+    const leg = mesh(THREE, legGeo, furMat);
+    leg.position.set(x, y, z);
+    group.add(leg);
   }
 
   // Tail

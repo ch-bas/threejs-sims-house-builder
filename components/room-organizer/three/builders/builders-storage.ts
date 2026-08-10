@@ -1,9 +1,9 @@
-import { type BuilderContext, mesh } from '../builder-utils';
+import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildBookshelf({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const shelfMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
+  const shelfMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
 
   const back = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth * 0.1), shelfMat);
   back.position.set(0, item.height / 2, -item.depth * 0.45);
@@ -30,7 +30,7 @@ export function buildBookshelf({ THREE, item, hasCollision, baseColor, opacity }
     const book = mesh(
       THREE,
       new THREE.BoxGeometry(item.width * 0.1, item.height * 0.15, item.depth * 0.6),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.8, transparent: hasCollision, opacity })
+      material(THREE, color, hasCollision, opacity, { roughness: 0.8 })
     );
     book.position.set(-item.width * 0.3 + i * 0.15, (item.height / 4) * i + item.height * 0.12, 0);
     group.add(book);
@@ -41,8 +41,8 @@ export function buildBookshelf({ THREE, item, hasCollision, baseColor, opacity }
 
 export function buildCabinet({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
-  const accentMat = new THREE.MeshStandardMaterial({ color: 0x424242, metalness: 0.6, roughness: 0.3, transparent: hasCollision, opacity });
+  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const accentMat = material(THREE, 0x424242, hasCollision, opacity, { metalness: 0.6, roughness: 0.3 });
 
   const body = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), bodyMat);
   body.position.y = item.height / 2;

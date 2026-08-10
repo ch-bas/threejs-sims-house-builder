@@ -1,15 +1,9 @@
-import { type BuilderContext, mesh, cornerPositions, lightenHex } from '../builder-utils';
+import { type BuilderContext, material, mesh, cornerPositions, lightenHex } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildChair({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const seatMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.7,
-    metalness: 0.1,
-    transparent: hasCollision,
-    opacity,
-  });
+  const seatMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7, metalness: 0.1 });
 
   const seat = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.1, item.depth), seatMat);
   seat.position.y = item.height * 0.5;
@@ -19,7 +13,7 @@ export function buildChair({ THREE, item, hasCollision, baseColor, opacity }: Bu
   back.position.set(0, item.height * 0.75, -item.depth * 0.45);
   group.add(back);
 
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x654321, roughness: 0.8, transparent: hasCollision, opacity });
+  const legMat = material(THREE, 0x654321, hasCollision, opacity, { roughness: 0.8 });
   const legGeo = new THREE.CylinderGeometry(0.03, 0.03, item.height * 0.5, 8);
   for (const [x, y, z] of cornerPositions(item.width * 0.4, item.height * 0.25, item.depth * 0.4)) {
     const leg = mesh(THREE, legGeo, legMat);
@@ -32,7 +26,7 @@ export function buildChair({ THREE, item, hasCollision, baseColor, opacity }: Bu
 
 export function buildArmchair({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.85, transparent: hasCollision, opacity });
+  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
 
   const seat = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.45, item.depth * 0.85), mat);
   seat.position.y = item.height * 0.35;
@@ -53,7 +47,7 @@ export function buildArmchair({ THREE, item, hasCollision, baseColor, opacity }:
 
 export function buildBench({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
+  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
   const seat = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.18, item.depth), mat);
   seat.position.y = item.height * 0.91;
   group.add(seat);
@@ -69,7 +63,7 @@ export function buildBench({ THREE, item, hasCollision, baseColor, opacity }: Bu
 
 export function buildSofa({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const sofaMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.8, transparent: hasCollision, opacity });
+  const sofaMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.8 });
 
   const shape = item.sofaShape ?? 'standard';
 
@@ -90,12 +84,7 @@ export function buildSofa({ THREE, item, hasCollision, baseColor, opacity }: Bui
     }
 
     // Seat cushions — one per "person seat" (divide the sofa into pillows).
-    const cushionMat = new THREE.MeshStandardMaterial({
-      color: lightenHex(item.color, 0.15),
-      roughness: 0.85,
-      transparent: hasCollision,
-      opacity,
-    });
+    const cushionMat = material(THREE, lightenHex(item.color, 0.15), hasCollision, opacity, { roughness: 0.85 });
     const cushionCount = Math.max(2, Math.min(4, Math.round(item.width / 0.8)));
     const cushionWidth = (item.width * 0.92) / cushionCount;
     for (let i = 0; i < cushionCount; i += 1) {
@@ -116,12 +105,7 @@ export function buildSofa({ THREE, item, hasCollision, baseColor, opacity }: Bui
     const pillowColors: ReadonlyArray<number> = [0xf2d488, 0xeb9d6b, 0x9ec6c0];
     for (const dx of [-1, 1]) {
       const color = pillowColors[(dx + 1) / 2 % pillowColors.length]!;
-      const pillowMat = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.9,
-        transparent: hasCollision,
-        opacity,
-      });
+      const pillowMat = material(THREE, color, hasCollision, opacity, { roughness: 0.9 });
       const pillow = mesh(
         THREE,
         new THREE.BoxGeometry(item.width * 0.18, item.height * 0.22, item.depth * 0.18),

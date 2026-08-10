@@ -1,21 +1,10 @@
-import { type BuilderContext, mesh } from '../builder-utils';
+import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const frameMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.7,
-    transparent: hasCollision,
-    opacity,
-  });
-  const handleMat = new THREE.MeshStandardMaterial({
-    color: 0xd7c483,
-    metalness: 0.8,
-    roughness: 0.2,
-    transparent: hasCollision,
-    opacity,
-  });
+  const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 0.8, roughness: 0.2 });
 
   // Door slab (almost as wide and tall as the wall opening).
   const slab = mesh(
@@ -52,18 +41,8 @@ export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const frameMat = new THREE.MeshStandardMaterial({
-    color: 0xf5f5f5,
-    roughness: 0.5,
-    transparent: hasCollision,
-    opacity,
-  });
-  const sillMat = new THREE.MeshStandardMaterial({
-    color: 0xe6e6e6,
-    roughness: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
+  const frameMat = material(THREE, 0xf5f5f5, hasCollision, opacity, { roughness: 0.5 });
+  const sillMat = material(THREE, 0xe6e6e6, hasCollision, opacity, { roughness: 0.6 });
   const glassMat = new THREE.MeshStandardMaterial({
     color: baseColor,
     roughness: 0.05,
@@ -129,12 +108,7 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   const wallBelow = mesh(
     THREE,
     new THREE.BoxGeometry(item.width, sillHeight, item.depth),
-    new THREE.MeshStandardMaterial({
-      color: 0xcccccc,
-      roughness: 0.8,
-      transparent: hasCollision,
-      opacity,
-    })
+    material(THREE, 0xcccccc, hasCollision, opacity, { roughness: 0.8 })
   );
   wallBelow.position.set(0, sillHeight / 2, 0);
   group.add(wallBelow);
@@ -144,19 +118,8 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
 
 export function buildStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const stepMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.85,
-    transparent: hasCollision,
-    opacity,
-  });
-  const railMat = new THREE.MeshStandardMaterial({
-    color: 0x424242,
-    roughness: 0.5,
-    metalness: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
+  const stepMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
+  const railMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 });
 
   // Item height is the rise to the next floor; build steps that span the depth.
   const stepCount = 14;

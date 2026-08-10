@@ -1,17 +1,12 @@
-import { type BuilderContext, mesh, lightenHex } from '../builder-utils';
+import { type BuilderContext, material, mesh, lightenHex } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildBed({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.8, transparent: hasCollision, opacity });
-  const sheetMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.9, transparent: hasCollision, opacity });
-  const pillowMat = new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.95, transparent: hasCollision, opacity });
-  const throwMat = new THREE.MeshStandardMaterial({
-    color: lightenHex(item.color, -0.18),
-    roughness: 0.95,
-    transparent: hasCollision,
-    opacity,
-  });
+  const woodMat = material(THREE, 0x8b4513, hasCollision, opacity, { roughness: 0.8 });
+  const sheetMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.9 });
+  const pillowMat = material(THREE, 0xfafafa, hasCollision, opacity, { roughness: 0.95 });
+  const throwMat = material(THREE, lightenHex(item.color, -0.18), hasCollision, opacity, { roughness: 0.95 });
 
   // Headboard at the head end (-z).
   const headboard = mesh(
@@ -63,8 +58,8 @@ export function buildBed({ THREE, item, hasCollision, baseColor, opacity }: Buil
 
 export function buildNightstand({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const woodMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
-  const drawerMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.6, transparent: hasCollision, opacity });
+  const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const drawerMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
 
   const body = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), woodMat);
   body.position.y = item.height / 2;
@@ -78,13 +73,7 @@ export function buildNightstand({ THREE, item, hasCollision, baseColor, opacity 
   }
 
   const handleGeo = new THREE.SphereGeometry(0.03, 8, 8);
-  const handleMat = new THREE.MeshStandardMaterial({
-    color: 0x888888,
-    metalness: 0.8,
-    roughness: 0.2,
-    transparent: hasCollision,
-    opacity,
-  });
+  const handleMat = material(THREE, 0x888888, hasCollision, opacity, { metalness: 0.8, roughness: 0.2 });
   for (const y of [item.height * 0.65, item.height * 0.25]) {
     const handle = mesh(THREE, handleGeo, handleMat);
     handle.position.set(0, y, item.depth * 0.53);
@@ -96,8 +85,8 @@ export function buildNightstand({ THREE, item, hasCollision, baseColor, opacity 
 
 export function buildDresser({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.7, transparent: hasCollision, opacity });
-  const accentMat = new THREE.MeshStandardMaterial({ color: 0x424242, metalness: 0.6, roughness: 0.3, transparent: hasCollision, opacity });
+  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const accentMat = material(THREE, 0x424242, hasCollision, opacity, { metalness: 0.6, roughness: 0.3 });
 
   const body = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), mat);
   body.position.y = item.height / 2;

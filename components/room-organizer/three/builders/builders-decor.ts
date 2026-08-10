@@ -1,10 +1,10 @@
-import { type BuilderContext, mesh } from '../builder-utils';
+import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildRug({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 1.0, transparent: hasCollision, opacity });
-  const border = new THREE.MeshStandardMaterial({ color: 0x424242, roughness: 1.0, transparent: hasCollision, opacity });
+  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 1.0 });
+  const border = material(THREE, 0x424242, hasCollision, opacity, { roughness: 1.0 });
 
   const rug = mesh(THREE, new THREE.BoxGeometry(item.width, 0.01, item.depth), mat);
   rug.position.y = 0.005;
@@ -18,8 +18,8 @@ export function buildRug({ THREE, item, hasCollision, baseColor, opacity }: Buil
 
 export function buildPainting({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const frameMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.6, transparent: hasCollision, opacity });
-  const canvasMat = new THREE.MeshStandardMaterial({ color: 0xfff3e0, roughness: 0.8, transparent: hasCollision, opacity });
+  const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
+  const canvasMat = material(THREE, 0xfff3e0, hasCollision, opacity, { roughness: 0.8 });
 
   const frame = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), frameMat);
   frame.position.y = item.height / 2 + 0.8;
@@ -39,7 +39,7 @@ export function buildPainting({ THREE, item, hasCollision, baseColor, opacity }:
     const blob = mesh(
       THREE,
       new THREE.SphereGeometry(item.width * 0.12, 10, 10),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.7, transparent: hasCollision, opacity })
+      material(THREE, color, hasCollision, opacity, { roughness: 0.7 })
     );
     blob.position.set(item.width * (i - 1) * 0.25, item.height / 2 + 0.8 + Math.sin(i) * 0.1, item.depth * 0.32);
     group.add(blob);
@@ -49,7 +49,7 @@ export function buildPainting({ THREE, item, hasCollision, baseColor, opacity }:
 
 export function buildVase({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, transparent: hasCollision, opacity });
+  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4 });
 
   const lower = mesh(THREE, new THREE.SphereGeometry(item.width * 0.45, 16, 16), mat);
   lower.position.y = item.height * 0.4;
@@ -64,8 +64,8 @@ export function buildVase({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildMirror({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const frameMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.5, transparent: hasCollision, opacity });
-  const reflectMat = new THREE.MeshStandardMaterial({ color: 0xb3e5fc, roughness: 0.05, metalness: 0.95, transparent: hasCollision, opacity });
+  const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5 });
+  const reflectMat = material(THREE, 0xb3e5fc, hasCollision, opacity, { roughness: 0.05, metalness: 0.95 });
 
   const frame = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), frameMat);
   frame.position.y = item.height / 2 + 0.4;
@@ -83,19 +83,8 @@ export function buildMirror({ THREE, item, hasCollision, baseColor, opacity }: B
 
 export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const rodMat = new THREE.MeshStandardMaterial({
-    color: 0x37474f,
-    roughness: 0.4,
-    metalness: 0.7,
-    transparent: hasCollision,
-    opacity,
-  });
-  const fabricMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.95,
-    transparent: hasCollision,
-    opacity,
-  });
+  const rodMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 0.7 });
+  const fabricMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.95 });
 
   // Rod across the top.
   const rodLength = item.width;
@@ -146,19 +135,8 @@ export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }:
 
 export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const woodMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.7,
-    transparent: hasCollision,
-    opacity,
-  });
-  const bracketMat = new THREE.MeshStandardMaterial({
-    color: 0x424242,
-    roughness: 0.4,
-    metalness: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
+  const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const bracketMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.4, metalness: 0.6 });
 
   // Shelf board itself.
   const shelf = mesh(
@@ -178,43 +156,23 @@ export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }
   }
 
   // A couple of small ornaments on top — a book and a tiny plant for variety.
-  const bookMat = new THREE.MeshStandardMaterial({
-    color: 0x8e1c1c,
-    roughness: 0.85,
-    transparent: hasCollision,
-    opacity,
-  });
+  const bookMat = material(THREE, 0x8e1c1c, hasCollision, opacity, { roughness: 0.85 });
   const book = mesh(THREE, new THREE.BoxGeometry(0.10, 0.14, 0.16), bookMat);
   book.position.set(-item.width * 0.30, item.height + 0.07, 0);
   group.add(book);
   const book2 = mesh(
     THREE,
     new THREE.BoxGeometry(0.08, 0.18, 0.14),
-    new THREE.MeshStandardMaterial({
-      color: 0x1b4f72,
-      roughness: 0.85,
-      transparent: hasCollision,
-      opacity,
-    })
+    material(THREE, 0x1b4f72, hasCollision, opacity, { roughness: 0.85 })
   );
   book2.position.set(-item.width * 0.18, item.height + 0.09, 0);
   group.add(book2);
 
-  const potMat = new THREE.MeshStandardMaterial({
-    color: 0xa0522d,
-    roughness: 0.85,
-    transparent: hasCollision,
-    opacity,
-  });
+  const potMat = material(THREE, 0xa0522d, hasCollision, opacity, { roughness: 0.85 });
   const pot = mesh(THREE, new THREE.CylinderGeometry(0.05, 0.06, 0.08, 10), potMat);
   pot.position.set(item.width * 0.30, item.height + 0.04, 0);
   group.add(pot);
-  const leafMat = new THREE.MeshStandardMaterial({
-    color: 0x4caf50,
-    roughness: 0.9,
-    transparent: hasCollision,
-    opacity,
-  });
+  const leafMat = material(THREE, 0x4caf50, hasCollision, opacity, { roughness: 0.9 });
   const leaf = mesh(THREE, new THREE.SphereGeometry(0.08, 10, 8), leafMat);
   leaf.position.set(item.width * 0.30, item.height + 0.14, 0);
   group.add(leaf);
@@ -224,25 +182,9 @@ export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }
 
 export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const frameMat = new THREE.MeshStandardMaterial({
-    color: 0x37474f,
-    roughness: 0.4,
-    metalness: 0.5,
-    transparent: hasCollision,
-    opacity,
-  });
-  const faceMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
-  const handMat = new THREE.MeshStandardMaterial({
-    color: 0x111111,
-    roughness: 0.5,
-    transparent: hasCollision,
-    opacity,
-  });
+  const frameMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 0.5 });
+  const faceMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
+  const handMat = material(THREE, 0x111111, hasCollision, opacity, { roughness: 0.5 });
 
   const radius = Math.min(item.width, item.height) / 2;
   const ring = mesh(
@@ -302,32 +244,10 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
 
 export function buildCandles({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const waxMat = new THREE.MeshStandardMaterial({
-    color: baseColor,
-    roughness: 0.6,
-    transparent: hasCollision,
-    opacity,
-  });
-  const wickMat = new THREE.MeshStandardMaterial({
-    color: 0x111111,
-    roughness: 0.9,
-    transparent: hasCollision,
-    opacity,
-  });
-  const flameMat = new THREE.MeshStandardMaterial({
-    color: 0xffa726,
-    emissive: 0xffd54f,
-    emissiveIntensity: 0.9,
-    roughness: 0.2,
-    transparent: hasCollision,
-    opacity,
-  });
-  const trayMat = new THREE.MeshStandardMaterial({
-    color: 0xb0a094,
-    roughness: 0.7,
-    transparent: hasCollision,
-    opacity,
-  });
+  const waxMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
+  const wickMat = material(THREE, 0x111111, hasCollision, opacity, { roughness: 0.9 });
+  const flameMat = material(THREE, 0xffa726, hasCollision, opacity, { emissive: 0xffd54f, emissiveIntensity: 0.9, roughness: 0.2 });
+  const trayMat = material(THREE, 0xb0a094, hasCollision, opacity, { roughness: 0.7 });
 
   const tray = mesh(
     THREE,
@@ -374,12 +294,7 @@ export function buildBooksStack({ THREE, item, hasCollision, baseColor, opacity 
   const slabHeight = stackHeight / bookCount;
   for (let i = 0; i < bookCount; i += 1) {
     const cover = covers[i % covers.length]!;
-    const mat = new THREE.MeshStandardMaterial({
-      color: cover,
-      roughness: 0.85,
-      transparent: hasCollision,
-      opacity,
-    });
+    const mat = material(THREE, cover, hasCollision, opacity, { roughness: 0.85 });
     const wiggleX = Math.sin(i * 1.7) * item.width * 0.05;
     const wiggleZ = Math.cos(i * 1.3) * item.depth * 0.05;
     const book = mesh(
