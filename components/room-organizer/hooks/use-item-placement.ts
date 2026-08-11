@@ -127,6 +127,16 @@ export function useItemPlacement({
         actions.updateItem(id, { wallRotation: snapped.rotation });
         return id;
       }
+      // Outdoor items belong outside the building on the ground. `addCatalogItem`
+      // targets the ACTIVE floor, so placing one while an upper floor is active
+      // lands it on that floor's ring hovering mid-air past the wall (#73c).
+      // The drag-plane Y is 0 only on the ground floor, so a non-zero Y means an
+      // upper floor is active — block the placement rather than float the item.
+      // (Re-homing it onto the ground floor would need a reducer change, which a
+      // sibling branch owns, so we no-op instead.)
+      if (catalogItem.category === 'outdoor' && activeFloorY > 0) {
+        return '';
+      }
       // Outdoor items belong outside the building — default them just past
       // the south wall instead of the room centre when no position is given.
       if (catalogItem.category === 'outdoor' && !position) {
@@ -135,7 +145,7 @@ export function useItemPlacement({
       }
       return actions.addCatalogItem(catalogItem, position);
     },
-    [actions, activeFloor.interiorWalls, roomWidth, roomDepth]
+    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth]
   );
 
   return { snapPosition, getDragPlaneY, placeCatalogItem };

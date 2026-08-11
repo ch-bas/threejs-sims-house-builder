@@ -1,5 +1,5 @@
 import { FURNITURE_CATALOG } from './constants';
-import { buildFurnitureSet, FURNITURE_SETS } from './furniture-sets';
+import { buildFurnitureSet, FURNITURE_SETS, setFitsRoom, type FurnitureSet } from './furniture-sets';
 import type { CatalogItem, FurnitureItem } from './types';
 
 const DECOR_TYPES = ['plant', 'flowerpot', 'rug', 'painting', 'vase', 'lamp', 'floor-lamp', 'mirror'] as const;
@@ -27,7 +27,11 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
   const rng = mulberry32(seed >>> 0);
 
   const set = chooseSet(roomWidth, roomDepth, rng);
-  const setItems = buildFurnitureSet(set, { center: { x: 0, z: 0 }, idPrefix: `surprise-set-${seed}` });
+  // A set is only chosen when at least one fits, but pass the room dims so
+  // buildFurnitureSet also scales its offsets in to keep pieces off the walls.
+  const setItems = set
+    ? buildFurnitureSet(set, { center: { x: 0, z: 0 }, idPrefix: `surprise-set-${seed}`, roomWidth, roomDepth })
+    : [];
 
   const decor: FurnitureItem[] = [];
   const decorCount = 3 + Math.floor(rng() * 4);
@@ -61,16 +65,22 @@ function chooseSet(width: number, depth: number, rng: () => number) {
     ['kitchen-line', width >= 4 ? 2 : 0.5],
   ];
 
-  const totalWeight = weighted.reduce((sum, [, w]) => sum + w, 0);
+  // Drop any candidate whose largest item can't fit the room, so a small
+  // room never gets a set that would drop pieces through the walls (#73).
+  const eligible = weighted
+    .map(([key, weight]) => ({ set: FURNITURE_SETS.find((set) => set.key === key), weight }))
+    .filter((entry): entry is { set: FurnitureSet; weight: number } =>
+      entry.set != null && entry.weight > 0 && setFitsRoom(entry.set, width, depth)
+    );
+  if (eligible.length === 0) return null;
+
+  const totalWeight = eligible.reduce((sum, { weight }) => sum + weight, 0);
   let pick = rng() * totalWeight;
-  for (const [key, weight] of weighted) {
+  for (const { set, weight } of eligible) {
     pick -= weight;
-    if (pick <= 0) {
-      const found = FURNITURE_SETS.find((set) => set.key === key);
-      if (found) return found;
-    }
+    if (pick <= 0) return set;
   }
-  return FURNITURE_SETS[0]!;
+  return eligible[eligible.length - 1]!.set;
 }
 
 function eligibleDecor(budget: number): readonly CatalogItem[] {

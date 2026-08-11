@@ -190,7 +190,14 @@ export function SidebarDrawer({
 
               <SetsPanel
                 onAddSet={(set) => {
-                  const items = buildFurnitureSet(set);
+                  // Scale/refuse the set to the current room so pieces don't
+                  // land through the walls in small rooms (#73). An empty
+                  // result means the set can't fit here.
+                  const items = buildFurnitureSet(set, {
+                    roomWidth: layout.width,
+                    roomDepth: layout.height,
+                  });
+                  if (items.length === 0) return;
                   actions.addItems(items);
                   const last = items[items.length - 1];
                   if (last) setSelectedItemId(last.id);
