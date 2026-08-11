@@ -199,7 +199,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
             // direction. One step per ~8% drag keeps the motion smooth.
             const steps = Math.max(1, Math.round(Math.abs(delta) / 8));
             for (let i = 0; i < steps; i += 1) {
-              props.onZoom(delta > 0 ? '-' : '+');
+              props.onZoom(delta > 0 ? '+' : '-');
             }
             setZoomPos(next);
           }}

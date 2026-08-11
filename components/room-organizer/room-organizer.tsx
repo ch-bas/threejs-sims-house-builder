@@ -821,7 +821,7 @@ export function RoomOrganizer(): JSX.Element {
       />
 
       {/* Touch mode toggle — visible on mobile only */}
-      <TouchModeToggle controlsRef={controlsRef} onFit={fitToRoom} />
+      <TouchModeToggle controlsRef={controlsRef} isReady={isReady} onFit={fitToRoom} />
 
       {/* Welcome modal — auto-shows once, dismissible */}
       <WelcomeBanner />

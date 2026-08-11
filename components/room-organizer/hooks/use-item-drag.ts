@@ -37,6 +37,24 @@ export interface UseItemDragResult {
  * positions and becomes one bulkSetPositions on release (which also gives
  * undo a single entry per gesture instead of one per mousemove).
  */
+// True if any entry's latest position differs from its origin. A pure
+// click-select (or any gesture with no net movement) leaves latest === origins,
+// which must not commit state or lock the item.
+function sessionMoved(
+  origins: Map<string, { x: number; z: number }>,
+  latest: Map<string, { x: number; z: number }>
+): boolean {
+  const EPS = 1e-4;
+  for (const [id, origin] of origins) {
+    const now = latest.get(id);
+    if (!now) continue;
+    if (Math.abs(now.x - origin.x) > EPS || Math.abs(now.z - origin.z) > EPS) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function useItemDrag({
   activeFloor,
   activeFloorIndex,
@@ -147,13 +165,19 @@ export function useItemDrag({
       const session = dragSessionRef.current;
       dragSessionRef.current = null;
       const finalPos = session?.latest.get(id);
-      if (session && finalPos) {
+      // A gesture that never actually moved anything (a stray zero-distance
+      // drag) must not write state or add an undo entry, and must not re-lock
+      // the item — otherwise a click silently blocks the next nudge/delete
+      // (see #65). A real drag always leaves at least one position changed.
+      const moved = session ? sessionMoved(session.origins, session.latest) : false;
+      if (session && finalPos && moved) {
         const primaryGroup = findFurnitureGroup(id);
         if (primaryGroup) setDragCollisionTint(primaryGroup, false);
         // Single dispatch for the whole gesture; the rebuild effect runs once.
         actions.bulkSetPositions(session.latest);
       }
-      // Lock the item after positioning so it can't be accidentally moved.
+      if (!moved) return;
+      // Lock the item after a real drag so it can't be accidentally moved.
       actions.setLocked(id, true);
       // On release, click a security camera onto the nearest wall and turn it to
       // face into the room. Doing this on drop (not per drag frame) keeps the

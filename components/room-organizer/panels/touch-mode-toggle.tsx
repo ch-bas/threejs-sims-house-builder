@@ -6,12 +6,19 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js
 
 type TouchMode = 'orbit' | 'pan';
 
+// THREE.TOUCH enum values, inlined to avoid importing the Three.js runtime into
+// this presentational panel: ROTATE = 0, PAN = 1, DOLLY_PAN = 2.
+const TOUCH_ROTATE = 0;
+const TOUCH_PAN = 1;
+const TOUCH_DOLLY_PAN = 2;
+
 export interface TouchModeToggleProps {
   controlsRef: MutableRefObject<OrbitControls | null>;
+  isReady: boolean;
   onFit(): void;
 }
 
-export function TouchModeToggle({ controlsRef, onFit }: TouchModeToggleProps): JSX.Element {
+export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggleProps): JSX.Element {
   const [mode, setMode] = useState<TouchMode>('orbit');
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -26,26 +33,22 @@ export function TouchModeToggle({ controlsRef, onFit }: TouchModeToggleProps): J
   const applyMode = useCallback((m: TouchMode) => {
     const controls = controlsRef.current;
     if (!controls) return;
-    if (m === 'pan') {
-      controls.mouseButtons = {
-        LEFT: 2 as never,
-        MIDDLE: 1 as never,
-        RIGHT: 0 as never,
-      };
-    } else {
-      controls.mouseButtons = {
-        LEFT: 0 as never,
-        MIDDLE: 1 as never,
-        RIGHT: 2 as never,
-      };
-    }
+    // Touch gestures read controls.touches (not mouseButtons). A one-finger
+    // drag either rotates the camera (orbit) or pans it (center); two fingers
+    // always pinch-dolly + pan. mouseButtons is left at its OrbitControls
+    // defaults so the desktop pointer-drag interaction is unaffected.
+    controls.touches = {
+      ONE: (m === 'pan' ? TOUCH_PAN : TOUCH_ROTATE) as never,
+      TWO: TOUCH_DOLLY_PAN as never,
+    };
   }, [controlsRef]);
 
   useEffect(() => {
+    // Apply once the scene (and therefore controlsRef) is live, rather than
+    // racing the renderer with a fixed setTimeout.
+    if (!isReady) return;
     applyMode(mode);
-    const timer = window.setTimeout(() => applyMode(mode), 1000);
-    return () => window.clearTimeout(timer);
-  }, [mode, applyMode]);
+  }, [mode, isReady, applyMode]);
 
   const handleZoom = (direction: '+' | '-') => {
     const controls = controlsRef.current;
