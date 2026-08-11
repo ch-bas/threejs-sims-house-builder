@@ -1,7 +1,7 @@
 import { useCallback, useRef, type MutableRefObject } from 'react';
 import { CAMERA_BRACKET_ARM } from '../lib/constants';
 import { hasCollisions } from '../lib/geometry';
-import { reseatWallMountedItem, snapWallMountedItem } from '../lib/opening-snap';
+import { isOpening, reseatWallMountedItem, snapOpeningToWall, snapWallMountedItem } from '../lib/opening-snap';
 import type { LayoutActions } from './use-layout-state';
 import type { FloorLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -185,6 +185,25 @@ export function useItemDrag({
       // position from the drag session — state is one dispatch behind here.
       const item = activeFloor.items.find((entry) => entry.id === id);
       const releasePos = finalPos ?? item?.position;
+      // Doors/windows: snapPosition force-snaps only the POSITION each drag
+      // frame, so an opening dragged from one wall to another keeps its stale
+      // rotation (slab perpendicular, sticking through the new wall — #62).
+      // Re-derive the wall-aligned rotation (and settle the snapped position)
+      // on drop, the same way the camera path does.
+      if (item && isOpening(item.type) && releasePos) {
+        const snapped = snapOpeningToWall({
+          position: releasePos,
+          itemWidth: item.width,
+          roomWidth,
+          roomDepth,
+          interiorWalls: activeFloor.interiorWalls ?? [],
+        });
+        actions.moveItem(id, snapped.position.x, snapped.position.z);
+        if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) {
+          actions.setRotation(id, snapped.rotation);
+        }
+        return;
+      }
       if (item?.type === 'security-camera' && releasePos) {
         const snapped = snapWallMountedItem({
           position: releasePos,

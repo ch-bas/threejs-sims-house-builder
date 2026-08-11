@@ -105,8 +105,13 @@ export function downloadInventoryCsv(layout: RoomLayout): void {
 }
 
 function csvField(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
+  // Neutralize spreadsheet formula injection: a value beginning with =, +, -,
+  // @, or a tab is interpreted as a formula by Excel/Sheets, so an imported
+  // layout with an item named `=HYPERLINK(...)` would execute on export.
+  // Prefix a single quote to force it to a literal string.
+  const safe = /^[=+\-@\t]/.test(value) ? `'${value}` : value;
+  if (/[",\n\r]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
 }
 
 export async function downloadSceneAsGlb(scene: import('three').Object3D, baseName: string): Promise<void> {
