@@ -1,6 +1,6 @@
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
-import { openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
+import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, WallId, WallPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -447,12 +447,19 @@ function buildWallGeometryWithCutouts(
   shape.lineTo(-halfW, halfH);
   shape.closePath();
 
-  for (const cutout of cutouts) {
-    const x0 = cutout.centerAlongWall - cutout.width / 2;
-    const x1 = cutout.centerAlongWall + cutout.width / 2;
-    const y0 = -halfH + cutout.bottomFromFloor;
-    const y1 = y0 + cutout.height;
-
+  // Merge overlapping cutouts before building holes — overlapping holes are
+  // illegal for earcut and produce phantom fill / self-intersecting triangles.
+  const rects = cutouts.map(
+    (c) =>
+      [
+        c.centerAlongWall - c.width / 2,
+        -halfH + c.bottomFromFloor,
+        c.centerAlongWall + c.width / 2,
+        -halfH + c.bottomFromFloor + c.height,
+      ] as [number, number, number, number]
+  );
+  for (const [x0, y0, x1, y1] of mergeHoleRects(rects)) {
+    if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
     const hole = new THREE.Path();
     hole.moveTo(x0, y0);
     hole.lineTo(x1, y0);
@@ -490,13 +497,20 @@ function buildFloorGeometryWithOpenings(
   shape.lineTo(-halfW, halfD);
   shape.closePath();
 
-  for (const opening of openings) {
-    const x0 = opening.centerX - opening.width / 2;
-    const x1 = opening.centerX + opening.width / 2;
-    // The -90° X rotation maps shape-Y to world -Z, so negate Z.
-    const y0 = -(opening.centerZ + opening.depth / 2);
-    const y1 = -(opening.centerZ - opening.depth / 2);
-
+  // Merge overlapping stairwell openings so two adjacent stairs never produce
+  // overlapping holes (illegal for earcut). The -90° X rotation maps shape-Y to
+  // world -Z, so negate Z when forming each rectangle.
+  const rects = openings.map(
+    (o) =>
+      [
+        o.centerX - o.width / 2,
+        -(o.centerZ + o.depth / 2),
+        o.centerX + o.width / 2,
+        -(o.centerZ - o.depth / 2),
+      ] as [number, number, number, number]
+  );
+  for (const [x0, y0, x1, y1] of mergeHoleRects(rects)) {
+    if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
     const hole = new THREE.Path();
     hole.moveTo(x0, y0);
     hole.lineTo(x1, y0);

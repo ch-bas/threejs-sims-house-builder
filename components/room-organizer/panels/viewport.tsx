@@ -68,10 +68,15 @@ export function Viewport(props: ViewportProps): JSX.Element {
          * can attach its renderer before isReady becomes true. The
          * inactive canvas is hidden, not unmounted.
          */}
+        {/*
+         * No fixed width/height attributes: the 2D backing store is sized to
+         * clientWidth/clientHeight × devicePixelRatio by a ResizeObserver in
+         * use-scene-effects, so the canvas stays crisp on retina and its aspect
+         * ratio matches the container (circles stay circular). CSS stretches the
+         * element to fill the viewport.
+         */}
         <canvas
           ref={props.canvas2DRef}
-          width={800}
-          height={600}
           className={props.view2D ? '' : 'hidden'}
           style={{
             width: '100%',

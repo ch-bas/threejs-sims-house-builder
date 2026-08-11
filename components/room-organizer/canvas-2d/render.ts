@@ -15,6 +15,25 @@ export interface Render2DOptions {
 }
 
 const PADDING = 60;
+
+// Decoded floor-plan image cache, keyed on the data-URL. Decoding a multi-MB
+// data-URL is async: the first render kicks off the load and re-renders once
+// the pixels are ready (so the image never paints over grid/furniture drawn
+// after it). Subsequent renders reuse the cached, already-decoded Image and
+// draw it synchronously in the correct layer order.
+let floorPlanImageCache: { url: string; image: HTMLImageElement } | null = null;
+
+/**
+ * Callback the render effect installs so the async floor-plan decode can
+ * trigger a full repaint (redrawing the whole scene in the right layer order)
+ * once the image is ready. Set via {@link setFloorPlanRepaintHandler}.
+ */
+let requestRepaint: (() => void) | null = null;
+
+/** Register the repaint handler used when an async floor-plan image finishes loading. */
+export function setFloorPlanRepaintHandler(handler: (() => void) | null): void {
+  requestRepaint = handler;
+}
 const WIFI_RING_FILLS = ['rgba(0, 255, 0, 0.15)', 'rgba(255, 255, 0, 0.10)', 'rgba(255, 102, 0, 0.08)'];
 const WIFI_RING_STROKES = ['rgba(0, 255, 0, 0.4)', 'rgba(255, 255, 0, 0.3)', 'rgba(255, 102, 0, 0.2)'];
 const CCTV_RING_FILLS = ['rgba(0, 136, 255, 0.12)', 'rgba(0, 221, 255, 0.08)', 'rgba(136, 0, 255, 0.06)'];
@@ -25,21 +44,31 @@ export function render2DTopDown(options: Render2DOptions): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // The backing store is sized clientWidth/clientHeight × devicePixelRatio (by
+  // the ResizeObserver in use-scene-effects), but all drawing below works in
+  // CSS-pixel (logical) coordinates. Reset the transform to a DPR scale so 1
+  // logical unit maps to `dpr` device pixels — that keeps strokes and text
+  // crisp on retina while the layout maths stays resolution-independent.
+  const dpr = canvas.width / Math.max(1, canvas.clientWidth || canvas.width);
+  const viewWidth = canvas.width / dpr;
+  const viewHeight = canvas.height / dpr;
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, viewWidth, viewHeight);
 
   const scale = Math.min(
-    (canvas.width - PADDING * 2) / layout.width,
-    (canvas.height - PADDING * 2) / layout.height
+    (viewWidth - PADDING * 2) / layout.width,
+    (viewHeight - PADDING * 2) / layout.height
   );
-  const offsetX = (canvas.width - layout.width * scale) / 2;
-  const offsetY = (canvas.height - layout.height * scale) / 2;
+  const offsetX = (viewWidth - layout.width * scale) / 2;
+  const offsetY = (viewHeight - layout.height * scale) / 2;
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
   drawRoomOutline(ctx, layout, offsetX, offsetY, scale);
 
   if (options.showHeatmap) {
-    drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale);
+    drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale, viewWidth, viewHeight);
   }
 
   if (options.showWiFiSignals) {
@@ -62,16 +91,33 @@ function drawFloor(
   offsetY: number,
   scale: number
 ): void {
-  if (layout.floorPlanImage) {
-    const img = new Image();
-    img.src = layout.floorPlanImage;
-    const draw = () => {
+  const url = layout.floorPlanImage;
+  if (url) {
+    // Fill the floor colour first so there's a base while (or if) the image is
+    // still decoding — avoids a flash of the raw canvas background.
+    ctx.fillStyle = floor.floorColor;
+    ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
+
+    if (floorPlanImageCache?.url === url && floorPlanImageCache.image.complete) {
+      const img = floorPlanImageCache.image;
       ctx.globalAlpha = layout.floorPlanOpacity ?? 1;
       ctx.drawImage(img, offsetX, offsetY, layout.width * scale, layout.height * scale);
       ctx.globalAlpha = 1;
-    };
-    if (img.complete) draw();
-    else img.onload = draw;
+      return;
+    }
+
+    // Not cached (or a different plan): decode once, then trigger a full
+    // repaint so grid/furniture end up on top of the image instead of the
+    // async onload painting over them.
+    if (floorPlanImageCache?.url !== url) {
+      const img = new Image();
+      floorPlanImageCache = { url, image: img };
+      img.onload = () => {
+        // Ignore stale loads if the plan changed again before this resolved.
+        if (floorPlanImageCache?.image === img) requestRepaint?.();
+      };
+      img.src = url;
+    }
   } else {
     ctx.fillStyle = floor.floorColor;
     ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
@@ -232,7 +278,9 @@ function drawHeatmap(
   items: readonly FurnitureItem[],
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  viewWidth: number,
+  viewHeight: number
 ): void {
   const COLS = 20;
   const ROWS = 20;
@@ -291,15 +339,23 @@ function drawHeatmap(
   }
   ctx.restore();
 
-  drawHeatmapLegend(ctx, max / cellArea);
+  drawHeatmapLegend(ctx, max / cellArea, viewWidth, viewHeight);
 }
 
-function drawHeatmapLegend(ctx: CanvasRenderingContext2D, maxPricePerSqM: number): void {
+function drawHeatmapLegend(
+  ctx: CanvasRenderingContext2D,
+  maxPricePerSqM: number,
+  viewWidth: number,
+  viewHeight: number
+): void {
   const padding = 12;
   const barWidth = 140;
   const barHeight = 12;
-  const x = ctx.canvas.width - barWidth - padding;
-  const y = ctx.canvas.height - barHeight - padding - 18;
+  // Position in logical (CSS-pixel) space — ctx is DPR-scaled, so using the raw
+  // backing-store size (ctx.canvas.width) would push the legend off-screen on
+  // retina.
+  const x = viewWidth - barWidth - padding;
+  const y = viewHeight - barHeight - padding - 18;
 
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.9)';

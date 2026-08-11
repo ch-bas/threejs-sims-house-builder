@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
-import { render2DTopDown } from '../canvas-2d/render';
+import { render2DTopDown, setFloorPlanRepaintHandler } from '../canvas-2d/render';
 import { hasCollisions } from '../lib/geometry';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
@@ -164,48 +164,6 @@ export function useSceneEffects({
     renderInteriorWallPreview(THREE, scene, wallDraft, wallSnapResult.point, activeFloorY);
   }, [isReady, invalidate, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallSnapResult, activeFloorY]);
 
-  // Cyan outline on selected wall
-  useEffect(() => {
-    invalidate();
-    if (!isReady) return undefined;
-    const THREE = threeModuleRef.current;
-    const scene = sceneRef.current;
-    if (!THREE || !scene) return undefined;
-
-    for (const child of [...scene.children]) {
-      if (child.userData.type === 'wall-selection') removeAndDispose(scene, child);
-    }
-    if (!selectedWall) return undefined;
-
-    const tag = selectedWall.kind === 'interior' ? 'interior-wall' : 'wall';
-    const wallMesh = scene.children.find(
-      (obj) => obj.userData.type === tag && obj.userData.wallId === selectedWall.id
-    ) as ThreeNS.Mesh | undefined;
-    if (!wallMesh) return undefined;
-
-    const edges = new THREE.EdgesGeometry(wallMesh.geometry);
-    const material = new THREE.LineBasicMaterial({
-      color: 0x7ff3ff,
-      transparent: true,
-      opacity: 0.95,
-      depthTest: false,
-    });
-    const outline = new THREE.LineSegments(edges, material);
-    outline.position.copy(wallMesh.position);
-    outline.rotation.copy(wallMesh.rotation);
-    outline.scale.copy(wallMesh.scale);
-    outline.renderOrder = 999;
-    outline.userData.type = 'wall-selection';
-    scene.add(outline);
-    invalidate();
-
-    return () => {
-      scene.remove(outline);
-      edges.dispose();
-      material.dispose();
-    };
-  }, [isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, selectedWall, layout.floors, activeFloorIndex]);
-
   // Build floor + walls
   useEffect(() => {
     invalidate();
@@ -222,7 +180,13 @@ export function useSceneEffects({
 
     for (const { floor, index } of floorsToRender) {
       const isActive = index === activeFloorIndex;
-      const wallOpenings = computeWallOpenings(floor.items, layout.width, layout.height);
+      const wallOpenings = computeWallOpenings(
+        floor.items,
+        layout.width,
+        layout.height,
+        3,
+        floor.interiorWalls ?? []
+      );
       // Stairs on the floor below create openings in this floor's plane.
       const floorBelow = index > 0 ? layout.floors[index - 1] : undefined;
       const floorOpenings = computeFloorOpenings(floorBelow);
@@ -382,10 +346,14 @@ export function useSceneEffects({
       outline.userData.type = 'selection-outline';
       group.add(outline);
     }
+    // view.showAllFloors is included because the furniture effect rebuilds all
+    // groups when it toggles (destroying the outline LineSegments children); the
+    // outline effect must re-run afterward to reattach outlines, otherwise a
+    // selected item is left with no outline after a Show-All-Floors toggle.
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
     activeFloor, activeFloorIndex, layout.width, layout.height,
-    selectedItemId, extraSelectedIds, highlightedIds,
+    selectedItemId, extraSelectedIds, highlightedIds, view.showAllFloors,
   ]);
 
   // Wi-Fi rings + camera vision cones. Independently tagged overlays, so
@@ -474,14 +442,68 @@ export function useSceneEffects({
         THREE, scene, walls,
         index * FLOOR_HEIGHT_METERS,
         view.showAllFloors && !isActive ? 0.25 : undefined,
-        { openingCandidates: floor.items }
+        { openingCandidates: floor.items, roomWidth: layout.width, roomDepth: layout.height }
       );
     }
     // layout.floors/activeFloor are read for the wall segments and the
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors, layout.width, layout.height]);
+
+  // Cyan outline on selected wall. Declared AFTER the shell + interior-wall
+  // rebuild effects and keyed on the same rebuild keys, so it always snapshots
+  // the CURRENT wall mesh. If it ran before the rebuilds (or without those
+  // keys) a hidden/moved/re-extruded wall would leave a stale floating outline.
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return undefined;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return undefined;
+
+    for (const child of [...scene.children]) {
+      if (child.userData.type === 'wall-selection') removeAndDispose(scene, child);
+    }
+    if (!selectedWall) return undefined;
+
+    const tag = selectedWall.kind === 'interior' ? 'interior-wall' : 'wall';
+    const wallMesh = scene.children.find(
+      (obj) => obj.userData.type === tag && obj.userData.wallId === selectedWall.id
+    ) as ThreeNS.Mesh | undefined;
+    if (!wallMesh) return undefined;
+
+    const edges = new THREE.EdgesGeometry(wallMesh.geometry);
+    const material = new THREE.LineBasicMaterial({
+      color: 0x7ff3ff,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+    });
+    const outline = new THREE.LineSegments(edges, material);
+    outline.position.copy(wallMesh.position);
+    outline.rotation.copy(wallMesh.rotation);
+    outline.scale.copy(wallMesh.scale);
+    outline.renderOrder = 999;
+    outline.userData.type = 'wall-selection';
+    scene.add(outline);
+    invalidate();
+
+    return () => {
+      scene.remove(outline);
+      edges.dispose();
+      material.dispose();
+    };
+    // Keyed on the shell + interior-wall rebuild keys (not layout.floors
+    // identity) so the outline re-snapshots the fresh mesh after any wall
+    // rebuild, hide, or move — without rebuilding on unrelated furniture edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
+    selectedWall, activeFloorIndex,
+    shellFinishesKey, wallOpeningsKey, interiorWallsKey,
+    layout.width, layout.height, view.showAllFloors, view.wallDisplay,
+  ]);
 
   // Measurement markers
   useEffect(() => {
@@ -539,22 +561,52 @@ export function useSceneEffects({
     });
   }, [isReady, invalidate, threeModuleRef, sceneRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors]);
 
-  // 2D top-down view
+  // 2D top-down view. The backing store is sized to the container's
+  // clientWidth/clientHeight × devicePixelRatio (via a ResizeObserver) so the
+  // aspect ratio matches the on-screen element (circles stay circular) and the
+  // render is crisp on retina; a resize re-paints. The floor-plan repaint
+  // handler lets an async image decode trigger a full repaint in the correct
+  // layer order.
   useEffect(() => {
     invalidate();
-    if (!view.view2D) return;
+    if (!view.view2D) return undefined;
     const canvas = canvas2DRef.current;
-    if (!canvas) return;
-    render2DTopDown({
-      canvas,
-      layout,
-      floor: activeFloor,
-      selectedItemId,
-      showMeasurements: view.showMeasurements,
-      showWiFiSignals: view.showWiFiSignals,
-      showHeatmap: view.showHeatmap,
-      hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height),
-    });
+    if (!canvas) return undefined;
+
+    const paint = () => {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (width === 0 || height === 0) return;
+      const dpr = window.devicePixelRatio || 1;
+      const backingWidth = Math.round(width * dpr);
+      const backingHeight = Math.round(height * dpr);
+      // Only resize the backing store when it actually changes — assigning
+      // canvas.width/height clears the canvas even when the value is unchanged.
+      if (canvas.width !== backingWidth) canvas.width = backingWidth;
+      if (canvas.height !== backingHeight) canvas.height = backingHeight;
+
+      render2DTopDown({
+        canvas,
+        layout,
+        floor: activeFloor,
+        selectedItemId,
+        showMeasurements: view.showMeasurements,
+        showWiFiSignals: view.showWiFiSignals,
+        showHeatmap: view.showHeatmap,
+        hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height),
+      });
+    };
+
+    setFloorPlanRepaintHandler(paint);
+    paint();
+
+    const observer = new ResizeObserver(paint);
+    observer.observe(canvas);
+
+    return () => {
+      observer.disconnect();
+      setFloorPlanRepaintHandler(null);
+    };
   }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, selectedItemId]);
 }
 
