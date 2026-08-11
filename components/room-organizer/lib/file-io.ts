@@ -24,15 +24,52 @@ export async function readLayoutFromFile(file: File): Promise<RoomLayout> {
   return layout;
 }
 
+/** Longest-edge cap for a stored floor plan, in pixels. */
+const MAX_IMAGE_EDGE = 1500;
+
 export async function readImageAsDataUrl(file: File): Promise<string> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Please upload an image file (PNG, JPG, etc.)');
   }
-  return new Promise((resolve, reject) => {
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'));
     reader.readAsDataURL(file);
+  });
+
+  // A full-resolution floor plan can easily be several MB of base64, which
+  // exhausts the ~5MB localStorage budget and makes every save fail. Downscale
+  // anything larger than MAX_IMAGE_EDGE on its long edge and re-encode as JPEG
+  // so the stored layout stays well within budget.
+  return downscaleDataUrl(rawDataUrl);
+}
+
+function downscaleDataUrl(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const longEdge = Math.max(image.width, image.height);
+      if (longEdge <= MAX_IMAGE_EDGE || longEdge === 0) {
+        resolve(dataUrl);
+        return;
+      }
+      const scale = MAX_IMAGE_EDGE / longEdge;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    // On decode failure, fall back to the original data URL rather than losing
+    // the upload entirely.
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
   });
 }
 

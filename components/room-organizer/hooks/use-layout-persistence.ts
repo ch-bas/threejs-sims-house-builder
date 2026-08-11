@@ -15,6 +15,12 @@ export interface UseLayoutPersistenceResult {
   lastSavedAt: number | null;
   /** True while the debounce window is pending — the next save is on the way. */
   saving: boolean;
+  /**
+   * True when the most recent save attempt failed (e.g. QuotaExceededError from
+   * an oversized floor-plan image). The HUD uses this to avoid falsely showing
+   * "Saved" when the layout never actually made it to localStorage.
+   */
+  saveError: boolean;
 }
 
 export function useLayoutPersistence({
@@ -33,6 +39,7 @@ export function useLayoutPersistence({
   const pendingRef = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   useEffect(() => {
     if (hasHydratedRef.current) return;
@@ -44,7 +51,15 @@ export function useLayoutPersistence({
       const shared = decodeShareUrl(window.location.hash);
       if (shared) {
         hydrationBaseRef.current = layout;
-        onHydrate(shared);
+        // A corrupt-but-parseable layout can still throw while it's applied to
+        // the scene. Guard the dispatch so a bad share link doesn't crash the
+        // whole mount — the error boundary's reset path is the recovery.
+        try {
+          onHydrate(shared);
+        } catch (error) {
+          console.warn('Failed to apply shared layout:', error);
+          hydrationBaseRef.current = null;
+        }
         // Clear the hash so reloading after edits doesn't restore the
         // shared version.
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -55,7 +70,14 @@ export function useLayoutPersistence({
     const saved = loadLayout();
     if (saved) {
       hydrationBaseRef.current = layout;
-      onHydrate(saved);
+      // As above: a stored layout that parses but throws on apply must not
+      // white-screen mount.
+      try {
+        onHydrate(saved);
+      } catch (error) {
+        console.warn('Failed to apply saved layout:', error);
+        hydrationBaseRef.current = null;
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot hydration; `layout` is only read as the pre-hydration baseline
   }, [onHydrate]);
@@ -71,10 +93,20 @@ export function useLayoutPersistence({
     setSaving(true);
     pendingRef.current = true;
     const handle = window.setTimeout(() => {
-      pendingRef.current = false;
-      saveLayout(layout);
-      setLastSavedAt(Date.now());
-      setSaving(false);
+      const ok = saveLayout(layout);
+      if (ok) {
+        // Only mark the edit persisted on a real success — otherwise the HUD
+        // would show "Saved" for a layout that never reached localStorage.
+        pendingRef.current = false;
+        setLastSavedAt(Date.now());
+        setSaving(false);
+        setSaveError(false);
+      } else {
+        // Keep `saving`/pending truthy and flag the error so the HUD reports
+        // the failure instead of a false "Saved". A later successful edit
+        // clears the flag.
+        setSaveError(true);
+      }
     }, debounceMs);
     return () => window.clearTimeout(handle);
   }, [layout, debounceMs]);
@@ -95,5 +127,5 @@ export function useLayoutPersistence({
     };
   }, []);
 
-  return { lastSavedAt, saving };
+  return { lastSavedAt, saving, saveError };
 }

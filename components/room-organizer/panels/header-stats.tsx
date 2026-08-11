@@ -9,11 +9,13 @@ import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 export interface HeaderStatsProps {
   lastSavedAt?: number | null;
   saving?: boolean;
+  saveError?: boolean;
 }
 
 export function HeaderStats({
   lastSavedAt = null,
   saving = false,
+  saveError = false,
 }: HeaderStatsProps): JSX.Element {
   const { layout } = useRoomEditor();
   const budget = DEFAULT_BUDGET;
@@ -33,7 +35,7 @@ export function HeaderStats({
         value={`${CURRENCY_SYMBOL}${cost.toLocaleString()} / ${CURRENCY_SYMBOL}${budget.toLocaleString()}`}
         intent={overBudget ? 'danger' : ratio > 0.85 ? 'warning' : 'normal'}
       />
-      <SaveIndicator lastSavedAt={lastSavedAt} saving={saving} />
+      <SaveIndicator lastSavedAt={lastSavedAt} saving={saving} saveError={saveError} />
     </div>
   );
 }
@@ -41,18 +43,29 @@ export function HeaderStats({
 interface SaveIndicatorProps {
   lastSavedAt: number | null;
   saving: boolean;
+  saveError: boolean;
 }
 
-function SaveIndicator({ lastSavedAt, saving }: SaveIndicatorProps): JSX.Element {
+function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): JSX.Element {
   const [, force] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => force((n) => n + 1), 10_000);
     return () => window.clearInterval(id);
   }, []);
 
+  // A failed save (typically an oversized floor-plan blowing the localStorage
+  // budget) takes precedence — never claim "Saved" for a layout that didn't
+  // actually persist.
   let label = 'Auto-save on';
-  if (saving) label = 'Saving…';
+  if (saveError) label = 'Save failed — storage full';
+  else if (saving) label = 'Saving…';
   else if (lastSavedAt) label = `Saved ${formatRelative(Date.now() - lastSavedAt)}`;
+
+  const iconColor = saveError
+    ? 'var(--pc-danger, #f87171)'
+    : saving
+      ? 'var(--pc-cyan-glow)'
+      : 'var(--pc-paper-soft)';
 
   return (
     <div
@@ -61,7 +74,7 @@ function SaveIndicator({ lastSavedAt, saving }: SaveIndicatorProps): JSX.Element
         alignItems: 'center',
         gap: 6,
         padding: '4px 10px',
-        color: 'var(--pc-paper-soft)',
+        color: saveError ? 'var(--pc-danger, #f87171)' : 'var(--pc-paper-soft)',
         fontFamily: 'var(--pc-font-body)',
         fontSize: 11,
         fontWeight: 600,
@@ -70,9 +83,9 @@ function SaveIndicator({ lastSavedAt, saving }: SaveIndicatorProps): JSX.Element
       <span
         aria-hidden
         style={{
-          color: saving ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)',
+          color: iconColor,
           display: 'inline-flex',
-          animation: saving ? 'pcHaloPulse 1.6s ease-in-out infinite' : undefined,
+          animation: saving && !saveError ? 'pcHaloPulse 1.6s ease-in-out infinite' : undefined,
         }}
       >
         <Icon name="save" size={14} />
