@@ -40,10 +40,17 @@ export interface DragHandlersOptions {
   handlersRef: { readonly current: SceneEventHandlers };
 }
 
+// A pointerdown that never travels past this radius (in CSS pixels) is a click,
+// not a drag: it selects the item without opening a drag session, so a plain
+// tap/click never re-locks the item or writes an undo entry. Real drags cross
+// the threshold and behave exactly as before.
+const DRAG_THRESHOLD_PX = 4;
+
 /**
- * Wires the canvas mouse events for select / drag / hover / wall-pick /
- * empty-click. Pure Three.js + DOM — no React. Returns a cleanup that removes
- * every listener.
+ * Wires the canvas pointer events for select / drag / hover / wall-pick /
+ * empty-click. Pointer events unify mouse, touch and pen — the same code path
+ * drives desktop and touch. Pure Three.js + DOM — no React. Returns a cleanup
+ * that removes every listener.
  */
 export function attachDragHandlers({
   THREE,
@@ -59,15 +66,47 @@ export function attachDragHandlers({
   const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const intersection = new THREE.Vector3();
 
+  // A "pending" drag is a pointerdown that landed on a movable item but hasn't
+  // yet travelled past DRAG_THRESHOLD_PX. Until it does, no drag session is
+  // opened (see #65) — a release while still pending is a select-only click.
   let dragTarget: ThreeNS.Object3D | null = null;
+  let dragStarted = false;
+  let activePointerId: number | null = null;
+  let downClientX = 0;
+  let downClientY = 0;
 
-  const setPointerFromEvent = (event: MouseEvent): void => {
+  const setPointerFromEvent = (event: { clientX: number; clientY: number }): void => {
     const rect = canvas.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   };
 
-  const onMouseDown = (event: MouseEvent): void => {
+  const resetDragState = (): void => {
+    dragTarget = null;
+    dragStarted = false;
+    activePointerId = null;
+  };
+
+  const beginDragSession = (event: PointerEvent): void => {
+    if (!dragTarget) return;
+    dragStarted = true;
+    // Take pointer capture so moves/up keep flowing to us even if the pointer
+    // slides off the canvas mid-drag (important for touch), and stop
+    // OrbitControls from panning/rotating the camera under the drag.
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // Capture can throw if the pointer is already gone; safe to ignore.
+    }
+    controls.enabled = false;
+    handlersRef.current.onItemDragStart?.(dragTarget.userData.id as string);
+  };
+
+  const onPointerDown = (event: PointerEvent): void => {
+    // Only track a single primary pointer at a time. A second finger arriving
+    // mid-gesture is ignored here so it can drive OrbitControls' pinch.
+    if (activePointerId !== null) return;
+
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     const furniture = scene.children.filter((obj) => obj.userData.type === 'furniture');
@@ -114,13 +153,17 @@ export function attachDragHandlers({
 
     if (target.userData.locked === true || mode === 'toggle') return;
 
+    // Arm a potential drag, but don't open the session yet: the drag only
+    // begins once the pointer travels past DRAG_THRESHOLD_PX (see onPointerMove).
     dragTarget = target;
-    controls.enabled = false;
-    handlersRef.current.onItemDragStart?.(itemId);
+    dragStarted = false;
+    activePointerId = event.pointerId;
+    downClientX = event.clientX;
+    downClientY = event.clientY;
   };
 
   let lastHoverId: string | null = null;
-  const updateHover = (event: MouseEvent): void => {
+  const updateHover = (event: PointerEvent): void => {
     const hoverCallback = handlersRef.current.onItemHover;
     if (!hoverCallback) return;
     setPointerFromEvent(event);
@@ -130,7 +173,7 @@ export function attachDragHandlers({
     const target = ascendToFurniture(hits[0]?.object);
     const id = target ? (target.userData.id as string) : null;
 
-    // Only notify on hover changes — a fresh payload per mousemove would
+    // Only notify on hover changes — a fresh payload per move would
     // re-render React for every pixel of travel. The tooltip anchors at the
     // point where the hover began.
     if (id === lastHoverId) return;
@@ -139,9 +182,13 @@ export function attachDragHandlers({
     hoverCallback(id ? { id, clientX: event.clientX, clientY: event.clientY } : null);
   };
 
-  const onMouseMove = (event: MouseEvent): void => {
+  const onPointerMove = (event: PointerEvent): void => {
     if (!dragTarget) {
-      updateHover(event);
+      // Hover + tooltip is a mouse/pen affordance only. Skipping it for touch
+      // avoids per-frame React re-renders while a finger drags.
+      if (event.pointerType !== 'touch') {
+        updateHover(event);
+      }
       if (handlersRef.current.onFloorPointerMove) {
         setPointerFromEvent(event);
         raycaster.setFromCamera(pointer, camera);
@@ -152,6 +199,17 @@ export function attachDragHandlers({
       }
       return;
     }
+
+    // A drag is armed on this item but the session hasn't opened yet: wait for
+    // the pointer to travel past the threshold before treating it as a drag.
+    if (!dragStarted) {
+      if (event.pointerId !== activePointerId) return;
+      const dx = event.clientX - downClientX;
+      const dy = event.clientY - downClientY;
+      if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+      beginDragSession(event);
+    }
+
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
@@ -166,36 +224,62 @@ export function attachDragHandlers({
     handlersRef.current.onItemDrag(itemId, snapped.x, snapped.z);
   };
 
-  const onMouseUp = (): void => {
-    if (!dragTarget) return;
-    const id = dragTarget.userData.id as string;
-    dragTarget = null;
+  const endGesture = (event: PointerEvent): void => {
+    if (event.pointerId !== activePointerId && activePointerId !== null) return;
+    const started = dragStarted;
+    const target = dragTarget;
+    if (activePointerId !== null) {
+      try {
+        canvas.releasePointerCapture(activePointerId);
+      } catch {
+        // Ignore if capture was never held or already released.
+      }
+    }
+    resetDragState();
+    if (!target) return;
+    // A pointerup that never crossed the drag threshold was a select-only
+    // click: no session was opened, so there is nothing to end (see #65).
+    if (!started) return;
     controls.enabled = true;
-    handlersRef.current.onItemDragEnd?.(id);
+    handlersRef.current.onItemDragEnd?.(target.userData.id as string);
   };
 
-  const onMouseLeave = (): void => {
-    handlersRef.current.onItemHover?.(null);
+  const onPointerUp = (event: PointerEvent): void => {
+    endGesture(event);
+  };
+
+  const onPointerCancel = (event: PointerEvent): void => {
+    endGesture(event);
+  };
+
+  const onPointerLeave = (event: PointerEvent): void => {
+    // Hover teardown is a mouse affordance; touch never sets hover state.
+    if (event.pointerType !== 'touch') {
+      handlersRef.current.onItemHover?.(null);
+      lastHoverId = null;
+      canvas.style.cursor = '';
+    }
     handlersRef.current.onFloorPointerLeave?.();
-    canvas.style.cursor = '';
-    if (dragTarget) {
-      const id = dragTarget.userData.id as string;
-      dragTarget = null;
-      controls.enabled = true;
-      handlersRef.current.onItemDragEnd?.(id);
+    // If a real drag is under way we keep it alive: pointer capture routes the
+    // remaining move/up events back to us even outside the canvas. Only a
+    // still-armed (not yet started) drag is abandoned here.
+    if (dragTarget && !dragStarted) {
+      resetDragState();
     }
   };
 
-  canvas.addEventListener('mousedown', onMouseDown);
-  canvas.addEventListener('mousemove', onMouseMove);
-  canvas.addEventListener('mouseup', onMouseUp);
-  canvas.addEventListener('mouseleave', onMouseLeave);
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerCancel);
+  canvas.addEventListener('pointerleave', onPointerLeave);
 
   return () => {
-    canvas.removeEventListener('mousedown', onMouseDown);
-    canvas.removeEventListener('mousemove', onMouseMove);
-    canvas.removeEventListener('mouseup', onMouseUp);
-    canvas.removeEventListener('mouseleave', onMouseLeave);
+    canvas.removeEventListener('pointerdown', onPointerDown);
+    canvas.removeEventListener('pointermove', onPointerMove);
+    canvas.removeEventListener('pointerup', onPointerUp);
+    canvas.removeEventListener('pointercancel', onPointerCancel);
+    canvas.removeEventListener('pointerleave', onPointerLeave);
   };
 }
 
