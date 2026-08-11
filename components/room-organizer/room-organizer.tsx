@@ -267,7 +267,20 @@ export function RoomOrganizer(): JSX.Element {
       if (current === null) {
         return id;
       }
-      if (current === id) return current;
+      if (current === id) {
+        // Toggling the primary off: promote an extra to primary (keeping the
+        // rest of the multi-select intact) or clear the selection entirely.
+        let promoted: string | null = null;
+        setExtraSelectedIds((extras) => {
+          if (extras.size === 0) return extras;
+          const next = new Set(extras);
+          const [first] = next;
+          promoted = first ?? null;
+          if (promoted !== null) next.delete(promoted);
+          return next;
+        });
+        return promoted;
+      }
       setExtraSelectedIds((extras) => {
         const next = new Set(extras);
         if (next.has(id)) next.delete(id);
@@ -381,6 +394,30 @@ export function RoomOrganizer(): JSX.Element {
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
   }, [actions, activeFloor.items, allSelectedIds]);
+
+  // Duplicate the current selection. For a multi-select every selected item is
+  // copied (each offset by the reducer) and the copies become the new
+  // selection, so the result is a clean set of duplicates rather than one new
+  // copy mixed in with the stale originals' ids.
+  const duplicateSelected = useCallback(
+    (primaryId: string) => {
+      if (allSelectedIds.size > 1 && allSelectedIds.has(primaryId)) {
+        // Duplicate the primary first so it becomes the new primary, then the
+        // remaining selected items in a stable order.
+        const others = Array.from(allSelectedIds).filter((id) => id !== primaryId);
+        const newPrimary = actions.duplicateItem(primaryId);
+        const newExtras = others.map((id) => actions.duplicateItem(id));
+        setSelectedItemId(newPrimary);
+        setExtraSelectedIds(new Set(newExtras));
+        return;
+      }
+      const newId = actions.duplicateItem(primaryId);
+      setSelectedItemId(newId);
+      // Clear stale extras so the selection is only the fresh copy.
+      setExtraSelectedIds(new Set());
+    },
+    [actions, allSelectedIds]
+  );
 
   const history = useHistory(layout, useCallback(
     (snapshot: RoomLayout) => {
@@ -545,10 +582,7 @@ export function RoomOrganizer(): JSX.Element {
           removeItem(id);
         }
       },
-      duplicateItem: (id: string) => {
-        const newId = actions.duplicateItem(id);
-        setSelectedItemId(newId);
-      },
+      duplicateItem: duplicateSelected,
       rotateItem: rotateItemHandler,
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
@@ -601,6 +635,7 @@ export function RoomOrganizer(): JSX.Element {
     [
       removeItem,
       removeSelected,
+      duplicateSelected,
       allSelectedIds,
       actions,
       activeFloor.items,
@@ -790,10 +825,7 @@ export function RoomOrganizer(): JSX.Element {
             playCue('rotate');
           }}
           onToggleCameraBracket={toggleCameraBracket}
-          onDuplicate={(id: string) => {
-            const newId = actions.duplicateItem(id);
-            setSelectedItemId(newId);
-          }}
+          onDuplicate={duplicateSelected}
           onRemove={removeItem}
           onClose={() => {
             setSelectedItemId(null);

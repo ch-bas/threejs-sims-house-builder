@@ -1,6 +1,8 @@
-import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout } from './types';
+import { MAX_FLOORS, MAX_ROOM_DIMENSION } from './constants';
+import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoofStyle, RoomLayout } from './types';
 
 const FIT_MODES: readonly FloorPlanFitMode[] = ['stretch', 'cover', 'contain'];
+const ROOF_STYLES: readonly RoofStyle[] = ['none', 'flat', 'gable', 'hipped'];
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -8,6 +10,19 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isPositiveNumber(value: unknown): value is number {
   return isFiniteNumber(value) && value > 0;
+}
+
+/**
+ * A room dimension must be finite AND strictly positive (0/negative break
+ * PlaneGeometry, fitTextureToRoom, and collision math) and sanely bounded so a
+ * corrupt value can't blow up the geometry.
+ */
+function isRoomDimension(value: unknown): value is number {
+  return isPositiveNumber(value) && value <= MAX_ROOM_DIMENSION;
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === 'boolean';
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -41,6 +56,13 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (v.visionRange !== undefined && !isFiniteNumber(v.visionRange)) return false;
   if (v.visionFov !== undefined && !isFiniteNumber(v.visionFov)) return false;
   if (v.wallRotation !== undefined && !isFiniteNumber(v.wallRotation)) return false;
+  // Booleans must be real booleans: a corrupt `locked:"no"` reads truthy for
+  // keyboard-delete guards yet fails `=== true` drag checks, desyncing the two.
+  if (!isOptionalBoolean(v.locked)) return false;
+  if (!isOptionalBoolean(v.mirrored)) return false;
+  if (!isOptionalBoolean(v.cameraBracket)) return false;
+  if (!isOptionalBoolean(v.isCCTV)) return false;
+  if (!isOptionalBoolean(v.isWiFiAccessPoint)) return false;
   return true;
 }
 
@@ -84,9 +106,14 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
   const v = value;
 
   if (typeof v.name !== 'string') return false;
-  if (!isFiniteNumber(v.width)) return false;
-  if (!isFiniteNumber(v.height)) return false;
-  if (!Array.isArray(v.floors) || v.floors.length === 0 || !v.floors.every(isFloorLayout)) {
+  if (!isRoomDimension(v.width)) return false;
+  if (!isRoomDimension(v.height)) return false;
+  if (
+    !Array.isArray(v.floors) ||
+    v.floors.length === 0 ||
+    v.floors.length > MAX_FLOORS ||
+    !v.floors.every(isFloorLayout)
+  ) {
     return false;
   }
 
@@ -102,7 +129,7 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
   if (v.roof !== undefined) {
     if (!isPlainObject(v.roof)) return false;
     const roof = v.roof;
-    if (typeof roof.style !== 'string') return false;
+    if (!ROOF_STYLES.includes(roof.style as RoofStyle)) return false;
     if (roof.color !== undefined && typeof roof.color !== 'string') return false;
   }
 
@@ -141,8 +168,8 @@ function isLegacySingleFloorLayout(value: unknown): value is LegacySingleFloorLa
   const v = value;
   return (
     typeof v.name === 'string' &&
-    isFiniteNumber(v.width) &&
-    isFiniteNumber(v.height) &&
+    isRoomDimension(v.width) &&
+    isRoomDimension(v.height) &&
     typeof v.floorColor === 'string' &&
     Array.isArray(v.items) &&
     v.items.every(isFurnitureItem) &&
