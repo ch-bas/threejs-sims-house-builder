@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.0] - 2026-08-11
+
+Correctness and robustness release from the second-round audit (issues [#58](https://github.com/ch-bas/threejs-sims-house-builder/issues/58)–[#74](https://github.com/ch-bas/threejs-sims-house-builder/issues/74)).
+
+### Added
+- Touch support: the canvas now uses pointer events, so tablets and phones can select and drag furniture; the touch mode toggle configures the correct one-/two-finger gestures ([#64](https://github.com/ch-bas/threejs-sims-house-builder/issues/64))
+- Error boundaries with a "Reset saved layout" recovery button, so a corrupt saved layout can no longer permanently white-screen the app ([#70](https://github.com/ch-bas/threejs-sims-house-builder/issues/70))
+
+### Fixed
+- Collision detection and the 2D top-down view now match the 3D scene at every rotation; previously both mirrored the rendered footprint, so rotated items showed wrong collision flags and flipped orientation in 2D ([#58](https://github.com/ch-bas/threejs-sims-house-builder/issues/58))
+- Doors and windows on the south and west walls no longer punch their cutout at the mirrored position ([#59](https://github.com/ch-bas/threejs-sims-house-builder/issues/59))
+- Doors and windows are no longer permanently flagged as colliding (they live inside the wall by design) ([#60](https://github.com/ch-bas/threejs-sims-house-builder/issues/60))
+- Clicking an item to select it no longer counts as a zero-distance drag — it no longer re-locks the item, blocks nudge/delete, or adds a spurious undo entry ([#65](https://github.com/ch-bas/threejs-sims-house-builder/issues/65))
+- Camera-pad zoom slider is no longer direction-inverted ([#68](https://github.com/ch-bas/threejs-sims-house-builder/issues/68))
+- Oversized floor-plan images are downscaled before saving, and failed saves (storage full) are reported honestly instead of showing "Saved" ([#71](https://github.com/ch-bas/threejs-sims-house-builder/issues/71))
+- Redo within the auto-commit debounce window no longer destroys a freshly-made edit ([#74](https://github.com/ch-bas/threejs-sims-house-builder/issues/74))
+
 ## [1.5.0] - 2026-08-10
 
 Performance and internal-quality release completing the August 2026 code audit (issues [#32](https://github.com/ch-bas/threejs-sims-house-builder/issues/32), [#34](https://github.com/ch-bas/threejs-sims-house-builder/issues/34)–[#38](https://github.com/ch-bas/threejs-sims-house-builder/issues/38)).

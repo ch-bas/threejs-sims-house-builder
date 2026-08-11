@@ -221,7 +221,7 @@ npm run typecheck
 ## Module layout
 
 ```
-app/                                     Next.js entry, no auth wrapper
+app/                                     Next.js entry (+ error / global-error boundaries)
 components/
 ├── ui/                                  shadcn-style primitives
 └── room-organizer/
