@@ -173,15 +173,22 @@ function buildOpening(
 }
 
 function projectAlongWall(position: { x: number; z: number }, wall: WallId): number {
+  // centerAlongWall is measured in each wall's LOCAL frame (origin at the
+  // wall's midpoint, along its local +X). The south and west walls are
+  // rotated relative to world space, so world coords must be flipped to land
+  // the cutout under the slab.
   switch (wall) {
     case 'north':
-    case 'south':
+      // North wall: local +X aligns with world +X.
       return position.x;
+    case 'south':
+      // South wall is rotateY π (local +X → world −X), so flip.
+      return -position.x;
     case 'east':
-    case 'west':
-      // East/west walls run along Z; the inside view's "right" is +z for
-      // the west wall and -z for the east wall, but for centre alignment
-      // we don't care about flip — the cutout is symmetric.
+      // East wall: local +X aligns with world +Z.
       return position.z;
+    case 'west':
+      // West wall is rotateY π/2 (local +X → world −Z), so flip.
+      return -position.z;
   }
 }

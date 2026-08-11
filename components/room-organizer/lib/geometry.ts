@@ -1,7 +1,24 @@
+import { isOpening } from './opening-snap';
 import type { FurnitureItem, Vec2 } from './types';
 
 export function boundingRadius(item: Pick<FurnitureItem, 'width' | 'depth'>): number {
   return Math.hypot(item.width / 2, item.depth / 2);
+}
+
+/**
+ * Half-extents of an item's axis-aligned bounding box in world space, given
+ * its oriented footprint. Shared by bounds tests, wall snapping, and the 2D
+ * renderer so rotated items report a consistent footprint everywhere.
+ */
+export function rotatedHalfExtents(
+  item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation'>
+): { halfW: number; halfD: number } {
+  const cos = Math.abs(Math.cos(item.rotation ?? 0));
+  const sin = Math.abs(Math.sin(item.rotation ?? 0));
+  return {
+    halfW: (item.width * cos + item.depth * sin) / 2,
+    halfD: (item.width * sin + item.depth * cos) / 2,
+  };
 }
 
 /**
@@ -39,9 +56,11 @@ function toObb(item: FurnitureItem): Obb {
     cz: item.position?.z ?? 0,
     hw: item.width / 2,
     hd: item.depth / 2,
+    // Three's rotY maps the local +X axis to (cosθ, −sinθ) in world XZ, so the
+    // width axis is (cos, −sin) and the depth axis is (sin, cos).
     ax: cos,
-    az: sin,
-    bx: -sin,
+    az: -sin,
+    bx: sin,
     bz: cos,
   };
 }
@@ -70,10 +89,7 @@ function obbOverlap(a: Obb, b: Obb): boolean {
 export function itemInBounds(item: FurnitureItem, roomWidth: number, roomDepth: number): boolean {
   if (!item.position) return false;
   // Rotation-aware AABB of the item's oriented footprint.
-  const cos = Math.abs(Math.cos(item.rotation ?? 0));
-  const sin = Math.abs(Math.sin(item.rotation ?? 0));
-  const halfW = (item.width * cos + item.depth * sin) / 2;
-  const halfD = (item.width * sin + item.depth * cos) / 2;
+  const { halfW, halfD } = rotatedHalfExtents(item);
   return (
     item.position.x - halfW >= -roomWidth / 2 &&
     item.position.x + halfW <= roomWidth / 2 &&
@@ -85,10 +101,7 @@ export function itemInBounds(item: FurnitureItem, roomWidth: number, roomDepth: 
 /** True when the item's rotation-aware AABB is entirely beyond the room rect. */
 export function itemFullyOutside(item: FurnitureItem, roomWidth: number, roomDepth: number): boolean {
   if (!item.position) return false;
-  const cos = Math.abs(Math.cos(item.rotation ?? 0));
-  const sin = Math.abs(Math.sin(item.rotation ?? 0));
-  const halfW = (item.width * cos + item.depth * sin) / 2;
-  const halfD = (item.width * sin + item.depth * cos) / 2;
+  const { halfW, halfD } = rotatedHalfExtents(item);
   return (
     item.position.x + halfW <= -roomWidth / 2 ||
     item.position.x - halfW >= roomWidth / 2 ||
@@ -107,6 +120,12 @@ export function hasCollisions(
   // Security cameras mount on the wall plane and may sit on its exterior side
   // when aimed outward, so the room-bounds test doesn't apply to them.
   if (item.type === 'security-camera') return false;
+  // Openings (doors/windows) live in the wall plane by design, so the
+  // room-bounds test never applies — they'd always poke through the wall and
+  // read as out-of-bounds. They still collide with other items on the wall.
+  if (isOpening(item.type)) {
+    return allItems.some((other) => other.id !== item.id && itemsOverlap(item, other));
+  }
   // Outdoor items belong outside the building footprint — flag them when any
   // part of their footprint pokes into the room. They still collide with
   // other items (e.g. two trees on the same spot).
@@ -194,10 +213,7 @@ export function snapToWall({
   roomDepth,
   threshold = 0.35,
 }: SnapToWallOptions): Vec2 {
-  const cos = Math.abs(Math.cos(item.rotation ?? 0));
-  const sin = Math.abs(Math.sin(item.rotation ?? 0));
-  const halfW = (item.width * cos + item.depth * sin) / 2;
-  const halfD = (item.width * sin + item.depth * cos) / 2;
+  const { halfW, halfD } = rotatedHalfExtents(item);
 
   const minX = -roomWidth / 2 + halfW;
   const maxX = roomWidth / 2 - halfW;

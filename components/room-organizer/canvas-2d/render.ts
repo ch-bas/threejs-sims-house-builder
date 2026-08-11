@@ -1,3 +1,4 @@
+import { rotatedHalfExtents } from '../lib/geometry';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../lib/types';
 
 export interface Render2DOptions {
@@ -161,7 +162,9 @@ function drawFurniture(
 
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(item.rotation ?? 0);
+    // Canvas rotate() is clockwise while Three's rotateY is CCW; negate so the
+    // 2D footprint matches the 3D scene's orientation.
+    ctx.rotate(-(item.rotation ?? 0));
 
     ctx.fillStyle = collision ? 'rgba(255, 0, 0, 0.7)' : item.color;
     ctx.fillRect(-w / 2, -d / 2, w, d);
@@ -186,11 +189,14 @@ function drawFurniture(
     ctx.restore();
 
     if (options.showMeasurements) {
+      // The label is drawn in screen space (outside the rotated transform), so
+      // offset it by the rotation-aware AABB half-depth to clear the footprint.
+      const { halfD } = rotatedHalfExtents(item);
       ctx.save();
       ctx.fillStyle = '#333';
       ctx.font = '10px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(`${item.width}m × ${item.depth}m`, cx, cy + d / 2 + 15);
+      ctx.fillText(`${item.width}m × ${item.depth}m`, cx, cy + halfD * scale + 15);
       ctx.restore();
     }
   }
@@ -243,10 +249,13 @@ function drawHeatmap(
     if (itemArea <= 0) continue;
     const pricePerArea = (item.price ?? 0) / itemArea;
 
-    const minX = item.position.x - item.width / 2 + layout.width / 2;
-    const maxX = item.position.x + item.width / 2 + layout.width / 2;
-    const minZ = item.position.z - item.depth / 2 + layout.height / 2;
-    const maxZ = item.position.z + item.depth / 2 + layout.height / 2;
+    // Use the rotation-aware AABB so a rotated item shades the cells its
+    // oriented footprint actually covers.
+    const { halfW, halfD } = rotatedHalfExtents(item);
+    const minX = item.position.x - halfW + layout.width / 2;
+    const maxX = item.position.x + halfW + layout.width / 2;
+    const minZ = item.position.z - halfD + layout.height / 2;
+    const maxZ = item.position.z + halfD + layout.height / 2;
 
     const col0 = Math.max(0, Math.floor(minX / cellWidth));
     const col1 = Math.min(COLS - 1, Math.floor(maxX / cellWidth));
