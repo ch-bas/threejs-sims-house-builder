@@ -73,7 +73,12 @@ export function useKeyboardShortcuts({
 
       // Everything below is a bare single-key shortcut. Never swallow browser
       // shortcuts like Cmd/Ctrl+F (find), Ctrl+R (reload), or Cmd+M.
-      if (ctrlOrCmd || event.altKey) return;
+      // AltGr is reported as ctrlKey+altKey on Windows, so a plain guard on
+      // those modifiers makes AltGr-produced keys (e.g. `[`/`]` on German /
+      // French / Nordic layouts) unreachable. Skip the guard when AltGraph is
+      // actually engaged — real Ctrl/Cmd chords never set the AltGraph state.
+      const altGraph = event.getModifierState('AltGraph');
+      if (!altGraph && (ctrlOrCmd || event.altKey)) return;
 
       if (event.key === 'f' && selectedItem) {
         event.preventDefault();
@@ -98,7 +103,7 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if (event.key === 'r' && selectedItem) {
+      if (event.key.toLowerCase() === 'r' && selectedItem) {
         event.preventDefault();
         if (event.shiftKey) {
           // Fine-grained 15° rotations when Shift is held.

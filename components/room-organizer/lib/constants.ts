@@ -9,6 +9,14 @@ export const CURRENCY_SYMBOL = '$';
 
 export const MAX_FLOORS = 4;
 
+/**
+ * Upper bound (metres) for a room's width/height. The editor UI tops out at
+ * 20m; this generous defensive cap keeps ingested/corrupt layouts from feeding
+ * absurd or non-positive dimensions into PlaneGeometry, texture fitting, and
+ * collision math while still accepting any realistic custom layout.
+ */
+export const MAX_ROOM_DIMENSION = 100;
+
 /** How far a bracketed security camera stands off the wall, in metres. */
 export const CAMERA_BRACKET_ARM = 0.22;
 

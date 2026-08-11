@@ -1,4 +1,4 @@
-import { MAX_FLOORS } from '../lib/constants';
+import { MAX_FLOORS, MAX_ROOM_DIMENSION } from '../lib/constants';
 import type {
   CatalogItem,
   FloorLayout,
@@ -238,14 +238,49 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       }));
 
     case 'rotateSelection':
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        items: floor.items.map((item) =>
-          action.ids.has(item.id)
-            ? { ...item, rotation: ((item.rotation ?? 0) + action.radians) % (Math.PI * 2) }
-            : item
-        ),
-      }));
+      return withActiveFloor(state, (floor) => {
+        // Rotate the whole group about its centroid: each selected item both
+        // spins in place (its own rotation) AND orbits the centroid, so the
+        // arrangement is preserved instead of every piece twisting individually.
+        const selected = floor.items.filter(
+          (item) => action.ids.has(item.id) && item.position
+        );
+        if (selected.length === 0) return floor;
+        let cx = 0;
+        let cz = 0;
+        for (const item of selected) {
+          cx += item.position!.x;
+          cz += item.position!.z;
+        }
+        cx /= selected.length;
+        cz /= selected.length;
+        // `group.rotation.y = rotation` (Three RY) maps a local offset (dx, dz)
+        // to world (dx·cosθ + dz·sinθ, −dx·sinθ + dz·cosθ). Use that same matrix
+        // for the orbit so the position sweep matches the rendered spin.
+        const theta = action.radians;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+        return {
+          ...floor,
+          items: floor.items.map((item) => {
+            if (!action.ids.has(item.id)) return item;
+            const nextRotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
+            if (!item.position) {
+              return { ...item, rotation: nextRotation };
+            }
+            const dx = item.position.x - cx;
+            const dz = item.position.z - cz;
+            return {
+              ...item,
+              rotation: nextRotation,
+              position: {
+                x: cx + dx * cos + dz * sin,
+                z: cz - dx * sin + dz * cos,
+              },
+            };
+          }),
+        };
+      });
 
     case 'setLockAll':
       return withActiveFloor(state, (floor) => ({
@@ -411,17 +446,24 @@ function patchItem(
   }));
 }
 
+function clampRoomDimension(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  return Math.min(value, MAX_ROOM_DIMENSION);
+}
+
 function normaliseLayout(layout: RoomLayout): RoomLayout {
-  if (layout.floors.length === 0) {
-    return { ...layout, floors: [INITIAL_GROUND_FLOOR] };
-  }
-  return {
-    ...layout,
-    floors: layout.floors.map((floor) => ({
-      ...floor,
-      floorColor: floor.floorColor || '#c9a57d',
-    })),
-  };
+  // Defense in depth: even after schema validation, clamp dimensions and floor
+  // count here so any layout reaching the reducer stays within safe bounds.
+  const width = clampRoomDimension(layout.width);
+  const height = clampRoomDimension(layout.height);
+  const floors =
+    layout.floors.length === 0
+      ? [INITIAL_GROUND_FLOOR]
+      : layout.floors.slice(0, MAX_FLOORS).map((floor) => ({
+          ...floor,
+          floorColor: floor.floorColor || '#c9a57d',
+        }));
+  return { ...layout, width, height, floors };
 }
 
 function clampActiveIndex(index: number, floorCount: number): number {
