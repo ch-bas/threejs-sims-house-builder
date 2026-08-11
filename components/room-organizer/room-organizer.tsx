@@ -389,7 +389,7 @@ export function RoomOrganizer(): JSX.Element {
     [actions]
   ));
 
-  const { lastSavedAt, saving: isSaving } = useLayoutPersistence({
+  const { lastSavedAt, saving: isSaving, saveError } = useLayoutPersistence({
     layout,
     onHydrate: useCallback(
       (saved: RoomLayout) => {
@@ -753,6 +753,7 @@ export function RoomOrganizer(): JSX.Element {
           <HeaderStats
             lastSavedAt={lastSavedAt}
             saving={isSaving}
+            saveError={saveError}
           />
         </div>
       </div>

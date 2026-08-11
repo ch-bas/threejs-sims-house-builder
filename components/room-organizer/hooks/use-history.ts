@@ -92,6 +92,21 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
 
   const redo = useCallback(() => {
     const { past, future } = stacksRef.current;
+
+    // A fresh edit still inside the debounce window hasn't been committed yet,
+    // and it will clear `future` when it commits. Redoing now would apply a
+    // stale snapshot and destroy that pending edit. Mirror the undo-side
+    // guard: while a pending edit exists, drop the stale future and treat redo
+    // as a no-op. While skipNextRef is armed the divergence is a
+    // not-yet-adopted baseline (hydration, undo/redo), not a pending edit.
+    if (!skipNextRef.current && !Object.is(valueRef.current, lastCommittedRef.current)) {
+      if (future.length > 0) {
+        stacksRef.current = { past, future: [] };
+        setStacks(stacksRef.current);
+      }
+      return;
+    }
+
     if (future.length === 0) return;
     const next = future[future.length - 1];
     if (next === undefined) return;
@@ -114,9 +129,11 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
 
   // A pending uncommitted edit is undoable too (back to the last committed
   // snapshot), so canUndo can't rely on the past stack alone.
-  const canUndo =
-    stacks.past.length > 0 || (!skipNextRef.current && !Object.is(value, lastCommittedRef.current));
-  const canRedo = stacks.future.length > 0;
+  const pendingEdit = !skipNextRef.current && !Object.is(value, lastCommittedRef.current);
+  const canUndo = stacks.past.length > 0 || pendingEdit;
+  // Symmetric to redo()'s guard: a pending edit invalidates the (stale) future
+  // stack, so redo must report disabled until that edit commits.
+  const canRedo = stacks.future.length > 0 && !pendingEdit;
 
   return useMemo(
     () => ({ canUndo, canRedo, undo, redo, clear }),
