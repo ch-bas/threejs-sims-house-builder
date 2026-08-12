@@ -24,8 +24,15 @@ export interface KeyboardShortcutHandlers {
 
 export interface UseKeyboardShortcutsOptions {
   selectedItem: FurnitureItem | null;
-  selectedWall: { id: string; kind: 'exterior' | 'interior' } | null; 
+  selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
   hasSignalItems: boolean;
+  /**
+   * When first-person walkthrough owns the keyboard (WASD/arrows drive the
+   * camera), every bare single-key shortcut is gated off so holding e.g. W to
+   * walk forward doesn't also toggle the WiFi overlay (see #67). Ctrl/Cmd chords
+   * (undo/redo/duplicate) and Escape still fire.
+   */
+  walkthroughActive?: boolean;
   handlers: KeyboardShortcutHandlers;
 }
 
@@ -40,6 +47,7 @@ export function useKeyboardShortcuts({
   selectedItem,
   selectedWall,
   hasSignalItems,
+  walkthroughActive = false,
   handlers,
 }: UseKeyboardShortcutsOptions): void {
   useEffect(() => {
@@ -70,6 +78,13 @@ export function useKeyboardShortcuts({
         handlers.deselect();
         return;
       }
+
+      // While walkthrough owns the keyboard, WASD/arrows/Shift drive the camera.
+      // Gate every bare single-key shortcut below off so walking forward (W)
+      // doesn't also toggle the WiFi overlay, `2`/`m`/`g`/`p`/`[`/`]`/PageUp/Down
+      // don't fire mid-walk, etc. (see #67). Ctrl/Cmd chords and Escape above
+      // still work; the walkthrough hook owns its own Esc-to-exit handling.
+      if (walkthroughActive) return;
 
       // Everything below is a bare single-key shortcut. Never swallow browser
       // shortcuts like Cmd/Ctrl+F (find), Ctrl+R (reload), or Cmd+M.
@@ -181,7 +196,7 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedItem, selectedWall, hasSignalItems, handlers]);
+  }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, handlers]);
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {

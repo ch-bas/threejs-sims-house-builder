@@ -17,6 +17,12 @@ export type SelectionMode = 'replace' | 'toggle';
  * re-attaching DOM listeners.
  */
 export interface SceneEventHandlers {
+  /**
+   * When true, first-person walkthrough owns the canvas (PointerLockControls).
+   * Select / drag / hover must no-op so the lock-engaging click doesn't select
+   * furniture, open a popover or start a zero-distance drag (see #67).
+   */
+  walkthroughActive?: boolean;
   onItemSelect: (id: string, mode: SelectionMode) => void;
   onItemDragStart?: (id: string) => void;
   onItemDrag: (id: string, x: number, z: number) => void;
@@ -103,6 +109,9 @@ export function attachDragHandlers({
   };
 
   const onPointerDown = (event: PointerEvent): void => {
+    // In walkthrough mode the canvas click only engages pointer lock — it must
+    // not select furniture, open a popover or start a drag (see #67).
+    if (handlersRef.current.walkthroughActive) return;
     // Only track a single primary pointer at a time. A second finger arriving
     // mid-gesture is ignored here so it can drive OrbitControls' pinch.
     if (activePointerId !== null) return;
@@ -164,6 +173,8 @@ export function attachDragHandlers({
 
   let lastHoverId: string | null = null;
   const updateHover = (event: PointerEvent): void => {
+    // No hover affordance while walkthrough owns the camera (see #67).
+    if (handlersRef.current.walkthroughActive) return;
     const hoverCallback = handlersRef.current.onItemHover;
     if (!hoverCallback) return;
     setPointerFromEvent(event);

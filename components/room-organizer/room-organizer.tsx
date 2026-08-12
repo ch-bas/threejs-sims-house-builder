@@ -116,6 +116,11 @@ export function RoomOrganizer(): JSX.Element {
   const { recent: recentColors, pushColor } = useRecentColors();
   const [view, setView] = useState<ViewSettings>(INITIAL_VIEW_SETTINGS);
 
+  // First-person walkthrough only runs in the 3D view; the 2D top-down renderer
+  // has no PointerLockControls. This single signal gates walkthrough-aware
+  // behaviour: canvas select/drag/hover, single-key shortcuts and the hook.
+  const walkthroughActive = view.walkthroughMode && !view.view2D;
+
   const playCue = useCallback(
     (cue: SoundCue) => {
       if (view.soundsEnabled) playSound(cue);
@@ -460,6 +465,7 @@ export function RoomOrganizer(): JSX.Element {
   const { isReady, error, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
+      walkthroughActive,
       onItemSelect: handleSelect,
       onItemDragStart: handleDragStart,
       onItemDrag: handleDrag,
@@ -482,13 +488,19 @@ export function RoomOrganizer(): JSX.Element {
   invalidateBoxRef.current = invalidate;
 
   useWalkthrough({
-    enabled: isReady && view.walkthroughMode && !view.view2D,
+    enabled: isReady && walkthroughActive,
     invalidate,
     canvasRef,
     threeModuleRef,
     cameraRef,
     orbitRef: controlsRef,
     eyeHeight: activeFloorY + 1.6,
+    roomWidth: layout.width,
+    roomDepth: layout.height,
+    onExit: useCallback(() => {
+      setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
+      setGameMode((mode) => (mode === 'live' ? 'build' : mode));
+    }, []),
   });
 
   useSceneEffects({
@@ -656,6 +668,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedItem,
     selectedWall,
     hasSignalItems,
+    walkthroughActive,
     handlers: shortcutHandlers,
   });
 
@@ -728,7 +741,7 @@ export function RoomOrganizer(): JSX.Element {
         selectionCount={allSelectedIds.size}
         showMeasurements={view.showMeasurements}
         showMinimap={view.showMinimap}
-        walkthroughActive={view.walkthroughMode && !view.view2D}
+        walkthroughActive={walkthroughActive}
         measurementDistance={measurementDistance(measurementPoints)}
         measurementPointsPlaced={view.measurementMode ? measurementPoints.length : 0}
         wallDrawStatus={

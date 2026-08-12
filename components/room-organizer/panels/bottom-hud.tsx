@@ -23,7 +23,7 @@ export interface BottomHudProps {
 }
 
 export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, placeCatalogItem }: BottomHudProps): JSX.Element {
-  const { layout, actions, view, toggle, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
+  const { layout, actions, view, toggle, setView, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
   const { setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
 
@@ -128,7 +128,10 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
         onSetMode={(mode) => {
           setGameMode(mode);
           if (mode === 'live') {
-            if (!view.walkthroughMode) toggle('walkthroughMode');
+            // Walkthrough needs the 3D view — the hook requires `!view2D`, so
+            // entering Live from the 2D top-down view is otherwise a silent
+            // no-op (see #67). Drop view2D as we switch walkthrough on.
+            setView((v) => ({ ...v, view2D: false, walkthroughMode: true }));
           } else if (view.walkthroughMode) {
             toggle('walkthroughMode');
           }
