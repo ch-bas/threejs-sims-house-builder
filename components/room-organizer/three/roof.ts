@@ -143,12 +143,15 @@ function buildHippedRoof(
      0,     peakHeight, 0, // 4 apex
   ]);
 
-  // Four triangle faces (one per side).
+  // Four triangle faces (one per side). Wound counter-clockwise when viewed
+  // from outside so each slope's normal points up-and-outward; the naive
+  // (0,1,4)… order winds them inward/down (normals verified by cross-product),
+  // which reads inside-out under shadows/AO and vanishes without DoubleSide.
   const indices = new Uint16Array([
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-    3, 0, 4,
+    1, 0, 4,
+    2, 1, 4,
+    3, 2, 4,
+    0, 3, 4,
   ]);
 
   const geometry = new THREE.BufferGeometry();

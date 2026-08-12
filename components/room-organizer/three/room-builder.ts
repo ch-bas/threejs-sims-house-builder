@@ -1,3 +1,4 @@
+import { GRID_SIZE_METERS } from '../lib/constants';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
@@ -384,7 +385,15 @@ function buildWalls(
   }
 
   if (yOffset === 0 && ghostOpacity === undefined) {
-    const grid = new THREE.GridHelper(Math.max(width, depth) * 1.5, 20);
+    // Match the snap grid: `snapToGrid` rounds world coordinates to multiples of
+    // GRID_SIZE_METERS about the origin. A GridHelper centres its divisions on
+    // the origin, so as long as each cell is exactly GRID_SIZE_METERS the drawn
+    // lines coincide with the snap positions. Size up to a whole number of cells
+    // that covers the room (with a little margin), then derive the divisions.
+    const span = Math.max(width, depth) * 1.5;
+    const divisions = Math.max(2, Math.ceil(span / GRID_SIZE_METERS));
+    const size = divisions * GRID_SIZE_METERS;
+    const grid = new THREE.GridHelper(size, divisions);
     grid.userData.type = ROOM_OBJECT_TAGS.Wall;
     scene.add(grid);
   }
@@ -497,18 +506,31 @@ function buildFloorGeometryWithOpenings(
   shape.lineTo(-halfW, halfD);
   shape.closePath();
 
-  // Merge overlapping stairwell openings so two adjacent stairs never produce
-  // overlapping holes (illegal for earcut). The -90° X rotation maps shape-Y to
-  // world -Z, so negate Z when forming each rectangle.
-  const rects = openings.map(
-    (o) =>
-      [
-        o.centerX - o.width / 2,
-        -(o.centerZ + o.depth / 2),
-        o.centerX + o.width / 2,
-        -(o.centerZ - o.depth / 2),
-      ] as [number, number, number, number]
-  );
+  // The -90° X rotation maps shape-Y to world -Z, so negate Z below.
+  //
+  // Split openings by whether they're axis-aligned (rotation a multiple of 90°)
+  // or genuinely rotated. Axis-aligned holes go through mergeHoleRects so two
+  // stacked stairwells fuse into one clean rectangle (overlapping holes are
+  // illegal for earcut). Rotated holes are cut as individual rotated rectangles
+  // matching the stairs' footprint — no over-inflated AABB, so no corner gaps.
+  const axisAligned: FloorOpening[] = [];
+  const rotated: FloorOpening[] = [];
+  for (const o of openings) {
+    (isAxisAlignedRotation(o.rotation) ? axisAligned : rotated).push(o);
+  }
+
+  const rects = axisAligned.map((o) => {
+    // At 90°/270° the footprint's width and depth swap in world space.
+    const swap = Math.abs(Math.sin(o.rotation)) > 0.5;
+    const worldW = swap ? o.depth : o.width;
+    const worldD = swap ? o.width : o.depth;
+    return [
+      o.centerX - worldW / 2,
+      -(o.centerZ + worldD / 2),
+      o.centerX + worldW / 2,
+      -(o.centerZ - worldD / 2),
+    ] as [number, number, number, number];
+  });
   for (const [x0, y0, x1, y1] of mergeHoleRects(rects)) {
     if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
     const hole = new THREE.Path();
@@ -520,7 +542,46 @@ function buildFloorGeometryWithOpenings(
     shape.holes.push(hole);
   }
 
+  for (const o of rotated) {
+    if (o.width <= 0 || o.depth <= 0) continue;
+    // Rotate the footprint corners about the opening centre. rotation.y turns
+    // local +X toward world -Z, so a world-space point is
+    // (cx + lx·cos + lz·sin, cz - lx·sin + lz·cos); shape-Y is world -Z.
+    const cos = Math.cos(o.rotation);
+    const sin = Math.sin(o.rotation);
+    const hw = o.width / 2;
+    const hd = o.depth / 2;
+    const localCorners: Array<[number, number]> = [
+      [-hw, -hd],
+      [hw, -hd],
+      [hw, hd],
+      [-hw, hd],
+    ];
+    const corners: Array<[number, number]> = localCorners.map(([lx, lz]) => {
+      const worldX = o.centerX + lx * cos + lz * sin;
+      const worldZ = o.centerZ - lx * sin + lz * cos;
+      return [worldX, -worldZ];
+    });
+    const hole = new THREE.Path();
+    hole.moveTo(corners[0]![0], corners[0]![1]);
+    hole.lineTo(corners[1]![0], corners[1]![1]);
+    hole.lineTo(corners[2]![0], corners[2]![1]);
+    hole.lineTo(corners[3]![0], corners[3]![1]);
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+
   return new THREE.ShapeGeometry(shape);
+}
+
+/**
+ * True when a rotation is (within a small tolerance) a multiple of 90°, so the
+ * footprint stays axis-aligned in world space and can be cut — and merged with
+ * neighbours — as an ordinary AABB rectangle.
+ */
+function isAxisAlignedRotation(rotation: number): boolean {
+  const twist = Math.abs(Math.sin(2 * rotation));
+  return twist < 1e-3;
 }
 
 function hexFromInt(value: number): string {

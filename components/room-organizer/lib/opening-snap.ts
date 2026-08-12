@@ -20,7 +20,23 @@ export interface OpeningSnap {
   wallKind: WallKind;
   /** Distance from the original cursor position to the wall, in metres. */
   distance: number;
+  /**
+   * The interior wall segment this snap landed on, when `wallKind` is
+   * `interior`. Wall-mounted items use it to seat on whichever side the cursor
+   * is on (an interior wall has no fixed inside/outside) and to inset by the
+   * wall's half-thickness so the item's back face rests on the surface rather
+   * than sinking into the centreline.
+   */
+  interiorWall?: { x1: number; z1: number; x2: number; z2: number };
 }
+
+/**
+ * Interior walls are modelled 0.16 m thick (see three/interior-walls.ts, which
+ * owns the authoritative constant). A flush inset measured from the wall
+ * centreline would bury a wall-mounted item's back face half that depth inside
+ * the wall, so seating against an interior wall adds this half-thickness.
+ */
+const INTERIOR_WALL_HALF_THICKNESS = 0.08;
 
 export interface SnapOpeningOptions {
   position: { x: number; z: number };
@@ -77,6 +93,7 @@ export function snapOpeningToWall(options: SnapOpeningOptions): OpeningSnap {
       rotation: -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1),
       wallKind: 'interior',
       distance: projected.distance,
+      interiorWall: { x1: wall.x1, z1: wall.z1, x2: wall.x2, z2: wall.z2 },
     });
   }
 
@@ -113,6 +130,26 @@ function projectOntoSegment(
   return { point: projected, distance };
 }
 
+/**
+ * Which side of an interior wall the cursor is on, expressed as a sign along
+ * the wall's `(sin rot, cos rot)` normal. `snapOpeningToWall` derives that
+ * normal from `rot = -atan2(dz, dx)`, i.e. N = (-dz, dx)/len — the left-hand
+ * perpendicular of the wall direction. A camera dropped on the −N side should
+ * seat there instead of teleporting to the +N side.
+ *
+ * Returns +1 when the cursor lies on the +N side (or exactly on the line).
+ */
+function interiorWallSide(
+  cursor: { x: number; z: number },
+  wall: { x1: number; z1: number; x2: number; z2: number }
+): 1 | -1 {
+  const dx = wall.x2 - wall.x1;
+  const dz = wall.z2 - wall.z1;
+  // Perpendicular component of (cursor - wallStart) along N = (-dz, dx).
+  const localPerp = (cursor.x - wall.x1) * -dz + (cursor.z - wall.z1) * dx;
+  return localPerp >= 0 ? 1 : -1;
+}
+
 export function isOpening(type: string): boolean {
   return type === 'door' || type === 'window';
 }
@@ -137,11 +174,19 @@ export function isWallMounted(type: string): boolean {
  */
 export function snapWallMountedItem(options: SnapOpeningOptions & { itemDepth: number }): OpeningSnap {
   const snap = snapOpeningToWall(options);
-  const inset = options.itemDepth / 2 + 0.02;
-  // Three.js rotation.y maps the local +Z axis to (sin θ, cos θ) in world XZ;
-  // that direction points into the room for every wall snapOpeningToWall picks.
-  const forwardX = Math.sin(snap.rotation);
-  const forwardZ = Math.cos(snap.rotation);
+  // Three.js rotation.y maps the local +Z axis to (sin θ, cos θ) in world XZ.
+  // For an exterior wall that direction always points into the room, so the
+  // sign is +1. For an interior wall it's an arbitrary normal, so seat the item
+  // on whichever side the cursor dropped and inset past the wall half-thickness
+  // so the back face rests on the surface instead of the centreline.
+  let inset = options.itemDepth / 2 + 0.02;
+  let side: 1 | -1 = 1;
+  if (snap.wallKind === 'interior' && snap.interiorWall) {
+    side = interiorWallSide(options.position, snap.interiorWall);
+    inset += INTERIOR_WALL_HALF_THICKNESS;
+  }
+  const forwardX = Math.sin(snap.rotation) * side;
+  const forwardZ = Math.cos(snap.rotation) * side;
   return {
     ...snap,
     position: {
@@ -165,20 +210,30 @@ export function snapWallMountedItem(options: SnapOpeningOptions & { itemDepth: n
 export function reseatWallMountedItem(
   options: SnapOpeningOptions & { itemDepth: number; rotation: number; bracketArm?: number }
 ): { x: number; z: number } {
-  const snap = snapOpeningToWall(options); // wall-plane point + inward-facing rotation
+  const snap = snapOpeningToWall(options); // wall-plane point + wall-normal rotation
   const inwardX = Math.sin(snap.rotation);
   const inwardZ = Math.cos(snap.rotation);
+  const isInterior = snap.wallKind === 'interior' && snap.interiorWall != null;
+
   if (options.bracketArm != null) {
+    // Stand-off mount: an exterior wall's normal already points into the room,
+    // but an interior wall's is arbitrary, so put the arm on the cursor's side
+    // instead of unconditionally along +normal (which flings it through the
+    // wall when the camera sits on the −normal side).
+    const bracketSide = isInterior ? interiorWallSide(options.position, snap.interiorWall!) : 1;
     return {
-      x: snap.position.x + inwardX * options.bracketArm,
-      z: snap.position.z + inwardZ * options.bracketArm,
+      x: snap.position.x + inwardX * bracketSide * options.bracketArm,
+      z: snap.position.z + inwardZ * bracketSide * options.bracketArm,
     };
   }
+
   const facingX = Math.sin(options.rotation);
   const facingZ = Math.cos(options.rotation);
-  // +1 if the item faces the room interior, −1 if it faces the exterior.
+  // +1 if the item faces along the wall normal, −1 if it faces the other side.
   const side = facingX * inwardX + facingZ * inwardZ >= 0 ? 1 : -1;
-  const inset = options.itemDepth / 2 + 0.02;
+  // Interior walls are thick; inset past the half-thickness so the back face
+  // rests on the surface rather than embedding into the centreline.
+  const inset = options.itemDepth / 2 + 0.02 + (isInterior ? INTERIOR_WALL_HALF_THICKNESS : 0);
   return {
     x: snap.position.x + inwardX * side * inset,
     z: snap.position.z + inwardZ * side * inset,
