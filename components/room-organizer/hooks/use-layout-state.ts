@@ -1,12 +1,16 @@
-import { useMemo, useReducer } from 'react';
-import { randomId } from '../lib/ids';
+'use client';
+
 import {
-  layoutReducer,
   INITIAL_GROUND_FLOOR,
   INITIAL_LAYOUT,
   type LayoutAction,
   type LayoutState,
 } from './layout-reducer';
+import {
+  useActiveFloorIndex,
+  useLayout,
+  useLayoutActions,
+} from './use-layout-store';
 import type {
   CatalogItem,
   FloorLayout,
@@ -82,84 +86,22 @@ export interface UseLayoutStateResult {
 }
 
 // ---------------------------------------------------------------------------
-// Hook
+// Hook — thin adapter over the Zustand store (POC for issue #3)
 // ---------------------------------------------------------------------------
+//
+// State now lives in `use-layout-store.ts`. This hook subscribes to the store
+// via selectors and returns the SAME `UseLayoutStateResult` shape it always
+// has, so `room-organizer.tsx` and every panel that reads through
+// `useRoomEditor()` keep working with zero edits. Panels migrated to subscribe
+// to the store directly bypass this adapter (and the context) entirely.
+//
+// The `initial` parameter is kept for signature compatibility; the store owns
+// the initial state (`INITIAL_LAYOUT`), so it is unused.
 
-const nextId = randomId;
-
-export function useLayoutState(initial: RoomLayout = INITIAL_LAYOUT): UseLayoutStateResult {
-  const [state, dispatch] = useReducer(layoutReducer, { layout: initial, activeFloorIndex: 0 } satisfies LayoutState);
-  const { layout, activeFloorIndex } = state;
-
-  const actions = useMemo<LayoutActions>(
-    () => ({
-      setName: (name) => dispatch({ type: 'setName', name }),
-      setWidth: (width) => dispatch({ type: 'setWidth', width }),
-      setHeight: (height) => dispatch({ type: 'setHeight', height }),
-      setFloorColor: (color) => dispatch({ type: 'setFloorColor', color }),
-      setFloorPattern: (pattern) => dispatch({ type: 'setFloorPattern', pattern }),
-      setWallPattern: (pattern) => dispatch({ type: 'setWallPattern', pattern }),
-      setWallColor: (wall, color) => dispatch({ type: 'setWallColor', wall, color }),
-      setFloorPlan: (image) => dispatch({ type: 'setFloorPlan', image }),
-      setFloorPlanOpacity: (opacity) => dispatch({ type: 'setFloorPlanOpacity', opacity }),
-      setFloorPlanFitMode: (mode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
-      setRoofStyle: (style) => dispatch({ type: 'setRoofStyle', style }),
-      setRoofColor: (color) => dispatch({ type: 'setRoofColor', color }),
-      addCatalogItem: (catalogItem, position) => {
-        const id = nextId(catalogItem.type);
-        dispatch({ type: 'addCatalogItem', catalogItem, id, ...(position ? { position } : {}) });
-        return id;
-      },
-      removeItem: (id) => dispatch({ type: 'removeItem', id }),
-      duplicateItem: (id) => {
-        const newId = nextId('copy');
-        dispatch({ type: 'duplicateItem', sourceId: id, newId });
-        return newId;
-      },
-      rotateItem: (id) => dispatch({ type: 'rotateItem', id }),
-      moveItem: (id, x, z) => dispatch({ type: 'moveItem', id, x, z }),
-      resizeItem: (id, dimension, value) => dispatch({ type: 'resizeItem', id, dimension, value }),
-      updateItem: (id, patch) => dispatch({ type: 'updateItem', id, patch }),
-      setSofaShape: (id, shape) => dispatch({ type: 'setSofaShape', id, shape }),
-      setSignalRange: (id, range) => dispatch({ type: 'setSignalRange', id, range }),
-      setColor: (id, color) => dispatch({ type: 'setColor', id, color }),
-      setLocked: (id, locked) => dispatch({ type: 'setLocked', id, locked }),
-      toggleMirror: (id) => dispatch({ type: 'toggleMirror', id }),
-      setRotation: (id, rotation) => dispatch({ type: 'setRotation', id, rotation }),
-      replaceItems: (items) => dispatch({ type: 'replaceItems', items }),
-      addItems: (items) => dispatch({ type: 'addItems', items }),
-      bulkSetPositions: (positions) => dispatch({ type: 'bulkSetPositions', positions }),
-      addInteriorWall: (wall) => dispatch({ type: 'addInteriorWall', wall }),
-      addInteriorWalls: (walls) => dispatch({ type: 'addInteriorWalls', walls }),
-      removeInteriorWall: (id) => dispatch({ type: 'removeInteriorWall', id }),
-      toggleExteriorWall: (wallId) => dispatch({ type: 'toggleExteriorWall', wallId }),
-      clearInteriorWalls: () => dispatch({ type: 'clearInteriorWalls' }),
-      rotateSelection: (ids, radians) => dispatch({ type: 'rotateSelection', ids, radians }),
-      setLockAll: (locked) => dispatch({ type: 'setLockAll', locked }),
-      clearItems: () => dispatch({ type: 'clearItems' }),
-
-      setActiveFloorIndex: (index) => dispatch({ type: 'setActiveFloorIndex', index }),
-      addFloor: () => {
-        const id = nextId('floor');
-        dispatch({
-          type: 'addFloor',
-          floor: { id, items: [], floorColor: '#c9a57d', floorPattern: 'wood' },
-        });
-        return id;
-      },
-      duplicateFloor: (sourceIndex) => {
-        const newId = nextId('floor');
-        dispatch({ type: 'duplicateFloor', sourceIndex, newId });
-        return newId;
-      },
-      removeFloor: (index) => dispatch({ type: 'removeFloor', index }),
-      renameFloor: (index, name) => dispatch({ type: 'renameFloor', index, name }),
-      reorderFloor: (from, to) => dispatch({ type: 'reorderFloor', from, to }),
-
-      applyLayout: (next) => dispatch({ type: 'applyLayout', layout: next }),
-    }),
-    []
-  );
+export function useLayoutState(_initial: RoomLayout = INITIAL_LAYOUT): UseLayoutStateResult {
+  const layout = useLayout();
+  const activeFloorIndex = useActiveFloorIndex();
+  const actions = useLayoutActions();
 
   const activeFloor = layout.floors[activeFloorIndex] ?? layout.floors[0] ?? INITIAL_GROUND_FLOOR;
 

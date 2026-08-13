@@ -4,12 +4,17 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useRoomEditor } from '../contexts';
+import { useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { MAX_FLOORS } from '../lib/constants';
 import { Icon } from '../plotcraft/icon';
 
 export function FloorSwitcher(): JSX.Element {
-  const { layout, activeFloorIndex, actions, view, toggle } = useRoomEditor();
-  const floors = layout.floors;
+  // Layout slices come from the store via atomic selectors; view/toggle stay on
+  // the context (mixed consumption — the incremental migration path).
+  const floors = useLayoutStore((s) => s.layout.floors);
+  const activeFloorIndex = useActiveFloorIndex();
+  const actions = useLayoutActions();
+  const { view, toggle } = useRoomEditor();
   const [renaming, setRenaming] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
 
