@@ -7,6 +7,16 @@ type ThreeModule = typeof import('three');
 
 export const ROOF_TAG = 'roof';
 
+/**
+ * Cache the painted shingle CanvasTexture keyed on colour (the canvas drawing
+ * depends only on colour; the 256px size is fixed). Per-surface `repeat` and
+ * the `side` flag live on the clone/material, not the master. Each roof gets a
+ * `.clone()` sharing the cached canvas image (cheap) that is independently
+ * disposable; the cached master is never disposed, so the shared GPU image is
+ * never freed while cached (a freed-then-reused texture renders black).
+ */
+const shingleTextureCache = new Map<string, ThreeNS.CanvasTexture>();
+
 /** Eaves: how far the roof overhangs past the wall plane (metres). */
 const EAVE_OVERHANG = 0.35;
 
@@ -218,25 +228,40 @@ function buildShingleMaterial(
   surfaceLength: number,
   doubleSided = false
 ): ThreeNS.MeshStandardMaterial {
-  const size = 256;
-  const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-  if (!canvas) {
+  const master = getShingleTexture(THREE, color);
+  if (!master) {
     return new THREE.MeshStandardMaterial({
       color,
       roughness: 0.9,
       ...(doubleSided ? { side: THREE.DoubleSide } : {}),
     });
   }
+
+  // Clone per roof so each surface owns a disposable copy sharing the cached
+  // canvas image; per-surface `repeat` is set on the clone, not the master.
+  const texture = master.clone();
+  texture.needsUpdate = true;
+  // Aim for ~3 shingle rows per metre of slope.
+  texture.repeat.set(Math.max(1, surfaceWidth * 0.6), Math.max(1, surfaceLength * 0.6));
+
+  return new THREE.MeshStandardMaterial({
+    map: texture,
+    roughness: 0.92,
+    ...(doubleSided ? { side: THREE.DoubleSide } : {}),
+  });
+}
+
+function getShingleTexture(THREE: ThreeModule, color: string): ThreeNS.CanvasTexture | null {
+  const cached = shingleTextureCache.get(color);
+  if (cached) return cached;
+
+  const size = 256;
+  const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+  if (!canvas) return null;
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    return new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.9,
-      ...(doubleSided ? { side: THREE.DoubleSide } : {}),
-    });
-  }
+  if (!ctx) return null;
 
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, size, size);
@@ -268,14 +293,9 @@ function buildShingleMaterial(
   // decoded before lighting instead of rendering washed-out under sRGB output.
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = getMaxAnisotropy();
-  // Aim for ~3 shingle rows per metre of slope.
-  texture.repeat.set(Math.max(1, surfaceWidth * 0.6), Math.max(1, surfaceLength * 0.6));
 
-  return new THREE.MeshStandardMaterial({
-    map: texture,
-    roughness: 0.92,
-    ...(doubleSided ? { side: THREE.DoubleSide } : {}),
-  });
+  shingleTextureCache.set(color, texture);
+  return texture;
 }
 
 function shadeHex(hex: string, multiplier: number): string {

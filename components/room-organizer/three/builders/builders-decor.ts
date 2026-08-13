@@ -35,10 +35,12 @@ export function buildPainting({ THREE, item, hasCollision, baseColor, opacity }:
 
   // a few abstract blobs of color
   const blobColors = [0xef5350, 0x42a5f5, 0xffca28];
+  // Every blob is the same size — share one geometry; only the colour differs.
+  const blobGeo = new THREE.SphereGeometry(item.width * 0.12, 10, 10);
   blobColors.forEach((color, i) => {
     const blob = mesh(
       THREE,
-      new THREE.SphereGeometry(item.width * 0.12, 10, 10),
+      blobGeo,
       material(THREE, color, hasCollision, opacity, { roughness: 0.7 })
     );
     blob.position.set(item.width * (i - 1) * 0.25, item.height / 2 + 0.8 + Math.sin(i) * 0.1, item.depth * 0.32);
@@ -262,6 +264,10 @@ export function buildCandles({ THREE, item, hasCollision, baseColor, opacity }: 
     [0, 1.2],
     [item.width * 0.30, 0.85],
   ];
+  // The candles differ in height per spec (leave that geometry per-iteration),
+  // but the wick and flame are identical every candle — share one each.
+  const wickGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.04, 6);
+  const flameGeo = new THREE.ConeGeometry(0.025, 0.08, 8);
   for (const [px, heightMult] of candleSpecs) {
     const hCandle = item.height * 0.75 * heightMult;
     const candle = mesh(
@@ -271,14 +277,10 @@ export function buildCandles({ THREE, item, hasCollision, baseColor, opacity }: 
     );
     candle.position.set(px, item.height * 0.08 + hCandle / 2, 0);
     group.add(candle);
-    const wick = mesh(
-      THREE,
-      new THREE.CylinderGeometry(0.005, 0.005, 0.04, 6),
-      wickMat
-    );
+    const wick = mesh(THREE, wickGeo, wickMat);
     wick.position.set(px, item.height * 0.08 + hCandle + 0.02, 0);
     group.add(wick);
-    const flame = mesh(THREE, new THREE.ConeGeometry(0.025, 0.08, 8), flameMat);
+    const flame = mesh(THREE, flameGeo, flameMat);
     flame.position.set(px, item.height * 0.08 + hCandle + 0.08, 0);
     group.add(flame);
   }

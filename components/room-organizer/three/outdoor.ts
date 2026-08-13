@@ -25,7 +25,13 @@ export function setOutdoorVisible(
 ): void {
   scene.children
     .filter((obj) => obj.userData.type === OUTDOOR_TAG)
-    .forEach((obj) => removeAndDispose(scene, obj));
+    .forEach((obj) => {
+      // InstancedMesh owns per-instance GPU buffers (instanceMatrix /
+      // instanceColor) that the generic geometry/material disposer doesn't
+      // free — dispose them explicitly before the shared teardown runs.
+      disposeInstancedMeshes(obj);
+      removeAndDispose(scene, obj);
+    });
 
   if (!visible) return;
 
@@ -37,15 +43,26 @@ export function setOutdoorVisible(
   const lotHalfD = halfD + lotMargin;
   const groundSize = Math.max(roomWidth, roomDepth) * 6 + lotMargin * 2;
 
+  // These ground layers were stacked only 1mm apart (grass -0.04, sidewalk
+  // -0.03, road -0.029, dashes -0.028), which z-fights at orbit distance.
+  // Widened to ~10-15mm gaps while keeping the same layering order:
+  // grass (lowest) < sidewalk < road < dashes (top). Tufts and stepping
+  // stones keep their same relative offset above grass.
+  const GRASS_Y = -0.05;
+  const SIDEWALK_Y = -0.035;
+  const ROAD_Y = -0.025;
+  const DASH_Y = -0.015;
+
   // ---- 1. Grass plane (warm suburban green) ----
   const grass = new THREE.Mesh(
     new THREE.PlaneGeometry(groundSize, groundSize, 1, 1),
     new THREE.MeshStandardMaterial({ color: 0x7cb04a, roughness: 1 })
   );
   grass.rotation.x = -Math.PI / 2;
-  grass.position.y = -0.04;
+  grass.position.y = GRASS_Y;
   grass.receiveShadow = true;
   grass.userData.type = OUTDOOR_TAG;
+  freezeMatrix(grass);
   scene.add(grass);
 
   // Tuft pass: a few hundred low patches of darker / lighter grass to break
@@ -63,9 +80,10 @@ export function setOutdoorVisible(
     sidewalkMat
   );
   sidewalk.rotation.x = -Math.PI / 2;
-  sidewalk.position.set(0, -0.03, -(roadOffset + sidewalkDepth / 2));
+  sidewalk.position.set(0, SIDEWALK_Y, -(roadOffset + sidewalkDepth / 2));
   sidewalk.receiveShadow = true;
   sidewalk.userData.type = OUTDOOR_TAG;
+  freezeMatrix(sidewalk);
   scene.add(sidewalk);
 
   const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.95 });
@@ -74,38 +92,84 @@ export function setOutdoorVisible(
     asphaltMat
   );
   road.rotation.x = -Math.PI / 2;
-  road.position.set(0, -0.029, -(roadOffset + sidewalkDepth + roadDepth / 2));
+  road.position.set(0, ROAD_Y, -(roadOffset + sidewalkDepth + roadDepth / 2));
   road.receiveShadow = true;
   road.userData.type = OUTDOOR_TAG;
+  freezeMatrix(road);
   scene.add(road);
 
-  // Yellow centre dashes on the road.
-  const dashMat = new THREE.MeshStandardMaterial({ color: 0xf4c026, roughness: 0.7 });
-  const dashGeom = new THREE.PlaneGeometry(1.2, 0.18);
+  // Yellow centre dashes on the road — one InstancedMesh (1 draw call) for all
+  // the identical dashes.
+  const dashZ = -(roadOffset + sidewalkDepth + roadDepth / 2);
+  const dummy = new THREE.Object3D();
+  const dashTransforms: ThreeNS.Matrix4[] = [];
   for (let x = -groundSize / 2 + 2; x < groundSize / 2 - 2; x += 2.4) {
-    const dash = new THREE.Mesh(dashGeom, dashMat);
-    dash.rotation.x = -Math.PI / 2;
-    dash.position.set(x, -0.028, -(roadOffset + sidewalkDepth + roadDepth / 2));
-    dash.userData.type = OUTDOOR_TAG;
-    scene.add(dash);
+    dummy.position.set(x, DASH_Y, dashZ);
+    dummy.rotation.set(-Math.PI / 2, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    dashTransforms.push(dummy.matrix.clone());
+  }
+  if (dashTransforms.length > 0) {
+    const dashMat = new THREE.MeshStandardMaterial({ color: 0xf4c026, roughness: 0.7 });
+    const dashGeom = new THREE.PlaneGeometry(1.2, 0.18);
+    const dashes = new THREE.InstancedMesh(dashGeom, dashMat, dashTransforms.length);
+    dashTransforms.forEach((m, i) => dashes.setMatrixAt(i, m));
+    dashes.instanceMatrix.needsUpdate = true;
+    dashes.matrixAutoUpdate = false;
+    dashes.updateMatrix();
+    dashes.userData.type = OUTDOOR_TAG;
+    scene.add(dashes);
   }
 
   // Path of stepping stones from the front-of-lot edge to the room's "door"
-  // wall (north). Just a few hint stones — looks like suburban walkways.
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb0b3b0, roughness: 0.9 });
+  // wall (north). Identical cylinders → one InstancedMesh.
+  const stoneTransforms: ThreeNS.Matrix4[] = [];
   for (let z = -halfD - 0.5; z >= -roadOffset; z -= 0.7) {
-    const stone = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.32, 0.30, 0.06, 12),
-      stoneMat
-    );
-    stone.position.set(0, -0.005, z);
-    stone.receiveShadow = true;
-    stone.userData.type = OUTDOOR_TAG;
-    scene.add(stone);
+    dummy.position.set(0, -0.005, z);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    stoneTransforms.push(dummy.matrix.clone());
+  }
+  if (stoneTransforms.length > 0) {
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb0b3b0, roughness: 0.9 });
+    const stoneGeom = new THREE.CylinderGeometry(0.32, 0.30, 0.06, 12);
+    const stones = new THREE.InstancedMesh(stoneGeom, stoneMat, stoneTransforms.length);
+    stoneTransforms.forEach((m, i) => stones.setMatrixAt(i, m));
+    stones.instanceMatrix.needsUpdate = true;
+    stones.receiveShadow = true;
+    stones.matrixAutoUpdate = false;
+    stones.updateMatrix();
+    stones.userData.type = OUTDOOR_TAG;
+    scene.add(stones);
   }
 
   // ---- 3. Perimeter trees + bushes ----
   scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD);
+}
+
+/** Static mesh — never moves after positioning, so bake its matrix once. */
+function freezeMatrix(obj: ThreeNS.Object3D): void {
+  obj.updateMatrix();
+  obj.matrixAutoUpdate = false;
+}
+
+/** Freeze a whole static subtree (group + all descendants). */
+function freezeMatrixDeep(obj: ThreeNS.Object3D): void {
+  obj.traverse((node) => {
+    node.updateMatrix();
+    node.matrixAutoUpdate = false;
+  });
+}
+
+/** Free the per-instance GPU buffers of any InstancedMesh in the subtree.
+ *  The shared geometry/material disposer doesn't cover these. */
+function disposeInstancedMeshes(obj: ThreeNS.Object3D): void {
+  obj.traverse((node) => {
+    const inst = node as ThreeNS.InstancedMesh;
+    if (inst.isInstancedMesh && typeof inst.dispose === 'function') inst.dispose();
+  });
 }
 
 function scatterGrassTufts(
@@ -116,27 +180,59 @@ function scatterGrassTufts(
   lotHalfW: number,
   lotHalfD: number
 ): void {
-  const tuftMat = new THREE.MeshStandardMaterial({ color: 0x5e9b2e, roughness: 1 });
-  const tuftBrightMat = new THREE.MeshStandardMaterial({ color: 0x9bc55a, roughness: 1 });
+  // 220 identical half-flattened spheres in two shades — collapse them into a
+  // single InstancedMesh (1 draw call) with per-instance colour. RNG draws are
+  // consumed in the exact same order as the old per-mesh loop so the scatter,
+  // shade choice, and scale are visually identical.
   const tuftGeom = new THREE.SphereGeometry(0.18, 6, 5);
+  const tuftMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
+  const dark = new THREE.Color(0x5e9b2e);
+  const bright = new THREE.Color(0x9bc55a);
   const half = groundSize / 2;
   const count = 220;
+
+  const matrices: ThreeNS.Matrix4[] = [];
+  const colors: ThreeNS.Color[] = [];
+  const dummy = new THREE.Object3D();
   for (let i = 0; i < count; i += 1) {
     const x = (rng() - 0.5) * groundSize;
     const z = (rng() - 0.5) * groundSize;
     // Don't put tufts inside the lot footprint or directly on the road.
     if (Math.abs(x) < lotHalfW + 0.5 && Math.abs(z) < lotHalfD + 0.5) continue;
     if (z < -lotHalfD - 1.5 && z > -lotHalfD - 7) continue;
-    const tuft = new THREE.Mesh(tuftGeom, rng() > 0.5 ? tuftMat : tuftBrightMat);
-    tuft.position.set(x, -0.02, z);
-    tuft.scale.setScalar(0.7 + rng() * 0.6);
-    tuft.scale.y *= 0.45;
-    tuft.userData.type = OUTDOOR_TAG;
-    scene.add(tuft);
-    // Hide ones way off-camera in fog to keep draw cost down. (Three picks
-    // these up at render time — we just leave them as plain meshes.)
-    if (Math.hypot(x, z) > half * 0.8) tuft.visible = false;
+    const color = rng() > 0.5 ? dark : bright;
+    const s = 0.7 + rng() * 0.6;
+    // The old code hid tufts far out in the fog (`.visible = false`), which
+    // renders nothing — so we simply omit those instances (visually identical,
+    // and cheaper). The RNG for position/shade/scale is still consumed above so
+    // the retained tufts land in exactly the same spots as before.
+    if (Math.hypot(x, z) > half * 0.8) continue;
+    dummy.position.set(x, -0.03, z);
+    dummy.scale.set(s, s * 0.45, s);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    matrices.push(dummy.matrix.clone());
+    colors.push(color);
   }
+
+  if (matrices.length === 0) {
+    tuftGeom.dispose();
+    tuftMat.dispose();
+    return;
+  }
+
+  const tufts = new THREE.InstancedMesh(tuftGeom, tuftMat, matrices.length);
+  for (let i = 0; i < matrices.length; i += 1) {
+    tufts.setMatrixAt(i, matrices[i]!);
+    tufts.setColorAt(i, colors[i]!);
+  }
+  tufts.instanceMatrix.needsUpdate = true;
+  if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
+  // Static — never moves.
+  tufts.matrixAutoUpdate = false;
+  tufts.updateMatrix();
+  tufts.userData.type = OUTDOOR_TAG;
+  scene.add(tufts);
 }
 
 interface TreeKind {
@@ -275,29 +371,79 @@ function scatterPerimeter(
     void t;
   }
 
-  // Small ornamental shrubs hugging the lot edges.
+  // Small ornamental shrubs hugging the lot edges — identical sphere geometry
+  // and material, so collapse them into one InstancedMesh (1 draw call). RNG is
+  // consumed in the same order so positions/scales are unchanged.
   const shrubCount = 18;
+  const shrubDummy = new THREE.Object3D();
+  const shrubTransforms: ThreeNS.Matrix4[] = [];
   for (let i = 0; i < shrubCount; i += 1) {
     const angle = (i / shrubCount) * Math.PI * 2;
     const radius = Math.max(lotHalfW, lotHalfD) + 0.8 + rng() * 0.6;
-    let x = Math.cos(angle) * radius;
-    let z = Math.sin(angle) * radius;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const s = 0.7 + rng() * 0.4;
     // Keep the road frontage clean.
     if (z < -lotHalfD) continue;
-    const bush = new THREE.Mesh(bushGeom, bushMat);
-    bush.position.set(x, 0.32, z);
-    bush.scale.setScalar(0.7 + rng() * 0.4);
-    bush.castShadow = true;
-    bush.userData.type = OUTDOOR_TAG;
-    scene.add(bush);
+    shrubDummy.position.set(x, 0.32, z);
+    shrubDummy.rotation.set(0, 0, 0);
+    shrubDummy.scale.setScalar(s);
+    shrubDummy.updateMatrix();
+    shrubTransforms.push(shrubDummy.matrix.clone());
+  }
+  if (shrubTransforms.length > 0) {
+    const shrubs = new THREE.InstancedMesh(bushGeom, bushMat, shrubTransforms.length);
+    shrubTransforms.forEach((m, i) => shrubs.setMatrixAt(i, m));
+    shrubs.instanceMatrix.needsUpdate = true;
+    shrubs.castShadow = true;
+    shrubs.matrixAutoUpdate = false;
+    shrubs.updateMatrix();
+    shrubs.userData.type = OUTDOOR_TAG;
+    scene.add(shrubs);
+  } else {
+    bushGeom.dispose();
+    bushMat.dispose();
   }
 
-  // A few cheerful flower patches around the lot's front.
+  // A few cheerful flower patches around the lot's front. Every flower blossom
+  // and every stem shares identical geometry, so accumulate their world
+  // transforms across all patches and emit two InstancedMeshes (blossoms carry
+  // per-instance colour). RNG draws stay in the same order as the old per-mesh
+  // build, so positions/colours/counts are unchanged.
   const flowerColors = [0xff5b6a, 0xffd24a, 0xffffff, 0xc77bff];
+  const dummy = new THREE.Object3D();
+  const blossomMatrices: ThreeNS.Matrix4[] = [];
+  const blossomColors: ThreeNS.Color[] = [];
+  const stemMatrices: ThreeNS.Matrix4[] = [];
   for (let i = 0; i < 6; i += 1) {
     const x = ((rng() - 0.5) * lotHalfW) * 2;
     const z = -lotHalfD - 0.4 - rng() * 0.6;
-    addFlowerPatch(THREE, scene, x, z, flowerColors, rng);
+    collectFlowerPatch(THREE, dummy, x, z, flowerColors, rng, blossomMatrices, blossomColors, stemMatrices);
+  }
+  if (blossomMatrices.length > 0) {
+    const blossomGeom = new THREE.SphereGeometry(0.07, 8, 8);
+    const blossomMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+    const blossoms = new THREE.InstancedMesh(blossomGeom, blossomMat, blossomMatrices.length);
+    blossomMatrices.forEach((m, i) => {
+      blossoms.setMatrixAt(i, m);
+      blossoms.setColorAt(i, blossomColors[i]!);
+    });
+    blossoms.instanceMatrix.needsUpdate = true;
+    if (blossoms.instanceColor) blossoms.instanceColor.needsUpdate = true;
+    blossoms.matrixAutoUpdate = false;
+    blossoms.updateMatrix();
+    blossoms.userData.type = OUTDOOR_TAG;
+    scene.add(blossoms);
+
+    const stemGeom = new THREE.CylinderGeometry(0.012, 0.015, 0.18, 5);
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0x336e1f, roughness: 0.9 });
+    const stems = new THREE.InstancedMesh(stemGeom, stemMat, stemMatrices.length);
+    stemMatrices.forEach((m, i) => stems.setMatrixAt(i, m));
+    stems.instanceMatrix.needsUpdate = true;
+    stems.matrixAutoUpdate = false;
+    stems.updateMatrix();
+    stems.userData.type = OUTDOOR_TAG;
+    scene.add(stems);
   }
 }
 
@@ -450,18 +596,27 @@ function addTree(
   group.rotation.y = rng() * Math.PI * 2;
   group.scale.setScalar(scale);
   group.userData.type = OUTDOOR_TAG;
+  // Trees never move — bake the group's and every child's matrix once.
+  freezeMatrixDeep(group);
   scene.add(group);
 }
 
-function addFlowerPatch(
+/**
+ * Accumulate one flower patch's blossom + stem transforms (in world space —
+ * the patch groups were never rotated or scaled) into the shared instance
+ * arrays. Mirrors the original per-mesh layout exactly.
+ */
+function collectFlowerPatch(
   THREE: ThreeModule,
-  scene: ThreeNS.Scene,
+  dummy: ThreeNS.Object3D,
   x: number,
   z: number,
   colors: readonly number[],
-  rng: () => number
+  rng: () => number,
+  blossomMatrices: ThreeNS.Matrix4[],
+  blossomColors: ThreeNS.Color[],
+  stemMatrices: ThreeNS.Matrix4[]
 ): void {
-  const group = new THREE.Group();
   const count = 6 + Math.floor(rng() * 4);
   for (let i = 0; i < count; i += 1) {
     const angle = rng() * Math.PI * 2;
@@ -469,20 +624,18 @@ function addFlowerPatch(
     const px = Math.cos(angle) * r;
     const pz = Math.sin(angle) * r;
     const color = colors[Math.floor(rng() * colors.length)]!;
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
-    const flower = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), mat);
-    flower.position.set(px, 0.12, pz);
-    group.add(flower);
-    const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.012, 0.015, 0.18, 5),
-      new THREE.MeshStandardMaterial({ color: 0x336e1f, roughness: 0.9 })
-    );
-    stem.position.set(px, 0.05, pz);
-    group.add(stem);
+
+    dummy.position.set(x + px, 0.12, z + pz);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    blossomMatrices.push(dummy.matrix.clone());
+    blossomColors.push(new THREE.Color(color));
+
+    dummy.position.set(x + px, 0.05, z + pz);
+    dummy.updateMatrix();
+    stemMatrices.push(dummy.matrix.clone());
   }
-  group.position.set(x, 0, z);
-  group.userData.type = OUTDOOR_TAG;
-  scene.add(group);
 }
 
 /** Mulberry32 — small, deterministic PRNG so the lot doesn't reshuffle. */
