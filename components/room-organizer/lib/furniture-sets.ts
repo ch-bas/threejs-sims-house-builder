@@ -1,4 +1,5 @@
 import { FURNITURE_CATALOG } from './constants';
+import { randomSuffix } from './ids';
 import type { CatalogItem, FurnitureItem, Vec2 } from './types';
 
 export interface FurnitureSet {
@@ -135,7 +136,15 @@ export function setFitsRoom(set: FurnitureSet, roomWidth: number, roomDepth: num
 }
 
 export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = {}): FurnitureItem[] {
-  const { center = { x: 0, z: 0 }, idPrefix = `${set.key}-${Date.now()}`, roomWidth, roomDepth } = options;
+  // The default id prefix includes a random suffix so two sets stamped in the
+  // same millisecond don't produce colliding item ids (the per-index suffix
+  // only disambiguates within a single set).
+  const {
+    center = { x: 0, z: 0 },
+    idPrefix = `${set.key}-${Date.now()}-${randomSuffix()}`,
+    roomWidth,
+    roomDepth,
+  } = options;
 
   const specs: ResolvedSpec[] = [];
   set.items.forEach((spec) => {

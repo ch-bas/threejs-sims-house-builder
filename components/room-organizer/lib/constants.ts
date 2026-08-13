@@ -80,6 +80,11 @@ export const FURNITURE_CATALOG = [
   { type: 'floor-lamp', category: 'electronics', name: 'Floor Lamp', width: 0.35, depth: 0.35, height: 1.7, color: '#FFB300', icon: '🪔', price: 180 },
   { type: 'wifi', category: 'electronics', name: 'Wi-Fi AP', width: 0.2, depth: 0.2, height: 0.1, color: '#0088FF', icon: '📶', price: 140, isWiFiAccessPoint: true, signalRange: 10 },
   { type: 'router', category: 'electronics', name: 'Router', width: 0.3, depth: 0.2, height: 0.1, color: '#1a1a1a', icon: '🌐', price: 160 },
+  // LEGACY variant: this is the original electronics-category "CCTV" (a simple
+  // signal-circle item, isCCTV/signalRange). It is superseded by the
+  // 'security-camera' entry below (security category, real vision cone), but is
+  // kept here for backward compatibility so previously saved layouts that
+  // reference `type: 'cctv'` still load and render. Do not remove.
   { type: 'cctv', category: 'electronics', name: 'CCTV Camera', width: 0.15, depth: 0.15, height: 0.2, color: '#2C2C2C', icon: '📹', price: 230, isCCTV: true, signalRange: 8 },
   // Security — cameras live in their own category and are browsed via the
   // dedicated CctvMenu (grouped by type); this base entry backs every model.

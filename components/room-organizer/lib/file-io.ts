@@ -7,7 +7,9 @@ export function downloadLayoutAsJson(layout: RoomLayout): void {
   try {
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${layout.name.replace(/\s+/g, '_')}.json`;
+    // Guard the empty-name case (mirrors the CSV path) so we never produce a
+    // bare `.json` filename.
+    link.download = `${(layout.name || 'layout').replace(/\s+/g, '_')}.json`;
     link.click();
   } finally {
     URL.revokeObjectURL(url);
@@ -143,17 +145,28 @@ export async function downloadSceneAsGlb(scene: import('three').Object3D, baseNa
   });
 }
 
-export function downloadCanvasAsPng(canvas: HTMLCanvasElement, baseName: string): void {
-  canvas.toBlob((blob) => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    try {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${baseName.replace(/\s+/g, '_')}.png`;
-      link.click();
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }, 'image/png');
+/**
+ * Trigger a PNG download of the canvas. Resolves to `true` on success and
+ * `false` when `toBlob` yields null (e.g. a tainted canvas or an out-of-memory
+ * encode) so the caller can surface a failure instead of a silent no-op.
+ */
+export function downloadCanvasAsPng(canvas: HTMLCanvasElement, baseName: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        resolve(false);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${(baseName || 'screenshot').replace(/\s+/g, '_')}.png`;
+        link.click();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      resolve(true);
+    }, 'image/png');
+  });
 }

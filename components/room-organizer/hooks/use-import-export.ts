@@ -48,7 +48,9 @@ export function useImportExport({
     if (!view2D && rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
-    downloadCanvasAsPng(canvas, layout.name || 'room-layout');
+    void downloadCanvasAsPng(canvas, layout.name || 'room-layout').then((ok) => {
+      if (!ok) window.alert('Could not export the screenshot — the image failed to encode.');
+    });
   }, [view2D, layout.name, canvasRef, canvas2DRef, rendererRef, sceneRef, cameraRef]);
 
   const handleExportGlb = useCallback(async () => {

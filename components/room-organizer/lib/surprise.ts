@@ -1,5 +1,6 @@
 import { FURNITURE_CATALOG } from './constants';
 import { buildFurnitureSet, FURNITURE_SETS, setFitsRoom, type FurnitureSet } from './furniture-sets';
+import { randomSuffix } from './ids';
 import type { CatalogItem, FurnitureItem } from './types';
 
 const DECOR_TYPES = ['plant', 'flowerpot', 'rug', 'painting', 'vase', 'lamp', 'floor-lamp', 'mirror'] as const;
@@ -26,11 +27,17 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
   const { roomWidth, roomDepth, maxCost = 10_000, seed = Date.now() } = options;
   const rng = mulberry32(seed >>> 0);
 
+  // When the caller pins a seed the result must stay reproducible, so ids are
+  // keyed on the seed alone. With the default (Date.now) seed, two calls in the
+  // same millisecond would otherwise produce identical ids — add a random tag so
+  // stamping "Surprise Me" twice in a row yields distinct items.
+  const idTag = options.seed === undefined ? `${seed}-${randomSuffix()}` : `${seed}`;
+
   const set = chooseSet(roomWidth, roomDepth, rng);
   // A set is only chosen when at least one fits, but pass the room dims so
   // buildFurnitureSet also scales its offsets in to keep pieces off the walls.
   const setItems = set
-    ? buildFurnitureSet(set, { center: { x: 0, z: 0 }, idPrefix: `surprise-set-${seed}`, roomWidth, roomDepth })
+    ? buildFurnitureSet(set, { center: { x: 0, z: 0 }, idPrefix: `surprise-set-${idTag}`, roomWidth, roomDepth })
     : [];
 
   const decor: FurnitureItem[] = [];
@@ -44,7 +51,7 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
     if (!position) continue;
     decor.push({
       ...choice,
-      id: `surprise-decor-${seed}-${i}`,
+      id: `surprise-decor-${idTag}-${i}`,
       position,
       rotation: 0,
     });

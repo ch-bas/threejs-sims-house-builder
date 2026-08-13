@@ -304,6 +304,38 @@ describe('layoutReducer — floor-scoped finishes', () => {
     state = layoutReducer(state, { type: 'clearInteriorWalls' });
     expect(state.layout.floors[0]!.interiorWalls).toEqual([]);
   });
+
+  it('addInteriorWalls appends a batch in one dispatch (single undo entry)', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, {
+      type: 'addInteriorWall',
+      wall: { id: 'w0', x1: 0, z1: 0, x2: 1, z2: 0 },
+    });
+    const before = state;
+    state = layoutReducer(state, {
+      type: 'addInteriorWalls',
+      walls: [
+        { id: 'w1', x1: 1, z1: 0, x2: 1, z2: 1 },
+        { id: 'w2', x1: 1, z1: 1, x2: 0, z2: 1 },
+        { id: 'w3', x1: 0, z1: 1, x2: 0, z2: 0 },
+      ],
+    });
+    // One dispatch added all three segments (plus the pre-existing one).
+    expect(state.layout.floors[0]!.interiorWalls!.map((w) => w.id)).toEqual([
+      'w0',
+      'w1',
+      'w2',
+      'w3',
+    ]);
+    // Producing a new state object (so history captures one step).
+    expect(state).not.toBe(before);
+  });
+
+  it('addInteriorWalls with an empty batch is a no-op (returns the same state)', () => {
+    const state = stateWith([]);
+    const next = layoutReducer(state, { type: 'addInteriorWalls', walls: [] });
+    expect(next).toBe(state);
+  });
 });
 
 describe('layoutReducer — roof + floor plan', () => {

@@ -72,7 +72,11 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
                 maxWidth={layout.width}
                 maxDepth={layout.height}
                 onStamp={({ shape, width, depth, centerX, centerZ }) => {
-                  const seed = `stamp-${shape}-${Date.now().toString(36)}`;
+                  // Random suffix so two stamps in the same millisecond can't
+                  // produce colliding wall ids.
+                  const seed = `stamp-${shape}-${Date.now().toString(36)}-${Math.random()
+                    .toString(36)
+                    .slice(2, 6)}`;
                   const walls = generateRoomShape(
                     shape,
                     centerX,
@@ -83,7 +87,9 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
                     undefined,
                     { width: layout.width, depth: layout.height }
                   );
-                  for (const wall of walls) actions.addInteriorWall(wall);
+                  // Batch all segments into one dispatch so the whole stamp is a
+                  // single undo entry rather than N steps.
+                  actions.addInteriorWalls(walls);
                   playCue('place');
                 }}
               />
