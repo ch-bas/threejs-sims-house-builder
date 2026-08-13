@@ -3,11 +3,14 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
+import { useLayout } from '../hooks/use-layout-store';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory, totalCost } from '../lib/geometry';
 
 export function StatisticsPanel(): JSX.Element {
-  const { layout, collidingIds } = useRoomEditor();
+  // `layout` from the store selector; `collidingIds` stays on the context.
+  const layout = useLayout();
+  const { collidingIds } = useRoomEditor();
   const budget = DEFAULT_BUDGET;
   const collisionsOnActiveFloor = collidingIds.size;
 
