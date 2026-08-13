@@ -218,6 +218,7 @@ function buildCone(
     depthWrite: false,
     depthTest: false,
     blending: THREE.AdditiveBlending,
+    toneMapped: false,
   });
   const wedge = new THREE.Mesh(wedgeGeo, wedgeMat);
   wedge.renderOrder = 991;
@@ -233,6 +234,7 @@ function buildCone(
     depthWrite: false,
     depthTest: false,
     blending: THREE.AdditiveBlending,
+    toneMapped: false,
   });
   const volume = new THREE.Mesh(volumeGeo, volumeMat);
   volume.renderOrder = 990;
@@ -251,6 +253,7 @@ function buildCone(
       opacity: 0.7,
       depthWrite: false,
       depthTest: false,
+      toneMapped: false,
     })
   );
   outline.renderOrder = 992;
@@ -267,6 +270,7 @@ function buildCone(
     depthWrite: false,
     depthTest: false,
     blending: THREE.AdditiveBlending,
+    toneMapped: false,
   });
   const scan = new THREE.Mesh(scanGeo, scanMat);
   scan.renderOrder = 993;

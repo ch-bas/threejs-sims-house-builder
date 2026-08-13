@@ -1,4 +1,5 @@
 import { removeAndDispose } from './builder-utils';
+import { getMaxAnisotropy } from './texture-settings';
 import type { RoofSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -263,6 +264,10 @@ function buildShingleMaterial(
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  // Albedo CanvasTextures default to NoColorSpace (linear); tag sRGB so it's
+  // decoded before lighting instead of rendering washed-out under sRGB output.
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = getMaxAnisotropy();
   // Aim for ~3 shingle rows per metre of slope.
   texture.repeat.set(Math.max(1, surfaceWidth * 0.6), Math.max(1, surfaceLength * 0.6));
 

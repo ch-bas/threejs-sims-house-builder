@@ -43,10 +43,16 @@ function addRings(
       transparent: true,
       opacity: startOpacity - (i - 1) * opacityFalloff,
       side: THREE.DoubleSide,
+      // UI overlay: bypass ACES tone mapping so the range-ring colour coding
+      // hits its exact hex, and don't write depth so concentric/overlapping
+      // rings from nearby sources don't punch holes in each other.
+      toneMapped: false,
+      depthWrite: false,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(position.x, yOffset + 0.01, position.z);
     mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = 980;
     mesh.userData.type = ROOM_OBJECT_TAGS.Signal;
     scene.add(mesh);
   }
