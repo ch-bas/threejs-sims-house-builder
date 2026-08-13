@@ -19,6 +19,12 @@ export interface UseThreeSceneResult {
   error: string | null;
   /** Mark the scene dirty so the next animation frame renders. */
   invalidate: () => void;
+  /**
+   * Request a one-off recompute of the (otherwise static) shadow map on the
+   * next render. Call this whenever a shadow caster or the sun actually moves
+   * — NOT for pure camera orbit, which never changes cast shadows.
+   */
+  requestShadowUpdate: () => void;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
@@ -55,12 +61,21 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     dirtyRef.current = true;
   });
 
+  // Shadow map is static by default (autoUpdate = false); we recompute it only
+  // when a shadow caster or the sun actually moves. `requestShadowUpdate` marks
+  // both the shadow map and the frame dirty so the fresh shadows get painted.
+  const rendererRef = useRef<ThreeNS.WebGLRenderer | null>(null);
+  const requestShadowUpdateRef = useRef(() => {
+    const renderer = rendererRef.current;
+    if (renderer) renderer.shadowMap.needsUpdate = true;
+    dirtyRef.current = true;
+  });
+
   const threeModuleRef = useRef<ThreeModule | null>(null);
   const orbitCtorRef = useRef<typeof OrbitControlsType | null>(null);
   const roomEnvCtorRef = useRef<(new () => ThreeNS.Scene) | null>(null);
   const sceneRef = useRef<ThreeNS.Scene | null>(null);
   const cameraRef = useRef<ThreeNS.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<ThreeNS.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControlsType | null>(null);
 
   // Latest-callback refs: capture handlers without making them part of the
@@ -144,7 +159,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       scene.background = new THREE.Color(0xdceefb);
       sceneRef.current = scene;
 
-      const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+      // Near plane pulled from 0.1 to 0.3 for better depth precision. The
+      // walkthrough eye height is ~1.6m so 0.3 never clips near geometry.
+      const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.3, 1000);
       camera.position.set(0, 8, 8);
       camera.lookAt(0, 0, 0);
       cameraRef.current = camera;
@@ -156,11 +173,17 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         canvas,
         antialias: true,
         failIfMajorPerformanceCaveat: false,
+        powerPreference: 'high-performance',
       });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(canvas.clientWidth, canvas.clientHeight);
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      // The 2048² directional shadow is expensive; keep it static and only
+      // recompute it when a caster or the sun actually moves (via
+      // requestShadowUpdate). Frame 1 needs the initial pass, so start dirty.
+      renderer.shadowMap.autoUpdate = false;
+      renderer.shadowMap.needsUpdate = true;
       // Filmic colour pipeline: ACES tone mapping + explicit sRGB output.
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.15;
@@ -199,6 +222,11 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
       addLights(THREE, scene);
 
+      // While the GPU context is lost the drawing buffer is gone; rendering
+      // into it throws and/or wastes work. Pause the render half of the loop
+      // until `webglcontextrestored` fires.
+      let contextLost = false;
+
       let rafId = 0;
       const tick = () => {
         rafId = requestAnimationFrame(tick);
@@ -206,12 +234,34 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // (including damping glide). Skip rendering entirely when nothing
         // changed — an editor sits idle most of the time.
         const controlsMoved = controls.update();
+        if (contextLost) return;
         if (!controlsMoved && !dirtyRef.current) return;
         dirtyRef.current = false;
         renderer.render(scene, camera);
       };
       rafId = requestAnimationFrame(tick);
       cleanup.push(() => cancelAnimationFrame(rafId));
+
+      // WebGL context loss (GPU reset, driver hiccup, tab backgrounding) would
+      // otherwise blank the canvas forever. preventDefault() lets the browser
+      // restore the context; we pause rendering until it does, then rebuild the
+      // shadow map and repaint from the (still-intact) scene graph.
+      const onContextLost = (event: Event) => {
+        event.preventDefault();
+        contextLost = true;
+      };
+      const onContextRestored = () => {
+        contextLost = false;
+        // GPU resources were dropped — force a fresh shadow pass and a repaint.
+        renderer.shadowMap.needsUpdate = true;
+        invalidateRef.current();
+      };
+      canvas.addEventListener('webglcontextlost', onContextLost as EventListener, false);
+      canvas.addEventListener('webglcontextrestored', onContextRestored as EventListener, false);
+      cleanup.push(() => {
+        canvas.removeEventListener('webglcontextlost', onContextLost as EventListener);
+        canvas.removeEventListener('webglcontextrestored', onContextRestored as EventListener);
+      });
 
       const onResize = () => {
         camera.aspect = canvas.clientWidth / canvas.clientHeight;
@@ -231,6 +281,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         markDirty: () => {
           dirtyRef.current = true;
         },
+        requestShadowUpdate: requestShadowUpdateRef.current,
         controls,
         handlersRef,
       });
@@ -280,6 +331,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     isReady,
     error,
     invalidate: invalidateRef.current,
+    requestShadowUpdate: requestShadowUpdateRef.current,
     threeModuleRef,
     sceneRef,
     cameraRef,

@@ -462,7 +462,7 @@ export function RoomOrganizer(): JSX.Element {
     view,
   });
 
-  const { isReady, error, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
+  const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
@@ -506,6 +506,7 @@ export function RoomOrganizer(): JSX.Element {
   useSceneEffects({
     isReady,
     invalidate,
+    requestShadowUpdate,
     threeModuleRef,
     sceneRef,
     rendererRef,
@@ -528,6 +529,7 @@ export function RoomOrganizer(): JSX.Element {
   useNpcs({
     enabled: isReady && view.showNpcs && !view.view2D,
     invalidate,
+    requestShadowUpdate,
     threeModuleRef,
     sceneRef,
     roomWidth: layout.width,

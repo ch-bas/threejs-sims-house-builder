@@ -8,6 +8,18 @@ import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 
+/**
+ * Freeze an object's transform: the room shell (walls, floor, baseboards,
+ * foundation, grid) never moves after it's built — a change rebuilds the whole
+ * shell, and applyWallDisplay only toggles `.visible`. Disabling matrixAutoUpdate
+ * (after a single updateMatrix()) skips the per-frame matrix recompute for every
+ * one of these meshes.
+ */
+function makeStatic(object: ThreeNS.Object3D): void {
+  object.updateMatrix();
+  object.matrixAutoUpdate = false;
+}
+
 export const ROOM_OBJECT_TAGS = {
   Floor: 'floor',
   Wall: 'wall',
@@ -159,6 +171,7 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   floor.position.y = yOffset;
   floor.receiveShadow = true;
   floor.userData.type = ROOM_OBJECT_TAGS.Floor;
+  makeStatic(floor);
   options.scene.add(floor);
 
   // Concrete foundation plinth — only on the ground floor. build-mode houses sit on
@@ -234,6 +247,7 @@ function addFoundation(
   foundation.receiveShadow = true;
   foundation.castShadow = true;
   foundation.userData.type = ROOM_OBJECT_TAGS.Floor;
+  makeStatic(foundation);
   scene.add(foundation);
 }
 
@@ -428,6 +442,7 @@ function buildWalls(
     wall.position.set(spec.position[0], spec.position[1], spec.position[2]);
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
     wall.userData.wallId = spec.id;
+    makeStatic(wall);
     scene.add(wall);
 
     // Dark wood baseboard along the floor of every wall — the build-mode-style
@@ -447,6 +462,7 @@ function buildWalls(
     const size = divisions * GRID_SIZE_METERS;
     const grid = new THREE.GridHelper(size, divisions);
     grid.userData.type = ROOM_OBJECT_TAGS.Wall;
+    makeStatic(grid);
     scene.add(grid);
   }
 }
@@ -489,6 +505,7 @@ function addBaseboard(
   base.receiveShadow = true;
   base.userData.type = ROOM_OBJECT_TAGS.Wall;
   base.userData.wallId = spec.id;
+  makeStatic(base);
   scene.add(base);
 }
 

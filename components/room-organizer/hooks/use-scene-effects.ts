@@ -4,6 +4,7 @@ import { hasCollisions } from '../lib/geometry';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
+import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
 import { createFurnitureModel } from '../three/furniture-builders';
 import {
   clearInteriorWalls,
@@ -51,6 +52,8 @@ export interface UseSceneEffectsParams {
   isReady: boolean;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate: () => void;
+  /** Recompute the static shadow map — call after a shadow caster/sun change. */
+  requestShadowUpdate: () => void;
   threeModuleRef: MutableRefObject<typeof import('three') | null>;
   sceneRef: MutableRefObject<ThreeNS.Scene | null>;
   rendererRef: MutableRefObject<ThreeNS.WebGLRenderer | null>;
@@ -73,6 +76,7 @@ export interface UseSceneEffectsParams {
 export function useSceneEffects({
   isReady,
   invalidate,
+  requestShadowUpdate,
   threeModuleRef,
   sceneRef,
   rendererRef,
@@ -215,13 +219,16 @@ export function useSceneEffects({
     if (camera) {
       applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
     }
+    // Walls, floor and foundation are shadow casters/receivers — recompute the
+    // static shadow map now that the shell geometry changed.
+    requestShadowUpdate();
     // The shell reads layout.floors/activeFloor but depends on them only
     // through the finishes and openings keys — depending on their identity
     // would rebuild walls, floor meshes, and procedural textures on every
     // item edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
+    isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef,
     layout.width, layout.height, shellFinishesKey, wallOpeningsKey,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, view.showAllFloors, view.wallDisplay,
@@ -287,8 +294,15 @@ export function useSceneEffects({
         scene.add(group);
       }
     }
+
+    // The furniture set just changed — bump the revision so the drag/hover
+    // raycast pre-filter cache rebuilds its list, and recompute the static
+    // shadow map now that shadow casters were added/removed/moved.
+    scene.userData[FURNITURE_REVISION_KEY] =
+      ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
+    requestShadowUpdate();
   }, [
-    isReady, invalidate, threeModuleRef, sceneRef,
+    isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
     layout.floors, layout.width, layout.height,
     activeFloor, activeFloorIndex, view.showAllFloors,
   ]);
@@ -406,10 +420,13 @@ export function useSceneEffects({
     );
 
     applyTimeOfDay(THREE, scene, view.timeOfDay, lampPositions);
+    // The sun's angle/position changed, so the (static) shadow map must be
+    // recomputed or shadows would stay frozen at the previous time of day.
+    requestShadowUpdate();
     // layout.floors is read for lamp positions only; lampsKey covers exactly
     // that, so a non-lamp item edit doesn't rebuild the sky and lights.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.timeOfDay, lampsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, lampsKey]);
 
   // Outdoor
   useEffect(() => {
@@ -445,11 +462,14 @@ export function useSceneEffects({
         { openingCandidates: floor.items, roomWidth: layout.width, roomDepth: layout.height }
       );
     }
+    // Interior walls cast shadows — recompute the static shadow map after any
+    // add/remove/re-extrude so their cast shadows don't go stale.
+    requestShadowUpdate();
     // layout.floors/activeFloor are read for the wall segments and the
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors, layout.width, layout.height]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors, layout.width, layout.height]);
 
   // Cyan outline on selected wall. Declared AFTER the shell + interior-wall
   // rebuild effects and keyed on the same rebuild keys, so it always snapshots

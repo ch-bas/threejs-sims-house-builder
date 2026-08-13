@@ -43,8 +43,17 @@ export interface DragHandlersOptions {
   scene: ThreeNS.Scene;
   controls: OrbitControlsType;
   markDirty: () => void;
+  /** Recompute the (static) shadow map — the dragged item is a shadow caster. */
+  requestShadowUpdate?: () => void;
   handlersRef: { readonly current: SceneEventHandlers };
 }
+
+/**
+ * `useSceneEffects` bumps this scene-level revision whenever it rebuilds the
+ * furniture set, letting the raycast pre-filter cache below rebuild its list
+ * only when the set actually changed — not on every pointermove.
+ */
+export const FURNITURE_REVISION_KEY = 'furnitureRevision';
 
 // A pointerdown that never travels past this radius (in CSS pixels) is a click,
 // not a drag: it selects the item without opening a drag session, so a plain
@@ -65,12 +74,28 @@ export function attachDragHandlers({
   scene,
   controls,
   markDirty,
+  requestShadowUpdate,
   handlersRef,
 }: DragHandlersOptions): () => void {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const intersection = new THREE.Vector3();
+
+  // Raycast pre-filter cache. `scene.children.filter(...)` allocated a fresh
+  // array on every pointermove (hover) and every pointerdown. The furniture set
+  // only changes on a rebuild, which bumps scene.userData[FURNITURE_REVISION_KEY];
+  // rebuild the cached list lazily when that revision moves.
+  let furnitureCache: ThreeNS.Object3D[] = [];
+  let furnitureCacheRevision = Number.NaN;
+  const furnitureList = (): ThreeNS.Object3D[] => {
+    const revision = (scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0;
+    if (revision !== furnitureCacheRevision) {
+      furnitureCache = scene.children.filter((obj) => obj.userData.type === 'furniture');
+      furnitureCacheRevision = revision;
+    }
+    return furnitureCache;
+  };
 
   // A "pending" drag is a pointerdown that landed on a movable item but hasn't
   // yet travelled past DRAG_THRESHOLD_PX. Until it does, no drag session is
@@ -118,7 +143,7 @@ export function attachDragHandlers({
 
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
-    const furniture = scene.children.filter((obj) => obj.userData.type === 'furniture');
+    const furniture = furnitureList();
     const hits = raycaster.intersectObjects(furniture, true);
     if (hits.length === 0) {
       // Walls get a chance to claim the click before we fall through to the
@@ -179,7 +204,7 @@ export function attachDragHandlers({
     if (!hoverCallback) return;
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
-    const furniture = scene.children.filter((obj) => obj.userData.type === 'furniture');
+    const furniture = furnitureList();
     const hits = raycaster.intersectObjects(furniture, true);
     const target = ascendToFurniture(hits[0]?.object);
     const id = target ? (target.userData.id as string) : null;
@@ -232,6 +257,9 @@ export function attachDragHandlers({
     dragTarget.position.x = snapped.x;
     dragTarget.position.z = snapped.z;
     markDirty();
+    // The item is a shadow caster; recompute the static shadow map so its cast
+    // shadow tracks the drag instead of freezing at the drag-start position.
+    requestShadowUpdate?.();
     handlersRef.current.onItemDrag(itemId, snapped.x, snapped.z);
   };
 
