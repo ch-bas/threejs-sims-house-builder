@@ -31,6 +31,7 @@ export interface UseThreeSceneResult {
 export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResult {
   const {
     canvasRef,
+    walkthroughActive,
     onItemSelect,
     onItemDragStart,
     onItemDrag,
@@ -64,7 +65,8 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
   // Latest-callback refs: capture handlers without making them part of the
   // init-effect dependency list (which would tear down the scene unnecessarily).
-  const handlersRef = useRef({
+  const handlersRef = useRef<SceneEventHandlers>({
+    walkthroughActive,
     onItemSelect,
     onItemDragStart,
     onItemDrag,
@@ -78,6 +80,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     getDragPlaneY,
   });
   handlersRef.current = {
+    walkthroughActive,
     onItemSelect,
     onItemDragStart,
     onItemDrag,
