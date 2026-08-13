@@ -27,6 +27,11 @@ export interface UseNpcsOptions {
   floorY: number;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate?: () => void;
+  /**
+   * Recompute the static shadow map. NPCs cast shadows, so while they're
+   * actually walking their shadows must keep updating — but only then.
+   */
+  requestShadowUpdate?: () => void;
 }
 
 /**
@@ -35,7 +40,7 @@ export interface UseNpcsOptions {
  * down all NPC meshes and the RAF loop on every dependency change.
  */
 export function useNpcs(options: UseNpcsOptions): void {
-  const { enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, invalidate } = options;
+  const { enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, invalidate, requestShadowUpdate } = options;
   const stateRef = useRef<NpcState[]>([]);
 
   useEffect(() => {
@@ -62,8 +67,14 @@ export function useNpcs(options: UseNpcsOptions): void {
       const now = performance.now();
       const delta = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
-      stepNpcs(stateRef.current, delta, halfW, halfD, floorY);
-      invalidate?.();
+      // Only request a repaint (and a shadow-map recompute) when an NPC
+      // actually moved this frame. When every NPC is idling at its target the
+      // render loop stays parked instead of pinning the GPU at refresh rate.
+      const moved = stepNpcs(stateRef.current, delta, halfW, halfD, floorY);
+      if (moved) {
+        requestShadowUpdate?.();
+        invalidate?.();
+      }
     };
     rafId = requestAnimationFrame(tick);
 
@@ -75,7 +86,7 @@ export function useNpcs(options: UseNpcsOptions): void {
       }
       stateRef.current = [];
     };
-  }, [enabled, count, invalidate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
+  }, [enabled, count, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
 }
 
 function createNpc(
@@ -141,22 +152,32 @@ function createNpc(
   };
 }
 
+/**
+ * Advances every NPC one frame. Returns true when at least one NPC actually
+ * moved (or its legs bobbed) this frame, so the caller can skip the repaint /
+ * shadow recompute when they're all momentarily idling at their targets.
+ */
 function stepNpcs(
   npcs: NpcState[],
   delta: number,
   halfW: number,
   halfD: number,
   floorY: number
-): void {
+): boolean {
+  let moved = false;
   for (const npc of npcs) {
     const dx = npc.target.x - npc.position.x;
     const dz = npc.target.z - npc.position.z;
     const distance = Math.hypot(dx, dz);
 
     if (distance < 0.15) {
+      // Reached the waypoint: pick a new one but produce no visible motion
+      // this frame (position/legs unchanged).
       npc.target = { x: rand(-halfW, halfW), z: rand(-halfD, halfD) };
       continue;
     }
+
+    moved = true;
 
     const step = npc.speed * delta;
     const nx = npc.position.x + (dx / distance) * step;
@@ -176,6 +197,7 @@ function stepNpcs(
     if (npc.legs[1]) npc.legs[1].position.y = 0.4 - swing;
     npc.group.position.y = floorY + Math.abs(swing) * 0.5;
   }
+  return moved;
 }
 
 function rand(min: number, max: number): number {
