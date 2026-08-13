@@ -241,3 +241,63 @@
     display: none !important;
   }
 }
+
+/* ================================================================
+   Responsive: short viewport / landscape phone (height < 500px)
+   Wide-but-short screens (landscape phones, short desktop windows)
+   fall past the width breakpoints into the roomy layout but lack the
+   vertical space for the tall floating chrome — compact it the way
+   the narrow layout does so nothing overflows off the bottom edge.
+   ================================================================ */
+@media (max-height: 500px) {
+  /* Touch orbit/zoom (and the TouchModeToggle) cover this — the vertical
+     camera d-pad just overflows a short viewport. */
+  .pc-camera-pad {
+    display: none !important;
+  }
+  /* Live stats are non-essential here; the budget still shows in the mode
+     panel, and hiding this frees the cramped top band. */
+  .pc-header-stats {
+    display: none !important;
+  }
+  /* Tighter bottom HUD so it doesn't eat the whole short viewport. */
+  .pc-bottom-hud {
+    padding: 6px !important;
+    gap: 6px !important;
+  }
+  /* Build tools collapse to a horizontal scrollable icon strip. */
+  .pc-build-tools {
+    width: auto !important;
+    padding: 6px !important;
+  }
+  .pc-build-tools-header {
+    display: none !important;
+  }
+  .pc-build-tools-grid {
+    display: flex !important;
+    overflow-x: auto !important;
+    gap: 3px !important;
+    padding: 4px !important;
+    scrollbar-width: none;
+  }
+  .pc-build-tools-grid::-webkit-scrollbar {
+    display: none;
+  }
+  .pc-build-tools-grid .pc-tile {
+    height: 36px !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    padding: 4px !important;
+    border-radius: 8px !important;
+  }
+  .pc-build-tools-label {
+    display: none !important;
+  }
+  /* The right-edge item editor can be taller than a short viewport — pin it
+     near the top and let it scroll instead of running off the bottom. */
+  .pc-item-popover {
+    top: 8px !important;
+    max-height: calc(100vh - 16px) !important;
+    overflow-y: auto !important;
+  }
+}

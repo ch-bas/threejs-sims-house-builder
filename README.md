@@ -415,8 +415,10 @@ components/
 - A large floor-plan image stored as base64 can exhaust the ~5 MB
   `localStorage` quota; the save call catches and warns instead of crashing.
 - Walkthrough requires a click on the canvas to engage pointer lock.
-- The bottom glass panels can overlap on viewports narrower than ~1100 px;
-  there is no dedicated mobile layout.
+- The UI is responsive down to phone sizes — the HUD reflows, the item
+  editor becomes a bottom sheet, the sidebar goes full-screen, and short /
+  landscape viewports compact the floating chrome — but it isn't a
+  mobile-first redesign; very small screens stay dense.
 - No "rooms from enclosed walls" detection — interior walls are just
   drawn segments, not space-bounding entities.
 
