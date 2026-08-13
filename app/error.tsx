@@ -1,13 +1,31 @@
 'use client';
 
+import { useEffect } from 'react';
+import { STORAGE_KEY } from '../components/room-organizer/lib/constants';
+
 // Route-level error boundary. A saved layout that crashes the renderer would
 // otherwise white-screen the app on every reload, with no way out but
 // devtools. This gives a friendly recovery path: clear the persisted layout
-// and retry. The storage key literal mirrors STORAGE_KEY in
-// components/room-organizer/lib/constants.ts.
-const STORAGE_KEY = 'standalone-room-organizer-layout';
+// and retry.
 
-export default function Error({ reset }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
+/**
+ * A returning user's cached HTML references old hashed chunks that a redeploy
+ * has since removed, so the `dynamic(() => import(...))` in app/page.tsx throws
+ * a ChunkLoadError. `reset()` only re-requests the same dead chunk → an
+ * infinite re-catch loop, so for chunk/loading failures we hard-reload instead:
+ * a fresh document fetch pulls the new HTML with the new chunk hashes.
+ */
+function isChunkLoadError(error: Error): boolean {
+  return error.name === 'ChunkLoadError' || /loading chunk|loading css chunk|dynamically imported module/i.test(error.message);
+}
+
+export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
+  useEffect(() => {
+    if (isChunkLoadError(error)) {
+      window.location.reload();
+    }
+  }, [error]);
+
   const resetSavedLayout = () => {
     try {
       window.localStorage.removeItem(STORAGE_KEY);

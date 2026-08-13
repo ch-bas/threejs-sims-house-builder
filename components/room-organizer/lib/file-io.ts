@@ -12,7 +12,10 @@ export function downloadLayoutAsJson(layout: RoomLayout): void {
     link.download = `${(layout.name || 'layout').replace(/\s+/g, '_')}.json`;
     link.click();
   } finally {
-    URL.revokeObjectURL(url);
+    // Defer the revoke: revoking synchronously right after click() can cancel
+    // the download mid-flight in some browsers. A 0ms timeout releases the URL
+    // after the click has been dispatched.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }
 
@@ -102,7 +105,8 @@ export function downloadInventoryCsv(layout: RoomLayout): void {
     link.download = `${(layout.name || 'inventory').replace(/\s+/g, '_')}_inventory.csv`;
     link.click();
   } finally {
-    URL.revokeObjectURL(url);
+    // Defer the revoke so it can't truncate the download (see downloadLayoutAsJson).
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 }
 
@@ -116,33 +120,78 @@ function csvField(value: string): string {
   return safe;
 }
 
+/**
+ * userData.type tags that make up the "meaningful" model the user expects in an
+ * exported .glb: the furniture and the room shell (walls incl. the floor grid
+ * helper + baseboards, interior walls, floor incl. the foundation, and the
+ * roof). Everything else — lights (`light:*`), the sky, the ground/outdoor
+ * scenery, NPCs, Wi-Fi/vision overlays, measurement markers, and item labels —
+ * is deliberately excluded.
+ */
+const GLB_EXPORT_TAGS: ReadonlySet<string> = new Set([
+  'furniture',
+  'floor',
+  'wall',
+  'interior-wall',
+  'roof',
+]);
+
+/**
+ * Build a throwaway group holding CLONES of just the meaningful scene objects.
+ * Cloning (rather than reparenting) keeps the live scene untouched and lets us
+ * discard the group without disposing the shared geometries/materials the
+ * clones borrow by reference. Transforms are preserved by clone().
+ */
+function collectExportGroup(THREE: typeof import('three'), scene: import('three').Object3D): import('three').Group {
+  const group = new THREE.Group();
+  for (const child of scene.children) {
+    const tag = child.userData.type as string | undefined;
+    if (tag !== undefined && GLB_EXPORT_TAGS.has(tag)) {
+      group.add(child.clone());
+    }
+  }
+  return group;
+}
+
 export async function downloadSceneAsGlb(scene: import('three').Object3D, baseName: string): Promise<void> {
+  const THREE = await import('three');
   const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
   const exporter = new GLTFExporter();
-  await new Promise<void>((resolve, reject) => {
-    exporter.parse(
-      scene,
-      (result) => {
-        const blob =
-          result instanceof ArrayBuffer
-            ? new Blob([result], { type: 'model/gltf-binary' })
-            : new Blob([JSON.stringify(result)], { type: 'application/json' });
-        const extension = result instanceof ArrayBuffer ? 'glb' : 'gltf';
-        const url = URL.createObjectURL(blob);
-        try {
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `${baseName.replace(/\s+/g, '_')}.${extension}`;
-          link.click();
-        } finally {
-          URL.revokeObjectURL(url);
-        }
-        resolve();
-      },
-      (error) => reject(error instanceof Error ? error : new Error('GLB export failed.')),
-      { binary: true }
-    );
-  });
+  // Export a temporary group of cloned meshes so the .glb carries only the
+  // furniture + room shell — not lights, sky, NPCs, overlays, or markers.
+  const exportGroup = collectExportGroup(THREE, scene);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      exporter.parse(
+        exportGroup,
+        (result) => {
+          const blob =
+            result instanceof ArrayBuffer
+              ? new Blob([result], { type: 'model/gltf-binary' })
+              : new Blob([JSON.stringify(result)], { type: 'application/json' });
+          const extension = result instanceof ArrayBuffer ? 'glb' : 'gltf';
+          const url = URL.createObjectURL(blob);
+          try {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${baseName.replace(/\s+/g, '_')}.${extension}`;
+            link.click();
+          } finally {
+            // Defer the revoke so it can't truncate the download (see downloadLayoutAsJson).
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+          }
+          resolve();
+        },
+        (error) => reject(error instanceof Error ? error : new Error('GLB export failed.')),
+        { binary: true }
+      );
+    });
+  } finally {
+    // Discard the temp group. The clones borrow the live scene's geometries and
+    // materials by reference, so only detach them (clear) — never dispose, or
+    // we'd destroy resources the on-screen scene is still using.
+    exportGroup.clear();
+  }
 }
 
 /**
@@ -164,7 +213,8 @@ export function downloadCanvasAsPng(canvas: HTMLCanvasElement, baseName: string)
         link.download = `${(baseName || 'screenshot').replace(/\s+/g, '_')}.png`;
         link.click();
       } finally {
-        URL.revokeObjectURL(url);
+        // Defer the revoke so it can't truncate the download (see downloadLayoutAsJson).
+        setTimeout(() => URL.revokeObjectURL(url), 0);
       }
       resolve(true);
     }, 'image/png');
