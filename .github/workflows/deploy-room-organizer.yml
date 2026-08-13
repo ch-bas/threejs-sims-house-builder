@@ -29,6 +29,7 @@
       - run: npm install
       - run: npx tsc --noEmit
       - run: npm run lint -- --max-warnings=0
+      - run: npm run test
       - run: npm run build                                                                                                                                                         
         env:
           GITHUB_PAGES: 'true'                                                                                                                                                     
