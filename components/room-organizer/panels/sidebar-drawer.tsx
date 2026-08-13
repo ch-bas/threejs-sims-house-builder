@@ -68,12 +68,12 @@ export function SidebarDrawer({
   const { selectedItem, setSelectedItemId, allSelectedIds } = useSelection();
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
     if (typeof window === 'undefined') return 'build';
-    const saved = localStorage.getItem('room-organizer-sidebar-tab');
+    const saved = localStorage.getItem('standalone-room-organizer-sidebar-tab');
     return (saved === 'build' || saved === 'buy' || saved === 'style' || saved === 'manage') ? saved : 'build';
   });
   const setSidebarTab = (tab: SidebarTab) => {
     setSidebarTabRaw(tab);
-    localStorage.setItem('room-organizer-sidebar-tab', tab);
+    localStorage.setItem('standalone-room-organizer-sidebar-tab', tab);
   };
 
   const handleFloorPlanUpload = async (file: File) => {

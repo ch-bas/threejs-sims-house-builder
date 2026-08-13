@@ -1,13 +1,29 @@
 'use client';
 
+import { useEffect } from 'react';
+import { STORAGE_KEY } from '../components/room-organizer/lib/constants';
+
 // Global error boundary — catches errors thrown in the root layout itself, so
 // it must render its own <html>/<body>. Same recovery path as app/error.tsx:
-// clear the persisted layout that crashed the renderer, then reload. The
-// storage key literal mirrors STORAGE_KEY in
-// components/room-organizer/lib/constants.ts.
-const STORAGE_KEY = 'standalone-room-organizer-layout';
+// clear the persisted layout that crashed the renderer, then reload.
 
-export default function GlobalError({ reset }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
+/**
+ * See app/error.tsx: a redeploy invalidates the cached chunk hashes a returning
+ * user's HTML points at, so `dynamic(...)` throws a ChunkLoadError that
+ * `reset()` can't clear (it re-requests the same dead chunk). Hard-reload for
+ * chunk/loading failures to fetch fresh HTML + new chunk hashes.
+ */
+function isChunkLoadError(error: Error): boolean {
+  return error.name === 'ChunkLoadError' || /loading chunk|loading css chunk|dynamically imported module/i.test(error.message);
+}
+
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
+  useEffect(() => {
+    if (isChunkLoadError(error)) {
+      window.location.reload();
+    }
+  }, [error]);
+
   const resetSavedLayout = () => {
     try {
       window.localStorage.removeItem(STORAGE_KEY);

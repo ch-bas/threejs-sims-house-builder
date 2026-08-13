@@ -81,6 +81,16 @@ describe('isRoomLayout', () => {
     expect(isRoomLayout({ ...makeLayout(), floorPlanFitMode: 'squish' })).toBe(false);
   });
 
+  it('accepts a data:image floorPlanImage', () => {
+    const layout = makeLayout({ floorPlanImage: 'data:image/png;base64,iVBORw0KGgo=' });
+    expect(isRoomLayout(layout)).toBe(true);
+  });
+
+  it('rejects a non-data-URL floorPlanImage (would trigger an outbound fetch)', () => {
+    const layout = makeLayout({ floorPlanImage: 'http://attacker.example/beacon.png' });
+    expect(isRoomLayout(layout)).toBe(false);
+  });
+
   it('accepts exactly MAX_ROOM_DIMENSION and exactly MAX_FLOORS', () => {
     const layout = makeLayout({
       width: MAX_ROOM_DIMENSION,
@@ -124,6 +134,34 @@ describe('parseStoredLayout', () => {
     expect(parsed!.floorPlanOpacity).toBe(0.4);
     // Legacy has no floors key.
     expect('floors' in legacy).toBe(false);
+  });
+
+  it('migrates a legacy layout but drops an unsafe (non-data-URL) floorPlanImage', () => {
+    const legacy = {
+      name: 'Legacy Home',
+      width: 6,
+      height: 7,
+      items: [makeItem({ id: 'sofa' })],
+      floorColor: '#deadbe',
+      floorPlanImage: 'http://attacker.example/beacon.png',
+    };
+    const parsed = parseStoredLayout(legacy);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.floorPlanImage).toBeUndefined();
+    expect(parsed!.floors[0]!.items.map((i) => i.id)).toEqual(['sofa']);
+  });
+
+  it('migrates a legacy layout and keeps a safe data:image floorPlanImage', () => {
+    const legacy = {
+      name: 'Legacy Home',
+      width: 6,
+      height: 7,
+      items: [],
+      floorColor: '#deadbe',
+      floorPlanImage: 'data:image/jpeg;base64,/9j/4AAQ',
+    };
+    const parsed = parseStoredLayout(legacy);
+    expect(parsed!.floorPlanImage).toBe('data:image/jpeg;base64,/9j/4AAQ');
   });
 
   it('does not treat an object that already has floors as legacy', () => {

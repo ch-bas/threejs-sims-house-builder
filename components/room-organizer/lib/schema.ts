@@ -25,6 +25,17 @@ function isOptionalBoolean(value: unknown): boolean {
   return value === undefined || typeof value === 'boolean';
 }
 
+/**
+ * A floor-plan image flows straight into `new THREE.TextureLoader().load(url)`
+ * in three/room-builder.ts. A poisoned localStorage entry or imported JSON
+ * could point it at `http://attacker/beacon.png`, firing an outbound request on
+ * load. Only accept inline `data:image/...` URLs so nothing can trigger a
+ * network fetch.
+ */
+function isDataImageUrl(value: unknown): value is string {
+  return typeof value === 'string' && /^data:image\//.test(value);
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -117,7 +128,7 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
     return false;
   }
 
-  if (v.floorPlanImage !== undefined && typeof v.floorPlanImage !== 'string') return false;
+  if (v.floorPlanImage !== undefined && !isDataImageUrl(v.floorPlanImage)) return false;
   if (v.floorPlanOpacity !== undefined && !isFiniteNumber(v.floorPlanOpacity)) return false;
   if (
     v.floorPlanFitMode !== undefined &&
@@ -198,7 +209,10 @@ function migrateLegacyLayout(legacy: LegacySingleFloorLayout): RoomLayout {
     floors: [groundFloor],
   };
   if (legacy.id !== undefined) layout.id = legacy.id;
-  if (legacy.floorPlanImage !== undefined) layout.floorPlanImage = legacy.floorPlanImage;
+  // Non-destructive: keep migrating the rest of the layout even if the stored
+  // floor plan isn't a safe inline data URL — just drop the image so we never
+  // hand a network URL to the texture loader.
+  if (isDataImageUrl(legacy.floorPlanImage)) layout.floorPlanImage = legacy.floorPlanImage;
   if (legacy.floorPlanOpacity !== undefined) layout.floorPlanOpacity = legacy.floorPlanOpacity;
   if (legacy.floorPlanFitMode !== undefined) layout.floorPlanFitMode = legacy.floorPlanFitMode;
   return layout;
