@@ -134,14 +134,20 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
     ? buildFloorGeometryWithOpenings(THREE, options.width, options.depth, options.floorOpenings!)
     : new THREE.PlaneGeometry(options.width, options.depth, useDisplacement ? 100 : 1, useDisplacement ? 100 : 1);
 
-  const material = options.floorPlanImage
-    ? buildFloorPlanMaterial(THREE, options, options.floorPlanImage)
-    : buildFloorMaterial(THREE, {
-        pattern: options.floorPattern ?? 'solid',
-        color: options.floorColor,
-        roomWidth: options.width,
-        roomDepth: options.depth,
-      });
+  let material: ThreeNS.Material;
+  if (options.floorPlanImage) {
+    material = buildFloorPlanMaterial(THREE, options, options.floorPlanImage);
+  } else {
+    // No floor-plan image on this rebuild: drop the decoded-image cache so a
+    // removed (possibly multi-MB) data URL isn't retained forever.
+    floorPlanImageCache = null;
+    material = buildFloorMaterial(THREE, {
+      pattern: options.floorPattern ?? 'solid',
+      color: options.floorColor,
+      roomWidth: options.width,
+      roomDepth: options.depth,
+    });
+  }
 
   if (isGhost) {
     material.transparent = true;
@@ -242,16 +248,62 @@ function buildFloorPlanMaterial(
   options: RoomBuilderOptions,
   imageUrl: string
 ): ThreeNS.MeshStandardMaterial {
+  // With the 3D effect on we build two textures (map + displacement) from the
+  // same URL. On a cache miss we must not kick off two independent decodes of a
+  // multi-MB data URL — share a single in-flight decode. The first cache-miss
+  // call starts one loader; later synchronous calls in the same build return a
+  // placeholder Texture whose pixels are filled in when the shared load
+  // resolves. `onLoad` fires for every texture once the image is ready.
+  let sharedLoad: {
+    started: boolean;
+    resolved: boolean;
+    image: HTMLImageElement | null;
+    pending: Array<{ texture: ThreeNS.Texture; onLoad?: (texture: ThreeNS.Texture) => void }>;
+  } | null = null;
+
   const acquireTexture = (onLoad?: (texture: ThreeNS.Texture) => void): ThreeNS.Texture => {
+    // Cache warm (from a previous build) — decode already available.
     if (floorPlanImageCache?.url === imageUrl) {
       const texture = new THREE.Texture(floorPlanImageCache.image);
       texture.needsUpdate = true;
       onLoad?.(texture);
       return texture;
     }
+
+    if (!sharedLoad) {
+      sharedLoad = { started: false, resolved: false, image: null, pending: [] };
+    }
+
+    // Second (and later) calls before the load resolves: attach a placeholder
+    // texture that gets its image + onLoad when the single decode finishes.
+    if (sharedLoad.started) {
+      if (sharedLoad.resolved && sharedLoad.image) {
+        const texture = new THREE.Texture(sharedLoad.image);
+        texture.needsUpdate = true;
+        onLoad?.(texture);
+        return texture;
+      }
+      const texture = new THREE.Texture();
+      sharedLoad.pending.push({ texture, ...(onLoad ? { onLoad } : {}) });
+      return texture;
+    }
+
+    // First cache-miss call: kick off the one and only decode for this build.
+    sharedLoad.started = true;
     const loader = new THREE.TextureLoader();
     return loader.load(imageUrl, (loaded) => {
-      floorPlanImageCache = { url: imageUrl, image: loaded.image as HTMLImageElement };
+      const image = loaded.image as HTMLImageElement;
+      floorPlanImageCache = { url: imageUrl, image };
+      if (sharedLoad) {
+        sharedLoad.resolved = true;
+        sharedLoad.image = image;
+        for (const { texture, onLoad: pendingOnLoad } of sharedLoad.pending) {
+          texture.image = image;
+          texture.needsUpdate = true;
+          pendingOnLoad?.(texture);
+        }
+        sharedLoad.pending = [];
+      }
       onLoad?.(loaded);
     });
   };

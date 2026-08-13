@@ -1,4 +1,5 @@
 import { useMemo, useReducer } from 'react';
+import { randomId } from '../lib/ids';
 import {
   layoutReducer,
   INITIAL_GROUND_FLOOR,
@@ -57,6 +58,7 @@ export interface LayoutActions {
   addItems(items: FurnitureItem[]): void;
   bulkSetPositions(positions: ReadonlyMap<string, { x: number; z: number }>): void;
   addInteriorWall(wall: InteriorWall): void;
+  addInteriorWalls(walls: readonly InteriorWall[]): void;
   removeInteriorWall(id: string): void;
   clearInteriorWalls(): void;
   toggleExteriorWall(wallId: WallId): void;
@@ -83,9 +85,7 @@ export interface UseLayoutStateResult {
 // Hook
 // ---------------------------------------------------------------------------
 
-function nextId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-}
+const nextId = randomId;
 
 export function useLayoutState(initial: RoomLayout = INITIAL_LAYOUT): UseLayoutStateResult {
   const [state, dispatch] = useReducer(layoutReducer, { layout: initial, activeFloorIndex: 0 } satisfies LayoutState);
@@ -130,6 +130,7 @@ export function useLayoutState(initial: RoomLayout = INITIAL_LAYOUT): UseLayoutS
       addItems: (items) => dispatch({ type: 'addItems', items }),
       bulkSetPositions: (positions) => dispatch({ type: 'bulkSetPositions', positions }),
       addInteriorWall: (wall) => dispatch({ type: 'addInteriorWall', wall }),
+      addInteriorWalls: (walls) => dispatch({ type: 'addInteriorWalls', walls }),
       removeInteriorWall: (id) => dispatch({ type: 'removeInteriorWall', id }),
       toggleExteriorWall: (wallId) => dispatch({ type: 'toggleExteriorWall', wallId }),
       clearInteriorWalls: () => dispatch({ type: 'clearInteriorWalls' }),

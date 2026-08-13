@@ -1,5 +1,22 @@
+import { CURRENCY_SYMBOL } from './constants';
 import { totalCost } from './geometry';
 import type { RoomLayout } from './types';
+
+// Furniture types that read as "planted greenery" in the catalog — kept in sync
+// with the `outdoor`/`decor` plant entries in FURNITURE_CATALOG. Water features
+// (pond, pool, birdbath) are intentionally excluded.
+const PLANTED_TYPES: ReadonlySet<string> = new Set([
+  'plant',
+  'flowerpot',
+  'tree',
+  'pine-tree',
+  'bush',
+  'hedge',
+  'flowerbed',
+  'tulips',
+  'sunflower',
+  'rose-bush',
+]);
 
 export interface Achievement {
   id: string;
@@ -34,9 +51,10 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   {
     id: 'big-spender',
     name: 'Big Spender',
-    description: 'Spent over §10,000 in total.',
+    description: `Spent over ${CURRENCY_SYMBOL}10,000 in total.`,
     icon: '💸',
-    isMet: (layout) => totalCost(allItems(layout)) >= 10_000,
+    // "over" means strictly greater than — exactly 10,000 doesn't count.
+    isMet: (layout) => totalCost(allItems(layout)) > 10_000,
   },
   {
     id: 'wifi-everywhere',
@@ -76,10 +94,10 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   {
     id: 'green-thumb',
     name: 'Green Thumb',
-    description: 'Placed three or more plants, trees, or flowerpots.',
+    description: 'Placed three or more plants, trees, or flowers.',
     icon: '🌿',
     isMet: (layout) =>
-      allItems(layout).filter((item) => ['plant', 'tree', 'flowerpot'].includes(item.type)).length >= 3,
+      allItems(layout).filter((item) => PLANTED_TYPES.has(item.type)).length >= 3,
   },
   {
     id: 'door-installer',
@@ -113,7 +131,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   {
     id: 'open-plan',
     name: 'Open Plan',
-    description: 'Built a layout under §3,000 with at least 5 items.',
+    description: `Built a layout under ${CURRENCY_SYMBOL}3,000 with at least 5 items.`,
     icon: '🪟',
     isMet: (layout) => {
       const items = allItems(layout);

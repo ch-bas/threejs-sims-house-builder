@@ -559,7 +559,13 @@ export function RoomOrganizer(): JSX.Element {
     rendererRef,
     sceneRef,
     cameraRef,
-    onImported: useCallback(() => setSelectedItemId(null), []),
+    onImported: useCallback(() => {
+      // A JSON import replaces the entire layout, so any prior multi-select ids
+      // now reference items that no longer exist. Clear both the primary and
+      // the extra selection to avoid ghost highlights.
+      setSelectedItemId(null);
+      setExtraSelectedIds(new Set());
+    }, []),
   });
 
   // Advance the time-of-day at roughly 1 in-game hour per second when on.

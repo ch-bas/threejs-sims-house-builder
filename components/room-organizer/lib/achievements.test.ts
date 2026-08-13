@@ -42,11 +42,11 @@ describe('achievements — count thresholds fire at the boundary', () => {
 });
 
 describe('achievements — spend thresholds', () => {
-  it('big-spender fires at exactly §10,000', () => {
-    const under = repeatItems(1, { price: 9_999 });
+  it('big-spender fires strictly over $10,000, not at exactly 10,000', () => {
     const at = repeatItems(1, { price: 10_000 });
-    expect(achievement('big-spender').isMet(layoutWithItems(under))).toBe(false);
-    expect(achievement('big-spender').isMet(layoutWithItems(at))).toBe(true);
+    const over = repeatItems(1, { price: 10_001 });
+    expect(achievement('big-spender').isMet(layoutWithItems(at))).toBe(false);
+    expect(achievement('big-spender').isMet(layoutWithItems(over))).toBe(true);
   });
 
   it('open-plan requires >=5 items AND total under §3,000', () => {
@@ -91,6 +91,22 @@ describe('achievements — type/structure predicates', () => {
     const three = [...two, makeItem({ id: '3', type: 'flowerpot' })];
     expect(achievement('green-thumb').isMet(layoutWithItems(two))).toBe(false);
     expect(achievement('green-thumb').isMet(layoutWithItems(three))).toBe(true);
+  });
+
+  it('green-thumb counts the broader planted catalog (pine-tree, bush, tulips, …)', () => {
+    const mixed = [
+      makeItem({ id: '1', type: 'pine-tree' }),
+      makeItem({ id: '2', type: 'bush' }),
+      makeItem({ id: '3', type: 'tulips' }),
+    ];
+    expect(achievement('green-thumb').isMet(layoutWithItems(mixed))).toBe(true);
+    // Non-plant outdoor items (e.g. a pond) must not count toward it.
+    const water = [
+      makeItem({ id: '1', type: 'pond' }),
+      makeItem({ id: '2', type: 'pool' }),
+      makeItem({ id: '3', type: 'birdbath' }),
+    ];
+    expect(achievement('green-thumb').isMet(layoutWithItems(water))).toBe(false);
   });
 
   it('window-watcher fires at 3 windows', () => {

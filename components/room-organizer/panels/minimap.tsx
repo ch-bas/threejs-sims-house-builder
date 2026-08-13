@@ -32,7 +32,13 @@ export function Minimap({ layout, floor, selectedItemId }: MinimapProps): JSX.El
   }, [layout, floor, selectedItemId]);
 
   return (
-    <div className="absolute top-4 right-4 rounded-lg border bg-background/90 backdrop-blur-sm p-2 shadow">
+    // Offset below the top-right pill stack (FloorPill + WallDisplayPill, at
+    // top:16) so the minimap no longer overlaps them or the measurement /
+    // wall-draw chips that share the same corner.
+    <div
+      className="absolute right-4 rounded-lg border bg-background/90 backdrop-blur-sm p-2 shadow"
+      style={{ top: 128, zIndex: 20 }}
+    >
       <p className="text-[10px] text-muted-foreground mb-1">{floor.name}</p>
       <canvas ref={canvasRef} width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} className="rounded" />
     </div>

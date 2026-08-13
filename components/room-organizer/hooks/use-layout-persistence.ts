@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS } from '../lib/constants';
 import { loadLayout, saveLayout } from '../lib/persistence';
-import { decodeShareUrl } from '../lib/share';
+import { decodeShareUrl, isShareHash } from '../lib/share';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseLayoutPersistenceOptions {
@@ -64,6 +64,16 @@ export function useLayoutPersistence({
         // shared version.
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
         return;
+      }
+      // The hash looks like a share link (`#layout=…`) but failed to decode —
+      // truncated or corrupted. Surface a visible notice instead of silently
+      // falling back to the local save, and clear the broken hash so a reload
+      // doesn't repeat the warning.
+      if (isShareHash(window.location.hash)) {
+        window.alert(
+          'This shared layout link is broken or incomplete and could not be opened. Loading your last saved layout instead.'
+        );
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
       }
     }
 

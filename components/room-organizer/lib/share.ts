@@ -20,6 +20,16 @@ export function encodeShareUrl(layout: RoomLayout, origin: string): EncodeShareU
   return { url: `${origin}${HASH_PREFIX}${encoded}`, strippedFloorPlan: stripped };
 }
 
+/**
+ * True when a URL hash carries a share payload (starts with `#layout=`),
+ * regardless of whether that payload decodes cleanly. Lets callers distinguish
+ * "no share link" from "a share link that failed to decode" so a corrupt link
+ * can surface user feedback instead of silently falling back to the local save.
+ */
+export function isShareHash(hash: string): boolean {
+  return hash.startsWith(HASH_PREFIX) && hash.length > HASH_PREFIX.length;
+}
+
 export function decodeShareUrl(hash: string): RoomLayout | null {
   if (!hash.startsWith(HASH_PREFIX)) return null;
   const encoded = hash.slice(HASH_PREFIX.length);

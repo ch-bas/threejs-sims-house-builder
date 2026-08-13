@@ -44,6 +44,7 @@ export type LayoutAction =
   | { type: 'addItems'; items: FurnitureItem[] }
   | { type: 'bulkSetPositions'; positions: ReadonlyMap<string, { x: number; z: number }> }
   | { type: 'addInteriorWall'; wall: InteriorWall }
+  | { type: 'addInteriorWalls'; walls: readonly InteriorWall[] }
   | { type: 'removeInteriorWall'; id: string }
   | { type: 'toggleExteriorWall'; wallId: WallId }
   | { type: 'clearInteriorWalls' }
@@ -297,6 +298,16 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         ...floor,
         interiorWalls: [...(floor.interiorWalls ?? []), action.wall],
       }));
+
+    // Batch insert — a room-shape stamp adds every segment in one dispatch so
+    // the whole stamp is a single history/undo entry rather than N of them.
+    case 'addInteriorWalls': {
+      if (action.walls.length === 0) return state;
+      return withActiveFloor(state, (floor) => ({
+        ...floor,
+        interiorWalls: [...(floor.interiorWalls ?? []), ...action.walls],
+      }));
+    }
 
     case 'removeInteriorWall':
       return withActiveFloor(state, (floor) => ({
