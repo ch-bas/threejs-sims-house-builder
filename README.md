@@ -371,7 +371,14 @@ components/
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is
   threaded through the scene-effect, walkthrough, NPC, and camera-preset
-  hooks). An idle editor draws zero frames.
+  hooks). An idle editor draws zero frames. The shadow map (`autoUpdate`
+  off) and the NPC loop only refresh when a caster actually moves, and the
+  WebGL context is restored automatically if the GPU drops it.
+- **Instanced outdoor scenery.** The suburban lot's high-count scatter
+  (grass tufts, shrubs, flowers, road dashes, stepping stones) renders
+  through `InstancedMesh` — hundreds of elements collapse to a handful of
+  draw calls — and static meshes bake their matrix once (`matrixAutoUpdate`
+  off).
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged

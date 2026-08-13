@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] - 2026-08-13
+
+Three.js-focused audit: rendering-quality, GPU performance, and static-export hardening.
+
+### Performance
+- Render loop: the shadow map no longer recomputes every frame (only when a caster or the sun moves), the NPC animation loop only requests frames when an NPC actually moves, static room-shell meshes bake their matrix once, and hover/drag raycasts reuse a cached furniture list instead of rebuilding it per pointer move ([#95](https://github.com/ch-bas/threejs-sims-house-builder/issues/95))
+- Draw calls: the outdoor lot's high-count scatter (220 grass tufts, shrubs, flowers, road dashes, stepping stones) renders through `InstancedMesh` (hundreds of meshes → a handful of draw calls); loop-invariant geometries are hoisted and shared; procedural floor/wall/label/roof textures are cached and reused across rebuilds ([#96](https://github.com/ch-bas/threejs-sims-house-builder/issues/96))
+
+### Fixed
+- Rendering color management: roof-shingle and birch-bark CanvasTextures are tagged sRGB (they were rendering washed-out), and the UI overlays (camera vision cones, WiFi/CCTV range rings, measurement markers) bypass ACES tone mapping so they hit their intended colors; transparent signal rings no longer punch holes in each other ([#94](https://github.com/ch-bas/threejs-sims-house-builder/issues/94))
+- A stale-chunk 404 after a redeploy no longer dead-ends returning users — the error boundary reloads on `ChunkLoadError` instead of re-requesting the dead chunk in a loop ([#97](https://github.com/ch-bas/threejs-sims-house-builder/issues/97))
+- Outdoor ground layers no longer z-fight (the 1 mm stack was widened) ([#96](https://github.com/ch-bas/threejs-sims-house-builder/issues/96))
+- The WebGL context is recovered automatically after a GPU context loss instead of leaving a permanently blank canvas ([#95](https://github.com/ch-bas/threejs-sims-house-builder/issues/95))
+
+### Security
+- `floorPlanImage` is restricted to `data:image/` URLs, closing an outbound-fetch vector where a poisoned/imported layout could point it at an arbitrary URL ([#97](https://github.com/ch-bas/threejs-sims-house-builder/issues/97))
+
+### Changed
+- GLB export serializes only the furniture/structure subtree instead of the whole scene (lights, sky, grid, NPCs, and overlays are excluded); download object-URLs are revoked on a later tick to avoid truncating downloads ([#97](https://github.com/ch-bas/threejs-sims-house-builder/issues/97))
+- CI installs with `npm ci` for reproducible builds; `next` bumped to 15.5.23 ([#97](https://github.com/ch-bas/threejs-sims-house-builder/issues/97))
+
 ## [1.7.0] - 2026-08-13
 
 Second batch of the second-round audit: geometry/interaction correctness, walkthrough fixes, schema hardening, and the project's first automated test suite.
