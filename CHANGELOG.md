@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.7.0] - 2026-08-13
+
+Second batch of the second-round audit: geometry/interaction correctness, walkthrough fixes, schema hardening, and the project's first automated test suite.
+
+### Added
+- Test framework: Vitest with 158 unit tests covering the layout reducer, schema migration/validation, geometry/OBB collision, the share-URL codec, wall snapping, alignment, and achievements — enforced in CI ([#6](https://github.com/ch-bas/threejs-sims-house-builder/issues/6))
+
+### Fixed
+- 2D top-down view renders at the container size and device-pixel-ratio instead of a fixed 800×600, so it's no longer stretched or blurry ([#66](https://github.com/ch-bas/threejs-sims-house-builder/issues/66))
+- Selection outlines no longer go stale when toggling Show All Floors or editing the selected wall ([#75](https://github.com/ch-bas/threejs-sims-house-builder/issues/75))
+- Wall cutouts: an opening near a junction cuts only its own wall, overlapping cutouts no longer corrupt the wall mesh, and oversized openings clamp to the wall segment ([#61](https://github.com/ch-bas/threejs-sims-house-builder/issues/61))
+- Dragging a door or window to a different wall now re-orients it to that wall instead of keeping its old rotation ([#62](https://github.com/ch-bas/threejs-sims-house-builder/issues/62))
+- Geometry polish: interior-wall cameras seat on the cursor's side of the wall, hipped-roof faces are wound outward, the 2D and 3D grids align to the actual snap grid, and rotated stairs cut a matching (non-inflated) floor hole ([#63](https://github.com/ch-bas/threejs-sims-house-builder/issues/63))
+- Multi-select: group rotate orbits items about the selection centroid (rigidly) instead of spinning each in place, duplicate copies the whole selection, and the primary item can be Ctrl-deselected ([#69](https://github.com/ch-bas/threejs-sims-house-builder/issues/69))
+- Keyboard: Shift+R fine-rotation works again, and AltGr layouts can reach the `[` / `]` time-of-day shortcuts ([#76](https://github.com/ch-bas/threejs-sims-house-builder/issues/76))
+- Walkthrough mode: single-key shortcuts and canvas selection are suppressed while walking, floor-switching keeps pointer lock instead of teleporting, a second Escape exits, entering Live from 2D works, and the camera is clamped to the room footprint ([#67](https://github.com/ch-bas/threejs-sims-house-builder/issues/67))
+- Furniture sets and Surprise no longer drop items outside small rooms, and outdoor items no longer float mid-air when an upper floor is active ([#73](https://github.com/ch-bas/threejs-sims-house-builder/issues/73))
+- Roundup: JSON import clears the multi-selection, corrupt share links surface an error instead of silently loading the local layout, generated IDs no longer collide (and a room-shape stamp is a single undo), achievement thresholds/text/currency are corrected, the minimap no longer overlaps the corner pills, the welcome banner is a proper accessible dialog, and empty-name/PNG export edge cases are handled ([#78](https://github.com/ch-bas/threejs-sims-house-builder/issues/78))
+
+### Security
+- CSV inventory export now escapes leading formula characters (`=`, `+`, `-`, `@`), closing a spreadsheet formula-injection vector via item/floor names carried in shared layouts ([#72](https://github.com/ch-bas/threejs-sims-house-builder/issues/72))
+
+### Changed
+- Layout schema validation rejects non-positive room dimensions, unknown roof styles, floor counts over the limit, and non-boolean flag fields ([#77](https://github.com/ch-bas/threejs-sims-house-builder/issues/77))
+
 ## [1.6.0] - 2026-08-11
 
 Correctness and robustness release from the second-round audit (issues [#58](https://github.com/ch-bas/threejs-sims-house-builder/issues/58)–[#74](https://github.com/ch-bas/threejs-sims-house-builder/issues/74)).

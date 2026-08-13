@@ -25,10 +25,11 @@ Production build:
 npm run build && npm start
 ```
 
-Type-check only:
+Type-check and test:
 
 ```bash
 npm run typecheck
+npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 ```
 
 ## Feature tour
