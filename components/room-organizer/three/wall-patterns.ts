@@ -149,6 +149,16 @@ export interface BuildWallMaterialOptions {
   height: number;
 }
 
+/**
+ * Cache the painted CanvasTexture keyed on (pattern, color, size). Walls are
+ * built ×4 per shell rebuild; the canvas drawing depends only on those keys,
+ * while the per-wall `repeat` is applied to a clone. Each caller gets a
+ * `.clone()` sharing the cached canvas image (cheap) that is independently
+ * disposable; the cached master is never disposed, so the shared GPU image is
+ * never freed while cached (a freed-then-reused texture renders black).
+ */
+const wallTextureCache = new Map<string, ThreeNS.CanvasTexture>();
+
 export function buildWallMaterial(
   THREE: ThreeModule,
   options: BuildWallMaterialOptions
@@ -166,11 +176,8 @@ export function buildWallMaterial(
 
   const renderer = PATTERNS[options.pattern];
   const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
+  const master = getWallTexture(THREE, options.pattern, options.color, size, renderer);
+  if (!master) {
     return new THREE.MeshStandardMaterial({
       color: options.color,
       transparent: true,
@@ -179,13 +186,10 @@ export function buildWallMaterial(
     });
   }
 
-  renderer.draw(ctx, size, options.color);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = getMaxAnisotropy();
+  // Clone per material so each wall owns a disposable copy sharing the cached
+  // canvas image; per-wall `repeat` is set on the clone, not the master.
+  const texture = master.clone();
+  texture.needsUpdate = true;
   texture.repeat.set(options.width * renderer.repeatPerMeter, options.height * renderer.repeatPerMeter * 0.6);
 
   return new THREE.MeshStandardMaterial({
@@ -193,4 +197,33 @@ export function buildWallMaterial(
     side: THREE.DoubleSide,
     roughness: 0.85,
   });
+}
+
+function getWallTexture(
+  THREE: ThreeModule,
+  pattern: Exclude<WallPattern, 'solid'>,
+  color: string,
+  size: number,
+  renderer: PatternRenderer
+): ThreeNS.CanvasTexture | null {
+  const key = `${pattern}|${color}|${size}`;
+  const cached = wallTextureCache.get(key);
+  if (cached) return cached;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  renderer.draw(ctx, size, color);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = getMaxAnisotropy();
+
+  wallTextureCache.set(key, texture);
+  return texture;
 }

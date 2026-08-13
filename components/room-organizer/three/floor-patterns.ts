@@ -135,6 +135,16 @@ export interface BuildFloorPatternOptions {
   roomDepth: number;
 }
 
+/**
+ * Cache the painted CanvasTexture keyed on (pattern, color, size). The canvas
+ * drawing depends only on those; the per-room `repeat` is applied to a clone.
+ * Regenerating the carpet pattern alone redraws 1200 speckles per rebuild.
+ * Each caller gets a `.clone()` sharing the cached canvas image (cheap) that is
+ * independently disposable; the cached master is never disposed, so the shared
+ * GPU image is never freed while cached (a freed-then-reused texture is black).
+ */
+const floorTextureCache = new Map<string, ThreeNS.CanvasTexture>();
+
 export function buildFloorMaterial(
   THREE: ThreeModule,
   options: BuildFloorPatternOptions
@@ -145,20 +155,15 @@ export function buildFloorMaterial(
 
   const renderer = PATTERNS[options.pattern];
   const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
+  const master = getFloorTexture(THREE, options.pattern, options.color, size, renderer);
+  if (!master) {
     return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0.2 });
   }
-  renderer.draw(ctx, size, options.color);
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = getMaxAnisotropy();
+  // Clone per material so each floor owns a disposable copy sharing the cached
+  // canvas image; per-room `repeat` is set on the clone, not the master.
+  const texture = master.clone();
+  texture.needsUpdate = true;
   texture.repeat.set(
     options.roomWidth * renderer.repeatPerMeter,
     options.roomDepth * renderer.repeatPerMeter
@@ -169,6 +174,34 @@ export function buildFloorMaterial(
     roughness: options.pattern === 'tile' ? 0.5 : 0.85,
     metalness: 0.1,
   });
+}
+
+function getFloorTexture(
+  THREE: ThreeModule,
+  pattern: Exclude<FloorPattern, 'solid'>,
+  color: string,
+  size: number,
+  renderer: PatternRenderer
+): ThreeNS.CanvasTexture | null {
+  const key = `${pattern}|${color}|${size}`;
+  const cached = floorTextureCache.get(key);
+  if (cached) return cached;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  renderer.draw(ctx, size, color);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = getMaxAnisotropy();
+
+  floorTextureCache.set(key, texture);
+  return texture;
 }
 
 function shadeColor(hex: string, shade: number): string {

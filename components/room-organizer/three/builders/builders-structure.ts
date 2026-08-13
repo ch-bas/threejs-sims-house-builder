@@ -126,8 +126,10 @@ export function buildStairs({ THREE, item, hasCollision, baseColor, opacity }: B
   const stepRise = item.height / stepCount;
   const stepRun = item.depth / stepCount;
 
+  // Every step is the same size — allocate one geometry and share it across
+  // all steps (matches the hoisted stringer/rail geometry below).
+  const stepGeo = new THREE.BoxGeometry(item.width, stepRise, stepRun + 0.04);
   for (let i = 0; i < stepCount; i++) {
-    const stepGeo = new THREE.BoxGeometry(item.width, stepRise, stepRun + 0.04);
     const step = mesh(THREE, stepGeo, stepMat);
     step.position.set(
       0,

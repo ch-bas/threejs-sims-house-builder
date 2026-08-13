@@ -24,12 +24,15 @@ export function buildBookshelf({ THREE, item, hasCollision, baseColor, opacity }
   }
 
   const BOOK_COLORS = [0xff6b6b, 0x4ecdc4, 0x45b7d1, 0xffa07a, 0x98d8c8];
+  // Every book is the same size — share one geometry; only the material
+  // (per-book colour) differs.
+  const bookGeo = new THREE.BoxGeometry(item.width * 0.1, item.height * 0.15, item.depth * 0.6);
   for (let i = 1; i < 4; i++) {
     const color = BOOK_COLORS[i % BOOK_COLORS.length];
     if (color === undefined) continue;
     const book = mesh(
       THREE,
-      new THREE.BoxGeometry(item.width * 0.1, item.height * 0.15, item.depth * 0.6),
+      bookGeo,
       material(THREE, color, hasCollision, opacity, { roughness: 0.8 })
     );
     book.position.set(-item.width * 0.3 + i * 0.15, (item.height / 4) * i + item.height * 0.12, 0);
