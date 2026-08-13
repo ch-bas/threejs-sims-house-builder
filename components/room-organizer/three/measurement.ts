@@ -32,6 +32,7 @@ export function renderMeasurement(
     color: 0x10b981,
     emissive: 0x10b981,
     emissiveIntensity: 0.4,
+    toneMapped: false,
   });
   for (const point of points) {
     const sphere = new THREE.Mesh(sphereGeo, sphereMat);
@@ -41,7 +42,7 @@ export function renderMeasurement(
   }
 
   if (points.length >= 2) {
-    const lineMat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 2 });
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 2, toneMapped: false });
     const lineGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(points[0]!.x, yOffset + 0.05, points[0]!.z),
       new THREE.Vector3(points[1]!.x, yOffset + 0.05, points[1]!.z),

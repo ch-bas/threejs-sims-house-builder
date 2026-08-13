@@ -198,6 +198,8 @@ function getBirchBarkTexture(THREE: ThreeModule): ThreeNS.CanvasTexture | null {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  // Tag sRGB (CanvasTextures default to linear) so the bark isn't washed out.
+  texture.colorSpace = THREE.SRGBColorSpace;
   birchBarkTextureCache = texture;
   return texture;
 }
