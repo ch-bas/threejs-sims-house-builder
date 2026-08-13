@@ -1,3 +1,4 @@
+import { GRID_SIZE_METERS } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../lib/types';
 
@@ -133,16 +134,24 @@ function drawGrid(
 ): void {
   ctx.strokeStyle = '#ddd';
   ctx.lineWidth = 1;
-  for (let x = 0; x <= layout.width; x += 0.5) {
+  // Anchor the grid to the world centre (0,0) so the drawn cells line up with
+  // `snapToGrid`, which rounds world coordinates to multiples of
+  // GRID_SIZE_METERS about the origin. Corner-anchoring (0, 0.5, 1.0 …) drifts
+  // by `(width/2 mod GRID_SIZE_METERS)` and makes items look off-grid.
+  const halfW = layout.width / 2;
+  const halfD = layout.height / 2;
+  for (let wx = Math.ceil(-halfW / GRID_SIZE_METERS) * GRID_SIZE_METERS; wx <= halfW; wx += GRID_SIZE_METERS) {
+    const sx = offsetX + (wx + halfW) * scale;
     ctx.beginPath();
-    ctx.moveTo(offsetX + x * scale, offsetY);
-    ctx.lineTo(offsetX + x * scale, offsetY + layout.height * scale);
+    ctx.moveTo(sx, offsetY);
+    ctx.lineTo(sx, offsetY + layout.height * scale);
     ctx.stroke();
   }
-  for (let y = 0; y <= layout.height; y += 0.5) {
+  for (let wz = Math.ceil(-halfD / GRID_SIZE_METERS) * GRID_SIZE_METERS; wz <= halfD; wz += GRID_SIZE_METERS) {
+    const sy = offsetY + (wz + halfD) * scale;
     ctx.beginPath();
-    ctx.moveTo(offsetX, offsetY + y * scale);
-    ctx.lineTo(offsetX + layout.width * scale, offsetY + y * scale);
+    ctx.moveTo(offsetX, sy);
+    ctx.lineTo(offsetX + layout.width * scale, sy);
     ctx.stroke();
   }
 }

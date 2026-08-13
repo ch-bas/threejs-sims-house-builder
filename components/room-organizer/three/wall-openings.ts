@@ -7,10 +7,21 @@ export interface FloorOpening {
   centerX: number;
   /** Centre Z in room-local coords. */
   centerZ: number;
-  /** Width of the opening (along X). */
+  /**
+   * Width of the opening along the opening's own local X axis (before
+   * `rotation`). This is the stairs' true footprint width, not an
+   * axis-aligned bounding box.
+   */
   width: number;
-  /** Depth of the opening (along Z). */
+  /** Depth of the opening along the opening's own local Z axis (before `rotation`). */
   depth: number;
+  /**
+   * Rotation of the opening about its centre (radians, Y axis), matching the
+   * stairs' rotation. The floor builder cuts a rotated rectangle so a 45°
+   * staircase doesn't leave triangular floor gaps at the corners of an
+   * inflated axis-aligned hole.
+   */
+  rotation: number;
 }
 
 /**
@@ -25,18 +36,19 @@ export function computeFloorOpenings(
   const openings: FloorOpening[] = [];
   for (const item of floorBelow.items) {
     if (item.type !== 'stairs' || !item.position) continue;
-    // When rotated 90° or 270° the width and depth swap in world space.
-    const rotation = item.rotation ?? 0;
-    const sin = Math.abs(Math.sin(rotation));
-    const cos = Math.abs(Math.cos(rotation));
-    const worldWidth = item.width * cos + item.depth * sin;
-    const worldDepth = item.width * sin + item.depth * cos;
+    // Cut a hole matching the stairs' true (rotated) footprint plus a small
+    // clearance margin, and carry the rotation so the floor builder can cut a
+    // rotated rectangle. Previously the hole was the axis-aligned bounding box
+    // of the rotated footprint, which over-cuts at non-90° angles (e.g. a 45°
+    // 1.2×2.4 staircase produced a 2.65×2.65 hole) yet still left floor gaps at
+    // the footprint corners.
     openings.push({
       id: item.id,
       centerX: item.position.x,
       centerZ: item.position.z,
-      width: worldWidth + 0.1,
-      depth: worldDepth + 0.1,
+      width: item.width + 0.1,
+      depth: item.depth + 0.1,
+      rotation: item.rotation ?? 0,
     });
   }
   return openings;
