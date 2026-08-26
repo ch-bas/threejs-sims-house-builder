@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRoomEditor } from '../contexts';
+import { useLayout } from '../hooks/use-layout-store';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
@@ -17,7 +17,8 @@ export function HeaderStats({
   saving = false,
   saveError = false,
 }: HeaderStatsProps): JSX.Element {
-  const { layout } = useRoomEditor();
+  // `layout` from the store selector — re-renders only on layout changes.
+  const layout = useLayout();
   const budget = DEFAULT_BUDGET;
   const allItems = layout.floors.flatMap((floor) => floor.items);
   const cost = totalCost(allItems);

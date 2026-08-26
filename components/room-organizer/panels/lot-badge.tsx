@@ -1,6 +1,6 @@
 'use client';
 
-import { useRoomEditor } from '../contexts';
+import { useActiveFloor, useLayoutStore } from '../hooks/use-layout-store';
 import { Icon } from '../plotcraft/icon';
 
 export interface LotBadgeProps {
@@ -9,7 +9,11 @@ export interface LotBadgeProps {
 }
 
 export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): JSX.Element {
-  const { layout, activeFloor } = useRoomEditor();
+  // Atomic selectors: this badge re-renders only when the name, the floor count,
+  // or the active floor changes — NOT when furniture moves on the canvas.
+  const name = useLayoutStore((s) => s.layout.name);
+  const floorCount = useLayoutStore((s) => s.layout.floors.length);
+  const activeFloor = useActiveFloor();
 
   return (
     <div
@@ -65,15 +69,13 @@ export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): 
               whiteSpace: 'nowrap',
             }}
           >
-            {layout.name || 'Untitled Home'}
+            {name || 'Untitled Home'}
           </p>
           <p
             className="pc-hud-header"
             style={{ fontSize: 9, opacity: 0.85, margin: '2px 0 0' }}
           >
-            {layout.floors.length === 1
-              ? '1 Floor'
-              : `${layout.floors.length} Floors`}
+            {floorCount === 1 ? '1 Floor' : `${floorCount} Floors`}
             {' · '}
             {activeFloor.name}
           </p>
