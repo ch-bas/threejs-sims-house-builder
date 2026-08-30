@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { reloadOnceForChunkError } from '../lib/chunk-reload';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { addLights } from '../three/lighting';
 import { setMaxAnisotropy } from '../three/texture-settings';
@@ -127,6 +128,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         setModuleLoaded(true);
       } catch (err) {
         if (cancelled) return;
+        // A stale Three.js chunk after a redeploy is a transient 404 — reload
+        // once to fetch fresh assets instead of stranding the user on the
+        // "Failed to load 3D engine" message.
+        if (reloadOnceForChunkError(err)) return;
         setError(messageOf(err, 'Failed to load 3D engine.'));
       }
     })();
