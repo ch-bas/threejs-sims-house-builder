@@ -287,7 +287,8 @@ components/
     ├── plotcraft/icon.tsx                Lucide-react icon wrapper for UI panels
     ├── hooks/
     │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)
-    │   ├── use-layout-state.ts          useReducer + activeFloorIndex
+    │   ├── use-layout-store.ts          Zustand store (reuses the reducer) + selectors
+    │   ├── use-layout-state.ts          Adapter over the store (activeFloor, actions)
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
     │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop

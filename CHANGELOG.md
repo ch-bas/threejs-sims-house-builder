@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.1] - 2026-08-26
+
+### Fixed
+- Returning visitors no longer get stuck on a permanent "Loading the lot…" screen after a redeploy. The static export's hashed chunk URLs change each deploy, and a browser holding cached HTML (GitHub Pages caches it ~10 min) would 404 on the old chunks with no recovery; an inline head watchdog now reloads once to fetch fresh assets ([#100](https://github.com/ch-bas/threejs-sims-house-builder/issues/100))
+
+### Added
+- Landscape / short-viewport responsive layout — wide-but-short screens (landscape phones, short desktop windows) now compact the floating chrome instead of overflowing it off the bottom edge ([#98](https://github.com/ch-bas/threejs-sims-house-builder/issues/98))
+
+### Changed
+- Introduced a Zustand store for layout state as an incremental foundation: it reuses the existing reducer (so behavior is unchanged), and a few panels now subscribe to atomic slices via selectors. The remaining panels still read through React context and can migrate individually ([#3](https://github.com/ch-bas/threejs-sims-house-builder/issues/3))
+
 ## [1.8.0] - 2026-08-13
 
 Three.js-focused audit: rendering-quality, GPU performance, and static-export hardening.
