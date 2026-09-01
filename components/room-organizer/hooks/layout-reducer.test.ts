@@ -392,13 +392,41 @@ describe('layoutReducer — floor / building operations', () => {
 
   it('duplicateFloor clones items with fresh ids and activates the copy', () => {
     const base = stateWith([makeItem({ id: 'orig', type: 'chair' })], 1);
-    const state = layoutReducer(base, { type: 'duplicateFloor', sourceIndex: 0, newId: 'copy' });
+    const state = layoutReducer(base, {
+      type: 'duplicateFloor',
+      sourceIndex: 0,
+      newId: 'copy',
+      idSuffix: 'aaaa',
+    });
     expect(state.layout.floors).toHaveLength(2);
     expect(state.activeFloorIndex).toBe(1);
     const copy = state.layout.floors[1]!;
     expect(copy.name).toBe('Floor 0 copy');
     expect(copy.items).toHaveLength(1);
     expect(copy.items[0]!.id).not.toBe('orig');
+  });
+
+  it('duplicateFloor keys cloned ids on the per-duplication idSuffix so same-millisecond copies never collide', () => {
+    const base = stateWith([makeItem({ id: 'orig', type: 'chair' })], 1);
+    const first = layoutReducer(base, {
+      type: 'duplicateFloor',
+      sourceIndex: 0,
+      newId: 'copy-a',
+      idSuffix: 'aaaa',
+    });
+    const second = layoutReducer(first, {
+      type: 'duplicateFloor',
+      sourceIndex: 0,
+      newId: 'copy-b',
+      idSuffix: 'bbbb',
+    });
+    const idsA = first.layout.floors[1]!.items.map((item) => item.id);
+    const idsB = second.layout.floors[2]!.items.map((item) => item.id);
+    expect(idsA[0]).toContain('aaaa');
+    expect(idsB[0]).toContain('bbbb');
+    // Even when both duplications land on the same Date.now() stamp, the
+    // suffix keeps every cloned id unique.
+    expect(new Set([...idsA, ...idsB]).size).toBe(idsA.length + idsB.length);
   });
 
   it('renameFloor renames the target floor without changing the active one', () => {

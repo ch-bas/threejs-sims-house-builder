@@ -23,7 +23,7 @@ export interface BottomHudProps {
 }
 
 export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, placeCatalogItem }: BottomHudProps): JSX.Element {
-  const { layout, actions, view, toggle, setView, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
+  const { layout, activeFloor, actions, view, toggle, setView, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
   const { setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
 
@@ -143,6 +143,14 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
           }
         }}
         onSurprise={() => {
+          // Surprise replaces the whole floor — never wipe placed furniture
+          // without asking (#105). An empty floor proceeds silently.
+          if (
+            activeFloor.items.length > 0 &&
+            !window.confirm('Replace everything on this floor with a surprise layout?')
+          ) {
+            return;
+          }
           const items = surpriseLayout({
             roomWidth: layout.width,
             roomDepth: layout.height,

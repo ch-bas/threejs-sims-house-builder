@@ -97,8 +97,13 @@ interface ResolvedSpec {
  * small as 2×2 m while the sets assume up to ~4.4 m, so without this clamp
  * items land through the walls (#73).
  */
+// Inset from the EXTERIOR half-width used when clamping generated placements.
+// The room dimensions are exterior measurements, so ~0.35 m (wall thickness
+// plus a small margin) keeps pieces from sitting under or inside the walls.
+const WALL_INSET = 0.35;
+
 function fitScale(specs: readonly ResolvedSpec[], roomWidth: number, roomDepth: number): number {
-  const MARGIN = 0.1;
+  const MARGIN = WALL_INSET;
   const usableHalfW = Math.max(0, roomWidth / 2 - MARGIN);
   const usableHalfD = Math.max(0, roomDepth / 2 - MARGIN);
   // Scale only the offsets: the item half-extents are fixed, so solve
@@ -123,7 +128,7 @@ function fitScale(specs: readonly ResolvedSpec[], roomWidth: number, roomDepth: 
  * if it doesn't, the set can't be placed here at all.
  */
 export function setFitsRoom(set: FurnitureSet, roomWidth: number, roomDepth: number): boolean {
-  const MARGIN = 0.1;
+  const MARGIN = WALL_INSET;
   for (const spec of set.items) {
     const catalog = FURNITURE_CATALOG.find((entry) => entry.type === spec.type);
     if (!catalog) continue;

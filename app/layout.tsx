@@ -19,10 +19,12 @@ export const viewport = {
 // 404 — breaking the app before any React code runs. Two guarded recovery paths,
 // inline in <head> so they run before the app chunks:
 //   1. A capture-phase resource-error / unhandledrejection listener (fast path).
-//   2. A watchdog: if the editor hasn't signalled ready in time (the stuck
+//   2. A watchdog: if the editor hasn't signalled ready within 20 s (the stuck
 //      "Loading the lot…" state), reload once. This catches failures the error
 //      events miss. `window.__pcReady` is set once the editor module loads
-//      (see app/page.tsx). The sessionStorage guard prevents a reload loop.
+//      (see app/page.tsx). The generous timeout avoids spurious reloads on
+//      slow connections, and the sessionStorage guard makes the reload
+//      one-shot either way.
 const CHUNK_RECOVERY_SCRIPT = `(function(){
   var K='pc-chunk-reload';
   function reloadOnce(){
@@ -40,7 +42,7 @@ const CHUNK_RECOVERY_SCRIPT = `(function(){
     var r=e&&e.reason, m=r?(r.name+' '+r.message):String(r||'');
     if(/ChunkLoadError|Loading chunk|dynamically imported module/i.test(m)) reloadOnce();
   });
-  setTimeout(function(){ if(!window.__pcReady) reloadOnce(); }, 12000);
+  setTimeout(function(){ if(!window.__pcReady) reloadOnce(); }, 20000);
 })();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
