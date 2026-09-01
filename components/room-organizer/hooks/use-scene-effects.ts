@@ -436,7 +436,10 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
     setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height);
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height]);
+    // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
+    // so it must be told the caster set changed.
+    requestShadowUpdate();
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height]);
 
   // Interior walls
   useEffect(() => {
@@ -569,6 +572,9 @@ export function useSceneEffects({
 
     if (!showRoof || !layout.roof) {
       removeRoof(scene);
+      // The roof is a shadow caster; the static shadow map must be refreshed
+      // whether the roof was just built or removed.
+      requestShadowUpdate();
       return;
     }
 
@@ -579,7 +585,8 @@ export function useSceneEffects({
       baseY: layout.floors.length * FLOOR_HEIGHT_METERS,
       spec: layout.roof,
     });
-  }, [isReady, invalidate, threeModuleRef, sceneRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors]);
+    requestShadowUpdate();
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors]);
 
   // 2D top-down view. The backing store is sized to the container's
   // clientWidth/clientHeight × devicePixelRatio (via a ResizeObserver) so the
