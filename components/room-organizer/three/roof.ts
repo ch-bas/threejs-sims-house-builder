@@ -1,4 +1,5 @@
 import { removeAndDispose } from './builder-utils';
+import { DisposableLruCache } from './texture-lru';
 import { getMaxAnisotropy } from './texture-settings';
 import type { RoofSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -12,10 +13,11 @@ export const ROOF_TAG = 'roof';
  * depends only on colour; the 256px size is fixed). Per-surface `repeat` and
  * the `side` flag live on the clone/material, not the master. Each roof gets a
  * `.clone()` sharing the cached canvas image (cheap) that is independently
- * disposable; the cached master is never disposed, so the shared GPU image is
- * never freed while cached (a freed-then-reused texture renders black).
+ * disposable. The cache is LRU-capped because the colour is user-pickable:
+ * evicted masters are disposed, which is safe for live clones (see
+ * texture-lru.ts), while cached masters keep the shared GPU image alive.
  */
-const shingleTextureCache = new Map<string, ThreeNS.CanvasTexture>();
+const shingleTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
 
 /** Eaves: how far the roof overhangs past the wall plane (metres). */
 const EAVE_OVERHANG = 0.35;
@@ -239,8 +241,8 @@ function buildShingleMaterial(
 
   // Clone per roof so each surface owns a disposable copy sharing the cached
   // canvas image; per-surface `repeat` is set on the clone, not the master.
+  // (`Texture.clone()` already flags needsUpdate, so no explicit re-upload.)
   const texture = master.clone();
-  texture.needsUpdate = true;
   // Aim for ~3 shingle rows per metre of slope.
   texture.repeat.set(Math.max(1, surfaceWidth * 0.6), Math.max(1, surfaceLength * 0.6));
 

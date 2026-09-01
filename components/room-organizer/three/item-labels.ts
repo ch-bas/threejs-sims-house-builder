@@ -1,4 +1,5 @@
 import { disposeObject } from './builder-utils';
+import { DisposableLruCache } from './texture-lru';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -11,10 +12,11 @@ const LABEL_TAG = 'item-label';
  * canvas + CanvasTexture on every scene rebuild is wasteful when the item
  * names haven't changed. Each caller gets a `.clone()` of the cached master
  * so the clone shares the underlying canvas image (cheap) yet is independently
- * disposable — the master stays resident and is never disposed, so the shared
- * GPU image can't be freed while still cached (which would render black).
+ * disposable. The cache is LRU-capped because label text is user-authored:
+ * evicted masters are disposed, which is safe for live clones (see
+ * texture-lru.ts), while cached masters keep the shared GPU image alive.
  */
-const labelTextureCache = new Map<string, ThreeNS.CanvasTexture>();
+const labelTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
 
 export function clearItemLabels(scene: ThreeNS.Scene): void {
   for (const obj of scene.children.filter((child) => child.userData.type === LABEL_TAG)) {
@@ -43,9 +45,8 @@ export function renderItemLabels(
 function createLabelSprite(THREE: ThreeModule, text: string): ThreeNS.Sprite {
   const master = getLabelTexture(THREE, text);
   // Clone per sprite so each mesh owns a disposable copy sharing the cached
-  // canvas image; the cached master is never disposed.
+  // canvas image. (`Texture.clone()` already flags needsUpdate.)
   const texture = master.clone();
-  texture.needsUpdate = true;
 
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
