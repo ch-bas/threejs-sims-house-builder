@@ -19,7 +19,7 @@ function isChunkLoadError(error: Error): boolean {
   return error.name === 'ChunkLoadError' || /loading chunk|loading css chunk|dynamically imported module/i.test(error.message);
 }
 
-export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
+export default function Error({ error }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
   useEffect(() => {
     if (isChunkLoadError(error)) {
       window.location.reload();
@@ -30,9 +30,14 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
     try {
       window.localStorage.removeItem(STORAGE_KEY);
     } catch {
-      // Ignore — worst case the reset button just reloads without clearing.
+      // Ignore — worst case the reload happens without clearing.
     }
-    reset();
+    // Hard reload rather than the soft `reset()`: the layout lives in a
+    // module-level Zustand singleton, so a soft remount would keep the
+    // crash-causing layout in memory (loadLayout() is now null, so hydration
+    // wouldn't overwrite it) and immediately re-crash. A full document reload
+    // re-evaluates the module with a fresh store seeded from INITIAL_LAYOUT.
+    window.location.reload();
   };
 
   return (
