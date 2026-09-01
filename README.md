@@ -279,6 +279,7 @@ components/
     │   ├── roof.ts                      Flat / gable / hipped roof
     │   ├── floor-patterns.ts            Procedural CanvasTexture floors
     │   ├── wall-patterns.ts             Procedural CanvasTexture walls
+    │   ├── texture-lru.ts               LRU cache for texture masters (evict + dispose)
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays
     │   ├── lighting.ts                  Sun-arc continuous time of day

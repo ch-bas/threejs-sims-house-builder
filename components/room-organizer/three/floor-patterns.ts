@@ -1,3 +1,4 @@
+import { DisposableLruCache } from './texture-lru';
 import { getMaxAnisotropy } from './texture-settings';
 import type { FloorPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -140,10 +141,11 @@ export interface BuildFloorPatternOptions {
  * drawing depends only on those; the per-room `repeat` is applied to a clone.
  * Regenerating the carpet pattern alone redraws 1200 speckles per rebuild.
  * Each caller gets a `.clone()` sharing the cached canvas image (cheap) that is
- * independently disposable; the cached master is never disposed, so the shared
- * GPU image is never freed while cached (a freed-then-reused texture is black).
+ * independently disposable. The cache is LRU-capped because `color` is
+ * user-pickable: evicted masters are disposed, which is safe for live clones
+ * (see texture-lru.ts), while cached masters keep the shared GPU image alive.
  */
-const floorTextureCache = new Map<string, ThreeNS.CanvasTexture>();
+const floorTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
 
 export function buildFloorMaterial(
   THREE: ThreeModule,
@@ -162,8 +164,8 @@ export function buildFloorMaterial(
 
   // Clone per material so each floor owns a disposable copy sharing the cached
   // canvas image; per-room `repeat` is set on the clone, not the master.
+  // (`Texture.clone()` already flags needsUpdate, so no explicit re-upload.)
   const texture = master.clone();
-  texture.needsUpdate = true;
   texture.repeat.set(
     options.roomWidth * renderer.repeatPerMeter,
     options.roomDepth * renderer.repeatPerMeter
