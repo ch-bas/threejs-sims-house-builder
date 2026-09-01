@@ -54,7 +54,7 @@ export type LayoutAction =
   // floor / building operations
   | { type: 'setActiveFloorIndex'; index: number }
   | { type: 'addFloor'; floor: Omit<FloorLayout, 'name'> & { name?: string } }
-  | { type: 'duplicateFloor'; sourceIndex: number; newId: string }
+  | { type: 'duplicateFloor'; sourceIndex: number; newId: string; idSuffix: string }
   | { type: 'removeFloor'; index: number }
   | { type: 'renameFloor'; index: number; name: string }
   | { type: 'reorderFloor'; from: number; to: number }
@@ -349,14 +349,18 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       if (state.layout.floors.length >= MAX_FLOORS) return state;
       const source = state.layout.floors[action.sourceIndex];
       if (!source) return state;
+      // `action.idSuffix` is a per-duplication random tag generated OUTSIDE the
+      // reducer (see use-layout-store.ts) — the reducer stays deterministic in
+      // its inputs, while two duplications within the same millisecond can no
+      // longer clone colliding item/wall ids.
       const stamp = Date.now();
       const clonedItems: FurnitureItem[] = source.items.map((item, idx) => ({
         ...item,
-        id: `${item.type}-${stamp}-${idx}`,
+        id: `${item.type}-${stamp}-${action.idSuffix}-${idx}`,
       }));
       const clonedWalls: InteriorWall[] | undefined = source.interiorWalls?.map((wall, idx) => ({
         ...wall,
-        id: `wall-${stamp}-${idx}`,
+        id: `wall-${stamp}-${action.idSuffix}-${idx}`,
       }));
       const floor: FloorLayout = {
         ...source,

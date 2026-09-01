@@ -111,12 +111,15 @@ function randomPosition(
   candidate: CatalogItem,
   existing: readonly FurnitureItem[]
 ): { x: number; z: number } | null {
+  // Room dimensions are exterior measurements; inset by ~wall thickness plus a
+  // small margin so decor never spawns under or inside the exterior walls.
+  const WALL_INSET = 0.35;
   const halfW = candidate.width / 2;
   const halfD = candidate.depth / 2;
-  const minX = -roomWidth / 2 + halfW;
-  const maxX = roomWidth / 2 - halfW;
-  const minZ = -roomDepth / 2 + halfD;
-  const maxZ = roomDepth / 2 - halfD;
+  const minX = -roomWidth / 2 + WALL_INSET + halfW;
+  const maxX = roomWidth / 2 - WALL_INSET - halfW;
+  const minZ = -roomDepth / 2 + WALL_INSET + halfD;
+  const maxZ = roomDepth / 2 - WALL_INSET - halfD;
   if (minX > maxX || minZ > maxZ) return null;
 
   for (let attempt = 0; attempt < 30; attempt++) {

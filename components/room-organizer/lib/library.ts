@@ -32,15 +32,33 @@ function layoutKey(id: string): string {
   return `${LIBRARY_KEY_PREFIX}${id}`;
 }
 
+const SLUG_MAX_LENGTH = 40;
+
+/**
+ * Deterministic 6-char base36 digest, used to keep truncated slugs distinct.
+ * Not cryptographic — just enough that two long names sharing a 40-char
+ * prefix don't silently map to the same save slot.
+ */
+function shortHash(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36).padStart(6, '0').slice(0, 6);
+}
+
 export function slugify(name: string): string {
-  return (
-    name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 40) || `layout-${Date.now()}`
-  );
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!base) return `layout-${Date.now()}`;
+  // Short names keep their historical slug unchanged, so existing library
+  // saves are unaffected. Only when truncation would discard part of the name
+  // do we append a hash of the FULL name to disambiguate.
+  if (base.length <= SLUG_MAX_LENGTH) return base;
+  return `${base.slice(0, SLUG_MAX_LENGTH)}-${shortHash(base)}`;
 }
 
 export function layoutSlugExists(name: string): boolean {

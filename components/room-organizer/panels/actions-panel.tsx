@@ -77,6 +77,14 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
           </div>
           <Button
             onClick={() => {
+              // Surprise replaces the whole floor — never wipe placed furniture
+              // without asking (#105). An empty floor proceeds silently.
+              if (
+                hasItems &&
+                !window.confirm('Replace everything on this floor with a surprise layout?')
+              ) {
+                return;
+              }
               const items = surpriseLayout({ roomWidth: layout.width, roomDepth: layout.height });
               actions.replaceItems(items);
               setSelectedItemId(null);

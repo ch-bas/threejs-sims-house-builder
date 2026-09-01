@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { createStore, useStore } from 'zustand';
-import { randomId } from '../lib/ids';
+import { randomId, randomSuffix } from '../lib/ids';
 import {
   layoutReducer,
   INITIAL_GROUND_FLOOR,
@@ -116,7 +116,10 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     },
     duplicateFloor: (sourceIndex) => {
       const newId = nextId('floor');
-      dispatch({ type: 'duplicateFloor', sourceIndex, newId });
+      // Randomness lives here, not in the reducer: the reducer must stay pure
+      // (StrictMode double-invokes updaters), so the per-duplication suffix
+      // that de-collides cloned item/wall ids is passed in via the action.
+      dispatch({ type: 'duplicateFloor', sourceIndex, newId, idSuffix: randomSuffix() });
       return newId;
     },
     removeFloor: (index) => dispatch({ type: 'removeFloor', index }),
