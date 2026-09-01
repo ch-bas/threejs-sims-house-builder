@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.3] - 2026-09-01
+
+### Fixed
+- Outdoor scatter (grass tufts, shrubs, flowers, road dashes, stepping stones) no longer blinks out of view when the camera pans — the instanced meshes now compute a bounding sphere covering their actual spread instead of culling at the world origin ([#104](https://github.com/ch-bas/threejs-sims-house-builder/issues/104))
+- "Surprise me" asks for confirmation before replacing a furnished floor instead of silently wiping it ([#105](https://github.com/ch-bas/threejs-sims-house-builder/issues/105))
+- Procedural texture caches (floor/wall patterns, roof shingles, item labels) are capped with a disposing LRU, so experimenting with colours no longer grows GPU memory for the whole session; redundant per-clone GPU re-uploads removed ([#106](https://github.com/ch-bas/threejs-sims-house-builder/issues/106))
+- Logic roundup: floor duplication can no longer produce colliding item ids, generated furniture sets keep a wall-thickness inset from exterior walls, long library save names no longer collide after slug truncation, and the redeploy watchdog waits 20s before reloading on slow connections ([#107](https://github.com/ch-bas/threejs-sims-house-builder/issues/107))
+
 ## [1.8.2] - 2026-09-01
 
 ### Fixed
