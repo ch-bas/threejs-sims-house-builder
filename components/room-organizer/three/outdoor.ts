@@ -116,6 +116,10 @@ export function setOutdoorVisible(
     const dashes = new THREE.InstancedMesh(dashGeom, dashMat, dashTransforms.length);
     dashTransforms.forEach((m, i) => dashes.setMatrixAt(i, m));
     dashes.instanceMatrix.needsUpdate = true;
+    // The base geometry's bounding sphere sits at the origin, but the instances
+    // span the whole lot — recompute over the instance matrices so three.js
+    // frustum-culls the real spread instead of blinking the group out.
+    dashes.computeBoundingSphere();
     dashes.matrixAutoUpdate = false;
     dashes.updateMatrix();
     dashes.userData.type = OUTDOOR_TAG;
@@ -138,6 +142,7 @@ export function setOutdoorVisible(
     const stones = new THREE.InstancedMesh(stoneGeom, stoneMat, stoneTransforms.length);
     stoneTransforms.forEach((m, i) => stones.setMatrixAt(i, m));
     stones.instanceMatrix.needsUpdate = true;
+    stones.computeBoundingSphere(); // bound the instance spread for culling
     stones.receiveShadow = true;
     stones.matrixAutoUpdate = false;
     stones.updateMatrix();
@@ -228,6 +233,7 @@ function scatterGrassTufts(
   }
   tufts.instanceMatrix.needsUpdate = true;
   if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
+  tufts.computeBoundingSphere(); // bound the instance spread for culling
   // Static — never moves.
   tufts.matrixAutoUpdate = false;
   tufts.updateMatrix();
@@ -395,6 +401,7 @@ function scatterPerimeter(
     const shrubs = new THREE.InstancedMesh(bushGeom, bushMat, shrubTransforms.length);
     shrubTransforms.forEach((m, i) => shrubs.setMatrixAt(i, m));
     shrubs.instanceMatrix.needsUpdate = true;
+    shrubs.computeBoundingSphere(); // bound the instance spread for culling
     shrubs.castShadow = true;
     shrubs.matrixAutoUpdate = false;
     shrubs.updateMatrix();
@@ -430,6 +437,7 @@ function scatterPerimeter(
     });
     blossoms.instanceMatrix.needsUpdate = true;
     if (blossoms.instanceColor) blossoms.instanceColor.needsUpdate = true;
+    blossoms.computeBoundingSphere(); // bound the instance spread for culling
     blossoms.matrixAutoUpdate = false;
     blossoms.updateMatrix();
     blossoms.userData.type = OUTDOOR_TAG;
@@ -440,6 +448,7 @@ function scatterPerimeter(
     const stems = new THREE.InstancedMesh(stemGeom, stemMat, stemMatrices.length);
     stemMatrices.forEach((m, i) => stems.setMatrixAt(i, m));
     stems.instanceMatrix.needsUpdate = true;
+    stems.computeBoundingSphere(); // bound the instance spread for culling
     stems.matrixAutoUpdate = false;
     stems.updateMatrix();
     stems.userData.type = OUTDOOR_TAG;
