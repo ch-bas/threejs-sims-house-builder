@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.2] - 2026-09-01
+
+### Fixed
+- The error boundary's "Reset saved layout" button now recovers instead of looping. After layout state moved into a module-level store (1.8.1), the soft reset kept the crash-causing layout in memory and re-crashed immediately; it now hard-reloads to re-baseline the store ([#102](https://github.com/ch-bas/threejs-sims-house-builder/issues/102))
+- Ground shadows no longer go stale or missing after changing the roof or toggling the outdoor scenery. Both effects now refresh the (static) shadow map like the others do ([#103](https://github.com/ch-bas/threejs-sims-house-builder/issues/103))
+
 ## [1.8.1] - 2026-08-26
 
 ### Fixed
