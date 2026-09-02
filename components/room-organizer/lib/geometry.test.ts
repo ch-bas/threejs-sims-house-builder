@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem } from './__testfixtures__/fixtures';
 import {
+  autoOrganize,
   boundingRadius,
   hasCollisions,
   itemInBounds,
@@ -149,5 +150,38 @@ describe('hasCollisions', () => {
 
   it('returns false for a positionless item', () => {
     expect(hasCollisions(makeItem({ position: undefined }), [], W, D)).toBe(false);
+  });
+});
+
+describe('autoOrganize — overflow handling (#128)', () => {
+  const items = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      makeItem({ id: `i${i}`, width: 1, depth: 1, position: { x: 3 + i, z: 2 }, rotation: 1.1 })
+    );
+
+  it('packs what fits and leaves overflow items at their original position and rotation', () => {
+    // 3×3 room, margin 0.3: each row holds 2 items across 2 rows → 4 fit, 2 overflow.
+    const result = autoOrganize(items(6), 3, 3);
+    const placed = result.slice(0, 4);
+    const overflow = result.slice(4);
+    for (const item of placed) expect(item.rotation).toBe(0);
+    expect(overflow.map((i) => i.position)).toEqual([
+      { x: 3 + 4, z: 2 },
+      { x: 3 + 5, z: 2 },
+    ]);
+    for (const item of overflow) expect(item.rotation).toBe(1.1);
+  });
+
+  it('never stacks two overflow items on the same spot', () => {
+    const result = autoOrganize(items(8), 3, 3);
+    const keys = result.map((i) => `${i.position!.x},${i.position!.z}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('leaves an item wider than the room at its original position instead of protruding', () => {
+    const wide = makeItem({ id: 'sofa', width: 2.0, depth: 0.9, position: { x: 0.1, z: 0.2 }, rotation: 0.5 });
+    const result = autoOrganize([wide], 2.2, 4);
+    expect(result[0]!.position).toEqual({ x: 0.1, z: 0.2 });
+    expect(result[0]!.rotation).toBe(0.5);
   });
 });

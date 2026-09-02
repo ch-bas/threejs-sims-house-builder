@@ -161,17 +161,24 @@ export function autoOrganize(
       rowMaxDepth = 0;
     }
 
-    const fits = cursorZ + item.depth + margin <= roomDepth / 2;
+    // An item the grid can't hold — wider than the room even on a fresh row,
+    // or the rows have consumed the remaining depth — keeps its original spot
+    // and rotation: packing what fits beats stacking every leftover in an
+    // overlapping pile at the origin (#128).
+    const fitsWidth = cursorX + item.width + margin <= roomWidth / 2;
+    const fitsDepth = cursorZ + item.depth + margin <= roomDepth / 2;
+    if (!fitsWidth || !fitsDepth) {
+      organized.push(item);
+      continue;
+    }
+
     organized.push({
       ...item,
-      position: fits ? { x: cursorX + item.width / 2, z: cursorZ + item.depth / 2 } : { x: 0, z: 0 },
+      position: { x: cursorX + item.width / 2, z: cursorZ + item.depth / 2 },
       rotation: 0,
     });
-
-    if (fits) {
-      cursorX += item.width + margin;
-      rowMaxDepth = Math.max(rowMaxDepth, item.depth);
-    }
+    cursorX += item.width + margin;
+    rowMaxDepth = Math.max(rowMaxDepth, item.depth);
   }
 
   return organized;
