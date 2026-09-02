@@ -27,7 +27,7 @@ export interface UseCameraPresetsOptions {
 
 export function useCameraPresets({ cameraRef, controlsRef, roomSize, buildingHeight = 3, invalidate }: UseCameraPresetsOptions): {
   applyPreset(preset: CameraPreset): void;
-  focusOn(target: { x: number; z: number }, distance?: number): void;
+  focusOn(target: { x: number; z: number }, distance?: number, floorY?: number): void;
   fitToRoom(): void;
 } {
   const applyPreset = useCallback(
@@ -50,16 +50,19 @@ export function useCameraPresets({ cameraRef, controlsRef, roomSize, buildingHei
   );
 
   const focusOn = useCallback(
-    (target: { x: number; z: number }, distance = 3) => {
+    // `floorY` lifts both the camera and the orbit target onto the item's
+    // floor plane — without it, focusing an upper-floor item dives the camera
+    // into the storey below and frames empty floor (#126).
+    (target: { x: number; z: number }, distance = 3, floorY = 0) => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       if (!camera) return;
 
-      camera.position.set(target.x + distance * 0.6, distance * 0.8, target.z + distance * 0.6);
-      camera.lookAt(target.x, 0, target.z);
+      camera.position.set(target.x + distance * 0.6, floorY + distance * 0.8, target.z + distance * 0.6);
+      camera.lookAt(target.x, floorY, target.z);
 
       if (controls) {
-        controls.target.set(target.x, 0, target.z);
+        controls.target.set(target.x, floorY, target.z);
         controls.update();
       }
       invalidate?.();

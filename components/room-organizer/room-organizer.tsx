@@ -631,7 +631,7 @@ export function RoomOrganizer(): JSX.Element {
         setExtraSelectedIds(new Set());
       },
       focusOnSelection: () => {
-        if (selectedItem?.position) focusOn(selectedItem.position);
+        if (selectedItem?.position) focusOn(selectedItem.position, undefined, activeFloorY);
       },
       advanceTime: (deltaHours: number) => {
         setView((v) => ({ ...v, timeOfDay: (((v.timeOfDay + deltaHours) % 24) + 24) % 24 }));
@@ -660,6 +660,7 @@ export function RoomOrganizer(): JSX.Element {
       actions,
       activeFloor.items,
       activeFloorIndex,
+      activeFloorY,
       layout.floors.length,
       toggle,
       history.undo,
