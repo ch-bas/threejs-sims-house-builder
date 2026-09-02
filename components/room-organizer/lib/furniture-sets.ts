@@ -1,4 +1,5 @@
 import { FURNITURE_CATALOG } from './constants';
+import { itemsOverlap } from './geometry';
 import { randomSuffix } from './ids';
 import type { CatalogItem, FurnitureItem, Vec2 } from './types';
 
@@ -166,10 +167,31 @@ export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = 
 
   const scale = roomWidth != null && roomDepth != null ? fitScale(specs, roomWidth, roomDepth) : 1;
 
-  return specs.map(({ spec, catalog }, index) => ({
-    ...catalog,
-    id: `${idPrefix}-${index}`,
-    position: { x: center.x + spec.offset.x * scale, z: center.z + spec.offset.z * scale },
-    rotation: spec.rotation ?? 0,
-  }));
+  const place = (s: number): FurnitureItem[] =>
+    specs.map(({ spec, catalog }, index) => ({
+      ...catalog,
+      id: `${idPrefix}-${index}`,
+      position: { x: center.x + spec.offset.x * s, z: center.z + spec.offset.z * s },
+      rotation: spec.rotation ?? 0,
+    }));
+
+  const items = place(scale);
+
+  // fitScale shrinks the offsets but not the item sizes, so a tight room can
+  // slide pieces into each other. Some overlaps are authored (the office
+  // computer and lamp sit ON the desk), so only an overlap that does NOT
+  // exist in the unscaled layout means the room is too narrow — refuse the
+  // set rather than stamp furniture embedded in furniture (#127).
+  if (scale < 1) {
+    const authored = place(1);
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        if (itemsOverlap(items[i]!, items[j]!) && !itemsOverlap(authored[i]!, authored[j]!)) {
+          return [];
+        }
+      }
+    }
+  }
+
+  return items;
 }
