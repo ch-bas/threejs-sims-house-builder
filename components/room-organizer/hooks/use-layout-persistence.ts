@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS } from '../lib/constants';
-import { loadLayout, saveLayout } from '../lib/persistence';
+import { backupUnreadableLayout, loadLayout, saveLayout } from '../lib/persistence';
 import { decodeShareUrl, isShareHash } from '../lib/share';
 import type { RoomLayout } from '../lib/types';
 
@@ -88,6 +88,11 @@ export function useLayoutPersistence({
         console.warn('Failed to apply saved layout:', error);
         hydrationBaseRef.current = null;
       }
+    } else {
+      // A blob that exists but failed to load would otherwise be overwritten
+      // by the autosave of the fallback layout ~debounceMs after mount —
+      // permanent data loss. Stash a copy first (#113).
+      backupUnreadableLayout();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot hydration; `layout` is only read as the pre-hydration baseline
   }, [onHydrate]);
