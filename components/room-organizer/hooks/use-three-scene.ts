@@ -238,7 +238,12 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // OrbitControls.update() returns true while the camera is moving
         // (including damping glide). Skip rendering entirely when nothing
         // changed — an editor sits idle most of the time.
-        const controlsMoved = controls.update();
+        // During walkthrough the camera belongs to PointerLockControls;
+        // OrbitControls.update() has no `enabled` guard (three r0.169) and
+        // would re-aim the camera at the stale orbit target and clamp it back
+        // into the polar cone before every render (#114). Walkthrough marks
+        // frames dirty itself, so skipping update() here loses nothing.
+        const controlsMoved = handlersRef.current.walkthroughActive ? false : controls.update();
         if (contextLost) return;
         if (!controlsMoved && !dirtyRef.current) return;
         dirtyRef.current = false;

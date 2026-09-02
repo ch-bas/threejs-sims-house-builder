@@ -101,10 +101,14 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
     // -- building-level properties ------------------------------------------
     case 'setName':
       return withLayout(state, (layout) => ({ ...layout, name: action.name }));
+    // Width/height must be clamped here, not only in normaliseLayout: an
+    // out-of-range dimension that reaches localStorage fails schema validation
+    // on the next load, and the fallback layout then autosaves over the
+    // user's house (#113).
     case 'setWidth':
-      return withLayout(state, (layout) => ({ ...layout, width: action.width }));
+      return withLayout(state, (layout) => ({ ...layout, width: clampRoomDimension(action.width) }));
     case 'setHeight':
-      return withLayout(state, (layout) => ({ ...layout, height: action.height }));
+      return withLayout(state, (layout) => ({ ...layout, height: clampRoomDimension(action.height) }));
 
     // -- floor-scoped finishes ----------------------------------------------
     case 'setFloorColor':

@@ -25,6 +25,19 @@ describe('layoutReducer — building properties', () => {
     expect(state.layout.width).toBe(12);
     expect(state.layout.height).toBe(14);
   });
+
+  it('setWidth / setHeight clamp out-of-range values so the save stays schema-valid (#113)', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setWidth', width: MAX_ROOM_DIMENSION + 100 });
+    expect(state.layout.width).toBe(MAX_ROOM_DIMENSION);
+    state = layoutReducer(state, { type: 'setWidth', width: -3 });
+    expect(state.layout.width).toBeGreaterThan(0);
+    state = layoutReducer(state, { type: 'setHeight', height: Number.POSITIVE_INFINITY });
+    expect(state.layout.height).toBeLessThanOrEqual(MAX_ROOM_DIMENSION);
+    state = layoutReducer(state, { type: 'setHeight', height: Number.NaN });
+    expect(Number.isFinite(state.layout.height)).toBe(true);
+    expect(state.layout.height).toBeGreaterThan(0);
+  });
 });
 
 describe('layoutReducer — item CRUD', () => {
