@@ -17,7 +17,7 @@ export function PlacedItemsPanel({
   onRemove,
 }: PlacedItemsPanelProps): JSX.Element {
   const { activeFloor, collidingIds } = useRoomEditor();
-  const { selectedItemId, setSelectedItemId } = useSelection();
+  const { selectedItemId, selectOnly } = useSelection();
   const items = activeFloor.items;
   const [query, setQuery] = useState('');
 
@@ -61,7 +61,7 @@ export function PlacedItemsPanel({
                       ? 'border-red-400 bg-red-50/60'
                       : 'border-border'
                 }`}
-                onClick={() => setSelectedItemId(item.id)}
+                onClick={() => selectOnly(item.id)}
               >
                 <span className="text-sm flex items-center gap-2">
                   <span>{item.icon}</span>

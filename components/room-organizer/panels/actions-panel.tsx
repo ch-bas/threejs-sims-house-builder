@@ -20,7 +20,7 @@ export interface ActionsPanelProps {
 
 export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const { layout, activeFloor, actions, isReady } = useRoomEditor();
-  const { setSelectedItemId, setExtraSelectedIds } = useSelection();
+  const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasItems = activeFloor.items.length > 0;
@@ -112,7 +112,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             <Button
               onClick={() => {
                 actions.clearItems();
-                setSelectedItemId(null);
+                selectOnly(null);
               }}
               variant="outline"
               size="sm"

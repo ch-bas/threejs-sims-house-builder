@@ -24,7 +24,7 @@ export interface BottomHudProps {
 
 export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, placeCatalogItem }: BottomHudProps): JSX.Element {
   const { layout, activeFloor, actions, view, toggle, setView, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
-  const { setSelectedItemId, setExtraSelectedIds } = useSelection();
+  const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
 
   if (!isReady || error) return <></>;
@@ -122,7 +122,7 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
           category={buildToolCategory === 'walls' ? 'all' : buildToolCategory}
           onAdd={(catalogItem) => {
             const id = placeCatalogItem(catalogItem);
-            setSelectedItemId(id);
+            selectOnly(id);
             playCue('place');
           }}
         />

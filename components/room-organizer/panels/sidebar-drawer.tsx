@@ -65,7 +65,7 @@ export function SidebarDrawer({
   removeItem,
 }: SidebarDrawerProps): JSX.Element {
   const { layout, activeFloor, actions, view, isReady, playCue, history, catalogQuery, setCatalogQuery } = useRoomEditor();
-  const { selectedItem, setSelectedItemId, allSelectedIds } = useSelection();
+  const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
     if (typeof window === 'undefined') return 'build';
     const saved = localStorage.getItem('standalone-room-organizer-sidebar-tab');
@@ -183,7 +183,7 @@ export function SidebarDrawer({
                 onQueryChange={setCatalogQuery}
                 onAdd={(catalogItem) => {
                   const id = placeCatalogItem(catalogItem);
-                  setSelectedItemId(id);
+                  selectOnly(id);
                   playCue('place');
                 }}
               />
@@ -200,7 +200,7 @@ export function SidebarDrawer({
                   if (items.length === 0) return;
                   actions.addItems(items);
                   const last = items[items.length - 1];
-                  if (last) setSelectedItemId(last.id);
+                  if (last) selectOnly(last.id);
                 }}
               />
 
@@ -225,7 +225,7 @@ export function SidebarDrawer({
                   hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height)}
                   onDuplicate={(id) => {
                     const newId = actions.duplicateItem(id);
-                    setSelectedItemId(newId);
+                    selectOnly(newId);
                   }}
                 />
               )}
@@ -253,7 +253,7 @@ export function SidebarDrawer({
                     ...template,
                     floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
                   });
-                  setSelectedItemId(null);
+                  selectOnly(null);
                 }}
               />
 
@@ -261,7 +261,7 @@ export function SidebarDrawer({
                 currentLayout={layout}
                 onLoad={(loaded) => {
                   actions.applyLayout(loaded);
-                  setSelectedItemId(null);
+                  selectOnly(null);
                   history.clear();
                 }}
               />

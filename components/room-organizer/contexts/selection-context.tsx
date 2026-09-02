@@ -10,6 +10,14 @@ export interface SelectionContextValue {
   readonly extraSelectedIds: ReadonlySet<string>;
   readonly setExtraSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   readonly allSelectedIds: ReadonlySet<string>;
+  /**
+   * Make `id` the sole selection (null clears it). Panels must use this —
+   * not raw setSelectedItemId — when reacting to an add/load/click, or the
+   * previous multi-select's extras silently survive into the next group
+   * operation (#117). Raw setters remain for the orchestrator's own
+   * toggle/promote logic.
+   */
+  readonly selectOnly: (id: string | null) => void;
 }
 
 const SelectionContext = createContext<SelectionContextValue | null>(null);
@@ -36,6 +44,7 @@ export function SelectionProvider({ value, children }: SelectionProviderProps): 
     value.extraSelectedIds,
     value.setExtraSelectedIds,
     value.allSelectedIds,
+    value.selectOnly,
   ]);
   return <SelectionContext.Provider value={memoised}>{children}</SelectionContext.Provider>;
 }
