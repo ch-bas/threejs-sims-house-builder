@@ -509,6 +509,26 @@ function addBaseboard(
   scene.add(base);
 }
 
+/**
+ * ShapeGeometry emits UVs equal to the raw shape vertex coordinates, while the
+ * pattern materials calibrate `texture.repeat` for PlaneGeometry's [0,1] UV
+ * span — feeding one into the other multiplies the tiling by the shape's size
+ * (#125). Rescale an origin-centred span×span shape to the plane convention so
+ * both geometry types tile identically.
+ */
+function normalizeShapeUvs(
+  geometry: ThreeNS.BufferGeometry,
+  spanX: number,
+  spanY: number
+): ThreeNS.BufferGeometry {
+  const uv = geometry.getAttribute('uv');
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, uv.getX(i) / spanX + 0.5, uv.getY(i) / spanY + 0.5);
+  }
+  uv.needsUpdate = true;
+  return geometry;
+}
+
 function buildWallGeometryWithCutouts(
   THREE: ThreeModule,
   wallWidth: number,
@@ -547,8 +567,7 @@ function buildWallGeometryWithCutouts(
     shape.holes.push(hole);
   }
 
-  const geometry = new THREE.ShapeGeometry(shape);
-  return geometry;
+  return normalizeShapeUvs(new THREE.ShapeGeometry(shape), wallWidth, wallHeight);
 }
 
 /**
@@ -640,7 +659,7 @@ function buildFloorGeometryWithOpenings(
     shape.holes.push(hole);
   }
 
-  return new THREE.ShapeGeometry(shape);
+  return normalizeShapeUvs(new THREE.ShapeGeometry(shape), roomWidth, roomDepth);
 }
 
 /**
