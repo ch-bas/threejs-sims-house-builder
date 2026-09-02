@@ -20,9 +20,13 @@
     steps:
       - uses: actions/checkout@v4                                                                                                                                                  
   
-      - uses: actions/setup-node@v4                                                                                                                                                
-        with:                                             
-          node-version: 20
+      - uses: actions/setup-node@v4
+        with:
+          # 22+: the jsdom test environment (vitest per-file, since 1.8.3)
+          # pulls an undici that needs newer Node platform internals — on
+          # Node 20 the forks worker dies with "webidl.util.markAsUncloneable
+          # is not a function" and the deploy has failed since.
+          node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
