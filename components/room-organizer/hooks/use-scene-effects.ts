@@ -17,7 +17,7 @@ import { applyTimeOfDay } from '../three/lighting';
 import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildRoof, removeRoof } from '../three/roof';
-import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, removeTagged } from '../three/room-builder';
+import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
 import type { FloorLayout, RoomLayout, ViewSettings } from '../lib/types';
@@ -178,6 +178,11 @@ export function useSceneEffects({
 
     removeTagged(scene, ROOM_OBJECT_TAGS.Floor, ROOM_OBJECT_TAGS.Wall);
 
+    // The building no longer has a floor plan: release the decoded multi-MB
+    // image. (Only here — see clearFloorPlanImageCache for why buildRoom must
+    // not drop it per image-less call.)
+    if (!layout.floorPlanImage) clearFloorPlanImageCache();
+
     const floorsToRender = view.showAllFloors
       ? layout.floors.map((floor, index) => ({ floor, index }))
       : [{ floor: activeFloor, index: activeFloorIndex }];
@@ -229,7 +234,11 @@ export function useSceneEffects({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef,
-    layout.width, layout.height, shellFinishesKey, wallOpeningsKey,
+    // interiorWallsKey: opening ownership is classified across exterior AND
+    // interior walls (nearest wall wins), so the exterior hole set changes
+    // when interior walls do — without this dep a door claimed by a new
+    // interior wall stays double-cut into the exterior wall (#119).
+    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, view.showAllFloors, view.wallDisplay,
     activeFloorIndex,
@@ -585,8 +594,15 @@ export function useSceneEffects({
       baseY: layout.floors.length * FLOOR_HEIGHT_METERS,
       spec: layout.roof,
     });
+    // buildRoof adds meshes visible; only applyWallDisplay hides the roof in
+    // cutaway/walls-down mode, and it otherwise runs on orbit — so a roof
+    // rebuilt while the walls are open would pop in until the camera moves (#119).
+    const camera = cameraRef.current;
+    if (camera) {
+      applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
+    }
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors, view.wallDisplay]);
 
   // 2D top-down view. The backing store is sized to the container's
   // clientWidth/clientHeight × devicePixelRatio (via a ResizeObserver) so the

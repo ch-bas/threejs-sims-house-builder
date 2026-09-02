@@ -259,42 +259,68 @@ export function RoomOrganizer(): JSX.Element {
     if (renderer) renderer.render(sceneRef.current!, camera);
     // The scene refs are declared below (useThreeScene) so they can't appear
     // in this dep array without a TDZ error; they're stable ref objects anyway.
+    // activeFloor.id: removing floor 0 (or reordering) can change WHICH floor
+    // is active while the index stays 0 — keying on the index alone carried
+    // the deleted floor's selection onto its replacement (#117).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFloorIndex]);
+  }, [activeFloorIndex, activeFloor.id]);
 
-  const handleSelect = useCallback((id: string, mode: 'replace' | 'toggle') => {
-    if (mode === 'replace') {
-      setSelectedItemId(id);
-      setExtraSelectedIds(new Set());
-      return;
-    }
-    setSelectedItemId((current) => {
-      if (current === null) {
-        return id;
+  // Ghost-selection guard: whenever the floor's items change (undo/redo,
+  // import, clear floor, deletes from any path), drop selected ids that no
+  // longer exist; a vanished primary promotes the first surviving extra (#117).
+  useEffect(() => {
+    const ids = new Set(activeFloor.items.map((item) => item.id));
+    const primaryGone = selectedItemId !== null && !ids.has(selectedItemId);
+    const hasStaleExtras = Array.from(extraSelectedIds).some((id) => !ids.has(id));
+    if (!primaryGone && !hasStaleExtras) return;
+    const liveExtras = Array.from(extraSelectedIds).filter((id) => ids.has(id));
+    if (primaryGone) setSelectedItemId(liveExtras.shift() ?? null);
+    setExtraSelectedIds(new Set(liveExtras));
+  }, [activeFloor.items, selectedItemId, extraSelectedIds]);
+
+  // Make `id` the sole selection (null clears). The one way panels set a
+  // primary — pairing the two setters at every call site is how stale extras
+  // leaked into later group operations (#117).
+  const selectOnly = useCallback((id: string | null) => {
+    setSelectedItemId(id);
+    setExtraSelectedIds((extras) => (extras.size === 0 ? extras : new Set()));
+  }, []);
+
+  // Plain reads + flat setter calls. The previous version computed the
+  // promotion inside a nested setState updater and read the result back
+  // synchronously — that only works on React's eager-evaluation path, and
+  // StrictMode's double-invoked updaters ran the toggle twice (#117).
+  const handleSelect = useCallback(
+    (id: string, mode: 'replace' | 'toggle') => {
+      if (mode === 'replace') {
+        selectOnly(id);
+        return;
       }
-      if (current === id) {
+      if (selectedItemId === null) {
+        setSelectedItemId(id);
+        return;
+      }
+      if (selectedItemId === id) {
         // Toggling the primary off: promote an extra to primary (keeping the
         // rest of the multi-select intact) or clear the selection entirely.
-        let promoted: string | null = null;
-        setExtraSelectedIds((extras) => {
-          if (extras.size === 0) return extras;
-          const next = new Set(extras);
-          const [first] = next;
-          promoted = first ?? null;
-          if (promoted !== null) next.delete(promoted);
-          return next;
-        });
-        return promoted;
+        const [promoted] = extraSelectedIds;
+        if (promoted === undefined) {
+          setSelectedItemId(null);
+          return;
+        }
+        const next = new Set(extraSelectedIds);
+        next.delete(promoted);
+        setExtraSelectedIds(next);
+        setSelectedItemId(promoted);
+        return;
       }
-      setExtraSelectedIds((extras) => {
-        const next = new Set(extras);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-      return current;
-    });
-  }, []);
+      const next = new Set(extraSelectedIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      setExtraSelectedIds(next);
+    },
+    [selectedItemId, extraSelectedIds, selectOnly]
+  );
 
   const allSelectedIds = useMemo(() => {
     const set = new Set(extraSelectedIds);
@@ -448,10 +474,10 @@ export function RoomOrganizer(): JSX.Element {
     onHydrate: useCallback(
       (saved: RoomLayout) => {
         actions.applyLayout(saved);
-        setSelectedItemId(null);
+        selectOnly(null);
         history.clear();
       },
-      [actions, history]
+      [actions, history, selectOnly]
     ),
   });
 
@@ -756,8 +782,9 @@ export function RoomOrganizer(): JSX.Element {
       extraSelectedIds,
       setExtraSelectedIds,
       allSelectedIds,
+      selectOnly,
     }),
-    [selectedItemId, setSelectedItemId, selectedItem, extraSelectedIds, setExtraSelectedIds, allSelectedIds]
+    [selectedItemId, setSelectedItemId, selectedItem, extraSelectedIds, setExtraSelectedIds, allSelectedIds, selectOnly]
   );
 
   return (
@@ -813,7 +840,7 @@ export function RoomOrganizer(): JSX.Element {
           if (!item) return;
           const world = worldPositionFromClient(clientX, clientY);
           const newId = placeCatalogItem(item, world ?? undefined);
-          setSelectedItemId(newId);
+          selectOnly(newId);
         }}
       />
 

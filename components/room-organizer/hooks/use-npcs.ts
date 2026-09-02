@@ -85,6 +85,11 @@ export function useNpcs(options: UseNpcsOptions): void {
         disposeObject(npc.group);
       }
       stateRef.current = [];
+      // Nothing else consumes showNpcs, so without an explicit repaint (and a
+      // shadow-map refresh — walkers cast) the removed NPCs stay painted in
+      // the last frame until something unrelated invalidates (#119).
+      requestShadowUpdate?.();
+      invalidate?.();
     };
   }, [enabled, count, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
 }
