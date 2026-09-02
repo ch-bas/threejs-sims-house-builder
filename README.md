@@ -240,7 +240,7 @@ components/
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
-    │   ├── persistence.ts               Active-layout localStorage I/O
+    │   ├── persistence.ts               Active-layout localStorage I/O + unreadable-save recovery backup
     │   ├── library.ts                   Named-layout library I/O
     │   ├── share.ts                     Share-URL encode/decode (base64url)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
@@ -357,7 +357,10 @@ components/
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere
   external data crosses the boundary (localStorage hydrate, JSON import,
-  library load, share URL decode).
+  library load, share URL decode). A stored blob that exists but fails to
+  load is copied to a `-recovery` localStorage key before the fallback
+  layout's autosave can overwrite it, so validation failures never
+  destroy a save.
 - **Three.js init / teardown is encapsulated.** `useThreeScene` owns the
   renderer, camera, controls, animation loop, resize listener, drag,
   hover, and the parameterised drag-plane Y. It always returns a
@@ -373,7 +376,10 @@ components/
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is
   threaded through the scene-effect, walkthrough, NPC, and camera-preset
-  hooks). An idle editor draws zero frames. The shadow map (`autoUpdate`
+  hooks). During walkthrough the loop skips `OrbitControls.update()`
+  entirely — the update has no `enabled` guard and would fight the
+  pointer-lock camera — and the walkthrough hook invalidates its own
+  frames. An idle editor draws zero frames. The shadow map (`autoUpdate`
   off) and the NPC loop only refresh when a caster actually moves, and the
   WebGL context is restored automatically if the GPU drops it.
 - **Instanced outdoor scenery.** The suburban lot's high-count scatter

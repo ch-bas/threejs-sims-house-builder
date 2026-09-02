@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.4] - 2026-09-02
+
+### Fixed
+- Typing an out-of-range room width/depth can no longer destroy the saved house: the reducer clamps the dimensions to schema-safe bounds, and any stored layout that exists but fails to load is backed up to a `-recovery` localStorage key before the fallback layout's autosave can overwrite it ([#113](https://github.com/ch-bas/threejs-sims-house-builder/issues/113))
+- Walkthrough mouse-look is no longer overwritten every frame: the render loop skips `OrbitControls.update()` (which has no `enabled` guard) while walkthrough is active, and exiting the mode always releases pointer lock ([#114](https://github.com/ch-bas/threejs-sims-house-builder/issues/114))
+- Patterned walls with a door or window — and patterned floors above a stairwell — now tile their texture at the same density as neighbouring surfaces instead of shrinking the pattern by the surface's size ([#125](https://github.com/ch-bas/threejs-sims-house-builder/issues/125))
+- Focus-on-selection now frames items on upper floors instead of diving the camera into the storey below ([#126](https://github.com/ch-bas/threejs-sims-house-builder/issues/126))
+
 ## [1.8.3] - 2026-09-01
 
 ### Fixed
