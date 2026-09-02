@@ -1,4 +1,6 @@
 import { MAX_FLOORS, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { rotatedHalfExtents } from '../lib/geometry';
+import { settleWallMountedItem } from '../lib/opening-snap';
 import type {
   CatalogItem,
   FloorLayout,
@@ -185,11 +187,29 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         const source = floor.items.find((item) => item.id === action.sourceId);
         if (!source) return floor;
         const position = source.position ?? { x: 0, z: 0 };
-        const copy: FurnitureItem = {
-          ...source,
-          id: action.newId,
-          position: { x: position.x + 0.5, z: position.z + 0.5 },
-        };
+        const offset = { x: position.x + 0.5, z: position.z + 0.5 };
+        // The raw +0.5/+0.5 offset stranded duplicated doors/windows/cameras
+        // off their wall and pushed copies near the +x/+z walls outside the
+        // room (#116): wall-mounted copies re-snap onto the wall (shifted
+        // along it) and indoor items clamp to the footprint. Outdoor items
+        // belong outside and keep the raw offset.
+        const settled = settleWallMountedItem(
+          source,
+          offset,
+          state.layout.width,
+          state.layout.height,
+          floor.interiorWalls ?? []
+        );
+        const copy: FurnitureItem = settled
+          ? { ...source, id: action.newId, ...settled }
+          : {
+              ...source,
+              id: action.newId,
+              position:
+                source.category === 'outdoor'
+                  ? offset
+                  : clampToFootprint(source, offset, state.layout.width, state.layout.height),
+            };
         return { ...floor, items: [...floor.items, copy] };
       });
 
@@ -237,6 +257,9 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       return withActiveFloor(state, (floor) => ({
         ...floor,
         items: floor.items.map((item) => {
+          // Locked items are immune to bulk moves (group drag, align,
+          // distribute) — enforced here so no caller can shove them (#115).
+          if (item.locked) return item;
           const next = action.positions.get(item.id);
           return next ? { ...item, position: { x: next.x, z: next.z } } : item;
         }),
@@ -468,6 +491,22 @@ function patchItem(
 function clampRoomDimension(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 1;
   return Math.min(value, MAX_ROOM_DIMENSION);
+}
+
+/** Clamp a position so the item's rotated footprint stays inside the room. */
+function clampToFootprint(
+  item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation'>,
+  position: { x: number; z: number },
+  roomWidth: number,
+  roomDepth: number
+): { x: number; z: number } {
+  const { halfW, halfD } = rotatedHalfExtents(item);
+  const maxX = Math.max(0, roomWidth / 2 - halfW);
+  const maxZ = Math.max(0, roomDepth / 2 - halfD);
+  return {
+    x: Math.min(maxX, Math.max(-maxX, position.x)),
+    z: Math.min(maxZ, Math.max(-maxZ, position.z)),
+  };
 }
 
 function normaliseLayout(layout: RoomLayout): RoomLayout {

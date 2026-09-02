@@ -5,6 +5,7 @@
  * or interior wall on placement and on drag.
  */
 
+import { CAMERA_BRACKET_ARM } from './constants';
 import type { InteriorWall } from './types';
 
 export type WallKind = 'exterior' | 'interior';
@@ -238,4 +239,72 @@ export function reseatWallMountedItem(
     x: snap.position.x + inwardX * side * inset,
     z: snap.position.z + inwardZ * side * inset,
   };
+}
+
+export interface SettledPlacement {
+  position: { x: number; z: number };
+  /** Present only when the item's rotation must change to stay wall-aligned. */
+  rotation?: number;
+  /** Present for surface-mounted items (cameras): the wall's inward-normal yaw. */
+  wallRotation?: number;
+}
+
+/**
+ * Settle a wall-mounted item's committed position back onto its wall — the
+ * single re-snap rule shared by drag release, group-drag commits, keyboard
+ * nudges, and duplication, so no code path can strand an opening off its
+ * wall (#116). Returns null for items that don't mount on walls.
+ */
+export function settleWallMountedItem(
+  item: {
+    type: string;
+    width: number;
+    depth: number;
+    rotation?: number;
+    cameraBracket?: boolean;
+  },
+  position: { x: number; z: number },
+  roomWidth: number,
+  roomDepth: number,
+  interiorWalls: readonly InteriorWall[] = []
+): SettledPlacement | null {
+  if (isOpening(item.type)) {
+    const snapped = snapOpeningToWall({
+      position,
+      itemWidth: item.width,
+      roomWidth,
+      roomDepth,
+      interiorWalls,
+    });
+    const patch: SettledPlacement = { position: snapped.position };
+    if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) patch.rotation = snapped.rotation;
+    return patch;
+  }
+  if (item.type === 'security-camera') {
+    const snapped = snapWallMountedItem({
+      position,
+      itemWidth: item.width,
+      itemDepth: item.depth,
+      roomWidth,
+      roomDepth,
+      interiorWalls,
+    });
+    if (item.cameraBracket) {
+      const reseated = reseatWallMountedItem({
+        position,
+        itemWidth: item.width,
+        itemDepth: item.depth,
+        roomWidth,
+        roomDepth,
+        interiorWalls,
+        rotation: item.rotation ?? snapped.rotation,
+        bracketArm: CAMERA_BRACKET_ARM,
+      });
+      return { position: reseated, wallRotation: snapped.rotation };
+    }
+    const patch: SettledPlacement = { position: snapped.position, wallRotation: snapped.rotation };
+    if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) patch.rotation = snapped.rotation;
+    return patch;
+  }
+  return null;
 }

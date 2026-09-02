@@ -20,7 +20,7 @@ import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { hasCollisions } from './lib/geometry';
-import { reseatWallMountedItem } from './lib/opening-snap';
+import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { playSound, type SoundCue } from './lib/sounds';
 import { FLOOR_HEIGHT_METERS } from './lib/types';
 import { snapWallEndpoint } from './lib/wall-snap';
@@ -336,13 +336,23 @@ export function RoomOrganizer(): JSX.Element {
     [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
   );
 
+  // Locked items are immune to rotation — group rotates orbit items around
+  // the centroid, so rotating a set containing a locked item would move it
+  // (#115). The unlocked subset still rotates about its own centroid.
+  const unlockedSelectedIds = useCallback(() => {
+    const lockedIds = new Set(activeFloor.items.filter((item) => item.locked).map((item) => item.id));
+    return new Set(Array.from(allSelectedIds).filter((id) => !lockedIds.has(id)));
+  }, [activeFloor.items, allSelectedIds]);
+
   const rotateItemHandler = useCallback(
     (id: string) => {
       if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
-        actions.rotateSelection(allSelectedIds, Math.PI / 2);
+        const unlocked = unlockedSelectedIds();
+        if (unlocked.size > 0) actions.rotateSelection(unlocked, Math.PI / 2);
         return;
       }
       const item = activeFloor.items.find((entry) => entry.id === id);
+      if (item?.locked) return;
       if (item?.type === 'security-camera') {
         // A flush camera can only face into the room or straight out, so Rotate
         // flips 180° along its wall's in/out axis. A bracketed camera pans freely.
@@ -355,7 +365,7 @@ export function RoomOrganizer(): JSX.Element {
       const next = ((item?.rotation ?? 0) + Math.PI / 2) % (Math.PI * 2);
       actions.setRotation(id, next);
     },
-    [allSelectedIds, activeFloor.items, actions, reseatCamera]
+    [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera]
   );
 
   // Toggle a camera's stand-off bracket. Enabling it keeps the current facing
@@ -392,9 +402,11 @@ export function RoomOrganizer(): JSX.Element {
   );
 
   const removeSelected = useCallback(() => {
-    const ids = Array.from(allSelectedIds);
-    if (ids.length === 0) return;
-    const remaining = activeFloor.items.filter((item) => !allSelectedIds.has(item.id));
+    if (allSelectedIds.size === 0) return;
+    // Locked items survive a group delete — the same immunity the single-item
+    // Delete gate gives them (#115).
+    const remaining = activeFloor.items.filter((item) => !allSelectedIds.has(item.id) || item.locked);
+    if (remaining.length === activeFloor.items.length) return;
     actions.replaceItems(remaining);
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
@@ -596,26 +608,41 @@ export function RoomOrganizer(): JSX.Element {
   const shortcutHandlers = useMemo(
     () => ({
       removeItem: (id: string) => {
+        // A multi-select delete removes the unlocked members even when the
+        // primary is locked; a single locked item can't be deleted from the
+        // keyboard, matching 3D drag (#115).
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
           removeSelected();
-        } else {
-          removeItem(id);
+          return;
         }
+        const item = activeFloor.items.find((entry) => entry.id === id);
+        if (!item?.locked) removeItem(id);
       },
       duplicateItem: duplicateSelected,
       rotateItem: rotateItemHandler,
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
-          actions.rotateSelection(allSelectedIds, radians);
+          const unlocked = unlockedSelectedIds();
+          if (unlocked.size > 0) actions.rotateSelection(unlocked, radians);
           return;
         }
         const item = activeFloor.items.find((entry) => entry.id === id);
-        if (!item) return;
+        if (!item || item.locked) return;
         const next = ((item.rotation ?? 0) + radians) % (Math.PI * 2);
         actions.setRotation(id, next);
         reseatCamera(id, next);
       },
-      moveItem: actions.moveItem,
+      moveItem: (id: string, x: number, z: number) => {
+        // Arrow nudges settle wall-mounted items back onto their wall the way
+        // drag release does — a nudged door slides along its wall instead of
+        // translating into the room as a free slab (#116).
+        const item = activeFloor.items.find((entry) => entry.id === id);
+        const settled = item
+          ? settleWallMountedItem(item, { x, z }, layout.width, layout.height, activeFloor.interiorWalls ?? [])
+          : null;
+        if (settled) actions.updateItem(id, settled);
+        else actions.moveItem(id, x, z);
+      },
       toggle2D: () => toggle('view2D'),
       toggleMeasurements: () => toggle('showMeasurements'),
       toggleSnap: () => toggle('snapToGrid'),
@@ -659,9 +686,13 @@ export function RoomOrganizer(): JSX.Element {
       allSelectedIds,
       actions,
       activeFloor.items,
+      activeFloor.interiorWalls,
       activeFloorIndex,
       activeFloorY,
       layout.floors.length,
+      layout.width,
+      layout.height,
+      unlockedSelectedIds,
       toggle,
       history.undo,
       history.redo,

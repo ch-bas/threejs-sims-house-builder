@@ -1,7 +1,6 @@
 import { useCallback, useRef, type MutableRefObject } from 'react';
-import { CAMERA_BRACKET_ARM } from '../lib/constants';
 import { hasCollisions } from '../lib/geometry';
-import { isOpening, reseatWallMountedItem, snapOpeningToWall, snapWallMountedItem } from '../lib/opening-snap';
+import { settleWallMountedItem } from '../lib/opening-snap';
 import type { LayoutActions } from './use-layout-state';
 import type { FloorLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -111,7 +110,13 @@ export function useItemDrag({
       const origins = new Map<string, { x: number; z: number }>();
       for (const id of ids) {
         const item = activeFloor.items.find((entry) => entry.id === id);
-        if (item?.position) origins.set(id, { x: item.position.x, z: item.position.z });
+        if (!item?.position) continue;
+        // Locked co-selected items stay put during a group drag — only the
+        // session's members are translated and committed (#115). The primary
+        // is always unlocked: the canvas handler refuses to start a drag on a
+        // locked item.
+        if (item.locked && id !== primaryId) continue;
+        origins.set(id, { x: item.position.x, z: item.position.z });
       }
       dragSessionRef.current = { primaryId, origins, latest: new Map(origins) };
     },
@@ -176,64 +181,30 @@ export function useItemDrag({
         // Single dispatch for the whole gesture; the rebuild effect runs once.
         actions.bulkSetPositions(session.latest);
       }
-      if (!moved) return;
-      // Lock the item after a real drag so it can't be accidentally moved.
-      actions.setLocked(id, true);
-      // On release, click a security camera onto the nearest wall and turn it to
-      // face into the room. Doing this on drop (not per drag frame) keeps the
-      // drag itself smooth instead of flipping between walls. Note: read the
-      // position from the drag session — state is one dispatch behind here.
-      const item = activeFloor.items.find((entry) => entry.id === id);
-      const releasePos = finalPos ?? item?.position;
-      // Doors/windows: snapPosition force-snaps only the POSITION each drag
-      // frame, so an opening dragged from one wall to another keeps its stale
-      // rotation (slab perpendicular, sticking through the new wall — #62).
-      // Re-derive the wall-aligned rotation (and settle the snapped position)
-      // on drop, the same way the camera path does.
-      if (item && isOpening(item.type) && releasePos) {
-        const snapped = snapOpeningToWall({
-          position: releasePos,
-          itemWidth: item.width,
+      if (!moved || !session) return;
+      // Lock every dragged item after a real drag so it can't be accidentally
+      // moved — previously only the primary was locked, so co-dragged items
+      // stayed silently movable (#115).
+      for (const movedId of session.latest.keys()) actions.setLocked(movedId, true);
+      // On release, settle every wall-mounted item in the commit — doors and
+      // windows re-snap their position AND wall-aligned rotation (a drag to a
+      // different wall otherwise keeps the stale rotation, #62; a group drag
+      // otherwise strands them mid-room, #116), and cameras additionally
+      // record the wall's inward-normal yaw and re-seat for their mount
+      // style. Doing this on drop (not per drag frame) keeps the drag itself
+      // smooth instead of flipping between walls. Note: read positions from
+      // the drag session — state is one dispatch behind here.
+      for (const [movedId, releasePos] of session.latest) {
+        const item = activeFloor.items.find((entry) => entry.id === movedId);
+        if (!item) continue;
+        const settled = settleWallMountedItem(
+          item,
+          releasePos,
           roomWidth,
           roomDepth,
-          interiorWalls: activeFloor.interiorWalls ?? [],
-        });
-        actions.moveItem(id, snapped.position.x, snapped.position.z);
-        if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) {
-          actions.setRotation(id, snapped.rotation);
-        }
-        return;
-      }
-      if (item?.type === 'security-camera' && releasePos) {
-        const snapped = snapWallMountedItem({
-          position: releasePos,
-          itemWidth: item.width,
-          itemDepth: item.depth,
-          roomWidth,
-          roomDepth,
-          interiorWalls: activeFloor.interiorWalls ?? [],
-        });
-        // Record the wall's inward-normal yaw so rotation can be locked to the
-        // in/out axis, then re-seat for the camera's current mount style.
-        actions.updateItem(id, { wallRotation: snapped.rotation });
-        if (item.cameraBracket) {
-          const pos = reseatWallMountedItem({
-            position: releasePos,
-            itemWidth: item.width,
-            itemDepth: item.depth,
-            roomWidth,
-            roomDepth,
-            interiorWalls: activeFloor.interiorWalls ?? [],
-            rotation: item.rotation ?? snapped.rotation,
-            bracketArm: CAMERA_BRACKET_ARM,
-          });
-          actions.moveItem(id, pos.x, pos.z);
-        } else {
-          actions.moveItem(id, snapped.position.x, snapped.position.z);
-          if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) {
-            actions.setRotation(id, snapped.rotation);
-          }
-        }
+          activeFloor.interiorWalls ?? []
+        );
+        if (settled) actions.updateItem(movedId, settled);
       }
     },
     [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, actions, findFurnitureGroup, setDragCollisionTint]
