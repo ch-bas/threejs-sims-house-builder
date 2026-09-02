@@ -90,6 +90,31 @@ describe('layoutReducer — item CRUD', () => {
     expect(items[1]).toMatchObject({ id: 'a-copy', position: { x: 1.5, z: 2.5 } });
   });
 
+  it('duplicateItem clamps the copy inside the room footprint (#116)', () => {
+    const state = layoutReducer(stateWith([makeItem({ id: 'a', position: { x: 3.4, z: 3.4 } })]), {
+      type: 'duplicateItem',
+      sourceId: 'a',
+      newId: 'a-copy',
+    });
+    // 8×8 room, 1×1 item: centre can reach at most ±3.5.
+    expect(activeItems(state)[1]!.position).toEqual({ x: 3.5, z: 3.5 });
+  });
+
+  it('duplicateItem re-snaps a door onto its wall instead of stranding it mid-room (#116)', () => {
+    const door = makeItem({ id: 'd', type: 'door', width: 0.9, depth: 0.12, position: { x: 0, z: -4 }, rotation: 0 });
+    const state = layoutReducer(stateWith([door]), { type: 'duplicateItem', sourceId: 'd', newId: 'd-copy' });
+    const copy = activeItems(state)[1]!;
+    // The +0.5 offset slides the copy along the north wall, not into the room.
+    expect(copy.position).toEqual({ x: 0.5, z: -4 });
+    expect(copy.rotation).toBe(0);
+  });
+
+  it('duplicateItem keeps the raw offset for outdoor items (they belong outside)', () => {
+    const tree = makeItem({ id: 't', type: 'tree', category: 'outdoor', position: { x: 7, z: 0 } });
+    const state = layoutReducer(stateWith([tree]), { type: 'duplicateItem', sourceId: 't', newId: 't-copy' });
+    expect(activeItems(state)[1]!.position).toEqual({ x: 7.5, z: 0.5 });
+  });
+
   it('duplicateItem is a no-op when the source is missing', () => {
     const before = stateWith([makeItem({ id: 'a' })]);
     const after = layoutReducer(before, { type: 'duplicateItem', sourceId: 'zzz', newId: 'x' });
@@ -177,6 +202,25 @@ describe('layoutReducer — bulk item operations', () => {
     expect(activeItems(state).every((i) => i.locked === true)).toBe(true);
     state = layoutReducer(state, { type: 'setLockAll', locked: false });
     expect(activeItems(state).every((i) => i.locked === false)).toBe(true);
+  });
+
+  it('bulkSetPositions never moves locked items (#115)', () => {
+    const state = layoutReducer(
+      stateWith([
+        makeItem({ id: 'a', position: { x: 0, z: 0 } }),
+        makeItem({ id: 'b', position: { x: 1, z: 1 }, locked: true }),
+      ]),
+      {
+        type: 'bulkSetPositions',
+        positions: new Map([
+          ['a', { x: 5, z: 5 }],
+          ['b', { x: 5, z: 5 }],
+        ]),
+      }
+    );
+    const items = activeItems(state);
+    expect(items.find((i) => i.id === 'a')!.position).toEqual({ x: 5, z: 5 });
+    expect(items.find((i) => i.id === 'b')!.position).toEqual({ x: 1, z: 1 });
   });
 
   it('bulkSetPositions moves only listed items and leaves others untouched', () => {

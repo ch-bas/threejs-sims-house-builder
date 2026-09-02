@@ -103,8 +103,10 @@ export function useKeyboardShortcuts({
 
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedItem) {
         event.preventDefault();
-        // Locked items can't be deleted from the keyboard, matching 3D drag.
-        if (!selectedItem.locked) handlers.removeItem(selectedItem.id);
+        // Lock enforcement lives in the handler: it must see the whole
+        // selection, not just the primary — gating on the primary's lock here
+        // blocked deleting unlocked extras and let locked extras through (#115).
+        handlers.removeItem(selectedItem.id);
         return;
       }
 
