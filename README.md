@@ -230,7 +230,7 @@ components/
     ├── index.ts                         Barrel export
     ├── contexts/                        React Context (eliminates prop drilling)
     │   ├── room-editor-context.tsx      Layout, actions, view, history, game state
-    │   ├── selection-context.tsx        Selected item(s), multi-select
+    │   ├── selection-context.tsx        Selected item(s), multi-select, selectOnly()
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
@@ -250,7 +250,7 @@ components/
     │   ├── surprise.ts                  Random one-shot floor populate
     │   ├── sounds.ts                    Web-Audio synth for UI cues
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
-    │   ├── opening-snap.ts              Door/window snap to wall segments
+    │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── room-shapes.ts               Predefined room shape presets
     │   └── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     ├── three/                           Three.js builders, no React

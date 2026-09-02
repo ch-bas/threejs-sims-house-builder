@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.5] - 2026-09-02
+
+### Fixed
+- Item locks are now enforced everywhere: multi-select Delete spares locked items (and a locked primary no longer blocks deleting unlocked extras), group drag and align/distribute leave locked items in place, rotation skips them, and a real drag locks every dragged item instead of only the primary ([#115](https://github.com/ch-bas/threejs-sims-house-builder/issues/115))
+- Doors, windows, and cameras can no longer be torn off their walls: group-drag commits, arrow-key nudges, and Ctrl+D duplication all settle wall-mounted items back onto the nearest wall (duplicates of other items are clamped inside the room) ([#116](https://github.com/ch-bas/threejs-sims-house-builder/issues/116))
+- Ghost multi-selects eliminated: picking or adding an item now clears leftover multi-select extras everywhere, ctrl-clicking the primary reliably promotes another selected item, and selections no longer survive deletions, undo/redo, or removing the active floor ([#117](https://github.com/ch-bas/threejs-sims-house-builder/issues/117))
+- Scene staleness fixes: exterior wall cutouts rebuild when interior walls change (no more double-cut doors), a roof restyled in cutaway mode no longer pops in over the open interior, toggling NPCs off erases them immediately, and the floor-plan image cache survives multi-floor rebuilds instead of re-decoding on each ([#119](https://github.com/ch-bas/threejs-sims-house-builder/issues/119))
+- Furniture sets that would overlap themselves when squeezed into a small room are refused instead of stamped broken — intentional overlaps like the office computer on its desk still place fine ([#127](https://github.com/ch-bas/threejs-sims-house-builder/issues/127))
+- Auto-organize keeps items it can't pack at their original spot instead of stacking them in an overlapping pile at the room centre, and no longer pushes too-wide items through the wall ([#128](https://github.com/ch-bas/threejs-sims-house-builder/issues/128))
+- CI: the GitHub Pages deploy runs on Node 22 — the jsdom test environment introduced in 1.8.3 killed the Node 20 test worker, so releases 1.8.3 and 1.8.4 never reached the live site; this release ships them
+
 ## [1.8.4] - 2026-09-02
 
 ### Fixed
