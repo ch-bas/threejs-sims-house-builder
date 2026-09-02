@@ -150,9 +150,11 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   if (options.floorPlanImage) {
     material = buildFloorPlanMaterial(THREE, options, options.floorPlanImage);
   } else {
-    // No floor-plan image on this rebuild: drop the decoded-image cache so a
-    // removed (possibly multi-MB) data URL isn't retained forever.
-    floorPlanImageCache = null;
+    // Note: an image-less call must NOT drop the decoded-image cache here —
+    // only floor 0 carries the plan, so in a multi-floor rebuild every upper
+    // floor would wipe the cache floor 0 just warmed and the multi-MB data
+    // URL would re-decode on every other rebuild (#119). The caller clears
+    // the cache via clearFloorPlanImageCache() when the plan is truly gone.
     material = buildFloorMaterial(THREE, {
       pattern: options.floorPattern ?? 'solid',
       color: options.floorColor,
@@ -256,6 +258,15 @@ function addFoundation(
 // disposed along with their meshes) keyed on the URL; single entry, since a
 // building has one floor plan.
 let floorPlanImageCache: { url: string; image: HTMLImageElement } | null = null;
+
+/**
+ * Drop the decoded floor-plan cache. Call when the building no longer has a
+ * plan (so a removed multi-MB data URL isn't retained) — not per image-less
+ * buildRoom call, which would thrash the cache in multi-floor rebuilds (#119).
+ */
+export function clearFloorPlanImageCache(): void {
+  floorPlanImageCache = null;
+}
 
 function buildFloorPlanMaterial(
   THREE: ThreeModule,
