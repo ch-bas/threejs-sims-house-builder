@@ -161,10 +161,19 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
       const requestLock = () => controls?.lock();
       canvas.addEventListener('click', requestLock);
       cleanup.push(() => canvas.removeEventListener('click', requestLock));
+      // Release pointer lock BEFORE disconnecting: an exit path that tears the
+      // mode down while still locked would otherwise leave the cursor captured
+      // with no mousemove handler attached (#114). No-op when already unlocked.
+      cleanup.push(() => controls?.unlock());
       cleanup.push(() => controls?.disconnect());
       cleanup.push(() => {
         if (savedCameraPosition) camera.position.copy(savedCameraPosition);
+        invalidateRef.current?.();
       });
+      // Paint the eye-level starting pose. The main RAF tick no longer calls
+      // OrbitControls.update() in this mode (#114), so nothing else marks the
+      // first walkthrough frame dirty.
+      invalidateRef.current?.();
 
       const forward = new THREE.Vector3();
       const right = new THREE.Vector3();
