@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem } from './__testfixtures__/fixtures';
+import { ROOM_TEMPLATES } from './constants';
 import {
   autoOrganize,
   boundingRadius,
@@ -136,6 +137,43 @@ describe('hasCollisions', () => {
     expect(hasCollisions(door, [door], W, D)).toBe(false);
     const other = makeItem({ id: 'o', type: 'window', width: 1, depth: 0.2, position: { x: 5, z: 0 } });
     expect(hasCollisions(door, [door, other], W, D)).toBe(true);
+  });
+
+  it('a rug under a sofa is not a collision (#120)', () => {
+    const rug = makeItem({ id: 'r', type: 'rug', width: 2, depth: 1.4, height: 0.02, position: { x: 0, z: 0 } });
+    const sofa = makeItem({ id: 's', type: 'sofa', width: 2, depth: 0.9, height: 0.8, position: { x: 0, z: 0 } });
+    expect(hasCollisions(rug, [rug, sofa], W, D)).toBe(false);
+    expect(hasCollisions(sofa, [rug, sofa], W, D)).toBe(false);
+  });
+
+  it('furniture flush under a window or camera is not a collision (#120)', () => {
+    const sofa = makeItem({ id: 's', type: 'sofa', width: 2, depth: 0.9, height: 0.8, position: { x: 0, z: -4.5 } });
+    const window = makeItem({ id: 'w', type: 'window', width: 1.2, depth: 0.12, position: { x: 0, z: -5 } });
+    const cam = makeItem({ id: 'c', type: 'security-camera', width: 0.3, depth: 0.2, position: { x: 3, z: -4.85 } });
+    const sofa2 = makeItem({ id: 's2', type: 'sofa', width: 2, depth: 0.9, height: 0.8, position: { x: 3, z: -4.5 } });
+    const items = [sofa, window, cam, sofa2];
+    expect(hasCollisions(sofa, items, W, D)).toBe(false);
+    expect(hasCollisions(window, items, W, D)).toBe(false);
+    expect(hasCollisions(cam, items, W, D)).toBe(false);
+  });
+
+  it('wall-plane items still collide with each other (#120)', () => {
+    const cam = makeItem({ id: 'c', type: 'security-camera', width: 0.3, depth: 0.2, position: { x: 5, z: 0 } });
+    const door = makeItem({ id: 'd', type: 'door', width: 1, depth: 0.2, position: { x: 5, z: 0 } });
+    expect(hasCollisions(cam, [cam, door], W, D)).toBe(true);
+  });
+
+  it('every shipped template loads with zero collisions (#120)', () => {
+    for (const [key, template] of Object.entries(ROOM_TEMPLATES)) {
+      for (const floor of template.floors) {
+        for (const item of floor.items) {
+          expect(
+            hasCollisions(item, floor.items, template.width, template.height),
+            `${key}: ${item.id}`
+          ).toBe(false);
+        }
+      }
+    }
   });
 
   it('outdoor items are flagged when they poke into the room', () => {

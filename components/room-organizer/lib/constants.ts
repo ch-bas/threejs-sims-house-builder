@@ -167,7 +167,9 @@ export const ROOM_TEMPLATES = {
     { id: 'nightstand-1', type: 'nightstand', category: 'bedroom', name: 'Nightstand', width: 0.5, depth: 0.4, height: 0.6, color: '#8B4513', icon: '🕯️', price: 120, position: { x: -1.3, z: -0.5 }, rotation: 0 },
     { id: 'nightstand-2', type: 'nightstand', category: 'bedroom', name: 'Nightstand', width: 0.5, depth: 0.4, height: 0.6, color: '#8B4513', icon: '🕯️', price: 120, position: { x: 1.3, z: -0.5 }, rotation: 0 },
     { id: 'wardrobe-1', type: 'wardrobe', category: 'bedroom', name: 'Wardrobe', width: 1.4, depth: 0.6, height: 2.1, color: '#6D4C41', icon: '🚪', price: 540, position: { x: -1.0, z: 1.3 }, rotation: 0 },
-    { id: 'lamp-1', type: 'lamp', category: 'electronics', name: 'Lamp', width: 0.3, depth: 0.3, height: 1.5, color: '#FFD700', icon: '💡', price: 110, position: { x: -1.5, z: 1.2 }, rotation: 0 },
+    // Opposite corner from the wardrobe — at (-1.5, 1.2) the floor lamp stood
+    // inside the wardrobe's footprint (#120).
+    { id: 'lamp-1', type: 'lamp', category: 'electronics', name: 'Lamp', width: 0.3, depth: 0.3, height: 1.5, color: '#FFD700', icon: '💡', price: 110, position: { x: 1.5, z: 1.3 }, rotation: 0 },
   ]),
   livingRoom: singleFloorTemplate('Living Room', 6, 5, '#D4C5B9', [
     { id: 'sofa-1', type: 'sofa', category: 'seating', name: 'Sofa', width: 2.0, depth: 0.9, height: 0.8, color: '#4A5568', icon: '🛋️', price: 650, position: { x: 0, z: -1.5 }, rotation: 0, sofaShape: 'standard' },
