@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.8] - 2026-09-03
+
+### Added
+- Editing the same house in two tabs is no longer a silent race: when another tab saves, a "Changed in another tab" notice appears with a one-click Load (undoable with Ctrl+Z) or dismiss ([#123](https://github.com/ch-bas/threejs-sims-house-builder/issues/123))
+
+### Changed
+- Test suite grew from 223 to 251: the door/window/camera snapping math, the Surprise-me generator, and every stamped room shape now have dedicated coverage ([#123](https://github.com/ch-bas/threejs-sims-house-builder/issues/123))
+
 ## [1.8.7] - 2026-09-03
 
 ### Fixed
