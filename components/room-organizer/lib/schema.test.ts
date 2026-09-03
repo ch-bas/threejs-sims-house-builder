@@ -1,11 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { MAX_FLOORS, MAX_ROOM_DIMENSION } from './constants';
+import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { isFloorLayout, isFurnitureItem, isRoomLayout, parseStoredLayout } from './schema';
 
 describe('isFurnitureItem', () => {
   it('accepts a well-formed item', () => {
     expect(isFurnitureItem(makeItem())).toBe(true);
+  });
+
+  it.each([
+    ['uncapped width', makeItem({ width: 1e12 })],
+    ['uncapped height', makeItem({ height: MAX_ITEM_DIMENSION + 1 })],
+    ['negative signalRange', makeItem({ signalRange: -3 })],
+    ['negative visionRange', makeItem({ visionRange: -1 })],
+    ['visionFov over a full circle', makeItem({ visionFov: 720 })],
+    ['unknown sofaShape', makeItem({ sofaShape: 'Z-shape' as never })],
+    ['unknown stairsDirection', makeItem({ stairsDirection: 'up' as never })],
+    ['non-string cctvModelId', makeItem({ cctvModelId: 42 as never })],
+    ['non-boolean hasVisionCone', makeItem({ hasVisionCone: 'yes' as never })],
+  ])('rejects %s (#121)', (_label, value) => {
+    expect(isFurnitureItem(value)).toBe(false);
+  });
+
+  it('accepts valid enum/range fields (#121)', () => {
+    expect(
+      isFurnitureItem(
+        makeItem({ sofaShape: 'L-shape', stairsDirection: 'north', visionFov: 90, visionRange: 5, signalRange: 8, hasVisionCone: true, cctvModelId: 'some-model' })
+      )
+    ).toBe(true);
   });
 
   it('accepts an item without optional fields', () => {
@@ -69,8 +91,16 @@ describe('isRoomLayout', () => {
     ['over-max dimension', makeLayout({ width: MAX_ROOM_DIMENSION + 1 })],
     ['empty floors', makeLayout({ floors: [] })],
     ['too many floors', makeLayout({ floors: Array.from({ length: MAX_FLOORS + 1 }, (_, i) => makeFloor({ id: `f${i}` })) })],
+    ['non-string layout id', makeLayout({ id: 7 as never })],
+    ['floorPlanOpacity above 1', makeLayout({ floorPlanOpacity: 1.5 })],
+    ['negative floorPlanOpacity', makeLayout({ floorPlanOpacity: -0.2 })],
   ])('rejects %s', (_label, value) => {
     expect(isRoomLayout(value)).toBe(false);
+  });
+
+  it('rejects an interior wall with a non-string color (#121)', () => {
+    const floor = { ...makeFloor(), interiorWalls: [{ id: 'w', x1: 0, z1: 0, x2: 1, z2: 1, color: 5 }] };
+    expect(isFloorLayout(floor)).toBe(false);
   });
 
   it('rejects a bad roof style', () => {
