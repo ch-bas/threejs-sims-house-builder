@@ -18,13 +18,11 @@ interface PatternRenderer {
   draw(ctx: CanvasRenderingContext2D, size: number, baseColor: string): void;
   /** How many tiles per meter of wall length. */
   repeatPerMeter: number;
-  opacity: number;
 }
 
 const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   brick: {
     repeatPerMeter: 0.8,
-    opacity: 0.55,
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
@@ -46,7 +44,6 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   },
   wallpaper: {
     repeatPerMeter: 1.2,
-    opacity: 0.55,
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
@@ -66,7 +63,6 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   },
   panel: {
     repeatPerMeter: 0.5,
-    opacity: 0.55,
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
@@ -97,7 +93,6 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   },
   plaster: {
     repeatPerMeter: 0.3,
-    opacity: 0.5,
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
@@ -120,7 +115,6 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   // subtle shadow line under each.
   siding: {
     repeatPerMeter: 0.5,
-    opacity: 0.7,
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
@@ -183,7 +177,6 @@ export function buildWallMaterial(
     return new THREE.MeshStandardMaterial({
       color: options.color,
       transparent: true,
-      opacity: 0.3,
       side: THREE.DoubleSide,
     });
   }

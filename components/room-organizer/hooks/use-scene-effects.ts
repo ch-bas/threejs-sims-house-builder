@@ -295,6 +295,9 @@ export function useSceneEffects({
         group.userData.id = item.id;
         group.userData.floorIndex = index;
         group.userData.locked = item.locked === true || !isActive;
+        // Inactive-floor groups are excluded from pointer raycasts entirely
+        // (see drag-handlers' furnitureList, #122).
+        group.userData.ghostFloor = !isActive;
 
         if (!isActive && view.showAllFloors) {
           ghostifyGroup(group);

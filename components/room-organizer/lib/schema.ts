@@ -1,8 +1,18 @@
-import { MAX_FLOORS, MAX_ROOM_DIMENSION } from './constants';
-import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoofStyle, RoomLayout } from './types';
+import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
+import type {
+  FloorLayout,
+  FloorPlanFitMode,
+  FurnitureItem,
+  RoofStyle,
+  RoomLayout,
+  SofaShape,
+  StairsDirection,
+} from './types';
 
 const FIT_MODES: readonly FloorPlanFitMode[] = ['stretch', 'cover', 'contain'];
 const ROOF_STYLES: readonly RoofStyle[] = ['none', 'flat', 'gable', 'hipped'];
+const SOFA_SHAPES: readonly SofaShape[] = ['standard', 'L-shape', 'U-shape'];
+const STAIRS_DIRECTIONS: readonly StairsDirection[] = ['north', 'south', 'east', 'west'];
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -19,6 +29,19 @@ function isPositiveNumber(value: unknown): value is number {
  */
 function isRoomDimension(value: unknown): value is number {
   return isPositiveNumber(value) && value <= MAX_ROOM_DIMENSION;
+}
+
+/**
+ * Item dims need an upper bound too: room dims are capped at 100 but a
+ * crafted item `width: 1e12` passed a bare positivity check and destroyed
+ * the scene scale (#121).
+ */
+function isItemDimension(value: unknown): value is number {
+  return isPositiveNumber(value) && value <= MAX_ITEM_DIMENSION;
+}
+
+function isOptionalPositiveNumber(value: unknown): boolean {
+  return value === undefined || isPositiveNumber(value);
 }
 
 function isOptionalBoolean(value: unknown): boolean {
@@ -51,9 +74,9 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
     typeof v.id !== 'string' ||
     typeof v.type !== 'string' ||
     typeof v.name !== 'string' ||
-    !isPositiveNumber(v.width) ||
-    !isPositiveNumber(v.depth) ||
-    !isPositiveNumber(v.height) ||
+    !isItemDimension(v.width) ||
+    !isItemDimension(v.depth) ||
+    !isItemDimension(v.height) ||
     typeof v.color !== 'string' ||
     typeof v.icon !== 'string'
   ) {
@@ -63,10 +86,24 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (v.category !== undefined && typeof v.category !== 'string') return false;
   if (v.position !== undefined && !isVec2(v.position)) return false;
   if (v.rotation !== undefined && !isFiniteNumber(v.rotation)) return false;
-  if (v.signalRange !== undefined && !isFiniteNumber(v.signalRange)) return false;
-  if (v.visionRange !== undefined && !isFiniteNumber(v.visionRange)) return false;
-  if (v.visionFov !== undefined && !isFiniteNumber(v.visionFov)) return false;
+  // Ranges must be positive: negative signal/vision values invert ring and
+  // cone geometry (#121). FOV additionally caps at a full circle.
+  if (!isOptionalPositiveNumber(v.signalRange)) return false;
+  if (!isOptionalPositiveNumber(v.visionRange)) return false;
+  if (v.visionFov !== undefined && (!isPositiveNumber(v.visionFov) || v.visionFov > 360)) return false;
   if (v.wallRotation !== undefined && !isFiniteNumber(v.wallRotation)) return false;
+  // Enum-ish fields ingested from external data must match their unions —
+  // an unknown sofaShape/stairsDirection reaches builder switch statements
+  // unchecked (#121). cctvModelId only needs to be a string: unknown ids
+  // fall back to the default model at lookup time.
+  if (v.sofaShape !== undefined && !SOFA_SHAPES.includes(v.sofaShape as SofaShape)) return false;
+  if (
+    v.stairsDirection !== undefined &&
+    !STAIRS_DIRECTIONS.includes(v.stairsDirection as StairsDirection)
+  ) {
+    return false;
+  }
+  if (v.cctvModelId !== undefined && typeof v.cctvModelId !== 'string') return false;
   // Booleans must be real booleans: a corrupt `locked:"no"` reads truthy for
   // keyboard-delete guards yet fails `=== true` drag checks, desyncing the two.
   if (!isOptionalBoolean(v.locked)) return false;
@@ -74,6 +111,7 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (!isOptionalBoolean(v.cameraBracket)) return false;
   if (!isOptionalBoolean(v.isCCTV)) return false;
   if (!isOptionalBoolean(v.isWiFiAccessPoint)) return false;
+  if (!isOptionalBoolean(v.hasVisionCone)) return false;
   return true;
 }
 
@@ -107,6 +145,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
       ) {
         return false;
       }
+      if (wall.color !== undefined && typeof wall.color !== 'string') return false;
     }
   }
   return true;
@@ -117,6 +156,7 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
   const v = value;
 
   if (typeof v.name !== 'string') return false;
+  if (v.id !== undefined && typeof v.id !== 'string') return false;
   if (!isRoomDimension(v.width)) return false;
   if (!isRoomDimension(v.height)) return false;
   if (
@@ -129,7 +169,14 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
   }
 
   if (v.floorPlanImage !== undefined && !isDataImageUrl(v.floorPlanImage)) return false;
-  if (v.floorPlanOpacity !== undefined && !isFiniteNumber(v.floorPlanOpacity)) return false;
+  // Opacity outside [0,1] is corruption, not preference — the UI slider only
+  // produces this range and canvas globalAlpha silently misbehaves outside it.
+  if (
+    v.floorPlanOpacity !== undefined &&
+    (!isFiniteNumber(v.floorPlanOpacity) || v.floorPlanOpacity < 0 || v.floorPlanOpacity > 1)
+  ) {
+    return false;
+  }
   if (
     v.floorPlanFitMode !== undefined &&
     !FIT_MODES.includes(v.floorPlanFitMode as FloorPlanFitMode)

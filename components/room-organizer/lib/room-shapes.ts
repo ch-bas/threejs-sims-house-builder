@@ -152,7 +152,10 @@ function outlinePoints(shapeId: RoomShapeId, w: number, d: number): readonly Vec
       // Regular hexagon inscribed in width × depth, flat top and bottom.
       const out: Vec2[] = [];
       for (let i = 0; i < 6; i += 1) {
-        const a = (Math.PI / 3) * i + Math.PI / 6;
+        // No phase offset: vertices at 0deg/60deg/... give a flat top and
+        // bottom and reach the full requested width, matching the picker
+        // thumbnail. The old +30deg phase drew it pointy-top at 87% width (#122).
+        const a = (Math.PI / 3) * i;
         out.push({ x: Math.cos(a) * hw, z: Math.sin(a) * hd });
       }
       return out;

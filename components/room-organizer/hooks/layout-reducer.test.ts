@@ -204,6 +204,22 @@ describe('layoutReducer — bulk item operations', () => {
     expect(activeItems(state).every((i) => i.locked === false)).toBe(true);
   });
 
+  it('setInteriorWallColor paints only the matching interior wall (#122)', () => {
+    const floor = makeFloor({
+      interiorWalls: [
+        { id: 'w1', x1: 0, z1: 0, x2: 1, z2: 0 },
+        { id: 'w2', x1: 1, z1: 0, x2: 1, z2: 1 },
+      ],
+    });
+    const state = layoutReducer(
+      { layout: makeLayout({ floors: [floor] }), activeFloorIndex: 0 },
+      { type: 'setInteriorWallColor', id: 'w1', color: '#123456' }
+    );
+    const walls = state.layout.floors[0]!.interiorWalls!;
+    expect(walls.find((w) => w.id === 'w1')!.color).toBe('#123456');
+    expect(walls.find((w) => w.id === 'w2')!.color).toBeUndefined();
+  });
+
   it('bulkSetPositions never moves locked items (#115)', () => {
     const state = layoutReducer(
       stateWith([

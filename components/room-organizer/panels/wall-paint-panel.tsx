@@ -136,6 +136,13 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
   const { activeFloor: floor, actions } = useRoomEditor();
 
   const applyWallColor = (target: WallId | 'all', color: string) => {
+    // A selected INTERIOR wall gets painted itself — previously an interior
+    // selection fell through to 'all' and silently repainted the four
+    // exterior walls instead (#122).
+    if (selectedInteriorId !== null) {
+      actions.setInteriorWallColor(selectedInteriorId, color);
+      return;
+    }
     if (target === 'all') {
       actions.setWallColor('north', color);
       actions.setWallColor('south', color);
@@ -156,14 +163,18 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
     props.selectedWall && props.selectedWall.kind === 'exterior'
       ? (props.selectedWall.id as WallId)
       : null;
+  const selectedInteriorId =
+    props.selectedWall && props.selectedWall.kind === 'interior' ? props.selectedWall.id : null;
   const applyTo: WallId | 'all' = selectedExteriorId ?? 'all';
 
   const currentWallPattern = floor.wallPattern ?? 'solid';
   const currentFloorPattern = floor.floorPattern ?? 'solid';
   const currentWallColor =
-    (selectedExteriorId
-      ? floor.wallColors?.[selectedExteriorId]
-      : floor.wallColors?.north) ?? '#e8dcc4';
+    (selectedInteriorId
+      ? floor.interiorWalls?.find((wall) => wall.id === selectedInteriorId)?.color ?? '#e0e0e0'
+      : selectedExteriorId
+        ? floor.wallColors?.[selectedExteriorId]
+        : floor.wallColors?.north) ?? '#e8dcc4';
 
   const activeWallPalette =
     WALL_PALETTES.find((g) => g.id === wallGroup) ?? WALL_PALETTES[0]!;
@@ -227,7 +238,7 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
                   color: 'var(--pc-cyan-glow)',
                 }}
               >
-                · Wall selected
+                {selectedInteriorId ? '· Interior wall selected' : '· Wall selected'}
               </span>
             )}
           </SectionLabel>

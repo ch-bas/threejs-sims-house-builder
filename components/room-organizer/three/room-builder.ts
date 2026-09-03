@@ -65,6 +65,15 @@ export function applyWallDisplay(
     }
     if (tag !== ROOM_OBJECT_TAGS.Wall) continue;
 
+    // Id-less Wall-tagged helpers (the snap grid) stay visible in EVERY mode
+    // — checking this after the mode branches made walls-down hide the floor
+    // grid, which Sims-style walls-down is supposed to keep (#122).
+    const wallId = obj.userData.wallId as WallId | undefined;
+    if (!wallId) {
+      obj.visible = true;
+      continue;
+    }
+
     if (mode === 'down') {
       obj.visible = false;
       continue;
@@ -75,12 +84,6 @@ export function applyWallDisplay(
     }
 
     // Cutaway: hide the wall if the camera is on its outer side.
-    const wallId = obj.userData.wallId as WallId | undefined;
-    if (!wallId) {
-      // Items without an id (e.g. the GridHelper) stay visible.
-      obj.visible = true;
-      continue;
-    }
 
     let nx = 0;
     let nz = 0;

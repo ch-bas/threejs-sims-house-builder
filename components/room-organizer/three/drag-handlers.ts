@@ -91,7 +91,12 @@ export function attachDragHandlers({
   const furnitureList = (): ThreeNS.Object3D[] => {
     const revision = (scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0;
     if (revision !== furnitureCacheRevision) {
-      furnitureCache = scene.children.filter((obj) => obj.userData.type === 'furniture');
+      // Ghosted furniture on inactive floors (show-all-floors mode) is
+      // scenery, not a pointer target: clicking it silently dropped the
+      // current selection and the hover cursor reacted to it (#122).
+      furnitureCache = scene.children.filter(
+        (obj) => obj.userData.type === 'furniture' && obj.userData.ghostFloor !== true
+      );
       furnitureCacheRevision = revision;
     }
     return furnitureCache;

@@ -640,9 +640,14 @@ const CATEGORY_TO_ICON: Record<string, PlotcraftIconName> = {
 };
 
 export function iconForItem(type: string, category?: string): PlotcraftIconName {
+  // Own-property lookups only: `type` comes from saved/imported layouts, so a
+  // crafted "constructor"/"toString" would otherwise resolve an inherited
+  // Object.prototype member and render a blank glyph instead of the fallback (#122).
   return (
-    TYPE_TO_ICON[type] ??
-    (category ? CATEGORY_TO_ICON[category] : undefined) ??
+    (Object.hasOwn(TYPE_TO_ICON, type) ? TYPE_TO_ICON[type] : undefined) ??
+    (category !== undefined && Object.hasOwn(CATEGORY_TO_ICON, category)
+      ? CATEGORY_TO_ICON[category]
+      : undefined) ??
     'box'
   );
 }

@@ -67,6 +67,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setFloorPattern: (pattern: FloorPattern) => dispatch({ type: 'setFloorPattern', pattern }),
     setWallPattern: (pattern: WallPattern) => dispatch({ type: 'setWallPattern', pattern }),
     setWallColor: (wall: WallId, color: string | null) => dispatch({ type: 'setWallColor', wall, color }),
+    setInteriorWallColor: (id: string, color: string) => dispatch({ type: 'setInteriorWallColor', id, color }),
     setFloorPlan: (image) => dispatch({ type: 'setFloorPlan', image }),
     setFloorPlanOpacity: (opacity) => dispatch({ type: 'setFloorPlanOpacity', opacity }),
     setFloorPlanFitMode: (mode: FloorPlanFitMode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
