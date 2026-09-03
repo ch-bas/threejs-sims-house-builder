@@ -1,5 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { generateRoomShape } from './room-shapes';
+import { ROOM_SHAPES, generateRoomShape } from './room-shapes';
+
+describe('generateRoomShape — every shape (#123)', () => {
+  it.each(ROOM_SHAPES.map((shape) => [shape.id]))('%s fits the requested bounds and closes its outline', (id) => {
+    const walls = generateRoomShape(id, 0, 0, 5, 4, 'test');
+    expect(walls.length).toBeGreaterThanOrEqual(3);
+    const eps = 1e-9;
+    for (const wall of walls) {
+      for (const [x, z] of [
+        [wall.x1, wall.z1],
+        [wall.x2, wall.z2],
+      ]) {
+        expect(Math.abs(x!)).toBeLessThanOrEqual(2.5 + eps);
+        expect(Math.abs(z!)).toBeLessThanOrEqual(2 + eps);
+      }
+    }
+    // Closed loop: every vertex is shared by exactly two wall endpoints.
+    const counts = new Map<string, number>();
+    for (const wall of walls) {
+      for (const key of [`${wall.x1.toFixed(6)},${wall.z1.toFixed(6)}`, `${wall.x2.toFixed(6)},${wall.z2.toFixed(6)}`]) {
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    for (const [vertex, count] of counts) {
+      expect(count, `vertex ${vertex} of ${id}`).toBe(2);
+    }
+  });
+});
 
 describe('generateRoomShape — hexagon orientation (#122)', () => {
   it('stamps a flat-top hexagon spanning the full requested width', () => {

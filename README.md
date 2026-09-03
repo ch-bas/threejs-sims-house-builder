@@ -304,7 +304,7 @@ components/
     │   ├── use-achievements.ts          Diffed unlock detection
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
-    │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save
+    │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
         ├── sidebar-drawer.tsx           Full sidebar with 4-tab panel layout

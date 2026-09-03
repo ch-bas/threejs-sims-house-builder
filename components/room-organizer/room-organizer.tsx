@@ -469,7 +469,7 @@ export function RoomOrganizer(): JSX.Element {
     [actions]
   ));
 
-  const { lastSavedAt, saving: isSaving, saveError } = useLayoutPersistence({
+  const { lastSavedAt, saving: isSaving, saveError, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
     layout,
     onHydrate: useCallback(
       (saved: RoomLayout) => {
@@ -480,6 +480,16 @@ export function RoomOrganizer(): JSX.Element {
       [actions, history, selectOnly]
     ),
   });
+
+  // Adopt the snapshot another tab saved (#123). Deliberately a plain
+  // applyLayout, not the hydrate path: it lands as a normal history entry, so
+  // switching to the other tab's version is one Ctrl+Z away from being undone.
+  const adoptRemoteLayout = useCallback(() => {
+    if (!remoteLayout) return;
+    actions.applyLayout(remoteLayout);
+    selectOnly(null);
+    clearRemoteLayout();
+  }, [remoteLayout, actions, selectOnly, clearRemoteLayout]);
 
   const selectedItem = useMemo(
     () => (selectedItemId ? activeFloor.items.find((item) => item.id === selectedItemId) ?? null : null),
@@ -869,6 +879,9 @@ export function RoomOrganizer(): JSX.Element {
             lastSavedAt={lastSavedAt}
             saving={isSaving}
             saveError={saveError}
+            remoteChange={remoteLayout !== null}
+            onAdoptRemote={adoptRemoteLayout}
+            onDismissRemote={clearRemoteLayout}
           />
         </div>
       </div>

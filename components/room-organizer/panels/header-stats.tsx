@@ -10,12 +10,19 @@ export interface HeaderStatsProps {
   lastSavedAt?: number | null;
   saving?: boolean;
   saveError?: boolean;
+  /** Another tab saved a different layout (#123). */
+  remoteChange?: boolean;
+  onAdoptRemote?(): void;
+  onDismissRemote?(): void;
 }
 
 export function HeaderStats({
   lastSavedAt = null,
   saving = false,
   saveError = false,
+  remoteChange = false,
+  onAdoptRemote,
+  onDismissRemote,
 }: HeaderStatsProps): JSX.Element {
   // `layout` from the store selector — re-renders only on layout changes.
   const layout = useLayout();
@@ -37,6 +44,65 @@ export function HeaderStats({
         intent={overBudget ? 'danger' : ratio > 0.85 ? 'warning' : 'normal'}
       />
       <SaveIndicator lastSavedAt={lastSavedAt} saving={saving} saveError={saveError} />
+      {remoteChange && (
+        <RemoteChangeNotice onAdopt={onAdoptRemote} onDismiss={onDismissRemote} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Cross-tab notice (#123): another tab saved over this tab's layout. Autosave
+ * stays last-writer-wins, but the race is made visible with a one-click,
+ * undoable way to load the other tab's version.
+ */
+function RemoteChangeNotice({
+  onAdopt,
+  onDismiss,
+}: {
+  onAdopt?: () => void;
+  onDismiss?: () => void;
+}): JSX.Element {
+  const buttonStyle: React.CSSProperties = {
+    border: '1px solid var(--pc-warn-amber)',
+    borderRadius: 999,
+    background: 'transparent',
+    color: 'var(--pc-warn-amber)',
+    fontFamily: 'var(--pc-font-display)',
+    fontWeight: 700,
+    fontSize: 10,
+    padding: '2px 8px',
+    cursor: 'pointer',
+  };
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        borderRadius: 999,
+        border: '1px solid var(--pc-warn-amber)',
+        background: 'rgba(242,181,61,0.18)',
+        padding: '4px 10px',
+        color: 'var(--pc-warn-amber)',
+        fontFamily: 'var(--pc-font-body)',
+        fontSize: 11,
+        fontWeight: 600,
+      }}
+    >
+      <span>Changed in another tab</span>
+      <button
+        type="button"
+        style={buttonStyle}
+        onClick={onAdopt}
+        title="Load the other tab's version (Ctrl+Z undoes it)"
+      >
+        Load
+      </button>
+      <button type="button" style={buttonStyle} onClick={onDismiss} title="Keep this tab's version" aria-label="Dismiss">
+        ✕
+      </button>
     </div>
   );
 }
