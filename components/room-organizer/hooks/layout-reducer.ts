@@ -28,6 +28,7 @@ export type LayoutAction =
   | { type: 'setFloorPattern'; pattern: FloorPattern }
   | { type: 'setWallPattern'; pattern: WallPattern }
   | { type: 'setWallColor'; wall: WallId; color: string | null }
+  | { type: 'setInteriorWallColor'; id: string; color: string }
   // floor-scoped items — target the active floor
   | { type: 'addCatalogItem'; catalogItem: CatalogItem; id: string; position?: { x: number; z: number } }
   | { type: 'removeItem'; id: string }
@@ -126,6 +127,13 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         else next[action.wall] = action.color;
         return { ...floor, wallColors: next };
       });
+    case 'setInteriorWallColor':
+      return withActiveFloor(state, (floor) => ({
+        ...floor,
+        interiorWalls: (floor.interiorWalls ?? []).map((wall) =>
+          wall.id === action.id ? { ...wall, color: action.color } : wall
+        ),
+      }));
 
     // -- floor plan ---------------------------------------------------------
     case 'setFloorPlan': {
@@ -377,17 +385,17 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       const source = state.layout.floors[action.sourceIndex];
       if (!source) return state;
       // `action.idSuffix` is a per-duplication random tag generated OUTSIDE the
-      // reducer (see use-layout-store.ts) — the reducer stays deterministic in
-      // its inputs, while two duplications within the same millisecond can no
-      // longer clone colliding item/wall ids.
-      const stamp = Date.now();
+      // reducer (see use-layout-store.ts): it alone makes the cloned ids
+      // unique, keeping the reducer fully deterministic in its inputs — the
+      // Date.now() stamp it used to mix in broke that purity for no extra
+      // collision protection (#122).
       const clonedItems: FurnitureItem[] = source.items.map((item, idx) => ({
         ...item,
-        id: `${item.type}-${stamp}-${action.idSuffix}-${idx}`,
+        id: `${item.type}-${action.idSuffix}-${idx}`,
       }));
       const clonedWalls: InteriorWall[] | undefined = source.interiorWalls?.map((wall, idx) => ({
         ...wall,
-        id: `wall-${stamp}-${action.idSuffix}-${idx}`,
+        id: `wall-${action.idSuffix}-${idx}`,
       }));
       const floor: FloorLayout = {
         ...source,

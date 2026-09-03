@@ -114,8 +114,14 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | 
   try {
     writeIndex(index);
   } catch {
-    if (previousBlob === null) window.localStorage.removeItem(layoutKey(id));
-    else window.localStorage.setItem(layoutKey(id), previousBlob);
+    // Best-effort rollback: restoring the blob can ITSELF hit the quota that
+    // just failed the index write — never let that escape the save call (#122).
+    try {
+      if (previousBlob === null) window.localStorage.removeItem(layoutKey(id));
+      else window.localStorage.setItem(layoutKey(id), previousBlob);
+    } catch {
+      /* quota still exhausted — the stale blob stays but the index is intact */
+    }
     return null;
   }
 
@@ -139,7 +145,14 @@ export function deleteNamedLayout(id: string): boolean {
   const index = readIndex();
   const filtered = index.entries.filter((entry) => entry.id !== id);
   if (filtered.length === index.entries.length) return false;
+  // Index first, blob second: the old order removed the blob and then let a
+  // quota throw out of writeIndex, leaving a ghost index entry whose layout
+  // was already gone (#122). removeItem itself cannot hit quota.
+  try {
+    writeIndex({ entries: filtered });
+  } catch {
+    return false;
+  }
   window.localStorage.removeItem(layoutKey(id));
-  writeIndex({ entries: filtered });
   return true;
 }

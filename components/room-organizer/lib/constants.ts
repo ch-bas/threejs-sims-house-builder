@@ -16,6 +16,10 @@ export const MAX_FLOORS = 4;
  * collision math while still accepting any realistic custom layout.
  */
 export const MAX_ROOM_DIMENSION = 100;
+// Item dims from external data (share URLs, imports) need a cap too: a
+// width of 1e12 passes a bare positivity check and destroys the scene scale
+// (camera framing, collision math, shadow map) (#121).
+export const MAX_ITEM_DIMENSION = 50;
 
 /** How far a bracketed security camera stands off the wall, in metres. */
 export const CAMERA_BRACKET_ARM = 0.22;
@@ -127,7 +131,7 @@ export const FURNITURE_CATALOG = [
 
   // People / scale references
   { type: 'person', category: 'people', name: 'Adult', width: 0.5, depth: 0.3, height: 1.75, color: '#FFCDD2', icon: '🧍', price: 0 },
-  { type: 'pet', category: 'people', name: 'Pet', width: 0.45, depth: 0.2, height: 0.4, color: '#A1887F', icon: '🐕', price: 0 },
+  { type: 'pet', category: 'people', name: 'Pet', width: 0.45, depth: 0.65, height: 0.4, color: '#A1887F', icon: '🐕', price: 0 },
 
   // Structure
   { type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, stairsDirection: 'north' },

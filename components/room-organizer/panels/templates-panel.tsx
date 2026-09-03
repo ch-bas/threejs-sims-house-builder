@@ -24,7 +24,11 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
         <CardTitle className="text-base">Templates</CardTitle>
       </CardHeader>
       <CardContent>
-        <Select onValueChange={(key) => onLoadTemplate(ROOM_TEMPLATES[key as RoomTemplateKey])}>
+        {/* Controlled with an always-empty value so choosing the SAME template
+            twice still fires onValueChange (Radix suppresses same-value
+            changes on an uncontrolled select) — re-applying a template after
+            edits was a silent no-op (#122). */}
+        <Select value="" onValueChange={(key) => onLoadTemplate(ROOM_TEMPLATES[key as RoomTemplateKey])}>
           <SelectTrigger>
             <SelectValue placeholder="Load a template..." />
           </SelectTrigger>

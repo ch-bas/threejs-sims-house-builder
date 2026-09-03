@@ -40,6 +40,7 @@ export interface LayoutActions {
   setFloorPattern(pattern: FloorPattern): void;
   setWallPattern(pattern: WallPattern): void;
   setWallColor(wall: WallId, color: string | null): void;
+  setInteriorWallColor(id: string, color: string): void;
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;

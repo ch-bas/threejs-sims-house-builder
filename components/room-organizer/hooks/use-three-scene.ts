@@ -311,6 +311,11 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
           /* swallow */
         }
       }
+      // The sky-gradient CanvasTexture installed by applyTimeOfDay lives on
+      // scene.background — the swap path only disposes its predecessor, so
+      // the final one leaks on full editor unmount without this (#122).
+      const background = sceneRef.current?.background;
+      if (background && 'dispose' in background) background.dispose();
       sceneRef.current = null;
       cameraRef.current = null;
       rendererRef.current = null;

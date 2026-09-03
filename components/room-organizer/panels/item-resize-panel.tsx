@@ -1,6 +1,6 @@
 'use client';
 
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -177,10 +177,12 @@ interface PositionInputsProps {
 function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
   const xId = useId();
   const zId = useId();
-  const parseOrFallback = (raw: string, fallback: number) => {
-    const parsed = parseFloat(raw);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  };
+  // While a field is being edited, show the raw draft instead of the
+  // re-formatted value: feeding toFixed(2) back on every keystroke snapped
+  // intermediate states like "-" or "1." away mid-typing (#122). Commit only
+  // parseable drafts; blur restores the canonical formatting.
+  const [xDraft, setXDraft] = useState<string | null>(null);
+  const [zDraft, setZDraft] = useState<string | null>(null);
   return (
     <div className="grid grid-cols-2 gap-2">
       <div>
@@ -191,8 +193,13 @@ function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
           id={xId}
           type="number"
           step={0.1}
-          value={x.toFixed(2)}
-          onChange={(event) => onChange(parseOrFallback(event.target.value, x), z)}
+          value={xDraft ?? x.toFixed(2)}
+          onChange={(event) => {
+            setXDraft(event.target.value);
+            const parsed = parseFloat(event.target.value);
+            if (Number.isFinite(parsed)) onChange(parsed, z);
+          }}
+          onBlur={() => setXDraft(null)}
         />
       </div>
       <div>
@@ -203,8 +210,13 @@ function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
           id={zId}
           type="number"
           step={0.1}
-          value={z.toFixed(2)}
-          onChange={(event) => onChange(x, parseOrFallback(event.target.value, z))}
+          value={zDraft ?? z.toFixed(2)}
+          onChange={(event) => {
+            setZDraft(event.target.value);
+            const parsed = parseFloat(event.target.value);
+            if (Number.isFinite(parsed)) onChange(x, parsed);
+          }}
+          onBlur={() => setZDraft(null)}
         />
       </div>
     </div>
