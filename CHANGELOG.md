@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.7] - 2026-09-03
+
+### Fixed
+- Painting with an interior wall selected now colours that wall instead of silently repainting all four exterior walls; the precise X/Z inputs no longer fight your typing; the Templates select can re-apply the same template; the sidebar wall-pattern select gained the missing Siding option; the stamped hexagon is flat-top at full width; walls-down mode keeps the snap grid; the pet's collision box matches its mesh; ghosted furniture on inactive floors no longer steals clicks; library saves/deletes are quota-safe; plus assorted hygiene (sky-texture disposal, reducer purity, icon lookups) ([#122](https://github.com/ch-bas/threejs-sims-house-builder/issues/122))
+- Schema hardening round 3: imported/shared layouts can no longer smuggle absurd item dimensions, unknown sofa/stairs variants, out-of-range floor-plan opacity, or negative signal/vision ranges into the app ([#121](https://github.com/ch-bas/threejs-sims-house-builder/issues/121))
+
 ## [1.8.6] - 2026-09-03
 
 ### Fixed

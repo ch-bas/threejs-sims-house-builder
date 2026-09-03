@@ -101,7 +101,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 
 - **Per-wall colours** (N/S/E/W) plus per-floor floor colour.
 - **Floor patterns**: Solid, Wood Planks, Tile, Carpet, Concrete.
-- **Wall patterns**: Solid, Brick, Wallpaper, Wood Panel, Plaster.
+- **Wall patterns**: Solid, Brick, Wallpaper, Wood Panel, Plaster, Siding.
 - All patterns are rendered procedurally to CanvasTextures — no asset
   files.
 - **Floor plan image** upload (per building) with opacity, fit-mode
@@ -116,7 +116,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   windows near an interior wall cut through it via ExtrudeGeometry with
   holes.
 - **Click-to-select walls** in any mode: clicking a wall in 3D outlines
-  it and auto-opens the Paint panel targeting it. **Delete** removes a
+  it and auto-opens the Paint panel targeting it — exterior walls paint
+  per-side, and a selected interior wall takes the colour itself. **Delete** removes a
   selected interior wall permanently, or toggles an exterior wall hidden
   (open side). The panel's **Wall Visibility** row (N/E/S/W) shows hidden
   walls crossed out and restores them with a click; hidden walls persist
