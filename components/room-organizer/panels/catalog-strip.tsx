@@ -258,7 +258,7 @@ function CatalogTile({ item, onAdd }: CatalogTileProps): JSX.Element {
     <button
       type="button"
       onClick={() => onAdd(item)}
-      title={`${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Drag onto the canvas to place precisely.`}
+      title={`${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Drag onto the 3D view to place precisely.`}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';

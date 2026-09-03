@@ -1,4 +1,4 @@
-import { isOpening } from './opening-snap';
+import { isWallMounted } from './opening-snap';
 import type { FurnitureItem, Vec2 } from './types';
 
 export function boundingRadius(item: Pick<FurnitureItem, 'width' | 'depth'>): number {
@@ -110,6 +110,44 @@ export function itemFullyOutside(item: FurnitureItem, roomWidth: number, roomDep
   );
 }
 
+/**
+ * Anything at or under this height goes UNDER furniture by design (rugs are
+ * 0.02 m) — a rug beneath a sofa is the intended use, not a collision.
+ */
+const LOW_PROFILE_MAX_HEIGHT = 0.05;
+
+function isLowProfile(item: Pick<FurnitureItem, 'height'>): boolean {
+  return item.height <= LOW_PROFILE_MAX_HEIGHT;
+}
+
+// Intended-stacking families (#120): small tabletop items sit ON these
+// surfaces (the Office template puts the computer and lamp on the desk) and
+// seats tuck UNDER tables (the Kitchen template's dining chairs). Items have
+// no elevation field, so the layer model is by type.
+const SURFACE_TYPES = new Set(['desk', 'dining-table', 'coffee-table', 'counter', 'nightstand', 'dresser']);
+const TABLETOP_TYPES = new Set(['computer', 'lamp', 'plant', 'books', 'candles', 'flowerpot', 'wifi']);
+const SEAT_TYPES = new Set(['chair', 'dining-chair', 'bench']);
+
+function isIntendedStack(a: FurnitureItem, b: FurnitureItem): boolean {
+  const stacksOn = (surface: FurnitureItem, top: FurnitureItem): boolean =>
+    SURFACE_TYPES.has(surface.type) && (TABLETOP_TYPES.has(top.type) || SEAT_TYPES.has(top.type));
+  return stacksOn(a, b) || stacksOn(b, a);
+}
+
+/**
+ * Layer-aware pair test (#120). Wall-plane items (doors, windows, cameras)
+ * collide only with EACH OTHER — two doors overlapping on one wall is real,
+ * but floor furniture flush under a window or beneath a 2.4 m camera is the
+ * intended use. The old symmetric 2D test flagged the shipped Living Room
+ * template (rug under sofa) red on load.
+ */
+function pairCollides(a: FurnitureItem, b: FurnitureItem): boolean {
+  if (isWallMounted(a.type) !== isWallMounted(b.type)) return false;
+  if (isLowProfile(a) || isLowProfile(b)) return false;
+  if (isIntendedStack(a, b)) return false;
+  return itemsOverlap(a, b);
+}
+
 export function hasCollisions(
   item: FurnitureItem,
   allItems: readonly FurnitureItem[],
@@ -117,24 +155,21 @@ export function hasCollisions(
   roomDepth: number
 ): boolean {
   if (!item.position) return false;
-  // Security cameras mount on the wall plane and may sit on its exterior side
-  // when aimed outward, so the room-bounds test doesn't apply to them.
-  if (item.type === 'security-camera') return false;
-  // Openings (doors/windows) live in the wall plane by design, so the
-  // room-bounds test never applies — they'd always poke through the wall and
-  // read as out-of-bounds. They still collide with other items on the wall.
-  if (isOpening(item.type)) {
-    return allItems.some((other) => other.id !== item.id && itemsOverlap(item, other));
-  }
+  const overlapsAnother = (): boolean =>
+    allItems.some((other) => other.id !== item.id && pairCollides(item, other));
+  // Wall-plane items (doors, windows, cameras) live in — or on the exterior
+  // side of — the wall by design, so the room-bounds test never applies:
+  // they'd always poke through the wall and read as out-of-bounds.
+  if (isWallMounted(item.type)) return overlapsAnother();
   // Outdoor items belong outside the building footprint — flag them when any
   // part of their footprint pokes into the room. They still collide with
   // other items (e.g. two trees on the same spot).
   if (item.category === 'outdoor') {
     if (!itemFullyOutside(item, roomWidth, roomDepth)) return true;
-    return allItems.some((other) => other.id !== item.id && itemsOverlap(item, other));
+    return overlapsAnother();
   }
   if (!itemInBounds(item, roomWidth, roomDepth)) return true;
-  return allItems.some((other) => other.id !== item.id && itemsOverlap(item, other));
+  return overlapsAnother();
 }
 
 export type AutoOrganizeStrategy = 'shelf' | 'by-category' | 'by-size';

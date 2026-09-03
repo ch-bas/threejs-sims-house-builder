@@ -79,7 +79,7 @@ export function FurnitureCatalogPanel({
           </div>
         )}
         <p className="text-[10px] text-muted-foreground mt-3 text-center">
-          Click to drop at centre · drag onto the floor to place precisely
+          Click to drop at centre · drag onto the 3D view to place precisely
         </p>
       </CardContent>
     </Card>
@@ -154,7 +154,7 @@ function CatalogTile({ item, onAdd }: CatalogTileProps): JSX.Element {
     <button
       type="button"
       onClick={() => onAdd(item)}
-      title={`${item.name} — drag onto the canvas to place precisely, or click to drop at center`}
+      title={`${item.name} — drag onto the 3D view to place precisely, or click to drop at center`}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';

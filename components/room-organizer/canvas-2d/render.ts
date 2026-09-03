@@ -9,13 +9,23 @@ export interface Render2DOptions {
   /** The floor to render — its items, floor colour, etc. */
   floor: FloorLayout;
   selectedItemId: string | null;
+  /** Multi-select extras — outlined like the primary so group state is visible (#118). */
+  extraSelectedIds?: ReadonlySet<string>;
   showMeasurements: boolean;
   showWiFiSignals: boolean;
   showHeatmap?: boolean;
   hasCollision: (item: FurnitureItem) => boolean;
+  /**
+   * Margin (CSS px) around the room. The default suits the full-screen 2D
+   * view; small consumers (the 180×130 minimap) must pass a small value or
+   * the margin consumes the whole canvas (#118).
+   */
+  padding?: number;
 }
 
 const PADDING = 60;
+// Matches the 0.16 m thickness modelled in three/interior-walls.ts.
+const INTERIOR_WALL_THICKNESS_M = 0.16;
 
 // Decoded floor-plan image cache, keyed on the data-URL. Decoding a multi-MB
 // data-URL is async: the first render kicks off the load and re-renders once
@@ -25,15 +35,22 @@ const PADDING = 60;
 let floorPlanImageCache: { url: string; image: HTMLImageElement } | null = null;
 
 /**
- * Callback the render effect installs so the async floor-plan decode can
- * trigger a full repaint (redrawing the whole scene in the right layer order)
- * once the image is ready. Set via {@link setFloorPlanRepaintHandler}.
+ * Callbacks the consumers install so the async floor-plan decode can trigger
+ * a full repaint (redrawing the whole scene in the right layer order) once
+ * the image is ready. A set, not a single slot: the 2D view AND the minimap
+ * render concurrently, and a single-slot handler dropped whichever consumer
+ * didn't own it — the minimap never repainted after a decode (#118).
  */
-let requestRepaint: (() => void) | null = null;
+const repaintHandlers = new Set<() => void>();
 
-/** Register the repaint handler used when an async floor-plan image finishes loading. */
-export function setFloorPlanRepaintHandler(handler: (() => void) | null): void {
-  requestRepaint = handler;
+/** Register a repaint handler; returns the disposer that unregisters it. */
+export function addFloorPlanRepaintHandler(handler: () => void): () => void {
+  repaintHandlers.add(handler);
+  return () => repaintHandlers.delete(handler);
+}
+
+function requestRepaint(): void {
+  for (const handler of repaintHandlers) handler();
 }
 const WIFI_RING_FILLS = ['rgba(0, 255, 0, 0.15)', 'rgba(255, 255, 0, 0.10)', 'rgba(255, 102, 0, 0.08)'];
 const WIFI_RING_STROKES = ['rgba(0, 255, 0, 0.4)', 'rgba(255, 255, 0, 0.3)', 'rgba(255, 102, 0, 0.2)'];
@@ -57,16 +74,18 @@ export function render2DTopDown(options: Render2DOptions): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, viewWidth, viewHeight);
 
+  const padding = options.padding ?? PADDING;
   const scale = Math.min(
-    (viewWidth - PADDING * 2) / layout.width,
-    (viewHeight - PADDING * 2) / layout.height
+    (viewWidth - padding * 2) / layout.width,
+    (viewHeight - padding * 2) / layout.height
   );
   const offsetX = (viewWidth - layout.width * scale) / 2;
   const offsetY = (viewHeight - layout.height * scale) / 2;
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
-  drawRoomOutline(ctx, layout, offsetX, offsetY, scale);
+  drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
+  drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
 
   if (options.showHeatmap) {
     drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale, viewWidth, viewHeight);
@@ -99,11 +118,16 @@ function drawFloor(
     ctx.fillStyle = floor.floorColor;
     ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
 
+    // naturalWidth guard: a broken image also reports `complete`, and
+    // drawImage on it throws InvalidStateError — which would abort the whole
+    // paint (grid and furniture never drawn) on every repaint (#118).
     if (floorPlanImageCache?.url === url && floorPlanImageCache.image.complete) {
       const img = floorPlanImageCache.image;
-      ctx.globalAlpha = layout.floorPlanOpacity ?? 1;
-      ctx.drawImage(img, offsetX, offsetY, layout.width * scale, layout.height * scale);
-      ctx.globalAlpha = 1;
+      if (img.naturalWidth > 0) {
+        ctx.globalAlpha = layout.floorPlanOpacity ?? 1;
+        ctx.drawImage(img, offsetX, offsetY, layout.width * scale, layout.height * scale);
+        ctx.globalAlpha = 1;
+      }
       return;
     }
 
@@ -159,13 +183,61 @@ function drawGrid(
 function drawRoomOutline(
   ctx: CanvasRenderingContext2D,
   layout: RoomLayout,
+  floor: FloorLayout,
   offsetX: number,
   offsetY: number,
   scale: number
 ): void {
-  ctx.strokeStyle = '#666';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
+  // Per-edge, not strokeRect: a wall hidden via Wall Visibility (or Delete)
+  // reads as a light dashed boundary instead of a solid wall (#118).
+  const hidden = new Set(floor.hiddenWalls ?? []);
+  const x0 = offsetX;
+  const y0 = offsetY;
+  const x1 = offsetX + layout.width * scale;
+  const y1 = offsetY + layout.height * scale;
+  const edges = [
+    { id: 'north', from: [x0, y0], to: [x1, y0] },
+    { id: 'south', from: [x0, y1], to: [x1, y1] },
+    { id: 'west', from: [x0, y0], to: [x0, y1] },
+    { id: 'east', from: [x1, y0], to: [x1, y1] },
+  ] as const;
+  for (const edge of edges) {
+    const isHidden = hidden.has(edge.id);
+    ctx.save();
+    ctx.strokeStyle = isHidden ? '#bbb' : '#666';
+    ctx.lineWidth = isHidden ? 1.5 : 3;
+    if (isHidden) ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(edge.from[0], edge.from[1]);
+    ctx.lineTo(edge.to[0], edge.to[1]);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawInteriorWalls(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const walls = floor.interiorWalls ?? [];
+  if (walls.length === 0) return;
+  const halfW = layout.width / 2;
+  const halfD = layout.height / 2;
+  ctx.save();
+  ctx.strokeStyle = '#555';
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS_M * scale);
+  for (const wall of walls) {
+    ctx.beginPath();
+    ctx.moveTo(offsetX + (wall.x1 + halfW) * scale, offsetY + (wall.z1 + halfD) * scale);
+    ctx.lineTo(offsetX + (wall.x2 + halfW) * scale, offsetY + (wall.z2 + halfD) * scale);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawSignalRings(
@@ -227,6 +299,10 @@ function drawFurniture(
     if (options.selectedItemId === item.id) {
       ctx.strokeStyle = collision ? '#ff6666' : '#00ff00';
       ctx.lineWidth = 3;
+    } else if (options.extraSelectedIds?.has(item.id)) {
+      // Multi-select extras share the primary's green, slightly thinner.
+      ctx.strokeStyle = collision ? '#ff6666' : '#00cc00';
+      ctx.lineWidth = 2;
     } else if (collision) {
       ctx.strokeStyle = '#ff0000';
       ctx.lineWidth = 2;
