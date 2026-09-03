@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
-import { render2DTopDown, setFloorPlanRepaintHandler } from '../canvas-2d/render';
+import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { hasCollisions } from '../lib/geometry';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
@@ -633,6 +633,7 @@ export function useSceneEffects({
         layout,
         floor: activeFloor,
         selectedItemId,
+        extraSelectedIds,
         showMeasurements: view.showMeasurements,
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
@@ -640,7 +641,7 @@ export function useSceneEffects({
       });
     };
 
-    setFloorPlanRepaintHandler(paint);
+    const removeRepaintHandler = addFloorPlanRepaintHandler(paint);
     paint();
 
     const observer = new ResizeObserver(paint);
@@ -648,9 +649,9 @@ export function useSceneEffects({
 
     return () => {
       observer.disconnect();
-      setFloorPlanRepaintHandler(null);
+      removeRepaintHandler();
     };
-  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, selectedItemId]);
+  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, selectedItemId, extraSelectedIds]);
 }
 
 export { measurementDistance } from '../three/measurement';
