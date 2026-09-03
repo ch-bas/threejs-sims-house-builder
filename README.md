@@ -393,7 +393,11 @@ components/
   group, and each drag gesture lands as one undo entry.
 - **OBB collision.** Item overlap uses a separating-axis test on rotated
   footprints, with the old bounding-circle check kept as a broad phase — no
-  more false positives on long thin items placed diagonally.
+  more false positives on long thin items placed diagonally. The pair test
+  is layer-aware: wall-plane items (doors/windows/cameras) collide only
+  with each other, low-profile items (rugs) go under furniture, and
+  type-based stacking families cover tabletop-items-on-surfaces and
+  seats-under-tables.
 - **Context over props.** `RoomEditorContext` and `SelectionContext`
   distribute state to panels — ~90 drilled props eliminated. Props are
   reserved for one-off callbacks with side effects (scene-ref closures,

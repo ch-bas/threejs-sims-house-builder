@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.6] - 2026-09-03
+
+### Fixed
+- The 2D plan view and printed blueprint now draw interior walls, show hidden exterior walls as dashed boundaries, and outline multi-select extras; the minimap renders at a usable scale instead of a ~10px blob and repaints when an uploaded floor plan finishes decoding; a broken floor-plan image can no longer abort the whole 2D paint ([#118](https://github.com/ch-bas/threejs-sims-house-builder/issues/118))
+- Collision flags are layer-aware: rugs under furniture, sofas flush beneath windows or cameras, tabletop items on desks, and chairs tucked under tables no longer read as collisions — while overlapping doors/windows on one wall still do. The shipped Living Room template no longer loads with items flagged red, and the Bedroom template's floor lamp no longer stands inside the wardrobe ([#120](https://github.com/ch-bas/threejs-sims-house-builder/issues/120))
+
 ## [1.8.5] - 2026-09-02
 
 ### Fixed
