@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { AUTOSAVE_DEBOUNCE_MS } from '../lib/constants';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { backupUnreadableLayout, loadLayout, saveLayout } from '../lib/persistence';
+import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash } from '../lib/share';
 import type { RoomLayout } from '../lib/types';
 
@@ -21,6 +22,16 @@ export interface UseLayoutPersistenceResult {
    * "Saved" when the layout never actually made it to localStorage.
    */
   saveError: boolean;
+  /**
+   * The layout another tab saved over ours, or null. Autosave stays
+   * last-writer-wins between tabs (full merge is out of scope, #123), but the
+   * race is surfaced instead of silent: the HUD shows a notice and can adopt
+   * this snapshot. The caller decides what "adopt" means (an undoable
+   * applyLayout — NOT the hydrate path, which would clear history).
+   */
+  remoteLayout: RoomLayout | null;
+  /** Dismiss the cross-tab notice (also call after adopting `remoteLayout`). */
+  clearRemoteLayout(): void;
 }
 
 export function useLayoutPersistence({
@@ -40,6 +51,25 @@ export function useLayoutPersistence({
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [remoteLayout, setRemoteLayout] = useState<RoomLayout | null>(null);
+
+  // Cross-tab guard (#123): the `storage` event only fires in OTHER tabs of
+  // the same origin, so any event on our key means a different tab saved.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key !== STORAGE_KEY || event.newValue === null) return;
+      try {
+        const parsed = parseStoredLayout(JSON.parse(event.newValue));
+        if (parsed) setRemoteLayout(parsed);
+      } catch {
+        /* another tab wrote something unreadable — nothing to offer */
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const clearRemoteLayout = useCallback(() => setRemoteLayout(null), []);
 
   useEffect(() => {
     if (hasHydratedRef.current) return;
@@ -142,5 +172,5 @@ export function useLayoutPersistence({
     };
   }, []);
 
-  return { lastSavedAt, saving, saveError };
+  return { lastSavedAt, saving, saveError, remoteLayout, clearRemoteLayout };
 }
