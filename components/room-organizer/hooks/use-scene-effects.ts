@@ -257,13 +257,17 @@ export function useSceneEffects({
     // interaction frame, and the RAF loop renders that same frame anyway, so a
     // direct render would draw the full scene twice per frame while orbiting.
     const apply = () => {
-      applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
+      const changed = applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
+      // Walls cast shadows (#132) and the shadow map is static: refresh it
+      // when a cutaway flip actually hid/showed a wall — which happens only
+      // when the camera crosses a wall plane, not on every orbit frame.
+      if (changed) requestShadowUpdate();
       invalidate();
     };
     apply();
     controls.addEventListener('change', apply);
     return () => controls.removeEventListener('change', apply);
-  }, [isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, view.wallDisplay, layout.width, layout.height]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, view.wallDisplay, layout.width, layout.height]);
 
   // Furniture meshes
   useEffect(() => {
@@ -521,6 +525,12 @@ export function useSceneEffects({
     outline.scale.copy(wallMesh.scale);
     outline.renderOrder = 999;
     outline.userData.type = 'wall-selection';
+    // Owner reference + initial visibility: applyWallDisplay keeps the
+    // outline in lockstep with its wall on every orbit, and a wall already
+    // hidden by cutaway must not spawn a visible ghost outline (#133).
+    outline.userData.ownerTag = tag;
+    outline.userData.wallId = selectedWall.id;
+    outline.visible = wallMesh.visible;
     scene.add(outline);
     invalidate();
 
