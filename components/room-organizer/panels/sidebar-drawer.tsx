@@ -183,6 +183,7 @@ export function SidebarDrawer({
                 onQueryChange={setCatalogQuery}
                 onAdd={(catalogItem) => {
                   const id = placeCatalogItem(catalogItem);
+                  if (!id) return;
                   selectOnly(id);
                   playCue('place');
                 }}

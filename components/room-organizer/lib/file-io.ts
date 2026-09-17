@@ -68,6 +68,10 @@ function downscaleDataUrl(dataUrl: string): Promise<string> {
         resolve(dataUrl);
         return;
       }
+      // Fill with white background first so transparent PNGs/CAD plans don't
+      // composite against black when converted to JPEG (#146).
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };

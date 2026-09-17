@@ -114,7 +114,7 @@ export function applyTimeOfDay(
     const distance = 6;
     for (const lamp of lampPositions) {
       const point = new THREE.PointLight(color, baseIntensity * nightFactor, distance, 2);
-      point.position.set(lamp.x, lamp.height * 0.9, lamp.z);
+      point.position.set(lamp.x, lamp.height, lamp.z);
       point.userData.type = LIGHTING_TAGS.Lamp;
       scene.add(point);
     }

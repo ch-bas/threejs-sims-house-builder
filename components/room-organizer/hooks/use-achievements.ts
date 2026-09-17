@@ -40,10 +40,16 @@ export function useAchievements(layout: RoomLayout): UseAchievementsResult {
     setPending((current) => [...current, ...next]);
   }, [layout, unlocked]);
 
-  // Mark initialised after the first paint so the very first user-driven
-  // change still triggers a toast even on a fresh slate.
+  // Check if a layout hydration is pending on mount (share URL or localStorage).
+  // If so, do not immediately mark initialised on first paint; wait until the
+  // first non-initial layout evaluation or user mutation arms it.
   useEffect(() => {
-    initialisedRef.current = true;
+    const hasPendingHydration =
+      typeof window !== 'undefined' &&
+      (window.location.hash.startsWith('#layout=') || window.localStorage.getItem('standalone-room-organizer-layout') !== null);
+    if (!hasPendingHydration) {
+      initialisedRef.current = true;
+    }
   }, []);
 
   return {
