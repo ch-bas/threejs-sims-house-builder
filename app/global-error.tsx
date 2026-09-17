@@ -1,28 +1,32 @@
 'use client';
 
 import { useEffect } from 'react';
+import {
+  clearChunkReloadGuard,
+  isChunkLoadError,
+  reloadOnceForChunkError,
+} from '../components/room-organizer/lib/chunk-reload';
 import { STORAGE_KEY } from '../components/room-organizer/lib/constants';
 
 // Global error boundary — catches errors thrown in the root layout itself, so
 // it must render its own <html>/<body>. Same recovery path as app/error.tsx:
 // clear the persisted layout that crashed the renderer, then reload.
 
-/**
- * See app/error.tsx: a redeploy invalidates the cached chunk hashes a returning
- * user's HTML points at, so `dynamic(...)` throws a ChunkLoadError that
- * `reset()` can't clear (it re-requests the same dead chunk). Hard-reload for
- * chunk/loading failures to fetch fresh HTML + new chunk hashes.
- */
-function isChunkLoadError(error: Error): boolean {
-  return error.name === 'ChunkLoadError' || /loading chunk|loading css chunk|dynamically imported module/i.test(error.message);
-}
-
 export default function GlobalError({ error }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
   useEffect(() => {
-    if (isChunkLoadError(error)) {
-      window.location.reload();
-    }
+    // One automatic reload per session via the shared pc-chunk-reload guard —
+    // see app/error.tsx: an unguarded reload looped forever on a persistently
+    // missing chunk and made the recovery UI unreachable (#143).
+    reloadOnceForChunkError(error);
   }, [error]);
+
+  // A persistent chunk failure is a deploy problem, not a corrupt save; keep
+  // the user's layout and offer a plain retry instead (#143).
+  const chunkFailure = isChunkLoadError(error);
+  const retryChunkLoad = () => {
+    clearChunkReloadGuard();
+    window.location.reload();
+  };
 
   const resetSavedLayout = () => {
     try {
@@ -61,15 +65,16 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
           }}
         >
           <p style={{ margin: '0 0 8px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 16 }}>
-            Something went sideways
+            {chunkFailure ? 'Couldn’t load the app' : 'Something went sideways'}
           </p>
           <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>
-            The saved layout couldn’t be rendered. Resetting it clears the
-            stored layout and starts fresh.
+            {chunkFailure
+              ? 'Some of the app’s files couldn’t be fetched — a fresh deploy may be rolling out. Reloading usually fixes it, and your saved house is untouched.'
+              : 'The saved layout couldn’t be rendered. Resetting it clears the stored layout and starts fresh.'}
           </p>
           <button
             type="button"
-            onClick={resetSavedLayout}
+            onClick={chunkFailure ? retryChunkLoad : resetSavedLayout}
             style={{
               appearance: 'none',
               cursor: 'pointer',
@@ -84,7 +89,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
               fontSize: 12,
             }}
           >
-            Reset saved layout
+            {chunkFailure ? 'Reload' : 'Reset saved layout'}
           </button>
         </div>
       </body>

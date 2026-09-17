@@ -277,7 +277,10 @@ export function settleWallMountedItem(
       interiorWalls,
     });
     const patch: SettledPlacement = { position: snapped.position };
-    if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) patch.rotation = snapped.rotation;
+    // A 180° flip is still wall-aligned (it picks the hinge/facing side) —
+    // only re-derive the rotation when the opening actually left its wall
+    // axis, e.g. dragged onto a perpendicular wall (#144).
+    if (!isOnWallAxis(item.rotation ?? 0, snapped.rotation)) patch.rotation = snapped.rotation;
     return patch;
   }
   if (item.type === 'security-camera') {
@@ -302,9 +305,34 @@ export function settleWallMountedItem(
       });
       return { position: reseated, wallRotation: snapped.rotation };
     }
-    const patch: SettledPlacement = { position: snapped.position, wallRotation: snapped.rotation };
-    if (Math.abs((item.rotation ?? 0) - snapped.rotation) > 1e-3) patch.rotation = snapped.rotation;
+    // Flush cameras are locked to the wall's normal axis but may face either
+    // way — outward (wallRotation + π) is a supported state that seats the
+    // body on the EXTERIOR side (see FurnitureItem.wallRotation and the
+    // rotate handler). Keep an axis-aligned rotation and reseat on the side
+    // the camera faces; only an off-axis rotation (a cross-wall move) is
+    // re-derived. Blindly resetting to the inward normal here undid the
+    // user's outward flip on every nudge, drag release, and duplicate (#144).
+    const current = item.rotation ?? snapped.rotation;
+    const rotation = isOnWallAxis(current, snapped.rotation) ? current : snapped.rotation;
+    const reseated = reseatWallMountedItem({
+      position,
+      itemWidth: item.width,
+      itemDepth: item.depth,
+      roomWidth,
+      roomDepth,
+      interiorWalls,
+      rotation,
+    });
+    const patch: SettledPlacement = { position: reseated, wallRotation: snapped.rotation };
+    if (Math.abs((item.rotation ?? 0) - rotation) > 1e-3) patch.rotation = rotation;
     return patch;
   }
   return null;
+}
+
+/** True when `rotation` lies on the wall's normal axis (≡ wallRotation mod π). */
+function isOnWallAxis(rotation: number, wallRotation: number): boolean {
+  const TAU = Math.PI * 2;
+  const diff = (((rotation - wallRotation) % TAU) + TAU) % TAU;
+  return diff < 1e-3 || Math.abs(diff - Math.PI) < 1e-3 || diff > TAU - 1e-3;
 }

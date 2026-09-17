@@ -179,6 +179,32 @@ describe('settleWallMountedItem (#116)', () => {
     expect(settled!.rotation).toBeCloseTo(-Math.PI / 2, 10);
   });
 
+  it('keeps an outward-facing flush camera outward and seated on the exterior side (#144)', () => {
+    const settled = settleWallMountedItem(
+      // North wall, flipped to face outside: rotation = wallRotation + π.
+      { type: 'security-camera', width: 0.3, depth: 0.2, rotation: Math.PI },
+      { x: 0.5, z: -3.9 },
+      W,
+      D
+    );
+    // Facing -z: the body seats OUTSIDE the north wall, rotation untouched.
+    expect(settled!.position.z).toBeCloseTo(-4 - 0.12, 10);
+    expect(settled!.position.x).toBeCloseTo(0.5, 10);
+    expect(settled!.rotation).toBeUndefined();
+    expect(settled!.wallRotation).toBeCloseTo(0, 10);
+  });
+
+  it('keeps a 180°-flipped door wall-aligned instead of resetting it (#144)', () => {
+    const settled = settleWallMountedItem(
+      { type: 'door', width: 0.9, depth: 0.12, rotation: Math.PI },
+      { x: 0.3, z: -3.5 },
+      W,
+      D
+    );
+    expect(settled!.position).toEqual({ x: 0.3, z: -4 });
+    expect(settled!.rotation).toBeUndefined();
+  });
+
   it('clamps the settled opening within the wall ends', () => {
     const settled = settleWallMountedItem(
       { type: 'door', width: 0.9, depth: 0.12, rotation: 0 },
