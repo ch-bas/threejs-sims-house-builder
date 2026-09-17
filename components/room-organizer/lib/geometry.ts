@@ -1,4 +1,4 @@
-import { isWallMounted } from './opening-snap';
+import { isOpening, isWallMounted } from './opening-snap';
 import type { FurnitureItem, Vec2 } from './types';
 
 export function boundingRadius(item: Pick<FurnitureItem, 'width' | 'depth'>): number {
@@ -143,6 +143,10 @@ function isIntendedStack(a: FurnitureItem, b: FurnitureItem): boolean {
  */
 function pairCollides(a: FurnitureItem, b: FurnitureItem): boolean {
   if (isWallMounted(a.type) !== isWallMounted(b.type)) return false;
+  // Security cameras mount at 2.4 m height, clearing doors and windows (#146).
+  if ((a.type === 'security-camera' && isOpening(b.type)) || (b.type === 'security-camera' && isOpening(a.type))) {
+    return false;
+  }
   if (isLowProfile(a) || isLowProfile(b)) return false;
   if (isIntendedStack(a, b)) return false;
   return itemsOverlap(a, b);

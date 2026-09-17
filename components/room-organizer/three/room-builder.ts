@@ -656,18 +656,21 @@ function buildFloorGeometryWithOpenings(
     (isAxisAlignedRotation(o.rotation) ? axisAligned : rotated).push(o);
   }
 
-  const rects = axisAligned.map((o) => {
+  const rects: Array<[number, number, number, number]> = [];
+  for (const o of axisAligned) {
     // At 90°/270° the footprint's width and depth swap in world space.
     const swap = Math.abs(Math.sin(o.rotation)) > 0.5;
     const worldW = swap ? o.depth : o.width;
     const worldD = swap ? o.width : o.depth;
-    return [
-      o.centerX - worldW / 2,
-      -(o.centerZ + worldD / 2),
-      o.centerX + worldW / 2,
-      -(o.centerZ - worldD / 2),
-    ] as [number, number, number, number];
-  });
+    // Intersect each hole rect with the floor rect; skip degenerate results (#146).
+    const x0 = Math.max(o.centerX - worldW / 2, -halfW);
+    const y0 = Math.max(-(o.centerZ + worldD / 2), -halfD);
+    const x1 = Math.min(o.centerX + worldW / 2, halfW);
+    const y1 = Math.min(-(o.centerZ - worldD / 2), halfD);
+    if (x1 - x0 > 0 && y1 - y0 > 0) {
+      rects.push([x0, y0, x1, y1]);
+    }
+  }
   for (const [x0, y0, x1, y1] of mergeHoleRects(rects)) {
     if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
     const hole = new THREE.Path();
@@ -699,6 +702,27 @@ function buildFloorGeometryWithOpenings(
       const worldZ = o.centerZ - lx * sin + lz * cos;
       return [worldX, -worldZ];
     });
+    // Rotated holes crossing the floor edge fall back to the clipped AABB (#146).
+    const crossesFloorOutline = corners.some(([x, y]) => x < -halfW || x > halfW || y < -halfD || y > halfD);
+    if (crossesFloorOutline) {
+      const minX = Math.min(...corners.map(([x]) => x));
+      const maxX = Math.max(...corners.map(([x]) => x));
+      const minY = Math.min(...corners.map(([, y]) => y));
+      const maxY = Math.max(...corners.map(([, y]) => y));
+      const cx0 = Math.max(minX, -halfW);
+      const cx1 = Math.min(maxX, halfW);
+      const cy0 = Math.max(minY, -halfD);
+      const cy1 = Math.min(maxY, halfD);
+      if (cx1 - cx0 <= 0 || cy1 - cy0 <= 0) continue;
+      const hole = new THREE.Path();
+      hole.moveTo(cx0, cy0);
+      hole.lineTo(cx1, cy0);
+      hole.lineTo(cx1, cy1);
+      hole.lineTo(cx0, cy1);
+      hole.closePath();
+      shape.holes.push(hole);
+      continue;
+    }
     const hole = new THREE.Path();
     hole.moveTo(corners[0]![0], corners[0]![1]);
     hole.lineTo(corners[1]![0], corners[1]![1]);

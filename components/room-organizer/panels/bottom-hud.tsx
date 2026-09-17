@@ -124,6 +124,7 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
           category={buildToolCategory === 'walls' ? 'all' : buildToolCategory}
           onAdd={(catalogItem) => {
             const id = placeCatalogItem(catalogItem);
+            if (!id) return;
             selectOnly(id);
             playCue('place');
           }}

@@ -856,6 +856,7 @@ export function RoomOrganizer(): JSX.Element {
           if (!item) return;
           const world = worldPositionFromClient(clientX, clientY);
           const newId = placeCatalogItem(item, world ?? undefined);
+          if (!newId) return;
           selectOnly(newId);
         }}
       />

@@ -431,7 +431,8 @@ export function useSceneEffects({
         .map((item) => ({
           x: item.position!.x,
           z: item.position!.z,
-          height: item.height + index * FLOOR_HEIGHT_METERS,
+          // Bulb height factor (0.9) scales the item height only, not the floor offset (#146).
+          height: item.height * 0.9 + index * FLOOR_HEIGHT_METERS,
         }))
     );
 
