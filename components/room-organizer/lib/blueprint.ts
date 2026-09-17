@@ -24,7 +24,10 @@ export function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout)
     floor,
     selectedItemId: null,
     showMeasurements: true,
-    showWiFiSignals: false,
+    // Coverage on by default: the blueprint is the natural artifact for
+    // planning Wi-Fi and camera placement, and hardcoding this off hid the
+    // signal rings AND the camera FOV wedges from the printout (#134).
+    showWiFiSignals: true,
     hasCollision: (item) => hasCollisions(item, floor.items, layout.width, layout.height),
   });
 
