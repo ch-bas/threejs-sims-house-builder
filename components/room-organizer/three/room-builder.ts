@@ -36,9 +36,15 @@ export type WallDisplay = 'up' | 'cutaway' | 'down';
  * build-mode-style wall cutaway. Reads the active wall-display mode + the camera
  * position and toggles each tagged wall (and the roof) `.visible` so the
  * user sees the interior from any angle without ghostly translucency.
+ * Selection outlines (`wall-selection`) mirror their owner wall so a hidden
+ * wall can't leave a glowing depth-test-free ghost floating in space (#133).
  *
  * Call this once after rebuilding walls, and again on every orbit-controls
  * change — visibility is cheap to flip, no geometry rebuild required.
+ *
+ * Returns true when any visibility actually changed: walls cast shadows and
+ * the shadow map is static, so a flip needs a one-off shadow refresh — but
+ * only a flip, not every orbit frame (#132).
  */
 export function applyWallDisplay(
   scene: ThreeNS.Scene,
@@ -47,20 +53,33 @@ export function applyWallDisplay(
   mode: WallDisplay,
   roomWidth: number,
   roomDepth: number
-): void {
+): boolean {
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
+
+  let changed = false;
+  const setVisible = (obj: ThreeNS.Object3D, visible: boolean): void => {
+    if (obj.visible !== visible) {
+      obj.visible = visible;
+      changed = true;
+    }
+  };
+  // Owner visibility by "tag:wallId", for the outline sync pass below.
+  const wallVisibility = new Map<string, boolean>();
 
   for (const obj of scene.children) {
     const tag = obj.userData.type as string | undefined;
     if (tag === 'roof') {
       // Roof only shows in "up" mode — cutaway and down both want the
       // interior visible from above.
-      obj.visible = mode === 'up';
+      setVisible(obj, mode === 'up');
       continue;
     }
     if (tag === 'interior-wall') {
-      obj.visible = mode !== 'down';
+      const visible = mode !== 'down';
+      setVisible(obj, visible);
+      const id = obj.userData.wallId as string | undefined;
+      if (id) wallVisibility.set(`interior-wall:${id}`, visible);
       continue;
     }
     if (tag !== ROOM_OBJECT_TAGS.Wall) continue;
@@ -70,34 +89,41 @@ export function applyWallDisplay(
     // grid, which Sims-style walls-down is supposed to keep (#122).
     const wallId = obj.userData.wallId as WallId | undefined;
     if (!wallId) {
-      obj.visible = true;
+      setVisible(obj, true);
       continue;
     }
 
+    let visible: boolean;
     if (mode === 'down') {
-      obj.visible = false;
-      continue;
+      visible = false;
+    } else if (mode === 'up') {
+      visible = true;
+    } else {
+      // Cutaway: hide the wall if the camera is on its outer side.
+      let nx = 0;
+      let nz = 0;
+      let cx = 0;
+      let cz = 0;
+      switch (wallId) {
+        case 'north': nz = -1; cz = -halfD; break;
+        case 'south': nz =  1; cz =  halfD; break;
+        case 'east':  nx =  1; cx =  halfW; break;
+        case 'west':  nx = -1; cx = -halfW; break;
+      }
+      const dot = (cameraX - cx) * nx + (cameraZ - cz) * nz;
+      visible = dot < 0;
     }
-    if (mode === 'up') {
-      obj.visible = true;
-      continue;
-    }
-
-    // Cutaway: hide the wall if the camera is on its outer side.
-
-    let nx = 0;
-    let nz = 0;
-    let cx = 0;
-    let cz = 0;
-    switch (wallId) {
-      case 'north': nz = -1; cz = -halfD; break;
-      case 'south': nz =  1; cz =  halfD; break;
-      case 'east':  nx =  1; cx =  halfW; break;
-      case 'west':  nx = -1; cx = -halfW; break;
-    }
-    const dot = (cameraX - cx) * nx + (cameraZ - cz) * nz;
-    obj.visible = dot < 0;
+    setVisible(obj, visible);
+    wallVisibility.set(`${ROOM_OBJECT_TAGS.Wall}:${wallId}`, visible);
   }
+
+  for (const obj of scene.children) {
+    if (obj.userData.type !== 'wall-selection') continue;
+    const owner = wallVisibility.get(`${obj.userData.ownerTag as string}:${obj.userData.wallId as string}`);
+    if (owner !== undefined) setVisible(obj, owner);
+  }
+
+  return changed;
 }
 
 // Warm cream — build-mode build mode walls read as tan/cream by default, never
@@ -456,6 +482,14 @@ function buildWalls(
     wall.position.set(spec.position[0], spec.position[1], spec.position[2]);
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
     wall.userData.wallId = spec.id;
+    // Solid walls block the sun like the roof, foundation, and interior walls
+    // already do — without this, dawn/dusk light fell on furniture straight
+    // through the shell (#132). Ghosted floors (show-all-floors) are
+    // translucent scenery and must not throw solid shadows.
+    if (ghostOpacity === undefined) {
+      wall.castShadow = true;
+      wall.receiveShadow = true;
+    }
     makeStatic(wall);
     scene.add(wall);
 
@@ -517,6 +551,7 @@ function addBaseboard(
     base.position.set(px, yOffset + BASEBOARD_HEIGHT / 2, pz);
   }
   base.receiveShadow = true;
+  base.castShadow = ghostOpacity === undefined;
   base.userData.type = ROOM_OBJECT_TAGS.Wall;
   base.userData.wallId = spec.id;
   makeStatic(base);
