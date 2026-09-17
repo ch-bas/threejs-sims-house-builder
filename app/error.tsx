@@ -1,6 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
+import {
+  clearChunkReloadGuard,
+  isChunkLoadError,
+  reloadOnceForChunkError,
+} from '../components/room-organizer/lib/chunk-reload';
 import { STORAGE_KEY } from '../components/room-organizer/lib/constants';
 
 // Route-level error boundary. A saved layout that crashes the renderer would
@@ -8,23 +13,24 @@ import { STORAGE_KEY } from '../components/room-organizer/lib/constants';
 // devtools. This gives a friendly recovery path: clear the persisted layout
 // and retry.
 
-/**
- * A returning user's cached HTML references old hashed chunks that a redeploy
- * has since removed, so the `dynamic(() => import(...))` in app/page.tsx throws
- * a ChunkLoadError. `reset()` only re-requests the same dead chunk → an
- * infinite re-catch loop, so for chunk/loading failures we hard-reload instead:
- * a fresh document fetch pulls the new HTML with the new chunk hashes.
- */
-function isChunkLoadError(error: Error): boolean {
-  return error.name === 'ChunkLoadError' || /loading chunk|loading css chunk|dynamically imported module/i.test(error.message);
-}
-
 export default function Error({ error }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
   useEffect(() => {
-    if (isChunkLoadError(error)) {
-      window.location.reload();
-    }
+    // Stale-chunk failures hard-reload ONCE via the shared pc-chunk-reload
+    // guard (`reset()` would just re-request the same dead chunk). An
+    // unguarded reload here looped forever on a persistently missing chunk —
+    // a broken deploy — and made this screen unreachable (#143). When the
+    // guard is already spent, fall through to the UI below instead.
+    reloadOnceForChunkError(error);
   }, [error]);
+
+  // A persistent chunk failure is a deploy problem, not a corrupt save —
+  // offering "Reset saved layout" for it would delete the user's house for
+  // nothing. Show a retry path that leaves storage alone (#143).
+  const chunkFailure = isChunkLoadError(error);
+  const retryChunkLoad = () => {
+    clearChunkReloadGuard();
+    window.location.reload();
+  };
 
   const resetSavedLayout = () => {
     try {
@@ -60,7 +66,7 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
             fontSize: 16,
           }}
         >
-          Something went sideways
+          {chunkFailure ? 'Couldn’t load the app' : 'Something went sideways'}
         </p>
         <p
           style={{
@@ -71,12 +77,13 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
             lineHeight: 1.5,
           }}
         >
-          The saved layout couldn’t be rendered. Resetting it clears the stored
-          layout and starts fresh.
+          {chunkFailure
+            ? 'Some of the app’s files couldn’t be fetched — a fresh deploy may be rolling out. Reloading usually fixes it, and your saved house is untouched.'
+            : 'The saved layout couldn’t be rendered. Resetting it clears the stored layout and starts fresh.'}
         </p>
         <button
           type="button"
-          onClick={resetSavedLayout}
+          onClick={chunkFailure ? retryChunkLoad : resetSavedLayout}
           style={{
             appearance: 'none',
             cursor: 'pointer',
@@ -92,7 +99,7 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
             fontSize: 12,
           }}
         >
-          Reset saved layout
+          {chunkFailure ? 'Reload' : 'Reset saved layout'}
         </button>
       </div>
     </div>
