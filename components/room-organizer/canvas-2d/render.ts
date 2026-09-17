@@ -94,6 +94,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.showWiFiSignals) {
     drawSignalRings(ctx, floor.items, offsetX, offsetY, scale, layout, 'wifi');
     drawSignalRings(ctx, floor.items, offsetX, offsetY, scale, layout, 'cctv');
+    drawVisionCones(ctx, floor.items, offsetX, offsetY, scale, layout);
   }
 
   drawFurniture(ctx, options, offsetX, offsetY, scale);
@@ -269,6 +270,41 @@ function drawSignalRings(
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+  }
+}
+
+/**
+ * Security-camera FOV wedges — the flagship coverage feature was invisible in
+ * exactly the artifacts you'd plan coverage with: the 2D plan and the printed
+ * blueprint (#134). Drawn under the furniture layer like the signal rings.
+ */
+function drawVisionCones(
+  ctx: CanvasRenderingContext2D,
+  items: readonly FurnitureItem[],
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  layout: RoomLayout
+): void {
+  for (const item of items) {
+    if (!item.position || !item.hasVisionCone || !item.visionRange || !item.visionFov) continue;
+    const cx = offsetX + (item.position.x + layout.width / 2) * scale;
+    const cy = offsetY + (item.position.z + layout.height / 2) * scale;
+    // The camera faces its local +Z: world direction (sin r, cos r), which
+    // maps straight onto canvas axes (x right, z down) — no negation, unlike
+    // the footprint rotation, which goes through ctx.rotate().
+    const rotation = item.rotation ?? 0;
+    const centerAngle = Math.atan2(Math.cos(rotation), Math.sin(rotation));
+    const halfAngle = (item.visionFov * Math.PI) / 360;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, item.visionRange * scale, centerAngle - halfAngle, centerAngle + halfAngle);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(127, 243, 255, 0.14)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(127, 243, 255, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 }
 

@@ -19,7 +19,7 @@ import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects'
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
-import { hasCollisions } from './lib/geometry';
+import { hasCollisions, totalCost } from './lib/geometry';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { playSound, type SoundCue } from './lib/sounds';
 import { FLOOR_HEIGHT_METERS } from './lib/types';
@@ -501,11 +501,17 @@ export function RoomOrganizer(): JSX.Element {
     [activeFloor.items]
   );
 
+  const buildingCost = useMemo(
+    () => totalCost(layout.floors.flatMap((floor) => floor.items)),
+    [layout.floors]
+  );
+
   const { snapPosition, getDragPlaneY, placeCatalogItem } = useItemPlacement({
     activeFloor,
     activeFloorY,
     roomWidth: layout.width,
     roomDepth: layout.height,
+    buildingCost,
     actions,
     view,
   });

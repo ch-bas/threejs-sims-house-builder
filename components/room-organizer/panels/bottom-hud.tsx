@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { DEFAULT_BUDGET } from '../lib/constants';
+import { totalCost } from '../lib/geometry';
 import { generateRoomShape } from '../lib/room-shapes';
 import { surpriseLayout } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
@@ -151,9 +153,13 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
           ) {
             return;
           }
+          const otherFloorsCost =
+            totalCost(layout.floors.flatMap((f) => f.items)) - totalCost(activeFloor.items);
           const items = surpriseLayout({
             roomWidth: layout.width,
             roomDepth: layout.height,
+            // Replaces the active floor: spend what the other floors leave (#136).
+            maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost),
           });
           actions.replaceItems(items);
           setSelectedItemId(null);

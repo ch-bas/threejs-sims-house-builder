@@ -6,7 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
+import { DEFAULT_BUDGET } from '../lib/constants';
 import { downloadLayoutAsJson, downloadInventoryCsv } from '../lib/file-io';
+import { totalCost } from '../lib/geometry';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { surpriseLayout } from '../lib/surprise';
@@ -85,7 +87,15 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               ) {
                 return;
               }
-              const items = surpriseLayout({ roomWidth: layout.width, roomDepth: layout.height });
+              // The generated set replaces the active floor, so its budget is
+              // whatever the OTHER floors leave of the building budget (#136).
+              const otherFloorsCost =
+                totalCost(layout.floors.flatMap((f) => f.items)) - totalCost(activeFloor.items);
+              const items = surpriseLayout({
+                roomWidth: layout.width,
+                roomDepth: layout.height,
+                maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost),
+              });
               actions.replaceItems(items);
               setSelectedItemId(null);
               setExtraSelectedIds(new Set());
