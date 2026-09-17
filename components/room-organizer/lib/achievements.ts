@@ -51,7 +51,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   {
     id: 'big-spender',
     name: 'Big Spender',
-    description: `Spent over ${CURRENCY_SYMBOL}10,000 in total.`,
+    description: `Own over ${CURRENCY_SYMBOL}10,000 of furniture.`,
     icon: '💸',
     // "over" means strictly greater than — exactly 10,000 doesn't count.
     isMet: (layout) => totalCost(allItems(layout)) > 10_000,

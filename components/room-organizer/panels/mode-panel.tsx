@@ -55,7 +55,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           className="pc-hud-header"
           style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}
         >
-          Total Spent
+          Furniture Value
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { GRID_SIZE_METERS } from '../lib/constants';
+import { CURRENCY_SYMBOL, DEFAULT_BUDGET, GRID_SIZE_METERS } from '../lib/constants';
 import {
   snapToGrid as snapValueToGrid,
   snapToNeighbors,
@@ -15,6 +15,8 @@ export interface UseItemPlacementParams {
   activeFloorY: number;
   roomWidth: number;
   roomDepth: number;
+  /** Current furniture value across the whole building, for the budget guard. */
+  buildingCost: number;
   actions: LayoutActions;
   view: Pick<ViewSettings, 'snapToGrid' | 'snapToWall' | 'snapToItems'>;
 }
@@ -32,6 +34,7 @@ export function useItemPlacement({
   activeFloorY,
   roomWidth,
   roomDepth,
+  buildingCost,
   actions,
   view,
 }: UseItemPlacementParams): UseItemPlacementResult {
@@ -101,6 +104,17 @@ export function useItemPlacement({
    */
   const placeCatalogItem = useCallback(
     (catalogItem: CatalogItem, position?: { x: number; z: number }) => {
+      // Budget guard (#136): the budget used to be pure decoration — nothing
+      // in the buy flow consulted it. Going over now asks instead of
+      // silently proceeding (and instead of hard-blocking: it's a sandbox).
+      const price = catalogItem.price ?? 0;
+      if (price > 0 && buildingCost + price > DEFAULT_BUDGET && typeof window !== 'undefined') {
+        const proceed = window.confirm(
+          `This ${CURRENCY_SYMBOL}${price.toLocaleString()} purchase puts you over the ` +
+            `${CURRENCY_SYMBOL}${DEFAULT_BUDGET.toLocaleString()} budget. Place it anyway?`
+        );
+        if (!proceed) return '';
+      }
       if (isOpening(catalogItem.type)) {
         const snapped = snapOpeningToWall({
           position: position ?? { x: 0, z: 0 },
@@ -145,7 +159,7 @@ export function useItemPlacement({
       }
       return actions.addCatalogItem(catalogItem, position);
     },
-    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth]
+    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth, buildingCost]
   );
 
   return { snapPosition, getDragPlaneY, placeCatalogItem };
