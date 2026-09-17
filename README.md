@@ -49,11 +49,16 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Roof** on top of the highest floor: Flat, Gable, or Hipped, with a
   per-roof colour picker.
 - **Categorised catalog** with search, filter chips, and price tags ($).
+- **A budget that pushes back**: purchases that would exceed the
+  $25,000 budget ask for confirmation, Surprise-me spends only what the
+  building has left, and the stats panels track your furniture value
+  against the cap.
 - **Security cameras with vision cones**: wall-mounted CCTV that mimics
   real-world camera models (`lib/cctv-models`), flush or bracket
   mounting, and a Desperados-style directional vision cone with
   configurable range and FOV — rendered as a coverage overlay alongside
-  Wi-Fi signal rings. The cone **detects objects**: furniture or NPCs
+  Wi-Fi signal rings in 3D, in the 2D plan view, and on the printed
+  blueprint. The cone **detects objects**: furniture or NPCs
   inside the field of view flip it from cyan to alert red, the wedge
   pulses faster, and the sweeping scan line flares as it passes over the
   target. The overlay renders depth-test-free so walls and furniture
@@ -74,7 +79,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **5 theme presets** (Modern, Rustic, Minimalist, Cozy, Tropical) that
   recolour walls, floor, and furniture by category across every floor.
 - **5 furniture sets** that drop a curated combo (Dining, Bedroom,
-  Home Office, Kitchen Line, Lounge) at the current cursor.
+  Home Office, Kitchen Line, Lounge) at the current cursor. Sets the
+  room can't hold are greyed out with a "Room too small" hint.
 
 ### Editing
 
@@ -132,7 +138,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Show all floors** toggle stacks every level at once with ghosted
   lower floors.
 - **Sun-arc time-of-day** (continuous 0–24) drives ambient and sun
-  colour, intensity, and position. Lamps light up at night. Dawn / Noon /
+  colour, intensity, and position; walls, roof, and furniture all cast
+  sun shadows. Lamps light up at night. Dawn / Noon /
   Dusk / Midnight presets plus a ▶ button advances time in real-time.
 - **Gradient sky** — a vertical zenith-to-horizon gradient backdrop that
   follows the time of day: deep blue over pale at noon, lavender over

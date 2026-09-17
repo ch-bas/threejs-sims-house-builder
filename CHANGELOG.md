@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.9] - 2026-09-14
+
+### Added
+- Security-camera coverage is now visible everywhere you plan it: the FOV wedge draws in the 2D plan view, and the printed blueprint includes camera wedges and Wi-Fi rings by default ([#134](https://github.com/ch-bas/threejs-sims-house-builder/issues/134))
+- The budget pushes back: purchases that would exceed it ask for confirmation before placing, and Surprise-me spends only what the building has left ([#136](https://github.com/ch-bas/threejs-sims-house-builder/issues/136))
+
+### Fixed
+- Exterior walls now cast and receive sun shadows like the roof and interior walls — dawn light no longer falls on furniture straight through the shell, and the house finally shadows its lawn. Cutaway wall flips refresh the static shadow map exactly once per flip, so orbiting stays cheap ([#132](https://github.com/ch-bas/threejs-sims-house-builder/issues/132))
+- A wall hidden by cutaway or walls-down takes its glowing selection outline with it instead of leaving a ghost rectangle floating over the open room ([#133](https://github.com/ch-bas/threejs-sims-house-builder/issues/133))
+- Furniture-set tiles the room can't hold are greyed out with a "Room too small" hint instead of silently doing nothing ([#135](https://github.com/ch-bas/threejs-sims-house-builder/issues/135))
+
+### Changed
+- Honest money labels: the mode panel shows "Furniture Value" (the number always was the current value, not cumulative spend), and the Big Spender achievement reads "Own over $10,000 of furniture" to match ([#136](https://github.com/ch-bas/threejs-sims-house-builder/issues/136))
+
 ## [1.8.8] - 2026-09-03
 
 ### Added
