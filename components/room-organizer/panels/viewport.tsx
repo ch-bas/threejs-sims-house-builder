@@ -20,6 +20,8 @@ export interface ViewportProps {
   activeFloor: FloorLayout;
   selectedItem: FurnitureItem | null;
   selectionCount?: number;
+  /** Copy the current multi-selection to the furniture clipboard (#153). */
+  onCopySelection?(): void;
   showMeasurements: boolean;
   showMinimap: boolean;
   walkthroughActive?: boolean;
@@ -353,12 +355,33 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
 
       {props.selectionCount !== undefined && props.selectionCount > 1 && (
         <div
-          className="pointer-events-none absolute top-4 left-1/2"
+          className="absolute top-4 left-1/2"
           style={{ transform: 'translateX(-50%)' }}
         >
           <StatusChip intent="accent">
             <Icon name="copy" size={14} />
             {props.selectionCount} items selected · drag to move together
+            {props.onCopySelection && (
+              <button
+                type="button"
+                onClick={props.onCopySelection}
+                title="Copy the selection (Ctrl+C) — Ctrl+V pastes, here or on another floor"
+                style={{
+                  marginLeft: 8,
+                  border: '1px solid currentColor',
+                  borderRadius: 999,
+                  background: 'transparent',
+                  color: 'inherit',
+                  fontFamily: 'var(--pc-font-display)',
+                  fontWeight: 700,
+                  fontSize: 10,
+                  padding: '1px 8px',
+                  cursor: 'pointer',
+                }}
+              >
+                Copy
+              </button>
+            )}
           </StatusChip>
         </div>
       )}
