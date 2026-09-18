@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.10] - 2026-09-18
+
+### Fixed
+- A persistently broken deploy no longer reloads the tab forever: the error boundaries honor the one-shot reload guard and fall through to a recovery screen with a plain Reload button — never offering to reset your saved house for a deploy problem ([#143](https://github.com/ch-bas/threejs-sims-house-builder/issues/143))
+- Flush cameras flipped to face outside (and 180°-flipped doors) survive nudges, drag releases, and duplication instead of being reset to face inward ([#144](https://github.com/ch-bas/threejs-sims-house-builder/issues/144))
+- The night sky now darkens after dusk, is darkest around midnight, and lifts toward dawn — previously midnight was the brightest point of the night and dusk snapped to black ([#145](https://github.com/ch-bas/threejs-sims-house-builder/issues/145))
+- Small-bug roundup: stairwell floor holes are clamped inside the floor outline (no more corrupted geometry from edge-placed stairs), declining the over-budget confirmation no longer chimes or wipes the selection, oversized transparent floor plans no longer turn black, loading a saved or shared house no longer fires a burst of achievement toasts (while a returning player's first real achievement still toasts), a camera mounted above a door is no longer flagged as a collision, and upper-floor lamp glow sits at the right height ([#146](https://github.com/ch-bas/threejs-sims-house-builder/issues/146))
+
+### Changed
+- Dependencies refreshed: Three.js 0.169 → 0.186 (verified against the render-on-demand and walkthrough camera contracts), Next.js 15.5.25 clearing all `npm audit` advisories, and the GitHub Actions runtime majors ([#160](https://github.com/ch-bas/threejs-sims-house-builder/issues/160))
+
+### Infrastructure
+- Every pull request now runs the full quality gate (typecheck, lint, 267-test suite, production build) and `main` is protected — nothing merges without a green check ([#159](https://github.com/ch-bas/threejs-sims-house-builder/issues/159))
+- Supply-chain hardening: all workflow actions pinned to commit SHAs, the release job serialized with a working tag check, and weekly grouped Dependabot updates for npm and the actions themselves ([#161](https://github.com/ch-bas/threejs-sims-house-builder/issues/161))
+
 ## [1.8.9] - 2026-09-14
 
 ### Added
