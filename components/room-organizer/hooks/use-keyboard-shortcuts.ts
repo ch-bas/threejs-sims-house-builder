@@ -6,6 +6,10 @@ export interface KeyboardShortcutHandlers {
   removeInteriorWall(id: string): void; 
   toggleExteriorWall(id: string): void;
   duplicateItem(id: string): void;
+  /** Copy the selection to the furniture clipboard; true if anything was copied. */
+  copySelection(): boolean;
+  /** Paste the furniture clipboard onto the active floor; true if anything was pasted. */
+  pasteClipboard(): boolean;
   rotateItem(id: string): void;
   rotateItemBy(id: string, radians: number): void;
   moveItem(id: string, x: number, z: number): void;
@@ -70,6 +74,18 @@ export function useKeyboardShortcuts({
       if (ctrlOrCmd && event.key.toLowerCase() === 'd' && selectedItem) {
         event.preventDefault();
         handlers.duplicateItem(selectedItem.id);
+        return;
+      }
+
+      // Furniture clipboard (#153). Ctrl+C only engages while furniture is
+      // selected, so copying text elsewhere in the page keeps working; Ctrl+V
+      // engages only when the clipboard actually has furniture.
+      if (ctrlOrCmd && event.key.toLowerCase() === 'c' && selectedItem) {
+        if (handlers.copySelection()) event.preventDefault();
+        return;
+      }
+      if (ctrlOrCmd && event.key.toLowerCase() === 'v') {
+        if (handlers.pasteClipboard()) event.preventDefault();
         return;
       }
 

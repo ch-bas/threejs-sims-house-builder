@@ -18,8 +18,10 @@ import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
+import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { hasCollisions, totalCost } from './lib/geometry';
+import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { playSound, type SoundCue } from './lib/sounds';
 import { FLOOR_HEIGHT_METERS } from './lib/types';
@@ -647,6 +649,31 @@ export function RoomOrganizer(): JSX.Element {
     setView((previous) => ({ ...previous, [key]: !previous[key] }));
   }, []);
 
+  // Furniture clipboard (#153): copy normalizes the selection around its
+  // centroid; paste rebuilds it on the ACTIVE floor (cross-floor paste is the
+  // point), settled/clamped, unlocked, and selected — one undo entry.
+  const copySelectionToClipboard = useCallback(() => {
+    const items = activeFloor.items.filter((item) => allSelectedIds.has(item.id));
+    return copyToClipboard(items) > 0;
+  }, [activeFloor.items, allSelectedIds]);
+
+  const pasteFromClipboard = useCallback(() => {
+    const built = buildPasteItems({
+      roomWidth: layout.width,
+      roomDepth: layout.height,
+      interiorWalls: activeFloor.interiorWalls ?? [],
+      idTag: randomSuffix(),
+    });
+    if (built.length === 0) return false;
+    actions.addItems(built);
+    selectOnly(built[0]!.id);
+    if (built.length > 1) {
+      setExtraSelectedIds(new Set(built.slice(1).map((item) => item.id)));
+    }
+    playCue('place');
+    return true;
+  }, [layout.width, layout.height, activeFloor.interiorWalls, actions, selectOnly, playCue]);
+
   const shortcutHandlers = useMemo(
     () => ({
       removeItem: (id: string) => {
@@ -661,6 +688,8 @@ export function RoomOrganizer(): JSX.Element {
         if (!item?.locked) removeItem(id);
       },
       duplicateItem: duplicateSelected,
+      copySelection: copySelectionToClipboard,
+      pasteClipboard: pasteFromClipboard,
       rotateItem: rotateItemHandler,
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
@@ -725,6 +754,8 @@ export function RoomOrganizer(): JSX.Element {
       removeItem,
       removeSelected,
       duplicateSelected,
+      copySelectionToClipboard,
+      pasteFromClipboard,
       allSelectedIds,
       actions,
       activeFloor.items,
@@ -822,6 +853,7 @@ export function RoomOrganizer(): JSX.Element {
         activeFloor={activeFloor}
         selectedItem={selectedItem}
         selectionCount={allSelectedIds.size}
+        onCopySelection={copySelectionToClipboard}
         showMeasurements={view.showMeasurements}
         showMinimap={view.showMinimap}
         walkthroughActive={walkthroughActive}
