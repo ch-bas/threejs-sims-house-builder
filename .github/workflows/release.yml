@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
 
+# Serialize release runs: without this, two pushes landing close together both
+# read "tag doesn't exist" and race the create step (#161).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -11,7 +17,12 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # fetch-depth 0 + tags: the default shallow, tag-less checkout made the
+      # tag-exists check below always report "false" (#161).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Get version from package.json
         id: version
@@ -28,7 +39,7 @@ jobs:
 
       - name: Create release
         if: steps.check.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
