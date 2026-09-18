@@ -80,7 +80,7 @@ export function applyTimeOfDay(
   // Vertical sky gradient (zenith → horizon) instead of a flat colour. The
   // texture is screen-space, so it reads as atmosphere without a sky dome.
   const previousBackground = scene.background;
-  scene.background = makeSkyGradientTexture(THREE, profile.backgroundTop, profile.background);
+  scene.background = makeSkyGradientTexture(THREE, profile.backgroundTop, profile.background, time, computeNightSky(time));
   if (previousBackground && (previousBackground as ThreeNS.Texture).isTexture) {
     (previousBackground as ThreeNS.Texture).dispose();
   }
@@ -198,6 +198,34 @@ export function computeSkyProfile(hour: number): SkyProfile {
   };
 }
 
+export interface NightSky {
+  /** 0..1 star visibility — 0 by day, ramping with darkness, full 22:00–02:00. */
+  starAlpha: number;
+  /** 0..1 moon visibility, slightly ahead of the stars so it leads the night. */
+  moonAlpha: number;
+  /** 0..1 progress along the night arc (rises ~19:00, peaks 00:00, sets ~05:00), or null when down. */
+  moonT: number | null;
+}
+
+/**
+ * Star/moon parameters for the sky backdrop (#182). Pure — the drawing lives
+ * in makeSkyGradientTexture; this is the testable half. Keyed on the same
+ * distance-to-sun-event ramp as the sky colours (#145) so stars fade exactly
+ * as the twilight glow fades.
+ */
+export function computeNightSky(hour: number): NightSky {
+  const time = ((hour % 24) + 24) % 24;
+  const night = time < 6 || time > 18;
+  if (!night) return { starAlpha: 0, moonAlpha: 0, moonT: null };
+  const hoursFromSun = time < 6 ? 6 - time : time - 18;
+  const starAlpha = clamp01(hoursFromSun / 4);
+  const moonAlpha = clamp01(hoursFromSun / 2);
+  // Night progress: 18:00 → 06:00 mapped to 0..1; the moon is up 19:00–05:00.
+  const t = (time > 18 ? time - 18 : time + 6) / 12;
+  const moonT = t > 1 / 12 && t < 11 / 12 ? (t - 1 / 12) / (10 / 12) : null;
+  return { starAlpha, moonAlpha, moonT };
+}
+
 /**
  * 1×256 vertical-gradient CanvasTexture used as the screen-space scene
  * background. Rebuilt on every time-of-day change; the previous texture is
@@ -206,10 +234,13 @@ export function computeSkyProfile(hour: number): SkyProfile {
 function makeSkyGradientTexture(
   THREE: ThreeModule,
   top: number,
-  bottom: number
+  bottom: number,
+  hour: number,
+  night: NightSky
 ): ThreeNS.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 1;
+  // Wide enough for stars and the moon; a bare gradient only needed 1px (#182).
+  canvas.width = 512;
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -220,9 +251,86 @@ function makeSkyGradientTexture(
   gradient.addColorStop(1, hexToCss(bottom));
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (night.starAlpha > 0 || (night.moonT !== null && night.moonAlpha > 0)) {
+    drawNightSky(ctx, canvas.width, canvas.height, hour, night);
+  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+const STAR_COUNT = 140;
+const STAR_SEED = 20260918;
+
+/** Deterministic PRNG so the starfield is position-stable across rebuilds. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function drawNightSky(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  hour: number,
+  night: NightSky
+): void {
+  // Stars: fixed positions from a seeded PRNG; per-star brightness drifts
+  // slowly with the hour, so the ▶ auto-cycle twinkles for free while a
+  // static time of day stays perfectly still (render-on-demand friendly).
+  if (night.starAlpha > 0) {
+    const rng = mulberry32(STAR_SEED);
+    ctx.fillStyle = '#dfe8ff';
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const x = rng() * width;
+      const y = rng() * height * 0.6;
+      const size = rng() < 0.15 ? 2 : 1;
+      const base = 0.35 + rng() * 0.65;
+      const twinkle = 0.75 + 0.25 * Math.sin(hour * 2.1 + i * 1.7);
+      ctx.globalAlpha = night.starAlpha * base * twinkle;
+      ctx.fillRect(x, y, size, size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Moon: a soft glowing disc arcing across the night, mirroring the day's
+  // sun arc — low at rise/set, highest at midnight.
+  if (night.moonT !== null && night.moonAlpha > 0) {
+    const elevation = Math.sin(night.moonT * Math.PI);
+    const cx = width * (0.08 + 0.84 * night.moonT);
+    // Keep the arc inside the top sky band: the backdrop is screen-space and
+    // the default iso view only shows sky in roughly the top seventh of the
+    // frame — anything lower paints behind the lawn and trees.
+    const cy = height * (0.14 - 0.06 * elevation);
+    const radius = 13;
+
+    const glow = ctx.createRadialGradient(cx, cy, radius * 0.4, cx, cy, radius * 3);
+    glow.addColorStop(0, 'rgba(244, 241, 222, 0.35)');
+    glow.addColorStop(1, 'rgba(244, 241, 222, 0)');
+    ctx.globalAlpha = night.moonAlpha;
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - radius * 3, cy - radius * 3, radius * 6, radius * 6);
+
+    ctx.fillStyle = '#f4f1de';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // A few faint maria so the disc reads as a moon, not a lamp.
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+    for (const [dx, dy, r] of [[-4, -3, 3.5], [3, 2, 2.5], [-1, 5, 2]] as const) {
+      ctx.beginPath();
+      ctx.arc(cx + dx, cy + dy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 
 function hexToCss(hex: number): string {
