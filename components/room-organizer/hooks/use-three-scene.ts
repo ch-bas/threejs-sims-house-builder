@@ -179,6 +179,11 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         antialias: true,
         failIfMajorPerformanceCaveat: false,
         powerPreference: 'high-performance',
+        // Reversed-Z (r183+): near-uniform depth precision across the range,
+        // eliminating grazing-angle z-fighting (thin walls, baseboards, rugs).
+        // Requires EXT_clip_control — three silently falls back to a normal
+        // depth buffer when the extension is missing, so this is opt-in-safe (#187).
+        reversedDepthBuffer: true,
       });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setSize(canvas.clientWidth, canvas.clientHeight);
