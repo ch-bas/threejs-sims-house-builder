@@ -65,7 +65,7 @@ export function useImportExport({
 
   const handleShareLink = useCallback(async () => {
     const origin = window.location.origin + window.location.pathname;
-    const { url, strippedFloorPlan } = encodeShareUrl(layout, origin);
+    const { url, strippedFloorPlan } = await encodeShareUrl(layout, origin);
 
     if (!isShareUrlReasonablySized(url)) {
       window.alert(

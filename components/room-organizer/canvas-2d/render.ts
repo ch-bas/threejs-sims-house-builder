@@ -1,4 +1,4 @@
-import { GRID_SIZE_METERS } from '../lib/constants';
+import { CURRENCY_SYMBOL, GRID_SIZE_METERS } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../lib/types';
 
@@ -387,11 +387,71 @@ function drawRoomDimensions(
   ctx.restore();
 }
 
+/** Grid resolution of the price heatmap (cells per axis). */
+export const HEATMAP_COLS = 20;
+export const HEATMAP_ROWS = 20;
+
+/**
+ * Pure heatmap accumulation: bucket the floor into a COLS×ROWS grid and
+ * attribute each priced item's value to the cells its rotation-aware AABB
+ * overlaps, weighted by the actual intersection area — a cell only grazed by
+ * an item's corner receives the matching fraction of its price, not the full
+ * per-cell amount (#150). Returns the row-major grid of price (§) per cell.
+ */
+export function computeHeatmapCells(
+  items: readonly FurnitureItem[],
+  roomWidth: number,
+  roomDepth: number,
+  cols: number = HEATMAP_COLS,
+  rows: number = HEATMAP_ROWS
+): number[] {
+  const grid: number[] = new Array(cols * rows).fill(0);
+  const cellWidth = roomWidth / cols;
+  const cellDepth = roomDepth / rows;
+  if (cellWidth <= 0 || cellDepth <= 0) return grid;
+
+  for (const item of items) {
+    if (!item.position || (item.price ?? 0) <= 0) continue;
+    const itemArea = item.width * item.depth;
+    if (itemArea <= 0) continue;
+    const pricePerArea = (item.price ?? 0) / itemArea;
+
+    // Use the rotation-aware AABB so a rotated item shades the cells its
+    // oriented footprint actually covers.
+    const { halfW, halfD } = rotatedHalfExtents(item);
+    const minX = item.position.x - halfW + roomWidth / 2;
+    const maxX = item.position.x + halfW + roomWidth / 2;
+    const minZ = item.position.z - halfD + roomDepth / 2;
+    const maxZ = item.position.z + halfD + roomDepth / 2;
+
+    const col0 = Math.max(0, Math.floor(minX / cellWidth));
+    const col1 = Math.min(cols - 1, Math.floor(maxX / cellWidth));
+    const row0 = Math.max(0, Math.floor(minZ / cellDepth));
+    const row1 = Math.min(rows - 1, Math.floor(maxZ / cellDepth));
+
+    for (let row = row0; row <= row1; row++) {
+      const cellTop = row * cellDepth;
+      const overlapZ = Math.min(maxZ, cellTop + cellDepth) - Math.max(minZ, cellTop);
+      if (overlapZ <= 0) continue;
+      for (let col = col0; col <= col1; col++) {
+        const cellLeft = col * cellWidth;
+        const overlapX = Math.min(maxX, cellLeft + cellWidth) - Math.max(minX, cellLeft);
+        if (overlapX <= 0) continue;
+        const idx = row * cols + col;
+        grid[idx] = (grid[idx] ?? 0) + pricePerArea * overlapX * overlapZ;
+      }
+    }
+  }
+
+  return grid;
+}
+
 /**
  * Paint a price-per-area heatmap onto the 2D canvas. The floor is bucketed
  * into a 20×20 grid; each cell aggregates the price of any item whose
- * footprint overlaps the cell, then colour-maps the density. Also draws a
- * compact legend showing the per-square-metre value range.
+ * footprint overlaps the cell (weighted by intersection area), then
+ * colour-maps the density. Also draws a compact legend showing the
+ * per-square-metre value range.
  */
 function drawHeatmap(
   ctx: CanvasRenderingContext2D,
@@ -403,41 +463,14 @@ function drawHeatmap(
   viewWidth: number,
   viewHeight: number
 ): void {
-  const COLS = 20;
-  const ROWS = 20;
+  const COLS = HEATMAP_COLS;
+  const ROWS = HEATMAP_ROWS;
   const cellWidth = layout.width / COLS;
   const cellDepth = layout.height / ROWS;
   const cellArea = cellWidth * cellDepth;
   if (cellArea <= 0) return;
 
-  const grid: number[] = new Array(COLS * ROWS).fill(0);
-
-  for (const item of items) {
-    if (!item.position || (item.price ?? 0) <= 0) continue;
-    const itemArea = item.width * item.depth;
-    if (itemArea <= 0) continue;
-    const pricePerArea = (item.price ?? 0) / itemArea;
-
-    // Use the rotation-aware AABB so a rotated item shades the cells its
-    // oriented footprint actually covers.
-    const { halfW, halfD } = rotatedHalfExtents(item);
-    const minX = item.position.x - halfW + layout.width / 2;
-    const maxX = item.position.x + halfW + layout.width / 2;
-    const minZ = item.position.z - halfD + layout.height / 2;
-    const maxZ = item.position.z + halfD + layout.height / 2;
-
-    const col0 = Math.max(0, Math.floor(minX / cellWidth));
-    const col1 = Math.min(COLS - 1, Math.floor(maxX / cellWidth));
-    const row0 = Math.max(0, Math.floor(minZ / cellDepth));
-    const row1 = Math.min(ROWS - 1, Math.floor(maxZ / cellDepth));
-
-    for (let row = row0; row <= row1; row++) {
-      for (let col = col0; col <= col1; col++) {
-        const idx = row * COLS + col;
-        grid[idx] = (grid[idx] ?? 0) + pricePerArea * cellArea;
-      }
-    }
-  }
+  const grid = computeHeatmapCells(items, layout.width, layout.height, COLS, ROWS);
 
   const max = Math.max(...grid);
   if (max <= 0) return;
@@ -502,10 +535,14 @@ function drawHeatmapLegend(
   ctx.fillStyle = '#333';
   ctx.font = '10px Arial';
   ctx.textAlign = 'left';
-  ctx.fillText('§/m² density', x, y - 4);
+  ctx.fillText(`${CURRENCY_SYMBOL}/m² density`, x, y - 4);
   ctx.fillText('0', x, y + barHeight + 12);
   ctx.textAlign = 'right';
-  ctx.fillText(`§${Math.round(maxPricePerSqM).toLocaleString()}`, x + barWidth, y + barHeight + 12);
+  ctx.fillText(
+    `${CURRENCY_SYMBOL}${Math.round(maxPricePerSqM).toLocaleString()}`,
+    x + barWidth,
+    y + barHeight + 12
+  );
   ctx.restore();
 }
 
