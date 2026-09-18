@@ -15,8 +15,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@radix-ui/react-label": "^2.1.0",
-    "@radix-ui/react-select": "^2.1.1",
+    "@radix-ui/react-label": "^2.1.15",
+    "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-slot": "^1.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
@@ -25,20 +25,20 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.4",
-    "three": "^0.169.0",
+    "three": "^0.186.0",
     "zustand": "^5.0.15"
   },
   "overrides": {
     "postcss": "^8.5.10"
   },
   "devDependencies": {
-    "@testing-library/dom": "^10.4.1",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^20.16.11",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
-    "@types/three": "^0.169.0",
-    "autoprefixer": "^10.4.20",
+    "@types/three": "^0.186.0",
+    "autoprefixer": "^10.6.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "^15.5.23",
     "jsdom": "^30.0.1",
