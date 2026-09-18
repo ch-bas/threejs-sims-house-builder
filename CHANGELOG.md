@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.13] - 2026-09-18
+
+### Added
+- Furniture clipboard: Ctrl+C copies the selection, Ctrl+V pastes it beside the original or onto another floor — arrangement preserved, wall items re-seated, pastes unlocked/selected and undoable in one step, with a Copy button on the multi-select badge ([#153](https://github.com/ch-bas/threejs-sims-house-builder/issues/153))
+- Share links compress with native deflate: a fully furnished 100-item house now encodes ~8× smaller and fits comfortably where it previously failed with "too large"; existing links keep working ([#147](https://github.com/ch-bas/threejs-sims-house-builder/issues/147))
+
+### Fixed
+- The item popover's "Centre" button no longer bypasses locks or strands doors/windows/cameras mid-room — it's disabled with an explanatory hint for locked and wall-mounted items ([#149](https://github.com/ch-bas/threejs-sims-house-builder/issues/149))
+- The cost heatmap weights cells by actual overlap instead of counting boundary-straddling items up to 4×, and its legend uses the same currency symbol as the rest of the app ([#150](https://github.com/ch-bas/threejs-sims-house-builder/issues/150))
+
+### Changed
+- The renderer uses a reversed depth buffer where the browser supports it, removing residual grazing-angle z-fighting on thin geometry ([#187](https://github.com/ch-bas/threejs-sims-house-builder/issues/187))
+
 ## [1.8.12] - 2026-09-18
 
 ### Fixed

@@ -90,6 +90,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   rotates every selected item), plus **Align**
   (left/centre/right/top/centre/bottom) and **Distribute** (X/Z) for 3+
   items.
+- **Copy / paste** (Ctrl+C / Ctrl+V): copy any selection and paste it
+  beside the original — or switch floors first to move a furnished
+  corner upstairs. Pastes arrive unlocked, selected, and undo as one
+  step.
 - **Per-item editor**: dimension sliders, **precise X/Z numeric inputs**,
   rotation in degrees, mirror, lock, "Centre in room" shortcut, colour
   picker (with a persisted "Recent" strip) + 🎲 randomise.
