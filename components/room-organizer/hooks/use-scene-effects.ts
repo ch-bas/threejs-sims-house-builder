@@ -431,7 +431,10 @@ export function useSceneEffects({
         .map((item) => ({
           x: item.position!.x,
           z: item.position!.z,
-          height: item.height + index * FLOOR_HEIGHT_METERS,
+          // The 0.9 bulb factor belongs to the lamp's own height only —
+          // applied after the floor offset it sank upper-floor glows 0.3 m
+          // per storey, lighting the floor below (#146).
+          height: item.height * 0.9 + index * FLOOR_HEIGHT_METERS,
         }))
     );
 

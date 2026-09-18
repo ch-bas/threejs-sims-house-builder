@@ -124,6 +124,9 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
           category={buildToolCategory === 'walls' ? 'all' : buildToolCategory}
           onAdd={(catalogItem) => {
             const id = placeCatalogItem(catalogItem);
+            // '' = placement declined (budget confirm) or refused — nothing
+            // was added, so no chime and no selection wipe (#146).
+            if (!id) return;
             selectOnly(id);
             playCue('place');
           }}

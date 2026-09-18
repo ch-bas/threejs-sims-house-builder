@@ -114,7 +114,7 @@ export function applyTimeOfDay(
     const distance = 6;
     for (const lamp of lampPositions) {
       const point = new THREE.PointLight(color, baseIntensity * nightFactor, distance, 2);
-      point.position.set(lamp.x, lamp.height * 0.9, lamp.z);
+      point.position.set(lamp.x, lamp.height, lamp.z);
       point.userData.type = LIGHTING_TAGS.Lamp;
       scene.add(point);
     }
@@ -135,7 +135,7 @@ interface SkyProfile {
  * given hour. The math is deliberately readable — it isn't physically
  * accurate, but the result reads as a coherent day/night cycle.
  */
-function computeSkyProfile(hour: number): SkyProfile {
+export function computeSkyProfile(hour: number): SkyProfile {
   const dayFraction = clamp01((hour - 6) / 12); // 0 at 06:00, 1 at 18:00
   const sunAboveHorizon = hour >= 6 && hour <= 18;
 
@@ -178,11 +178,16 @@ function computeSkyProfile(hour: number): SkyProfile {
     background = mixHex(horizonDusk, horizonDay, noonness);
     backgroundTop = mixHex(zenithDusk, zenithDay, noonness);
   } else {
-    // 18..22 = darkening; 22..6 = full night; 4..6 = lifting
-    const timeToDawn = hour < 6 ? hour : 24 - hour + 6;
-    const dawnNess = clamp01(1 - timeToDawn / 6);
-    background = mixHex(horizonNight, horizonDusk, dawnNess * 0.5);
-    backgroundTop = mixHex(zenithNight, zenithDusk, dawnNess * 0.5);
+    // Twilight glow keyed on the distance to the NEAREST sun event: fades
+    // out over 18..22, holds full night 22..02, lifts 02..06, and meets the
+    // day branch's full-dusk colour exactly at 06:00/18:00 so there's no
+    // snap at the horizon. The old expression used `hour` — time since
+    // midnight, not distance to dawn — which made midnight the brightest
+    // point of the night and skipped the post-dusk fade entirely (#145).
+    const hoursFromSun = hour < 6 ? 6 - hour : hour - 18;
+    const glow = clamp01(1 - hoursFromSun / 4);
+    background = mixHex(horizonNight, horizonDusk, glow);
+    backgroundTop = mixHex(zenithNight, zenithDusk, glow);
   }
 
   return {

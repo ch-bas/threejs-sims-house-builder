@@ -68,6 +68,11 @@ function downscaleDataUrl(dataUrl: string): Promise<string> {
         resolve(dataUrl);
         return;
       }
+      // JPEG has no alpha and composites transparency on black — a
+      // transparent-background plan (typical CAD export) turned into
+      // line-work on a black slab. Fill white first (#146).
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
