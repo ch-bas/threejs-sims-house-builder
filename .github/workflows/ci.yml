@@ -1,0 +1,39 @@
+name: CI
+
+# Every pull request and every push to main runs the full quality gate.
+# Before this workflow existed, PRs ran zero checks and the first signal of a
+# broken change was a failed Pages deploy of main (#159). Action pinning to
+# SHAs across all workflows is tracked separately (#161).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22+: the jsdom test environment needs newer Node platform
+          # internals (see the deploy workflow's note).
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --max-warnings=0
+      - run: npm run test
+      - run: npm run build
