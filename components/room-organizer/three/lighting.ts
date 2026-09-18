@@ -8,6 +8,8 @@ export const LIGHTING_TAGS = {
   Directional: 'light:directional',
   Hemisphere: 'light:hemi',
   Lamp: 'light:lamp',
+  Stars: 'sky:stars',
+  Moon: 'sky:moon',
 } as const;
 
 /**
@@ -80,7 +82,8 @@ export function applyTimeOfDay(
   // Vertical sky gradient (zenith → horizon) instead of a flat colour. The
   // texture is screen-space, so it reads as atmosphere without a sky dome.
   const previousBackground = scene.background;
-  scene.background = makeSkyGradientTexture(THREE, profile.backgroundTop, profile.background, time, computeNightSky(time));
+  scene.background = makeSkyGradientTexture(THREE, profile.backgroundTop, profile.background);
+  updateNightSky(THREE, scene, computeNightSky(time));
   if (previousBackground && (previousBackground as ThreeNS.Texture).isTexture) {
     (previousBackground as ThreeNS.Texture).dispose();
   }
@@ -234,13 +237,10 @@ export function computeNightSky(hour: number): NightSky {
 function makeSkyGradientTexture(
   THREE: ThreeModule,
   top: number,
-  bottom: number,
-  hour: number,
-  night: NightSky
+  bottom: number
 ): ThreeNS.CanvasTexture {
   const canvas = document.createElement('canvas');
-  // Wide enough for stars and the moon; a bare gradient only needed 1px (#182).
-  canvas.width = 512;
+  canvas.width = 1;
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -251,18 +251,17 @@ function makeSkyGradientTexture(
   gradient.addColorStop(1, hexToCss(bottom));
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  if (night.starAlpha > 0 || (night.moonT !== null && night.moonAlpha > 0)) {
-    drawNightSky(ctx, canvas.width, canvas.height, hour, night);
-  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
-const STAR_COUNT = 140;
+const STAR_COUNT = 350;
 const STAR_SEED = 20260918;
+/** Radius of the star dome / moon arc — far beyond the lot, well inside the camera far plane. */
+const SKY_RADIUS = 140;
 
-/** Deterministic PRNG so the starfield is position-stable across rebuilds. */
+/** Deterministic PRNG so the starfield is identical every session. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -274,63 +273,165 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function drawNightSky(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  hour: number,
-  night: NightSky
-): void {
-  // Stars: fixed positions from a seeded PRNG; per-star brightness drifts
-  // slowly with the hour, so the ▶ auto-cycle twinkles for free while a
-  // static time of day stays perfectly still (render-on-demand friendly).
-  if (night.starAlpha > 0) {
+/**
+ * World-space night sky (#182): a Points starfield on a distant upper dome
+ * and a billboarded moon sprite arcing east→west across the night. Created
+ * lazily once, then only opacity/position are driven per time change.
+ *
+ * These are real scene objects rather than pixels in the background texture:
+ * the backdrop is screen-space and stretched to the viewport, which smeared
+ * 1px stars into blurry rectangles and distorted the moon — and it pinned
+ * the moon to a fixed screen band regardless of camera tilt. Points with
+ * sizeAttenuation off stay pixel-crisp at any resolution and pick up real
+ * parallax when the camera orbits.
+ */
+function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSky): void {
+  let stars = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Stars) as
+    | ThreeNS.Points
+    | undefined;
+  if (!stars) {
     const rng = mulberry32(STAR_SEED);
-    ctx.fillStyle = '#dfe8ff';
+    const positions = new Float32Array(STAR_COUNT * 3);
     for (let i = 0; i < STAR_COUNT; i++) {
-      const x = rng() * width;
-      const y = rng() * height * 0.6;
-      const size = rng() < 0.15 ? 2 : 1;
-      const base = 0.35 + rng() * 0.65;
-      const twinkle = 0.75 + 0.25 * Math.sin(hour * 2.1 + i * 1.7);
-      ctx.globalAlpha = night.starAlpha * base * twinkle;
-      ctx.fillRect(x, y, size, size);
+      const azimuth = rng() * Math.PI * 2;
+      // Upper dome only, kept a little above the horizon line.
+      const elevation = Math.asin(0.06 + 0.94 * rng());
+      positions[i * 3] = Math.cos(elevation) * Math.cos(azimuth) * SKY_RADIUS;
+      positions[i * 3 + 1] = Math.sin(elevation) * SKY_RADIUS;
+      positions[i * 3 + 2] = Math.cos(elevation) * Math.sin(azimuth) * SKY_RADIUS;
     }
-    ctx.globalAlpha = 1;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+      color: 0xdfe8ff,
+      size: 2,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    stars = new THREE.Points(geometry, material);
+    stars.userData.type = LIGHTING_TAGS.Stars;
+    // The dome surrounds the camera; its bounding sphere is centred far away
+    // per-axis, so skip culling instead of fighting it.
+    stars.frustumCulled = false;
+    stars.renderOrder = -1;
+    stars.matrixAutoUpdate = false;
+    stars.updateMatrix();
+    scene.add(stars);
+
+    // A sparse second layer of larger, slightly warm stars gives the field
+    // depth — one PointsMaterial has a single size, so brightness variety
+    // needs a second draw call (still just two for the whole sky).
+    const brightPositions = new Float32Array(60 * 3);
+    for (let i = 0; i < 60; i++) {
+      const azimuth = rng() * Math.PI * 2;
+      const elevation = Math.asin(0.08 + 0.92 * rng());
+      brightPositions[i * 3] = Math.cos(elevation) * Math.cos(azimuth) * SKY_RADIUS;
+      brightPositions[i * 3 + 1] = Math.sin(elevation) * SKY_RADIUS;
+      brightPositions[i * 3 + 2] = Math.cos(elevation) * Math.sin(azimuth) * SKY_RADIUS;
+    }
+    const brightGeometry = new THREE.BufferGeometry();
+    brightGeometry.setAttribute('position', new THREE.BufferAttribute(brightPositions, 3));
+    const bright = new THREE.Points(
+      brightGeometry,
+      new THREE.PointsMaterial({
+        color: 0xfff4e0,
+        size: 3.5,
+        sizeAttenuation: false,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      })
+    );
+    bright.userData.type = LIGHTING_TAGS.Stars;
+    bright.frustumCulled = false;
+    bright.renderOrder = -1;
+    bright.matrixAutoUpdate = false;
+    bright.updateMatrix();
+    scene.add(bright);
+  }
+  for (const layer of scene.children.filter((obj) => obj.userData.type === LIGHTING_TAGS.Stars)) {
+    ((layer as ThreeNS.Points).material as ThreeNS.PointsMaterial).opacity = night.starAlpha * 0.9;
+    layer.visible = night.starAlpha > 0.01;
   }
 
-  // Moon: a soft glowing disc arcing across the night, mirroring the day's
-  // sun arc — low at rise/set, highest at midnight.
-  if (night.moonT !== null && night.moonAlpha > 0) {
+  let moon = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Moon) as
+    | ThreeNS.Sprite
+    | undefined;
+  if (!moon) {
+    const material = new THREE.SpriteMaterial({
+      map: makeMoonTexture(THREE),
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
+    moon = new THREE.Sprite(material);
+    // The disc occupies ~40% of the texture; 30 world units ≈ a 12-unit moon.
+    moon.scale.set(26, 26, 1);
+    moon.userData.type = LIGHTING_TAGS.Moon;
+    moon.frustumCulled = false;
+    moon.renderOrder = -1;
+    scene.add(moon);
+  }
+  if (night.moonT === null || night.moonAlpha <= 0.01) {
+    moon.visible = false;
+  } else {
+    moon.visible = true;
+    (moon.material as ThreeNS.SpriteMaterial).opacity = night.moonAlpha;
+    // Mirror the sun's east→west arc, but on the NORTH side (-z): the default
+    // camera sits south of the lot looking north, so that's the visible sky.
+    const azimuth = (night.moonT - 0.5) * Math.PI;
     const elevation = Math.sin(night.moonT * Math.PI);
-    const cx = width * (0.08 + 0.84 * night.moonT);
-    // Keep the arc inside the top sky band: the backdrop is screen-space and
-    // the default iso view only shows sky in roughly the top seventh of the
-    // frame — anything lower paints behind the lawn and trees.
-    const cy = height * (0.14 - 0.06 * elevation);
-    const radius = 13;
-
-    const glow = ctx.createRadialGradient(cx, cy, radius * 0.4, cx, cy, radius * 3);
-    glow.addColorStop(0, 'rgba(244, 241, 222, 0.35)');
-    glow.addColorStop(1, 'rgba(244, 241, 222, 0)');
-    ctx.globalAlpha = night.moonAlpha;
-    ctx.fillStyle = glow;
-    ctx.fillRect(cx - radius * 3, cy - radius * 3, radius * 6, radius * 6);
-
-    ctx.fillStyle = '#f4f1de';
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // A few faint maria so the disc reads as a moon, not a lamp.
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
-    for (const [dx, dy, r] of [[-4, -3, 3.5], [3, 2, 2.5], [-1, 5, 2]] as const) {
-      ctx.beginPath();
-      ctx.arc(cx + dx, cy + dy, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+    // Low, flat arc: the default iso camera looks slightly downward, so the
+    // visible sky is a band just above the horizon — a high apex leaves the
+    // frame entirely. Peak ≈ 40 world units at z −120 is ~13° up: prominent
+    // in the default view and still natural when tilted or walking.
+    // Hug the horizon: the iso camera's visible sky is a shallow band, so
+    // even modest world heights project off the top of the frame (verified
+    // empirically — y=30 at z=-50 hides behind the header bar). ~8° up at
+    // ~110 units reads as a rising/hanging moon over the treeline.
+    const arcRadius = 100;
+    moon.position.set(
+      Math.sin(azimuth) * arcRadius,
+      8 + elevation * 16,
+      -Math.cos(azimuth) * arcRadius - 10
+    );
   }
+}
+
+/** 256px radial moon disc with soft glow and faint maria — rendered once. */
+function makeMoonTexture(THREE: ThreeModule): ThreeNS.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const c = size / 2;
+  const discRadius = size * 0.2;
+
+  const glow = ctx.createRadialGradient(c, c, discRadius * 0.8, c, c, size * 0.5);
+  glow.addColorStop(0, 'rgba(244, 241, 222, 0.45)');
+  glow.addColorStop(1, 'rgba(244, 241, 222, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.fillStyle = '#f6f3e4';
+  ctx.beginPath();
+  ctx.arc(c, c, discRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Faint maria so the disc reads as a moon, not a lamp.
+  ctx.fillStyle = 'rgba(118, 116, 98, 0.28)';
+  for (const [dx, dy, r] of [[-16, -10, 12], [12, 8, 9], [-4, 20, 7], [18, -14, 5]] as const) {
+    ctx.beginPath();
+    ctx.arc(c + dx, c + dy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 function hexToCss(hex: number): string {
