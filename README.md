@@ -143,7 +143,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   Dusk / Midnight presets plus a ▶ button advances time in real-time.
 - **Gradient sky** — a vertical zenith-to-horizon gradient backdrop that
   follows the time of day: deep blue over pale at noon, lavender over
-  warm orange at dawn/dusk, near-black over navy at night.
+  warm orange at dawn/dusk, near-black over navy at night — with a
+  starfield that fades in as night deepens and a moon that rises after
+  dusk, crests at midnight, and sets before dawn.
 - **Outdoor garden mode**: grass, stone path ring, scattered bushes.
 - **Top-down minimap** overlay (active floor).
 - **Hover tooltips** showing item icon, name, price ($), and dimensions.

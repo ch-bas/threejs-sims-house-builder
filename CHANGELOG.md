@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.11] - 2026-09-18
+
+### Added
+- The night sky has stars and a moon: a seeded starfield fades in as darkness deepens (twinkling gently while time auto-advances), and a glowing moon rises after dusk, crests at midnight, and sets before dawn ([#182](https://github.com/ch-bas/threejs-sims-house-builder/issues/182))
+
 ## [1.8.10] - 2026-09-18
 
 ### Fixed
