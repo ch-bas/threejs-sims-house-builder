@@ -75,56 +75,66 @@ export function useLayoutPersistence({
     if (hasHydratedRef.current) return;
     hasHydratedRef.current = true;
 
-    // Share-URL takes precedence over the local auto-save so opening a
-    // shared link always lands you on that layout.
-    if (typeof window !== 'undefined') {
-      const shared = decodeShareUrl(window.location.hash);
-      if (shared) {
-        hydrationBaseRef.current = layout;
-        // A corrupt-but-parseable layout can still throw while it's applied to
-        // the scene. Guard the dispatch so a bad share link doesn't crash the
-        // whole mount — the error boundary's reset path is the recovery.
+    const hydrateFromLocalSave = (): void => {
+      const saved = loadLayout();
+      if (saved) {
+        hydrationBaseRef.current = layoutRef.current;
+        // A stored layout that parses but throws on apply must not
+        // white-screen mount.
         try {
-          onHydrate(shared);
+          onHydrate(saved);
         } catch (error) {
-          console.warn('Failed to apply shared layout:', error);
+          console.warn('Failed to apply saved layout:', error);
           hydrationBaseRef.current = null;
         }
-        // Clear the hash so reloading after edits doesn't restore the
-        // shared version.
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        return;
+      } else {
+        hydrationBaseRef.current = null;
+        // A blob that exists but failed to load would otherwise be overwritten
+        // by the autosave of the fallback layout ~debounceMs after mount —
+        // permanent data loss. Stash a copy first (#113).
+        backupUnreadableLayout();
       }
-      // The hash looks like a share link (`#layout=…`) but failed to decode —
-      // truncated or corrupted. Surface a visible notice instead of silently
-      // falling back to the local save, and clear the broken hash so a reload
-      // doesn't repeat the warning.
-      if (isShareHash(window.location.hash)) {
+    };
+
+    // Share-URL takes precedence over the local auto-save so opening a
+    // shared link always lands you on that layout.
+    if (typeof window !== 'undefined' && isShareHash(window.location.hash)) {
+      const hash = window.location.hash;
+      // decodeShareUrl is async (DecompressionStream). Set the hydration
+      // baseline synchronously so the autosave effect stays suppressed while
+      // the decode is in flight — otherwise the fallback layout could be
+      // scheduled to overwrite the local save before hydration lands.
+      hydrationBaseRef.current = layoutRef.current;
+      void decodeShareUrl(hash).then((shared) => {
+        // Clear the hash either way: reloading after edits must not restore
+        // the shared version, nor repeat the broken-link warning.
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        if (shared) {
+          // Re-capture the baseline right before the hydration dispatch.
+          hydrationBaseRef.current = layoutRef.current;
+          // A corrupt-but-parseable layout can still throw while it's applied
+          // to the scene. Guard the dispatch so a bad share link doesn't crash
+          // the whole mount — the error boundary's reset path is the recovery.
+          try {
+            onHydrate(shared);
+          } catch (error) {
+            console.warn('Failed to apply shared layout:', error);
+            hydrationBaseRef.current = null;
+          }
+          return;
+        }
+        // The hash looks like a share link (`#layout=…`) but failed to decode
+        // — truncated or corrupted. Surface a visible notice instead of
+        // silently falling back to the local save.
         window.alert(
           'This shared layout link is broken or incomplete and could not be opened. Loading your last saved layout instead.'
         );
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      }
+        hydrateFromLocalSave();
+      });
+      return;
     }
 
-    const saved = loadLayout();
-    if (saved) {
-      hydrationBaseRef.current = layout;
-      // As above: a stored layout that parses but throws on apply must not
-      // white-screen mount.
-      try {
-        onHydrate(saved);
-      } catch (error) {
-        console.warn('Failed to apply saved layout:', error);
-        hydrationBaseRef.current = null;
-      }
-    } else {
-      // A blob that exists but failed to load would otherwise be overwritten
-      // by the autosave of the fallback layout ~debounceMs after mount —
-      // permanent data loss. Stash a copy first (#113).
-      backupUnreadableLayout();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot hydration; `layout` is only read as the pre-hydration baseline
+    hydrateFromLocalSave();
   }, [onHydrate]);
 
   useEffect(() => {
