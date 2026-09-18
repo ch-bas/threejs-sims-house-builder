@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.12] - 2026-09-18
+
+### Fixed
+- The night sky's stars and moon are now real world-space objects instead of pixels in the stretched screen backdrop: stars render pixel-crisp at any resolution with true parallax when orbiting (and surround you in walkthrough mode), and the moon is a proper glowing disc with craters riding a low arc over the treeline ([#182](https://github.com/ch-bas/threejs-sims-house-builder/issues/182))
+
 ## [1.8.11] - 2026-09-18
 
 ### Added
