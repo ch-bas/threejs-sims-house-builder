@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isWallMounted,
   reseatWallMountedItem,
   settleWallMountedItem,
   snapOpeningToWall,
@@ -215,5 +216,17 @@ describe('settleWallMountedItem (#116)', () => {
     // x is clamped so the whole 0.9 m door stays on the 8 m wall.
     expect(settled!.position.x).toBeCloseTo(4 - 0.45, 10);
     expect(settled!.position.z).toBe(-4);
+  });
+});
+
+describe('isWallMounted (#149)', () => {
+  // The popover disables its Centre tile for these types — centring a
+  // wall-mounted item would strand it mid-room as a free-floating slab.
+  it.each(['door', 'window', 'security-camera'])('%s is wall-mounted', (type) => {
+    expect(isWallMounted(type)).toBe(true);
+  });
+
+  it.each(['sofa', 'table', 'wifi-router'])('%s is not wall-mounted', (type) => {
+    expect(isWallMounted(type)).toBe(false);
   });
 });

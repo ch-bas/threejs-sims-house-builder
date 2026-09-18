@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
+import { isWallMounted } from '../lib/opening-snap';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import { SliderRow } from './slider-row';
@@ -228,7 +229,19 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             onClick={() => actions.setLocked(item.id, !item.locked)}
           />
           <ActionTile icon="copy" label="Copy" onClick={() => props.onDuplicate(item.id)} />
-          <ActionTile icon="target" label="Centre" onClick={() => actions.moveItem(item.id, 0, 0)} />
+          <ActionTile
+            icon="target"
+            label="Centre"
+            disabled={isWallMounted(item.type) || item.locked}
+            title={
+              isWallMounted(item.type)
+                ? 'Wall-mounted — drag along the wall instead'
+                : item.locked
+                  ? 'Locked — unlock to move'
+                  : undefined
+            }
+            onClick={() => actions.moveItem(item.id, 0, 0)}
+          />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -311,14 +324,18 @@ interface ActionTileProps {
   label: string;
   onClick(): void;
   active?: boolean;
+  disabled?: boolean;
+  /** Tooltip override — used to explain why a disabled tile can't act. */
+  title?: string;
 }
 
-function ActionTile({ icon, label, onClick, active }: ActionTileProps): JSX.Element {
+function ActionTile({ icon, label, onClick, active, disabled, title }: ActionTileProps): JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
-      title={label}
+      disabled={disabled}
+      title={title ?? label}
       aria-label={label}
       className={`pc-tile${active ? ' pc-tile--active' : ''}`}
       style={{
@@ -328,6 +345,7 @@ function ActionTile({ icon, label, onClick, active }: ActionTileProps): JSX.Elem
         alignItems: 'center',
         gap: 2,
         borderRadius: 10,
+        ...(disabled ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
       }}
     >
       <Icon name={icon} size={16} />
