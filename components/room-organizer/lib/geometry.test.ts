@@ -157,10 +157,12 @@ describe('hasCollisions', () => {
     expect(hasCollisions(cam, items, W, D)).toBe(false);
   });
 
-  it('wall-plane items still collide with each other (#120)', () => {
+  it('a camera mounted over a door is not a collision; two cameras still are (#146)', () => {
     const cam = makeItem({ id: 'c', type: 'security-camera', width: 0.3, depth: 0.2, position: { x: 5, z: 0 } });
     const door = makeItem({ id: 'd', type: 'door', width: 1, depth: 0.2, position: { x: 5, z: 0 } });
-    expect(hasCollisions(cam, [cam, door], W, D)).toBe(true);
+    expect(hasCollisions(cam, [cam, door], W, D)).toBe(false);
+    const cam2 = makeItem({ id: 'c2', type: 'security-camera', width: 0.3, depth: 0.2, position: { x: 5, z: 0.1 } });
+    expect(hasCollisions(cam, [cam, cam2], W, D)).toBe(true);
   });
 
   it('every shipped template loads with zero collisions (#120)', () => {

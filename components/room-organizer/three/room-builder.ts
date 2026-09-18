@@ -656,18 +656,25 @@ function buildFloorGeometryWithOpenings(
     (isAxisAlignedRotation(o.rotation) ? axisAligned : rotated).push(o);
   }
 
-  const rects = axisAligned.map((o) => {
+  // Clamp every hole inside the floor contour, inset by an epsilon: a hole
+  // crossing — or even sharing an edge with — the outer ring is illegal for
+  // earcut and produces phantom fill on the floor above (#146). Stairs can
+  // legally sit at (or past) the room edge, so this is reachable.
+  const HOLE_INSET = 0.001;
+  const clampX = (v: number) => Math.min(halfW - HOLE_INSET, Math.max(-halfW + HOLE_INSET, v));
+  const clampY = (v: number) => Math.min(halfD - HOLE_INSET, Math.max(-halfD + HOLE_INSET, v));
+  const rects: Array<[number, number, number, number]> = [];
+  for (const o of axisAligned) {
     // At 90°/270° the footprint's width and depth swap in world space.
     const swap = Math.abs(Math.sin(o.rotation)) > 0.5;
     const worldW = swap ? o.depth : o.width;
     const worldD = swap ? o.width : o.depth;
-    return [
-      o.centerX - worldW / 2,
-      -(o.centerZ + worldD / 2),
-      o.centerX + worldW / 2,
-      -(o.centerZ - worldD / 2),
-    ] as [number, number, number, number];
-  });
+    const x0 = clampX(o.centerX - worldW / 2);
+    const y0 = clampY(-(o.centerZ + worldD / 2));
+    const x1 = clampX(o.centerX + worldW / 2);
+    const y1 = clampY(-(o.centerZ - worldD / 2));
+    if (x1 - x0 > 0 && y1 - y0 > 0) rects.push([x0, y0, x1, y1]);
+  }
   for (const [x0, y0, x1, y1] of mergeHoleRects(rects)) {
     if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
     const hole = new THREE.Path();
@@ -699,6 +706,25 @@ function buildFloorGeometryWithOpenings(
       const worldZ = o.centerZ - lx * sin + lz * cos;
       return [worldX, -worldZ];
     });
+    // A rotated hole with any corner outside the contour falls back to its
+    // clamped AABB — a slightly larger hole beats corrupt triangulation (#146).
+    if (corners.some(([x, y]) => x <= -halfW || x >= halfW || y <= -halfD || y >= halfD)) {
+      const xs = corners.map(([x]) => x);
+      const ys = corners.map(([, y]) => y);
+      const x0 = clampX(Math.min(...xs));
+      const x1 = clampX(Math.max(...xs));
+      const y0 = clampY(Math.min(...ys));
+      const y1 = clampY(Math.max(...ys));
+      if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
+      const aabb = new THREE.Path();
+      aabb.moveTo(x0, y0);
+      aabb.lineTo(x1, y0);
+      aabb.lineTo(x1, y1);
+      aabb.lineTo(x0, y1);
+      aabb.closePath();
+      shape.holes.push(aabb);
+      continue;
+    }
     const hole = new THREE.Path();
     hole.moveTo(corners[0]![0], corners[0]![1]);
     hole.lineTo(corners[1]![0], corners[1]![1]);
