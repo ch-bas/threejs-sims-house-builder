@@ -1,15 +1,26 @@
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import type {
   FloorLayout,
+  FloorPattern,
   FloorPlanFitMode,
   FurnitureItem,
   RoofStyle,
   RoomLayout,
   SofaShape,
   StairsDirection,
+  WallPattern,
 } from './types';
 
 const FIT_MODES: readonly FloorPlanFitMode[] = ['stretch', 'cover', 'contain'];
+const FLOOR_PATTERNS: readonly FloorPattern[] = ['solid', 'wood', 'tile', 'carpet', 'concrete'];
+const WALL_PATTERNS: readonly WallPattern[] = [
+  'solid',
+  'brick',
+  'wallpaper',
+  'panel',
+  'plaster',
+  'siding',
+];
 const ROOF_STYLES: readonly RoofStyle[] = ['none', 'flat', 'gable', 'hipped'];
 const SOFA_SHAPES: readonly SofaShape[] = ['standard', 'L-shape', 'U-shape'];
 const STAIRS_DIRECTIONS: readonly StairsDirection[] = ['north', 'south', 'east', 'west'];
@@ -122,8 +133,17 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   if (typeof v.name !== 'string') return false;
   if (typeof v.floorColor !== 'string') return false;
   if (!Array.isArray(v.items) || !v.items.every(isFurnitureItem)) return false;
-  if (v.floorPattern !== undefined && typeof v.floorPattern !== 'string') return false;
-  if (v.wallPattern !== undefined && typeof v.wallPattern !== 'string') return false;
+  // Patterns must match their unions, not just be strings: an unknown key
+  // reaches `PATTERNS[pattern].draw(...)` in the texture builders and throws
+  // on every scene build — and because the layout would keep validating, it
+  // would keep autosaving and crash every subsequent mount too (#208). Same
+  // class as the sofaShape/stairsDirection checks above (#121).
+  if (v.floorPattern !== undefined && !FLOOR_PATTERNS.includes(v.floorPattern as FloorPattern)) {
+    return false;
+  }
+  if (v.wallPattern !== undefined && !WALL_PATTERNS.includes(v.wallPattern as WallPattern)) {
+    return false;
+  }
   if (v.wallColors !== undefined) {
     if (!isPlainObject(v.wallColors)) return false;
     if (!Object.values(v.wallColors).every((color) => typeof color === 'string')) return false;
@@ -244,8 +264,15 @@ function migrateLegacyLayout(legacy: LegacySingleFloorLayout): RoomLayout {
     name: 'Ground Floor',
     items: legacy.items,
     floorColor: legacy.floorColor,
-    ...(legacy.floorPattern ? { floorPattern: legacy.floorPattern as FloorLayout['floorPattern'] } : {}),
-    ...(legacy.wallPattern ? { wallPattern: legacy.wallPattern as FloorLayout['wallPattern'] } : {}),
+    // Only carry patterns the current schema would accept: an unknown value
+    // copied verbatim would fail `isRoomLayout` on the NEXT load, turning a
+    // recoverable legacy save into an unreadable one (#208).
+    ...(legacy.floorPattern && FLOOR_PATTERNS.includes(legacy.floorPattern as FloorPattern)
+      ? { floorPattern: legacy.floorPattern as FloorPattern }
+      : {}),
+    ...(legacy.wallPattern && WALL_PATTERNS.includes(legacy.wallPattern as WallPattern)
+      ? { wallPattern: legacy.wallPattern as WallPattern }
+      : {}),
     ...(legacy.wallColors ? { wallColors: legacy.wallColors } : {}),
   };
 
@@ -260,7 +287,18 @@ function migrateLegacyLayout(legacy: LegacySingleFloorLayout): RoomLayout {
   // floor plan isn't a safe inline data URL — just drop the image so we never
   // hand a network URL to the texture loader.
   if (isDataImageUrl(legacy.floorPlanImage)) layout.floorPlanImage = legacy.floorPlanImage;
-  if (legacy.floorPlanOpacity !== undefined) layout.floorPlanOpacity = legacy.floorPlanOpacity;
-  if (legacy.floorPlanFitMode !== undefined) layout.floorPlanFitMode = legacy.floorPlanFitMode;
+  // Same non-destructive rule for the other floor-plan fields: the legacy
+  // shape check doesn't validate them, and a value `isRoomLayout` rejects
+  // would brick the migrated save on its second load (#208). Clamp opacity
+  // into the accepted [0,1]; drop anything else invalid.
+  if (isFiniteNumber(legacy.floorPlanOpacity)) {
+    layout.floorPlanOpacity = Math.min(1, Math.max(0, legacy.floorPlanOpacity));
+  }
+  if (
+    legacy.floorPlanFitMode !== undefined &&
+    FIT_MODES.includes(legacy.floorPlanFitMode as FloorPlanFitMode)
+  ) {
+    layout.floorPlanFitMode = legacy.floorPlanFitMode;
+  }
   return layout;
 }

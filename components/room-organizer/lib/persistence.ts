@@ -16,26 +16,29 @@ export function loadLayout(): RoomLayout | null {
 }
 
 /**
- * Where a stored blob that exists but can no longer be read (JSON or schema
- * failure) is stashed before the autosave loop can overwrite it with the
- * fallback layout — the user's house survives for manual recovery (#113).
+ * Where a stored blob that exists but can't be used — unreadable (JSON or
+ * schema failure, #113) or parseable but crashing on apply (#206) — is
+ * stashed before the autosave loop can overwrite it with the fallback
+ * layout. The user's house survives for manual recovery.
  */
 export const RECOVERY_STORAGE_KEY = `${STORAGE_KEY}-recovery`;
 
 /**
- * Call only after loadLayout() returned null: if a raw blob exists at all, it
- * is unreadable — copy it aside before it gets clobbered. Best-effort; a
- * quota failure here must not break the mount.
+ * Copy the raw stored blob aside before it gets clobbered by the fallback
+ * autosave. Call whenever the stored layout can't be brought up: after
+ * loadLayout() returned null despite a blob existing (#113), or after
+ * applying a parsed layout threw (#206). Best-effort; a quota failure here
+ * must not break the mount.
  */
-export function backupUnreadableLayout(): void {
+export function backupStoredLayout(): void {
   if (typeof window === 'undefined') return;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     window.localStorage.setItem(RECOVERY_STORAGE_KEY, raw);
-    console.warn(`Saved layout is unreadable; a copy was kept under "${RECOVERY_STORAGE_KEY}".`);
+    console.warn(`Saved layout can't be used; a copy was kept under "${RECOVERY_STORAGE_KEY}".`);
   } catch (error) {
-    console.warn('Failed to back up unreadable layout:', error);
+    console.warn('Failed to back up stored layout:', error);
   }
 }
 

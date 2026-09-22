@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeLayout } from './__testfixtures__/fixtures';
 import { MAX_ROOM_DIMENSION, STORAGE_KEY } from './constants';
-import { RECOVERY_STORAGE_KEY, backupUnreadableLayout, loadLayout, saveLayout } from './persistence';
+import { RECOVERY_STORAGE_KEY, backupStoredLayout, loadLayout, saveLayout } from './persistence';
 
 describe('persistence — unreadable-save recovery (#113)', () => {
   beforeEach(() => {
@@ -20,19 +20,26 @@ describe('persistence — unreadable-save recovery (#113)', () => {
     const corrupt = JSON.stringify(makeLayout({ width: MAX_ROOM_DIMENSION + 100 }));
     window.localStorage.setItem(STORAGE_KEY, corrupt);
     expect(loadLayout()).toBeNull();
-    backupUnreadableLayout();
+    backupStoredLayout();
     expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe(corrupt);
   });
 
   it('stashes a non-JSON blob under the recovery key', () => {
     window.localStorage.setItem(STORAGE_KEY, '{not json');
     expect(loadLayout()).toBeNull();
-    backupUnreadableLayout();
+    backupStoredLayout();
     expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe('{not json');
   });
 
+  it('stashes a readable blob too — used when applying it throws (#206)', () => {
+    const healthy = JSON.stringify(makeLayout({ name: 'Crashes on apply' }));
+    window.localStorage.setItem(STORAGE_KEY, healthy);
+    backupStoredLayout();
+    expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe(healthy);
+  });
+
   it('does nothing when no blob is stored', () => {
-    backupUnreadableLayout();
+    backupStoredLayout();
     expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBeNull();
   });
 });

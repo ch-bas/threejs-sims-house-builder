@@ -171,6 +171,16 @@ export function buildWallMaterial(
   }
 
   const renderer = PATTERNS[options.pattern];
+  // Defence in depth: the schema rejects unknown patterns (#208), but data
+  // saved before that check may still be in the wild — render solid instead
+  // of throwing inside the scene build.
+  if (!renderer) {
+    return new THREE.MeshStandardMaterial({
+      color: options.color,
+      side: THREE.DoubleSide,
+      roughness: 0.85,
+    });
+  }
   const size = 256;
   const master = getWallTexture(THREE, options.pattern, options.color, size, renderer);
   if (!master) {

@@ -212,3 +212,72 @@ describe('parseStoredLayout', () => {
     expect(parseStoredLayout(value)).toBeNull();
   });
 });
+
+describe('schema hardening (#208)', () => {
+  const legacyBase = {
+    name: 'Legacy',
+    width: 8,
+    height: 8,
+    items: [makeItem()],
+    floorColor: '#c9a57d',
+  };
+
+  /** The regression that matters: whatever migration emits must load again. */
+  const reloads = (layout: unknown) =>
+    parseStoredLayout(JSON.parse(JSON.stringify(layout))) !== null;
+
+  it.each([
+    ['unknown floorPattern', makeFloor({ floorPattern: 'marble' as never })],
+    ['unknown wallPattern', makeFloor({ wallPattern: 'stucco' as never })],
+  ])('isFloorLayout rejects an %s', (_label, floor) => {
+    expect(isFloorLayout(floor)).toBe(false);
+  });
+
+  it('isFloorLayout accepts catalogued patterns', () => {
+    expect(isFloorLayout(makeFloor({ floorPattern: 'wood', wallPattern: 'brick' }))).toBe(true);
+  });
+
+  it('legacy migration clamps an out-of-range floorPlanOpacity', () => {
+    const parsed = parseStoredLayout({ ...legacyBase, floorPlanOpacity: 5 });
+    expect(parsed?.floorPlanOpacity).toBe(1);
+    expect(reloads(parsed)).toBe(true);
+  });
+
+  it('legacy migration drops a non-finite opacity and an unknown fit mode', () => {
+    const parsed = parseStoredLayout({
+      ...legacyBase,
+      floorPlanOpacity: Number.NaN,
+      floorPlanFitMode: 'zoom',
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.floorPlanOpacity).toBeUndefined();
+    expect(parsed?.floorPlanFitMode).toBeUndefined();
+    expect(reloads(parsed)).toBe(true);
+  });
+
+  it('legacy migration keeps valid floor-plan fields and patterns', () => {
+    const parsed = parseStoredLayout({
+      ...legacyBase,
+      floorPlanOpacity: 0.4,
+      floorPlanFitMode: 'cover',
+      floorPattern: 'tile',
+      wallPattern: 'brick',
+    });
+    expect(parsed?.floorPlanOpacity).toBe(0.4);
+    expect(parsed?.floorPlanFitMode).toBe('cover');
+    expect(parsed?.floors[0]?.floorPattern).toBe('tile');
+    expect(parsed?.floors[0]?.wallPattern).toBe('brick');
+  });
+
+  it('legacy migration drops unknown patterns so the migrated save reloads', () => {
+    const parsed = parseStoredLayout({
+      ...legacyBase,
+      floorPattern: 'marble',
+      wallPattern: 'stucco',
+    });
+    expect(parsed).not.toBeNull();
+    expect(parsed?.floors[0]?.floorPattern).toBeUndefined();
+    expect(parsed?.floors[0]?.wallPattern).toBeUndefined();
+    expect(reloads(parsed)).toBe(true);
+  });
+});
