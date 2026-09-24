@@ -1,3 +1,4 @@
+import { WINDOW_SILL_HEIGHT } from '../lib/constants';
 import type { FloorLayout, FurnitureItem, InteriorWall, WallId } from '../lib/types';
 
 /** A rectangular hole in a floor plane (e.g. where stairs connect floors). */
@@ -276,9 +277,12 @@ function buildOpening(
   const half = width / 2;
   const clampedCenter = Math.max(-halfWallLength + half, Math.min(halfWallLength - half, centerAlongWall));
 
+  // Windows open at the shared sill datum — the same constant the window
+  // mesh is built around, so hole and frame stay flush (#212). A window too
+  // tall for the wall drops its sill rather than poking out the top.
   const bottomFromFloor = classification.groundLevel
     ? 0
-    : Math.max(0, Math.min(wallHeight - item.height, 1.0));
+    : Math.max(0, Math.min(wallHeight - item.height, WINDOW_SILL_HEIGHT));
 
   return {
     id: item.id,
