@@ -24,6 +24,15 @@ export const MAX_ITEM_DIMENSION = 50;
 /** How far a bracketed security camera stands off the wall, in metres. */
 export const CAMERA_BRACKET_ARM = 0.22;
 
+/**
+ * The single window-sill datum, in metres from the floor. Consumed by the
+ * exterior wall cut, the interior wall cut, AND the window mesh builder —
+ * these three used to disagree (cut at 1.0, mesh at 0.9), leaving a 10 cm
+ * see-through slit above every default window (#212). Per-window sill
+ * heights (#204) should override this default, not fork it again.
+ */
+export const WINDOW_SILL_HEIGHT = 0.9;
+
 export const CATEGORIES: readonly CategoryMeta[] = [
   { key: 'seating', label: 'Seating', icon: '🪑' },
   { key: 'tables', label: 'Tables', icon: '🟫' },

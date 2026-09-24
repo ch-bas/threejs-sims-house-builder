@@ -1,3 +1,4 @@
+import { WINDOW_SILL_HEIGHT } from '../../lib/constants';
 import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
@@ -50,9 +51,10 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     transparent: true,
     opacity: hasCollision ? 0.5 : 0.4,
   });
-  // Windows sit at sill height (~0.9m), not on the floor.                                                                                                         
-  const sillHeight = 0.9;                                                                                                                                  
-  const frameThickness = 0.06;                            
+  // Windows sit at the shared sill datum, not on the floor — the wall cut
+  // uses the same constant so the frame fills the hole exactly (#212).
+  const sillHeight = WINDOW_SILL_HEIGHT;
+  const frameThickness = 0.06;
   // Glass pane.
   const glass = mesh(
     THREE,

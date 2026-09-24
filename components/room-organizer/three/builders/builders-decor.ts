@@ -135,10 +135,23 @@ export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }:
   return group;
 }
 
+// Wall decor bakes its hanging height into the builder — furniture groups are
+// placed at floor level, so a wall item that models itself from y=0 lies on
+// the floor (#163). Painting (+0.8) and mirror (+0.4) follow the same rule.
+const WALL_SHELF_MOUNT_Y = 1.1;
+const WALL_CLOCK_MOUNT_Y = 1.25;
+
 export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
   const bracketMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.4, metalness: 0.6 });
+
+  // The whole assembly (board, brackets below it, ornaments above) is modelled
+  // around the board's underside at y=0, then hung as one unit — the brackets'
+  // negative y only makes sense once the shelf is off the floor.
+  const hung = new THREE.Group();
+  hung.position.y = WALL_SHELF_MOUNT_Y;
+  group.add(hung);
 
   // Shelf board itself.
   const shelf = mesh(
@@ -147,37 +160,37 @@ export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }
     woodMat
   );
   shelf.position.y = item.height / 2;
-  group.add(shelf);
+  hung.add(shelf);
 
   // L-shaped brackets under the shelf, one near each end.
   const bracketGeo = new THREE.BoxGeometry(0.02, 0.12, item.depth * 0.85);
   for (const sign of [-1, 1] as const) {
     const bracket = mesh(THREE, bracketGeo, bracketMat);
     bracket.position.set(sign * (item.width / 2 - 0.08), -0.05, 0);
-    group.add(bracket);
+    hung.add(bracket);
   }
 
   // A couple of small ornaments on top — a book and a tiny plant for variety.
   const bookMat = material(THREE, 0x8e1c1c, hasCollision, opacity, { roughness: 0.85 });
   const book = mesh(THREE, new THREE.BoxGeometry(0.10, 0.14, 0.16), bookMat);
   book.position.set(-item.width * 0.30, item.height + 0.07, 0);
-  group.add(book);
+  hung.add(book);
   const book2 = mesh(
     THREE,
     new THREE.BoxGeometry(0.08, 0.18, 0.14),
     material(THREE, 0x1b4f72, hasCollision, opacity, { roughness: 0.85 })
   );
   book2.position.set(-item.width * 0.18, item.height + 0.09, 0);
-  group.add(book2);
+  hung.add(book2);
 
   const potMat = material(THREE, 0xa0522d, hasCollision, opacity, { roughness: 0.85 });
   const pot = mesh(THREE, new THREE.CylinderGeometry(0.05, 0.06, 0.08, 10), potMat);
   pot.position.set(item.width * 0.30, item.height + 0.04, 0);
-  group.add(pot);
+  hung.add(pot);
   const leafMat = material(THREE, 0x4caf50, hasCollision, opacity, { roughness: 0.9 });
   const leaf = mesh(THREE, new THREE.SphereGeometry(0.08, 10, 8), leafMat);
   leaf.position.set(item.width * 0.30, item.height + 0.14, 0);
-  group.add(leaf);
+  hung.add(leaf);
 
   return group;
 }
@@ -188,6 +201,12 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
   const faceMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
   const handMat = material(THREE, 0x111111, hasCollision, opacity, { roughness: 0.5 });
 
+  // Same hanging rule as the shelf: the face is modelled around y=0..height,
+  // then the whole clock is lifted so its centre sits at eye level.
+  const hung = new THREE.Group();
+  hung.position.y = WALL_CLOCK_MOUNT_Y;
+  group.add(hung);
+
   const radius = Math.min(item.width, item.height) / 2;
   const ring = mesh(
     THREE,
@@ -196,7 +215,7 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
   );
   ring.rotation.x = Math.PI / 2;
   ring.position.y = item.height / 2;
-  group.add(ring);
+  hung.add(ring);
 
   const face = mesh(
     THREE,
@@ -206,7 +225,7 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
   face.rotation.x = Math.PI / 2;
   face.position.y = item.height / 2;
   face.position.z = item.depth * 0.26;
-  group.add(face);
+  hung.add(face);
 
   // Hour and minute hands pointing roughly to 10:10 — the universal
   // "happy clock" pose.
@@ -217,7 +236,7 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
   );
   hour.position.set(-radius * 0.18, item.height / 2 + radius * 0.12, item.depth * 0.5);
   hour.rotation.z = Math.PI * 0.18;
-  group.add(hour);
+  hung.add(hour);
   const minute = mesh(
     THREE,
     new THREE.BoxGeometry(radius * 0.62, 0.010, 0.012),
@@ -225,7 +244,7 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
   );
   minute.position.set(radius * 0.20, item.height / 2 + radius * 0.20, item.depth * 0.5);
   minute.rotation.z = -Math.PI * 0.18;
-  group.add(minute);
+  hung.add(minute);
 
   // Tick marks at 12 / 3 / 6 / 9.
   const tickGeo = new THREE.BoxGeometry(0.03, 0.06, 0.01);
@@ -238,7 +257,7 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
   for (const [tx, ty] of ticks) {
     const tick = mesh(THREE, tickGeo, handMat);
     tick.position.set(tx, item.height / 2 + ty, item.depth * 0.5);
-    group.add(tick);
+    hung.add(tick);
   }
 
   return group;
