@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
-import { backupUnreadableLayout, loadLayout, saveLayout } from '../lib/persistence';
+import { backupStoredLayout, loadLayout, saveLayout } from '../lib/persistence';
 import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash } from '../lib/share';
 import type { RoomLayout } from '../lib/types';
@@ -85,6 +85,11 @@ export function useLayoutPersistence({
           onHydrate(saved);
         } catch (error) {
           console.warn('Failed to apply saved layout:', error);
+          // Clearing the baseline resumes autosave, which will overwrite the
+          // stored blob with the fallback layout ~debounceMs later. That blob
+          // is the user's house — stash a copy first, exactly like the
+          // unreadable-blob branch below (#206).
+          backupStoredLayout();
           hydrationBaseRef.current = null;
         }
       } else {
@@ -92,7 +97,7 @@ export function useLayoutPersistence({
         // A blob that exists but failed to load would otherwise be overwritten
         // by the autosave of the fallback layout ~debounceMs after mount —
         // permanent data loss. Stash a copy first (#113).
-        backupUnreadableLayout();
+        backupStoredLayout();
       }
     };
 
@@ -119,7 +124,12 @@ export function useLayoutPersistence({
             onHydrate(shared);
           } catch (error) {
             console.warn('Failed to apply shared layout:', error);
-            hydrationBaseRef.current = null;
+            // The LOCAL save is healthy and untouched — the failure is the
+            // shared layout's. Nulling the baseline here would let the
+            // fallback layout autosave over the local house ~debounceMs
+            // later (#206). Fall back to the local save instead, same as a
+            // link that failed to decode.
+            hydrateFromLocalSave();
           }
           return;
         }

@@ -156,6 +156,12 @@ export function buildFloorMaterial(
   }
 
   const renderer = PATTERNS[options.pattern];
+  // Defence in depth: the schema rejects unknown patterns (#208), but data
+  // saved before that check may still be in the wild — render solid instead
+  // of throwing inside the scene build.
+  if (!renderer) {
+    return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0.2 });
+  }
   const size = 256;
   const master = getFloorTexture(THREE, options.pattern, options.color, size, renderer);
   if (!master) {
