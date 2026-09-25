@@ -34,9 +34,12 @@ describe('use-layout-store — wiring', () => {
     expect(items[0]).toMatchObject({ id, position: { x: 2, z: 3 } });
   });
 
-  it('moveItem repositions an existing item', () => {
-    const { addCatalogItem, moveItem } = layoutStore.getState().actions;
+  it('moveItem repositions an existing (unlocked) item', () => {
+    const { addCatalogItem, moveItem, setLocked } = layoutStore.getState().actions;
     const id = addCatalogItem(makeCatalogItem());
+    // Catalog items are born locked (#11) and the reducer now refuses to
+    // move locked items (#209) — unlock first, like the UI does.
+    setLocked(id, false);
     moveItem(id, 5, 7);
 
     const moved = layoutStore.getState().layout.floors[0]!.items.find((i) => i.id === id);

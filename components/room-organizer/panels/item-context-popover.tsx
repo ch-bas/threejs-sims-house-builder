@@ -185,6 +185,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             type="button"
             onClick={() => props.onToggleCameraBracket(item.id)}
             aria-pressed={item.cameraBracket === true}
+            disabled={item.locked}
+            title={item.locked ? 'Locked — unlock to change the mount' : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -192,7 +194,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               gap: 8,
               padding: '8px 10px',
               borderRadius: 8,
-              cursor: 'pointer',
+              cursor: item.locked ? 'not-allowed' : 'pointer',
+              opacity: item.locked ? 0.5 : 1,
               border: '1px solid rgba(255,255,255,0.12)',
               background: item.cameraBracket ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
               color: 'inherit',
@@ -215,7 +218,13 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
-          <ActionTile icon="rotate" label="Rotate" onClick={() => props.onRotate(item.id)} />
+          <ActionTile
+            icon="rotate"
+            label="Rotate"
+            disabled={item.locked}
+            title={item.locked ? 'Locked — unlock to rotate' : undefined}
+            onClick={() => props.onRotate(item.id)}
+          />
           <ActionTile
             icon="mirror"
             label="Mirror"
@@ -257,6 +266,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
               labelWidth={14}
               uppercaseLabel={false}
+              disabled={item.locked}
+              title={item.locked ? 'Locked — unlock to resize' : undefined}
             />
           ))}
         </div>

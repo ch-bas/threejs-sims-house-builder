@@ -372,26 +372,31 @@ export function RoomOrganizer(): JSX.Element {
     return new Set(Array.from(allSelectedIds).filter((id) => !lockedIds.has(id)));
   }, [activeFloor.items, allSelectedIds]);
 
+  // Returns whether anything actually rotated, so callers only play the
+  // rotate cue for a real rotation — a locked item's no-op used to chime
+  // anyway, audibly lying about what happened (#209).
   const rotateItemHandler = useCallback(
-    (id: string) => {
+    (id: string): boolean => {
       if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
         const unlocked = unlockedSelectedIds();
-        if (unlocked.size > 0) actions.rotateSelection(unlocked, Math.PI / 2);
-        return;
+        if (unlocked.size === 0) return false;
+        actions.rotateSelection(unlocked, Math.PI / 2);
+        return true;
       }
       const item = activeFloor.items.find((entry) => entry.id === id);
-      if (item?.locked) return;
-      if (item?.type === 'security-camera') {
+      if (!item || item.locked) return false;
+      if (item.type === 'security-camera') {
         // A flush camera can only face into the room or straight out, so Rotate
         // flips 180° along its wall's in/out axis. A bracketed camera pans freely.
         const step = item.cameraBracket ? Math.PI / 2 : Math.PI;
         const next = ((item.rotation ?? 0) + step) % (Math.PI * 2);
         actions.setRotation(id, next);
         reseatCamera(id, next);
-        return;
+        return true;
       }
-      const next = ((item?.rotation ?? 0) + Math.PI / 2) % (Math.PI * 2);
+      const next = ((item.rotation ?? 0) + Math.PI / 2) % (Math.PI * 2);
       actions.setRotation(id, next);
+      return true;
     },
     [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera]
   );
@@ -403,6 +408,10 @@ export function RoomOrganizer(): JSX.Element {
     (id: string) => {
       const item = activeFloor.items.find((entry) => entry.id === id);
       if (item?.type !== 'security-camera') return;
+      // The toggle moves the camera on/off its arm; a locked camera must not
+      // move — and the reducer would now refuse the setRotation/moveItem half
+      // anyway, leaving the bracket flag desynced from the position (#209).
+      if (item.locked) return;
       const next = !item.cameraBracket;
       actions.updateItem(id, { cameraBracket: next });
       const rotation = next ? item.rotation ?? 0 : item.wallRotation ?? item.rotation ?? 0;
@@ -953,8 +962,7 @@ export function RoomOrganizer(): JSX.Element {
             layout.height
           )}
           onRotate={(id: string) => {
-            rotateItemHandler(id);
-            playCue('rotate');
+            if (rotateItemHandler(id)) playCue('rotate');
           }}
           onToggleCameraBracket={toggleCameraBracket}
           onDuplicate={duplicateSelected}

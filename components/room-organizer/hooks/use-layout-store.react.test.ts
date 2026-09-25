@@ -36,6 +36,8 @@ describe('use-layout-store — React hook layer', () => {
 
   it('a layout.name subscriber re-renders on setName but not on moveItem', () => {
     const itemId = layoutStore.getState().actions.addCatalogItem(makeCatalogItem(), { x: 0, z: 0 });
+    // Born locked (#11); the reducer refuses to move locked items (#209).
+    layoutStore.getState().actions.setLocked(itemId, false);
 
     let renders = 0;
     const { result } = renderHook(() => {
