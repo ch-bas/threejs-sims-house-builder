@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.14] - 2026-09-27
+
+### Fixed
+- Locks actually lock: every panel, the Placed Items list, and group rotate now refuse to move, rotate, or resize a locked item — enforced in the reducer so no caller can bypass it — and the affected controls grey out with an "unlock to…" hint instead of silently doing nothing (the Rotate chime no longer plays for a no-op) ([#209](https://github.com/ch-bas/threejs-sims-house-builder/issues/209))
+- Doors, windows, and cameras can no longer be stranded off their walls by typed X/Z coordinates, Align/Distribute, or a group rotate — they re-snap to the nearest wall like a drag does ([#210](https://github.com/ch-bas/threejs-sims-house-builder/issues/210))
+- A saved layout that loads but fails to apply is backed up before autosave can overwrite it, and a shared link that fails to apply falls back to your local save instead of the default layout ([#206](https://github.com/ch-bas/threejs-sims-house-builder/issues/206))
+- Saves from older versions, or with an unknown floor/wall pattern, no longer fail validation on the next load and lose the house ([#208](https://github.com/ch-bas/threejs-sims-house-builder/issues/208))
+- The 10 cm see-through slit above every default window is gone — the wall cut and the window now share one sill height ([#212](https://github.com/ch-bas/threejs-sims-house-builder/issues/212))
+- Wall Clock and Wall Shelf hang at wall height instead of sitting on the floor ([#163](https://github.com/ch-bas/threejs-sims-house-builder/issues/163))
+
+### Changed
+- Dependency updates: Next.js 15.5.26 (upstream security hardening), eslint-config-next 15.5.26, lucide-react 1.48, autoprefixer 10.6.1, @types/node 26.6.2
+
 ## [1.8.13] - 2026-09-18
 
 ### Added

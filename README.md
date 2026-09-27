@@ -65,8 +65,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   never occlude it.
 - **Drag-from-catalog placement**: drag an item directly onto the 3D
   viewport to drop it where you release. Items **auto-lock** on placement
-  and re-lock after every drag, so finished furniture can't be nudged by
-  accident; unlock from the item editor to reposition.
+  and re-lock after every drag, so finished furniture can't be moved,
+  rotated, or resized by accident; unlock from the item editor to edit it.
 - **Outdoor items stay outdoors**: trees, fences, pools, BBQs, and other
   garden items flag a collision when any part of their footprint pokes
   into the building, and catalog drops default to just outside the south
