@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../lib/constants';
 import { RECOVERY_STORAGE_KEY } from '../lib/persistence';
@@ -23,6 +23,11 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
     window.history.replaceState(null, '', '/');
     mockedDecode.mockReset();
   });
+
+  // RTL only auto-unmounts when vitest globals are on (they're off here). A
+  // still-mounted hook's 20ms autosave timer can otherwise fire after jsdom
+  // is torn down and throw "window is not defined", failing the run.
+  afterEach(cleanup);
 
   const mount = (onHydrate: (layout: RoomLayout) => void, debounceMs = 20) =>
     renderHook(() =>
