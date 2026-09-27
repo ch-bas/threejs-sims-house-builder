@@ -124,7 +124,9 @@ export function useItemPlacement({
           interiorWalls: activeFloor.interiorWalls ?? [],
         });
         const id = actions.addCatalogItem(catalogItem, snapped.position);
-        actions.setRotation(id, snapped.rotation);
+        // updateItem, not setRotation: catalog items are born locked (#11)
+        // and the reducer refuses setRotation on locked items (#209).
+        actions.updateItem(id, { rotation: snapped.rotation });
         return id;
       }
       if (catalogItem.type === 'security-camera') {
@@ -137,8 +139,7 @@ export function useItemPlacement({
           interiorWalls: activeFloor.interiorWalls ?? [],
         });
         const id = actions.addCatalogItem(catalogItem, snapped.position);
-        actions.setRotation(id, snapped.rotation);
-        actions.updateItem(id, { wallRotation: snapped.rotation });
+        actions.updateItem(id, { rotation: snapped.rotation, wallRotation: snapped.rotation });
         return id;
       }
       // Outdoor items belong outside the building on the ground. `addCatalogItem`
