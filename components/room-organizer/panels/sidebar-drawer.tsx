@@ -64,7 +64,7 @@ export function SidebarDrawer({
   placeCatalogItem,
   removeItem,
 }: SidebarDrawerProps): JSX.Element {
-  const { layout, activeFloor, actions, view, isReady, playCue, history, catalogQuery, setCatalogQuery } = useRoomEditor();
+  const { layout, activeFloor, actions, view, isReady, playCue, catalogQuery, setCatalogQuery } = useRoomEditor();
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
     if (typeof window === 'undefined') return 'build';
@@ -261,9 +261,10 @@ export function SidebarDrawer({
               <LibraryPanel
                 currentLayout={layout}
                 onLoad={(loaded) => {
+                  // No history.clear(): like a template load, this must stay
+                  // one Ctrl+Z away from the design it replaced (#222).
                   actions.applyLayout(loaded);
                   selectOnly(null);
-                  history.clear();
                 }}
               />
 
