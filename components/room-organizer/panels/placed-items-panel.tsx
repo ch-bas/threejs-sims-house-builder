@@ -74,6 +74,8 @@ export function PlacedItemsPanel({
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={item.locked}
+                    title={item.locked ? 'Locked — unlock to rotate' : undefined}
                     onClick={(event) => {
                       event.stopPropagation();
                       onRotate(item.id);

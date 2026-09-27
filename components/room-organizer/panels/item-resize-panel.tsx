@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { isWallMounted } from '../lib/opening-snap';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import type { FurnitureItem, SofaShape } from '../lib/types';
 
@@ -54,6 +55,10 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
   if (!selectedItem) return <></>;
   const item = selectedItem;
   const rotationDeg = Math.round(((item.rotation ?? 0) * 180) / Math.PI) % 360;
+  // The reducer refuses geometry mutations on locked items (#209) — mirror
+  // that here so the controls look inert instead of silently no-opping.
+  const locked = item.locked === true;
+  const lockedTitle = locked ? 'Locked — unlock to edit' : undefined;
   return (
     <Card>
       <CardHeader>
@@ -68,18 +73,24 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
             key={dimension.key}
             item={item}
             dimension={dimension}
+            disabled={locked}
+            title={lockedTitle}
             onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
           />
         ))}
 
         <RotationInput
           value={rotationDeg}
+          disabled={locked}
+          title={lockedTitle}
           onChange={(deg) => actions.setRotation(item.id, (deg * Math.PI) / 180)}
         />
 
         <PositionInputs
           x={item.position?.x ?? 0}
           z={item.position?.z ?? 0}
+          disabled={locked}
+          title={lockedTitle}
           onChange={(x, z) => actions.moveItem(item.id, x, z)}
         />
 
@@ -100,6 +111,12 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
           variant="outline"
           size="sm"
           className="w-full text-xs"
+          disabled={locked || isWallMounted(item.type)}
+          title={
+            isWallMounted(item.type)
+              ? 'Wall-mounted — drag along the wall instead'
+              : lockedTitle
+          }
           onClick={() => actions.moveItem(item.id, 0, 0)}
         >
           🎯 Centre in room
@@ -171,10 +188,12 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
 interface PositionInputsProps {
   x: number;
   z: number;
+  disabled?: boolean;
+  title?: string;
   onChange(x: number, z: number): void;
 }
 
-function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
+function PositionInputs({ x, z, disabled, title, onChange }: PositionInputsProps): JSX.Element {
   const xId = useId();
   const zId = useId();
   // While a field is being edited, show the raw draft instead of the
@@ -184,7 +203,7 @@ function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
   const [xDraft, setXDraft] = useState<string | null>(null);
   const [zDraft, setZDraft] = useState<string | null>(null);
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className={`grid grid-cols-2 gap-2${disabled ? ' opacity-50' : ''}`} title={title}>
       <div>
         <Label htmlFor={xId} className="text-xs">
           X (m)
@@ -193,6 +212,7 @@ function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
           id={xId}
           type="number"
           step={0.1}
+          disabled={disabled}
           value={xDraft ?? x.toFixed(2)}
           onChange={(event) => {
             setXDraft(event.target.value);
@@ -210,6 +230,7 @@ function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
           id={zId}
           type="number"
           step={0.1}
+          disabled={disabled}
           value={zDraft ?? z.toFixed(2)}
           onChange={(event) => {
             setZDraft(event.target.value);
@@ -225,13 +246,15 @@ function PositionInputs({ x, z, onChange }: PositionInputsProps): JSX.Element {
 
 interface RotationInputProps {
   value: number;
+  disabled?: boolean;
+  title?: string;
   onChange(value: number): void;
 }
 
-function RotationInput({ value, onChange }: RotationInputProps): JSX.Element {
+function RotationInput({ value, disabled, title, onChange }: RotationInputProps): JSX.Element {
   const id = useId();
   return (
-    <div>
+    <div title={title} className={disabled ? 'opacity-50' : undefined}>
       <Label htmlFor={id} className="text-xs">
         Rotation (°)
       </Label>
@@ -241,6 +264,7 @@ function RotationInput({ value, onChange }: RotationInputProps): JSX.Element {
         min={0}
         max={359}
         step={5}
+        disabled={disabled}
         value={value}
         onChange={(event) => {
           const parsed = parseFloat(event.target.value);
@@ -254,14 +278,16 @@ function RotationInput({ value, onChange }: RotationInputProps): JSX.Element {
 interface DimensionSliderProps {
   item: FurnitureItem;
   dimension: DimensionConfig;
+  disabled?: boolean;
+  title?: string;
   onChange(value: number): void;
 }
 
-function DimensionSlider({ item, dimension, onChange }: DimensionSliderProps): JSX.Element {
+function DimensionSlider({ item, dimension, disabled, title, onChange }: DimensionSliderProps): JSX.Element {
   const inputId = useId();
   const value = item[dimension.key];
   return (
-    <div>
+    <div title={title} className={disabled ? 'opacity-50' : undefined}>
       <Label htmlFor={inputId} className="text-xs">
         {dimension.label}: {value.toFixed(2)}m
       </Label>
@@ -272,6 +298,7 @@ function DimensionSlider({ item, dimension, onChange }: DimensionSliderProps): J
         max={dimension.max}
         step="0.1"
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(parseFloat(event.target.value))}
         className="w-full"
       />

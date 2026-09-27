@@ -1,4 +1,4 @@
-import { MAX_FLOORS, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import type {
@@ -221,20 +221,57 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         return { ...floor, items: [...floor.items, copy] };
       });
 
+    // Geometry mutations enforce the lock IN the reducer (same strategy as
+    // bulkSetPositions' #115 guard) and re-run the wall settle rule, so no
+    // panel or future caller can move a locked item or strand a door,
+    // window, or camera off its wall (#209, #210). `updateItem` stays
+    // unguarded on purpose — it is the internal channel for derived
+    // placement (drag settles, camera reseats).
     case 'rotateItem':
-      return patchItem(state, action.id, (item) => ({
-        rotation: ((item.rotation ?? 0) + Math.PI / 2) % (Math.PI * 2),
-      }));
+      return patchItem(state, action.id, (item) => {
+        if (item.locked) return null;
+        // Flush cameras only face in or out along their wall's normal —
+        // step π; everything else quarter-turns (same rule as the viewport
+        // rotate handler).
+        const step =
+          item.type === 'security-camera' && !item.cameraBracket ? Math.PI : Math.PI / 2;
+        const rotation = ((item.rotation ?? 0) + step) % (Math.PI * 2);
+        const settled = item.position
+          ? settleWallMountedItem(
+              { ...item, rotation },
+              item.position,
+              state.layout.width,
+              state.layout.height,
+              activeInteriorWalls(state)
+            )
+          : null;
+        return { rotation, ...settled };
+      });
 
     case 'moveItem':
-      return patchItem(state, action.id, () => ({
-        position: { x: action.x, z: action.z },
-      }));
+      return patchItem(state, action.id, (item) => {
+        if (item.locked) return null;
+        const position = { x: action.x, z: action.z };
+        const settled = settleWallMountedItem(
+          item,
+          position,
+          state.layout.width,
+          state.layout.height,
+          activeInteriorWalls(state)
+        );
+        return settled ?? { position };
+      });
 
     case 'resizeItem':
-      return patchItem(state, action.id, () => ({
-        [action.dimension]: Math.max(0.1, action.value),
-      }));
+      return patchItem(state, action.id, (item) => {
+        // Clamp like the room dimensions (#113): a non-finite or oversized
+        // value that reached localStorage would fail schema validation on
+        // the next load and cost the whole save.
+        if (item.locked || !Number.isFinite(action.value)) return null;
+        return {
+          [action.dimension]: Math.min(MAX_ITEM_DIMENSION, Math.max(0.1, action.value)),
+        };
+      });
 
     case 'setSofaShape':
       return patchItem(state, action.id, () => ({ sofaShape: action.shape }));
@@ -252,7 +289,11 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       return patchItem(state, action.id, (item) => ({ mirrored: !item.mirrored }));
 
     case 'setRotation':
-      return patchItem(state, action.id, () => ({ rotation: action.rotation }));
+      // Raw on purpose apart from the lock: this is the channel the camera
+      // handlers use to set an exact facing before reseating.
+      return patchItem(state, action.id, (item) =>
+        item.locked ? null : { rotation: action.rotation }
+      );
 
     // -- bulk item operations -----------------------------------------------
     case 'replaceItems':
@@ -269,7 +310,20 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
           // distribute) — enforced here so no caller can shove them (#115).
           if (item.locked) return item;
           const next = action.positions.get(item.id);
-          return next ? { ...item, position: { x: next.x, z: next.z } } : item;
+          if (!next) return item;
+          const position = { x: next.x, z: next.z };
+          // Align/distribute previously parked doors and windows mid-room;
+          // the settle rule applies to bulk commits like any other (#210).
+          // The drag path settles before dispatching — re-settling an
+          // on-wall placement is a no-op.
+          const settled = settleWallMountedItem(
+            item,
+            position,
+            state.layout.width,
+            state.layout.height,
+            floor.interiorWalls ?? []
+          );
+          return { ...item, ...(settled ?? { position }) };
         }),
       }));
 
@@ -299,21 +353,30 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         return {
           ...floor,
           items: floor.items.map((item) => {
-            if (!action.ids.has(item.id)) return item;
+            // Locked items neither spin nor orbit — callers filter, but the
+            // reducer is the guarantee (#115/#209).
+            if (!action.ids.has(item.id) || item.locked) return item;
             const nextRotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
             if (!item.position) {
               return { ...item, rotation: nextRotation };
             }
             const dx = item.position.x - cx;
             const dz = item.position.z - cz;
-            return {
-              ...item,
-              rotation: nextRotation,
-              position: {
-                x: cx + dx * cos + dz * sin,
-                z: cz - dx * sin + dz * cos,
-              },
+            const position = {
+              x: cx + dx * cos + dz * sin,
+              z: cz - dx * sin + dz * cos,
             };
+            // A wall-mounted item swept to an interior point re-snaps to the
+            // nearest wall instead of floating where the orbit dropped it
+            // (#210) — the same rule every other commit path follows.
+            const settled = settleWallMountedItem(
+              { ...item, rotation: nextRotation },
+              position,
+              state.layout.width,
+              state.layout.height,
+              floor.interiorWalls ?? []
+            );
+            return { ...item, rotation: nextRotation, ...(settled ?? { position }) };
           }),
         };
       });
@@ -483,17 +546,32 @@ function withActiveFloor(state: LayoutState, update: (floor: FloorLayout) => Flo
   return { ...state, layout: { ...state.layout, floors: nextFloors } };
 }
 
+/**
+ * Patch one item on the active floor. A `null` patch means "refused" (e.g.
+ * the item is locked): the state is returned with its identity intact, so a
+ * refused mutation never registers as an edit in undo history or autosave.
+ */
 function patchItem(
   state: LayoutState,
   id: string,
-  patch: (item: FurnitureItem) => Partial<FurnitureItem>
+  patch: (item: FurnitureItem) => Partial<FurnitureItem> | null
 ): LayoutState {
-  return withActiveFloor(state, (floor) => ({
-    ...floor,
-    items: floor.items.map((item) =>
-      item.id === id ? { ...item, ...patch(item) } : item
-    ),
-  }));
+  return withActiveFloor(state, (floor) => {
+    let changed = false;
+    const items = floor.items.map((item) => {
+      if (item.id !== id) return item;
+      const fields = patch(item);
+      if (fields === null) return item;
+      changed = true;
+      return { ...item, ...fields };
+    });
+    return changed ? { ...floor, items } : floor;
+  });
+}
+
+/** Interior walls of the active floor — what wall-mounted items settle against. */
+function activeInteriorWalls(state: LayoutState): readonly InteriorWall[] {
+  return state.layout.floors[state.activeFloorIndex]?.interiorWalls ?? [];
 }
 
 function clampRoomDimension(value: number): number {

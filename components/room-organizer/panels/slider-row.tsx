@@ -17,6 +17,9 @@ export interface SliderRowProps {
    * used by the compact dimension rows.
    */
   uppercaseLabel?: boolean;
+  /** Greys the row out and ignores input; pair with `title` to say why. */
+  disabled?: boolean;
+  title?: string;
 }
 
 /**
@@ -34,10 +37,15 @@ export function SliderRow(props: SliderRowProps): JSX.Element {
     onChange,
     labelWidth = 48,
     uppercaseLabel = true,
+    disabled = false,
+    title,
   } = props;
   const id = useId();
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <div
+      title={title}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: disabled ? 0.45 : 1 }}
+    >
       <label
         htmlFor={id}
         style={{
@@ -63,6 +71,7 @@ export function SliderRow(props: SliderRowProps): JSX.Element {
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(parseFloat(event.target.value))}
         style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)' }}
       />

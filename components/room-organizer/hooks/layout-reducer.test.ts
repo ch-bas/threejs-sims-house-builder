@@ -619,3 +619,109 @@ describe('layoutReducer — applyLayout', () => {
     expect(applied.activeFloorIndex).toBe(0);
   });
 });
+
+describe('layoutReducer — lock enforcement in the reducer (#209)', () => {
+  const locked = () => makeItem({ id: 'a', locked: true, position: { x: 1, z: 1 }, rotation: 0 });
+
+  it.each([
+    ['rotateItem', { type: 'rotateItem', id: 'a' }],
+    ['moveItem', { type: 'moveItem', id: 'a', x: 3, z: 3 }],
+    ['setRotation', { type: 'setRotation', id: 'a', rotation: 1.5 }],
+    ['resizeItem', { type: 'resizeItem', id: 'a', dimension: 'width', value: 2 }],
+  ] as const)('%s refuses a locked item and preserves state identity', (_label, action) => {
+    const state = stateWith([locked()]);
+    // Identity, not just equality: a refused mutation must not register as
+    // an edit in snapshot-based undo history or trigger an autosave.
+    expect(layoutReducer(state, action as Parameters<typeof layoutReducer>[1])).toBe(state);
+  });
+
+  it('rotateSelection leaves locked members in place while the rest orbit', () => {
+    const state = stateWith([
+      makeItem({ id: 'a', locked: true, position: { x: 1, z: 0 }, rotation: 0 }),
+      makeItem({ id: 'b', position: { x: -1, z: 0 }, rotation: 0 }),
+    ]);
+    const next = layoutReducer(state, {
+      type: 'rotateSelection',
+      ids: new Set(['a', 'b']),
+      radians: Math.PI / 2,
+    });
+    const [a, b] = activeItems(next);
+    expect(a!.position).toEqual({ x: 1, z: 0 });
+    expect(a!.rotation).toBe(0);
+    expect(b!.rotation).toBeCloseTo(Math.PI / 2, 10);
+  });
+
+  it('resizeItem clamps to MAX_ITEM_DIMENSION and refuses non-finite values (#113 pattern)', () => {
+    let state = stateWith([makeItem({ id: 'a', width: 1 })]);
+    state = layoutReducer(state, { type: 'resizeItem', id: 'a', dimension: 'width', value: 1e6 });
+    expect(activeItems(state)[0]!.width).toBeLessThanOrEqual(50);
+    const before = state;
+    state = layoutReducer(state, { type: 'resizeItem', id: 'a', dimension: 'width', value: Number.NaN });
+    expect(state).toBe(before);
+  });
+});
+
+describe('layoutReducer — wall settle rule enforced in the reducer (#210)', () => {
+  const door = (over: Partial<FurnitureItem> = {}) =>
+    makeItem({ id: 'door-1', type: 'door', width: 0.9, depth: 0.12, height: 2.1, position: { x: 0, z: -4 }, rotation: 0, ...over });
+
+  it('moveItem re-snaps a door onto the wall instead of parking it mid-room', () => {
+    const state = stateWith([door()]);
+    const next = layoutReducer(state, { type: 'moveItem', id: 'door-1', x: 1, z: -3 });
+    const moved = activeItems(next)[0]!;
+    // Slides along the wall; never leaves its plane (room is 8×8 → z = −4).
+    expect(moved.position!.z).toBe(-4);
+    expect(moved.position!.x).toBeCloseTo(1, 10);
+  });
+
+  it('moveItem keeps ordinary furniture exactly where the caller put it', () => {
+    const state = stateWith([makeItem({ id: 'a', position: { x: 0, z: 0 } })]);
+    const next = layoutReducer(state, { type: 'moveItem', id: 'a', x: 2.4, z: -1.2 });
+    expect(activeItems(next)[0]!.position).toEqual({ x: 2.4, z: -1.2 });
+  });
+
+  it('bulkSetPositions settles wall-mounted items (align/distribute path)', () => {
+    const state = stateWith([door(), makeItem({ id: 'b', position: { x: 2, z: 2 } })]);
+    const next = layoutReducer(state, {
+      type: 'bulkSetPositions',
+      positions: new Map([
+        ['door-1', { x: 2, z: 0 }],
+        ['b', { x: 2, z: 2.5 }],
+      ]),
+    });
+    const [movedDoor, movedB] = activeItems(next);
+    // The door was aligned to x=2 but pulled to its nearest wall plane…
+    expect(Math.max(Math.abs(movedDoor!.position!.x), Math.abs(movedDoor!.position!.z))).toBeCloseTo(4, 10);
+    // …while the free-standing item lands exactly on the alignment line.
+    expect(movedB!.position).toEqual({ x: 2, z: 2.5 });
+  });
+
+  it('rotateSelection re-snaps a swept door to a wall with a wall-aligned rotation', () => {
+    const state = stateWith([door(), makeItem({ id: 'b', position: { x: 0, z: 0 } })]);
+    const next = layoutReducer(state, {
+      type: 'rotateSelection',
+      ids: new Set(['door-1', 'b']),
+      radians: Math.PI / 2,
+    });
+    const movedDoor = activeItems(next)[0]!;
+    // The orbit alone would drop the door at (−2, −2) — an interior point.
+    expect(Math.max(Math.abs(movedDoor.position!.x), Math.abs(movedDoor.position!.z))).toBeCloseTo(4, 10);
+    // Rotation must lie on the owning wall's axis (a multiple of π/2 that
+    // matches the wall the settle picked).
+    const quarter = ((movedDoor.rotation ?? 0) / (Math.PI / 2)) % 1;
+    expect(Math.min(quarter, 1 - quarter)).toBeCloseTo(0, 10);
+  });
+
+  it('rotateItem flips a flush camera along its wall axis and reseats it', () => {
+    const state = stateWith([
+      makeItem({ id: 'cam', type: 'security-camera', width: 0.3, depth: 0.2, height: 0.25, position: { x: 0, z: -3.9 }, rotation: 0 }),
+    ]);
+    const next = layoutReducer(state, { type: 'rotateItem', id: 'cam' });
+    const cam = activeItems(next)[0]!;
+    // Flush cameras step π (in ↔ out), not the generic quarter turn.
+    expect(cam.rotation).toBeCloseTo(Math.PI, 10);
+    // Reseated on the exterior side of the north wall, wall yaw recorded.
+    expect(cam.position!.z).toBeLessThan(-4);
+    expect(cam.wallRotation).toBeDefined();
+  });
+});
