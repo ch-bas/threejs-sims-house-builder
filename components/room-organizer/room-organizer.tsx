@@ -330,7 +330,7 @@ export function RoomOrganizer(): JSX.Element {
     return set;
   }, [selectedItemId, extraSelectedIds]);
 
-  const { sceneBoxRef, invalidateBoxRef, handleDragStart, handleDrag, handleDragEnd } = useItemDrag({
+  const { sceneBoxRef, invalidateBoxRef, handleDragStart, handleDrag, handleDragEnd, isDragActive } = useItemDrag({
     activeFloor,
     activeFloorIndex,
     roomWidth: layout.width,
@@ -791,6 +791,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedWall,
     hasSignalItems,
     walkthroughActive,
+    isDragActive,
     handlers: shortcutHandlers,
   });
 
