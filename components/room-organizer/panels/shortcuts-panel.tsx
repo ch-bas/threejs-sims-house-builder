@@ -8,20 +8,22 @@ interface Shortcut {
 }
 
 const SHORTCUTS: readonly Shortcut[] = [
-  { label: 'Undo / Redo', keys: 'Ctrl+Z / Ctrl+⇧+Z' },
-  { label: 'Delete item', keys: 'Del' },
+  { label: 'Undo / Redo', keys: 'Ctrl+Z / Ctrl+⇧+Z or Ctrl+Y' },
+  { label: 'Delete item or wall', keys: 'Del / ⌫' },
   { label: 'Duplicate', keys: 'Ctrl+D' },
+  { label: 'Copy / Paste', keys: 'Ctrl+C / Ctrl+V' },
   { label: 'Rotate', keys: 'R (⇧R = 15°)' },
-  { label: 'Move', keys: 'Arrows' },
+  { label: 'Nudge', keys: 'Arrows (⇧ = 1 m)' },
   { label: 'Deselect', keys: 'Esc' },
   { label: 'Focus on item', keys: 'F' },
-  { label: 'Multi-select', keys: 'Ctrl+click' },
+  { label: 'Multi-select', keys: 'Ctrl/⌘+click' },
   { label: 'Toggle 2D', keys: '2' },
   { label: 'Measurements', keys: 'M' },
   { label: 'Snap to grid', keys: 'G' },
   { label: 'Signals/Coverage', keys: 'W' },
   { label: 'Time of day', keys: '[ / ]' },
   { label: 'Switch floor', keys: 'PgUp / PgDn' },
+  { label: 'Show / hide panels', keys: 'P' },
 ];
 
 export function ShortcutsPanel(): JSX.Element {
