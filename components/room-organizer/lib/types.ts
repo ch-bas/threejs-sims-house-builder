@@ -194,6 +194,19 @@ export interface FloorLayout {
   height?: number;
 }
 
+/** Ground heights in metres relative to the ground floor (#202); see lib/site.ts. */
+export interface TerrainSpec {
+  /** At the street (north / front). */
+  frontY: number;
+  /** At the garden (south / back). */
+  backY: number;
+}
+
+export type NeighbourSide = 'west' | 'east';
+
+/** Party-wall neighbour blocks either side, for terraces and semis (#202). */
+export type NeighbourSpec = Partial<Record<NeighbourSide, boolean>>;
+
 /**
  * A multi-floor building. `floors[0]` is the ground floor; subsequent
  * entries stack upward. Footprint and floor-plan upload live on the
@@ -209,6 +222,9 @@ export interface RoomLayout {
   floorPlanImage?: string;
   floorPlanOpacity?: number;
   floorPlanFitMode?: FloorPlanFitMode;
+  /** Sloped site; absent is flat ground at the ground-floor level. */
+  terrain?: TerrainSpec;
+  neighbours?: NeighbourSpec;
 }
 
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */

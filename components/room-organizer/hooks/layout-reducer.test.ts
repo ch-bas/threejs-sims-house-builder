@@ -373,6 +373,39 @@ describe('layoutReducer — storey height (#202)', () => {
   });
 });
 
+describe('layoutReducer — site (#202)', () => {
+  it('sets a clamped slope and returns to flat ground', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setTerrain', terrain: { frontY: 2.5, backY: -99 } });
+    expect(state.layout.terrain).toEqual({ frontY: 2.5, backY: -3 });
+    state = layoutReducer(state, { type: 'setTerrain', terrain: null });
+    expect('terrain' in state.layout).toBe(false);
+    expect(layoutReducer(state, { type: 'setTerrain', terrain: null })).toBe(state);
+  });
+
+  it('toggles neighbours per side and drops the field when none are left', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'east', present: true });
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'west', present: true });
+    expect(state.layout.neighbours).toEqual({ east: true, west: true });
+    expect(layoutReducer(state, { type: 'setNeighbour', side: 'east', present: true })).toBe(state);
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'east', present: false });
+    expect(state.layout.neighbours).toEqual({ west: true });
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'west', present: false });
+    expect('neighbours' in state.layout).toBe(false);
+  });
+
+  it('applyLayout clamps an imported slope', () => {
+    const state: LayoutState = { layout: makeLayout(), activeFloorIndex: 0 };
+    const applied = layoutReducer(state, {
+      type: 'applyLayout',
+      layout: makeLayout({ terrain: { frontY: 40, backY: 0 } }),
+    });
+    expect(applied.layout.terrain).toEqual({ frontY: 6, backY: 0 });
+    expect('terrain' in layoutReducer(state, { type: 'applyLayout', layout: makeLayout() }).layout).toBe(false);
+  });
+});
+
 describe('layoutReducer — floor-scoped finishes', () => {
   it('setFloorColor / setFloorPattern / setWallPattern update the active floor', () => {
     let state = stateWith([]);

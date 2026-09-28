@@ -1,6 +1,7 @@
 import { DEFAULT_ROOF, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
+import { clampTerrainY } from '../lib/site';
 import { clampStoreyHeight } from '../lib/storeys';
 import type {
   CatalogItem,
@@ -9,9 +10,11 @@ import type {
   FloorPlanFitMode,
   FurnitureItem,
   InteriorWall,
+  NeighbourSide,
   RoofStyle,
   RoomLayout,
   SofaShape,
+  TerrainSpec,
   WallId,
   WallPattern,
 } from '../lib/types';
@@ -68,6 +71,8 @@ export type LayoutAction =
   | { type: 'setFloorPlanFitMode'; mode: FloorPlanFitMode }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
+  | { type: 'setTerrain'; terrain: TerrainSpec | null }
+  | { type: 'setNeighbour'; side: NeighbourSide; present: boolean }
   | { type: 'applyLayout'; layout: RoomLayout };
 
 // ---------------------------------------------------------------------------
@@ -114,6 +119,29 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       return withLayout(state, (layout) => ({ ...layout, width: clampRoomDimension(action.width) }));
     case 'setHeight':
       return withLayout(state, (layout) => ({ ...layout, height: clampRoomDimension(action.height) }));
+
+    // -- site (#202) -------------------------------------------------------
+    // Clamped here too, so an out-of-range slope can't reach the save and
+    // fail validation on the next load (#113). `null` returns to flat ground.
+    case 'setTerrain':
+      return withLayout(state, (layout) => {
+        if (action.terrain === null) {
+          if (layout.terrain === undefined) return layout;
+          const { terrain: _flat, ...rest } = layout;
+          return rest;
+        }
+        return { ...layout, terrain: clampTerrain(action.terrain) };
+      });
+    case 'setNeighbour':
+      return withLayout(state, (layout) => {
+        if ((layout.neighbours?.[action.side] === true) === action.present) return layout;
+        const neighbours = { ...layout.neighbours };
+        if (action.present) neighbours[action.side] = true;
+        else delete neighbours[action.side];
+        if (Object.keys(neighbours).length > 0) return { ...layout, neighbours };
+        const { neighbours: _none, ...rest } = layout;
+        return rest;
+      });
 
     // -- floor-scoped finishes ----------------------------------------------
     case 'setFloorColor':
@@ -548,7 +576,9 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
 // ---------------------------------------------------------------------------
 
 function withLayout(state: LayoutState, update: (layout: RoomLayout) => RoomLayout): LayoutState {
-  return { ...state, layout: update(state.layout) };
+  const next = update(state.layout);
+  // A no-op keeps state identity, so it never registers in undo history.
+  return next === state.layout ? state : { ...state, layout: next };
 }
 
 function withActiveFloor(state: LayoutState, update: (floor: FloorLayout) => FloorLayout): LayoutState {
@@ -623,7 +653,17 @@ function normaliseLayout(layout: RoomLayout): RoomLayout {
           floorColor: floor.floorColor || '#c9a57d',
           ...(floor.height !== undefined ? { height: clampStoreyHeight(floor.height) } : {}),
         }));
-  return { ...layout, width, height, floors };
+  return {
+    ...layout,
+    width,
+    height,
+    floors,
+    ...(layout.terrain !== undefined ? { terrain: clampTerrain(layout.terrain) } : {}),
+  };
+}
+
+function clampTerrain(terrain: TerrainSpec): TerrainSpec {
+  return { frontY: clampTerrainY(terrain.frontY), backY: clampTerrainY(terrain.backY) };
 }
 
 function clampActiveIndex(index: number, floorCount: number): number {

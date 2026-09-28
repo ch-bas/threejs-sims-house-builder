@@ -24,6 +24,7 @@ import { RoomSettingsPanel } from './room-settings-panel';
 import { SetsPanel } from './sets-panel';
 import { ShortcutsPanel } from './shortcuts-panel';
 import { SidebarTabs, type SidebarTab } from './sidebar-tabs';
+import { SitePanel } from './site-panel';
 import { StatisticsPanel } from './statistics-panel';
 import { TemplatesPanel } from './templates-panel';
 import { ThemesPanel } from './themes-panel';
@@ -183,6 +184,8 @@ export function SidebarDrawer({
               <WallsPanel />
 
               <RoofPanel />
+
+              <SitePanel />
             </>
           )}
 
