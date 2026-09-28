@@ -37,6 +37,8 @@ export interface UseKeyboardShortcutsOptions {
    * (undo/redo/duplicate) and Escape still fire.
    */
   walkthroughActive?: boolean;
+  /** Whether an item drag is in progress; read at keypress time. */
+  isDragActive?: () => boolean;
   handlers: KeyboardShortcutHandlers;
 }
 
@@ -47,16 +49,45 @@ const ARROW_DELTAS: Record<string, readonly [number, number]> = {
   ArrowRight: [1, 0],
 };
 
+const DRAG_INTERRUPTING_CHORDS = new Set(['z', 'y', 'd', 'v']);
+const DRAG_INTERRUPTING_KEYS = new Set([
+  'Delete',
+  'Backspace',
+  'r',
+  'R',
+  '2',
+  'PageUp',
+  'PageDown',
+  ...Object.keys(ARROW_DELTAS),
+]);
+
+/**
+ * Shortcuts that change the layout, the active floor, or the render mode.
+ * Mid-drag they rebuild the furniture under the dragged mesh, and the release
+ * then commits the stale in-flight positions on top of the result (#207).
+ */
+function interruptsDrag(event: KeyboardEvent): boolean {
+  if (event.ctrlKey || event.metaKey) return DRAG_INTERRUPTING_CHORDS.has(event.key.toLowerCase());
+  return DRAG_INTERRUPTING_KEYS.has(event.key);
+}
+
 export function useKeyboardShortcuts({
   selectedItem,
   selectedWall,
   hasSignalItems,
   walkthroughActive = false,
+  isDragActive,
   handlers,
 }: UseKeyboardShortcutsOptions): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
+
+      // Held until the drop; view-only keys (snap, measurements, time) still work.
+      if (isDragActive?.() && interruptsDrag(event)) {
+        event.preventDefault();
+        return;
+      }
 
       const ctrlOrCmd = event.ctrlKey || event.metaKey;
       if (ctrlOrCmd && event.key.toLowerCase() === 'z') {
@@ -214,7 +245,7 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, handlers]);
+  }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, isDragActive, handlers]);
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {

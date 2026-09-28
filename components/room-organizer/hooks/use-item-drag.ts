@@ -25,6 +25,8 @@ export interface UseItemDragResult {
   handleDragStart(primaryId: string): void;
   handleDrag(id: string, x: number, z: number): void;
   handleDragEnd(id: string): void;
+  /** True between a drag session opening (past the threshold) and release. */
+  isDragActive(): boolean;
 }
 
 /**
@@ -210,5 +212,7 @@ export function useItemDrag({
     [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, actions, findFurnitureGroup, setDragCollisionTint]
   );
 
-  return { sceneBoxRef, invalidateBoxRef, handleDragStart, handleDrag, handleDragEnd };
+  const isDragActive = useCallback(() => dragSessionRef.current !== null, []);
+
+  return { sceneBoxRef, invalidateBoxRef, handleDragStart, handleDrag, handleDragEnd, isDragActive };
 }
