@@ -1,6 +1,9 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Mirror tsconfig's `@/*` path so panel components are importable in tests.
+  resolve: { alias: { '@': fileURLToPath(new URL('.', import.meta.url)) } },
   // Next's tsconfig sets `jsx: preserve` (Next compiles JSX itself); the
   // vitest transform must compile it instead for the React-facing suites.
   oxc: { jsx: { runtime: 'automatic' } },
