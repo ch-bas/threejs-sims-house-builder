@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { disposeObject } from '../three/builder-utils';
+import { type HumanFigureRig, buildHumanFigure, poseWalk } from '../three/builders/human-figure';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -11,9 +12,9 @@ interface NpcState {
   position: { x: number; z: number };
   target: { x: number; z: number };
   speed: number;
-  /** Used to drive the leg-bob animation. */
+  /** Walk-cycle phase driving the limb swing. */
   phase: number;
-  legs: ThreeNS.Object3D[];
+  rig: HumanFigureRig;
 }
 
 export interface UseNpcsOptions {
@@ -102,46 +103,21 @@ function createNpc(
   floorY: number,
   index: number
 ): NpcState {
-  const group = new THREE.Group();
+  const palette = [0xc62828, 0x2e7d32, 0x1565c0, 0xf9a825, 0x6a1b9a];
+  const hairPalette = [0x2b1d14, 0x5a3825, 0x1a1a1a, 0x8d6e4a, 0x3b2a20];
+  const skinPalette = [0xe0ac8a, 0xc68863, 0x8d5a3b, 0xf1c7a5, 0xa8714f];
+  const pick = (list: number[]) => list[index % list.length] ?? list[0]!;
+
+  const { group, rig } = buildHumanFigure(THREE, {
+    top: new THREE.MeshStandardMaterial({ color: pick(palette), roughness: 0.8 }),
+    skin: new THREE.MeshStandardMaterial({ color: skinPalette[(index * 2) % skinPalette.length] ?? 0xe0ac8a, roughness: 0.65 }),
+    bottom: new THREE.MeshStandardMaterial({ color: 0x37474f, roughness: 0.85 }),
+    shoes: new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.6 }),
+    hair: new THREE.MeshStandardMaterial({ color: pick(hairPalette), roughness: 0.9 }),
+  });
   group.userData.type = NPC_TAG;
-
-  const palette = [0xef9a9a, 0xa5d6a7, 0x90caf9, 0xffe082, 0xb39ddb];
-  const shirtColor = palette[index % palette.length] ?? 0xef9a9a;
-  const skinColor = 0xffccbc;
-  const trouserColor = 0x37474f;
-
-  const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.8 });
-  const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.7 });
-  const trouserMat = new THREE.MeshStandardMaterial({ color: trouserColor, roughness: 0.85 });
-
-  // Legs — animated by bobbing in Y.
-  const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.8, 10);
-  const legs: ThreeNS.Object3D[] = [];
-  for (const dx of [-0.1, 0.1]) {
-    const leg = new THREE.Mesh(legGeo, trouserMat);
-    leg.position.set(dx, 0.4, 0);
-    leg.castShadow = true;
-    group.add(leg);
-    legs.push(leg);
-  }
-
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.6, 14), shirtMat);
-  torso.position.y = 1.1;
-  torso.castShadow = true;
-  group.add(torso);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 14), skinMat);
-  head.position.y = 1.55;
-  head.castShadow = true;
-  group.add(head);
-
-  const armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.7, 10);
-  for (const dx of [-0.25, 0.25]) {
-    const arm = new THREE.Mesh(armGeo, shirtMat);
-    arm.position.set(dx, 1.1, 0);
-    arm.castShadow = true;
-    group.add(arm);
-  }
+  // Slight height variety so a group of walkers doesn't look cloned.
+  group.scale.setScalar(0.94 + ((index * 37) % 11) / 100);
 
   const position = { x: rand(-halfW, halfW), z: rand(-halfD, halfD) };
   group.position.set(position.x, floorY, position.z);
@@ -153,13 +129,13 @@ function createNpc(
     target: { x: rand(-halfW, halfW), z: rand(-halfD, halfD) },
     speed: 0.6 + Math.random() * 0.5,
     phase: Math.random() * Math.PI * 2,
-    legs,
+    rig,
   };
 }
 
 /**
  * Advances every NPC one frame. Returns true when at least one NPC actually
- * moved (or its legs bobbed) this frame, so the caller can skip the repaint /
+ * moved (or its limbs swung) this frame, so the caller can skip the repaint /
  * shadow recompute when they're all momentarily idling at their targets.
  */
 function stepNpcs(
@@ -177,7 +153,7 @@ function stepNpcs(
 
     if (distance < 0.15) {
       // Reached the waypoint: pick a new one but produce no visible motion
-      // this frame (position/legs unchanged).
+      // this frame (position/pose unchanged).
       npc.target = { x: rand(-halfW, halfW), z: rand(-halfD, halfD) };
       continue;
     }
@@ -195,12 +171,10 @@ function stepNpcs(
     npc.group.position.x = npc.position.x;
     npc.group.position.z = npc.position.z;
 
-    // Bob legs to mimic walking. Phase advances proportionally to speed.
-    npc.phase += delta * 6;
-    const swing = Math.sin(npc.phase) * 0.06;
-    if (npc.legs[0]) npc.legs[0].position.y = 0.4 + swing;
-    if (npc.legs[1]) npc.legs[1].position.y = 0.4 - swing;
-    npc.group.position.y = floorY + Math.abs(swing) * 0.5;
+    // Swing limbs about hips/shoulders; a small bob at each footfall.
+    npc.phase += delta * npc.speed * 7;
+    poseWalk(npc.rig, npc.phase);
+    npc.group.position.y = floorY + Math.abs(Math.cos(npc.phase)) * 0.025;
   }
   return moved;
 }
