@@ -78,6 +78,9 @@ export type SofaShape = 'standard' | 'L-shape' | 'U-shape';
 
 export type StairsDirection = 'north' | 'south' | 'east' | 'west';
 
+/** 'winder': a half-turn dog-leg with a fan of winders (#205). */
+export type StairsShape = 'straight' | 'winder';
+
 export type FloorPlanFitMode = 'stretch' | 'cover' | 'contain';
 
 export type FurnitureCategory =
@@ -141,6 +144,10 @@ export interface FurnitureItem {
   mirrored?: boolean;
   /** Direction the stairs ascend (for `type === 'stairs'`). */
   stairsDirection?: StairsDirection;
+  /** Straight flight (default) or half-turn winder (#205). */
+  stairsShape?: StairsShape;
+  /** Winder only: extra steps on the up flight, taken from the return flight. */
+  stairsLeadIn?: number;
   /** Window sill above its floor, overriding the shared datum (#204). */
   sillHeight?: number;
 }

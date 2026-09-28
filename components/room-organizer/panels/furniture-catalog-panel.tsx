@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
+import { catalogKey } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { CctvMenu } from './cctv-menu';
@@ -74,7 +75,7 @@ export function FurnitureCatalogPanel({
         ) : (
           <div className="grid grid-cols-3 gap-2 max-h-[460px] overflow-y-auto pr-1">
             {filtered.map((item) => (
-              <CatalogTile key={item.type} item={item} onAdd={onAdd} />
+              <CatalogTile key={catalogKey(item)} item={item} onAdd={onAdd} />
             ))}
           </div>
         )}

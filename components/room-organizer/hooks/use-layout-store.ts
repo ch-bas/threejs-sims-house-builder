@@ -86,6 +86,8 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setEntrance: (entrance) => dispatch({ type: 'setEntrance', entrance }),
     setFrontage: (frontage) => dispatch({ type: 'setFrontage', frontage }),
     setSillHeight: (id, sillHeight) => dispatch({ type: 'setSillHeight', id, sillHeight }),
+    setStairsShape: (id, shape, leadIn) =>
+      dispatch({ type: 'setStairsShape', id, shape, ...(leadIn !== undefined ? { leadIn } : {}) }),
     addCatalogItem: (catalogItem: CatalogItem, position) => {
       const id = nextId(catalogItem.type);
       dispatch({ type: 'addCatalogItem', catalogItem, id, ...(position ? { position } : {}) });

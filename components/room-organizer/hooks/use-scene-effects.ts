@@ -139,6 +139,12 @@ export function useSceneEffects({
               item.height,
               item.depth,
               item.rotation,
+              // Stair shape + mirroring move the headroom hole above (#205);
+              // a window's own sill moves its hole (#204).
+              item.stairsShape,
+              item.stairsLeadIn,
+              item.mirrored,
+              item.sillHeight,
             ])
         )
       ),

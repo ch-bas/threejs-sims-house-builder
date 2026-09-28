@@ -1,6 +1,7 @@
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { NEIGHBOUR_SIDES, isTerrainY } from './site';
+import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
 import { isEntranceSpec, isSillHeight } from './street';
 import type {
@@ -121,6 +122,8 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   ) {
     return false;
   }
+  if (v.stairsShape !== undefined && !isStairsShape(v.stairsShape)) return false;
+  if (v.stairsLeadIn !== undefined && !isStairsLeadIn(v.stairsLeadIn)) return false;
   if (v.cctvModelId !== undefined && typeof v.cctvModelId !== 'string') return false;
   // Booleans must be real booleans: a corrupt `locked:"no"` reads truthy for
   // keyboard-delete guards yet fails `=== true` drag checks, desyncing the two.

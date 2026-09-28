@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { isWallMounted } from '../lib/opening-snap';
+import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import type { FurnitureItem, SofaShape } from '../lib/types';
@@ -145,6 +146,43 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
             value={item.sofaShape ?? 'standard'}
             onChange={(shape) => actions.setSofaShape(item.id, shape)}
           />
+        )}
+
+        {item.type === 'stairs' && (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Stairs shape">
+              {(['straight', 'winder'] as const).map((shape) => {
+                const active = (item.stairsShape ?? 'straight') === shape;
+                return (
+                  <Button
+                    key={shape}
+                    variant={active ? 'default' : 'outline'}
+                    size="sm"
+                    className="text-xs"
+                    aria-pressed={active}
+                    disabled={locked}
+                    title={lockedTitle}
+                    onClick={() => actions.setStairsShape(item.id, shape)}
+                  >
+                    {shape === 'straight' ? 'Straight' : 'Winder'}
+                  </Button>
+                );
+              })}
+            </div>
+            {item.stairsShape === 'winder' && (
+              <SignalRangeSlider
+                label="Up-flight lead-in (steps)"
+                min={0}
+                max={MAX_STAIRS_LEAD_IN}
+                step={1}
+                value={item.stairsLeadIn ?? 0}
+                format={(value) => `${value}`}
+                disabled={locked}
+                title={lockedTitle}
+                onChange={(value) => actions.setStairsShape(item.id, 'winder', value)}
+              />
+            )}
+          </div>
         )}
 
         {item.type === 'window' && (
@@ -354,15 +392,27 @@ interface SignalRangeSliderProps {
   value: number;
   disabled?: boolean;
   title?: string;
+  /** How the value reads in the label; metres by default. */
+  format?(value: number): string;
   onChange(value: number): void;
 }
 
-function SignalRangeSlider({ label, min, max, step = 0.5, value, disabled, title, onChange }: SignalRangeSliderProps): JSX.Element {
+function SignalRangeSlider({
+  label,
+  min,
+  max,
+  step = 0.5,
+  value,
+  disabled,
+  title,
+  format = (v) => `${v.toFixed(1)}m`,
+  onChange,
+}: SignalRangeSliderProps): JSX.Element {
   const id = useId();
   return (
     <div>
       <Label htmlFor={id} className="text-xs">
-        {label}: {value.toFixed(1)}m
+        {label}: {format(value)}
       </Label>
       <Input
         id={id}

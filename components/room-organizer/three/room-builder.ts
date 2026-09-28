@@ -671,8 +671,10 @@ function buildFloorGeometryWithOpenings(
   // matching the stairs' footprint — no over-inflated AABB, so no corner gaps.
   const axisAligned: FloorOpening[] = [];
   const rotated: FloorOpening[] = [];
+  const outlined: FloorOpening[] = [];
   for (const o of openings) {
-    (isAxisAlignedRotation(o.rotation) ? axisAligned : rotated).push(o);
+    if (o.outline) outlined.push(o);
+    else (isAxisAlignedRotation(o.rotation) ? axisAligned : rotated).push(o);
   }
 
   // Clamp every hole inside the floor contour, inset by an epsilon: a hole
@@ -749,6 +751,33 @@ function buildFloorGeometryWithOpenings(
     hole.lineTo(corners[1]![0], corners[1]![1]);
     hole.lineTo(corners[2]![0], corners[2]![1]);
     hole.lineTo(corners[3]![0], corners[3]![1]);
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+
+  // Outlined holes (a winder's L, #205): cut as given, or — if any corner
+  // crosses the floor outline — as their clamped bounding box, like rotated
+  // holes above (#146).
+  for (const o of outlined) {
+    const points = o.outline!.map(([x, z]): [number, number] => [x, -z]);
+    if (points.some(([x, y]) => x <= -halfW || x >= halfW || y <= -halfD || y >= halfD)) {
+      const x0 = clampX(Math.min(...points.map(([x]) => x)));
+      const x1 = clampX(Math.max(...points.map(([x]) => x)));
+      const y0 = clampY(Math.min(...points.map(([, y]) => y)));
+      const y1 = clampY(Math.max(...points.map(([, y]) => y)));
+      if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
+      const box = new THREE.Path();
+      box.moveTo(x0, y0);
+      box.lineTo(x1, y0);
+      box.lineTo(x1, y1);
+      box.lineTo(x0, y1);
+      box.closePath();
+      shape.holes.push(box);
+      continue;
+    }
+    const hole = new THREE.Path();
+    hole.moveTo(points[0]![0], points[0]![1]);
+    for (const [x, y] of points.slice(1)) hole.lineTo(x, y);
     hole.closePath();
     shape.holes.push(hole);
   }
