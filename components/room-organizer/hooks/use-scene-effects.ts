@@ -1,7 +1,7 @@
 import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { hasCollisions } from '../lib/geometry';
-import { FLOOR_HEIGHT_METERS } from '../lib/types';
+import { buildingHeight, floorElevation, interiorWallHeight, stairRise, storeyHeight } from '../lib/storeys';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
@@ -109,7 +109,12 @@ export function useSceneEffects({
   wallSnapResult,
   measurementPoints,
 }: UseSceneEffectsParams): void {
-  const activeFloorY = activeFloorIndex * FLOOR_HEIGHT_METERS;
+  const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
+
+  // Storey heights stack every floor's Y, the wall heights, and the roof
+  // base (#202). The structural effects are keyed on narrow signatures, not
+  // `layout.floors` identity, so they need this one too.
+  const storeyHeightsKey = layout.floors.map((floor) => floor.height ?? '').join(',');
 
   // Serialized signatures of exactly the item-derived inputs the structural
   // effects consume. `layout.floors` gets a new identity on every item action,
@@ -179,8 +184,12 @@ export function useSceneEffects({
       clearWallPreview(scene);
       return;
     }
-    renderInteriorWallPreview(THREE, scene, wallDraft, wallSnapResult.point, activeFloorY);
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallSnapResult, activeFloorY]);
+    renderInteriorWallPreview(
+      THREE, scene, wallDraft, wallSnapResult.point, activeFloorY, interiorWallHeight(activeFloor)
+    );
+    // activeFloor is read for its storey height only; storeyHeightsKey covers it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallSnapResult, activeFloorY, storeyHeightsKey]);
 
   // Build floor + walls
   useEffect(() => {
@@ -207,7 +216,7 @@ export function useSceneEffects({
         floor.items,
         layout.width,
         layout.height,
-        3,
+        storeyHeight(floor),
         floor.interiorWalls ?? []
       );
       // Stairs on the floor below create openings in this floor's plane.
@@ -228,7 +237,8 @@ export function useSceneEffects({
         floorPlanOpacity: layout.floorPlanOpacity ?? 0.5,
         floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
         floorPlan3DEffect: view.floorPlan3DEffect,
-        yOffset: index * FLOOR_HEIGHT_METERS,
+        yOffset: floorElevation(layout.floors, index),
+        wallHeight: storeyHeight(floor),
         ghostOpacity: otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
         onTextureLoaded: invalidate,
       });
@@ -252,7 +262,7 @@ export function useSceneEffects({
     // interior walls (nearest wall wins), so the exterior hole set changes
     // when interior walls do — without this dep a door claimed by a new
     // interior wall stays double-cut into the exterior wall (#119).
-    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey,
+    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, view.showAllFloors, view.wallDisplay,
     activeFloorIndex,
@@ -299,13 +309,15 @@ export function useSceneEffects({
 
     for (const { floor, index } of floorsToRender) {
       const isActive = index === activeFloorIndex;
-      const floorY = index * FLOOR_HEIGHT_METERS;
+      const floorY = floorElevation(layout.floors, index);
 
       for (const item of floor.items) {
         if (!item.position) continue;
 
         const collision = hasCollisions(item, floor.items, layout.width, layout.height);
-        const group = createFurnitureModel(THREE, item, collision);
+        // Stairs climb to the floor above, whatever this storey's height (#202).
+        const model = item.type === 'stairs' ? { ...item, height: stairRise(item, floor) } : item;
+        const group = createFurnitureModel(THREE, model, collision);
         group.position.set(item.position.x, floorY, item.position.z);
         group.rotation.y = item.rotation ?? 0;
         if (item.mirrored) group.scale.x = -1;
@@ -417,7 +429,7 @@ export function useSceneEffects({
       : [{ floor: activeFloor, index: activeFloorIndex }];
 
     for (const { floor, index } of floorsToRender) {
-      const floorY = index * FLOOR_HEIGHT_METERS;
+      const floorY = floorElevation(layout.floors, index);
       if (view.showWiFiSignals) {
         addSignalOverlays(THREE, scene, floor.items, floorY);
       }
@@ -448,7 +460,7 @@ export function useSceneEffects({
           // The 0.9 bulb factor belongs to the lamp's own height only —
           // applied after the floor offset it sank upper-floor glows 0.3 m
           // per storey, lighting the floor below (#146).
-          height: item.height * 0.9 + index * FLOOR_HEIGHT_METERS,
+          height: item.height * 0.9 + floorElevation(layout.floors, index),
         }))
     );
 
@@ -459,7 +471,7 @@ export function useSceneEffects({
     // layout.floors is read for lamp positions only; lampsKey covers exactly
     // that, so a non-lamp item edit doesn't rebuild the sky and lights.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, lampsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, lampsKey, storeyHeightsKey]);
 
   // Outdoor
   useEffect(() => {
@@ -493,9 +505,14 @@ export function useSceneEffects({
       const isActive = index === activeFloorIndex;
       renderInteriorWalls(
         THREE, scene, walls,
-        index * FLOOR_HEIGHT_METERS,
+        floorElevation(layout.floors, index),
         otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
-        { openingCandidates: floor.items, roomWidth: layout.width, roomDepth: layout.height }
+        {
+          openingCandidates: floor.items,
+          roomWidth: layout.width,
+          roomDepth: layout.height,
+          wallHeight: interiorWallHeight(floor),
+        }
       );
     }
     // Interior walls cast shadows — recompute the static shadow map after any
@@ -505,7 +522,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors, view.wallDisplay, layout.width, layout.height]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, activeFloorIndex, view.showAllFloors, view.wallDisplay, layout.width, layout.height]);
 
   // Cyan outline on selected wall. Declared AFTER the shell + interior-wall
   // rebuild effects and keyed on the same rebuild keys, so it always snapshots
@@ -563,7 +580,7 @@ export function useSceneEffects({
   }, [
     isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
     selectedWall, activeFloorIndex,
-    shellFinishesKey, wallOpeningsKey, interiorWallsKey,
+    shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.width, layout.height, view.showAllFloors, view.wallDisplay,
   ]);
 
@@ -621,7 +638,7 @@ export function useSceneEffects({
       scene,
       width: layout.width,
       depth: layout.height,
-      baseY: layout.floors.length * FLOOR_HEIGHT_METERS,
+      baseY: buildingHeight(layout.floors),
       spec: layout.roof,
     });
     // buildRoof adds meshes visible; only applyWallDisplay hides the roof in
@@ -632,7 +649,10 @@ export function useSceneEffects({
       applyWallDisplay(scene, camera.position.x, camera.position.z, view.wallDisplay, layout.width, layout.height);
     }
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, layout.floors.length, activeFloorIndex, view.showAllFloors, view.wallDisplay]);
+    // layout.floors is read for the eaves height only (floor count + storey
+    // heights); keying on its identity would rebuild the roof on every item edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, layout.floors.length, storeyHeightsKey, activeFloorIndex, view.showAllFloors, view.wallDisplay]);
 
   // 2D top-down view. The backing store is sized to the container's
   // clientWidth/clientHeight × devicePixelRatio (via a ResizeObserver) so the

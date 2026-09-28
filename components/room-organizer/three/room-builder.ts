@@ -1,4 +1,5 @@
 import { GRID_SIZE_METERS } from '../lib/constants';
+import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
@@ -157,6 +158,8 @@ export interface RoomBuilderOptions {
   floorPlan3DEffect: boolean;
   /** Vertical offset for this floor (y in metres). Defaults to 0 (ground). */
   yOffset?: number;
+  /** Exterior wall height — the storey height (#202). Defaults to 3 m. */
+  wallHeight?: number;
   /** Opacity multiplier for stacked floors below the active one. */
   ghostOpacity?: number;
   onTextureLoaded?: () => void;
@@ -224,7 +227,8 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
       yOffset,
       isGhost ? options.ghostOpacity : undefined,
       options.wallOpenings,
-      options.hiddenWalls
+      options.hiddenWalls,
+      options.wallHeight
     );
   }
 }
@@ -440,9 +444,9 @@ function buildWalls(
   yOffset = 0,
   ghostOpacity?: number,
   openings?: ReadonlyMap<WallId, WallOpening[]>,
-  hiddenWalls?: readonly WallId[]
+  hiddenWalls?: readonly WallId[],
+  wallHeight = FLOOR_HEIGHT_METERS
 ): void {
-  const wallHeight = 3;
   const centerY = yOffset + wallHeight / 2;
 
   const wallSpecs: ReadonlyArray<{

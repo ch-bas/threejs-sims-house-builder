@@ -89,4 +89,22 @@ describe('RoomDimensionInput (#217)', () => {
     fireEvent.blur(input);
     expect(onCommit).not.toHaveBeenCalled();
   });
+
+  it('honours a custom range and step, e.g. storey height (#202)', () => {
+    const onCommit = vi.fn<(value: number) => void>();
+    render(
+      <>
+        <label htmlFor="s">Storey</label>
+        <RoomDimensionInput id="s" value={3} onCommit={onCommit} min={1} max={6} step={0.1} />
+      </>
+    );
+    const input = screen.getByLabelText('Storey') as HTMLInputElement;
+    expect(input.step).toBe('0.1');
+    fireEvent.change(input, { target: { value: '1.1' } });
+    expect(onCommit).toHaveBeenLastCalledWith(1.1);
+    fireEvent.change(input, { target: { value: '0.4' } });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenLastCalledWith(1);
+  });
 });

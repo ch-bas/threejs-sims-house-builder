@@ -186,6 +186,12 @@ export interface FloorLayout {
   wallColors?: Partial<Record<WallId, string>>;
   hiddenWalls?: WallId[]; 
   interiorWalls?: InteriorWall[];
+  /**
+   * Floor-to-floor height in metres (#202) — a 2.5 m basement, a 1.1 m loft
+   * knee wall. Absent means the classic `FLOOR_HEIGHT_METERS` storey; each
+   * floor's elevation is the sum of the storeys below it (lib/storeys.ts).
+   */
+  height?: number;
 }
 
 /**
@@ -205,7 +211,7 @@ export interface RoomLayout {
   floorPlanFitMode?: FloorPlanFitMode;
 }
 
-/** Vertical height of a single floor in metres. */
+/** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */
 export const FLOOR_HEIGHT_METERS = 3;
 
 export interface ViewSettings {

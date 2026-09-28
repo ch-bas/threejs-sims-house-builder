@@ -335,6 +335,44 @@ describe('layoutReducer — rotateSelection (rigid rotation about centroid)', ()
   });
 });
 
+describe('layoutReducer — storey height (#202)', () => {
+  it('sets, clamps and resets the active floor only', () => {
+    let state = stateWith([], 2, 1);
+    state = layoutReducer(state, { type: 'setStoreyHeight', height: 2.5 });
+    expect(state.layout.floors[1]!.height).toBe(2.5);
+    expect(state.layout.floors[0]!.height).toBeUndefined();
+    state = layoutReducer(state, { type: 'setStoreyHeight', height: 50 });
+    expect(state.layout.floors[1]!.height).toBe(6);
+    state = layoutReducer(state, { type: 'setStoreyHeight', height: Number.NaN });
+    expect(state.layout.floors[1]!.height).toBe(3);
+    state = layoutReducer(state, { type: 'setStoreyHeight', height: null });
+    expect('height' in state.layout.floors[1]!).toBe(false);
+  });
+
+  it('keeps state identity for no-op changes so undo history stays clean', () => {
+    const state = stateWith([]);
+    expect(layoutReducer(state, { type: 'setStoreyHeight', height: null })).toBe(state);
+    const set = layoutReducer(state, { type: 'setStoreyHeight', height: 2.5 });
+    expect(layoutReducer(set, { type: 'setStoreyHeight', height: 2.5 })).toBe(set);
+  });
+
+  it('duplicating a floor keeps its storey height', () => {
+    let state = layoutReducer(stateWith([]), { type: 'setStoreyHeight', height: 2.4 });
+    state = layoutReducer(state, { type: 'duplicateFloor', sourceIndex: 0, newId: 'copy', idSuffix: 'x' });
+    expect(state.layout.floors[1]!.height).toBe(2.4);
+  });
+
+  it('applyLayout clamps a storey height and leaves legacy floors without one', () => {
+    const state: LayoutState = { layout: makeLayout(), activeFloorIndex: 0 };
+    const applied = layoutReducer(state, {
+      type: 'applyLayout',
+      layout: makeLayout({ floors: [makeFloor({ id: 'a' }), makeFloor({ id: 'b', height: 0.2 })] }),
+    });
+    expect('height' in applied.layout.floors[0]!).toBe(false);
+    expect(applied.layout.floors[1]!.height).toBe(1);
+  });
+});
+
 describe('layoutReducer — floor-scoped finishes', () => {
   it('setFloorColor / setFloorPattern / setWallPattern update the active floor', () => {
     let state = stateWith([]);

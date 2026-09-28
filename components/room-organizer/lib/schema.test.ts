@@ -78,6 +78,14 @@ describe('isFloorLayout', () => {
     const floor = { ...makeFloor(), interiorWalls: [{ id: 'w', x1: 0, z1: 0, x2: Number.NaN, z2: 1 }] };
     expect(isFloorLayout(floor)).toBe(false);
   });
+
+  it('accepts an in-range storey height and rejects a corrupt one (#202)', () => {
+    expect(isFloorLayout({ ...makeFloor(), height: 2.5 })).toBe(true);
+    expect(isFloorLayout({ ...makeFloor(), height: 1.1 })).toBe(true);
+    for (const height of [0, -3, 0.5, 40, Number.NaN, '3']) {
+      expect(isFloorLayout({ ...makeFloor(), height })).toBe(false);
+    }
+  });
 });
 
 describe('isRoomLayout', () => {

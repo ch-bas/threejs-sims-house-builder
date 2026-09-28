@@ -1,4 +1,5 @@
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
+import { isStoreyHeight } from './storeys';
 import type {
   FloorLayout,
   FloorPattern,
@@ -168,6 +169,9 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
       if (wall.color !== undefined && typeof wall.color !== 'string') return false;
     }
   }
+  // Storey height feeds every floor's elevation and the roof base: a zero,
+  // negative or absurd value collapses or launches the whole stack (#202).
+  if (v.height !== undefined && !isStoreyHeight(v.height)) return false;
   return true;
 }
 

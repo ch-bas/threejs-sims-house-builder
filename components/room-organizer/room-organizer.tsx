@@ -24,7 +24,7 @@ import { hasCollisions, totalCost } from './lib/geometry';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { playSound, type SoundCue } from './lib/sounds';
-import { FLOOR_HEIGHT_METERS } from './lib/types';
+import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
@@ -109,7 +109,8 @@ export function RoomOrganizer(): JSX.Element {
   const canvas2DRef = useRef<HTMLCanvasElement>(null);
 
   const { layout, activeFloor, activeFloorIndex, actions } = useLayoutState();
-  const activeFloorY = activeFloorIndex * FLOOR_HEIGHT_METERS;
+  const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
+  const activeStoreyHeight = storeyHeight(activeFloor);
   const {
     unlocked: unlockedAchievements,
     pending: pendingAchievements,
@@ -242,7 +243,7 @@ export function RoomOrganizer(): JSX.Element {
   }, [view.drawWallMode]);
 
   // Floor switch: drop any in-progress wall draft and selection (those live on
-  // the previous floor) and slide the camera target up/down to the new floor.
+  // the previous floor).
   useEffect(() => {
     setWallDraft(null);
     setSelectedItemId(null);
@@ -251,10 +252,20 @@ export function RoomOrganizer(): JSX.Element {
     // Points are floor-plane coordinates; kept, they'd float on the new floor
     // showing a distance measured on the old one (#224).
     setMeasurementPoints([]);
+    // activeFloor.id: removing floor 0 (or reordering) can change WHICH floor
+    // is active while the index stays 0 — keying on the index alone carried
+    // the deleted floor's selection onto its replacement (#117).
+  }, [activeFloorIndex, activeFloor.id]);
+
+  // Slide the camera target to mid-height of the active storey — on a floor
+  // switch, and when a storey height below or on it changes (#202), without
+  // the selection reset above.
+  const cameraTargetY = activeFloorY + activeStoreyHeight / 2;
+  useEffect(() => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
-    const newTargetY = activeFloorIndex * FLOOR_HEIGHT_METERS + FLOOR_HEIGHT_METERS / 2;
+    const newTargetY = cameraTargetY;
     const dy = newTargetY - controls.target.y;
     if (Math.abs(dy) < 0.01) return;
     controls.target.y = newTargetY;
@@ -264,11 +275,8 @@ export function RoomOrganizer(): JSX.Element {
     if (renderer) renderer.render(sceneRef.current!, camera);
     // The scene refs are declared below (useThreeScene) so they can't appear
     // in this dep array without a TDZ error; they're stable ref objects anyway.
-    // activeFloor.id: removing floor 0 (or reordering) can change WHICH floor
-    // is active while the index stays 0 — keying on the index alone carried
-    // the deleted floor's selection onto its replacement (#117).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeFloorIndex, activeFloor.id]);
+  }, [cameraTargetY]);
 
   // Ghost-selection guard: whenever the floor's items change (undo/redo,
   // import, clear floor, deletes from any path), drop selected ids that no
@@ -635,7 +643,7 @@ export function RoomOrganizer(): JSX.Element {
     controlsRef,
     invalidate,
     roomSize: Math.max(layout.width, layout.height),
-    buildingHeight: layout.floors.length * FLOOR_HEIGHT_METERS,
+    buildingHeight: buildingHeight(layout.floors),
   });
 
   const { handleScreenshot, handleExportGlb, handleShareLink, handleImport } = useImportExport({

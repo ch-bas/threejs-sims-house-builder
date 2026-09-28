@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
+import { MAX_STOREY_HEIGHT, MIN_STOREY_HEIGHT, storeyHeight } from '../lib/storeys';
 import type { FloorPlanFitMode } from '../lib/types';
 
 const ROOM_INPUT_MIN = 2;
@@ -28,6 +29,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
   const nameId = useId();
   const widthId = useId();
   const heightId = useId();
+  const storeyId = useId();
   const colorId = useId();
   const opacityId = useId();
   const effectId = useId();
@@ -62,6 +64,33 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
         <div>
           <Label htmlFor={heightId}>Depth (meters)</Label>
           <RoomDimensionInput id={heightId} value={layout.height} onCommit={actions.setHeight} />
+        </div>
+        <div>
+          <Label htmlFor={storeyId}>Storey height (meters)</Label>
+          <div className="flex items-center gap-2">
+            <RoomDimensionInput
+              id={storeyId}
+              value={storeyHeight(activeFloor)}
+              onCommit={actions.setStoreyHeight}
+              min={MIN_STOREY_HEIGHT}
+              max={MAX_STOREY_HEIGHT}
+              step={0.1}
+            />
+            {activeFloor.height !== undefined && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs shrink-0"
+                onClick={() => actions.setStoreyHeight(null)}
+                title="Back to the standard 3 m storey"
+              >
+                Reset
+              </Button>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {activeFloor.name}, floor to floor. Try 2.5 for a basement or 1.1 for a loft knee wall.
+          </p>
         </div>
         <div>
           <Label htmlFor={colorId}>Floor Color</Label>
@@ -168,6 +197,10 @@ export interface RoomDimensionInputProps {
   id: string;
   value: number;
   onCommit(value: number): void;
+  /** Accepted range and spinner step; default to the room footprint's. */
+  min?: number;
+  max?: number;
+  step?: number;
 }
 
 /**
@@ -178,14 +211,21 @@ export interface RoomDimensionInputProps {
  * leaves the room alone. Blur or Enter commits the draft clamped to the
  * declared range; an empty or unparseable draft restores the current value.
  */
-export function RoomDimensionInput({ id, value, onCommit }: RoomDimensionInputProps): JSX.Element {
+export function RoomDimensionInput({
+  id,
+  value,
+  onCommit,
+  min = ROOM_INPUT_MIN,
+  max = ROOM_INPUT_MAX,
+  step = 0.5,
+}: RoomDimensionInputProps): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null);
 
   const finish = () => {
     if (draft !== null) {
       const parsed = parseFloat(draft);
       if (Number.isFinite(parsed)) {
-        const clamped = Math.min(ROOM_INPUT_MAX, Math.max(ROOM_INPUT_MIN, parsed));
+        const clamped = Math.min(max, Math.max(min, parsed));
         if (clamped !== value) onCommit(clamped);
       }
     }
@@ -196,14 +236,14 @@ export function RoomDimensionInput({ id, value, onCommit }: RoomDimensionInputPr
     <Input
       id={id}
       type="number"
-      min={ROOM_INPUT_MIN}
-      max={ROOM_INPUT_MAX}
-      step="0.5"
+      min={min}
+      max={max}
+      step={step}
       value={draft ?? value}
       onChange={(event) => {
         setDraft(event.target.value);
         const parsed = parseFloat(event.target.value);
-        if (Number.isFinite(parsed) && parsed >= ROOM_INPUT_MIN && parsed <= ROOM_INPUT_MAX) {
+        if (Number.isFinite(parsed) && parsed >= min && parsed <= max) {
           onCommit(parsed);
         }
       }}
