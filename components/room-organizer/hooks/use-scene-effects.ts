@@ -1,6 +1,7 @@
 import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { hasCollisions } from '../lib/geometry';
+import { lowestGround, neighbourSides } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, stairRise, storeyHeight } from '../lib/storeys';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
@@ -15,6 +16,7 @@ import {
 import { clearItemLabels, renderItemLabels } from '../three/item-labels';
 import { applyTimeOfDay } from '../three/lighting';
 import { clearMeasurement, renderMeasurement } from '../three/measurement';
+import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildRoof, removeRoof } from '../three/roof';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
@@ -239,6 +241,7 @@ export function useSceneEffects({
         floorPlan3DEffect: view.floorPlan3DEffect,
         yOffset: floorElevation(layout.floors, index),
         wallHeight: storeyHeight(floor),
+        groundY: lowestGround(layout.terrain),
         ghostOpacity: otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
         onTextureLoaded: invalidate,
       });
@@ -262,7 +265,7 @@ export function useSceneEffects({
     // interior walls (nearest wall wins), so the exterior hole set changes
     // when interior walls do — without this dep a door claimed by a new
     // interior wall stays double-cut into the exterior wall (#119).
-    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
+    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, view.showAllFloors, view.wallDisplay,
     activeFloorIndex,
@@ -480,11 +483,45 @@ export function useSceneEffects({
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
-    setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height);
+    setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height, {
+      terrain: layout.terrain,
+      neighbours: layout.neighbours,
+    });
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.terrain, layout.neighbours]);
+
+  // Party-wall neighbours (#202). Never touched by applyWallDisplay, so they
+  // stay put in every wall-display mode (#201).
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+    const sides = neighbourSides(layout.neighbours);
+    if (sides.length === 0) {
+      removeNeighbours(scene);
+    } else {
+      buildNeighbours(THREE, scene, {
+        width: layout.width,
+        depth: layout.height,
+        eavesY: buildingHeight(layout.floors),
+        baseY: lowestGround(layout.terrain) - 0.25,
+        storeys: layout.floors.map((floor, index) => ({
+          y: floorElevation(layout.floors, index),
+          height: storeyHeight(floor),
+        })),
+        roof: layout.roof,
+        sides,
+      });
+    }
+    requestShadowUpdate();
+    // layout.floors is read for storey heights only (storeyHeightsKey +
+    // floor count), so an item edit doesn't rebuild the neighbours.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.width, layout.height, layout.floors.length, storeyHeightsKey, layout.terrain, layout.neighbours, layout.roof]);
 
   // Interior walls
   useEffect(() => {

@@ -1,10 +1,12 @@
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
+import { NEIGHBOUR_SIDES, isTerrainY } from './site';
 import { isStoreyHeight } from './storeys';
 import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
   FurnitureItem,
+  NeighbourSide,
   RoofStyle,
   RoomLayout,
   SofaShape,
@@ -213,6 +215,19 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
     const roof = v.roof;
     if (!ROOF_STYLES.includes(roof.style as RoofStyle)) return false;
     if (roof.color !== undefined && typeof roof.color !== 'string') return false;
+  }
+
+  // Terrain heights place the whole outdoor scene and the plinth depth; a
+  // non-finite or absurd value would sink or launch the lot (#202).
+  if (v.terrain !== undefined) {
+    if (!isPlainObject(v.terrain)) return false;
+    if (!isTerrainY(v.terrain.frontY) || !isTerrainY(v.terrain.backY)) return false;
+  }
+  if (v.neighbours !== undefined) {
+    if (!isPlainObject(v.neighbours)) return false;
+    for (const [side, present] of Object.entries(v.neighbours)) {
+      if (!NEIGHBOUR_SIDES.includes(side as NeighbourSide) || typeof present !== 'boolean') return false;
+    }
   }
 
   return true;

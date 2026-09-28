@@ -89,6 +89,17 @@ describe('isFloorLayout', () => {
 });
 
 describe('isRoomLayout', () => {
+  it('accepts a sloped site with neighbours, and rejects corrupt ones (#202)', () => {
+    expect(isRoomLayout(makeLayout({ terrain: { frontY: 2.5, backY: 0 }, neighbours: { east: true } }))).toBe(true);
+    expect(isRoomLayout(makeLayout({ neighbours: { west: false } }))).toBe(true);
+    for (const terrain of [{ frontY: 2.5 }, { frontY: 99, backY: 0 }, { frontY: Number.NaN, backY: 0 }, 'hill']) {
+      expect(isRoomLayout({ ...makeLayout(), terrain })).toBe(false);
+    }
+    for (const neighbours of [{ north: true }, { east: 'yes' }, ['east']]) {
+      expect(isRoomLayout({ ...makeLayout(), neighbours })).toBe(false);
+    }
+  });
+
   it('accepts the current multi-floor shape', () => {
     expect(isRoomLayout(makeLayout())).toBe(true);
   });

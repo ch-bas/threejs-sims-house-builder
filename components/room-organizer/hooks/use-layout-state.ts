@@ -18,9 +18,11 @@ import type {
   FloorPlanFitMode,
   FurnitureItem,
   InteriorWall,
+  NeighbourSide,
   RoofStyle,
   RoomLayout,
   SofaShape,
+  TerrainSpec,
   WallId,
   WallPattern,
 } from '../lib/types';
@@ -48,6 +50,9 @@ export interface LayoutActions {
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
   setRoofStyle(style: RoofStyle): void;
   setRoofColor(color: string): void;
+  /** Sloped site (#202); `null` returns to flat ground. */
+  setTerrain(terrain: TerrainSpec | null): void;
+  setNeighbour(side: NeighbourSide, present: boolean): void;
   addCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
   removeItem(id: string): void;
   duplicateItem(id: string): string;

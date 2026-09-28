@@ -160,6 +160,11 @@ export interface RoomBuilderOptions {
   yOffset?: number;
   /** Exterior wall height — the storey height (#202). Defaults to 3 m. */
   wallHeight?: number;
+  /**
+   * Lowest ground around the house (#202). Below 0 the plinth reaches down
+   * to it, so a house on a falling site sits on its base, not in mid-air.
+   */
+  groundY?: number;
   /** Opacity multiplier for stacked floors below the active one. */
   ghostOpacity?: number;
   onTextureLoaded?: () => void;
@@ -213,7 +218,9 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   // a low base that extends slightly past the wall plane and grounds the
   // building visually.
   if (yOffset === 0 && !options.floorPlanImage) {
-    addFoundation(THREE, options.scene, options.width, options.depth, isGhost ? options.ghostOpacity : undefined);
+    addFoundation(
+      THREE, options.scene, options.width, options.depth, isGhost ? options.ghostOpacity : undefined, options.groundY
+    );
   }
 
   if (!options.floorPlanImage) {
@@ -242,8 +249,10 @@ function addFoundation(
   scene: ThreeNS.Scene,
   width: number,
   depth: number,
-  ghostOpacity?: number
+  ghostOpacity?: number,
+  groundY = 0
 ): void {
+  const plinthHeight = FOUNDATION_HEIGHT + Math.max(0, -groundY);
   const outerW = width + FOUNDATION_OVERHANG * 2;
   const outerD = depth + FOUNDATION_OVERHANG * 2;
   // Hollow rectangle: outer perimeter minus the inner room footprint, so the
@@ -264,7 +273,7 @@ function addFoundation(
   outline.holes.push(hole);
 
   const geometry = new THREE.ExtrudeGeometry(outline, {
-    depth: FOUNDATION_HEIGHT,
+    depth: plinthHeight,
     bevelEnabled: false,
   });
   // Extrude is created along +Z. Rotate to stand up vertically.
@@ -279,7 +288,7 @@ function addFoundation(
     material.opacity = ghostOpacity;
   }
   const foundation = new THREE.Mesh(geometry, material);
-  foundation.position.y = -FOUNDATION_HEIGHT;
+  foundation.position.y = -plinthHeight;
   foundation.receiveShadow = true;
   foundation.castShadow = true;
   foundation.userData.type = ROOM_OBJECT_TAGS.Floor;

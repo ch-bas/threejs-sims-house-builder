@@ -1,4 +1,7 @@
+import { groundHeightAt } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
+import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
+import type { NeighbourSpec, TerrainSpec } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -15,13 +18,23 @@ const OUTDOOR_TAG = 'outdoor';
  *  - clusters of bushes and flower spots scattered around the grass
  *
  * Deterministic random so the layout doesn't shuffle every render.
+ *
+ * On a sloped site (#202) everything sits on the ground line instead of
+ * y = 0 — road and paths at street level, planting on the slope — and the
+ * lot is excavated around the house. Trees skip a side with a neighbour.
  */
+export interface OutdoorSite {
+  terrain?: TerrainSpec;
+  neighbours?: NeighbourSpec;
+}
+
 export function setOutdoorVisible(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
   visible: boolean,
   roomWidth: number,
-  roomDepth: number
+  roomDepth: number,
+  site: OutdoorSite = {}
 ): void {
   scene.children
     .filter((obj) => obj.userData.type === OUTDOOR_TAG)
@@ -42,6 +55,9 @@ export function setOutdoorVisible(
   const lotHalfW = halfW + lotMargin;
   const lotHalfD = halfD + lotMargin;
   const groundSize = Math.max(roomWidth, roomDepth) * 6 + lotMargin * 2;
+  const { terrain } = site;
+  const groundAt = (z: number) => groundHeightAt(terrain, z, halfD);
+  const streetY = groundAt(-halfD);
 
   // These ground layers were stacked only 1mm apart (grass -0.04, sidewalk
   // -0.03, road -0.029, dashes -0.028), which z-fights at orbit distance.
@@ -54,20 +70,32 @@ export function setOutdoorVisible(
   const DASH_Y = -0.015;
 
   // ---- 1. Grass plane (warm suburban green) ----
-  const grass = new THREE.Mesh(
-    new THREE.PlaneGeometry(groundSize, groundSize, 1, 1),
-    new THREE.MeshStandardMaterial({ color: 0x7cb04a, roughness: 1 })
-  );
-  grass.rotation.x = -Math.PI / 2;
-  grass.position.y = GRASS_Y;
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0x7cb04a, roughness: 1 });
+  const grass = terrain
+    ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y), grassMat)
+    : new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize, 1, 1), grassMat);
+  if (!terrain) {
+    grass.rotation.x = -Math.PI / 2;
+    grass.position.y = GRASS_Y;
+  }
   grass.receiveShadow = true;
   grass.userData.type = OUTDOOR_TAG;
   freezeMatrix(grass);
   scene.add(grass);
 
+  // The sides of the dig where the house cuts into the hill.
+  const excavation = terrain ? buildExcavationGeometry(THREE, terrain, halfW, halfD) : null;
+  if (excavation) {
+    const earth = new THREE.Mesh(excavation, earthMaterial(THREE));
+    earth.receiveShadow = true;
+    earth.userData.type = OUTDOOR_TAG;
+    freezeMatrix(earth);
+    scene.add(earth);
+  }
+
   // Tuft pass: a few hundred low patches of darker / lighter grass to break
   // the flat plane up the way suburban terrain reads.
-  scatterGrassTufts(THREE, scene, rng, groundSize, lotHalfW, lotHalfD);
+  scatterGrassTufts(THREE, scene, rng, groundSize, lotHalfW, lotHalfD, groundAt);
 
   // ---- 2. Sidewalk + road on the north edge ----
   const roadOffset = lotHalfD + 1.6; // sidewalk starts past the lot
@@ -80,7 +108,7 @@ export function setOutdoorVisible(
     sidewalkMat
   );
   sidewalk.rotation.x = -Math.PI / 2;
-  sidewalk.position.set(0, SIDEWALK_Y, -(roadOffset + sidewalkDepth / 2));
+  sidewalk.position.set(0, streetY + SIDEWALK_Y, -(roadOffset + sidewalkDepth / 2));
   sidewalk.receiveShadow = true;
   sidewalk.userData.type = OUTDOOR_TAG;
   freezeMatrix(sidewalk);
@@ -92,7 +120,7 @@ export function setOutdoorVisible(
     asphaltMat
   );
   road.rotation.x = -Math.PI / 2;
-  road.position.set(0, ROAD_Y, -(roadOffset + sidewalkDepth + roadDepth / 2));
+  road.position.set(0, streetY + ROAD_Y, -(roadOffset + sidewalkDepth + roadDepth / 2));
   road.receiveShadow = true;
   road.userData.type = OUTDOOR_TAG;
   freezeMatrix(road);
@@ -104,7 +132,7 @@ export function setOutdoorVisible(
   const dummy = new THREE.Object3D();
   const dashTransforms: ThreeNS.Matrix4[] = [];
   for (let x = -groundSize / 2 + 2; x < groundSize / 2 - 2; x += 2.4) {
-    dummy.position.set(x, DASH_Y, dashZ);
+    dummy.position.set(x, streetY + DASH_Y, dashZ);
     dummy.rotation.set(-Math.PI / 2, 0, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
@@ -130,7 +158,7 @@ export function setOutdoorVisible(
   // wall (north). Identical cylinders → one InstancedMesh.
   const stoneTransforms: ThreeNS.Matrix4[] = [];
   for (let z = -halfD - 0.5; z >= -roadOffset; z -= 0.7) {
-    dummy.position.set(0, -0.005, z);
+    dummy.position.set(0, groundAt(z) - 0.005, z);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
@@ -151,7 +179,7 @@ export function setOutdoorVisible(
   }
 
   // ---- 3. Perimeter trees + bushes ----
-  scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD);
+  scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD, groundAt, site.neighbours);
 }
 
 /** Static mesh — never moves after positioning, so bake its matrix once. */
@@ -183,7 +211,8 @@ function scatterGrassTufts(
   rng: () => number,
   groundSize: number,
   lotHalfW: number,
-  lotHalfD: number
+  lotHalfD: number,
+  groundAt: (z: number) => number
 ): void {
   // 220 identical half-flattened spheres in two shades — collapse them into a
   // single InstancedMesh (1 draw call) with per-instance colour. RNG draws are
@@ -212,7 +241,7 @@ function scatterGrassTufts(
     // and cheaper). The RNG for position/shade/scale is still consumed above so
     // the retained tufts land in exactly the same spots as before.
     if (Math.hypot(x, z) > half * 0.8) continue;
-    dummy.position.set(x, -0.03, z);
+    dummy.position.set(x, groundAt(z) - 0.03, z);
     dummy.scale.set(s, s * 0.45, s);
     dummy.rotation.set(0, 0, 0);
     dummy.updateMatrix();
@@ -348,7 +377,9 @@ function scatterPerimeter(
   scene: ThreeNS.Scene,
   rng: () => number,
   lotHalfW: number,
-  lotHalfD: number
+  lotHalfD: number,
+  groundAt: (z: number) => number,
+  neighbours: NeighbourSpec | undefined
 ): void {
   const bushMat = new THREE.MeshStandardMaterial({ color: 0x3e7a35, roughness: 0.9 });
   const bushGeom = new THREE.SphereGeometry(0.45, 10, 10);
@@ -372,8 +403,10 @@ function scatterPerimeter(
       x = -(lotHalfW + 1.5 + rng() * 3.5); // west
       z = (rng() - 0.5) * (lotHalfD * 2);
     }
+    // A neighbour's house stands on that side (#202).
+    if ((side === 1 && neighbours?.east) || (side === 2 && neighbours?.west)) continue;
     treePositions.push([x, z]);
-    addTree(THREE, scene, x, z, TREE_KINDS[i % TREE_KINDS.length]!, rng);
+    addTree(THREE, scene, x, groundAt(z), z, TREE_KINDS[i % TREE_KINDS.length]!, rng);
     void t;
   }
 
@@ -391,7 +424,7 @@ function scatterPerimeter(
     const s = 0.7 + rng() * 0.4;
     // Keep the road frontage clean.
     if (z < -lotHalfD) continue;
-    shrubDummy.position.set(x, 0.32, z);
+    shrubDummy.position.set(x, groundAt(z) + 0.32, z);
     shrubDummy.rotation.set(0, 0, 0);
     shrubDummy.scale.setScalar(s);
     shrubDummy.updateMatrix();
@@ -425,7 +458,7 @@ function scatterPerimeter(
   for (let i = 0; i < 6; i += 1) {
     const x = ((rng() - 0.5) * lotHalfW) * 2;
     const z = -lotHalfD - 0.4 - rng() * 0.6;
-    collectFlowerPatch(THREE, dummy, x, z, flowerColors, rng, blossomMatrices, blossomColors, stemMatrices);
+    collectFlowerPatch(THREE, dummy, x, groundAt(z), z, flowerColors, rng, blossomMatrices, blossomColors, stemMatrices);
   }
   if (blossomMatrices.length > 0) {
     const blossomGeom = new THREE.SphereGeometry(0.07, 8, 8);
@@ -460,6 +493,7 @@ function addTree(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
   x: number,
+  y: number,
   z: number,
   kind: TreeKind,
   rng: () => number
@@ -601,7 +635,7 @@ function addTree(
     });
   }
 
-  group.position.set(x, 0, z);
+  group.position.set(x, y, z);
   group.rotation.y = rng() * Math.PI * 2;
   group.scale.setScalar(scale);
   group.userData.type = OUTDOOR_TAG;
@@ -619,6 +653,7 @@ function collectFlowerPatch(
   THREE: ThreeModule,
   dummy: ThreeNS.Object3D,
   x: number,
+  y: number,
   z: number,
   colors: readonly number[],
   rng: () => number,
@@ -634,14 +669,14 @@ function collectFlowerPatch(
     const pz = Math.sin(angle) * r;
     const color = colors[Math.floor(rng() * colors.length)]!;
 
-    dummy.position.set(x + px, 0.12, z + pz);
+    dummy.position.set(x + px, y + 0.12, z + pz);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     blossomMatrices.push(dummy.matrix.clone());
     blossomColors.push(new THREE.Color(color));
 
-    dummy.position.set(x + px, 0.05, z + pz);
+    dummy.position.set(x + px, y + 0.05, z + pz);
     dummy.updateMatrix();
     stemMatrices.push(dummy.matrix.clone());
   }

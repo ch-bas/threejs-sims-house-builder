@@ -74,6 +74,8 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setFloorPlanFitMode: (mode: FloorPlanFitMode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
     setRoofStyle: (style: RoofStyle) => dispatch({ type: 'setRoofStyle', style }),
     setRoofColor: (color) => dispatch({ type: 'setRoofColor', color }),
+    setTerrain: (terrain) => dispatch({ type: 'setTerrain', terrain }),
+    setNeighbour: (side, present) => dispatch({ type: 'setNeighbour', side, present }),
     addCatalogItem: (catalogItem: CatalogItem, position) => {
       const id = nextId(catalogItem.type);
       dispatch({ type: 'addCatalogItem', catalogItem, id, ...(position ? { position } : {}) });
