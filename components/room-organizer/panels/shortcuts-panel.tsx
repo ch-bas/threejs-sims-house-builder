@@ -16,7 +16,7 @@ const SHORTCUTS: readonly Shortcut[] = [
   { label: 'Nudge', keys: 'Arrows (⇧ = 1 m)' },
   { label: 'Deselect', keys: 'Esc' },
   { label: 'Focus on item', keys: 'F' },
-  { label: 'Multi-select', keys: 'Ctrl+click' },
+  { label: 'Multi-select', keys: 'Ctrl/⌘+click' },
   { label: 'Toggle 2D', keys: '2' },
   { label: 'Measurements', keys: 'M' },
   { label: 'Snap to grid', keys: 'G' },

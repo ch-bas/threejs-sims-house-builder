@@ -13,10 +13,10 @@ interface Tip {
 const TIPS: readonly Tip[] = [
   { title: 'Drag from catalog', body: 'Drop any catalog item onto the lot to place it exactly where you let go.' },
   { title: 'Move in 3D', body: 'Click and drag furniture, or select and nudge with the arrow keys — hold Shift for 1 m steps.' },
-  { title: 'Snap toggles', body: 'Grid, Wall, and Items snaps keep your placements tidy.' },
+  { title: 'Grid snap', body: 'Press G to snap placements to a 0.5 m grid. Doors and windows snap to walls on their own.' },
   { title: 'Themes & sets', body: 'One-click templates rebuild the room. Library saves named layouts.' },
-  { title: 'Walkthrough', body: 'Switch to LIVE to wander your Sim home with WASD + Shift to sprint.' },
-  { title: 'Multi-select', body: 'Ctrl-click to add items to a selection. Delete clears them all.' },
+  { title: 'Walkthrough', body: 'Switch to EXPLORE to wander your Sim home with WASD + Shift to sprint.' },
+  { title: 'Multi-select', body: 'Ctrl/⌘-click to add items to a selection. Delete removes them all, except locked ones.' },
 ];
 
 export function WelcomeBanner(): JSX.Element | null {
