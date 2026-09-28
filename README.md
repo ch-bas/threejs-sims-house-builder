@@ -36,7 +36,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 
 ### Building
 
-- **68 furniture items** across 12 categories (Seating, Tables, Bedroom,
+- **69 furniture items** across 12 categories (Seating, Tables, Bedroom,
   Storage, Kitchen, Bathroom, Electronics, Security, Decor, Outdoor,
   People, Structure).
 - **Multi-floor buildings** up to 4 levels — ground floor + up to three
@@ -44,10 +44,27 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   (double-click), reorder, and **clone** the active floor. Each floor
   has its own items and finishes; per-floor stats break down cost and
   count in the sidebar.
-- **Stairs** as a furniture type that visually bridges one floor to the
-  next (14 steps, stringers, slanted handrails).
+- **Per-storey heights**: each floor has its own floor-to-floor height
+  (1–6 m) in Room Settings — a 2.5 m basement, a 1.1 m loft knee wall —
+  and everything stacks on it: walls, furniture, lamps, the roof,
+  dragging, walkthrough and the camera.
+- **Stairs** as a furniture type that bridges one floor to the next
+  (14 steps, stringers, slanted handrails), climbing exactly to the
+  storey above. **Winder Stairs** turn a half-turn dog-leg (up flight,
+  winder fan, return flight) with a Straight/Winder switch and an
+  up-flight lead-in. Stairwells are cut only where a tread comes within
+  2.0 m headroom of the floor above — an L over a winder's turn.
 - **Roof** on top of the highest floor: Flat, Gable, or Hipped, with a
-  per-roof colour picker.
+  per-roof colour picker, and **dormers** on gable and hipped slopes —
+  ribbon windows, casement pairs, or French doors with side lights and
+  an optional Juliet balcony, each with frames, mullions, transoms,
+  glass and a colour finish.
+- **Real streets** (Site panel): a **sloped site** with street and
+  garden ground levels (the road, paths and planting follow the slope
+  and the lot is dug out around the house), **party-wall neighbours**
+  either side built to your eaves, **pavement frontage** right up to
+  the front wall, and a **recessed entrance** porch with steps up from
+  the street and an ordinary door across its back.
 - **Categorised catalog** with search, filter chips, and price tags ($).
 - **A budget that pushes back**: purchases that would exceed the
   $25,000 budget ask for confirmation, Surprise-me spends only what the
@@ -119,7 +136,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   (stretch/cover/contain), and optional 3D displacement.
 - **Roof** picker (None / Flat / Gable / Hipped) with a colour.
 - **Doors and windows** that cut openings in the nearest wall when
-  dropped — both exterior and interior walls support the cutouts.
+  dropped — both exterior and interior walls support the cutouts. Each
+  window can set its own **sill height**.
 - **Interior walls**: a chained draw-mode (click successive floor points
   to lay a polyline of thin wall segments) with **vertex snapping**
   (existing endpoints), **right-angle snapping** (perpendicular to the
@@ -251,7 +269,7 @@ components/
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
-    │   ├── constants.ts                 Catalog (68 items), templates, MAX_FLOORS
+    │   ├── constants.ts                 Catalog (69 items), templates, MAX_FLOORS
     │   ├── schema.ts                    Type guards + legacy migration
     │   ├── geometry.ts                  Collision, bounds, snap, auto-organize
     │   ├── alignment.ts                 Align/distribute pure functions
@@ -261,7 +279,7 @@ components/
     │   ├── library.ts                   Named-layout library I/O
     │   ├── share.ts                     Share-URL encode/decode (base64url)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
-    │   ├── catalog-drag.ts              HTML5 drag MIME constants
+    │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── furniture-sets.ts            Pre-built combos
     │   ├── surprise.ts                  Random one-shot floor populate
@@ -269,6 +287,11 @@ components/
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── room-shapes.ts               Predefined room shape presets
+    │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
+    │   ├── site.ts                      Sloped ground + party-wall neighbour sides
+    │   ├── street.ts                    Window sills, recessed entrance, frontage
+    │   ├── dormers.ts                   Dormer slope fitting + opening layout
+    │   ├── stairs.ts                    Tread layout (straight / winder) + headroom stairwells
     │   └── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory (~110 lines)
@@ -294,6 +317,11 @@ components/
     │   ├── measurement.ts               Distance-tool spheres + line
     │   ├── item-labels.ts               Floating sprite labels above items
     │   ├── roof.ts                      Flat / gable / hipped roof
+    │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails
+    │   ├── neighbours.ts                Party-wall terrace neighbours
+    │   ├── terrain.ts                   Sloped ground + excavation faces
+    │   ├── entrance.ts                  Recessed porch reveals, soffit, steps
+    │   ├── baseboard.ts                 Skirting profile + door-gap runs
     │   ├── floor-patterns.ts            Procedural CanvasTexture floors
     │   ├── wall-patterns.ts             Procedural CanvasTexture walls
     │   ├── texture-lru.ts               LRU cache for texture masters (evict + dispose)
@@ -335,6 +363,7 @@ components/
         ├── floor-switcher.tsx
         ├── walls-panel.tsx
         ├── roof-panel.tsx
+        ├── site-panel.tsx               Slope, neighbours, frontage, entrance
         ├── room-settings-panel.tsx
         ├── furniture-catalog-panel.tsx
         ├── placed-items-panel.tsx

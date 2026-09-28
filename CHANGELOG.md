@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.9.0] - 2026-09-28
+
+Completes the **v1.9 — Real Streets** milestone: the realism track from [#195](https://github.com/ch-bas/threejs-sims-house-builder/issues/195).
+
+### Added
+- Per-storey heights: each floor can have its own floor-to-floor height (1–6 m) — a 2.5 m basement, a 1.1 m loft knee wall — set in Room Settings. Floors, walls, furniture, lamps, the roof, dragging, walkthrough, the camera and stairs all follow it; layouts without heights stack exactly as before ([#202](https://github.com/ch-bas/threejs-sims-house-builder/issues/202))
+- Sloped sites: street and garden ground levels in the new Site panel. The road, pavement, path and planting follow the slope, the lot is dug out around the house with earth faces over the buried facade, and the plinth reaches down to falling ground ([#202](https://github.com/ch-bas/threejs-sims-house-builder/issues/202))
+- Party-wall neighbours: terrace houses either side, sized off your eaves and roofed in your style, visible in every wall-display mode ([#202](https://github.com/ch-bas/threejs-sims-house-builder/issues/202), [#201](https://github.com/ch-bas/threejs-sims-house-builder/issues/201))
+- Roof dormers on gable and hipped slopes, with real openings — ribbon windows, casement pairs, French doors with side lights — frames, mullions, transoms, glass, head trim, an optional Juliet balcony, and a colour finish, managed from the Roof panel ([#203](https://github.com/ch-bas/threejs-sims-house-builder/issues/203))
+- A recessed entrance porch in the front wall on the storey at street level, with reveals, a soffit, steps up from the street, and an ordinary door on the wall across the back that follows the recess ([#204](https://github.com/ch-bas/threejs-sims-house-builder/issues/204))
+- Pavement frontage: the pavement and road run right up to the front wall, town-terrace style ([#204](https://github.com/ch-bas/threejs-sims-house-builder/issues/204))
+- Per-window sill height in the item panel; the wall cut and the window always agree ([#204](https://github.com/ch-bas/threejs-sims-house-builder/issues/204))
+- Winder stairs: a half-turn dog-leg (up flight, winder fan, return flight) with a Straight/Winder switch and an up-flight lead-in in the item panel, and a "Winder Stairs" catalogue entry ([#205](https://github.com/ch-bas/threejs-sims-house-builder/issues/205))
+
+### Changed
+- Stairwells are sized for 2.0 m headroom (UK Approved Document K) instead of cutting the stair's whole footprint out of the floor above; a winder's stairwell is an L over its turn and return flight ([#205](https://github.com/ch-bas/threejs-sims-house-builder/issues/205))
+
+### Fixed
+- With "Show all floors" and all walls up, the house renders solid instead of the other storeys turning see-through ([#201](https://github.com/ch-bas/threejs-sims-house-builder/issues/201))
+- Skirting boards stop at doorways, meet cleanly at the corners, and no longer flicker through the facade as a dark band ([#201](https://github.com/ch-bas/threejs-sims-house-builder/issues/201))
+- Dragging a catalogue tile always drops that exact item, even when two entries share a type ([#205](https://github.com/ch-bas/threejs-sims-house-builder/issues/205))
+
 ## [1.8.15] - 2026-09-28
 
 Completes the **Editor integrity** milestone.
