@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { Icon } from '../plotcraft/icon';
 
 const STORAGE_KEY = 'standalone-room-organizer-welcome-dismissed';
@@ -46,40 +47,7 @@ export function WelcomeBanner(): JSX.Element | null {
 
   // A11y: focus the primary action on mount, close on Escape, and keep Tab
   // focus trapped inside the modal dialog (it renders with aria-modal="true").
-  useEffect(() => {
-    if (!visible) return undefined;
-    primaryButtonRef.current?.focus();
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        dismiss();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-      const focusable = dialog.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      const active = document.activeElement;
-      if (event.shiftKey) {
-        if (active === first || !dialog.contains(active)) {
-          event.preventDefault();
-          last.focus();
-        }
-      } else if (active === last || !dialog.contains(active)) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [visible, dismiss]);
+  useDialogFocus(visible, dialogRef, { initialFocusRef: primaryButtonRef, onEscape: dismiss, trap: true });
 
   if (!visible) return null;
 

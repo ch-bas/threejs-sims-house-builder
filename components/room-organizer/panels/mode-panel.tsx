@@ -61,7 +61,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
 
       <div
         className="pc-mode-pill"
-        role="tablist"
+        role="group"
         aria-label="Game mode"
         style={{ alignSelf: 'stretch', justifyContent: 'space-between' }}
       >
@@ -71,8 +71,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
             <button
               key={entry.key}
               type="button"
-              role="tab"
-              aria-selected={isActive}
+              aria-pressed={isActive}
               onClick={() => onSetMode(entry.key)}
               title={entry.hint}
               className={`pc-mode-pill__cell${isActive ? ' pc-mode-pill__cell--active' : ''}`}

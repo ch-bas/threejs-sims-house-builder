@@ -147,6 +147,9 @@ export function FloorSwitcher(): JSX.Element {
                         actions.renameFloor(index, draft.trim() || floor.name);
                         setRenaming(null);
                       } else if (event.key === 'Escape') {
+                        // Handled here: cancel the rename without also closing
+                        // the drawer this sits in (#152).
+                        event.preventDefault();
                         setRenaming(null);
                       }
                     }}

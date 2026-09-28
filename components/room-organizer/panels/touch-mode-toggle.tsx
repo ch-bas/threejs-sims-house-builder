@@ -121,9 +121,9 @@ function TouchButton({ icon, label, active, onClick, flipIcon }: {
       onClick={onClick}
       className={`pc-tile${active ? ' pc-tile--active' : ''}`}
       style={{
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -135,6 +135,7 @@ function TouchButton({ icon, label, active, onClick, flipIcon }: {
         boxShadow: active ? 'var(--pc-halo-cyan-soft)' : '0 2px 8px rgba(0,0,0,0.3)',
       }}
       title={label}
+      aria-label={label}
     >
       <Icon
         name={icon}
@@ -148,7 +149,7 @@ function TouchButton({ icon, label, active, onClick, flipIcon }: {
         style={{
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 600,
-          fontSize: 6,
+          fontSize: 8,
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
           color: active ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)',
