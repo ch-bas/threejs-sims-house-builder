@@ -110,6 +110,17 @@ const FLOOR_PALETTES: readonly SwatchGroup[] = [
 // Apply-to + active-tab state
 // ============================================================================
 
+/** Unpainted exterior walls render in this colour (room-builder's default). */
+const DEFAULT_EXTERIOR_WALL_COLOR = '#e8dcc4';
+const EXTERIOR_WALLS: readonly WallId[] = ['north', 'east', 'south', 'west'];
+
+/** The colour every entry shares, or undefined if they differ. */
+function sharedColor(colors: readonly string[]): string | undefined {
+  const [first, ...rest] = colors;
+  if (first === undefined) return undefined;
+  return rest.every((color) => color.toLowerCase() === first.toLowerCase()) ? first : undefined;
+}
+
 const APPLY_TARGETS: ReadonlyArray<{ id: WallId | 'all'; label: string }> = [
   { id: 'all',   label: 'All' },
   { id: 'north', label: 'N' },
@@ -165,16 +176,18 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       : null;
   const selectedInteriorId =
     props.selectedWall && props.selectedWall.kind === 'interior' ? props.selectedWall.id : null;
-  const applyTo: WallId | 'all' = selectedExteriorId ?? 'all';
+  // An interior selection paints only that wall, so no exterior chip is the
+  // target — showing "All" checked promised a repaint that never happened (#221).
+  const applyTo: WallId | 'all' | null = selectedInteriorId ? null : selectedExteriorId ?? 'all';
 
   const currentWallPattern = floor.wallPattern ?? 'solid';
   const currentFloorPattern = floor.floorPattern ?? 'solid';
-  const currentWallColor =
-    (selectedInteriorId
-      ? floor.interiorWalls?.find((wall) => wall.id === selectedInteriorId)?.color ?? '#e0e0e0'
-      : selectedExteriorId
-        ? floor.wallColors?.[selectedExteriorId]
-        : floor.wallColors?.north) ?? '#e8dcc4';
+  const exteriorColor = (wall: WallId) => floor.wallColors?.[wall] ?? DEFAULT_EXTERIOR_WALL_COLOR;
+  const currentWallColor = selectedInteriorId
+    ? floor.interiorWalls?.find((wall) => wall.id === selectedInteriorId)?.color ?? '#e0e0e0'
+    : selectedExteriorId
+      ? exteriorColor(selectedExteriorId)
+      : sharedColor(EXTERIOR_WALLS.map(exteriorColor));
 
   const activeWallPalette =
     WALL_PALETTES.find((g) => g.id === wallGroup) ?? WALL_PALETTES[0]!;
@@ -268,8 +281,8 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
           <SwatchGrid
             swatches={activeWallPalette.colors}
             value={currentWallColor}
-            onChange={(color) => applyWallColor(applyTo, color)}
-            onCustomChange={(color) => applyWallColor(applyTo, color)}
+            onChange={(color) => applyWallColor(applyTo ?? 'all', color)}
+            onCustomChange={(color) => applyWallColor(applyTo ?? 'all', color)}
           />
         </>
       ) : (
@@ -358,7 +371,8 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
 }
 
 interface ApplyToggleProps {
-  value: WallId | 'all';
+  /** null: nothing checked (an interior wall is the target). */
+  value: WallId | 'all' | null;
   onChange(v: WallId | 'all'): void;
 }
 
@@ -696,6 +710,7 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
             type="button"
             onClick={() => onChange(swatch)}
             aria-label={`Use color ${swatch}`}
+            aria-pressed={active}
             title={swatch}
             style={{
               height: 22,
