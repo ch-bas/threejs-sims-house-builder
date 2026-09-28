@@ -105,7 +105,8 @@ function buildNeighbour(THREE: ThreeModule, options: NeighbourOptions, side: Nei
       width,
       depth,
       baseY: eavesY - ROOF_DROP,
-      spec: options.roof,
+      // Our dormers are ours: the neighbours get the plain roof.
+      spec: { style: options.roof.style, color: options.roof.color },
     });
   }
   return group;

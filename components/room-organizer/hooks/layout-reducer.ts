@@ -1,10 +1,12 @@
 import { DEFAULT_ROOF, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { MAX_DORMERS, clampDormer } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import { clampTerrainY } from '../lib/site';
 import { clampStoreyHeight } from '../lib/storeys';
 import type {
   CatalogItem,
+  DormerSpec,
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
@@ -71,6 +73,9 @@ export type LayoutAction =
   | { type: 'setFloorPlanFitMode'; mode: FloorPlanFitMode }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
+  | { type: 'addDormer'; dormer: DormerSpec }
+  | { type: 'updateDormer'; id: string; patch: Partial<Omit<DormerSpec, 'id'>> }
+  | { type: 'removeDormer'; id: string }
   | { type: 'setTerrain'; terrain: TerrainSpec | null }
   | { type: 'setNeighbour'; side: NeighbourSide; present: boolean }
   | { type: 'applyLayout'; layout: RoomLayout };
@@ -205,6 +210,32 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         ...layout,
         roof: { ...(layout.roof ?? { style: 'flat' }), color: action.color },
       }));
+
+    // -- dormers (#203) -----------------------------------------------------
+    // Clamped on the way in so a stray value can't fail validation on reload.
+    case 'addDormer':
+      return withLayout(state, (layout) => {
+        const dormers = layout.roof?.dormers ?? [];
+        if (dormers.length >= MAX_DORMERS) return layout;
+        const roof = layout.roof ?? DEFAULT_ROOF;
+        return { ...layout, roof: { ...roof, dormers: [...dormers, clampDormer(action.dormer)] } };
+      });
+    case 'updateDormer':
+      return withLayout(state, (layout) => {
+        const dormers = layout.roof?.dormers;
+        if (!layout.roof || !dormers?.some((d) => d.id === action.id)) return layout;
+        const next = dormers.map((d) => (d.id === action.id ? clampDormer({ ...d, ...action.patch, id: d.id }) : d));
+        return { ...layout, roof: { ...layout.roof, dormers: next } };
+      });
+    case 'removeDormer':
+      return withLayout(state, (layout) => {
+        const dormers = layout.roof?.dormers;
+        if (!layout.roof || !dormers?.some((d) => d.id === action.id)) return layout;
+        const next = dormers.filter((d) => d.id !== action.id);
+        if (next.length > 0) return { ...layout, roof: { ...layout.roof, dormers: next } };
+        const { dormers: _none, ...roof } = layout.roof;
+        return { ...layout, roof };
+      });
 
     // -- item CRUD ----------------------------------------------------------
     case 'addCatalogItem': {

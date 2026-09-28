@@ -13,6 +13,7 @@ import {
 } from './use-layout-store';
 import type {
   CatalogItem,
+  DormerSpec,
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
@@ -50,6 +51,10 @@ export interface LayoutActions {
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
   setRoofStyle(style: RoofStyle): void;
   setRoofColor(color: string): void;
+  /** Roof dormers (#203). `addDormer` returns the new dormer's id. */
+  addDormer(dormer: Omit<DormerSpec, 'id'>): string;
+  updateDormer(id: string, patch: Partial<Omit<DormerSpec, 'id'>>): void;
+  removeDormer(id: string): void;
   /** Sloped site (#202); `null` returns to flat ground. */
   setTerrain(terrain: TerrainSpec | null): void;
   setNeighbour(side: NeighbourSide, present: boolean): void;

@@ -1,4 +1,5 @@
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
+import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { NEIGHBOUR_SIDES, isTerrainY } from './site';
 import { isStoreyHeight } from './storeys';
 import type {
@@ -215,6 +216,12 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
     const roof = v.roof;
     if (!ROOF_STYLES.includes(roof.style as RoofStyle)) return false;
     if (roof.color !== undefined && typeof roof.color !== 'string') return false;
+    // Dormer numbers size real geometry on the roof; an absurd width or a
+    // non-finite offset must not reach the builder (#203).
+    if (roof.dormers !== undefined) {
+      if (!Array.isArray(roof.dormers) || roof.dormers.length > MAX_DORMERS) return false;
+      if (!roof.dormers.every(isDormerSpec)) return false;
+    }
   }
 
   // Terrain heights place the whole outdoor scene and the plinth depth; a

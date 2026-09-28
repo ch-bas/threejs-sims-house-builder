@@ -373,6 +373,30 @@ describe('layoutReducer — storey height (#202)', () => {
   });
 });
 
+describe('layoutReducer — dormers (#203)', () => {
+  const dormer = { id: 'd1', side: 'south' as const, width: 2, window: true };
+
+  it('adds clamped dormers up to the cap, updates and removes them', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'addDormer', dormer: { ...dormer, width: 99 } });
+    expect(state.layout.roof?.dormers).toEqual([{ ...dormer, width: 8 }]);
+    state = layoutReducer(state, { type: 'updateDormer', id: 'd1', patch: { width: 3, window: undefined, balcony: true } });
+    expect(state.layout.roof?.dormers).toEqual([{ id: 'd1', side: 'south', width: 3, balcony: true }]);
+    for (let i = 2; i <= 7; i++) {
+      state = layoutReducer(state, { type: 'addDormer', dormer: { ...dormer, id: `d${i}` } });
+    }
+    expect(state.layout.roof?.dormers).toHaveLength(6);
+    for (let i = 1; i <= 6; i++) state = layoutReducer(state, { type: 'removeDormer', id: `d${i}` });
+    expect('dormers' in state.layout.roof!).toBe(false);
+  });
+
+  it('keeps state identity for unknown ids', () => {
+    const state = layoutReducer(stateWith([]), { type: 'addDormer', dormer });
+    expect(layoutReducer(state, { type: 'updateDormer', id: 'nope', patch: { width: 3 } })).toBe(state);
+    expect(layoutReducer(state, { type: 'removeDormer', id: 'nope' })).toBe(state);
+  });
+});
+
 describe('layoutReducer — site (#202)', () => {
   it('sets a clamped slope and returns to flat ground', () => {
     let state = stateWith([]);

@@ -89,6 +89,14 @@ describe('isFloorLayout', () => {
 });
 
 describe('isRoomLayout', () => {
+  it('accepts roof dormers and rejects corrupt ones (#203)', () => {
+    const dormer = { id: 'd', side: 'south', width: 2, window: true };
+    expect(isRoomLayout(makeLayout({ roof: { style: 'gable', dormers: [dormer] as never } }))).toBe(true);
+    for (const dormers of ['x', [{ ...dormer, width: -1 }], Array.from({ length: 7 }, () => dormer)]) {
+      expect(isRoomLayout({ ...makeLayout(), roof: { style: 'gable', dormers } })).toBe(false);
+    }
+  });
+
   it('accepts a sloped site with neighbours, and rejects corrupt ones (#202)', () => {
     expect(isRoomLayout(makeLayout({ terrain: { frontY: 2.5, backY: 0 }, neighbours: { east: true } }))).toBe(true);
     expect(isRoomLayout(makeLayout({ neighbours: { west: false } }))).toBe(true);
