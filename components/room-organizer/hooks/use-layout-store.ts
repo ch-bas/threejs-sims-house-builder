@@ -83,6 +83,9 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     removeDormer: (id) => dispatch({ type: 'removeDormer', id }),
     setTerrain: (terrain) => dispatch({ type: 'setTerrain', terrain }),
     setNeighbour: (side, present) => dispatch({ type: 'setNeighbour', side, present }),
+    setEntrance: (entrance) => dispatch({ type: 'setEntrance', entrance }),
+    setFrontage: (frontage) => dispatch({ type: 'setFrontage', frontage }),
+    setSillHeight: (id, sillHeight) => dispatch({ type: 'setSillHeight', id, sillHeight }),
     addCatalogItem: (catalogItem: CatalogItem, position) => {
       const id = nextId(catalogItem.type);
       dispatch({ type: 'addCatalogItem', catalogItem, id, ...(position ? { position } : {}) });

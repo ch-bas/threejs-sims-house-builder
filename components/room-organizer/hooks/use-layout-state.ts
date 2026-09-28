@@ -14,9 +14,11 @@ import {
 import type {
   CatalogItem,
   DormerSpec,
+  EntranceSpec,
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  Frontage,
   FurnitureItem,
   InteriorWall,
   NeighbourSide,
@@ -58,6 +60,11 @@ export interface LayoutActions {
   /** Sloped site (#202); `null` returns to flat ground. */
   setTerrain(terrain: TerrainSpec | null): void;
   setNeighbour(side: NeighbourSide, present: boolean): void;
+  /** Recessed entrance and street frontage (#204). */
+  setEntrance(entrance: EntranceSpec | null): void;
+  setFrontage(frontage: Frontage): void;
+  /** A window's own sill height; `null` returns it to the shared datum. */
+  setSillHeight(id: string, sillHeight: number | null): void;
   addCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
   removeItem(id: string): void;
   duplicateItem(id: string): string;

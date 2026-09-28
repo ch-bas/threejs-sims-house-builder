@@ -2,6 +2,7 @@ import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants'
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { NEIGHBOUR_SIDES, isTerrainY } from './site';
 import { isStoreyHeight } from './storeys';
+import { isEntranceSpec, isSillHeight } from './street';
 import type {
   FloorLayout,
   FloorPattern,
@@ -107,6 +108,8 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (!isOptionalPositiveNumber(v.visionRange)) return false;
   if (v.visionFov !== undefined && (!isPositiveNumber(v.visionFov) || v.visionFov > 360)) return false;
   if (v.wallRotation !== undefined && !isFiniteNumber(v.wallRotation)) return false;
+  // Sill height places the window hole in the wall (#204).
+  if (v.sillHeight !== undefined && !isSillHeight(v.sillHeight)) return false;
   // Enum-ish fields ingested from external data must match their unions —
   // an unknown sofaShape/stairsDirection reaches builder switch statements
   // unchecked (#121). cctvModelId only needs to be a string: unknown ids
@@ -230,6 +233,8 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
     if (!isPlainObject(v.terrain)) return false;
     if (!isTerrainY(v.terrain.frontY) || !isTerrainY(v.terrain.backY)) return false;
   }
+  if (v.entrance !== undefined && !isEntranceSpec(v.entrance)) return false;
+  if (v.frontage !== undefined && v.frontage !== 'garden' && v.frontage !== 'pavement') return false;
   if (v.neighbours !== undefined) {
     if (!isPlainObject(v.neighbours)) return false;
     for (const [side, present] of Object.entries(v.neighbours)) {

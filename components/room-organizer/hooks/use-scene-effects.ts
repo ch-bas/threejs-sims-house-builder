@@ -3,9 +3,11 @@ import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render
 import { hasCollisions } from '../lib/geometry';
 import { lowestGround, neighbourSides } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, stairRise, storeyHeight } from '../lib/storeys';
+import { entranceGeometry, entranceWallCut } from '../lib/street';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
+import { buildEntrance } from '../three/entrance';
 import { createFurnitureModel } from '../three/furniture-builders';
 import {
   clearInteriorWalls,
@@ -212,6 +214,16 @@ export function useSceneEffects({
       ? layout.floors.map((floor, index) => ({ floor, index }))
       : [{ floor: activeFloor, index: activeFloorIndex }];
 
+    // The recessed entrance (#204) cuts the front wall of every storey it crosses.
+    const entrance = layout.entrance
+      ? entranceGeometry(layout.entrance, {
+          width: layout.width,
+          depth: layout.height,
+          floors: layout.floors,
+          terrain: layout.terrain,
+        })
+      : null;
+
     for (const { floor, index } of floorsToRender) {
       const isActive = index === activeFloorIndex;
       const wallOpenings = computeWallOpenings(
@@ -221,6 +233,10 @@ export function useSceneEffects({
         storeyHeight(floor),
         floor.interiorWalls ?? []
       );
+      const entranceCut = entrance ? entranceWallCut(entrance, layout.floors, index) : null;
+      if (entranceCut) {
+        wallOpenings.set('north', [...(wallOpenings.get('north') ?? []), { id: 'entrance', ...entranceCut }]);
+      }
       // Stairs on the floor below create openings in this floor's plane.
       const floorBelow = index > 0 ? layout.floors[index - 1] : undefined;
       const floorOpenings = computeFloorOpenings(floorBelow);
@@ -245,6 +261,17 @@ export function useSceneEffects({
         ghostOpacity: otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
         onTextureLoaded: invalidate,
       });
+      if (entrance && index === entrance.floorIndex && !layout.floorPlanImage) {
+        for (const group of buildEntrance(THREE, {
+          geometry: entrance,
+          wallColor: floor.wallColors?.north ?? '#e8dcc4',
+          wallTag: ROOM_OBJECT_TAGS.Wall,
+          floorTag: ROOM_OBJECT_TAGS.Floor,
+          ghostOpacity: otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
+        })) {
+          scene.add(group);
+        }
+      }
     }
 
     const camera = cameraRef.current;
@@ -265,7 +292,7 @@ export function useSceneEffects({
     // interior walls (nearest wall wins), so the exterior hole set changes
     // when interior walls do — without this dep a door claimed by a new
     // interior wall stays double-cut into the exterior wall (#119).
-    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain,
+    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, view.showAllFloors, view.wallDisplay,
     activeFloorIndex,
@@ -486,11 +513,12 @@ export function useSceneEffects({
     setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height, {
       terrain: layout.terrain,
       neighbours: layout.neighbours,
+      frontage: layout.frontage,
     });
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.terrain, layout.neighbours]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.terrain, layout.neighbours, layout.frontage]);
 
   // Party-wall neighbours (#202). Never touched by applyWallDisplay, so they
   // stay put in every wall-display mode (#201).

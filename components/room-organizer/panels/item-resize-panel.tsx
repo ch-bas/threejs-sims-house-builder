@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { isWallMounted } from '../lib/opening-snap';
+import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import type { FurnitureItem, SofaShape } from '../lib/types';
 
@@ -143,6 +144,19 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
           <SofaShapeSelect
             value={item.sofaShape ?? 'standard'}
             onChange={(shape) => actions.setSofaShape(item.id, shape)}
+          />
+        )}
+
+        {item.type === 'window' && (
+          <SignalRangeSlider
+            label="Sill height"
+            min={MIN_SILL_HEIGHT}
+            max={MAX_SILL_HEIGHT}
+            step={0.05}
+            value={windowSillHeight(item)}
+            disabled={locked}
+            title={lockedTitle}
+            onChange={(value) => actions.setSillHeight(item.id, value)}
           />
         )}
 
@@ -336,11 +350,14 @@ interface SignalRangeSliderProps {
   label: string;
   min: number;
   max: number;
+  step?: number;
   value: number;
+  disabled?: boolean;
+  title?: string;
   onChange(value: number): void;
 }
 
-function SignalRangeSlider({ label, min, max, value, onChange }: SignalRangeSliderProps): JSX.Element {
+function SignalRangeSlider({ label, min, max, step = 0.5, value, disabled, title, onChange }: SignalRangeSliderProps): JSX.Element {
   const id = useId();
   return (
     <div>
@@ -352,8 +369,10 @@ function SignalRangeSlider({ label, min, max, value, onChange }: SignalRangeSlid
         type="range"
         min={min}
         max={max}
-        step="0.5"
+        step={step}
         value={value}
+        disabled={disabled}
+        title={title}
         onChange={(event) => onChange(parseFloat(event.target.value))}
         className="w-full"
       />

@@ -41,6 +41,22 @@ describe('outdoor scene on a sloped site (#202)', () => {
     expect(outdoor(hill).length).toBe(outdoor(flat).length + 1);
   });
 
+  it('runs the pavement up to the front wall with no front garden (#204)', () => {
+    const scene = new THREE.Scene();
+    setOutdoorVisible(THREE, scene, true, WIDTH, DEPTH, { frontage: 'pavement' });
+    const planes = outdoor(scene).filter((obj) => obj instanceof THREE.Mesh && obj.geometry instanceof THREE.PlaneGeometry);
+    const nearest = planes.filter((p) => p.position.z < 0).reduce((a, b) => (b.position.z > a.position.z ? b : a));
+    expect(nearest.position.z).toBeCloseTo(-(DEPTH / 2 + 0.8)); // pavement, 1.6 m deep, from the wall
+    expect(road(scene).position.z).toBeCloseTo(-(DEPTH / 2 + 1.6 + 2.25));
+    // No stepping stones or front planting.
+    const stones = outdoor(scene).filter(
+      (obj) => obj instanceof THREE.InstancedMesh && obj.geometry instanceof THREE.CylinderGeometry && obj.count > 0 &&
+        (obj.geometry as THREE.CylinderGeometry).parameters.radiusTop === 0.32
+    );
+    expect(stones).toHaveLength(0);
+    expect(trees(scene).some((tree) => tree.position.z < -DEPTH / 2)).toBe(false);
+  });
+
   it('plants no trees on a side with a neighbour', () => {
     const scene = new THREE.Scene();
     setOutdoorVisible(THREE, scene, true, WIDTH, DEPTH, { neighbours: { east: true } });
