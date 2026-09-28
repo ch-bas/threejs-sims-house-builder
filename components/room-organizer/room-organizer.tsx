@@ -14,6 +14,7 @@ import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
 import { useNpcs } from './hooks/use-npcs';
+import { usePeopleModel } from './hooks/use-people-model';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
@@ -598,8 +599,16 @@ export function RoomOrganizer(): JSX.Element {
     }, []),
   });
 
+  // people.glb is fetched only once a person is placed or the walkers are on.
+  const layoutHasPeople = useMemo(
+    () => layout.floors.some((floor) => floor.items.some((item) => item.type === 'person')),
+    [layout.floors]
+  );
+  const peopleModelReady = usePeopleModel(threeModuleRef, isReady, layoutHasPeople || view.showNpcs);
+
   useSceneEffects({
     isReady,
+    peopleModelReady,
     invalidate,
     requestShadowUpdate,
     threeModuleRef,
@@ -630,6 +639,7 @@ export function RoomOrganizer(): JSX.Element {
     roomWidth: layout.width,
     roomDepth: layout.height,
     floorY: activeFloorY,
+    riggedModelReady: peopleModelReady,
   });
 
   useCameraVision({

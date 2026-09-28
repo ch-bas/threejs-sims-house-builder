@@ -1,8 +1,37 @@
 import { type BuilderContext, cornerPositions, material, mesh } from '../builder-utils';
+import { PEOPLE_CLIPS, clonePerson, findClip, getPeopleModel } from '../people-model';
 import { FIGURE_HEIGHT, buildHumanFigure } from './human-figure';
 import type * as ThreeNS from 'three';
 
-export function buildPerson({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildPerson(ctx: BuilderContext): ThreeNS.Group {
+  return buildRiggedPerson(ctx) ?? buildProceduralPerson(ctx);
+}
+
+/**
+ * The rigged mannequin, held in a still idle pose. Null until people.glb has
+ * loaded — the scene rebuilds furniture once it has (see usePeopleModel).
+ */
+function buildRiggedPerson({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group | null {
+  const people = getPeopleModel();
+  const idle = people && findClip(people, PEOPLE_CLIPS.idle);
+  if (!people || !idle) return null;
+  const person = clonePerson(THREE, people, {
+    body: baseColor,
+    joints: hasCollision ? 0x7f1d1d : 0x3a3f47,
+    opacity,
+  });
+  // Sample the idle clip once to leave the skeleton in a relaxed stance. The
+  // mixer is dropped rather than stopped: stopping restores the T-pose.
+  const mixer = new THREE.AnimationMixer(person);
+  mixer.clipAction(idle).play();
+  mixer.update(0.6);
+  person.scale.setScalar(item.height / people.height);
+  const group = new THREE.Group();
+  group.add(person);
+  return group;
+}
+
+function buildProceduralPerson({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   // The item colour dresses the figure; skin, trousers, shoes and hair are fixed.
   const { group: figure } = buildHumanFigure(THREE, {
     top: material(THREE, baseColor, hasCollision, opacity, { roughness: 0.8 }),

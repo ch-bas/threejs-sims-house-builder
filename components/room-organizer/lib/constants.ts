@@ -154,7 +154,7 @@ export const FURNITURE_CATALOG = [
   { type: 'pond', category: 'outdoor', name: 'Garden Pond', width: 2.2, depth: 1.5, height: 0.25, color: '#0277BD', icon: '💧', price: 1200 },
 
   // People / scale references
-  { type: 'person', category: 'people', name: 'Adult', width: 0.5, depth: 0.3, height: 1.75, color: '#3949AB', icon: '🧍', price: 0 },
+  { type: 'person', category: 'people', name: 'Adult', width: 0.5, depth: 0.3, height: 1.75, color: '#8FA3BF', icon: '🧍', price: 0 },
   { type: 'pet', category: 'people', name: 'Pet', width: 0.45, depth: 0.65, height: 0.4, color: '#A1887F', icon: '🐕', price: 0 },
 
   // Structure

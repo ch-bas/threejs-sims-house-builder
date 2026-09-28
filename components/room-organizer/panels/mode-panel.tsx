@@ -155,6 +155,12 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           active={view.showCameraVision}
           onClick={() => toggle('showCameraVision')}
         />
+        <ActionButton
+          label={view.showNpcs ? 'Hide walkers' : 'Show walkers'}
+          icon="person"
+          active={view.showNpcs}
+          onClick={() => toggle('showNpcs')}
+        />
       </div>
     </div>
   );

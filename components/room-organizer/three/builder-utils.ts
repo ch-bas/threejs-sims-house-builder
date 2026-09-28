@@ -25,6 +25,9 @@ export function disposeObject(obj: ThreeNS.Object3D): void {
   obj.traverse((node) => {
     const mesh = node as ThreeNS.Mesh;
     if (mesh.geometry) mesh.geometry.dispose();
+    // Rigged people own a skeleton whose bone texture lives on the GPU.
+    const skinned = node as ThreeNS.SkinnedMesh;
+    if (skinned.isSkinnedMesh) skinned.skeleton.dispose();
 
     const material = mesh.material as ThreeNS.Material | ThreeNS.Material[] | undefined;
     if (material) {
