@@ -45,7 +45,7 @@ export function FloorSwitcher(): JSX.Element {
             type="button"
             onClick={() => toggle('showAllFloors')}
             className={`pc-tile${view.showAllFloors ? ' pc-tile--active' : ''}`}
-            title="Show all floors at once (lower floors render translucent)"
+            title="Show all floors at once (other floors render translucent, or solid with all walls up)"
             style={{
               height: 26,
               padding: '0 10px',

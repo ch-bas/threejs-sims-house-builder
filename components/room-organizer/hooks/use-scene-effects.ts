@@ -32,6 +32,20 @@ interface MeshLike {
   material?: MaterialLike | readonly MaterialLike[] | null;
 }
 
+/**
+ * Opacity for another storey's shell and interior walls in "show all floors",
+ * or undefined to draw it solid. Other storeys are ghosted so the active one
+ * stays readable — except with every wall up, where the point is to see the
+ * house as a solid building from outside (#201).
+ */
+export function otherFloorGhostOpacity(
+  showAllFloors: boolean,
+  wallDisplay: ViewSettings['wallDisplay'],
+  isActive: boolean
+): number | undefined {
+  return showAllFloors && !isActive && wallDisplay !== 'up' ? 0.25 : undefined;
+}
+
 function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
   group.traverse((node) => {
     const material = (node as MeshLike).material;
@@ -215,7 +229,7 @@ export function useSceneEffects({
         floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
         floorPlan3DEffect: view.floorPlan3DEffect,
         yOffset: index * FLOOR_HEIGHT_METERS,
-        ghostOpacity: view.showAllFloors && !isActive ? 0.25 : undefined,
+        ghostOpacity: otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
         onTextureLoaded: invalidate,
       });
     }
@@ -303,7 +317,7 @@ export function useSceneEffects({
         // (see drag-handlers' furnitureList, #122).
         group.userData.ghostFloor = !isActive;
 
-        if (!isActive && view.showAllFloors) {
+        if (otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive) !== undefined) {
           ghostifyGroup(group);
         }
 
@@ -320,7 +334,7 @@ export function useSceneEffects({
   }, [
     isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
     layout.floors, layout.width, layout.height,
-    activeFloor, activeFloorIndex, view.showAllFloors,
+    activeFloor, activeFloorIndex, view.showAllFloors, view.wallDisplay,
   ]);
 
   // Selection / highlight outlines. Kept out of the furniture effect above so
@@ -480,7 +494,7 @@ export function useSceneEffects({
       renderInteriorWalls(
         THREE, scene, walls,
         index * FLOOR_HEIGHT_METERS,
-        view.showAllFloors && !isActive ? 0.25 : undefined,
+        otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
         { openingCandidates: floor.items, roomWidth: layout.width, roomDepth: layout.height }
       );
     }
@@ -491,7 +505,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors, layout.width, layout.height]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, activeFloorIndex, view.showAllFloors, view.wallDisplay, layout.width, layout.height]);
 
   // Cyan outline on selected wall. Declared AFTER the shell + interior-wall
   // rebuild effects and keyed on the same rebuild keys, so it always snapshots
