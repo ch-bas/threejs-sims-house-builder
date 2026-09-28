@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
@@ -66,6 +67,11 @@ export function SidebarDrawer({
 }: SidebarDrawerProps): JSX.Element {
   const { layout, activeFloor, actions, view, isReady, playCue, catalogQuery, setCatalogQuery } = useRoomEditor();
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
+  const drawerRef = useRef<HTMLElement>(null);
+  // The drawer is a modal overlay (a backdrop covers the canvas), so it
+  // behaves like one for keyboard users: focus moves in, Tab stays inside,
+  // Escape closes it, and focus returns to the opener (#152).
+  useDialogFocus(!collapsed, drawerRef, { trap: true, onEscape: onCollapse });
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
     if (typeof window === 'undefined') return 'build';
     const saved = localStorage.getItem('standalone-room-organizer-sidebar-tab');
@@ -101,6 +107,10 @@ export function SidebarDrawer({
         }}
       />
       <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label="Side panels"
         className="pc-glass pc-glass--dark pc-sidebar"
         style={{

@@ -1,8 +1,9 @@
 'use client';
 
-import { useId } from 'react';
+import { useId, useRef } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { isWallMounted } from '../lib/opening-snap';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
@@ -37,10 +38,18 @@ export interface ItemContextPopoverProps {
 export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element {
   const { actions, recentColors, pushColor } = useRoomEditor();
   const { selectedItem: item } = useSelection();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Non-modal: move focus in so screen readers land in the dialog, and hand it
+  // back when it closes (Close / Demolish / deselect) instead of dropping it
+  // to <body> (#152). The container, not a button, takes focus so Enter/Space
+  // can't trigger an action by accident.
+  useDialogFocus(item !== null, dialogRef, { onEscape: props.onClose });
   if (!item) return <></>;
   const { onClose } = props;
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       className="pc-glass pc-glass--dark pc-item-popover"
       role="dialog"
       aria-label={`Edit ${item.name}`}
@@ -364,7 +373,7 @@ function ActionTile({ icon, label, onClick, active, disabled, title }: ActionTil
         style={{
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 600,
-          fontSize: 8,
+          fontSize: 9,
           letterSpacing: 'var(--pc-tr-caps)',
           textTransform: 'uppercase',
           color: active ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)',
