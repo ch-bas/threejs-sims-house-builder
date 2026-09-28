@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDialogFocus } from './use-dialog-focus';
 
@@ -118,5 +119,88 @@ describe('useDialogFocus (#152)', () => {
     screen.getByRole('textbox', { name: 'elsewhere' }).focus();
     key('Escape');
     expect(onEscape).not.toHaveBeenCalled();
+  });
+});
+
+function Stacked() {
+  const [drawer, setDrawer] = useState(true);
+  const [popover, setPopover] = useState(false);
+  const [welcome, setWelcome] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const welcomeRef = useRef<HTMLDivElement>(null);
+  // flushSync mirrors the browser, where React applies these updates in a
+  // microtask BETWEEN two document listeners of the same keydown — so a
+  // dialog that just closed must not hand the same event to the next one.
+  useDialogFocus(drawer, drawerRef, { trap: true, onEscape: () => flushSync(() => setDrawer(false)) });
+  useDialogFocus(popover, popoverRef);
+  useDialogFocus(welcome, welcomeRef, { trap: true, onEscape: () => flushSync(() => setWelcome(false)) });
+  return (
+    <>
+      {drawer && (
+        <div ref={drawerRef} role="dialog" aria-modal="true" aria-label="drawer" tabIndex={-1}>
+          <button type="button" onClick={() => setPopover(true)}>
+            add
+          </button>
+          <button type="button" onClick={() => setWelcome(true)}>
+            open welcome
+          </button>
+        </div>
+      )}
+      {popover && (
+        <div ref={popoverRef} role="dialog" aria-label="popover" tabIndex={-1}>
+          <button type="button">tile</button>
+        </div>
+      )}
+      {welcome && (
+        <div ref={welcomeRef} role="dialog" aria-modal="true" aria-label="welcome" tabIndex={-1}>
+          <button type="button">ok</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+describe('useDialogFocus — stacked overlays (#152 review)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('a popover opened from inside a modal does not pull focus out of it, and one Escape closes only the modal', () => {
+    render(<Stacked />);
+    act(() => vi.runAllTimers());
+    const add = screen.getByRole('button', { name: 'add' });
+    add.focus();
+    act(() => add.click());
+    act(() => vi.runAllTimers());
+    expect(screen.getByRole('dialog', { name: 'popover' })).toBeTruthy();
+    expect(document.activeElement).toBe(add);
+
+    key('Escape');
+    expect(screen.queryByRole('dialog', { name: 'drawer' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'popover' })).toBeTruthy();
+  });
+
+  it('with two modals open, Escape closes only the one holding focus', () => {
+    render(<Stacked />);
+    act(() => vi.runAllTimers());
+    const opener = screen.getByRole('button', { name: 'open welcome' });
+    opener.focus();
+    act(() => opener.click());
+    act(() => vi.runAllTimers());
+    // Focus stays in the drawer, the modal that already held it.
+    expect(document.activeElement).toBe(opener);
+
+    key('Escape');
+    expect(screen.queryByRole('dialog', { name: 'drawer' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'welcome' })).toBeTruthy();
+
+    // With focus no longer in any dialog, the remaining modal owns Escape.
+    key('Escape');
+    expect(screen.queryByRole('dialog', { name: 'welcome' })).toBeNull();
   });
 });

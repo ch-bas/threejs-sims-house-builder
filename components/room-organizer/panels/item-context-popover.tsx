@@ -42,8 +42,9 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // Non-modal: move focus in so screen readers land in the dialog, and hand it
   // back when it closes (Close / Demolish / deselect) instead of dropping it
   // to <body> (#152). The container, not a button, takes focus so Enter/Space
-  // can't trigger an action by accident.
-  useDialogFocus(item !== null, dialogRef, { onEscape: props.onClose });
+  // can't trigger an action by accident. Escape is left to the global
+  // shortcut (deselect), which also cancels an in-progress wall draft first.
+  useDialogFocus(item !== null, dialogRef);
   if (!item) return <></>;
   const { onClose } = props;
   return (

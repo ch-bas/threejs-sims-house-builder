@@ -6,13 +6,44 @@ export interface UseDialogFocusOptions {
   /** Focused on open; defaults to the container itself (give it tabIndex={-1}). */
   initialFocusRef?: RefObject<HTMLElement>;
   /**
-   * Called on Escape while open — anywhere for a trapping (modal) dialog, only
-   * while focus is inside it otherwise. The event is consumed so the global
-   * shortcuts don't also see it.
+   * Called on Escape while this dialog owns the keyboard (see activeDialog).
+   * The event is consumed so the global shortcuts don't also see it.
    */
   onEscape?: () => void;
-  /** Keep Tab / Shift+Tab cycling inside the container (modal dialogs). */
+  /** Modal: keep Tab / Shift+Tab cycling inside the container. */
   trap?: boolean;
+}
+
+interface OpenDialog {
+  container: HTMLElement;
+  trap: boolean;
+}
+
+/** Every open dialog, in the order they opened. */
+const openDialogs: OpenDialog[] = [];
+
+/**
+ * Key events already handled by a dialog. In a browser React applies a
+ * dialog's close in a microtask that runs between two listeners of the same
+ * event, so ownership can shift mid-dispatch — the first owner claims the
+ * event and every other dialog skips it.
+ */
+const claimedEvents = new WeakSet<Event>();
+
+/**
+ * The one dialog that handles Tab/Escape: the most recently opened one that
+ * holds focus, else the most recently opened modal. Exactly one owner means a
+ * single Escape never closes two stacked overlays at once.
+ */
+function activeDialog(): OpenDialog | undefined {
+  const focused = document.activeElement;
+  for (let i = openDialogs.length - 1; i >= 0; i--) {
+    if (openDialogs[i]!.container.contains(focused)) return openDialogs[i];
+  }
+  for (let i = openDialogs.length - 1; i >= 0; i--) {
+    if (openDialogs[i]!.trap) return openDialogs[i];
+  }
+  return undefined;
 }
 
 /**
@@ -33,21 +64,26 @@ export function useDialogFocus(
     const container = containerRef.current;
     if (!container) return undefined;
 
+    const self: OpenDialog = { container, trap };
+    openDialogs.push(self);
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
     // Deferred past the current input event: an overlay opened from a canvas
     // pointerdown would otherwise lose focus again to that same click's
-    // mousedown default action (which blurs to <body>).
+    // mousedown default action (which blurs to <body>). Never pull focus out
+    // of another open modal (e.g. the popover opening from the drawer).
     const focusTimer = window.setTimeout(() => {
-      if (!container.isConnected || container.contains(document.activeElement)) return;
+      const active = document.activeElement;
+      if (!container.isConnected || container.contains(active)) return;
+      const hostModal = active?.closest('[aria-modal="true"]');
+      if (hostModal && !container.contains(hostModal)) return;
       (initialFocusRef?.current ?? container).focus({ preventScroll: true });
     }, 0);
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === 'Escape' &&
-        onEscapeRef.current &&
-        (trap || container.contains(document.activeElement))
-      ) {
+      if (claimedEvents.has(event) || activeDialog() !== self) return;
+      claimedEvents.add(event);
+      if (event.key === 'Escape' && onEscapeRef.current) {
         event.preventDefault();
         event.stopPropagation();
         onEscapeRef.current();
@@ -74,6 +110,8 @@ export function useDialogFocus(
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKeyDown);
+      const index = openDialogs.indexOf(self);
+      if (index !== -1) openDialogs.splice(index, 1);
       // Restore only if focus is still ours to give back: inside the closing
       // overlay, or dropped to <body> because the focused control unmounted.
       const active = document.activeElement;
