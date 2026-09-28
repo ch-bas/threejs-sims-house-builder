@@ -54,4 +54,28 @@ describe('surpriseLayout (#123)', () => {
       expect(Math.abs(item.position!.z) + halfD).toBeLessThanOrEqual(1.1 + 1e-9);
     }
   });
+
+  it('hangs paintings and mirrors flush on a wall, facing into the room', () => {
+    let hung = 0;
+    for (let seed = 0; seed < 60; seed++) {
+      const w = 5 + (seed % 4);
+      const d = 4 + (seed % 3);
+      for (const item of surpriseLayout({ roomWidth: w, roomDepth: d, seed })) {
+        if (item.type !== 'painting' && item.type !== 'mirror') continue;
+        hung += 1;
+        const { x, z } = item.position!;
+        const back = item.depth / 2 + 0.01;
+        // Against exactly one wall, face turned toward the room centre.
+        const faceX = Math.sin(item.rotation ?? 0);
+        const faceZ = Math.cos(item.rotation ?? 0);
+        const onWall =
+          (Math.abs(z + d / 2 - back) < 1e-9 && faceZ > 0.99) ||
+          (Math.abs(z - d / 2 + back) < 1e-9 && faceZ < -0.99) ||
+          (Math.abs(x + w / 2 - back) < 1e-9 && faceX > 0.99) ||
+          (Math.abs(x - w / 2 + back) < 1e-9 && faceX < -0.99);
+        expect(onWall, `seed ${seed}: ${item.id} at ${x.toFixed(2)},${z.toFixed(2)}`).toBe(true);
+      }
+    }
+    expect(hung).toBeGreaterThan(5);
+  });
 });
