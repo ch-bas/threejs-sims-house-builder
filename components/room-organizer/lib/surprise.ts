@@ -5,6 +5,13 @@ import type { CatalogItem, FurnitureItem } from './types';
 
 const DECOR_TYPES = ['plant', 'flowerpot', 'rug', 'painting', 'vase', 'lamp', 'floor-lamp', 'mirror'] as const;
 
+/**
+ * Decor built to hang on a wall: thin panels lifted off the floor. Dropped at
+ * a random floor spot they stood in the room like a stray partition beside
+ * the real wall, so they're hung flush on a wall instead.
+ */
+const WALL_ART_TYPES: ReadonlySet<string> = new Set(['painting', 'mirror']);
+
 export interface SurpriseOptions {
   roomWidth: number;
   roomDepth: number;
@@ -47,13 +54,15 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
   for (let i = 0; i < decorCount; i++) {
     const choice = pickRandom(rng, eligibleDecor(remainingBudget));
     if (!choice) break;
-    const position = randomPosition(rng, roomWidth, roomDepth, choice, [...setItems, ...decor]);
-    if (!position) continue;
+    const placement = WALL_ART_TYPES.has(choice.type)
+      ? wallPosition(rng, roomWidth, roomDepth, choice, [...setItems, ...decor])
+      : floorPosition(rng, roomWidth, roomDepth, choice, [...setItems, ...decor]);
+    if (!placement) continue;
     decor.push({
       ...choice,
       id: `surprise-decor-${idTag}-${i}`,
-      position,
-      rotation: 0,
+      position: placement.position,
+      rotation: placement.rotation,
     });
     remainingBudget -= choice.price;
   }
@@ -104,13 +113,18 @@ function sumPrice(items: readonly FurnitureItem[]): number {
   return items.reduce((sum, item) => sum + (item.price ?? 0), 0);
 }
 
-function randomPosition(
+interface Placement {
+  position: { x: number; z: number };
+  rotation: number;
+}
+
+function floorPosition(
   rng: () => number,
   roomWidth: number,
   roomDepth: number,
   candidate: CatalogItem,
   existing: readonly FurnitureItem[]
-): { x: number; z: number } | null {
+): Placement | null {
   // Room dimensions are exterior measurements; inset by ~wall thickness plus a
   // small margin so decor never spawns under or inside the exterior walls.
   const WALL_INSET = 0.35;
@@ -126,8 +140,49 @@ function randomPosition(
     const x = minX + rng() * (maxX - minX);
     const z = minZ + rng() * (maxZ - minZ);
     if (!collides({ x, z, width: candidate.width, depth: candidate.depth }, existing)) {
-      return { x, z };
+      return { position: { x, z }, rotation: 0 };
     }
+  }
+  return null;
+}
+
+/** Keeps hung art clear of the corners. */
+const CORNER_CLEARANCE = 0.3;
+/** Hairline between the art's back and the wall plane. */
+const WALL_GAP = 0.01;
+
+/**
+ * Hang a piece of wall art on a random exterior wall: its back flush with
+ * the wall, its face (local +z) turned into the room — the same seating a
+ * wall-mounted camera gets.
+ */
+function wallPosition(
+  rng: () => number,
+  roomWidth: number,
+  roomDepth: number,
+  candidate: CatalogItem,
+  existing: readonly FurnitureItem[]
+): Placement | null {
+  const halfW = roomWidth / 2;
+  const halfD = roomDepth / 2;
+  const inset = candidate.depth / 2 + WALL_GAP;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const wall = Math.floor(rng() * 4);
+    const along = rng();
+    const span = (wall < 2 ? roomWidth : roomDepth) / 2 - CORNER_CLEARANCE - candidate.width / 2;
+    if (span < 0) continue;
+    const offset = (along * 2 - 1) * span;
+    // North, south, west, east — rotation turns local +z to face the room.
+    const placement: Placement =
+      wall === 0
+        ? { position: { x: offset, z: -halfD + inset }, rotation: 0 }
+        : wall === 1
+          ? { position: { x: offset, z: halfD - inset }, rotation: Math.PI }
+          : wall === 2
+            ? { position: { x: -halfW + inset, z: offset }, rotation: Math.PI / 2 }
+            : { position: { x: halfW - inset, z: offset }, rotation: -Math.PI / 2 };
+    const { x, z } = placement.position;
+    if (!collides({ x, z, width: candidate.width, depth: candidate.depth }, existing)) return placement;
   }
   return null;
 }
