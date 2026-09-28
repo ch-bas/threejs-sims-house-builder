@@ -158,9 +158,41 @@ export type WallPattern = 'solid' | 'brick' | 'wallpaper' | 'panel' | 'plaster' 
 
 export type RoofStyle = 'none' | 'flat' | 'gable' | 'hipped';
 
+export type DormerOpeningKind = 'casement' | 'french' | 'sidelight';
+
+/** An opening across part of a dormer face; `from`/`to` are fractions of its width. */
+export interface DormerOpening {
+  kind: DormerOpeningKind;
+  from: number;
+  to: number;
+}
+
+/** A dormer standing on one roof slope (#203); see lib/dormers.ts. */
+export interface DormerSpec {
+  id: string;
+  /** The slope it stands on, named by the way it faces. */
+  side: WallId;
+  width: number;
+  /** Centre along the ridge's world axis (x for north/south, z for east/west). */
+  offset?: number;
+  /** Face height; trimmed to clear the ridge. */
+  height?: number;
+  /** How far the face stands behind the wall line. */
+  setback?: number;
+  openings?: DormerOpening[];
+  /** Shorthand for a single ribbon casement; `openings` wins when both are set. */
+  window?: boolean;
+  /** A Juliet rail across the French doors (or the whole face). */
+  balcony?: boolean;
+  /** Render finish of the face and cheeks. */
+  color?: string;
+}
+
 export interface RoofSpec {
   style: RoofStyle;
   color?: string;
+  /** Dormers; built on gable and hipped roofs, ignored on flat or none. */
+  dormers?: DormerSpec[];
 }
 
 /**

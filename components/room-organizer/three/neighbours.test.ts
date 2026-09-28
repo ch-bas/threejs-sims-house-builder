@@ -53,6 +53,20 @@ describe('party-wall neighbours (#202)', () => {
     }
   });
 
+  it('never copies our dormers onto the neighbours (#203)', () => {
+    const scene = new THREE.Scene();
+    buildNeighbours(THREE, scene, {
+      ...OPTIONS,
+      roof: { style: 'gable', dormers: [{ id: 'd', side: 'east', width: 2, window: true }] },
+      sides: ['east'],
+    });
+    let dormers = 0;
+    scene.traverse((obj) => {
+      if (obj.userData.dormerId !== undefined) dormers += 1;
+    });
+    expect(dormers).toBe(0);
+  });
+
   it('rebuilds instead of stacking, and removes cleanly', () => {
     const scene = new THREE.Scene();
     buildNeighbours(THREE, scene, { ...OPTIONS, sides: ['east'] });

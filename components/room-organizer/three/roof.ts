@@ -1,5 +1,7 @@
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
+import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
 import { removeAndDispose } from './builder-utils';
+import { buildDormers } from './dormers';
 import { DisposableLruCache } from './texture-lru';
 import { getMaxAnisotropy } from './texture-settings';
 import type { RoofSpec, RoofStyle } from '../lib/types';
@@ -20,8 +22,8 @@ export const ROOF_TAG = 'roof';
  */
 const shingleTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
 
-/** Eaves: how far the roof overhangs past the wall plane (metres). */
-const EAVE_OVERHANG = 0.35;
+/** Eaves: how far the roof overhangs past the wall plane (metres). Mirrored by lib/dormers.ts. */
+const EAVE_OVERHANG = ROOF_EAVE_OVERHANG;
 
 export const ROOF_LABELS: Record<RoofStyle, string> = {
   none: 'No roof',
@@ -55,6 +57,19 @@ export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
     case 'hipped':
       options.scene.add(buildHippedRoof(THREE, options, color));
       break;
+  }
+
+  // Dormers (#203) stand on the gable / hipped slopes; flat roofs have none.
+  if (options.spec.dormers?.length) {
+    const dormers = buildDormers(THREE, options.spec.dormers, {
+      style: options.spec.style,
+      width: options.width,
+      depth: options.depth,
+      baseY: options.baseY,
+      roofColor: darkenHex(color, 0.15),
+      tag: ROOF_TAG,
+    });
+    for (const dormer of dormers) options.scene.add(dormer);
   }
 }
 

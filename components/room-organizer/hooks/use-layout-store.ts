@@ -74,6 +74,13 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setFloorPlanFitMode: (mode: FloorPlanFitMode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
     setRoofStyle: (style: RoofStyle) => dispatch({ type: 'setRoofStyle', style }),
     setRoofColor: (color) => dispatch({ type: 'setRoofColor', color }),
+    addDormer: (dormer) => {
+      const id = nextId('dormer');
+      dispatch({ type: 'addDormer', dormer: { ...dormer, id } });
+      return id;
+    },
+    updateDormer: (id, patch) => dispatch({ type: 'updateDormer', id, patch }),
+    removeDormer: (id) => dispatch({ type: 'removeDormer', id }),
     setTerrain: (terrain) => dispatch({ type: 'setTerrain', terrain }),
     setNeighbour: (side, present) => dispatch({ type: 'setNeighbour', side, present }),
     addCatalogItem: (catalogItem: CatalogItem, position) => {

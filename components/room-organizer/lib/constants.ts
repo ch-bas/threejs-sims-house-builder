@@ -10,7 +10,7 @@ export const CURRENCY_SYMBOL = '$';
 export const MAX_FLOORS = 4;
 
 /** The roof every new layout starts with. */
-export const DEFAULT_ROOF: Required<RoofSpec> = { style: 'gable', color: '#5d3a23' };
+export const DEFAULT_ROOF: Required<Pick<RoofSpec, 'style' | 'color'>> = { style: 'gable', color: '#5d3a23' };
 
 /**
  * The colour a roof renders in when it has no colour of its own — shared by
