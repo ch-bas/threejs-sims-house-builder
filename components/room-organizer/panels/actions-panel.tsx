@@ -26,6 +26,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasItems = activeFloor.items.length > 0;
+  const hasInteriorWalls = (activeFloor.interiorWalls ?? []).length > 0;
   const allLocked = hasItems && activeFloor.items.every((item) => item.locked === true);
 
   // Doors/windows/cameras must stay on their walls and outdoor items must stay
@@ -121,6 +122,9 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             </Button>
             <Button
               onClick={() => {
+                // Same rule as Surprise: never wipe placed furniture without
+                // asking (#105, #223).
+                if (!window.confirm('Remove every item from this floor?')) return;
                 actions.clearItems();
                 selectOnly(null);
               }}
@@ -133,10 +137,14 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             </Button>
           </div>
           <Button
-            onClick={actions.clearInteriorWalls}
+            onClick={() => {
+              if (!window.confirm('Remove every interior wall on this floor?')) return;
+              actions.clearInteriorWalls();
+            }}
             variant="outline"
             size="sm"
             className="w-full text-xs"
+            disabled={!hasInteriorWalls}
           >
             🧹 Clear interior walls
           </Button>
