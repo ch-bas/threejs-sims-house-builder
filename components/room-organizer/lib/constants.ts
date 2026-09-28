@@ -1,4 +1,4 @@
-import type { CatalogItem, CategoryMeta, FloorLayout, RoomLayout } from './types';
+import type { CatalogItem, CategoryMeta, FloorLayout, RoofSpec, RoomLayout } from './types';
 
 export const STORAGE_KEY = 'standalone-room-organizer-layout';
 export const AUTOSAVE_DEBOUNCE_MS = 1500;
@@ -8,6 +8,9 @@ export const DEFAULT_BUDGET = 25_000;
 export const CURRENCY_SYMBOL = '$';
 
 export const MAX_FLOORS = 4;
+
+/** The roof every new layout starts with. */
+export const DEFAULT_ROOF: Required<RoofSpec> = { style: 'gable', color: '#5d3a23' };
 
 /**
  * Upper bound (metres) for a room's width/height. The editor UI tops out at
