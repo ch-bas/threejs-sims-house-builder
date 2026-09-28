@@ -109,12 +109,19 @@ interface ProgressBarProps {
   intent: 'normal' | 'warning' | 'danger';
 }
 
-function ProgressBar({ value, intent }: ProgressBarProps): JSX.Element {
+function ProgressBar({ value, label, intent }: ProgressBarProps): JSX.Element {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   const tone =
     intent === 'danger' ? 'bg-red-500' : intent === 'warning' ? 'bg-amber-500' : 'bg-emerald-500';
   return (
-    <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(pct)}
+      className="h-1.5 w-full bg-muted rounded-full overflow-hidden"
+    >
       <div className={`h-full ${tone} transition-all`} style={{ width: `${pct}%` }} />
     </div>
   );
