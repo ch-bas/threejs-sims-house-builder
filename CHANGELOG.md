@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.15] - 2026-09-28
+
+Completes the **Editor integrity** milestone.
+
+### Fixed
+- Loading a layout from Saved Layouts can be undone with Ctrl+Z, like a template load — it used to wipe the undo history, so one click on an old entry lost the current design for good ([#222](https://github.com/ch-bas/threejs-sims-house-builder/issues/222))
+- Room Width/Depth inputs no longer resize the room mid-typing: clearing the field no longer snaps it to 5 m (which turned "12" into a 51 m, then 100 m room), values are kept within the fields' 2–20 m range, and blur/Enter restores or clamps ([#217](https://github.com/ch-bas/threejs-sims-house-builder/issues/217))
+- Undo, delete, rotate, nudge, duplicate, paste, floor-switch and 2D shortcuts pressed mid-drag wait for the drop instead of corrupting the drag and overwriting the undo ([#207](https://github.com/ch-bas/threejs-sims-house-builder/issues/207))
+- A wall removed by undo no longer stays "selected" in the paint panel, and imports, loads and floor switches clear stale wall selections and measurement points ([#224](https://github.com/ch-bas/threejs-sims-house-builder/issues/224))
+- The Coverage stat (and the blueprint's footprint) no longer counts outdoor items, which must sit outside the room ([#164](https://github.com/ch-bas/threejs-sims-house-builder/issues/164))
+- The wall paint panel no longer shows "All" as the target while an interior wall is selected, and only highlights a colour all four exterior walls actually share ([#221](https://github.com/ch-bas/threejs-sims-house-builder/issues/221))
+- "Roof It" can actually be earned — it unlocked on its own for every new profile; it now takes a roof of your own (a new style or colour), and the roof builder, Roof panel and achievement agree on what a colourless roof looks like ([#165](https://github.com/ch-bas/threejs-sims-house-builder/issues/165))
+- The shortcuts card, welcome tips and README match the real key bindings (P, Ctrl+C/V, Ctrl+Y, Backspace, Shift for 1 m nudges, EXPLORE mode, grid snap) ([#225](https://github.com/ch-bas/threejs-sims-house-builder/issues/225))
+- Keyboard and screen-reader users: the side panels drawer behaves as a modal dialog (focus moves in, Tab stays inside, Escape closes it and returns focus), the item popover takes focus when it opens and hands it back when it closes, stacked overlays never both react to one keypress, the game-mode switcher is announced as toggle buttons, and the smallest labels are larger ([#152](https://github.com/ch-bas/threejs-sims-house-builder/issues/152))
+
+### Changed
+- "Clear floor" and "Clear interior walls" ask for confirmation first, like "Surprise me"; "Clear interior walls" is disabled when there are none ([#223](https://github.com/ch-bas/threejs-sims-house-builder/issues/223))
+- "Open Plan" has its own achievement icon (🏷️) instead of sharing Window Watcher's
+
 ## [1.8.14] - 2026-09-27
 
 ### Fixed
