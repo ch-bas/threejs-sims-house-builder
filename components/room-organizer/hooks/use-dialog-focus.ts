@@ -81,6 +81,8 @@ export function useDialogFocus(
     }, 0);
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // A control inside handled it (e.g. Escape cancelling an inline rename).
+      if (event.defaultPrevented) return;
       if (claimedEvents.has(event) || activeDialog() !== self) return;
       claimedEvents.add(event);
       if (event.key === 'Escape' && onEscapeRef.current) {

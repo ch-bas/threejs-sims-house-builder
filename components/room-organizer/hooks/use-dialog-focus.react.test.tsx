@@ -204,3 +204,47 @@ describe('useDialogFocus — stacked overlays (#152 review)', () => {
     expect(screen.queryByRole('dialog', { name: 'welcome' })).toBeNull();
   });
 });
+
+function DrawerWithRename() {
+  const [drawer, setDrawer] = useState(true);
+  const [renaming, setRenaming] = useState(true);
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogFocus(drawer, ref, { trap: true, onEscape: () => flushSync(() => setDrawer(false)) });
+  if (!drawer) return <p>drawer closed</p>;
+  return (
+    <div ref={ref} role="dialog" aria-modal="true" aria-label="drawer" tabIndex={-1}>
+      {renaming ? (
+        <input
+          aria-label="floor name"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              flushSync(() => setRenaming(false));
+            }
+          }}
+        />
+      ) : (
+        <p>rename cancelled</p>
+      )}
+    </div>
+  );
+}
+
+describe('useDialogFocus — Escape handled by a control inside (#152 review)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('cancelling an inline edit with Escape does not also close the modal', () => {
+    render(<DrawerWithRename />);
+    act(() => vi.runAllTimers());
+    screen.getByRole('textbox', { name: 'floor name' }).focus();
+    key('Escape');
+    expect(screen.getByText('rename cancelled')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'drawer' })).toBeTruthy();
+  });
+});
