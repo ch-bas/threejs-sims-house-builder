@@ -1,4 +1,4 @@
-import { CURRENCY_SYMBOL } from './constants';
+import { CURRENCY_SYMBOL, DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import { totalCost } from './geometry';
 import type { RoomLayout } from './types';
 
@@ -87,9 +87,18 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   {
     id: 'roof-it',
     name: 'Roof It',
-    description: 'Added a roof to your building.',
+    description: 'Gave your building a roof of your own — a new style or colour.',
     icon: '🏠',
-    isMet: (layout) => Boolean(layout.roof && layout.roof.style !== 'none'),
+    // Every layout starts with the default roof, so "has a roof" was met before
+    // the first click and could never actually be earned (#165).
+    isMet: (layout) => {
+      const roof = layout.roof;
+      if (!roof || roof.style === 'none') return false;
+      // Compare what's actually drawn: a colourless roof renders in its
+      // style's default, which for a gable is not the starter colour.
+      const color = roof.color ?? ROOF_STYLE_DEFAULT_COLORS[roof.style];
+      return roof.style !== DEFAULT_ROOF.style || color.toLowerCase() !== DEFAULT_ROOF.color.toLowerCase();
+    },
   },
   {
     id: 'green-thumb',
@@ -132,7 +141,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     id: 'open-plan',
     name: 'Open Plan',
     description: `Built a layout under ${CURRENCY_SYMBOL}3,000 with at least 5 items.`,
-    icon: '🪟',
+    icon: '🏷️',
     isMet: (layout) => {
       const items = allItems(layout);
       return items.length >= 5 && totalCost(items) < 3_000;

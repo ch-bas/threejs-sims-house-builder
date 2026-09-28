@@ -5,16 +5,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
+import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
 import { ROOF_LABELS } from '../three/roof';
 import type { RoofStyle } from '../lib/types';
 
 const ROOF_STYLES: ReadonlyArray<RoofStyle> = ['none', 'flat', 'gable', 'hipped'];
-const DEFAULT_COLOR = '#8d6e63';
 
 export function RoofPanel(): JSX.Element {
   const { layout, actions } = useRoomEditor();
   const style = layout.roof?.style ?? 'none';
-  const color = layout.roof?.color ?? DEFAULT_COLOR;
+  // Show what the roof actually renders in when it has no colour of its own.
+  const color = layout.roof?.color ?? ROOF_STYLE_DEFAULT_COLORS[style];
 
   return (
     <Card>

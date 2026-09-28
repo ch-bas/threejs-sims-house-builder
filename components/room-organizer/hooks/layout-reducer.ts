@@ -1,4 +1,4 @@
-import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { DEFAULT_ROOF, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import type {
@@ -90,7 +90,7 @@ export const INITIAL_LAYOUT: RoomLayout = {
   width: 8,
   height: 8,
   floors: [INITIAL_GROUND_FLOOR],
-  roof: { style: 'gable', color: '#5d3a23' },
+  roof: DEFAULT_ROOF,
   floorPlanOpacity: 0.5,
   floorPlanFitMode: 'stretch',
 };
