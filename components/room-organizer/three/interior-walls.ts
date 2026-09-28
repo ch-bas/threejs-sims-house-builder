@@ -1,4 +1,5 @@
 import { WINDOW_SILL_HEIGHT } from '../lib/constants';
+import { BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { classifyOpeningOwners, mergeHoleRects, type OpeningOwner } from './wall-openings';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
@@ -83,7 +84,10 @@ export function renderInteriorWalls(
     wallMesh.userData.wallId = wall.id;
     scene.add(wallMesh);
 
-    // Matching dark-wood baseboard along the bottom of every interior wall.
+    // Matching dark-wood baseboard along the bottom of every interior wall —
+    // broken at doorways, and stopping just short of the ends so an end
+    // butting an exterior wall isn't coplanar with (and z-fighting through)
+    // the facade (#201).
     const baseMat = new THREE.MeshStandardMaterial({
       color: 0x4a3a2a,
       roughness: 0.7,
@@ -92,20 +96,26 @@ export function renderInteriorWalls(
       baseMat.transparent = true;
       baseMat.opacity = ghostOpacity;
     }
-    const base = new THREE.Mesh(
-      new THREE.BoxGeometry(length, 0.12, WALL_THICKNESS + 0.01),
-      baseMat
-    );
-    base.position.set(
-      (wall.x1 + wall.x2) / 2,
-      yOffset + 0.06,
-      (wall.z1 + wall.z2) / 2
-    );
-    base.rotation.y = -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1);
-    base.receiveShadow = true;
-    base.userData.type = INTERIOR_WALL_TAG;
-    base.userData.wallId = wall.id;
-    scene.add(base);
+    const dirX = (wall.x2 - wall.x1) / length;
+    const dirZ = (wall.z2 - wall.z1) / length;
+    const half = length / 2;
+    for (const [from, to] of baseboardRuns(-half + BASEBOARD_WALL_GAP, half - BASEBOARD_WALL_GAP, openings)) {
+      const mid = (from + to) / 2;
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(to - from, BASEBOARD_HEIGHT, WALL_THICKNESS + 0.01),
+        baseMat
+      );
+      base.position.set(
+        (wall.x1 + wall.x2) / 2 + dirX * mid,
+        yOffset + BASEBOARD_HEIGHT / 2,
+        (wall.z1 + wall.z2) / 2 + dirZ * mid
+      );
+      base.rotation.y = wallMesh.rotation.y;
+      base.receiveShadow = true;
+      base.userData.type = INTERIOR_WALL_TAG;
+      base.userData.wallId = wall.id;
+      scene.add(base);
+    }
   }
 }
 

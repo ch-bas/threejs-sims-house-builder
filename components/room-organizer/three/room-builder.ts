@@ -1,4 +1,5 @@
 import { GRID_SIZE_METERS } from '../lib/constants';
+import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
@@ -494,9 +495,8 @@ function buildWalls(
     scene.add(wall);
 
     // Dark wood baseboard along the floor of every wall — the build-mode-style
-    // trim that grounds the room and hides the floor/wall seam. Solid
-    // (non-translucent) so the room reads as a real building from outside.
-    addBaseboard(THREE, scene, spec, yOffset, ghostOpacity);
+    // trim that grounds the room and hides the floor/wall seam.
+    addBaseboard(THREE, scene, spec, yOffset, ghostOpacity, wallCutouts);
   }
 
   if (yOffset === 0 && ghostOpacity === undefined) {
@@ -515,8 +515,6 @@ function buildWalls(
   }
 }
 
-const BASEBOARD_HEIGHT = 0.12;
-const BASEBOARD_DEPTH = 0.04;
 const BASEBOARD_COLOR = 0x4a3a2a;
 
 function addBaseboard(
@@ -524,7 +522,8 @@ function addBaseboard(
   scene: ThreeNS.Scene,
   spec: { id: WallId; width: number; rotateY: number; position: readonly [number, number, number] },
   yOffset: number,
-  ghostOpacity?: number
+  ghostOpacity: number | undefined,
+  openings: readonly WallOpening[]
 ): void {
   const material = new THREE.MeshStandardMaterial({
     color: BASEBOARD_COLOR,
@@ -534,28 +533,35 @@ function addBaseboard(
     material.transparent = true;
     material.opacity = ghostOpacity;
   }
-  const geometry = new THREE.BoxGeometry(spec.width, BASEBOARD_HEIGHT, BASEBOARD_DEPTH);
-  const base = new THREE.Mesh(geometry, material);
-  base.rotation.y = spec.rotateY;
-  // Baseboards offset slightly inward (toward room centre) so they're flush
-  // with the inside face of the wall. The wall's outward normal points away
-  // from origin, so push along the negative of (position.xz / |position.xz|).
+
+  // Sit just inside the wall plane (inward = toward the room centre), not
+  // flush with it: a flush back face z-fought the double-sided wall (#201).
   const [px, , pz] = spec.position;
   const radial = Math.hypot(px, pz);
-  if (radial > 0.001) {
-    const inset = BASEBOARD_DEPTH / 2;
-    const nx = px / radial;
-    const nz = pz / radial;
-    base.position.set(px - nx * inset, yOffset + BASEBOARD_HEIGHT / 2, pz - nz * inset);
-  } else {
-    base.position.set(px, yOffset + BASEBOARD_HEIGHT / 2, pz);
+  const inset = BASEBOARD_DEPTH / 2 + BASEBOARD_WALL_GAP;
+  const nx = radial > 0.001 ? px / radial : 0;
+  const nz = radial > 0.001 ? pz / radial : 0;
+  // The wall-local +x axis in world space, for placing runs along the wall.
+  const ax = Math.cos(spec.rotateY);
+  const az = -Math.sin(spec.rotateY);
+
+  // North/south boards run the full width; east/west boards stop at the
+  // north/south boards' inner faces instead of overlapping them at the
+  // corners (#201).
+  const endTrim = spec.id === 'east' || spec.id === 'west' ? BASEBOARD_DEPTH + BASEBOARD_WALL_GAP : 0;
+  const half = spec.width / 2;
+  for (const [from, to] of baseboardRuns(-half + endTrim, half - endTrim, openings)) {
+    const mid = (from + to) / 2;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(to - from, BASEBOARD_HEIGHT, BASEBOARD_DEPTH), material);
+    base.rotation.y = spec.rotateY;
+    base.position.set(px - nx * inset + ax * mid, yOffset + BASEBOARD_HEIGHT / 2, pz - nz * inset + az * mid);
+    base.receiveShadow = true;
+    base.castShadow = ghostOpacity === undefined;
+    base.userData.type = ROOM_OBJECT_TAGS.Wall;
+    base.userData.wallId = spec.id;
+    makeStatic(base);
+    scene.add(base);
   }
-  base.receiveShadow = true;
-  base.castShadow = ghostOpacity === undefined;
-  base.userData.type = ROOM_OBJECT_TAGS.Wall;
-  base.userData.wallId = spec.id;
-  makeStatic(base);
-  scene.add(base);
 }
 
 /**
