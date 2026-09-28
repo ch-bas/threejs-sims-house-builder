@@ -1,3 +1,4 @@
+import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
 import { removeAndDispose } from './builder-utils';
 import { DisposableLruCache } from './texture-lru';
 import { getMaxAnisotropy } from './texture-settings';
@@ -64,16 +65,7 @@ export function removeRoof(scene: ThreeNS.Scene): void {
 }
 
 function defaultRoofColor(style: RoofStyle): string {
-  switch (style) {
-    case 'flat':
-      return '#546e7a';
-    case 'gable':
-      return '#8d6e63';
-    case 'hipped':
-      return '#a1887f';
-    default:
-      return '#90a4ae';
-  }
+  return ROOF_STYLE_DEFAULT_COLORS[style];
 }
 
 function buildFlatRoof(

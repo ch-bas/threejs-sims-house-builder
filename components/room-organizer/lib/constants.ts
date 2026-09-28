@@ -1,4 +1,4 @@
-import type { CatalogItem, CategoryMeta, FloorLayout, RoofSpec, RoomLayout } from './types';
+import type { CatalogItem, CategoryMeta, FloorLayout, RoofSpec, RoofStyle, RoomLayout } from './types';
 
 export const STORAGE_KEY = 'standalone-room-organizer-layout';
 export const AUTOSAVE_DEBOUNCE_MS = 1500;
@@ -11,6 +11,18 @@ export const MAX_FLOORS = 4;
 
 /** The roof every new layout starts with. */
 export const DEFAULT_ROOF: Required<RoofSpec> = { style: 'gable', color: '#5d3a23' };
+
+/**
+ * The colour a roof renders in when it has no colour of its own — shared by
+ * the roof builder, the Roof panel's picker, and the Roof It achievement so
+ * they all agree on what a colourless roof looks like.
+ */
+export const ROOF_STYLE_DEFAULT_COLORS: Readonly<Record<RoofStyle, string>> = {
+  none: '#90a4ae',
+  flat: '#546e7a',
+  gable: '#8d6e63',
+  hipped: '#a1887f',
+};
 
 /**
  * Upper bound (metres) for a room's width/height. The editor UI tops out at

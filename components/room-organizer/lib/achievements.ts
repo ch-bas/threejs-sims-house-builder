@@ -1,4 +1,4 @@
-import { CURRENCY_SYMBOL, DEFAULT_ROOF } from './constants';
+import { CURRENCY_SYMBOL, DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import { totalCost } from './geometry';
 import type { RoomLayout } from './types';
 
@@ -94,7 +94,9 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     isMet: (layout) => {
       const roof = layout.roof;
       if (!roof || roof.style === 'none') return false;
-      const color = roof.color ?? DEFAULT_ROOF.color;
+      // Compare what's actually drawn: a colourless roof renders in its
+      // style's default, which for a gable is not the starter colour.
+      const color = roof.color ?? ROOF_STYLE_DEFAULT_COLORS[roof.style];
       return roof.style !== DEFAULT_ROOF.style || color.toLowerCase() !== DEFAULT_ROOF.color.toLowerCase();
     },
   },

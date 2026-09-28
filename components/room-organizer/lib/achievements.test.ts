@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { INITIAL_LAYOUT } from '../hooks/layout-reducer';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { ACHIEVEMENTS } from './achievements';
-import { DEFAULT_ROOF } from './constants';
+import { DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import type { FurnitureItem } from './types';
 
 function achievement(id: string) {
@@ -86,13 +86,15 @@ describe('achievements — type/structure predicates', () => {
   it('roof-it needs a roof that differs from the starter one (#165)', () => {
     const roofIt = achievement('roof-it');
     expect(roofIt.isMet(makeLayout({ roof: { style: 'none' } }))).toBe(false);
-    // The starter roof — explicit, colourless, or in another case — isn't earned.
+    // The starter roof, in any letter case, isn't earned.
     expect(roofIt.isMet(makeLayout({ roof: DEFAULT_ROOF }))).toBe(false);
-    expect(roofIt.isMet(makeLayout({ roof: { style: DEFAULT_ROOF.style } }))).toBe(false);
     expect(
       roofIt.isMet(makeLayout({ roof: { style: DEFAULT_ROOF.style, color: DEFAULT_ROOF.color.toUpperCase() } }))
     ).toBe(false);
-    // A new style or a new colour is.
+    // A new style or a new colour is — including a colourless gable (e.g. a
+    // template load + "Gable"), which renders in the gable default, not the
+    // starter colour.
+    expect(roofIt.isMet(makeLayout({ roof: { style: DEFAULT_ROOF.style } }))).toBe(true);
     expect(roofIt.isMet(makeLayout({ roof: { style: 'hipped' } }))).toBe(true);
     expect(roofIt.isMet(makeLayout({ roof: { style: 'flat', color: DEFAULT_ROOF.color } }))).toBe(true);
     expect(roofIt.isMet(makeLayout({ roof: { style: DEFAULT_ROOF.style, color: '#1d3f78' } }))).toBe(true);
@@ -147,6 +149,12 @@ describe('achievements — catalogue invariants', () => {
   // click and can never be earned — the Roof It bug (#165) generalised.
   it('none is already met by the initial layout', () => {
     expect(ACHIEVEMENTS.filter((a) => a.isMet(INITIAL_LAYOUT)).map((a) => a.id)).toEqual([]);
+  });
+
+  it('the starter roof colour is not any style\'s colourless default', () => {
+    // Otherwise a colourless roof of that style would look like the starter
+    // yet count as customised (or vice versa).
+    expect(Object.values(ROOF_STYLE_DEFAULT_COLORS)).not.toContain(DEFAULT_ROOF.color);
   });
 
   it('every achievement has a distinct icon', () => {
