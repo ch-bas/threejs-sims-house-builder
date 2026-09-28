@@ -284,8 +284,16 @@ export function totalCost(items: readonly FurnitureItem[]): number {
   return items.reduce((sum, item) => sum + (item.price ?? 0), 0);
 }
 
+/**
+ * Interior floor area covered by furniture. Outdoor items are excluded: they
+ * must sit entirely outside the room, so counting them inflated the interior
+ * coverage of a bare room with a garden (#164).
+ */
 export function footprintArea(items: readonly FurnitureItem[]): number {
-  return items.reduce((sum, item) => sum + item.width * item.depth, 0);
+  return items.reduce(
+    (sum, item) => (item.category === 'outdoor' ? sum : sum + item.width * item.depth),
+    0
+  );
 }
 
 export function itemCountByCategory(items: readonly FurnitureItem[]): Map<string, number> {
