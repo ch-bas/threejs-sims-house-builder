@@ -39,6 +39,8 @@ export interface LayoutActions {
   setFloorColor(color: string): void;
   setFloorPattern(pattern: FloorPattern): void;
   setWallPattern(pattern: WallPattern): void;
+  /** Active floor's storey height in metres; `null` restores the default 3 m (#202). */
+  setStoreyHeight(height: number | null): void;
   setWallColor(wall: WallId, color: string | null): void;
   setInteriorWallColor(id: string, color: string): void;
   setFloorPlan(image: string | null): void;

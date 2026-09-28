@@ -9,7 +9,8 @@ type ThreeModule = typeof import('three');
 
 const INTERIOR_WALL_TAG = 'interior-wall';
 const WALL_THICKNESS = 0.16;
-const WALL_HEIGHT = 2.6;
+/** Partition height in a classic 3 m storey; see `interiorWallHeight` (#202). */
+const DEFAULT_WALL_HEIGHT = 2.6;
 
 interface SegmentOpening {
   /** Centre position along the wall, measured from the segment midpoint (m). */
@@ -35,6 +36,8 @@ export interface RenderInteriorWallsOptions {
    */
   roomWidth?: number;
   roomDepth?: number;
+  /** Partition height for this storey (#202). Defaults to 2.6 m. */
+  wallHeight?: number;
 }
 
 export function renderInteriorWalls(
@@ -45,6 +48,7 @@ export function renderInteriorWalls(
   ghostOpacity?: number,
   options: RenderInteriorWallsOptions = {}
 ): void {
+  const wallHeight = options.wallHeight ?? DEFAULT_WALL_HEIGHT;
   // Classify every opening to exactly one wall across the whole floor (exterior
   // + interior). An opening this interior wall doesn't own is cut elsewhere, so
   // it never gets double-cut at a junction.
@@ -58,7 +62,7 @@ export function renderInteriorWalls(
     if (length < 0.01) continue;
 
     const openings = options.openingCandidates
-      ? computeSegmentOpenings(wall, options.openingCandidates, owners)
+      ? computeSegmentOpenings(wall, options.openingCandidates, owners, wallHeight)
       : [];
 
     const material = new THREE.MeshStandardMaterial({
@@ -72,11 +76,11 @@ export function renderInteriorWalls(
 
     const geometry =
       openings.length > 0
-        ? buildExtrudedWallGeometry(THREE, length, WALL_HEIGHT, WALL_THICKNESS, openings)
-        : new THREE.BoxGeometry(length, WALL_HEIGHT, WALL_THICKNESS);
+        ? buildExtrudedWallGeometry(THREE, length, wallHeight, WALL_THICKNESS, openings)
+        : new THREE.BoxGeometry(length, wallHeight, WALL_THICKNESS);
 
     const wallMesh = new THREE.Mesh(geometry, material);
-    wallMesh.position.set((wall.x1 + wall.x2) / 2, yOffset + (openings.length > 0 ? 0 : WALL_HEIGHT / 2), (wall.z1 + wall.z2) / 2);
+    wallMesh.position.set((wall.x1 + wall.x2) / 2, yOffset + (openings.length > 0 ? 0 : wallHeight / 2), (wall.z1 + wall.z2) / 2);
     wallMesh.rotation.y = -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1);
     wallMesh.castShadow = true;
     wallMesh.receiveShadow = true;
@@ -177,7 +181,8 @@ const OPENING_DISTANCE_THRESHOLD = 0.4;
 function computeSegmentOpenings(
   wall: InteriorWall,
   items: readonly FurnitureItem[],
-  owners: ReadonlyMap<string, OpeningOwner> | null
+  owners: ReadonlyMap<string, OpeningOwner> | null,
+  wallHeight: number
 ): SegmentOpening[] {
   const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
   if (length < 0.05) return [];
@@ -213,11 +218,14 @@ function computeSegmentOpenings(
     const width = Math.min(item.width, Math.max(0, length - 0.05));
     const halfItem = width / 2;
     const clampedCenter = Math.max(-halfLen + halfItem, Math.min(halfLen - halfItem, localX));
+    // A window sill above a low (loft) partition leaves nothing to cut (#202).
+    const height = Math.min(item.height, wallHeight - bottom - 0.05);
+    if (height <= 0) continue;
     openings.push({
       centerAlongWall: clampedCenter,
       bottomFromFloor: bottom,
       width,
-      height: Math.min(item.height, WALL_HEIGHT - bottom - 0.05),
+      height,
     });
   }
   return openings;
@@ -229,7 +237,8 @@ export function renderInteriorWallPreview(
   scene: ThreeNS.Scene,
   start: { x: number; z: number },
   end: { x: number; z: number },
-  yOffset = 0
+  yOffset = 0,
+  wallHeight = DEFAULT_WALL_HEIGHT
 ): void {
   clearPreview(scene);
   const length = Math.hypot(end.x - start.x, end.z - start.z);
@@ -239,8 +248,8 @@ export function renderInteriorWallPreview(
     transparent: true,
     opacity: 0.5,
   });
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, WALL_HEIGHT, WALL_THICKNESS), material);
-  mesh.position.set((start.x + end.x) / 2, yOffset + WALL_HEIGHT / 2, (start.z + end.z) / 2);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, wallHeight, WALL_THICKNESS), material);
+  mesh.position.set((start.x + end.x) / 2, yOffset + wallHeight / 2, (start.z + end.z) / 2);
   mesh.rotation.y = -Math.atan2(end.z - start.z, end.x - start.x);
   mesh.userData.type = `${INTERIOR_WALL_TAG}-preview`;
   scene.add(mesh);

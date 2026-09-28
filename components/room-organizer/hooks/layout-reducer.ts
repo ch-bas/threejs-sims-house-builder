@@ -1,6 +1,7 @@
 import { DEFAULT_ROOF, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
+import { clampStoreyHeight } from '../lib/storeys';
 import type {
   CatalogItem,
   FloorLayout,
@@ -27,6 +28,7 @@ export type LayoutAction =
   | { type: 'setFloorColor'; color: string }
   | { type: 'setFloorPattern'; pattern: FloorPattern }
   | { type: 'setWallPattern'; pattern: WallPattern }
+  | { type: 'setStoreyHeight'; height: number | null }
   | { type: 'setWallColor'; wall: WallId; color: string | null }
   | { type: 'setInteriorWallColor'; id: string; color: string }
   // floor-scoped items — target the active floor
@@ -120,6 +122,19 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
       return withActiveFloor(state, (floor) => ({ ...floor, floorPattern: action.pattern }));
     case 'setWallPattern':
       return withActiveFloor(state, (floor) => ({ ...floor, wallPattern: action.pattern }));
+    // Clamped like the room dimensions: an out-of-range height reaching
+    // localStorage would fail validation on the next load (#113, #202).
+    // `null` restores the default storey by dropping the field.
+    case 'setStoreyHeight':
+      return withActiveFloor(state, (floor) => {
+        if (action.height === null) {
+          if (floor.height === undefined) return floor;
+          const { height: _dropped, ...rest } = floor;
+          return rest;
+        }
+        const height = clampStoreyHeight(action.height);
+        return floor.height === height ? floor : { ...floor, height };
+      });
     case 'setWallColor':
       return withActiveFloor(state, (floor) => {
         const next = { ...(floor.wallColors ?? {}) };
@@ -606,6 +621,7 @@ function normaliseLayout(layout: RoomLayout): RoomLayout {
       : layout.floors.slice(0, MAX_FLOORS).map((floor) => ({
           ...floor,
           floorColor: floor.floorColor || '#c9a57d',
+          ...(floor.height !== undefined ? { height: clampStoreyHeight(floor.height) } : {}),
         }));
   return { ...layout, width, height, floors };
 }
