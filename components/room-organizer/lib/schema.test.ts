@@ -89,6 +89,15 @@ describe('isFloorLayout', () => {
 });
 
 describe('isRoomLayout', () => {
+  it('accepts an entrance, frontage and window sills, and rejects corrupt ones (#204)', () => {
+    const window = makeItem({ type: 'window', sillHeight: 0.4 });
+    expect(isRoomLayout(makeLayout({ entrance: { width: 1.4, depth: 1.2 }, frontage: 'pavement' }))).toBe(true);
+    expect(isFurnitureItem(window)).toBe(true);
+    expect(isFurnitureItem({ ...window, sillHeight: -1 })).toBe(false);
+    expect(isRoomLayout({ ...makeLayout(), entrance: { width: 1.4 } })).toBe(false);
+    expect(isRoomLayout({ ...makeLayout(), frontage: 'lawn' })).toBe(false);
+  });
+
   it('accepts roof dormers and rejects corrupt ones (#203)', () => {
     const dormer = { id: 'd', side: 'south', width: 2, window: true };
     expect(isRoomLayout(makeLayout({ roof: { style: 'gable', dormers: [dormer] as never } }))).toBe(true);

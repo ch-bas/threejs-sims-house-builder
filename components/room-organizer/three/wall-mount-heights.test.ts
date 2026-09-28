@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { WINDOW_SILL_HEIGHT } from '../lib/constants';
 import { buildWallClock, buildWallShelf } from './builders/builders-decor';
+import { buildWindow } from './builders/builders-structure';
 import { computeWallOpenings, openingsForWall } from './wall-openings';
 import type { BuilderContext } from './builder-utils';
 import type { FurnitureItem } from '../lib/types';
@@ -40,6 +41,16 @@ describe('window sill datum (#212)', () => {
       makeItem({ type: 'window', width: 1.2, depth: 0.15, height: 2.8, position: { x: 0, z: -5 } })
     );
     expect(opening!.bottomFromFloor).toBeCloseTo(WALL_HEIGHT - 2.8, 10);
+  });
+
+  it('honours a per-window sill in the hole and the mesh alike (#204)', () => {
+    const item = makeItem({ type: 'window', width: 1.2, depth: 0.15, height: 1.2, sillHeight: 0.4, position: { x: 0, z: -5 } });
+    const opening = windowOn(item);
+    expect(opening!.bottomFromFloor).toBeCloseTo(0.4, 10);
+    // The mesh (frame over a filler panel down to the floor) tops out where the hole does.
+    const mesh = bounds(buildWindow(context(item)));
+    expect(mesh.max.y).toBeCloseTo(0.4 + 1.2, 5);
+    expect(opening!.bottomFromFloor + opening!.height).toBeCloseTo(mesh.max.y, 5);
   });
 
   it('keeps doors on the floor', () => {

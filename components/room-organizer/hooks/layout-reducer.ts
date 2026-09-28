@@ -1,15 +1,26 @@
-import { DEFAULT_ROOF, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { DEFAULT_ROOF, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
 import { MAX_DORMERS, clampDormer } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import { clampTerrainY } from '../lib/site';
 import { clampStoreyHeight } from '../lib/storeys';
+import {
+  ENTRANCE_DOOR_ID,
+  ENTRANCE_WALL_ID,
+  MAX_SILL_HEIGHT,
+  MIN_SILL_HEIGHT,
+  clampEntrance,
+  entranceBackWall,
+  entranceGeometry,
+} from '../lib/street';
 import type {
   CatalogItem,
   DormerSpec,
+  EntranceSpec,
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  Frontage,
   FurnitureItem,
   InteriorWall,
   NeighbourSide,
@@ -78,6 +89,9 @@ export type LayoutAction =
   | { type: 'removeDormer'; id: string }
   | { type: 'setTerrain'; terrain: TerrainSpec | null }
   | { type: 'setNeighbour'; side: NeighbourSide; present: boolean }
+  | { type: 'setEntrance'; entrance: EntranceSpec | null }
+  | { type: 'setFrontage'; frontage: Frontage }
+  | { type: 'setSillHeight'; id: string; sillHeight: number | null }
   | { type: 'applyLayout'; layout: RoomLayout };
 
 // ---------------------------------------------------------------------------
@@ -111,7 +125,29 @@ export const INITIAL_LAYOUT: RoomLayout = {
 // Reducer
 // ---------------------------------------------------------------------------
 
+/**
+ * Actions that move the street storey or the front wall. After any of them
+ * the entrance's back wall and door are re-fitted (#204); applyLayout is
+ * deliberately absent — undo/redo and loads must restore state verbatim.
+ */
+const ENTRANCE_RESYNC_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
+  'setWidth',
+  'setHeight',
+  'setTerrain',
+  'setStoreyHeight',
+  'addFloor',
+  'duplicateFloor',
+  'removeFloor',
+  'reorderFloor',
+]);
+
 export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
+  const next = reduceLayout(state, action);
+  if (next === state || !next.layout.entrance || !ENTRANCE_RESYNC_ACTIONS.has(action.type)) return next;
+  return { ...next, layout: syncEntrance(next.layout, next.layout.entrance) };
+}
+
+function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
   switch (action.type) {
     // -- building-level properties ------------------------------------------
     case 'setName':
@@ -137,6 +173,19 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
         }
         return { ...layout, terrain: clampTerrain(action.terrain) };
       });
+    // A recessed entrance (#204) owns an interior wall across the back of the
+    // recess and, when first added, an ordinary door on it. Both follow the
+    // recess as it's resized or moved, onto whichever storey meets the street.
+    case 'setEntrance':
+      return withLayout(state, (layout) => syncEntrance(layout, action.entrance));
+    case 'setFrontage':
+      return withLayout(state, (layout) => {
+        if ((layout.frontage ?? 'garden') === action.frontage) return layout;
+        if (action.frontage === 'pavement') return { ...layout, frontage: 'pavement' };
+        const { frontage: _garden, ...rest } = layout;
+        return rest;
+      });
+
     case 'setNeighbour':
       return withLayout(state, (layout) => {
         if ((layout.neighbours?.[action.side] === true) === action.present) return layout;
@@ -349,6 +398,15 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
 
     case 'setSofaShape':
       return patchItem(state, action.id, () => ({ sofaShape: action.shape }));
+
+    case 'setSillHeight':
+      return patchItem(state, action.id, (item) => {
+        // Geometry like a resize: refused while locked (#209), clamped (#113).
+        if (item.locked || item.type !== 'window') return null;
+        if (action.sillHeight === null) return item.sillHeight === undefined ? null : { sillHeight: undefined };
+        if (!Number.isFinite(action.sillHeight)) return null;
+        return { sillHeight: Math.min(MAX_SILL_HEIGHT, Math.max(MIN_SILL_HEIGHT, action.sillHeight)) };
+      });
 
     case 'setSignalRange':
       return patchItem(state, action.id, () => ({ signalRange: action.range }));
@@ -691,6 +749,48 @@ function normaliseLayout(layout: RoomLayout): RoomLayout {
     floors,
     ...(layout.terrain !== undefined ? { terrain: clampTerrain(layout.terrain) } : {}),
   };
+}
+
+/**
+ * Apply an entrance change and keep its back wall and door in step: the wall
+ * always spans the recess on the street storey; the door is created with the
+ * entrance and afterwards only re-centred (a user who deleted it keeps it
+ * deleted). Removing the entrance removes both.
+ */
+function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null): RoomLayout {
+  const entrance = requested === null ? null : clampEntrance(requested);
+  if (entrance === null && layout.entrance === undefined) return layout;
+  const hadEntrance = layout.entrance !== undefined;
+  let door = layout.floors.flatMap((floor) => floor.items).find((item) => item.id === ENTRANCE_DOOR_ID);
+  const floors = layout.floors.map((floor) => {
+    const next: FloorLayout = { ...floor, items: floor.items.filter((item) => item.id !== ENTRANCE_DOOR_ID) };
+    if (floor.interiorWalls) next.interiorWalls = floor.interiorWalls.filter((wall) => wall.id !== ENTRANCE_WALL_ID);
+    return next;
+  });
+  const { entrance: _old, ...rest } = layout;
+  if (entrance === null) return { ...rest, floors };
+
+  const geometry = entranceGeometry(entrance, {
+    width: layout.width,
+    depth: layout.height,
+    floors: layout.floors,
+    terrain: layout.terrain,
+  });
+  if (geometry) {
+    const target = floors[geometry.floorIndex]!;
+    target.interiorWalls = [...(target.interiorWalls ?? []), { id: ENTRANCE_WALL_ID, ...entranceBackWall(geometry) }];
+    if (!door && !hadEntrance) {
+      const catalogDoor = FURNITURE_CATALOG.find((item) => item.type === 'door');
+      if (catalogDoor) door = { ...catalogDoor, id: ENTRANCE_DOOR_ID, locked: true, rotation: 0 };
+    }
+    if (door) {
+      target.items = [
+        ...target.items,
+        { ...door, position: { x: (geometry.x0 + geometry.x1) / 2, z: geometry.backZ }, rotation: 0 },
+      ];
+    }
+  }
+  return { ...rest, entrance, floors };
 }
 
 function clampTerrain(terrain: TerrainSpec): TerrainSpec {

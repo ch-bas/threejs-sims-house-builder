@@ -1,4 +1,4 @@
-import { WINDOW_SILL_HEIGHT } from '../lib/constants';
+import { windowSillHeight } from '../lib/street';
 import { BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { classifyOpeningOwners, mergeHoleRects, type OpeningOwner } from './wall-openings';
@@ -211,8 +211,8 @@ function computeSegmentOpenings(
     const localX = (item.position.x - cx) * dx + (item.position.z - cz) * dz;
     if (localX + item.width / 2 < -halfLen || localX - item.width / 2 > halfLen) continue;
 
-    // Same sill datum as the exterior cut and the window mesh (#212).
-    const bottom = item.type === 'door' ? 0 : WINDOW_SILL_HEIGHT;
+    // Same sill as the exterior cut and the window mesh (#212, #204).
+    const bottom = item.type === 'door' ? 0 : windowSillHeight(item);
     // Clamp the width to the segment first, then clamp the centre using the
     // clamped half-width so an oversized opening can't extend past the wall.
     const width = Math.min(item.width, Math.max(0, length - 0.05));

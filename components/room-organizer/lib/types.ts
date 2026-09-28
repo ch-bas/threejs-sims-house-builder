@@ -141,6 +141,8 @@ export interface FurnitureItem {
   mirrored?: boolean;
   /** Direction the stairs ascend (for `type === 'stairs'`). */
   stairsDirection?: StairsDirection;
+  /** Window sill above its floor, overriding the shared datum (#204). */
+  sillHeight?: number;
 }
 
 export type CameraPreset = 'iso' | 'top' | 'front' | 'corner';
@@ -236,6 +238,19 @@ export interface TerrainSpec {
 
 export type NeighbourSide = 'west' | 'east';
 
+export type Frontage = 'garden' | 'pavement';
+
+/** A porch recessed into the front (north) wall, opening onto the storey at street level. */
+export interface EntranceSpec {
+  width: number;
+  /** How far the recess reaches back into the house. */
+  depth: number;
+  /** Centre along the front wall (world x). */
+  offset?: number;
+  /** Porch floor to soffit; may span more than one storey. */
+  height?: number;
+}
+
 /** Party-wall neighbour blocks either side, for terraces and semis (#202). */
 export type NeighbourSpec = Partial<Record<NeighbourSide, boolean>>;
 
@@ -257,6 +272,10 @@ export interface RoomLayout {
   /** Sloped site; absent is flat ground at the ground-floor level. */
   terrain?: TerrainSpec;
   neighbours?: NeighbourSpec;
+  /** A recessed porch in the front wall (#204); see lib/street.ts. */
+  entrance?: EntranceSpec;
+  /** 'pavement': the pavement runs right up to the front wall, no front garden. */
+  frontage?: Frontage;
 }
 
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */

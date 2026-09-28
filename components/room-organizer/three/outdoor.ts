@@ -1,7 +1,7 @@
 import { groundHeightAt } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
-import type { NeighbourSpec, TerrainSpec } from '../lib/types';
+import type { Frontage, NeighbourSpec, TerrainSpec } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -26,6 +26,8 @@ const OUTDOOR_TAG = 'outdoor';
 export interface OutdoorSite {
   terrain?: TerrainSpec;
   neighbours?: NeighbourSpec;
+  /** 'pavement': pavement and road run right up to the front wall (#204). */
+  frontage?: Frontage;
 }
 
 export function setOutdoorVisible(
@@ -95,10 +97,13 @@ export function setOutdoorVisible(
 
   // Tuft pass: a few hundred low patches of darker / lighter grass to break
   // the flat plane up the way suburban terrain reads.
-  scatterGrassTufts(THREE, scene, rng, groundSize, lotHalfW, lotHalfD, groundAt);
+  // A town frontage has no front garden: the pavement starts at the wall.
+  const pavement = site.frontage === 'pavement';
+  const roadBand: readonly [number, number] = pavement ? [halfD, halfD + 6.6] : [lotHalfD + 1.5, lotHalfD + 7];
+  scatterGrassTufts(THREE, scene, rng, groundSize, lotHalfW, lotHalfD, groundAt, roadBand);
 
   // ---- 2. Sidewalk + road on the north edge ----
-  const roadOffset = lotHalfD + 1.6; // sidewalk starts past the lot
+  const roadOffset = pavement ? halfD : lotHalfD + 1.6; // sidewalk starts past the lot (or at the wall)
   const sidewalkDepth = 1.6;
   const roadDepth = 4.5;
 
@@ -157,7 +162,7 @@ export function setOutdoorVisible(
   // Path of stepping stones from the front-of-lot edge to the room's "door"
   // wall (north). Identical cylinders → one InstancedMesh.
   const stoneTransforms: ThreeNS.Matrix4[] = [];
-  for (let z = -halfD - 0.5; z >= -roadOffset; z -= 0.7) {
+  for (let z = -halfD - 0.5; !pavement && z >= -roadOffset; z -= 0.7) {
     dummy.position.set(0, groundAt(z) - 0.005, z);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.set(1, 1, 1);
@@ -179,7 +184,7 @@ export function setOutdoorVisible(
   }
 
   // ---- 3. Perimeter trees + bushes ----
-  scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD, groundAt, site.neighbours);
+  scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD, groundAt, site.neighbours, pavement ? halfD : null);
 }
 
 /** Static mesh — never moves after positioning, so bake its matrix once. */
@@ -212,7 +217,8 @@ function scatterGrassTufts(
   groundSize: number,
   lotHalfW: number,
   lotHalfD: number,
-  groundAt: (z: number) => number
+  groundAt: (z: number) => number,
+  roadBand: readonly [number, number]
 ): void {
   // 220 identical half-flattened spheres in two shades — collapse them into a
   // single InstancedMesh (1 draw call) with per-instance colour. RNG draws are
@@ -233,7 +239,7 @@ function scatterGrassTufts(
     const z = (rng() - 0.5) * groundSize;
     // Don't put tufts inside the lot footprint or directly on the road.
     if (Math.abs(x) < lotHalfW + 0.5 && Math.abs(z) < lotHalfD + 0.5) continue;
-    if (z < -lotHalfD - 1.5 && z > -lotHalfD - 7) continue;
+    if (z < -roadBand[0] && z > -roadBand[1]) continue;
     const color = rng() > 0.5 ? dark : bright;
     const s = 0.7 + rng() * 0.6;
     // The old code hid tufts far out in the fog (`.visible = false`), which
@@ -379,8 +385,11 @@ function scatterPerimeter(
   lotHalfW: number,
   lotHalfD: number,
   groundAt: (z: number) => number,
-  neighbours: NeighbourSpec | undefined
+  neighbours: NeighbourSpec | undefined,
+  /** With a pavement frontage: the front wall's |z|; nothing is planted beyond it. */
+  pavementFrom: number | null
 ): void {
+  const onStreet = (z: number) => pavementFrom !== null && z < -pavementFrom;
   const bushMat = new THREE.MeshStandardMaterial({ color: 0x3e7a35, roughness: 0.9 });
   const bushGeom = new THREE.SphereGeometry(0.45, 10, 10);
 
@@ -405,6 +414,7 @@ function scatterPerimeter(
     }
     // A neighbour's house stands on that side (#202).
     if ((side === 1 && neighbours?.east) || (side === 2 && neighbours?.west)) continue;
+    if (onStreet(z)) continue;
     treePositions.push([x, z]);
     addTree(THREE, scene, x, groundAt(z), z, TREE_KINDS[i % TREE_KINDS.length]!, rng);
     void t;
@@ -423,7 +433,7 @@ function scatterPerimeter(
     const z = Math.sin(angle) * radius;
     const s = 0.7 + rng() * 0.4;
     // Keep the road frontage clean.
-    if (z < -lotHalfD) continue;
+    if (z < -lotHalfD || onStreet(z)) continue;
     shrubDummy.position.set(x, groundAt(z) + 0.32, z);
     shrubDummy.rotation.set(0, 0, 0);
     shrubDummy.scale.setScalar(s);
@@ -455,7 +465,7 @@ function scatterPerimeter(
   const blossomMatrices: ThreeNS.Matrix4[] = [];
   const blossomColors: ThreeNS.Color[] = [];
   const stemMatrices: ThreeNS.Matrix4[] = [];
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; pavementFrom === null && i < 6; i += 1) {
     const x = ((rng() - 0.5) * lotHalfW) * 2;
     const z = -lotHalfD - 0.4 - rng() * 0.6;
     collectFlowerPatch(THREE, dummy, x, groundAt(z), z, flowerColors, rng, blossomMatrices, blossomColors, stemMatrices);

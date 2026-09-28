@@ -373,6 +373,71 @@ describe('layoutReducer — storey height (#202)', () => {
   });
 });
 
+describe('layoutReducer — entrance, frontage, sills (#204)', () => {
+  const entranceWall = (state: LayoutState, floor: number) =>
+    state.layout.floors[floor]!.interiorWalls?.find((w) => w.id === 'entrance-back');
+  const entranceDoor = (state: LayoutState, floor: number) =>
+    state.layout.floors[floor]!.items.find((i) => i.id === 'entrance-door');
+
+  it('adds the recess with a back wall and a door on it, and follows resizes', () => {
+    let state = stateWith([], 2);
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    expect(state.layout.entrance).toEqual({ width: 1.4, depth: 1.2 });
+    const wall = entranceWall(state, 0)!;
+    expect(wall.z1).toBeCloseTo(-state.layout.height / 2 + 1.2);
+    expect(entranceDoor(state, 0)!.position).toEqual({ x: 0, z: wall.z1 });
+
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.5, offset: 1 } });
+    expect(entranceWall(state, 0)!.z1).toBeCloseTo(-state.layout.height / 2 + 1.5);
+    expect(entranceDoor(state, 0)!.position!.x).toBeCloseTo(1);
+    expect(state.layout.floors[0]!.interiorWalls!.filter((w) => w.id === 'entrance-back')).toHaveLength(1);
+
+    state = layoutReducer(state, { type: 'setHeight', height: 12 });
+    expect(entranceWall(state, 0)!.z1).toBeCloseTo(-6 + 1.5);
+  });
+
+  it('moves up to the street storey on a hill, and keeps a deleted door deleted', () => {
+    let state = stateWith([], 2);
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    state = layoutReducer(state, { type: 'setTerrain', terrain: { frontY: 3, backY: 0 } });
+    expect(entranceWall(state, 0)).toBeUndefined();
+    expect(entranceWall(state, 1)).toBeDefined();
+    expect(entranceDoor(state, 1)).toBeDefined();
+    state = { ...state, activeFloorIndex: 1 };
+    state = layoutReducer(state, { type: 'removeItem', id: 'entrance-door' });
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 2, depth: 1.2 } });
+    expect(entranceDoor(state, 1)).toBeUndefined();
+  });
+
+  it('removes the recess, its wall and its door together', () => {
+    let state = layoutReducer(stateWith([], 1), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    state = layoutReducer(state, { type: 'setEntrance', entrance: null });
+    expect('entrance' in state.layout).toBe(false);
+    expect(entranceWall(state, 0)).toBeUndefined();
+    expect(entranceDoor(state, 0)).toBeUndefined();
+    expect(layoutReducer(state, { type: 'setEntrance', entrance: null })).toBe(state);
+  });
+
+  it('switches frontage and drops the default', () => {
+    let state = layoutReducer(stateWith([]), { type: 'setFrontage', frontage: 'pavement' });
+    expect(state.layout.frontage).toBe('pavement');
+    state = layoutReducer(state, { type: 'setFrontage', frontage: 'garden' });
+    expect('frontage' in state.layout).toBe(false);
+  });
+
+  it('sets a clamped window sill, refuses locked or non-window items, and resets', () => {
+    const window = makeItem({ id: 'w', type: 'window', locked: false });
+    let state = stateWith([window, makeItem({ id: 'c', type: 'chair', locked: false }), makeItem({ id: 'l', type: 'window', locked: true })]);
+    state = layoutReducer(state, { type: 'setSillHeight', id: 'w', sillHeight: 9 });
+    expect(activeItems(state)[0]!.sillHeight).toBe(2.5);
+    for (const id of ['c', 'l']) {
+      expect(layoutReducer(state, { type: 'setSillHeight', id, sillHeight: 0.4 })).toBe(state);
+    }
+    state = layoutReducer(state, { type: 'setSillHeight', id: 'w', sillHeight: null });
+    expect(activeItems(state)[0]!.sillHeight).toBeUndefined();
+  });
+});
+
 describe('layoutReducer — dormers (#203)', () => {
   const dormer = { id: 'd1', side: 'south' as const, width: 2, window: true };
 
