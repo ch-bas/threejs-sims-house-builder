@@ -104,8 +104,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   stackable, rotation-aware.
 - **Auto-organize** with three strategies: packed, by category, by size.
 - **Surprise me** picks a room-appropriate furniture set + random decor.
-- **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z) — snapshot-based, debounced,
-  50-entry stack.
+- **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y) — snapshot-based,
+  debounced, 50-entry stack. Loading a template or a saved layout is one
+  Ctrl+Z away from the design it replaced.
 
 ### Walls, floor & roof
 
@@ -185,8 +186,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 
 - **Auto-save** to `localStorage` (1.5s debounce). Legacy single-floor
   saves continue to load thanks to the schema migration.
-- **Saved-layouts library**: name, save, list, load, delete; entry stores
-  item and floor counts.
+- **Saved-layouts library**: name, save, list, load (undoable), delete;
+  entry stores item and floor counts.
 - **Export / import layout** as JSON (with structural validation).
 - **Inventory CSV** with a Floor column.
 - **PNG screenshot** of the current viewport.
@@ -207,7 +208,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 
 - **Header chip strip**: items / floors / room dimensions / cost-vs-budget.
 - **Statistics panel**: items, floors, floor area, total area, footprint
-  coverage %, cost vs. budget, breakdown by category.
+  coverage % (indoor items only), cost vs. budget, breakdown by category.
 
 ### Welcome
 
@@ -319,6 +320,7 @@ components/
     │   ├── use-achievements.ts          Diffed unlock detection
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
+    │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
