@@ -4,6 +4,7 @@ import { ROOM_TEMPLATES } from './constants';
 import {
   autoOrganize,
   boundingRadius,
+  footprintArea,
   hasCollisions,
   itemInBounds,
   itemsOverlap,
@@ -223,5 +224,20 @@ describe('autoOrganize — overflow handling (#128)', () => {
     const result = autoOrganize([wide], 2.2, 4);
     expect(result[0]!.position).toEqual({ x: 0.1, z: 0.2 });
     expect(result[0]!.rotation).toBe(0.5);
+  });
+});
+
+describe('footprintArea (#164)', () => {
+  it('sums width × depth of indoor items', () => {
+    expect(footprintArea([makeItem({ width: 2, depth: 1.5 }), makeItem({ width: 1, depth: 1 })])).toBeCloseTo(4, 10);
+  });
+
+  it('ignores outdoor items, which must sit outside the room', () => {
+    const garden = [
+      makeItem({ category: 'outdoor', width: 4, depth: 2.5 }), // pool
+      makeItem({ category: 'outdoor', width: 2, depth: 2 }), // oak
+    ];
+    expect(footprintArea(garden)).toBe(0);
+    expect(footprintArea([...garden, makeItem({ width: 2, depth: 1 })])).toBeCloseTo(2, 10);
   });
 });
