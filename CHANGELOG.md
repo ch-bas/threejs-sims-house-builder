@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.9.1] - 2026-09-28
+
+### Fixed
+- Surprise me no longer stands paintings and mirrors loose in the room, where the thin raised panels looked like a second wall beside the real one; it hangs them flush on a wall, facing into the room ([#261](https://github.com/ch-bas/threejs-sims-house-builder/pull/261))
+
 ## [1.9.0] - 2026-09-28
 
 Completes the **v1.9 — Real Streets** milestone: the realism track from [#195](https://github.com/ch-bas/threejs-sims-house-builder/issues/195).
