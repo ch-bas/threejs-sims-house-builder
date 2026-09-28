@@ -217,9 +217,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 
 | Action            | Key                |
 | ----------------- | ------------------ |
-| Undo / Redo       | Ctrl+Z / Ctrl+Shift+Z |
-| Delete item / wall | Delete            |
+| Undo / Redo       | Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y |
+| Delete item / wall | Delete / Backspace |
 | Duplicate         | Ctrl+D             |
+| Copy / Paste      | Ctrl+C / Ctrl+V    |
 | Rotate            | R (Shift+R = 15°)  |
 | Move              | Arrow keys (Shift = 1 m) |
 | Deselect          | Esc                |
@@ -232,6 +233,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 | Measurements      | M                  |
 | Snap to grid      | G                  |
 | Signals/Coverage  | W                  |
+| Show / hide panels | P                 |
 
 ## Module layout
 
