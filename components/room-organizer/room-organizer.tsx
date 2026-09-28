@@ -18,6 +18,7 @@ import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
+import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { hasCollisions, totalCost } from './lib/geometry';
@@ -916,8 +917,8 @@ export function RoomOrganizer(): JSX.Element {
             return item ? { item, clientX: hover.clientX, clientY: hover.clientY } : null;
           })()
         }
-        onCatalogDrop={(clientX, clientY, type) => {
-          const item = FURNITURE_CATALOG.find((entry) => entry.type === type);
+        onCatalogDrop={(clientX, clientY, key) => {
+          const item = findCatalogEntry(FURNITURE_CATALOG, key);
           if (!item) return;
           const world = worldPositionFromClient(clientX, clientY);
           const newId = placeCatalogItem(item, world ?? undefined);

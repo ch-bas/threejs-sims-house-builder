@@ -1,3 +1,4 @@
+import { STAIR_STEP_COUNT, stairSteps } from '../../lib/stairs';
 import { windowSillHeight } from '../../lib/street';
 import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
@@ -119,7 +120,12 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   return group;
 }
 
-export function buildStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildStairs(ctx: BuilderContext): ThreeNS.Group {
+  if (ctx.item.stairsShape === 'winder') return buildWinderStairs(ctx);
+  return buildStraightStairs(ctx);
+}
+
+function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const stepMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
   const railMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 });
@@ -162,6 +168,48 @@ export function buildStairs({ THREE, item, hasCollision, baseColor, opacity }: B
     rail.position.set(dx * (item.width / 2 + 0.04), item.height / 2 + 0.4, 0);
     group.add(rail);
   }
+
+  return group;
+}
+
+/**
+ * Half-turn winder stair (#205): up flight, a fan of winders turning 180°,
+ * return flight — laid out by lib/stairs.ts, the same layout the stairwell
+ * cut above uses. Each tread is a slab of one rise; a newel post stands at
+ * the turn and a spine wall divides the flights.
+ */
+function buildWinderStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+  const group = new THREE.Group();
+  const treadMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
+  const spineMat = material(THREE, 0xefe9df, hasCollision, opacity, { roughness: 0.9 });
+  const newelMat = material(THREE, 0x5d4037, hasCollision, opacity, { roughness: 0.6 });
+  const steps = stairSteps(item, item.height);
+  const rise = item.height / STAIR_STEP_COUNT;
+
+  for (const step of steps) {
+    // Outline is [x, z]; the shape lives in XY with y = −z so that rotating
+    // −90° about X lays it flat with extrusion pointing up.
+    const shape = new THREE.Shape(step.outline.map(([x, z]) => new THREE.Vector2(x, -z)));
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: rise, bevelEnabled: false });
+    geometry.rotateX(-Math.PI / 2);
+    const tread = mesh(THREE, geometry, treadMat);
+    tread.position.y = step.top - rise;
+    group.add(tread);
+  }
+
+  // Spine wall between the flights, up to the turn, and the newel at the turn.
+  const fanZ = item.depth / 2 - item.width / 2;
+  const spineLength = fanZ + item.depth / 2;
+  const spineHeight = Math.max(0.9, steps[steps.length - 1]!.top * 0.5);
+  if (spineLength > 0.05) {
+    const spine = mesh(THREE, new THREE.BoxGeometry(0.08, spineHeight, spineLength), spineMat);
+    spine.position.set(0, spineHeight / 2, -item.depth / 2 + spineLength / 2);
+    group.add(spine);
+  }
+  const newelHeight = item.height * 0.55 + 0.9;
+  const newel = mesh(THREE, new THREE.BoxGeometry(0.1, newelHeight, 0.1), newelMat);
+  newel.position.set(0, newelHeight / 2, fanZ);
+  group.add(newel);
 
   return group;
 }

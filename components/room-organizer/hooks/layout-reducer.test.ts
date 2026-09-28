@@ -438,6 +438,29 @@ describe('layoutReducer — entrance, frontage, sills (#204)', () => {
   });
 });
 
+describe('layoutReducer — stairs shape (#205)', () => {
+  it('switches to a winder with a clamped lead-in and back to straight', () => {
+    let state = stateWith([makeItem({ id: 's', type: 'stairs', locked: false })]);
+    state = layoutReducer(state, { type: 'setStairsShape', id: 's', shape: 'winder', leadIn: 99 });
+    expect(activeItems(state)[0]).toMatchObject({ stairsShape: 'winder', stairsLeadIn: 6 });
+    state = layoutReducer(state, { type: 'setStairsShape', id: 's', shape: 'winder', leadIn: 0 });
+    expect(activeItems(state)[0]!.stairsLeadIn).toBeUndefined();
+    expect(layoutReducer(state, { type: 'setStairsShape', id: 's', shape: 'winder', leadIn: 0 })).toBe(state);
+    state = layoutReducer(state, { type: 'setStairsShape', id: 's', shape: 'straight' });
+    expect(activeItems(state)[0]!.stairsShape).toBeUndefined();
+  });
+
+  it('refuses locked stairs and non-stairs', () => {
+    const state = stateWith([
+      makeItem({ id: 'l', type: 'stairs', locked: true }),
+      makeItem({ id: 'c', type: 'chair', locked: false }),
+    ]);
+    for (const id of ['l', 'c']) {
+      expect(layoutReducer(state, { type: 'setStairsShape', id, shape: 'winder' })).toBe(state);
+    }
+  });
+});
+
 describe('layoutReducer — dormers (#203)', () => {
   const dormer = { id: 'd1', side: 'south' as const, width: 2, window: true };
 

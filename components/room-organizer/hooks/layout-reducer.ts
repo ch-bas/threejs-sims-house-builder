@@ -3,6 +3,7 @@ import { MAX_DORMERS, clampDormer } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import { clampTerrainY } from '../lib/site';
+import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { clampStoreyHeight } from '../lib/storeys';
 import {
   ENTRANCE_DOOR_ID,
@@ -27,6 +28,7 @@ import type {
   RoofStyle,
   RoomLayout,
   SofaShape,
+  StairsShape,
   TerrainSpec,
   WallId,
   WallPattern,
@@ -92,6 +94,7 @@ export type LayoutAction =
   | { type: 'setEntrance'; entrance: EntranceSpec | null }
   | { type: 'setFrontage'; frontage: Frontage }
   | { type: 'setSillHeight'; id: string; sillHeight: number | null }
+  | { type: 'setStairsShape'; id: string; shape: StairsShape; leadIn?: number }
   | { type: 'applyLayout'; layout: RoomLayout };
 
 // ---------------------------------------------------------------------------
@@ -406,6 +409,21 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         if (action.sillHeight === null) return item.sillHeight === undefined ? null : { sillHeight: undefined };
         if (!Number.isFinite(action.sillHeight)) return null;
         return { sillHeight: Math.min(MAX_SILL_HEIGHT, Math.max(MIN_SILL_HEIGHT, action.sillHeight)) };
+      });
+
+    // Stair shape changes the flight and the hole above it — geometry, so
+    // refused while locked (#209); the lead-in is clamped to the step count.
+    case 'setStairsShape':
+      return patchItem(state, action.id, (item) => {
+        if (item.locked || item.type !== 'stairs') return null;
+        if (action.shape === 'straight') {
+          if ((item.stairsShape ?? 'straight') === 'straight' && item.stairsLeadIn === undefined) return null;
+          return { stairsShape: undefined, stairsLeadIn: undefined };
+        }
+        const leadIn = action.leadIn ?? item.stairsLeadIn ?? 0;
+        const clamped = Number.isFinite(leadIn) ? Math.max(0, Math.min(MAX_STAIRS_LEAD_IN, Math.round(leadIn))) : 0;
+        if (item.stairsShape === 'winder' && (item.stairsLeadIn ?? 0) === clamped) return null;
+        return { stairsShape: 'winder', stairsLeadIn: clamped === 0 ? undefined : clamped };
       });
 
     case 'setSignalRange':

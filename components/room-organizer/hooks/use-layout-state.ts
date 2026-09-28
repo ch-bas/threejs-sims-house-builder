@@ -25,6 +25,7 @@ import type {
   RoofStyle,
   RoomLayout,
   SofaShape,
+  StairsShape,
   TerrainSpec,
   WallId,
   WallPattern,
@@ -65,6 +66,8 @@ export interface LayoutActions {
   setFrontage(frontage: Frontage): void;
   /** A window's own sill height; `null` returns it to the shared datum. */
   setSillHeight(id: string, sillHeight: number | null): void;
+  /** Straight or winder stairs (#205); `leadIn` sets the winder's extra up-flight steps. */
+  setStairsShape(id: string, shape: StairsShape, leadIn?: number): void;
   addCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
   removeItem(id: string): void;
   duplicateItem(id: string): string;

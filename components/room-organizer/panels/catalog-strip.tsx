@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
+import { CATALOG_DRAG_MIME, catalogKey } from '../lib/catalog-drag';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { CctvMenu } from './cctv-menu';
@@ -153,7 +153,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   />
                 );
               }
-              return <CatalogTile key={item.type} item={item} onAdd={onAdd} />;
+              return <CatalogTile key={catalogKey(item)} item={item} onAdd={onAdd} />;
             })}
           </div>
         </div>
@@ -262,7 +262,7 @@ function CatalogTile({ item, onAdd }: CatalogTileProps): JSX.Element {
       draggable
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';
-        event.dataTransfer.setData(CATALOG_DRAG_MIME, item.type);
+        event.dataTransfer.setData(CATALOG_DRAG_MIME, catalogKey(item));
         event.dataTransfer.setData('text/plain', item.name);
       }}
       className="pc-tile"

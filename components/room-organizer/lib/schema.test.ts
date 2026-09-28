@@ -89,6 +89,14 @@ describe('isFloorLayout', () => {
 });
 
 describe('isRoomLayout', () => {
+  it('accepts winder stairs and rejects unknown shapes or lead-ins (#205)', () => {
+    const stairs = makeItem({ type: 'stairs', stairsShape: 'winder', stairsLeadIn: 2 });
+    expect(isFurnitureItem(stairs)).toBe(true);
+    expect(isFurnitureItem({ ...stairs, stairsShape: 'spiral' })).toBe(false);
+    expect(isFurnitureItem({ ...stairs, stairsLeadIn: 1.5 })).toBe(false);
+    expect(isFurnitureItem({ ...stairs, stairsLeadIn: 40 })).toBe(false);
+  });
+
   it('accepts an entrance, frontage and window sills, and rejects corrupt ones (#204)', () => {
     const window = makeItem({ type: 'window', sillHeight: 0.4 });
     expect(isRoomLayout(makeLayout({ entrance: { width: 1.4, depth: 1.2 }, frontage: 'pavement' }))).toBe(true);

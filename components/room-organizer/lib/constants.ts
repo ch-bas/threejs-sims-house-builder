@@ -159,6 +159,7 @@ export const FURNITURE_CATALOG = [
 
   // Structure
   { type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, stairsDirection: 'north' },
+  { type: 'stairs', category: 'structure', name: 'Winder Stairs', width: 2.0, depth: 2.6, height: 3.0, color: '#8B4513', icon: '🪜', price: 2200, stairsDirection: 'north', stairsShape: 'winder' },
   { type: 'door', category: 'structure', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, color: '#6D4C41', icon: '🚪', price: 320 },
   { type: 'window', category: 'structure', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, color: '#90CAF9', icon: '🪟', price: 240 },
 ] as const satisfies readonly CatalogItem[];

@@ -1,3 +1,5 @@
+import { stairwellRect, winderStairwellOutline } from '../lib/stairs';
+import { stairRise } from '../lib/storeys';
 import { windowSillHeight } from '../lib/street';
 import type { FloorLayout, FurnitureItem, InteriorWall, WallId } from '../lib/types';
 
@@ -23,6 +25,12 @@ export interface FloorOpening {
    * inflated axis-aligned hole.
    */
   rotation: number;
+  /**
+   * A non-rectangular hole (a winder's L, #205), as world [x, z] points. When
+   * present the floor builder cuts this outline; the fields above are its
+   * bounding box in the stair's frame.
+   */
+  outline?: Array<[number, number]>;
 }
 
 /**
@@ -37,19 +45,35 @@ export function computeFloorOpenings(
   const openings: FloorOpening[] = [];
   for (const item of floorBelow.items) {
     if (item.type !== 'stairs' || !item.position) continue;
-    // Cut a hole matching the stairs' true (rotated) footprint plus a small
-    // clearance margin, and carry the rotation so the floor builder can cut a
-    // rotated rectangle. Previously the hole was the axis-aligned bounding box
-    // of the rotated footprint, which over-cuts at non-90° angles (e.g. a 45°
-    // 1.2×2.4 staircase produced a 2.65×2.65 hole) yet still left floor gaps at
-    // the footprint corners.
+    // Cut only where the treads come within 2 m headroom of this floor
+    // (#205) — not the stair's whole footprint — using the same step layout
+    // the builder draws, so straight and winder stairs both get the right
+    // hole. The rectangle keeps the stairs' rotation so the floor builder
+    // cuts it rotated (no over-inflated AABB); it clamps holes into the floor
+    // outline with its epsilon inset (#146).
+    const rise = stairRise(item, floorBelow);
+    const rect = stairwellRect(item, rise);
+    if (!rect) continue;
+    const rotation = item.rotation ?? 0;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const { x: px, z: pz } = item.position;
+    // Stair-local → world. A mirrored stair flips its local x (the winder's
+    // return-flight side), as its mesh does.
+    const toWorld = (x: number, z: number): [number, number] => {
+      const lx = item.mirrored ? -x : x;
+      return [px + lx * cos + z * sin, pz - lx * sin + z * cos];
+    };
+    const [centerX, centerZ] = toWorld(rect.centerX, rect.centerZ);
+    const outline = winderStairwellOutline(item, rise);
     openings.push({
       id: item.id,
-      centerX: item.position.x,
-      centerZ: item.position.z,
-      width: item.width + 0.1,
-      depth: item.depth + 0.1,
-      rotation: item.rotation ?? 0,
+      centerX,
+      centerZ,
+      width: rect.width,
+      depth: rect.depth,
+      rotation,
+      ...(outline ? { outline: outline.map(([x, z]) => toWorld(x, z)) } : {}),
     });
   }
   return openings;
