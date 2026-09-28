@@ -248,6 +248,9 @@ export function RoomOrganizer(): JSX.Element {
     setSelectedItemId(null);
     setSelectedWall(null);
     setExtraSelectedIds(new Set());
+    // Points are floor-plane coordinates; kept, they'd float on the new floor
+    // showing a distance measured on the old one (#224).
+    setMeasurementPoints([]);
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
@@ -280,6 +283,15 @@ export function RoomOrganizer(): JSX.Element {
     setExtraSelectedIds(new Set(liveExtras));
   }, [activeFloor.items, selectedItemId, extraSelectedIds]);
 
+  // Same guard for a selected interior wall: undo/redo past its creation (or
+  // any path that removes it) would otherwise leave the paint panel open and
+  // dispatching against a wall that no longer exists (#224).
+  useEffect(() => {
+    if (selectedWall?.kind !== 'interior') return;
+    const exists = (activeFloor.interiorWalls ?? []).some((wall) => wall.id === selectedWall.id);
+    if (!exists) setSelectedWall(null);
+  }, [activeFloor.interiorWalls, selectedWall]);
+
   // Make `id` the sole selection (null clears). The one way panels set a
   // primary — pairing the two setters at every call site is how stale extras
   // leaked into later group operations (#117).
@@ -287,6 +299,15 @@ export function RoomOrganizer(): JSX.Element {
     setSelectedItemId(id);
     setExtraSelectedIds((extras) => (extras.size === 0 ? extras : new Set()));
   }, []);
+
+  // A whole-layout replacement (import, share/local hydration, adopting
+  // another tab's save) invalidates every piece of transient selection state,
+  // not just the item ids (#224).
+  const clearTransientSelection = useCallback(() => {
+    selectOnly(null);
+    setSelectedWall(null);
+    setMeasurementPoints([]);
+  }, [selectOnly]);
 
   // Plain reads + flat setter calls. The previous version computed the
   // promotion inside a nested setState updater and read the result back
@@ -485,10 +506,10 @@ export function RoomOrganizer(): JSX.Element {
     onHydrate: useCallback(
       (saved: RoomLayout) => {
         actions.applyLayout(saved);
-        selectOnly(null);
+        clearTransientSelection();
         history.clear();
       },
-      [actions, history, selectOnly]
+      [actions, history, clearTransientSelection]
     ),
   });
 
@@ -498,9 +519,9 @@ export function RoomOrganizer(): JSX.Element {
   const adoptRemoteLayout = useCallback(() => {
     if (!remoteLayout) return;
     actions.applyLayout(remoteLayout);
-    selectOnly(null);
+    clearTransientSelection();
     clearRemoteLayout();
-  }, [remoteLayout, actions, selectOnly, clearRemoteLayout]);
+  }, [remoteLayout, actions, clearTransientSelection, clearRemoteLayout]);
 
   const selectedItem = useMemo(
     () => (selectedItemId ? activeFloor.items.find((item) => item.id === selectedItemId) ?? null : null),
@@ -626,13 +647,7 @@ export function RoomOrganizer(): JSX.Element {
     rendererRef,
     sceneRef,
     cameraRef,
-    onImported: useCallback(() => {
-      // A JSON import replaces the entire layout, so any prior multi-select ids
-      // now reference items that no longer exist. Clear both the primary and
-      // the extra selection to avoid ghost highlights.
-      setSelectedItemId(null);
-      setExtraSelectedIds(new Set());
-    }, []),
+    onImported: clearTransientSelection,
   });
 
   // Advance the time-of-day at roughly 1 in-game hour per second when on.
