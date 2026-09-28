@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import type { FloorPlanFitMode } from '../lib/types';
+
+const ROOM_INPUT_MIN = 2;
+const ROOM_INPUT_MAX = 20;
 
 const FIT_MODE_HINTS: Record<FloorPlanFitMode, string> = {
   stretch: '↔️ Stretches image to fill entire room',
@@ -54,27 +57,11 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
         </div>
         <div>
           <Label htmlFor={widthId}>Width (meters)</Label>
-          <Input
-            id={widthId}
-            type="number"
-            min="2"
-            max="20"
-            step="0.5"
-            value={layout.width}
-            onChange={(e) => actions.setWidth(parseFloat(e.target.value) || 5)}
-          />
+          <RoomDimensionInput id={widthId} value={layout.width} onCommit={actions.setWidth} />
         </div>
         <div>
           <Label htmlFor={heightId}>Depth (meters)</Label>
-          <Input
-            id={heightId}
-            type="number"
-            min="2"
-            max="20"
-            step="0.5"
-            value={layout.height}
-            onChange={(e) => actions.setHeight(parseFloat(e.target.value) || 4)}
-          />
+          <RoomDimensionInput id={heightId} value={layout.height} onCommit={actions.setHeight} />
         </div>
         <div>
           <Label htmlFor={colorId}>Floor Color</Label>
@@ -174,5 +161,56 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+export interface RoomDimensionInputProps {
+  id: string;
+  value: number;
+  onCommit(value: number): void;
+}
+
+/**
+ * A room Width/Depth field that never resizes the room to a mid-typing
+ * value (#217). Same draft-string approach as the item X/Z inputs (#122):
+ * keystrokes update a local draft and only an in-range parse is applied
+ * live, so clearing the field or passing through "1" on the way to "12"
+ * leaves the room alone. Blur or Enter commits the draft clamped to the
+ * declared range; an empty or unparseable draft restores the current value.
+ */
+export function RoomDimensionInput({ id, value, onCommit }: RoomDimensionInputProps): JSX.Element {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const finish = () => {
+    if (draft !== null) {
+      const parsed = parseFloat(draft);
+      if (Number.isFinite(parsed)) {
+        const clamped = Math.min(ROOM_INPUT_MAX, Math.max(ROOM_INPUT_MIN, parsed));
+        if (clamped !== value) onCommit(clamped);
+      }
+    }
+    setDraft(null);
+  };
+
+  return (
+    <Input
+      id={id}
+      type="number"
+      min={ROOM_INPUT_MIN}
+      max={ROOM_INPUT_MAX}
+      step="0.5"
+      value={draft ?? value}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        const parsed = parseFloat(event.target.value);
+        if (Number.isFinite(parsed) && parsed >= ROOM_INPUT_MIN && parsed <= ROOM_INPUT_MAX) {
+          onCommit(parsed);
+        }
+      }}
+      onBlur={finish}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur();
+      }}
+    />
   );
 }
