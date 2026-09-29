@@ -769,7 +769,25 @@ export function useSceneEffects({
     const observer = new ResizeObserver(paint);
     observer.observe(canvas);
 
+    // The ResizeObserver watches the content box, which doesn't change when
+    // only devicePixelRatio does (window dragged between 1× and 2× monitors),
+    // leaving a stale backing store (#226). A matchMedia query on the current
+    // ratio fires exactly when the ratio leaves it; each fire repaints and
+    // re-arms a fresh query for the new ratio.
+    let dprQuery: MediaQueryList | null = null;
+    const onDprChange = () => {
+      paint();
+      armDprListener();
+    };
+    const armDprListener = () => {
+      dprQuery?.removeEventListener('change', onDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      dprQuery.addEventListener('change', onDprChange);
+    };
+    armDprListener();
+
     return () => {
+      dprQuery?.removeEventListener('change', onDprChange);
       observer.disconnect();
       removeRepaintHandler();
     };

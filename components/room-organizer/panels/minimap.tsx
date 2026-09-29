@@ -23,7 +23,17 @@ export function Minimap({ layout, floor, selectedItemId }: MinimapProps): JSX.El
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
-    const paint = () =>
+    const paint = () => {
+      // Size the backing store to CSS size × devicePixelRatio (the CSS size is
+      // pinned via style below) so render2DTopDown's derived dpr scales the
+      // render — a fixed 180×130 store is blurry on retina (#226).
+      const dpr = window.devicePixelRatio || 1;
+      const backingWidth = Math.round(MINIMAP_WIDTH * dpr);
+      const backingHeight = Math.round(MINIMAP_HEIGHT * dpr);
+      // Assigning canvas.width/height clears the canvas — only touch it when
+      // the value actually changes.
+      if (canvas.width !== backingWidth) canvas.width = backingWidth;
+      if (canvas.height !== backingHeight) canvas.height = backingHeight;
       render2DTopDown({
         canvas,
         layout,
@@ -34,6 +44,7 @@ export function Minimap({ layout, floor, selectedItemId }: MinimapProps): JSX.El
         hasCollision: (item) => hasCollisions(item, floor.items, layout.width, layout.height),
         padding: MINIMAP_PADDING,
       });
+    };
     paint();
     // Repaint when an async floor-plan decode lands — the minimap renders in
     // 3D view where the 2D view's handler isn't registered (#118).
@@ -49,7 +60,13 @@ export function Minimap({ layout, floor, selectedItemId }: MinimapProps): JSX.El
       style={{ top: 128, zIndex: 20 }}
     >
       <p className="text-[10px] text-muted-foreground mb-1">{floor.name}</p>
-      <canvas ref={canvasRef} width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} className="rounded" />
+      {/* CSS size is pinned here; the paint effect sizes the backing store to
+          this × devicePixelRatio (#226). */}
+      <canvas
+        ref={canvasRef}
+        className="rounded"
+        style={{ width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT }}
+      />
     </div>
   );
 }

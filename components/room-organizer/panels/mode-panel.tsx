@@ -113,10 +113,13 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           gap: 4,
         }}
       >
+        {/* Lighting only exists in 3D — disable in the 2D top-down view like
+            TimeOfDayPanel's twin button (#220). */}
         <ActionButton
-          label="Speed up time"
+          label={view.view2D ? 'Speed up time — switch back to 3D view' : 'Speed up time'}
           icon="fastfwd"
           active={autoCycleLighting}
+          disabled={view.view2D}
           onClick={() => setAutoCycleLighting((cur) => !cur)}
         />
         <ActionButton

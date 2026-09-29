@@ -109,11 +109,16 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
               }
             }}
           />
-          <CameraPad
-            onOrbit={onOrbit}
-            onZoom={onZoom}
-            onFit={onFit}
-          />
+          {/* The pad drives the (hidden) 3D camera, so it's inert in the 2D
+              top-down view — hide it there, like CameraPresetsPanel disables
+              on view2D (#220). */}
+          {!view.view2D && (
+            <CameraPad
+              onOrbit={onOrbit}
+              onZoom={onZoom}
+              onFit={onFit}
+            />
+          )}
         </div>
       ) : (
         <div />
