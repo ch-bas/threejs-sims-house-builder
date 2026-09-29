@@ -1,6 +1,8 @@
 import { STORAGE_KEY } from './constants';
 import { parseStoredLayout } from './schema';
+import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout } from './types';
+import type { VersionHistoryStore } from './version-history';
 
 export function loadLayout(): RoomLayout | null {
   if (typeof window === 'undefined') return null;
@@ -42,11 +44,16 @@ export function backupStoredLayout(): void {
   }
 }
 
-/** Returns true when the layout was persisted, false on any storage failure. */
-export function saveLayout(layout: RoomLayout): boolean {
-  if (typeof window === 'undefined') return false;
+/**
+ * Returns true when the layout was persisted, false on any storage failure.
+ * Restore points are the lowest-priority tenant of the quota: a failed write
+ * evicts them oldest-first and retries before giving up (#295). `storage` is
+ * injectable for tests and defaults to `window.localStorage`.
+ */
+export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): boolean {
+  if (!storage && typeof window === 'undefined') return false;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+    setItemEvictingSnapshots(storage ?? window.localStorage, STORAGE_KEY, JSON.stringify(layout));
     return true;
   } catch (error) {
     // The most common failure here is QuotaExceededError when a large base64
