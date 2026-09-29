@@ -11,6 +11,7 @@ import {
   loadNamedLayout,
   saveNamedLayout,
 } from '../lib/library';
+import { snapshotBeforeReplace } from '../lib/restore-point';
 import {
   VERSION_HISTORY_STORAGE_KEY,
   floorPlanFingerprint,
@@ -113,6 +114,9 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       summary.floorPlanFingerprint === floorPlanFingerprint(currentLayout.floorPlanImage)
         ? { ...snapshot, floorPlanImage: currentLayout.floorPlanImage }
         : snapshot;
+    // Restoring replaces the whole house too — keep a way back to the one
+    // on screen beyond this session's undo stack (#298).
+    snapshotBeforeReplace(currentLayout);
     // `onLoad` applies via the same undoable path as a library/template load
     // (applyLayout without history.clear, #222) — one Ctrl+Z away.
     onLoad(restored);

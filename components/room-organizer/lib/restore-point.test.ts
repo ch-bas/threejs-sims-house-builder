@@ -60,3 +60,16 @@ describe('snapshotBeforeReplace (#298)', () => {
     warn.mockRestore();
   });
 });
+
+describe('snapshotBeforeReplace — structure counts as work (#298)', () => {
+  it.each([
+    ['interior walls', makeLayout({ floors: [makeFloor({ interiorWalls: [{ id: 'w', x1: 0, z1: 0, x2: 1, z2: 0 }] })] })],
+    ['a second floor', makeLayout({ floors: [makeFloor(), makeFloor({ id: 'first', name: 'First Floor' })] })],
+    ['a sloped site', makeLayout({ terrain: { frontY: 1, backY: 0 } })],
+    ['a dormer', makeLayout({ roof: { style: 'gable', color: '#5d3a23', dormers: [{ id: 'd', side: 'south', width: 2, offset: 0 }] } as never })],
+  ])('snapshots an unfurnished house with %s', (_label, layout) => {
+    vi.mocked(recordSnapshot).mockClear();
+    snapshotBeforeReplace(layout);
+    expect(recordSnapshot).toHaveBeenCalledTimes(1);
+  });
+});
