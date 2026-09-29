@@ -49,12 +49,14 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
     >
       {gameMode !== 'live' ? (
         <div
+          // max-height lives in globals.css: the room above this column
+          // differs per breakpoint (#299).
+          className="pc-hud-left"
           style={{
             display: 'flex',
             flexDirection: 'column',
             gap: 12,
             alignItems: 'flex-start',
-            maxHeight: 'calc(100vh - 112px)',
             overflowY: 'auto',
             overflowX: 'visible',
             paddingRight: 4,
