@@ -181,8 +181,13 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   outline in the active floor.
 - **Floating item labels** sprite above each piece in 3D when enabled.
 - **Cost-density heatmap** in the 2D view, with a min/max gradient legend.
-- **Walking NPCs** that wander the active floor between random waypoints
-  (procedural human meshes, leg-bob animation, RAF-driven motion).
+- **Interactive 2D plan**: select, multi-select, and drag items on the
+  top-down plan with the same snapping and settling as 3D; catalog items
+  drop straight onto it.
+- **Walking people**: rigged, animated mannequins (CC0 Quaternius rig)
+  that wander the active floor, pause to idle or chat at waypoints, and
+  crossfade between clips — with a procedural jointed figure as the
+  loading/offline fallback.
 - **Collapsible sidebar** for full-viewport editing.
 - **Walkthrough HUD** with a centre reticle + WASD/Sprint/Esc help banner.
 - **Multi-select badge** floating at the top of the viewport when more
@@ -214,6 +219,11 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Inventory CSV** with a Floor column.
 - **PNG screenshot** of the current viewport.
 - **GLB / glTF export** of the live Three.js scene — opens in any viewer.
+- **Plan export**: scalable SVG, CAD-ready layered DXF, and a
+  print-to-scale PDF with title block (1:20–1:200, picked to fit A4).
+- **Version history**: automatic restore points every few minutes of
+  editing (and on page close), restorable — and undoable — from the
+  library's History section.
 - **Shareable URLs**: the layout is base64-url encoded into the hash; the
   app hydrates from it if present on load. Floor-plan images are stripped
   to keep URLs compact.

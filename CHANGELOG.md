@@ -4,11 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.10.0] - 2026-09-29
+
+The **2D plan & export** milestone, animated people, and a round of robustness fixes.
 
 ### Added
+- The 2D plan is fully interactive: click to select (Ctrl-click for multi-select), drag items with the same snapping, wall settling, lock-on-release and single undo entry as 3D, and drop catalog items straight onto the plan ([#219](https://github.com/ch-bas/threejs-sims-house-builder/issues/219), [#166](https://github.com/ch-bas/threejs-sims-house-builder/issues/166))
+- Export the plan as a scalable **SVG**, a CAD-ready **DXF** (layers for walls, openings, furniture and labels; opens in AutoCAD/LibreCAD/QCAD), or a **print-to-scale PDF** with a title block and a declared scale like 1:75 on A4 ([#230](https://github.com/ch-bas/threejs-sims-house-builder/issues/230))
+- Version history: automatic restore points (at most one per 5 minutes, plus one when the page closes) in a History section of the saved-layouts library. Restoring is undoable and keeps the current floor-plan image ([#231](https://github.com/ch-bas/threejs-sims-house-builder/issues/231))
 - People are a rigged, animated mannequin: placed people hold a relaxed idle stance, and walkers stroll, stop at each waypoint to idle or talk, and walk on, with the walk cycle matched to their speed. The model (Quaternius' Universal Animation Library, CC0, ~420 KB) is only downloaded once a layout contains a person or the walkers are on
 - A "Show walkers" toggle in the mode panel — the walking people existed but had no control to switch them on
+
+### Fixed
+- The 2D plan and printed blueprint draw the floor-plan tracing image like 3D does: 50% default opacity, the chosen cover/contain fit, and only on the ground floor ([#218](https://github.com/ch-bas/threejs-sims-house-builder/issues/218))
+- The camera pad and the auto-cycle time button no longer pretend to work in 2D view, the minimap renders sharply on retina displays, and the 2D view stays crisp after moving the window between monitors with different pixel densities ([#220](https://github.com/ch-bas/threejs-sims-house-builder/issues/220), [#226](https://github.com/ch-bas/threejs-sims-house-builder/issues/226))
+- Switching floors during walkthrough no longer snaps the first-person camera to an orbit pose, and movement keys no longer stick after Alt-Tabbing away mid-walk ([#216](https://github.com/ch-bas/threejs-sims-house-builder/issues/216))
+- A drag whose item was rebuilt mid-gesture (a cross-tab load, for example) aborts cleanly instead of committing stale positions ([#207](https://github.com/ch-bas/threejs-sims-house-builder/issues/207) follow-up)
+- Exporting a GLB with rigged people in the scene produces a valid file with the posed skeleton — it previously failed to open at all
 
 ### Changed
 - The procedural person, now the fallback while the model loads or if it can't, is a jointed scale figure with a neck, shaped chest, hands and feet that swings its limbs to walk, instead of a floating ball over a tube with legs that slid up and down
