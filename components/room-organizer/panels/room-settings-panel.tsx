@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
+import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { MAX_STOREY_HEIGHT, MIN_STOREY_HEIGHT, storeyHeight } from '../lib/storeys';
 import type { FloorPlanFitMode } from '../lib/types';
 
@@ -110,7 +111,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
                 <div className="text-xs text-muted-foreground bg-green-50 p-2 rounded">✓ Floor plan uploaded</div>
                 <div>
                   <Label htmlFor={opacityId} className="text-xs">
-                    Opacity: {((layout.floorPlanOpacity ?? 0.5) * 100).toFixed(0)}%
+                    Opacity: {((layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY) * 100).toFixed(0)}%
                   </Label>
                   <Input
                     id={opacityId}
@@ -118,7 +119,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
                     min="0"
                     max="1"
                     step="0.05"
-                    value={layout.floorPlanOpacity ?? 0.5}
+                    value={layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY}
                     onChange={(e) => actions.setFloorPlanOpacity(parseFloat(e.target.value))}
                     className="w-full"
                   />

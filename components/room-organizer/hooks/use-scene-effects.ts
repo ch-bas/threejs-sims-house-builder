@@ -1,5 +1,6 @@
 import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
+import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { hasCollisions } from '../lib/geometry';
 import { lowestGround, neighbourSides } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, stairRise, storeyHeight } from '../lib/storeys';
@@ -258,7 +259,7 @@ export function useSceneEffects({
         hiddenWalls: floor.hiddenWalls,
         floorOpenings,
         floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
-        floorPlanOpacity: layout.floorPlanOpacity ?? 0.5,
+        floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
         floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
         floorPlan3DEffect: view.floorPlan3DEffect,
         yOffset: floorElevation(layout.floors, index),
