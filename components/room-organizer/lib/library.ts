@@ -1,4 +1,5 @@
 import { parseStoredLayout } from './schema';
+import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout, SavedLayoutEntry } from './types';
 
 const LIBRARY_KEY_PREFIX = 'standalone-room-organizer-library:';
@@ -25,7 +26,8 @@ function readIndex(): LibraryIndex {
 
 function writeIndex(index: LibraryIndex): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(LIBRARY_INDEX_KEY, JSON.stringify(index));
+  // Restore points give way to the library on a full quota (#295).
+  setItemEvictingSnapshots(window.localStorage, LIBRARY_INDEX_KEY, JSON.stringify(index));
 }
 
 function layoutKey(id: string): string {
@@ -83,6 +85,7 @@ function totalItemCount(layout: RoomLayout): number {
  * QuotaExceededError — library entries embed the base64 floor-plan image, so
  * running out of the ~5MB quota is realistic). The layout blob and the index
  * are kept consistent: if the index write fails, the blob is rolled back.
+ * Automatic restore points are evicted before a save is refused (#295).
  */
 export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | null {
   const trimmed = name.trim() || layout.name || 'Untitled';
@@ -101,7 +104,7 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | 
   const layoutCopy: RoomLayout = { ...layout, id, name: trimmed };
   const previousBlob = window.localStorage.getItem(layoutKey(id));
   try {
-    window.localStorage.setItem(layoutKey(id), JSON.stringify(layoutCopy));
+    setItemEvictingSnapshots(window.localStorage, layoutKey(id), JSON.stringify(layoutCopy));
   } catch {
     return null;
   }

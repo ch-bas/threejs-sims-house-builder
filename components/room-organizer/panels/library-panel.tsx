@@ -11,7 +11,12 @@ import {
   loadNamedLayout,
   saveNamedLayout,
 } from '../lib/library';
-import { getSnapshot, listSnapshots } from '../lib/version-history';
+import {
+  VERSION_HISTORY_STORAGE_KEY,
+  getSnapshot,
+  listSnapshots,
+  snapshotBelongsTo,
+} from '../lib/version-history';
 import type { RoomLayout, SavedLayoutEntry } from '../lib/types';
 import type { VersionSummary } from '../lib/version-history';
 
@@ -41,6 +46,16 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Another tab writes to the same ring (#296); `key` is null on clear().
+  useEffect(() => {
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key !== null && event.key !== VERSION_HISTORY_STORAGE_KEY) return;
+      setSnapshots(listSnapshots());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     setName(currentLayout.name);
@@ -82,16 +97,17 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   };
 
   const handleRestore = (summary: VersionSummary) => {
-    const snapshot = getSnapshot(summary.savedAt);
+    const snapshot = getSnapshot(summary.id);
     if (!snapshot) {
       window.alert('Failed to restore this version — it may have been evicted or corrupted.');
       refresh();
       return;
     }
     // Snapshots are stored without the floor-plan image to spare the
-    // localStorage quota (#231) — restoring keeps the CURRENT image.
+    // localStorage quota (#231). The current image is put back only under
+    // the house it was taken from — never grafted onto another one (#296).
     const restored: RoomLayout =
-      !snapshot.floorPlanImage && currentLayout.floorPlanImage
+      summary.hadFloorPlan && currentLayout.floorPlanImage && snapshotBelongsTo(summary, currentLayout)
         ? { ...snapshot, floorPlanImage: currentLayout.floorPlanImage }
         : snapshot;
     // `onLoad` applies via the same undoable path as a library/template load
@@ -159,11 +175,14 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             <ul className="space-y-1 max-h-48 overflow-y-auto">
               {snapshots.map((summary) => (
                 <li
-                  key={summary.savedAt}
+                  key={summary.id}
                   className="flex items-center justify-between gap-2 rounded border p-2 text-xs"
                 >
                   <div className="flex-1" title={new Date(summary.savedAt).toLocaleString()}>
                     <div className="font-medium">{formatAge(Date.now() - summary.savedAt)}</div>
+                    <div className="text-muted-foreground truncate">
+                      {summary.name ?? 'Unknown house'}
+                    </div>
                     <div className="text-muted-foreground">
                       {summary.itemCount} item{summary.itemCount === 1 ? '' : 's'} · {summary.floorCount} floor{summary.floorCount === 1 ? '' : 's'}
                     </div>
@@ -172,7 +191,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
                     size="sm"
                     variant="ghost"
                     onClick={() => handleRestore(summary)}
-                    aria-label={`Restore version from ${new Date(summary.savedAt).toLocaleString()}`}
+                    aria-label={`Restore ${summary.name ?? 'version'} from ${new Date(summary.savedAt).toLocaleString()}`}
                   >
                     ↩️ Restore
                   </Button>
