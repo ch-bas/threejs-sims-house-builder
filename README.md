@@ -277,6 +277,7 @@ components/
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── persistence.ts               Active-layout localStorage I/O + unreadable-save recovery backup
     │   ├── library.ts                   Named-layout library I/O
+    │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots)
     │   ├── share.ts                     Share-URL encode/decode (base64url)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys

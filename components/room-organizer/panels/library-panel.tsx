@@ -11,19 +11,31 @@ import {
   loadNamedLayout,
   saveNamedLayout,
 } from '../lib/library';
+import { getSnapshot, listSnapshots } from '../lib/version-history';
 import type { RoomLayout, SavedLayoutEntry } from '../lib/types';
+import type { VersionSummary } from '../lib/version-history';
 
 export interface LibraryPanelProps {
   currentLayout: RoomLayout;
   onLoad(layout: RoomLayout): void;
 }
 
+/** "just now" / "3 m ago" / "2 h ago" / "4 d ago" for the History rows. */
+function formatAge(ms: number): string {
+  if (ms < 60_000) return 'just now';
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} h ago`;
+  return `${Math.floor(ms / 86_400_000)} d ago`;
+}
+
 export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.Element {
   const [entries, setEntries] = useState<SavedLayoutEntry[]>([]);
+  const [snapshots, setSnapshots] = useState<VersionSummary[]>([]);
   const [name, setName] = useState(currentLayout.name);
 
   const refresh = useCallback(() => {
     setEntries(listSavedLayouts());
+    setSnapshots(listSnapshots());
   }, []);
 
   useEffect(() => {
@@ -67,6 +79,24 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       return;
     }
     onLoad(loaded);
+  };
+
+  const handleRestore = (summary: VersionSummary) => {
+    const snapshot = getSnapshot(summary.savedAt);
+    if (!snapshot) {
+      window.alert('Failed to restore this version — it may have been evicted or corrupted.');
+      refresh();
+      return;
+    }
+    // Snapshots are stored without the floor-plan image to spare the
+    // localStorage quota (#231) — restoring keeps the CURRENT image.
+    const restored: RoomLayout =
+      !snapshot.floorPlanImage && currentLayout.floorPlanImage
+        ? { ...snapshot, floorPlanImage: currentLayout.floorPlanImage }
+        : snapshot;
+    // `onLoad` applies via the same undoable path as a library/template load
+    // (applyLayout without history.clear, #222) — one Ctrl+Z away.
+    onLoad(restored);
   };
 
   return (
@@ -118,6 +148,39 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             ))}
           </ul>
         )}
+        <div className="border-t pt-3 space-y-2">
+          <div className="text-sm font-semibold">🕘 History</div>
+          <p className="text-xs text-muted-foreground">
+            Automatic restore points, saved every few minutes while you build.
+          </p>
+          {snapshots.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2 text-center">No restore points yet.</p>
+          ) : (
+            <ul className="space-y-1 max-h-48 overflow-y-auto">
+              {snapshots.map((summary) => (
+                <li
+                  key={summary.savedAt}
+                  className="flex items-center justify-between gap-2 rounded border p-2 text-xs"
+                >
+                  <div className="flex-1" title={new Date(summary.savedAt).toLocaleString()}>
+                    <div className="font-medium">{formatAge(Date.now() - summary.savedAt)}</div>
+                    <div className="text-muted-foreground">
+                      {summary.itemCount} item{summary.itemCount === 1 ? '' : 's'} · {summary.floorCount} floor{summary.floorCount === 1 ? '' : 's'}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleRestore(summary)}
+                    aria-label={`Restore version from ${new Date(summary.savedAt).toLocaleString()}`}
+                  >
+                    ↩️ Restore
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
