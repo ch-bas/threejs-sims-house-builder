@@ -1,7 +1,7 @@
 {
   "name": "threejs-sims-house-builder",
   "version": "1.9.1",
-  "description": "A lightweight, open-source Sims-like house builder built entirely in the browser using Three.js.",
+  "description": "A lightweight, open-source 3D house builder that runs entirely in the browser using Three.js.",
   "author": "Bassem Chagra",
   "license": "MIT",
   "private": true,
