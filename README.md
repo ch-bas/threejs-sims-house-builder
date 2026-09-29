@@ -339,6 +339,7 @@ components/
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
     │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop
+    │   ├── use-canvas-2d-interaction.ts 2D plan select/drag via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-walkthrough.ts           PointerLock + WASD movement

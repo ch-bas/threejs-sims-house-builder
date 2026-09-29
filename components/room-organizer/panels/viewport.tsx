@@ -1,5 +1,6 @@
 'use client';
 
+import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { Icon, iconForItem } from '../plotcraft/icon';
 import { Minimap } from './minimap';
@@ -43,16 +44,20 @@ export function Viewport(props: ViewportProps): JSX.Element {
   const showLoading = !props.isReady && !props.error;
   const showError = Boolean(props.error);
 
+  // Foreign-drag guard (#166): only the app's own catalog payload is accepted.
+  // Without the types check, dragover preventDefault advertised a drop target
+  // to ANY drag (files, text, images), showing a fake copy affordance.
   const handleDragOver = (event: React.DragEvent<HTMLCanvasElement>) => {
     if (!props.onCatalogDrop) return;
+    if (!event.dataTransfer.types.includes(CATALOG_DRAG_MIME)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   };
   const handleDrop = (event: React.DragEvent<HTMLCanvasElement>) => {
     if (!props.onCatalogDrop) return;
-    event.preventDefault();
-    const type = event.dataTransfer.getData('application/x-room-organizer-catalog-item');
+    const type = event.dataTransfer.getData(CATALOG_DRAG_MIME);
     if (!type) return;
+    event.preventDefault();
     props.onCatalogDrop(event.clientX, event.clientY, type);
   };
 
@@ -77,6 +82,11 @@ export function Viewport(props: ViewportProps): JSX.Element {
          * ratio matches the container (circles stay circular). CSS stretches the
          * element to fill the viewport.
          */}
+        {/*
+         * The 2D plan takes the same catalog drops as the 3D canvas (#166) and
+         * pointer select/drag via use-canvas-2d-interaction (#219); touchAction
+         * none, as on the 3D canvas, so touch drags aren't eaten by scrolling.
+         */}
         <canvas
           ref={props.canvas2DRef}
           className={props.view2D ? '' : 'hidden'}
@@ -85,7 +95,10 @@ export function Viewport(props: ViewportProps): JSX.Element {
             height: '100%',
             display: props.view2D ? 'block' : 'none',
             background: 'var(--pc-grass)',
+            touchAction: 'none',
           }}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
         />
         <canvas
           ref={props.canvasRef}
