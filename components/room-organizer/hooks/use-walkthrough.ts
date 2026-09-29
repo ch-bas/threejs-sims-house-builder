@@ -161,6 +161,15 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
       const requestLock = () => controls?.lock();
       canvas.addEventListener('click', requestLock);
       cleanup.push(() => canvas.removeEventListener('click', requestLock));
+      // A keyup fired in another window never reaches us: Alt/Cmd-Tab (blur)
+      // and any pointer-lock release strand held codes in `pressed`, and the
+      // walker auto-marches on return until the key is tapped again (#216).
+      // Drop every held key whenever focus or the lock is lost.
+      const releaseHeldKeys = () => pressed.clear();
+      window.addEventListener('blur', releaseHeldKeys);
+      cleanup.push(() => window.removeEventListener('blur', releaseHeldKeys));
+      controls.addEventListener('unlock', releaseHeldKeys);
+      cleanup.push(() => controls?.removeEventListener('unlock', releaseHeldKeys));
       // Release pointer lock BEFORE disconnecting: an exit path that tears the
       // mode down while still locked would otherwise leave the cursor captured
       // with no mousemove handler attached (#114). No-op when already unlocked.

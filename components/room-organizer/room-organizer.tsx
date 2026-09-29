@@ -269,15 +269,25 @@ export function RoomOrganizer(): JSX.Element {
     const newTargetY = cameraTargetY;
     const dy = newTargetY - controls.target.y;
     if (Math.abs(dy) < 0.01) return;
+    // Keep the orbit target on the new storey even mid-walkthrough, so the
+    // orbit camera aims right after an exit — but never touch the camera or
+    // run controls.update() while walkthrough owns it: update() has no
+    // `enabled` guard, so it re-aims the first-person camera at the orbit
+    // target and clamps it back into the polar cone (#114/#216). Walkthrough
+    // owns its own eye height.
     controls.target.y = newTargetY;
-    camera.position.y += dy;
-    controls.update();
-    const renderer = rendererRef.current;
-    if (renderer) renderer.render(sceneRef.current!, camera);
-    // The scene refs are declared below (useThreeScene) so they can't appear
-    // in this dep array without a TDZ error; they're stable ref objects anyway.
+    if (!walkthroughActive) {
+      camera.position.y += dy;
+      controls.update();
+    }
+    // Defer painting to the next frame via invalidate(): a synchronous
+    // renderer.render here ran BEFORE the scene effects rebuilt the new
+    // floor, flashing the old floor's contents from the new camera (#216).
+    invalidate();
+    // The scene refs/invalidate are declared below (useThreeScene) so they
+    // can't appear in this dep array without a TDZ error; they're stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraTargetY]);
+  }, [cameraTargetY, walkthroughActive]);
 
   // Ghost-selection guard: whenever the floor's items change (undo/redo,
   // import, clear floor, deletes from any path), drop selected ids that no
