@@ -13,9 +13,9 @@ import {
 } from '../lib/library';
 import {
   VERSION_HISTORY_STORAGE_KEY,
+  floorPlanFingerprint,
   getSnapshot,
   listSnapshots,
-  snapshotBelongsTo,
 } from '../lib/version-history';
 import type { RoomLayout, SavedLayoutEntry } from '../lib/types';
 import type { VersionSummary } from '../lib/version-history';
@@ -104,10 +104,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       return;
     }
     // Snapshots are stored without the floor-plan image to spare the
-    // localStorage quota (#231). The current image is put back only under
-    // the house it was taken from — never grafted onto another one (#296).
+    // localStorage quota (#231). The current image is put back only when it
+    // is the very image the snapshot was taken with — matching on the house
+    // isn't enough, since unrenamed houses all share one name (#296).
     const restored: RoomLayout =
-      summary.hadFloorPlan && currentLayout.floorPlanImage && snapshotBelongsTo(summary, currentLayout)
+      currentLayout.floorPlanImage &&
+      summary.floorPlanFingerprint !== null &&
+      summary.floorPlanFingerprint === floorPlanFingerprint(currentLayout.floorPlanImage)
         ? { ...snapshot, floorPlanImage: currentLayout.floorPlanImage }
         : snapshot;
     // `onLoad` applies via the same undoable path as a library/template load

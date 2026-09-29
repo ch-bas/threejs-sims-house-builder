@@ -4,12 +4,13 @@ import { STORAGE_KEY } from './constants';
 import { saveLayout } from './persistence';
 import {
   VERSION_HISTORY_LIMIT,
-  VERSION_HISTORY_MAX_BYTES,
+  VERSION_HISTORY_MAX_CHARS,
   VERSION_HISTORY_META_KEY,
   VERSION_HISTORY_MIN_INTERVAL_MS,
   VERSION_HISTORY_STORAGE_KEY,
   clearSnapshots,
   evictOldestSnapshot,
+  floorPlanFingerprint,
   getSnapshot,
   listSnapshots,
   recordSnapshot,
@@ -349,7 +350,7 @@ describe('version-history — lowest-priority tenant (#295)', () => {
       ).toBe(true);
       clock.advance(VERSION_HISTORY_MIN_INTERVAL_MS);
       expect(storage.getItem(VERSION_HISTORY_STORAGE_KEY)!.length).toBeLessThanOrEqual(
-        VERSION_HISTORY_MAX_BYTES
+        VERSION_HISTORY_MAX_CHARS
       );
     }
     const summaries = listSnapshots({ storage, now: clock.now });
@@ -362,7 +363,7 @@ describe('version-history — lowest-priority tenant (#295)', () => {
     const clock = makeClock();
     recordSnapshot(makeLayout({ id: 'h' }), { storage, now: clock.now });
     clock.advance(VERSION_HISTORY_MIN_INTERVAL_MS);
-    const huge = makeLayout({ id: 'h', name: 'x'.repeat(VERSION_HISTORY_MAX_BYTES) });
+    const huge = makeLayout({ id: 'h', name: 'x'.repeat(VERSION_HISTORY_MAX_CHARS) });
     expect(recordSnapshot(huge, { storage, now: clock.now })).toBe(false);
     expect(listSnapshots({ storage, now: clock.now })).toHaveLength(1);
   });
@@ -534,9 +535,46 @@ describe('version-history — gate hygiene (#297)', () => {
         name: 'Broken',
         layoutId: null,
         hadFloorPlan: false,
+        floorPlanFingerprint: null,
       },
     ]);
     // Validation happens on restore.
     expect(getSnapshot(5, { storage })).toBeNull();
+  });
+});
+
+describe('floor-plan fingerprint (#296)', () => {
+  const imageA = `data:image/png;base64,${'A'.repeat(20000)}`;
+  const imageB = `data:image/png;base64,${'A'.repeat(19999)}B`;
+
+  it('is stable for the same image and differs for a different one of equal length', () => {
+    expect(floorPlanFingerprint(imageA)).toBe(floorPlanFingerprint(imageA));
+    expect(imageB.length).toBe(imageA.length);
+    expect(floorPlanFingerprint(imageB)).not.toBe(floorPlanFingerprint(imageA));
+  });
+
+  it('is null without an image', () => {
+    expect(floorPlanFingerprint(undefined)).toBeNull();
+    expect(floorPlanFingerprint('')).toBeNull();
+  });
+
+  it('travels with the summary so two houses sharing the default name stay apart', () => {
+    const storage = makeStore();
+    // Both are called "My Home" and neither has an id — the common case.
+    recordSnapshot(makeLayout({ floorPlanImage: imageA }), { storage, now: () => 1_000 });
+    const [summary] = listSnapshots({ storage, now: () => 2_000 });
+    expect(summary!.floorPlanFingerprint).toBe(floorPlanFingerprint(imageA));
+    // The other house's image must not match, so a restore won't graft it.
+    expect(summary!.floorPlanFingerprint).not.toBe(floorPlanFingerprint(imageB));
+  });
+
+  it('is null for entries written before fingerprints existed', () => {
+    const storage = makeStore();
+    storage.setItem(
+      VERSION_HISTORY_STORAGE_KEY,
+      JSON.stringify([{ savedAt: 500, layout: makeLayout() }])
+    );
+    const [summary] = listSnapshots({ storage, now: () => 2_000 });
+    expect(summary!.floorPlanFingerprint).toBeNull();
   });
 });

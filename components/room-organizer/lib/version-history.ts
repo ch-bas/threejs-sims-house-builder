@@ -31,7 +31,7 @@ export const VERSION_HISTORY_LIMIT = 10;
  * the ring grew to whatever the quota allowed and starved the main autosave
  * and the library, which matter more than restore points.
  */
-export const VERSION_HISTORY_MAX_BYTES = 512 * 1024;
+export const VERSION_HISTORY_MAX_CHARS = 512 * 1024;
 
 /**
  * Coarse cadence: a new snapshot is accepted only when the newest entry of
@@ -50,6 +50,8 @@ interface StoredEntry {
   layoutId?: string;
   name?: string;
   hadFloorPlan?: boolean;
+  /** Fingerprint of the floor-plan image the house carried (#296). */
+  floorPlan?: string;
   itemCount?: number;
   floorCount?: number;
   layout: unknown;
@@ -75,6 +77,8 @@ export interface VersionSummary {
   layoutId: string | null;
   /** Whether the house carried a floor-plan image when it was snapshotted. */
   hadFloorPlan: boolean;
+  /** Fingerprint of that image, or null — see `floorPlanFingerprint`. */
+  floorPlanFingerprint: string | null;
 }
 
 /** The slice of the Storage API this module needs; injectable for tests. */
@@ -111,6 +115,29 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+const FINGERPRINT_SAMPLE = 4096;
+
+/**
+ * Short fingerprint of a floor-plan data URL: its length plus a hash of its
+ * head and tail. Houses have no dependable identity — `layout.id` is rarely
+ * set and every new house is called "My Home" — so whether a restore may put
+ * the current image back is decided by the image itself, not by the house
+ * it seems to belong to (#296). Sampled so a multi-megabyte image costs the
+ * same as a small one.
+ */
+export function floorPlanFingerprint(image: string | null | undefined): string | null {
+  if (!image) return null;
+  const sample =
+    image.length <= FINGERPRINT_SAMPLE * 2
+      ? image
+      : image.slice(0, FINGERPRINT_SAMPLE) + image.slice(-FINGERPRINT_SAMPLE);
+  let hash = 5381;
+  for (let i = 0; i < sample.length; i++) {
+    hash = ((hash << 5) + hash + sample.charCodeAt(i)) | 0;
+  }
+  return `${image.length}:${(hash >>> 0).toString(36)}`;
 }
 
 /**
@@ -161,6 +188,7 @@ function readEntries(storage: VersionHistoryStore): StoredEntry[] {
       layoutId: optionalString(candidate.layoutId) ?? optionalString(layout.id),
       name: optionalString(candidate.name) ?? optionalString(layout.name),
       hadFloorPlan: candidate.hadFloorPlan === true,
+      floorPlan: optionalString(candidate.floorPlan),
       itemCount: optionalCount(candidate.itemCount),
       floorCount: optionalCount(candidate.floorCount),
       layout,
@@ -229,7 +257,7 @@ function removeKey(storage: VersionHistoryStore, key: string): void {
  * and would blow the ring's share of the ~5MB localStorage budget, so
  * snapshots NEVER carry `floorPlanImage` — the History panel re-attaches the
  * current one when the snapshot belongs to the same house (#296). The ring
- * stays under VERSION_HISTORY_MAX_BYTES (#295); on a failed write the oldest
+ * stays under VERSION_HISTORY_MAX_CHARS (#295); on a failed write the oldest
  * entry is evicted and the write retried; if even a single-entry ring won't
  * fit, give up silently — restore points must never break the app or the
  * main autosave.
@@ -292,6 +320,7 @@ export function recordSnapshot(
     layoutId: layout.id,
     name: layout.name,
     hadFloorPlan: Boolean(layout.floorPlanImage),
+    floorPlan: floorPlanFingerprint(layout.floorPlanImage) ?? undefined,
     itemCount: layout.floors.reduce((sum, floor) => sum + floor.items.length, 0),
     floorCount: layout.floors.length,
   };
@@ -302,11 +331,11 @@ export function recordSnapshot(
   };
   // A house too large for the budget on its own gets no restore points;
   // the older entries are worth more than an empty ring.
-  if (serialisedLength([added]) > VERSION_HISTORY_MAX_BYTES) return false;
+  if (serialisedLength([added]) > VERSION_HISTORY_MAX_CHARS) return false;
 
   slots.push(added);
   while (slots.length > VERSION_HISTORY_LIMIT) slots.shift();
-  while (serialisedLength(slots) > VERSION_HISTORY_MAX_BYTES) slots.shift();
+  while (serialisedLength(slots) > VERSION_HISTORY_MAX_CHARS) slots.shift();
 
   while (slots.length > 0) {
     try {
@@ -347,6 +376,7 @@ export function listSnapshots(opts: VersionHistoryOptions = {}): VersionSummary[
       name: entry.name ?? null,
       layoutId: entry.layoutId ?? null,
       hadFloorPlan: entry.hadFloorPlan === true,
+      floorPlanFingerprint: entry.floorPlan ?? null,
     });
   }
   // Stable sort: entries clamped to the same instant keep their stored order.
