@@ -3,6 +3,7 @@ import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { backupStoredLayout, loadLayout, saveLayout } from '../lib/persistence';
 import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash } from '../lib/share';
+import { recordSnapshot } from '../lib/version-history';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseLayoutPersistenceOptions {
@@ -166,6 +167,10 @@ export function useLayoutPersistence({
         setLastSavedAt(Date.now());
         setSaving(false);
         setSaveError(false);
+        // Restore point (#231): piggyback on the successful autosave. The
+        // ring gates its own cadence and swallows quota failures, so this
+        // can never break the save that just happened.
+        recordSnapshot(layout);
       } else {
         // Keep `saving`/pending truthy and flag the error so the HUD reports
         // the failure instead of a false "Saved". A later successful edit
@@ -184,6 +189,9 @@ export function useLayoutPersistence({
       if (!pendingRef.current) return;
       pendingRef.current = false;
       saveLayout(layoutRef.current);
+      // The page is going away — capture a restore point regardless of the
+      // ring's 5-minute cadence (#231).
+      recordSnapshot(layoutRef.current, { force: true });
     };
     window.addEventListener('pagehide', flush);
     return () => {
