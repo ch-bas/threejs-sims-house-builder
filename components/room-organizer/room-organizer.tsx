@@ -26,6 +26,7 @@ import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { hasCollisions, totalCost } from './lib/geometry';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
+import { snapshotBeforeReplace } from './lib/restore-point';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
 import { snapWallEndpoint } from './lib/wall-snap';
@@ -547,10 +548,11 @@ export function RoomOrganizer(): JSX.Element {
   // switching to the other tab's version is one Ctrl+Z away from being undone.
   const adoptRemoteLayout = useCallback(() => {
     if (!remoteLayout) return;
+    snapshotBeforeReplace(layout);
     actions.applyLayout(remoteLayout);
     clearTransientSelection();
     clearRemoteLayout();
-  }, [remoteLayout, actions, clearTransientSelection, clearRemoteLayout]);
+  }, [remoteLayout, layout, actions, clearTransientSelection, clearRemoteLayout]);
 
   const selectedItem = useMemo(
     () => (selectedItemId ? activeFloor.items.find((item) => item.id === selectedItemId) ?? null : null),

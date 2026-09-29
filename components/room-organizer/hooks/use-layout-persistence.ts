@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { backupStoredLayout, loadLayout, saveLayout } from '../lib/persistence';
+import { snapshotBeforeReplace } from '../lib/restore-point';
 import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash } from '../lib/share';
 import { recordSnapshot } from '../lib/version-history';
@@ -116,6 +117,11 @@ export function useLayoutPersistence({
         // the shared version, nor repeat the broken-link warning.
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
         if (shared) {
+          // Hydration clears undo and the first edit autosaves over the
+          // stored house, so its final state needs a restore point now — the
+          // ring's last cadence snapshot may be minutes stale (#298). Reads
+          // storage only; the hydration baseline below is untouched.
+          snapshotBeforeReplace(loadLayout());
           // Re-capture the baseline right before the hydration dispatch.
           hydrationBaseRef.current = layoutRef.current;
           // A corrupt-but-parseable layout can still throw while it's applied
