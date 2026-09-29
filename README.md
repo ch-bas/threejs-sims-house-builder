@@ -293,7 +293,13 @@ components/
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder) + headroom stairwells
-    │   └── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
+    │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
+    │   └── plan-export/                 2D-plan exporters (#230)
+    │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings)
+    │       ├── svg.ts                   Vector SVG plan emitter (pure)
+    │       ├── dxf.ts                   DXF R12 plan emitter (pure)
+    │       ├── download.ts              Blob download + filename slugs (DOM)
+    │       └── print.ts                 Print-to-scale SVG popup → Save-as-PDF (DOM)
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory (~110 lines)
     │   ├── builder-utils.ts             Shared types + mesh()/material() helpers

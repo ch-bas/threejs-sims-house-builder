@@ -11,6 +11,10 @@ import { downloadLayoutAsJson, downloadInventoryCsv } from '../lib/file-io';
 import { totalCost } from '../lib/geometry';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
+import { downloadTextFile, planExportFileName } from '../lib/plan-export/download';
+import { layoutToDxf } from '../lib/plan-export/dxf';
+import { openPlanPrintWindow } from '../lib/plan-export/print';
+import { layoutToSvg } from '../lib/plan-export/svg';
 import { surpriseLayout } from '../lib/surprise';
 import type { FurnitureItem } from '../lib/types';
 
@@ -192,6 +196,44 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               disabled={!hasItems}
             >
               🖨 Print
+            </Button>
+            {/* Vector plan exports of the active floor (#230). Not gated on
+                hasItems: the walls + openings alone are a valid plan. */}
+            <Button
+              onClick={() =>
+                downloadTextFile(
+                  planExportFileName(layout, activeFloor, 'svg'),
+                  'image/svg+xml',
+                  layoutToSvg(layout, activeFloor)
+                )
+              }
+              variant="outline"
+              size="sm"
+              className="text-xs"
+            >
+              🖼 SVG
+            </Button>
+            <Button
+              onClick={() =>
+                downloadTextFile(
+                  planExportFileName(layout, activeFloor, 'dxf'),
+                  'application/dxf',
+                  layoutToDxf(layout, activeFloor)
+                )
+              }
+              variant="outline"
+              size="sm"
+              className="text-xs"
+            >
+              📐 DXF
+            </Button>
+            <Button
+              onClick={() => openPlanPrintWindow(layout, activeFloor)}
+              variant="outline"
+              size="sm"
+              className="col-span-2 text-xs"
+            >
+              📄 Print / PDF (to scale)
             </Button>
           </div>
         </Section>
