@@ -8,6 +8,7 @@ import { alignSelection, distributeSelection } from '../lib/alignment';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
+import { snapshotBeforeReplace } from '../lib/restore-point';
 import { applyTheme } from '../lib/themes';
 import { Icon } from '../plotcraft/icon';
 import { AchievementsPanel } from './achievements-panel';
@@ -263,6 +264,7 @@ export function SidebarDrawer({
 
               <TemplatesPanel
                 onLoadTemplate={(template) => {
+                  snapshotBeforeReplace(layout);
                   actions.applyLayout({
                     ...template,
                     floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
@@ -276,6 +278,7 @@ export function SidebarDrawer({
                 onLoad={(loaded) => {
                   // No history.clear(): like a template load, this must stay
                   // one Ctrl+Z away from the design it replaced (#222).
+                  snapshotBeforeReplace(layout);
                   actions.applyLayout(loaded);
                   selectOnly(null);
                 }}

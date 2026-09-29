@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeLayout } from '../lib/__testfixtures__/fixtures';
+import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../lib/constants';
 import { RECOVERY_STORAGE_KEY } from '../lib/persistence';
 import { decodeShareUrl } from '../lib/share';
+import { VERSION_HISTORY_STORAGE_KEY } from '../lib/version-history';
 import { useLayoutPersistence } from './use-layout-persistence';
 import type { RoomLayout } from '../lib/types';
 
@@ -90,5 +91,59 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
 
     await waitFor(() => expect(applied).toEqual(['Shared', 'Local house']));
     await waitFor(() => expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe(blob));
+  });
+
+  const readRing = (): { layout: RoomLayout }[] => {
+    const raw = window.localStorage.getItem(VERSION_HISTORY_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as { layout: RoomLayout }[]) : [];
+  };
+
+  it('takes a restore point of the stored house before applying a shared layout (#298)', async () => {
+    const local = makeLayout({ name: 'Local house', floors: [makeFloor({ items: [makeItem()] })] });
+    const blob = JSON.stringify(local);
+    window.localStorage.setItem(STORAGE_KEY, blob);
+    window.location.hash = '#layout=whatever';
+    mockedDecode.mockResolvedValue(makeLayout({ name: 'Shared' }));
+
+    // Ring contents at the moment each layout is applied.
+    const ringAtApply: string[][] = [];
+    const applied: string[] = [];
+    mount((layout) => {
+      applied.push(layout.name);
+      ringAtApply.push(readRing().map((entry) => entry.layout.name));
+    });
+
+    await waitFor(() => expect(applied).toEqual(['Shared']));
+    expect(ringAtApply).toEqual([['Local house']]);
+    expect(readRing().map((entry) => entry.layout)).toEqual([local]);
+    // Snapshotting only reads the save: it is neither rewritten nor treated
+    // as broken, and the hash is still cleared.
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(blob);
+    expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBeNull();
+    expect(window.location.hash).toBe('');
+  });
+
+  it('takes no restore point for a share link when nothing worth keeping is stored (#298)', async () => {
+    window.location.hash = '#layout=whatever';
+    mockedDecode.mockResolvedValue(makeLayout({ name: 'Shared' }));
+
+    const applied: string[] = [];
+    const first = mount((layout) => {
+      applied.push(layout.name);
+    });
+    await waitFor(() => expect(applied).toEqual(['Shared']));
+    expect(readRing()).toEqual([]);
+    first.unmount();
+
+    // An empty stored house is skipped too.
+    window.localStorage.clear();
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(makeLayout({ name: 'Blank' })));
+    window.location.hash = '#layout=whatever';
+    applied.length = 0;
+    mount((layout) => {
+      applied.push(layout.name);
+    });
+    await waitFor(() => expect(applied).toEqual(['Shared']));
+    expect(readRing()).toEqual([]);
   });
 });

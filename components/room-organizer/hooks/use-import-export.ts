@@ -4,6 +4,7 @@ import {
   downloadSceneAsGlb,
   readLayoutFromFile,
 } from '../lib/file-io';
+import { snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
 import type { LayoutActions } from './use-layout-state';
 import type { RoomLayout } from '../lib/types';
@@ -89,6 +90,7 @@ export function useImportExport({
     async (file: File) => {
       try {
         const next = await readLayoutFromFile(file);
+        snapshotBeforeReplace(layout);
         actions.applyLayout(next);
         onImported();
       } catch (importError) {
@@ -99,7 +101,7 @@ export function useImportExport({
         window.alert(message);
       }
     },
-    [actions, onImported]
+    [layout, actions, onImported]
   );
 
   return { handleScreenshot, handleExportGlb, handleShareLink, handleImport };
