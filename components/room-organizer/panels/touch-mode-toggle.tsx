@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type MutableRefObject } from 'react';
+import { useRoomEditor } from '../contexts';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -19,6 +20,7 @@ export interface TouchModeToggleProps {
 }
 
 export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggleProps): JSX.Element {
+  const { view } = useRoomEditor();
   const [mode, setMode] = useState<TouchMode>('orbit');
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -60,20 +62,23 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
     controls.update();
   };
 
-  if (!isTouchDevice) return <></>;
+  // The buttons drive the 3D camera, which is hidden in the 2D top-down view —
+  // same reasoning as the camera pad (#220).
+  if (!isTouchDevice || view.view2D) return <></>;
 
   return (
+    // Anchored under the top-right pills instead of at 50%, where it landed on
+    // the stacked mobile HUD (#300). Placement and column/row direction are
+    // per-breakpoint in globals.css, which also steps it clear of the minimap.
+    // zIndex stays below the HUD (25) and the item bottom sheet (28): wherever
+    // the viewport is too small to keep them apart, the panels win the tap.
     <div
       className="pointer-events-auto pc-touch-controls"
+      data-minimap={view.showMinimap ? '' : undefined}
       style={{
         position: 'absolute',
-        right: 10,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        zIndex: 35,
+        zIndex: 24,
         display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
       }}
     >
       <TouchButton
@@ -121,9 +126,9 @@ function TouchButton({ icon, label, active, onClick, flipIcon }: {
       onClick={onClick}
       className={`pc-tile${active ? ' pc-tile--active' : ''}`}
       style={{
-        width: 48,
-        height: 48,
-        borderRadius: 24,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -139,7 +144,7 @@ function TouchButton({ icon, label, active, onClick, flipIcon }: {
     >
       <Icon
         name={icon}
-        size={18}
+        size={16}
         style={{
           transform: flipIcon ? 'rotate(180deg)' : undefined,
           color: active ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)',

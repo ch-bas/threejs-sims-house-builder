@@ -996,15 +996,19 @@ export function RoomOrganizer(): JSX.Element {
         style={{
           position: 'absolute',
           top: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
+          // Boxed between the widest title badge + sidebar toggle and the
+          // top-right pills, so it wraps instead of sliding under them (#299).
+          left: 398,
+          right: 303,
           zIndex: 30,
-          maxWidth: 'calc(100vw - 480px)',
+          display: 'flex',
+          justifyContent: 'center',
+          pointerEvents: 'none',
         }}
       >
         <div
           className="pc-glass pc-glass--dark"
-          style={{ padding: '8px 12px' }}
+          style={{ padding: '8px 12px', pointerEvents: 'auto' }}
         >
           <HeaderStats
             lastSavedAt={lastSavedAt}

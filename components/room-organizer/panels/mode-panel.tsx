@@ -102,17 +102,36 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
         })}
       </div>
 
+      {/* A wrapping grid, not a flex row: nine 36 px buttons don't fit the
+          panel on one line and flex-shrink squeezed them to ~22 px (#301). */}
       <div
+        className="pc-mode-actions"
+        role="group"
+        aria-label="History and view options"
         style={{
           background: 'rgba(0, 0, 0, 0.20)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
           borderRadius: 12,
           padding: 4,
           boxShadow: 'inset 0 2px 4px rgba(0, 0, 0, 0.30)',
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))',
           gap: 4,
         }}
       >
+        <ActionButton
+          label="Undo"
+          icon="undo"
+          disabled={!history.canUndo}
+          onClick={history.undo}
+        />
+        <ActionButton
+          label="Redo"
+          icon="undo"
+          mirrorIcon
+          disabled={!history.canRedo}
+          onClick={history.redo}
+        />
         {/* Lighting only exists in 3D — disable in the 2D top-down view like
             TimeOfDayPanel's twin button (#220). */}
         <ActionButton
@@ -121,12 +140,6 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           active={autoCycleLighting}
           disabled={view.view2D}
           onClick={() => setAutoCycleLighting((cur) => !cur)}
-        />
-        <ActionButton
-          label="Undo"
-          icon="undo"
-          disabled={!history.canUndo}
-          onClick={history.undo}
         />
         <ActionButton
           label="Surprise me"
@@ -175,6 +188,8 @@ interface ActionButtonProps {
   active?: boolean;
   accent?: boolean;
   disabled?: boolean;
+  /** Flip the glyph horizontally — Redo reuses the Undo arrow. */
+  mirrorIcon?: boolean;
   onClick(): void;
 }
 
@@ -184,6 +199,7 @@ function ActionButton({
   active,
   accent,
   disabled,
+  mirrorIcon,
   onClick,
 }: ActionButtonProps): JSX.Element {
   return (
@@ -195,7 +211,8 @@ function ActionButton({
       aria-label={label}
       className={`pc-tile${active ? ' pc-tile--active' : ''}`}
       style={{
-        width: 36,
+        width: '100%',
+        minWidth: 36,
         height: 36,
         borderRadius: 10,
         display: 'flex',
@@ -206,7 +223,11 @@ function ActionButton({
         color: accent && !active ? 'var(--pc-cyan-glow)' : undefined,
       }}
     >
-      <Icon name={icon} size={18} />
+      <Icon
+        name={icon}
+        size={18}
+        style={mirrorIcon ? { transform: 'scaleX(-1)' } : undefined}
+      />
     </button>
   );
 }
