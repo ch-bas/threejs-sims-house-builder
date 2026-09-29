@@ -360,7 +360,15 @@ export function RoomOrganizer(): JSX.Element {
     return set;
   }, [selectedItemId, extraSelectedIds]);
 
-  const { sceneBoxRef, invalidateBoxRef, handleDragStart, handleDrag, handleDragEnd, isDragActive } = useItemDrag({
+  const {
+    sceneBoxRef,
+    invalidateBoxRef,
+    handleDragStart,
+    handleDrag,
+    handleDragEnd,
+    handleDragCancel,
+    isDragActive,
+  } = useItemDrag({
     activeFloor,
     activeFloorIndex,
     roomWidth: layout.width,
@@ -565,6 +573,7 @@ export function RoomOrganizer(): JSX.Element {
       onItemDragStart: handleDragStart,
       onItemDrag: handleDrag,
       onItemDragEnd: handleDragEnd,
+      onItemDragCancel: handleDragCancel,
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
       onWallSelect: ({ wallId, kind }) => {

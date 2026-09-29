@@ -25,6 +25,12 @@ export interface UseItemDragResult {
   handleDragStart(primaryId: string): void;
   handleDrag(id: string, x: number, z: number): void;
   handleDragEnd(id: string): void;
+  /**
+   * Discard the session without committing anything — the canvas handler
+   * aborted the gesture because its captured group was rebuilt away
+   * (#207 follow-up).
+   */
+  handleDragCancel(id: string): void;
   /** True between a drag session opening (past the threshold) and release. */
   isDragActive(): boolean;
 }
@@ -212,7 +218,23 @@ export function useItemDrag({
     [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, actions, findFurnitureGroup, setDragCollisionTint]
   );
 
+  const handleDragCancel = useCallback(() => {
+    // No dispatch, no lock, no settle: the rebuild that killed the gesture
+    // came from an authoritative state change (cross-tab adopt, library
+    // load), so the scene already shows the right thing — committing
+    // `latest` would overwrite it with in-flight drag positions.
+    dragSessionRef.current = null;
+  }, []);
+
   const isDragActive = useCallback(() => dragSessionRef.current !== null, []);
 
-  return { sceneBoxRef, invalidateBoxRef, handleDragStart, handleDrag, handleDragEnd, isDragActive };
+  return {
+    sceneBoxRef,
+    invalidateBoxRef,
+    handleDragStart,
+    handleDrag,
+    handleDragEnd,
+    handleDragCancel,
+    isDragActive,
+  };
 }
