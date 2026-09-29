@@ -48,6 +48,14 @@ export const CAMERA_BRACKET_ARM = 0.22;
  */
 export const WINDOW_SILL_HEIGHT = 0.9;
 
+/**
+ * Default tracing-image strength when a layout has no explicit
+ * `floorPlanOpacity`. One constant for BOTH renderers: the 3D floor, the 2D
+ * plan/blueprint, and the settings panel used to disagree (2D painted at
+ * full strength), so the same save read differently per view (#218).
+ */
+export const DEFAULT_FLOOR_PLAN_OPACITY = 0.5;
+
 export const CATEGORIES: readonly CategoryMeta[] = [
   { key: 'seating', label: 'Seating', icon: '🪑' },
   { key: 'tables', label: 'Tables', icon: '🟫' },

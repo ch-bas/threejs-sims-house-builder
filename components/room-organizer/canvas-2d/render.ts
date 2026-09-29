@@ -1,6 +1,6 @@
-import { CURRENCY_SYMBOL, GRID_SIZE_METERS } from '../lib/constants';
+import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
-import type { FloorLayout, FurnitureItem, RoomLayout } from '../lib/types';
+import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout } from '../lib/types';
 
 export interface Render2DOptions {
   canvas: HTMLCanvasElement;
@@ -104,6 +104,49 @@ export function render2DTopDown(options: Render2DOptions): void {
   }
 }
 
+/**
+ * Where to paint the tracing image, honouring the fit mode the 3D floor uses
+ * (`fitTextureToRoom` in three/room-builder.ts) — the 2D plan used to stretch
+ * unconditionally, shifting the image relative to furniture aligned against
+ * the fitted 3D rendering (#218). Pure and exported for tests.
+ *
+ * `source` is in image pixels (cover crops it); `dest` is normalized to the
+ * room rectangle, each axis 0..1 (contain letterboxes it — the bands show the
+ * floor colour, which the caller fills first).
+ */
+export function computeFloorPlanPlacement(
+  imageWidth: number,
+  imageHeight: number,
+  roomAspect: number,
+  mode: FloorPlanFitMode
+): {
+  source: { x: number; y: number; w: number; h: number };
+  dest: { x: number; y: number; w: number; h: number };
+} {
+  const fullSource = { x: 0, y: 0, w: imageWidth, h: imageHeight };
+  const fullDest = { x: 0, y: 0, w: 1, h: 1 };
+  const imageAspect = imageWidth / imageHeight;
+  if (mode === 'cover') {
+    // Crop the image (centered) to the room's aspect; fill the whole room.
+    if (imageAspect > roomAspect) {
+      const w = imageHeight * roomAspect;
+      return { source: { x: (imageWidth - w) / 2, y: 0, w, h: imageHeight }, dest: fullDest };
+    }
+    const h = imageWidth / roomAspect;
+    return { source: { x: 0, y: (imageHeight - h) / 2, w: imageWidth, h }, dest: fullDest };
+  }
+  if (mode === 'contain') {
+    // Whole image visible, centered, aspect kept; bands show the floor.
+    if (imageAspect > roomAspect) {
+      const h = roomAspect / imageAspect;
+      return { source: fullSource, dest: { x: 0, y: (1 - h) / 2, w: 1, h } };
+    }
+    const w = imageAspect / roomAspect;
+    return { source: fullSource, dest: { x: (1 - w) / 2, y: 0, w, h: 1 } };
+  }
+  return { source: fullSource, dest: fullDest };
+}
+
 function drawFloor(
   ctx: CanvasRenderingContext2D,
   layout: RoomLayout,
@@ -112,7 +155,12 @@ function drawFloor(
   offsetY: number,
   scale: number
 ): void {
-  const url = layout.floorPlanImage;
+  // The tracing image belongs to the ground floor only, like in 3D
+  // (use-scene-effects keys it on floor index 0) — painting it under every
+  // storey put the ground-floor scan in upstairs blueprints (#218). Derived
+  // here from data both callers already pass, so no caller can forget it.
+  const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
+  const url = isGroundFloor ? layout.floorPlanImage : undefined;
   if (url) {
     // Fill the floor colour first so there's a base while (or if) the image is
     // still decoding — avoids a flash of the raw canvas background.
@@ -125,8 +173,26 @@ function drawFloor(
     if (floorPlanImageCache?.url === url && floorPlanImageCache.image.complete) {
       const img = floorPlanImageCache.image;
       if (img.naturalWidth > 0) {
-        ctx.globalAlpha = layout.floorPlanOpacity ?? 1;
-        ctx.drawImage(img, offsetX, offsetY, layout.width * scale, layout.height * scale);
+        const { source, dest } = computeFloorPlanPlacement(
+          img.naturalWidth,
+          img.naturalHeight,
+          layout.width / layout.height,
+          layout.floorPlanFitMode ?? 'stretch'
+        );
+        const roomW = layout.width * scale;
+        const roomH = layout.height * scale;
+        ctx.globalAlpha = layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY;
+        ctx.drawImage(
+          img,
+          source.x,
+          source.y,
+          source.w,
+          source.h,
+          offsetX + dest.x * roomW,
+          offsetY + dest.y * roomH,
+          dest.w * roomW,
+          dest.h * roomH
+        );
         ctx.globalAlpha = 1;
       }
       return;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
-import { computeHeatmapCells, HEATMAP_COLS, HEATMAP_ROWS } from './render';
+import { computeFloorPlanPlacement, computeHeatmapCells, HEATMAP_COLS, HEATMAP_ROWS } from './render';
 
 // A 10×10 m room with the default 20×20 grid gives 0.5 m cells, so grid
 // coordinates are easy to reason about: cell (col, row) spans
@@ -73,5 +73,48 @@ describe('computeHeatmapCells — overlap-weighted attribution (#150)', () => {
     const grid = computeHeatmapCells([unplaced, free, zeroArea], ROOM, ROOM);
     expect(sum(grid)).toBe(0);
     expect(grid).toHaveLength(HEATMAP_COLS * HEATMAP_ROWS);
+  });
+});
+
+describe('computeFloorPlanPlacement (#218)', () => {
+  it('stretch fills the room with the whole image', () => {
+    const { source, dest } = computeFloorPlanPlacement(2000, 1000, 1, 'stretch');
+    expect(source).toEqual({ x: 0, y: 0, w: 2000, h: 1000 });
+    expect(dest).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+  });
+
+  it('cover crops a wide image to the room aspect, centered', () => {
+    const { source, dest } = computeFloorPlanPlacement(2000, 1000, 1, 'cover');
+    // Square room: keep a 1000-wide centered band of the 2000-wide image.
+    expect(source).toEqual({ x: 500, y: 0, w: 1000, h: 1000 });
+    expect(dest).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+  });
+
+  it('cover crops a tall image vertically', () => {
+    const { source } = computeFloorPlanPlacement(1000, 2000, 1, 'cover');
+    expect(source).toEqual({ x: 0, y: 500, w: 1000, h: 1000 });
+  });
+
+  it('contain letterboxes a wide image with centered bands', () => {
+    const { source, dest } = computeFloorPlanPlacement(2000, 1000, 1, 'contain');
+    expect(source).toEqual({ x: 0, y: 0, w: 2000, h: 1000 });
+    expect(dest.w).toBe(1);
+    expect(dest.h).toBeCloseTo(0.5, 10);
+    expect(dest.y).toBeCloseTo(0.25, 10);
+  });
+
+  it('contain pillarboxes a tall image', () => {
+    const { dest } = computeFloorPlanPlacement(1000, 2000, 1, 'contain');
+    expect(dest.h).toBe(1);
+    expect(dest.w).toBeCloseTo(0.5, 10);
+    expect(dest.x).toBeCloseTo(0.25, 10);
+  });
+
+  it('contain preserves the image aspect in room space for any room', () => {
+    for (const roomAspect of [0.5, 1, 1.6, 3]) {
+      const { dest } = computeFloorPlanPlacement(1600, 900, roomAspect, 'contain');
+      const paintedAspect = (dest.w * roomAspect) / dest.h;
+      expect(paintedAspect).toBeCloseTo(1600 / 900, 10);
+    }
   });
 });
