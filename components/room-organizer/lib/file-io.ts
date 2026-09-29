@@ -147,24 +147,39 @@ const GLB_EXPORT_TAGS: ReadonlySet<string> = new Set([
  * discard the group without disposing the shared geometries/materials the
  * clones borrow by reference. Transforms are preserved by clone().
  */
-function collectExportGroup(THREE: typeof import('three'), scene: import('three').Object3D): import('three').Group {
+function collectExportGroup(
+  THREE: typeof import('three'),
+  scene: import('three').Object3D,
+  cloneSkinned: (source: import('three').Object3D) => import('three').Object3D
+): import('three').Group {
   const group = new THREE.Group();
   for (const child of scene.children) {
     const tag = child.userData.type as string | undefined;
-    if (tag !== undefined && GLB_EXPORT_TAGS.has(tag)) {
-      group.add(child.clone());
-    }
+    if (tag === undefined || !GLB_EXPORT_TAGS.has(tag)) continue;
+    // Plain clone() shares the LIVE scene's skeleton, so the exporter writes
+    // skins whose joints point at nodes outside the exported graph — the
+    // file then fails to parse (GLTFLoader: "Cannot set … 'isBone'"). Rigged
+    // people need SkeletonUtils.clone, which brings their bones (at the
+    // current pose) into the export group.
+    let hasSkinned = false;
+    child.traverse((node) => {
+      if ((node as import('three').SkinnedMesh).isSkinnedMesh) hasSkinned = true;
+    });
+    group.add(hasSkinned ? cloneSkinned(child) : child.clone());
   }
   return group;
 }
 
 export async function downloadSceneAsGlb(scene: import('three').Object3D, baseName: string): Promise<void> {
   const THREE = await import('three');
-  const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
+  const [{ GLTFExporter }, SkeletonUtils] = await Promise.all([
+    import('three/examples/jsm/exporters/GLTFExporter.js'),
+    import('three/examples/jsm/utils/SkeletonUtils.js'),
+  ]);
   const exporter = new GLTFExporter();
   // Export a temporary group of cloned meshes so the .glb carries only the
   // furniture + room shell — not lights, sky, NPCs, overlays, or markers.
-  const exportGroup = collectExportGroup(THREE, scene);
+  const exportGroup = collectExportGroup(THREE, scene, SkeletonUtils.clone);
   try {
     await new Promise<void>((resolve, reject) => {
       exporter.parse(

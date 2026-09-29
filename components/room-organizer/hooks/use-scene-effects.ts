@@ -69,6 +69,8 @@ function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
 
 export interface UseSceneEffectsParams {
   isReady: boolean;
+  /** Flips once people.glb loads, so placed people rebuild as rigged figures. */
+  peopleModelReady?: boolean;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate: () => void;
   /** Recompute the static shadow map — call after a shadow caster/sun change. */
@@ -94,6 +96,7 @@ export interface UseSceneEffectsParams {
 
 export function useSceneEffects({
   isReady,
+  peopleModelReady = false,
   invalidate,
   requestShadowUpdate,
   threeModuleRef,
@@ -384,6 +387,9 @@ export function useSceneEffects({
     isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
     layout.floors, layout.width, layout.height,
     activeFloor, activeFloorIndex, view.showAllFloors, view.wallDisplay,
+    // Not read in the body: createFurnitureModel picks the rigged person up
+    // from the model cache, and this re-runs the build once it's filled.
+    peopleModelReady,
   ]);
 
   // Selection / highlight outlines. Kept out of the furniture effect above so

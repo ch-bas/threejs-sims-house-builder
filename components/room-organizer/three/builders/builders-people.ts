@@ -1,42 +1,49 @@
 import { type BuilderContext, cornerPositions, material, mesh } from '../builder-utils';
+import { PEOPLE_CLIPS, clonePerson, findClip, getPeopleModel } from '../people-model';
+import { FIGURE_HEIGHT, buildHumanFigure } from './human-figure';
 import type * as ThreeNS from 'three';
 
-export function buildPerson({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildPerson(ctx: BuilderContext): ThreeNS.Group {
+  return buildRiggedPerson(ctx) ?? buildProceduralPerson(ctx);
+}
+
+/**
+ * The rigged mannequin, held in a still idle pose. Null until people.glb has
+ * loaded — the scene rebuilds furniture once it has (see usePeopleModel).
+ */
+function buildRiggedPerson({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group | null {
+  const people = getPeopleModel();
+  const idle = people && findClip(people, PEOPLE_CLIPS.idle);
+  if (!people || !idle) return null;
+  const person = clonePerson(THREE, people, {
+    body: baseColor,
+    joints: hasCollision ? 0x7f1d1d : 0x3a3f47,
+    opacity,
+  });
+  // Sample the idle clip once to leave the skeleton in a relaxed stance. The
+  // mixer is dropped rather than stopped: stopping restores the T-pose.
+  const mixer = new THREE.AnimationMixer(person);
+  mixer.clipAction(idle).play();
+  mixer.update(0.6);
+  person.scale.setScalar(item.height / people.height);
   const group = new THREE.Group();
-  const skinMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
-  const clothesMat = material(THREE, 0x3949ab, hasCollision, opacity, { roughness: 0.8 });
-  const trouserMat = material(THREE, 0x1f2937, hasCollision, opacity, { roughness: 0.8 });
+  group.add(person);
+  return group;
+}
 
-  // Legs (cylinders)
-  const legGeo = new THREE.CylinderGeometry(0.08, 0.08, item.height * 0.45, 10);
-  for (const dx of [-0.1, 0.1]) {
-    const leg = mesh(THREE, legGeo, trouserMat);
-    leg.position.set(dx, item.height * 0.225, 0);
-    group.add(leg);
-  }
-
-  // Torso
-  const torso = mesh(
-    THREE,
-    new THREE.CylinderGeometry(0.18, 0.22, item.height * 0.35, 14),
-    clothesMat
-  );
-  torso.position.y = item.height * 0.6;
-  group.add(torso);
-
-  // Arms
-  const armGeo = new THREE.CylinderGeometry(0.06, 0.06, item.height * 0.42, 10);
-  for (const dx of [-0.25, 0.25]) {
-    const arm = mesh(THREE, armGeo, clothesMat);
-    arm.position.set(dx, item.height * 0.6, 0);
-    group.add(arm);
-  }
-
-  // Head
-  const head = mesh(THREE, new THREE.SphereGeometry(0.13, 16, 14), skinMat);
-  head.position.y = item.height * 0.92;
-  group.add(head);
-
+function buildProceduralPerson({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+  // The item colour dresses the figure; skin, trousers, shoes and hair are fixed.
+  const { group: figure } = buildHumanFigure(THREE, {
+    top: material(THREE, baseColor, hasCollision, opacity, { roughness: 0.8 }),
+    skin: material(THREE, 0xd9a787, hasCollision, opacity, { roughness: 0.65 }),
+    bottom: material(THREE, 0x2f3542, hasCollision, opacity, { roughness: 0.85 }),
+    shoes: material(THREE, 0x1c1c1c, hasCollision, opacity, { roughness: 0.6 }),
+    hair: material(THREE, 0x3b2a20, hasCollision, opacity, { roughness: 0.9 }),
+  });
+  // Scale uniformly from height so a resized person stays in proportion.
+  figure.scale.setScalar(item.height / FIGURE_HEIGHT);
+  const group = new THREE.Group();
+  group.add(figure);
   return group;
 }
 

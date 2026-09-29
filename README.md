@@ -90,7 +90,11 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   wall.
 - **3D mesh builders** for every type — beds, sofas (standard/L/U-shape),
   fridges, stoves, sinks, toilets, bathtubs, showers, trees, fences,
-  pools, stairs, people / pets for scale, and more.
+  pools, stairs, pets, and more.
+- **Animated people**: placed people and optional walkers ("Show walkers")
+  are a rigged mannequin with motion-captured idle, talking and walk clips.
+  The model (~420 KB) loads only once a layout has people in it; until then,
+  or if it can't load, a procedural jointed figure stands in.
 - **7 room templates**: Bedroom, Living Room, Home Office, Kitchen,
   Bathroom, Studio Apartment, plus a populated multi-floor **Two-Story Home**.
 - **5 theme presets** (Modern, Rustic, Minimalist, Cozy, Tropical) that
@@ -316,8 +320,10 @@ components/
     │   │   ├── builders-decor.ts        Rug, painting, vase, mirror, etc.
     │   │   ├── builders-plants.ts       Plant, tree, flowers, hedge, etc.
     │   │   ├── builders-outdoor.ts      Fence, pool, BBQ, mailbox, etc.
-    │   │   ├── builders-people.ts       Person, pet
+    │   │   ├── builders-people.ts       Person (rigged, else procedural), pet
+    │   │   ├── human-figure.ts          Procedural jointed figure + walk pose
     │   │   └── builders-structure.ts    Door, window, stairs
+    │   ├── people-model.ts              people.glb loader, cloning, clip names
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
@@ -492,3 +498,10 @@ components/
 ## License
 
 [MIT](LICENSE)
+
+### Third-party assets
+
+- `components/room-organizer/assets/people.glb` — mannequin and animations
+  from Quaternius' [Universal Animation Library](https://quaternius.itch.io/universal-animation-library),
+  CC0 1.0. Thank you, Quaternius. Details in
+  [`assets/README.md`](components/room-organizer/assets/README.md).

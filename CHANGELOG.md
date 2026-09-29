@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- People are a rigged, animated mannequin: placed people hold a relaxed idle stance, and walkers stroll, stop at each waypoint to idle or talk, and walk on, with the walk cycle matched to their speed. The model (Quaternius' Universal Animation Library, CC0, ~420 KB) is only downloaded once a layout contains a person or the walkers are on
+- A "Show walkers" toggle in the mode panel — the walking people existed but had no control to switch them on
+
+### Changed
+- The procedural person, now the fallback while the model loads or if it can't, is a jointed scale figure with a neck, shaped chest, hands and feet that swings its limbs to walk, instead of a floating ball over a tube with legs that slid up and down
+- A person's colour paints their body instead of their skin, and resizing a person scales it evenly
+
 ## [1.9.1] - 2026-09-28
 
 ### Fixed

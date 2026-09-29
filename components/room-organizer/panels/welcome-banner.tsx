@@ -16,7 +16,7 @@ const TIPS: readonly Tip[] = [
   { title: 'Move in 3D', body: 'Click and drag furniture, or select and nudge with the arrow keys — hold Shift for 1 m steps.' },
   { title: 'Grid snap', body: 'Press G to snap items you drag to a 0.5 m grid. Doors and windows snap to walls on their own.' },
   { title: 'Themes & sets', body: 'One-click templates rebuild the room. Library saves named layouts.' },
-  { title: 'Walkthrough', body: 'Switch to EXPLORE to wander your Sim home with WASD + Shift to sprint.' },
+  { title: 'Walkthrough', body: 'Switch to EXPLORE to wander your home with WASD + Shift to sprint.' },
   { title: 'Multi-select', body: 'Ctrl/⌘-click to add items to a selection. Delete removes them all, except locked ones.' },
 ];
 
