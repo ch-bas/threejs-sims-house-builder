@@ -27,6 +27,13 @@ export interface SceneEventHandlers {
   onItemDragStart?: (id: string) => void;
   onItemDrag: (id: string, x: number, z: number) => void;
   onItemDragEnd?: (id: string) => void;
+  /**
+   * The gesture was aborted without a commit — the furniture set was rebuilt
+   * under the live drag (cross-tab adopt, library load) and the captured
+   * group no longer exists (#207 follow-up). The React side must discard its
+   * drag session so nothing is committed on the next pointerup.
+   */
+  onItemDragCancel?: (id: string) => void;
   onItemHover?: (info: HoverInfo | null) => void;
   onEmptyClick?: (x: number, z: number) => void;
   onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior' }) => void;
@@ -251,6 +258,17 @@ export function attachDragHandlers({
       beginDragSession(event);
     }
 
+    // The furniture set can be rebuilt under a live drag despite the keyboard
+    // gate (#245): a cross-tab adopt, library load, or any other state-driven
+    // rebuild disposes the captured group and detaches it from the scene.
+    // Dragging it then paints nothing, while the release would still commit
+    // the stale in-flight positions over the fresh state. A detached group
+    // has no parent — abort the gesture; state is already authoritative.
+    if (dragTarget.parent === null) {
+      abortGesture();
+      return;
+    }
+
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
@@ -266,6 +284,22 @@ export function attachDragHandlers({
     // shadow tracks the drag instead of freezing at the drag-start position.
     requestShadowUpdate?.();
     handlersRef.current.onItemDrag(itemId, snapped.x, snapped.z);
+  };
+
+  // Like endGesture, but for a gesture that died under us: no commit — the
+  // React side is told to throw its session away instead.
+  const abortGesture = (): void => {
+    const target = dragTarget;
+    if (activePointerId !== null) {
+      try {
+        canvas.releasePointerCapture(activePointerId);
+      } catch {
+        // Ignore if capture was never held or already released.
+      }
+    }
+    resetDragState();
+    controls.enabled = true;
+    if (target) handlersRef.current.onItemDragCancel?.(target.userData.id as string);
   };
 
   const endGesture = (event: PointerEvent): void => {
