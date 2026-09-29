@@ -6,6 +6,7 @@ import { SelectionProvider, type SelectionContextValue } from './contexts/select
 import { useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
+import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useHistory } from './hooks/use-history';
 import { useImportExport } from './hooks/use-import-export';
 import { useItemDrag } from './hooks/use-item-drag';
@@ -575,6 +576,29 @@ export function RoomOrganizer(): JSX.Element {
     view,
   });
 
+  const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
+
+  // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
+  // semantics (single dispatch, lock-on-release, wall settling, isDragActive
+  // keyboard gate) are identical to a 3D drag.
+  const { clientToWorld2D } = useCanvas2DInteraction({
+    enabled: view.view2D,
+    canvasRef: canvas2DRef,
+    layout,
+    activeFloor,
+    view,
+    selectedItemId,
+    extraSelectedIds,
+    allSelectedIds,
+    onItemSelect: handleSelect,
+    onDeselect: deselectAll,
+    snapPosition,
+    onItemDragStart: handleDragStart,
+    onItemDrag: handleDrag,
+    onItemDragEnd: handleDragEnd,
+    onItemDragCancel: handleDragCancel,
+  });
+
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
@@ -939,7 +963,10 @@ export function RoomOrganizer(): JSX.Element {
         onCatalogDrop={(clientX, clientY, key) => {
           const item = findCatalogEntry(FURNITURE_CATALOG, key);
           if (!item) return;
-          const world = worldPositionFromClient(clientX, clientY);
+          // The 2D plan inverts the renderer's view transform; 3D raycasts (#166).
+          const world = view.view2D
+            ? clientToWorld2D(clientX, clientY)
+            : worldPositionFromClient(clientX, clientY);
           const newId = placeCatalogItem(item, world ?? undefined);
           if (!newId) return;
           selectOnly(newId);

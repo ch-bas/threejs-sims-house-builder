@@ -27,6 +27,46 @@ const PADDING = 60;
 // Matches the 0.16 m thickness modelled in three/interior-walls.ts.
 const INTERIOR_WALL_THICKNESS_M = 0.16;
 
+/** The world→canvas mapping the 2D renderer draws with (CSS-pixel space). */
+export interface View2DTransform {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+/**
+ * The exact fit-and-centre transform `render2DTopDown` paints with, exposed so
+ * pointer handling and drop placement can invert it (#166, #219). The renderer
+ * itself calls this, so the two can never diverge.
+ */
+export function get2DViewTransform(
+  canvasClientWidth: number,
+  canvasClientHeight: number,
+  layout: Pick<RoomLayout, 'width' | 'height'>,
+  padding: number = PADDING
+): View2DTransform {
+  const scale = Math.min(
+    (canvasClientWidth - padding * 2) / layout.width,
+    (canvasClientHeight - padding * 2) / layout.height
+  );
+  const offsetX = (canvasClientWidth - layout.width * scale) / 2;
+  const offsetY = (canvasClientHeight - layout.height * scale) / 2;
+  return { scale, offsetX, offsetY };
+}
+
+/** Inverse of the renderer's mapping: canvas CSS px → world x/z (room-centred). */
+export function canvasToWorld(
+  px: number,
+  py: number,
+  transform: View2DTransform,
+  layout: Pick<RoomLayout, 'width' | 'height'>
+): { x: number; z: number } {
+  return {
+    x: (px - transform.offsetX) / transform.scale - layout.width / 2,
+    z: (py - transform.offsetY) / transform.scale - layout.height / 2,
+  };
+}
+
 // Decoded floor-plan image cache, keyed on the data-URL. Decoding a multi-MB
 // data-URL is async: the first render kicks off the load and re-renders once
 // the pixels are ready (so the image never paints over grid/furniture drawn
@@ -74,13 +114,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, viewWidth, viewHeight);
 
-  const padding = options.padding ?? PADDING;
-  const scale = Math.min(
-    (viewWidth - padding * 2) / layout.width,
-    (viewHeight - padding * 2) / layout.height
-  );
-  const offsetX = (viewWidth - layout.width * scale) / 2;
-  const offsetY = (viewHeight - layout.height * scale) / 2;
+  const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
