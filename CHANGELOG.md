@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.10.1] - 2026-09-30
+
+The **Data safety & history** and **Responsive & mobile** milestones.
+
+### Added
+- A restore point is taken of the design on screen before anything replaces the whole house: opening a share link, loading a template or a saved layout, restoring from History, importing JSON, or adopting another tab's version. Opening a share link used to overwrite the stored house with no way back ([#298](https://github.com/ch-bas/threejs-sims-house-builder/issues/298))
+- A Redo button beside Undo — Redo previously had a shortcut but no button ([#301](https://github.com/ch-bas/threejs-sims-house-builder/issues/301))
+
+### Fixed
+- Restore points can no longer fill browser storage and stop autosave: a save that doesn't fit now drops the oldest restore points and retries, and the history has its own size limit ([#295](https://github.com/ch-bas/threejs-sims-house-builder/issues/295))
+- History rows show which house each restore point belongs to, and restoring puts the floor-plan image back only when it is the image that restore point was taken with — restoring one house while another's plan was loaded used to graft the wrong plan under it ([#296](https://github.com/ch-bas/threejs-sims-house-builder/issues/296))
+- Restore points keep being taken after the system clock is corrected backwards, unchanged designs no longer use up slots, and the history is no longer read in full after every autosave ([#297](https://github.com/ch-bas/threejs-sims-house-builder/issues/297))
+- Tablet widths (769–1100 px): the bottom panels no longer wrap, so the catalog stays on the bottom edge and the build tools no longer slide under the title ([#299](https://github.com/ch-bas/threejs-sims-house-builder/issues/299))
+- Mobile: the touch camera buttons no longer cover the catalog's next-page arrow ([#300](https://github.com/ch-bas/threejs-sims-house-builder/issues/300))
+- Mobile: Undo, Redo, snap, minimap, sounds, camera cones and walkers are reachable again — the whole row was hidden on phones. On desktop the same buttons are no longer squeezed below a comfortable size ([#301](https://github.com/ch-bas/threejs-sims-house-builder/issues/301))
+
 ## [1.10.0] - 2026-09-29
 
 The **2D plan & export** milestone, animated people, and a round of robustness fixes.
