@@ -189,6 +189,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   crossfade between clips — with a procedural jointed figure as the
   loading/offline fallback.
 - **Collapsible sidebar** for full-viewport editing.
+- **Responsive HUD**: explicit desktop, tablet and phone layouts, with
+  touch camera controls and the full action row on small screens.
 - **Walkthrough HUD** with a centre reticle + WASD/Sprint/Esc help banner.
 - **Multi-select badge** floating at the top of the viewport when more
   than one item is selected.
@@ -222,11 +224,11 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Plan export**: scalable SVG, CAD-ready layered DXF, and a
   print-to-scale PDF with title block (1:20–1:200, picked to fit A4).
 - **Version history**: automatic restore points every few minutes of
-  editing (and on page close), restorable — and undoable — from the
-  library's History section.
-- **Shareable URLs**: the layout is base64-url encoded into the hash; the
-  app hydrates from it if present on load. Floor-plan images are stripped
-  to keep URLs compact.
+  editing, on page close, and before anything replaces the whole house
+  (share link, template, saved layout, import). Restorable — and
+  undoable — from the library's History section, which names the house
+  each one belongs to. Restore points give way to saves when browser
+  storage runs short.
 
 ### Game-y
 
