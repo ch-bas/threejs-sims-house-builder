@@ -17,6 +17,7 @@
  * - Labels are horizontal TEXT (rotating text helps nobody in CAD).
  */
 
+import { planDrawOrder } from '../plan-order';
 import { itemWorldCorners, openingAxes, splitPlanItems, type PlacedItem } from './plan-geometry';
 import type { FloorLayout, RoomLayout } from '../types';
 
@@ -141,7 +142,8 @@ export function layoutToDxf(layout: RoomLayout, floor: FloorLayout): string {
     line('INTERIOR', cx(wall.x1), cy(wall.z1), cx(wall.x2), cy(wall.z2));
   }
 
-  const { openings, furniture } = splitPlanItems(floor.items);
+  // Same bottom-to-top layer order as the on-screen plan (#286).
+  const { openings, furniture } = splitPlanItems(planDrawOrder(floor.items));
 
   for (const item of openings) emitOpening(item, cx, cy, line, put);
 

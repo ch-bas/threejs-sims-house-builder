@@ -107,3 +107,45 @@ describe('hitTest2DItems (#219)', () => {
     expect(hitTest2DItems([], 0, 0)).toBeNull();
   });
 });
+
+describe('hitTest2DItems layer order + hit slop (#286)', () => {
+  it('picks the sofa over a rug listed after it (the Living Room template)', () => {
+    const sofa = makeItem({ id: 'sofa', type: 'sofa', width: 2, depth: 0.9, height: 0.8, position: { x: 0, z: -1.5 } });
+    const rug = makeItem({ id: 'rug', type: 'rug', width: 2, depth: 1.4, height: 0.02, position: { x: 0, z: -0.5 } });
+    // (0, −1.1) is inside both footprints; the sofa is the upper layer.
+    expect(hitTest2DItems([sofa, rug], 0, -1.1)?.id).toBe('sofa');
+    expect(hitTest2DItems([rug, sofa], 0, -1.1)?.id).toBe('sofa');
+    // Rug-only area still hits the rug.
+    expect(hitTest2DItems([sofa, rug], 0, 0)?.id).toBe('rug');
+  });
+
+  it('picks a tabletop item over the desk added after it, and a camera over a cabinet', () => {
+    const lamp = makeItem({ id: 'lamp', type: 'lamp', width: 0.3, depth: 0.3, height: 1.5, position: { x: 0.5, z: 0 } });
+    const desk = makeItem({ id: 'desk', type: 'desk', width: 1.2, depth: 0.6, height: 0.75, position: { x: 0, z: 0 } });
+    expect(hitTest2DItems([lamp, desk], 0.5, 0)?.id).toBe('lamp');
+    const camera = makeItem({ id: 'cam', type: 'security-camera', width: 0.25, depth: 0.2, height: 2.4, position: { x: 0, z: 0 } });
+    const cabinet = makeItem({ id: 'cabinet', type: 'cabinet', width: 1, depth: 0.5, height: 1.8, position: { x: 0, z: 0 } });
+    expect(hitTest2DItems([camera, cabinet], 0, 0)?.id).toBe('cam');
+  });
+
+  it('applies the slop to wall-mounted and sub-0.3 m items only', () => {
+    const wifi = makeItem({ id: 'wifi', type: 'wifi', width: 0.2, depth: 0.2, height: 0.1, position: { x: 0, z: 0 } });
+    // 0.05 m outside the puck's edge: a miss without slop, a hit with it.
+    expect(hitTest2DItems([wifi], 0.15, 0)).toBeNull();
+    expect(hitTest2DItems([wifi], 0.15, 0, 0.06)?.id).toBe('wifi');
+    const window = makeItem({ id: 'win', type: 'window', width: 1.2, depth: 0.12, height: 1.2, position: { x: 0, z: -2 } });
+    expect(hitTest2DItems([window], 0, -2.1)).toBeNull();
+    expect(hitTest2DItems([window], 0, -2.1, 0.06)?.id).toBe('win');
+    // A sofa is a large target: the slop never widens it.
+    const sofa = makeItem({ id: 'sofa', type: 'sofa', width: 2, depth: 0.9, height: 0.8, position: { x: 0, z: 0 } });
+    expect(hitTest2DItems([sofa], 0, 0.48, 0.06)).toBeNull();
+  });
+
+  it('slop respects the item rotation', () => {
+    const cam = makeItem({ id: 'cam', type: 'security-camera', width: 0.25, depth: 0.2, height: 2.4, rotation: Math.PI / 2, position: { x: 0, z: 0 } });
+    // Rotated 90°: width (0.25) now runs along world Z. 0.16 m along Z is
+    // 0.035 m past the edge — inside a 0.05 m slop; 0.2 m is not.
+    expect(hitTest2DItems([cam], 0, 0.16, 0.05)?.id).toBe('cam');
+    expect(hitTest2DItems([cam], 0, 0.2, 0.05)).toBeNull();
+  });
+});

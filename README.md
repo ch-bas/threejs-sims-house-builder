@@ -356,6 +356,7 @@ components/
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder) + headroom stairwells
     │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
+    │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → wall (#286)
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings)

@@ -1,5 +1,6 @@
 import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
+import { planDrawOrder } from '../lib/plan-order';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout } from '../lib/types';
 
@@ -547,7 +548,9 @@ function drawFurniture(
   offsetY: number,
   scale: number
 ): void {
-  for (const item of options.floor.items) {
+  // Layer order (#286): rugs first, then floor furniture, tabletop items,
+  // wall-mounted — so a rug listed after its sofa still paints beneath it.
+  for (const item of planDrawOrder(options.floor.items)) {
     if (!item.position) continue;
     const collision = options.hasCollision(item);
     const cx = offsetX + (item.position.x + options.layout.width / 2) * scale;
@@ -598,6 +601,40 @@ function drawFurniture(
       ctx.fillText(`${item.width}m × ${item.depth}m`, cx, cy + halfD * scale + 15);
       ctx.restore();
     }
+  }
+  drawSelectionOutlines(ctx, options, offsetX, offsetY, scale);
+}
+
+/**
+ * Re-strokes the selection outlines after every item is painted (#286): the
+ * layer order can put a selected item (a rug) beneath later-drawn furniture,
+ * and its in-loop outline would then be partly hidden. Same colours as the
+ * in-loop stroke, so an unobstructed item looks unchanged.
+ */
+function drawSelectionOutlines(
+  ctx: CanvasRenderingContext2D,
+  options: Render2DOptions,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  for (const item of options.floor.items) {
+    if (!item.position) continue;
+    const primary = options.selectedItemId === item.id;
+    if (!primary && !options.extraSelectedIds?.has(item.id)) continue;
+    const collision = options.hasCollision(item);
+    const w = item.width * scale;
+    const d = item.depth * scale;
+    ctx.save();
+    ctx.translate(
+      offsetX + (item.position.x + options.layout.width / 2) * scale,
+      offsetY + (item.position.z + options.layout.height / 2) * scale
+    );
+    ctx.rotate(-(item.rotation ?? 0));
+    ctx.strokeStyle = collision ? '#ff6666' : primary ? '#00ff00' : '#00cc00';
+    ctx.lineWidth = primary ? 3 : 2;
+    ctx.strokeRect(-w / 2, -d / 2, w, d);
+    ctx.restore();
   }
 }
 
