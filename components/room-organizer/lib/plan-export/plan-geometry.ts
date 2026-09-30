@@ -11,6 +11,7 @@
 
 import { GRID_SIZE_METERS } from '../constants';
 import { isOpening } from '../opening-snap';
+import { computeFloorOpenings, floorOpeningOutline, stairPlanSymbol, stairTreadLines } from '../stairs';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../types';
 
 /** Duplicated from canvas-2d/render.ts (`INTERIOR_WALL_THICKNESS_M`), which
@@ -98,6 +99,63 @@ export function gridLinePositions(extent: number): number[] {
     positions.push(w);
   }
   return positions;
+}
+
+export interface PlanPoint {
+  x: number;
+  z: number;
+}
+
+/** A line of a plan symbol, in world metres. */
+export interface PlanSegment {
+  from: PlanPoint;
+  to: PlanPoint;
+}
+
+/** Length of each barb of the stair arrow's head, in metres. */
+const STAIR_ARROW_HEAD_M = 0.22;
+/** Half-angle of the arrow head. */
+const STAIR_ARROW_HEAD_ANGLE = Math.PI / 6;
+
+/**
+ * The tread lines of a stair in world metres (#290): every tread edge from
+ * `stairSteps`, shared nosings once, rotated and mirrored like the mesh. The
+ * footprint rect the plan already draws is among them.
+ */
+export function stairTreadSegments(item: PlacedItem): PlanSegment[] {
+  return stairTreadLines(stairPlanSymbol(item).treads).map(([from, to]) => ({
+    from: { x: from[0], z: from[1] },
+    to: { x: to[0], z: to[1] },
+  }));
+}
+
+/**
+ * The up-arrow of a stair symbol (#290): a shaft through the tread centres
+ * from the foot of the flight — a winder's turns the fan — and two barbs at
+ * the head, on the last tread. Empty for a stair with a single tread.
+ */
+export function stairArrow(item: PlacedItem): { shaft: PlanPoint[]; head: PlanSegment[] } {
+  const shaft = stairPlanSymbol(item).walkLine.map(([x, z]) => ({ x, z }));
+  const tip = shaft[shaft.length - 1];
+  const prev = shaft[shaft.length - 2];
+  if (!tip || !prev) return { shaft, head: [] };
+  const back = Math.atan2(prev.z - tip.z, prev.x - tip.x);
+  const head = [back + STAIR_ARROW_HEAD_ANGLE, back - STAIR_ARROW_HEAD_ANGLE].map((angle) => ({
+    from: { x: tip.x + Math.cos(angle) * STAIR_ARROW_HEAD_M, z: tip.z + Math.sin(angle) * STAIR_ARROW_HEAD_M },
+    to: tip,
+  }));
+  return { shaft, head };
+}
+
+/**
+ * The stairwell holes in a floor's plane, as closed world outlines (#290):
+ * the openings the stairs on the floor below cut, from the same maths the 3D
+ * floor is built with. Empty for the ground floor (or an index off the
+ * building), whose slab nothing cuts.
+ */
+export function stairwellOutlines(layout: Pick<RoomLayout, 'floors'>, floorIndex: number): PlanPoint[][] {
+  const floorBelow = floorIndex > 0 ? layout.floors[floorIndex - 1] : undefined;
+  return computeFloorOpenings(floorBelow).map((opening) => floorOpeningOutline(opening).map(([x, z]) => ({ x, z })));
 }
 
 /** True when the floor plan should draw this exterior wall dashed-hidden. */

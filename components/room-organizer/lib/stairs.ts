@@ -1,4 +1,5 @@
-import type { FurnitureItem, StairsShape } from './types';
+import { stairRise } from './storeys';
+import type { FloorLayout, FurnitureItem, StairsShape } from './types';
 
 /**
  * Stair layout (#205), shared by the stair builder and the stairwell cut so
@@ -223,4 +224,170 @@ export function winderStairwellOutline(item: StairItem, rise: number): Array<[nu
     [hw + m, hd + m],
     [-hw - m, hd + m],
   ];
+}
+
+type PlacedStair = StairItem & Pick<FurnitureItem, 'rotation' | 'mirrored'> & { position: { x: number; z: number } };
+
+/**
+ * Stair-local → world [x, z]. A mirrored stair flips its local x (the
+ * winder's return-flight side) before the rotation, as its mesh does
+ * (`group.scale.x = −1` under `rotation.y`); the rotation is Three's rotateY,
+ * which canvas-2d/render.ts reproduces with `ctx.rotate(−rotation)`.
+ */
+export function stairToWorld(
+  item: Pick<FurnitureItem, 'rotation' | 'mirrored'>,
+  position: { x: number; z: number }
+): (x: number, z: number) => [number, number] {
+  const rotation = item.rotation ?? 0;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const { x: px, z: pz } = position;
+  return (x, z) => {
+    const lx = item.mirrored ? -x : x;
+    return [px + lx * cos + z * sin, pz - lx * sin + z * cos];
+  };
+}
+
+/** A hole in a floor plane where stairs connect floors. */
+export interface FloorOpening {
+  id: string;
+  /** Centre X in room-local coords. */
+  centerX: number;
+  /** Centre Z in room-local coords. */
+  centerZ: number;
+  /**
+   * Width of the opening along the opening's own local X axis (before
+   * `rotation`). This is the stairs' true footprint width, not an
+   * axis-aligned bounding box.
+   */
+  width: number;
+  /** Depth of the opening along the opening's own local Z axis (before `rotation`). */
+  depth: number;
+  /**
+   * Rotation of the opening about its centre (radians, Y axis), matching the
+   * stairs' rotation. The floor builder cuts a rotated rectangle so a 45°
+   * staircase doesn't leave triangular floor gaps at the corners of an
+   * inflated axis-aligned hole.
+   */
+  rotation: number;
+  /**
+   * A non-rectangular hole (a winder's L, #205), as world [x, z] points. When
+   * present the floor builder cuts this outline; the fields above are its
+   * bounding box in the stair's frame.
+   */
+  outline?: Array<[number, number]>;
+}
+
+/**
+ * Compute stairwell openings for a given floor by looking at stairs placed
+ * on the floor below. If floor N has stairs at position (x, z), floor N+1
+ * should have a rectangular hole at that position. Pure: the 3D floor
+ * builder cuts these, and the 2D plan and exporters draw them (#290).
+ */
+export function computeFloorOpenings(floorBelow: FloorLayout | undefined): readonly FloorOpening[] {
+  if (!floorBelow) return [];
+  const openings: FloorOpening[] = [];
+  for (const item of floorBelow.items) {
+    if (item.type !== 'stairs' || !item.position) continue;
+    // Cut only where the treads come within 2 m headroom of this floor
+    // (#205) — not the stair's whole footprint — using the same step layout
+    // the builder draws, so straight and winder stairs both get the right
+    // hole. The rectangle keeps the stairs' rotation so the floor builder
+    // cuts it rotated (no over-inflated AABB); it clamps holes into the floor
+    // outline with its epsilon inset (#146).
+    const rise = stairRise(item, floorBelow);
+    const rect = stairwellRect(item, rise);
+    if (!rect) continue;
+    const toWorld = stairToWorld(item, item.position);
+    const [centerX, centerZ] = toWorld(rect.centerX, rect.centerZ);
+    const outline = winderStairwellOutline(item, rise);
+    openings.push({
+      id: item.id,
+      centerX,
+      centerZ,
+      width: rect.width,
+      depth: rect.depth,
+      rotation: item.rotation ?? 0,
+      ...(outline ? { outline: outline.map(([x, z]) => toWorld(x, z)) } : {}),
+    });
+  }
+  return openings;
+}
+
+/**
+ * The opening as a closed outline in world [x, z] — the winder's L as given,
+ * or the rotated rectangle's four corners — for the 2D plan and exporters
+ * to draw as a void on the floor above (#290). The rectangle is rotated
+ * about its own centre, which `stairToWorld` already placed, so no mirror
+ * applies here.
+ */
+export function floorOpeningOutline(opening: FloorOpening): Array<[number, number]> {
+  if (opening.outline) return opening.outline;
+  const cos = Math.cos(opening.rotation);
+  const sin = Math.sin(opening.rotation);
+  const hw = opening.width / 2;
+  const hd = opening.depth / 2;
+  const corners: ReadonlyArray<readonly [number, number]> = [
+    [-hw, -hd],
+    [hw, -hd],
+    [hw, hd],
+    [-hw, hd],
+  ];
+  return corners.map(([x, z]) => [opening.centerX + x * cos + z * sin, opening.centerZ - x * sin + z * cos]);
+}
+
+/** The plan symbol of a stair: its treads and the arrow that climbs them (#290). */
+export interface StairPlanSymbol {
+  /** Every tread's outline in world [x, z], in climbing order. */
+  treads: Array<Array<[number, number]>>;
+  /**
+   * The walk line through the tread centres, foot first: a straight flight's
+   * centreline, or the path up, round the fan and back down a winder.
+   */
+  walkLine: Array<[number, number]>;
+}
+
+/**
+ * What a plan draws for a stair, in world metres: the tread outlines from
+ * the same layout the mesh is built from, and the walk line the up-arrow
+ * follows — so rotation and mirroring read the same in 2D as in 3D (#290).
+ * The rise only sets the treads' heights, which a plan never shows.
+ */
+export function stairPlanSymbol(item: PlacedStair): StairPlanSymbol {
+  const toWorld = stairToWorld(item, item.position);
+  const steps = stairSteps(item, 1);
+  const treads = steps.map((step) => step.outline.map(([x, z]) => toWorld(x, z)));
+  const walkLine = steps.map((step) => {
+    const n = step.outline.length;
+    const [cx, cz] = step.outline.reduce(([sx, sz], [x, z]) => [sx + x / n, sz + z / n], [0, 0]);
+    return toWorld(cx, cz);
+  });
+  return { treads, walkLine };
+}
+
+/**
+ * The tread lines of a stair symbol as unique world segments: every tread
+ * outline's edges with the ones two treads share drawn once. Duplicates are
+ * matched on rounded endpoints in either direction.
+ */
+export function stairTreadLines(
+  treads: ReadonlyArray<ReadonlyArray<readonly [number, number]>>
+): Array<[[number, number], [number, number]]> {
+  const seen = new Set<string>();
+  const lines: Array<[[number, number], [number, number]]> = [];
+  const key = ([x, z]: readonly [number, number]) => `${x.toFixed(5)},${z.toFixed(5)}`;
+  for (const outline of treads) {
+    for (let i = 0; i < outline.length; i++) {
+      const a = outline[i]!;
+      const b = outline[(i + 1) % outline.length]!;
+      const ka = key(a);
+      const kb = key(b);
+      if (ka === kb) continue;
+      const id = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      lines.push([[a[0], a[1]], [b[0], b[1]]]);
+    }
+  }
+  return lines;
 }

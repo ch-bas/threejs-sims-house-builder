@@ -14,7 +14,11 @@ import {
   isWallHidden,
   planBounds,
   splitPlanItems,
+  stairArrow,
+  stairTreadSegments,
+  stairwellOutlines,
   type PlacedItem,
+  type PlanPoint,
 } from './plan-geometry';
 import type { FloorLayout, RoomLayout, WallId } from '../types';
 
@@ -123,6 +127,7 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
     renderZones(floor, px, py, scale, theme),
     renderRoomOutline(layout, floor, margin, scale, theme),
     renderInteriorWalls(floor, px, py, scale, theme),
+    renderStairwellHoles(layout, floor, px, py, theme),
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
     ...furniture.map((item) => renderFurniture(item, px, py, scale, theme)),
     `</g>`,
@@ -306,7 +311,60 @@ function renderFurniture(
     Math.min(w, d) >= MIN_LABEL_EDGE_PX
       ? `<text class="label" x="0" y="0" dy="0.35em" font-size="10" text-anchor="middle" fill="${theme.label}">${escapeXml(item.name)}</text>`
       : '';
+  // Stairs carry treads and a climb arrow instead of a name (#290).
+  if (item.type === 'stairs') return `<g transform="${transform}">${rect}</g>${renderStairsSymbol(item, px, py, theme)}`;
   return `<g transform="${transform}">${rect}${label}</g>`;
+}
+
+/**
+ * Tread lines and the up-arrow of a stair (#290), in plan space (already
+ * rotated and mirrored, so outside the footprint's transform group): the
+ * foot is dotted and the arrow follows the walk line up to the last tread.
+ */
+function renderStairsSymbol(
+  item: PlacedItem,
+  px: (x: number) => string,
+  py: (z: number) => string,
+  theme: SvgPlanTheme
+): string {
+  const at = (p: PlanPoint): string => `${px(p.x)} ${py(p.z)}`;
+  const treads = stairTreadSegments(item)
+    .map(({ from, to }) => `M ${at(from)} L ${at(to)}`)
+    .join(' ');
+  const { shaft, head } = stairArrow(item);
+  if (shaft.length < 2) return `<path class="stairs" d="${treads}" stroke="${theme.furnitureStroke}" stroke-width="1" fill="none"/>`;
+  const arrow = [
+    `M ${shaft.map(at).join(' L ')}`,
+    ...head.map(({ from, to }) => `M ${at(from)} L ${at(to)}`),
+  ].join(' ');
+  return [
+    `<g class="stairs" stroke="${theme.furnitureStroke}" fill="none" stroke-linecap="round" stroke-linejoin="round">`,
+    `<path class="treads" d="${treads}" stroke-width="1"/>`,
+    `<path class="arrow" d="${arrow}" stroke-width="2"/>`,
+    `<circle cx="${px(shaft[0]!.x)}" cy="${py(shaft[0]!.z)}" r="2.5" fill="${theme.furnitureStroke}" stroke="none"/>`,
+    `</g>`,
+  ].join('');
+}
+
+/**
+ * The stairwell the floor below cuts through this floor's slab (#290): a
+ * dashed void outline over the floor, under the furniture — so the export
+ * of an upper floor shows the drop, not a solid slab.
+ */
+function renderStairwellHoles(
+  layout: RoomLayout,
+  floor: FloorLayout,
+  px: (x: number) => string,
+  py: (z: number) => string,
+  theme: SvgPlanTheme
+): string {
+  const floorIndex = layout.floors.findIndex((candidate) => candidate === floor || candidate.id === floor.id);
+  return stairwellOutlines(layout, floorIndex)
+    .map(
+      (outline) =>
+        `<polygon class="stairwell" points="${outline.map((p) => `${px(p.x)},${py(p.z)}`).join(' ')}" fill="${theme.furnitureStroke}" fill-opacity="0.12" stroke="${theme.furnitureStroke}" stroke-width="1.5" stroke-dasharray="6 4"/>`
+    )
+    .join('\n');
 }
 
 function renderScaleBar(

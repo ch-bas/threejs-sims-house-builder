@@ -356,12 +356,12 @@ components/
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
-    │   ├── stairs.ts                    Tread layout (straight / winder) + headroom stairwells
+    │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → wall (#286)
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
-    │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings)
+    │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs)
     │       ├── svg.ts                   Vector SVG plan emitter (pure)
     │       ├── dxf.ts                   DXF R12 plan emitter (pure)
     │       ├── download.ts              Blob download + filename slugs (DOM)
@@ -406,6 +406,7 @@ components/
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
     │   └── outdoor.ts                   Garden / path / bush scenery
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
+    ├── canvas-2d/stairs-symbol.ts       Stair treads + climb arrow, stairwell voids on the floor above
     ├── plotcraft/icon.tsx                Lucide-react icon wrapper for UI panels
     ├── hooks/
     │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)

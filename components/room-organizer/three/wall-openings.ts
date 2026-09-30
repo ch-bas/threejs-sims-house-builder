@@ -1,82 +1,12 @@
-import { stairwellRect, winderStairwellOutline } from '../lib/stairs';
-import { fitOpeningToStorey, stairRise } from '../lib/storeys';
-import type { FloorLayout, FurnitureItem, InteriorWall, WallId } from '../lib/types';
-
-/** A rectangular hole in a floor plane (e.g. where stairs connect floors). */
-export interface FloorOpening {
-  id: string;
-  /** Centre X in room-local coords. */
-  centerX: number;
-  /** Centre Z in room-local coords. */
-  centerZ: number;
-  /**
-   * Width of the opening along the opening's own local X axis (before
-   * `rotation`). This is the stairs' true footprint width, not an
-   * axis-aligned bounding box.
-   */
-  width: number;
-  /** Depth of the opening along the opening's own local Z axis (before `rotation`). */
-  depth: number;
-  /**
-   * Rotation of the opening about its centre (radians, Y axis), matching the
-   * stairs' rotation. The floor builder cuts a rotated rectangle so a 45°
-   * staircase doesn't leave triangular floor gaps at the corners of an
-   * inflated axis-aligned hole.
-   */
-  rotation: number;
-  /**
-   * A non-rectangular hole (a winder's L, #205), as world [x, z] points. When
-   * present the floor builder cuts this outline; the fields above are its
-   * bounding box in the stair's frame.
-   */
-  outline?: Array<[number, number]>;
-}
+import { fitOpeningToStorey } from '../lib/storeys';
+import type { FurnitureItem, InteriorWall, WallId } from '../lib/types';
 
 /**
- * Compute stairwell openings for a given floor by looking at stairs placed
- * on the floor below. If floor N has stairs at position (x, z), floor N+1
- * should have a rectangular hole at that position.
+ * Stairwell openings are pure maths and live in lib/stairs.ts, where the 2D
+ * plan and the exporters share them with the floor builder (#290);
+ * re-exported so scene code keeps importing them from here.
  */
-export function computeFloorOpenings(
-  floorBelow: FloorLayout | undefined
-): readonly FloorOpening[] {
-  if (!floorBelow) return [];
-  const openings: FloorOpening[] = [];
-  for (const item of floorBelow.items) {
-    if (item.type !== 'stairs' || !item.position) continue;
-    // Cut only where the treads come within 2 m headroom of this floor
-    // (#205) — not the stair's whole footprint — using the same step layout
-    // the builder draws, so straight and winder stairs both get the right
-    // hole. The rectangle keeps the stairs' rotation so the floor builder
-    // cuts it rotated (no over-inflated AABB); it clamps holes into the floor
-    // outline with its epsilon inset (#146).
-    const rise = stairRise(item, floorBelow);
-    const rect = stairwellRect(item, rise);
-    if (!rect) continue;
-    const rotation = item.rotation ?? 0;
-    const cos = Math.cos(rotation);
-    const sin = Math.sin(rotation);
-    const { x: px, z: pz } = item.position;
-    // Stair-local → world. A mirrored stair flips its local x (the winder's
-    // return-flight side), as its mesh does.
-    const toWorld = (x: number, z: number): [number, number] => {
-      const lx = item.mirrored ? -x : x;
-      return [px + lx * cos + z * sin, pz - lx * sin + z * cos];
-    };
-    const [centerX, centerZ] = toWorld(rect.centerX, rect.centerZ);
-    const outline = winderStairwellOutline(item, rise);
-    openings.push({
-      id: item.id,
-      centerX,
-      centerZ,
-      width: rect.width,
-      depth: rect.depth,
-      rotation,
-      ...(outline ? { outline: outline.map(([x, z]) => toWorld(x, z)) } : {}),
-    });
-  }
-  return openings;
-}
+export { computeFloorOpenings, type FloorOpening } from '../lib/stairs';
 
 export interface WallOpening {
   /** Item id that this opening originates from (for cleanup / debugging). */
