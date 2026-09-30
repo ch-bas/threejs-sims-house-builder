@@ -21,6 +21,13 @@ export const MAX_STAIRS_LEAD_IN = STAIR_STEP_COUNT - WINDER_TREADS - 2;
 export const STAIR_HEADROOM = 2.0;
 /** Clearance around the cut, like the old whole-footprint hole. */
 const HOLE_MARGIN = 0.05;
+/**
+ * Shortest tread a winder keeps (#278): the going of each flight step and
+ * the radius of the fan. The schema accepts any dims down to 0.1 m, so a
+ * winder that is too shallow for its width has its fan clamped to what the
+ * depth leaves, and one too shallow even for that lays out straight.
+ */
+export const MIN_WINDER_TREAD = 0.15;
 
 export interface StairStep {
   /** Tread outline in the local frame, as [x, z] points (counter-clockwise from above). */
@@ -54,6 +61,39 @@ const rect = (x0: number, x1: number, z0: number, z1: number): Array<[number, nu
   [x0, z1],
 ];
 
+export interface WinderLayout {
+  up: number;
+  back: number;
+  /** Radius of the fan: its depth along z, at most the half-width. */
+  fan: number;
+  /** z of the newel, where the flights end and the fan starts. */
+  fanZ: number;
+  /** Going of each flight tread. */
+  going: number;
+}
+
+/**
+ * How a winder fits its footprint, or null when it lays out straight: not a
+ * winder, or too shallow for even the shortest fan and flight (#278). The fan
+ * turns about the newel at the middle of the width, where the flights end; it
+ * fills the last half-width of the depth, or less when the depth would leave
+ * the up flight shorter than MIN_WINDER_TREAD a tread. Every consumer of the
+ * layout — treads and stairwell alike — reads the same answer here.
+ */
+export function winderLayout(item: StairItem): WinderLayout | null {
+  if (item.stairsShape !== 'winder') return null;
+  const { up, back } = winderFlights(item.stairsLeadIn);
+  const hw = item.width / 2;
+  const hd = item.depth / 2;
+  // What the depth leaves for the fan once every up-flight tread has its
+  // shortest going. (Negated comparison so a NaN dim also lays out straight.)
+  const room = item.depth - up * MIN_WINDER_TREAD;
+  if (!(room >= MIN_WINDER_TREAD)) return null;
+  const fan = Math.min(hw, room);
+  const fanZ = hd - fan;
+  return { up, back, fan, fanZ, going: (fanZ + hd) / up };
+}
+
 /** Every tread of a stair of the given rise, in climbing order. */
 export function stairSteps(item: StairItem, rise: number): StairStep[] {
   const hw = item.width / 2;
@@ -61,7 +101,8 @@ export function stairSteps(item: StairItem, rise: number): StairStep[] {
   const stepRise = rise / STAIR_STEP_COUNT;
   const top = (i: number) => stepRise * (i + 1);
 
-  if (item.stairsShape !== 'winder') {
+  const layout = winderLayout(item);
+  if (!layout) {
     const going = item.depth / STAIR_STEP_COUNT;
     return Array.from({ length: STAIR_STEP_COUNT }, (_, i) => ({
       outline: rect(-hw, hw, -hd + i * going, -hd + (i + 1) * going),
@@ -69,11 +110,7 @@ export function stairSteps(item: StairItem, rise: number): StairStep[] {
     }));
   }
 
-  const { up, back } = winderFlights(item.stairsLeadIn);
-  // The fan turns about the newel at the middle of the width, where the
-  // flights end; it fills the last half-width of the depth.
-  const fanZ = hd - hw;
-  const going = (fanZ + hd) / up;
+  const { up, back, fanZ, going } = layout;
   const steps: StairStep[] = [];
   for (let i = 0; i < up; i++) {
     steps.push({ outline: rect(-hw, 0, -hd + i * going, -hd + (i + 1) * going), top: top(steps.length) });
@@ -149,18 +186,19 @@ export function stairwellRect(item: StairItem, rise: number): StairwellRect | nu
  * is the return flight from its foot, plus the fan, plus the top of the up
  * flight when it reaches that far — an L (or a notched rectangle), never the
  * box around it, so the floor stays over the foot of the up flight.
- * Null for a straight flight (its hole is a plain rectangle) or when no
- * tread needs it.
+ * Null for a straight flight (its hole is a plain rectangle) — including a
+ * winder too shallow to turn, which stairSteps lays out straight (#278) —
+ * or when no tread needs it.
  */
 export function winderStairwellOutline(item: StairItem, rise: number): Array<[number, number]> | null {
-  if (item.stairsShape !== 'winder') return null;
+  const layout = winderLayout(item);
+  if (!layout) return null;
   const steps = stairSteps(item, rise);
   const first = steps.findIndex((step) => step.top > rise - STAIR_HEADROOM);
   if (first < 0) return null;
   const hw = item.width / 2;
   const hd = item.depth / 2;
-  const { up } = winderFlights(item.stairsLeadIn);
-  const fanZ = hd - hw;
+  const { up, fanZ } = layout;
   const m = HOLE_MARGIN;
   const zsOf = (i: number) => steps[i]!.outline.map(([, z]) => z);
   const returnFoot = Math.min(...zsOf(steps.length - 1));
