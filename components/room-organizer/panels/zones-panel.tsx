@@ -8,23 +8,34 @@ import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_ZONES, zoneStats } from '../lib/zones';
 import type { RoomZone } from '../lib/types';
 
+export interface ZonesPanelProps {
+  /**
+   * Called when the draw mode is switched on: the drawer this sits in covers
+   * the left third of the plan the user is about to draw on, so it folds
+   * itself away (#323).
+   */
+  onDrawStart?(): void;
+}
+
 /**
  * Room zones of the active floor (#155): the list with rename / recolour /
  * delete, and the toggle for the 2D draw mode that creates them. Drawing
  * only works on the plan, so switching the mode on also switches to 2D and
  * parks the 3D floor-click modes it would otherwise sit beside.
  */
-export function ZonesPanel(): JSX.Element {
+export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
   const { activeFloor, actions, view, setView } = useRoomEditor();
   const zones = activeFloor.zones ?? [];
   const drawing = view.drawZoneMode;
 
-  const toggleDrawing = () =>
-    setView((v) =>
-      v.drawZoneMode
-        ? { ...v, drawZoneMode: false }
-        : { ...v, drawZoneMode: true, view2D: true, drawWallMode: false, measurementMode: false }
-    );
+  const toggleDrawing = () => {
+    if (drawing) {
+      setView((v) => ({ ...v, drawZoneMode: false }));
+      return;
+    }
+    setView((v) => ({ ...v, drawZoneMode: true, view2D: true, drawWallMode: false, measurementMode: false }));
+    onDrawStart?.();
+  };
 
   const rename = (zone: RoomZone) => {
     const name = window.prompt('Zone name:', zone.name);

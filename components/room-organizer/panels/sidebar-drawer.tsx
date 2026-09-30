@@ -76,10 +76,17 @@ export function SidebarDrawer({
   const keepOut = useEntranceKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   const drawerRef = useRef<HTMLElement>(null);
-  // The drawer is a modal overlay (a backdrop covers the canvas), so it
-  // behaves like one for keyboard users: focus moves in, Tab stays inside,
-  // Escape closes it, and focus returns to the opener (#152).
-  useDialogFocus(!collapsed, drawerRef, { trap: true, onEscape: onCollapse });
+  // While a draw mode is on the canvas is the workbench, so the drawer stops
+  // being modal: no backdrop — the backdrop button sat over the plan and
+  // swallowed the first pointerdown of a zone / wall gesture, closing the
+  // drawer instead of drawing (#323) — and no focus trap, so Escape and the
+  // shortcuts stay with the plan once it has focus. The close tile, `p` and
+  // Escape from inside still dismiss it.
+  const drawing = view.drawWallMode || view.drawZoneMode || view.measurementMode;
+  // Otherwise the drawer is a modal overlay (a backdrop covers the canvas),
+  // so it behaves like one for keyboard users: focus moves in, Tab stays
+  // inside, Escape closes it, and focus returns to the opener (#152).
+  useDialogFocus(!collapsed, drawerRef, { trap: !drawing, onEscape: onCollapse });
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
     if (typeof window === 'undefined') return 'build';
     const saved = localStorage.getItem(SIDEBAR_TAB_KEY);
@@ -112,23 +119,25 @@ export function SidebarDrawer({
 
   return (
     <div style={{ display: collapsed ? 'none' : 'block' }}>
-      <button
-        type="button"
-        aria-label="Close panels"
-        onClick={onCollapse}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(20, 30, 40, 0.35)',
-          border: 'none',
-          zIndex: 35,
-          cursor: 'pointer',
-        }}
-      />
+      {!drawing && (
+        <button
+          type="button"
+          aria-label="Close panels"
+          onClick={onCollapse}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(20, 30, 40, 0.35)',
+            border: 'none',
+            zIndex: 35,
+            cursor: 'pointer',
+          }}
+        />
+      )}
       <aside
         ref={drawerRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={drawing ? undefined : 'true'}
         tabIndex={-1}
         aria-label="Side panels"
         className="pc-glass pc-glass--dark pc-sidebar"
@@ -201,7 +210,9 @@ export function SidebarDrawer({
 
               <WallsPanel />
 
-              <ZonesPanel />
+              {/* Drawing happens on the plan the drawer covers, so switching
+                  the mode on folds the drawer away (#323). */}
+              <ZonesPanel onDrawStart={onCollapse} />
 
               <RoofPanel />
 
