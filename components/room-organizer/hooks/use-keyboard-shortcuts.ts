@@ -24,6 +24,13 @@ export interface KeyboardShortcutHandlers {
   advanceTime(deltaHours: number): void;
   changeFloor(delta: number): void;
   toggleSidebar(): void;
+  /**
+   * Keyboard placement (#168): both are passed only while an item placed from
+   * a catalog tile is still being positioned. Enter then locks it in place and
+   * Escape takes it back out, ahead of the plain deselect.
+   */
+  confirmPlacement?(): void;
+  cancelPlacement?(): void;
 }
 
 export interface UseKeyboardShortcutsOptions {
@@ -120,9 +127,17 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      // A pending keyboard placement owns Enter/Escape (#168).
+      if (event.key === 'Enter' && handlers.confirmPlacement) {
+        event.preventDefault();
+        handlers.confirmPlacement();
+        return;
+      }
+
       if (event.key === 'Escape') {
         event.preventDefault();
-        handlers.deselect();
+        if (handlers.cancelPlacement) handlers.cancelPlacement();
+        else handlers.deselect();
         return;
       }
 

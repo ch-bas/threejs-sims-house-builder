@@ -35,8 +35,11 @@ function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
   return event;
 }
 
-const setup = (dragging: boolean) => {
-  const handlers = makeHandlers();
+const setup = (dragging: boolean, placing = false) => {
+  const handlers = {
+    ...makeHandlers(),
+    ...(placing ? { confirmPlacement: vi.fn(), cancelPlacement: vi.fn() } : {}),
+  };
   renderHook(() =>
     useKeyboardShortcuts({
       selectedItem: makeItem({ id: 'chair', position: { x: 0, z: 0 }, locked: false }),
@@ -107,5 +110,37 @@ describe('useKeyboardShortcuts — mid-drag gate (#207)', () => {
     const { calls } = setup(false);
     press(key, init);
     expect(calls()).toEqual([handler]);
+  });
+});
+
+describe('useKeyboardShortcuts — pending keyboard placement (#168)', () => {
+  afterEach(cleanup);
+
+  it('Enter confirms the placement', () => {
+    const { calls } = setup(false, true);
+    const event = press('Enter');
+    expect(calls()).toEqual(['confirmPlacement']);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('Escape cancels the placement instead of deselecting', () => {
+    const { calls } = setup(false, true);
+    press('Escape');
+    expect(calls()).toEqual(['cancelPlacement']);
+  });
+
+  it('arrows and R still nudge and rotate the pending item', () => {
+    const { calls } = setup(false, true);
+    press('ArrowRight');
+    press('r');
+    expect(calls()).toEqual(['rotateItem', 'moveItem']);
+  });
+
+  it('without a placement, Escape deselects and Enter is left alone', () => {
+    const { calls } = setup(false);
+    const enter = press('Enter');
+    expect(enter.defaultPrevented).toBe(false);
+    press('Escape');
+    expect(calls()).toEqual(['deselect']);
   });
 });

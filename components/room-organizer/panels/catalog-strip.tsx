@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { CATALOG_DRAG_MIME, catalogKey } from '../lib/catalog-drag';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
@@ -8,6 +9,7 @@ import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, FurnitureCategory } from '../lib/types';
 
 const PAGE_SIZE = 8;
+const COLUMNS = 4;
 
 export interface CatalogStripProps {
   category: FurnitureCategory | 'all';
@@ -17,6 +19,17 @@ export interface CatalogStripProps {
 export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Element {
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
+
+  const items =
+    category === 'all'
+      ? FURNITURE_CATALOG
+      : FURNITURE_CATALOG.filter((item) => item.category === category);
+  const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const safePage = Math.min(page, pages - 1);
+  const visible = items.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
+  // Keyboard placement (#168): one tile in the Tab order, arrows rove the grid.
+  const { gridRef, tileProps } = useRovingTiles(visible.length, COLUMNS);
 
   // Cameras get a dedicated, type-grouped menu rather than the paged grid.
   if (category === 'security') {
@@ -49,14 +62,6 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
       </div>
     );
   }
-
-  const items =
-    category === 'all'
-      ? FURNITURE_CATALOG
-      : FURNITURE_CATALOG.filter((item) => item.category === category);
-  const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const safePage = Math.min(page, pages - 1);
-  const visible = items.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   const categoryMeta = CATEGORIES.find((entry) => entry.key === category);
   const categoryLabel =
@@ -134,9 +139,10 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
             Catalog Selection
           </div>
           <div
+            ref={gridRef}
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
+              gridTemplateColumns: `repeat(${COLUMNS}, 1fr)`,
               gridTemplateRows: 'repeat(2, 1fr)',
               gap: 6,
             }}
@@ -153,7 +159,14 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   />
                 );
               }
-              return <CatalogTile key={catalogKey(item)} item={item} onAdd={onAdd} />;
+              return (
+                <CatalogTile
+                  key={catalogKey(item)}
+                  item={item}
+                  onAdd={onAdd}
+                  roving={tileProps(index, () => onAdd(item))}
+                />
+              );
             })}
           </div>
         </div>
@@ -250,15 +263,17 @@ function PageButton({ icon, label, disabled, onClick }: PageButtonProps): JSX.El
 interface CatalogTileProps {
   item: CatalogItem;
   onAdd(item: CatalogItem): void;
+  roving: RovingTileProps;
 }
 
-function CatalogTile({ item, onAdd }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, onAdd, roving }: CatalogTileProps): JSX.Element {
   const icon = iconForItem(item.type, item.category);
   return (
     <button
       type="button"
       onClick={() => onAdd(item)}
-      title={`${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Drag onto the 3D view to place precisely.`}
+      title={`${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Drag onto the 3D view to place precisely, or press Enter to place and position it with the keyboard.`}
+      {...roving}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';

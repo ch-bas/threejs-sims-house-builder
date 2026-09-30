@@ -278,6 +278,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 | Rotate            | R (Shift+R = 15°)  |
 | Move              | Arrow keys (Shift = 1 m) |
 | Deselect          | Esc                |
+| Place from catalog | Enter on a focused tile, then arrows / R · Enter confirm · Esc cancel |
 | Focus on item     | F                  |
 | Multi-select      | Ctrl/⌘+click       |
 | Group-drag        | Drag any selected  |
@@ -399,6 +400,7 @@ components/
     │   ├── use-achievements.ts          Diffed unlock detection
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
+    │   ├── use-keyboard-placement.ts    Enter-on-tile placement session + roving tile focus
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice
     └── panels/                          Presentation (most use context)
@@ -439,6 +441,7 @@ components/
         ├── minimap.tsx
         ├── achievements-panel.tsx
         ├── achievement-toast.tsx
+        ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
         └── viewport.tsx
 ```
 
