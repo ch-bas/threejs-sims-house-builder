@@ -114,19 +114,25 @@ export function itemFullyOutside(item: FurnitureItem, roomWidth: number, roomDep
  * Anything at or under this height goes UNDER furniture by design (rugs are
  * 0.02 m) — a rug beneath a sofa is the intended use, not a collision.
  */
-const LOW_PROFILE_MAX_HEIGHT = 0.05;
+export const LOW_PROFILE_MAX_HEIGHT = 0.05;
 
-function isLowProfile(item: Pick<FurnitureItem, 'height'>): boolean {
+export function isLowProfile(item: Pick<FurnitureItem, 'height'>): boolean {
   return item.height <= LOW_PROFILE_MAX_HEIGHT;
 }
 
 // Intended-stacking families (#120): small tabletop items sit ON these
 // surfaces (the Office template puts the computer and lamp on the desk) and
 // seats tuck UNDER tables (the Kitchen template's dining chairs). Items have
-// no elevation field, so the layer model is by type.
+// no elevation field, so the layer model is by type. The 2D plan's draw order
+// (lib/plan-order, #286) reads the same families.
 const SURFACE_TYPES = new Set(['desk', 'dining-table', 'coffee-table', 'counter', 'nightstand', 'dresser']);
 const TABLETOP_TYPES = new Set(['computer', 'lamp', 'plant', 'books', 'candles', 'flowerpot', 'wifi']);
 const SEAT_TYPES = new Set(['chair', 'dining-chair', 'bench']);
+
+/** Small items that sit ON a surface (desk, table, counter) rather than the floor. */
+export function isTabletopType(type: string): boolean {
+  return TABLETOP_TYPES.has(type);
+}
 
 function isIntendedStack(a: FurnitureItem, b: FurnitureItem): boolean {
   const stacksOn = (surface: FurnitureItem, top: FurnitureItem): boolean =>

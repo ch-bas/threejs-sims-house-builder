@@ -5,6 +5,7 @@
  * anchoring, same wall styling, same footprint rotation convention.
  */
 
+import { planDrawOrder } from '../plan-order';
 import { zoneArea } from '../zones';
 import {
   gridLinePositions,
@@ -73,7 +74,8 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
   const px = (x: number): string => fmt(margin + (x + layout.width / 2) * scale);
   const py = (z: number): string => fmt(margin + (z + layout.height / 2) * scale);
 
-  const { openings, furniture } = splitPlanItems(floor.items);
+  // Same bottom-to-top layer order as the on-screen plan (#286).
+  const { openings, furniture } = splitPlanItems(planDrawOrder(floor.items));
   const title = `${layout.name} — ${floor.name}`;
 
   const parts: string[] = [
