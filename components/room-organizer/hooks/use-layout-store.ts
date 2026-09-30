@@ -22,6 +22,7 @@
 
 import { createStore, useStore } from 'zustand';
 import { randomId, randomSuffix } from '../lib/ids';
+import { randomStreetSeed } from '../lib/street-row';
 import {
   layoutReducer,
   INITIAL_GROUND_FLOOR,
@@ -83,6 +84,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     removeDormer: (id) => dispatch({ type: 'removeDormer', id }),
     setTerrain: (terrain) => dispatch({ type: 'setTerrain', terrain }),
     setNeighbour: (side, present) => dispatch({ type: 'setNeighbour', side, present }),
+    shuffleStreet: () => dispatch({ type: 'shuffleStreet', seed: randomStreetSeed() }),
     setEntrance: (entrance) => dispatch({ type: 'setEntrance', entrance }),
     setFrontage: (frontage) => dispatch({ type: 'setFrontage', frontage }),
     setSillHeight: (id, sillHeight) => dispatch({ type: 'setSillHeight', id, sillHeight }),

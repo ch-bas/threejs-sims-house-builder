@@ -264,8 +264,24 @@ export interface EntranceSpec {
   door?: false;
 }
 
-/** Party-wall neighbour blocks either side, for terraces and semis (#202). */
-export type NeighbourSpec = Partial<Record<NeighbourSide, boolean>>;
+/** The boolean switches of a `NeighbourSpec`: the two party walls plus the street rows (#310). */
+export type NeighbourFlag = NeighbourSide | 'street' | 'across';
+
+/**
+ * Party-wall neighbour blocks either side, for terraces and semis (#202),
+ * and the rest of the street (#310): `street` continues the row along both
+ * sides for as far as the scenery goes, `across` adds a facing row over the
+ * road. Every house is drawn from `seed`, so the same design always shows
+ * the same street; all fields are optional and absent means the old pair.
+ */
+export interface NeighbourSpec {
+  west?: boolean;
+  east?: boolean;
+  street?: boolean;
+  across?: boolean;
+  /** Integer PRNG seed for the street's variation; see lib/street-row.ts. */
+  seed?: number;
+}
 
 /**
  * A multi-floor building. `floors[0]` is the ground floor; subsequent

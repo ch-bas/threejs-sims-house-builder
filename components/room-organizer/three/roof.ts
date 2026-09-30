@@ -24,6 +24,7 @@ const shingleTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
 
 /** Eaves: how far the roof overhangs past the wall plane (metres). Mirrored by lib/dormers.ts. */
 const EAVE_OVERHANG = ROOF_EAVE_OVERHANG;
+const FLAT_ROOF_THICKNESS = 0.2;
 
 export const ROOF_LABELS: Record<RoofStyle, string> = {
   none: 'No roof',
@@ -39,6 +40,12 @@ export interface BuildRoofOptions {
   /** Y-position of the roof base (top of the highest floor). */
   baseY: number;
   spec: RoofSpec;
+  /**
+   * Multiplier on the peak height (default 1). Only the dormer-less
+   * neighbour roofs use it (#310): lib/dormers.ts fits dormers to the
+   * unscaled slope, so our own roof always builds at 1.
+   */
+  pitch?: number;
 }
 
 export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
@@ -73,6 +80,27 @@ export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
   }
 }
 
+/**
+ * Rise of the roof above its base for a footprint: the gable ridge or the
+ * hipped apex (a flat roof is its slab). Exported so chimneys and dormers
+ * built outside this module can find the slope.
+ */
+export function roofPeakHeight(style: RoofStyle, width: number, depth: number, pitch = 1): number {
+  const w = width + EAVE_OVERHANG * 2;
+  const d = depth + EAVE_OVERHANG * 2;
+  switch (style) {
+    case 'gable':
+      // The ridge runs along the longer axis; the span is the shorter one.
+      return Math.min(2.5, Math.min(w, d) * 0.5) * pitch;
+    case 'hipped':
+      return Math.min(2.2, Math.min(w, d) * 0.45) * pitch;
+    case 'flat':
+      return FLAT_ROOF_THICKNESS;
+    case 'none':
+      return 0;
+  }
+}
+
 export function removeRoof(scene: ThreeNS.Scene): void {
   scene.children
     .filter((obj) => obj.userData.type === ROOF_TAG)
@@ -88,7 +116,7 @@ function buildFlatRoof(
   { width, depth, baseY }: BuildRoofOptions,
   color: string
 ): ThreeNS.Object3D {
-  const thickness = 0.2;
+  const thickness = FLAT_ROOF_THICKNESS;
   const w = width + EAVE_OVERHANG * 2;
   const d = depth + EAVE_OVERHANG * 2;
   const material = buildShingleMaterial(THREE, color, w, d);
@@ -102,14 +130,14 @@ function buildFlatRoof(
 
 function buildGableRoof(
   THREE: ThreeModule,
-  { width, depth, baseY }: BuildRoofOptions,
+  { width, depth, baseY, pitch = 1 }: BuildRoofOptions,
   color: string
 ): ThreeNS.Object3D {
   // Ridge runs along the longer axis so the slopes shed water from the long sides.
   const ridgeAlongX = width >= depth;
   const length = (ridgeAlongX ? width : depth) + EAVE_OVERHANG * 2;
   const span = (ridgeAlongX ? depth : width) + EAVE_OVERHANG * 2;
-  const peakHeight = Math.min(2.5, span * 0.5);
+  const peakHeight = roofPeakHeight('gable', width, depth, pitch);
 
   // Triangle cross-section, extruded to `length`.
   const triangle = new THREE.Shape();
@@ -145,12 +173,12 @@ function buildGableRoof(
 
 function buildHippedRoof(
   THREE: ThreeModule,
-  { width, depth, baseY }: BuildRoofOptions,
+  { width, depth, baseY, pitch = 1 }: BuildRoofOptions,
   color: string
 ): ThreeNS.Object3D {
   const w = width + EAVE_OVERHANG * 2;
   const d = depth + EAVE_OVERHANG * 2;
-  const peakHeight = Math.min(2.2, Math.min(w, d) * 0.45);
+  const peakHeight = roofPeakHeight('hipped', width, depth, pitch);
   const halfW = w / 2;
   const halfD = d / 2;
 

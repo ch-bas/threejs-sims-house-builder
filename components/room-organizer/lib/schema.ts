@@ -1,6 +1,6 @@
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
-import { NEIGHBOUR_SIDES, isTerrainY } from './site';
+import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
 import { isEntranceSpec, isSillHeight } from './street';
@@ -9,7 +9,7 @@ import type {
   FloorPattern,
   FloorPlanFitMode,
   FurnitureItem,
-  NeighbourSide,
+  NeighbourFlag,
   RoofStyle,
   RoomLayout,
   SofaShape,
@@ -238,10 +238,16 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
   }
   if (v.entrance !== undefined && !isEntranceSpec(v.entrance)) return false;
   if (v.frontage !== undefined && v.frontage !== 'garden' && v.frontage !== 'pavement') return false;
+  // The street's houses are generated from these (#310): an unknown flag or
+  // a non-integer seed must not reach the generator.
   if (v.neighbours !== undefined) {
     if (!isPlainObject(v.neighbours)) return false;
-    for (const [side, present] of Object.entries(v.neighbours)) {
-      if (!NEIGHBOUR_SIDES.includes(side as NeighbourSide) || typeof present !== 'boolean') return false;
+    for (const [key, value] of Object.entries(v.neighbours)) {
+      if (key === 'seed') {
+        if (!isStreetSeed(value)) return false;
+      } else if (!NEIGHBOUR_FLAGS.includes(key as NeighbourFlag) || typeof value !== 'boolean') {
+        return false;
+      }
     }
   }
 
