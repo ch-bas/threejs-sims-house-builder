@@ -4,7 +4,7 @@ import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { hasCollisions } from '../lib/geometry';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
-import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
+import { ENTRANCE_WALL_ID, entranceGeometry, entranceKeepOut, entranceWallCut, type EntranceBuilding } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
@@ -124,6 +124,12 @@ export function useSceneEffects({
   // base (#202). The structural effects are keyed on narrow signatures, not
   // `layout.floors` identity, so they need this one too.
   const storeyHeightsKey = layout.floors.map((floor) => floor.height ?? '').join(',');
+  // What the porch keep-out is fitted to (#285) — the effects key on this
+  // rather than the whole layout.
+  const entranceBuilding = useMemo<EntranceBuilding>(
+    () => ({ width: layout.width, height: layout.height, terrain: layout.terrain, entrance: layout.entrance, floors: layout.floors }),
+    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors]
+  );
 
   // Serialized signatures of exactly the item-derived inputs the structural
   // effects consume. `layout.floors` gets a new identity on every item action,
@@ -355,7 +361,7 @@ export function useSceneEffects({
       for (const item of floor.items) {
         if (!item.position) continue;
 
-        const collision = hasCollisions(item, floor.items, layout.width, layout.height);
+        const collision = hasCollisions(item, floor.items, layout.width, layout.height, entranceKeepOut(entranceBuilding, index));
         // Stairs climb to the floor above and openings are fitted into the
         // storey, so the mesh matches the hole cut for it (#202, #277).
         const group = createFurnitureModel(THREE, itemForStorey(item, floor), collision);
@@ -386,7 +392,7 @@ export function useSceneEffects({
     requestShadowUpdate();
   }, [
     isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
-    layout.floors, layout.width, layout.height,
+    layout.floors, layout.width, layout.height, entranceBuilding,
     activeFloor, activeFloorIndex, view.showAllFloors, view.wallDisplay,
     // Not read in the body: createFurnitureModel picks the rigged person up
     // from the model cache, and this re-runs the build once it's filled.
@@ -418,6 +424,7 @@ export function useSceneEffects({
     if (outlineIds.size === 0) return;
 
     const itemsById = new Map(activeFloor.items.map((item) => [item.id, item]));
+    const keepOut = entranceKeepOut(entranceBuilding, activeFloorIndex);
     for (const group of scene.children) {
       if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
       if (group.userData.floorIndex !== activeFloorIndex) continue;
@@ -427,7 +434,7 @@ export function useSceneEffects({
       if (!item) continue;
 
       const isSelected = selectedItemId === id || extraSelectedIds.has(id);
-      const collision = hasCollisions(item, activeFloor.items, layout.width, layout.height);
+      const collision = hasCollisions(item, activeFloor.items, layout.width, layout.height, keepOut);
       const accent = isSelected
         ? selectedItemId === id
           ? collision
@@ -452,7 +459,7 @@ export function useSceneEffects({
     // selected item is left with no outline after a Show-All-Floors toggle.
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
-    activeFloor, activeFloorIndex, layout.width, layout.height,
+    activeFloor, activeFloorIndex, layout.width, layout.height, entranceBuilding,
     selectedItemId, extraSelectedIds, highlightedIds, view.showAllFloors,
   ]);
 
@@ -781,6 +788,7 @@ export function useSceneEffects({
     const canvas = canvas2DRef.current;
     if (!canvas) return undefined;
 
+    const keepOut = entranceKeepOut(entranceBuilding, activeFloorIndex);
     const paint = () => {
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
@@ -802,7 +810,7 @@ export function useSceneEffects({
         showMeasurements: view.showMeasurements,
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
-        hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height),
+        hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, keepOut),
       });
     };
 
@@ -834,7 +842,7 @@ export function useSceneEffects({
       observer.disconnect();
       removeRepaintHandler();
     };
-  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, selectedItemId, extraSelectedIds]);
+  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds]);
 }
 
 export { measurementDistance } from '../three/measurement';
