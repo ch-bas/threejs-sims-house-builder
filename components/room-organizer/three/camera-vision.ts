@@ -1,15 +1,29 @@
+import { fitOpeningToStorey } from '../lib/storeys';
+import { FLOOR_HEIGHT_METERS, type FurnitureItem } from '../lib/types';
 import { ROOM_OBJECT_TAGS } from './room-builder';
-import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 
 /**
  * Height (metres) at which the security camera body — and the apex of its
- * vision cone — sits above the floor. Shared with the camera builder so the
- * 3D light volume connects the lens to the floor wedge.
+ * vision cone — sits above the floor on a classic storey. The camera builder
+ * and the cone both read it through `cameraMountHeight`, so the 3D light
+ * volume connects the lens to the floor wedge.
  */
 export const CAMERA_MOUNT_HEIGHT = 2.3;
+/** The camera head sits this far below the top of its mount run (the item's height). */
+const CAMERA_HEAD_CLEARANCE = 0.1;
+
+/**
+ * Where a camera's body actually mounts: the default height, or lower under
+ * a low ceiling (#277). The catalog height doubles as the wall-mount run and
+ * the furniture effect fits it to the storey, so a flush camera on a 1.1 m
+ * loft no longer hangs 1.2 m above its ceiling.
+ */
+export function cameraMountHeight(item: Pick<FurnitureItem, 'height'>): number {
+  return Math.max(CAMERA_HEAD_CLEARANCE, Math.min(CAMERA_MOUNT_HEIGHT, item.height - CAMERA_HEAD_CLEARANCE));
+}
 
 /** Desperados-style cyan glow, matching the PlotCraft accent. */
 const CONE_COLOR = 0x38f0ff;
@@ -75,7 +89,8 @@ export function addVisionCones(
   scene: ThreeNS.Scene,
   items: readonly FurnitureItem[],
   yOffset = 0,
-  floorIndex = 0
+  floorIndex = 0,
+  storeyHeight = FLOOR_HEIGHT_METERS
 ): void {
   // Item ids on this floor a cone may alert on. Rebuilt with the cones on
   // every item add/remove, so it never goes stale; live positions are read
@@ -89,7 +104,10 @@ export function addVisionCones(
     if (!item.position || !item.hasVisionCone) continue;
     const range = item.visionRange ?? 7;
     const fov = ((item.visionFov ?? 70) * Math.PI) / 180;
-    const group = buildCone(THREE, range, fov, item.id, floorIndex, detectableIds);
+    // The light volume's apex follows the body, fitted to the storey like
+    // the camera mesh is (#277).
+    const apexY = cameraMountHeight(fitOpeningToStorey(item, storeyHeight));
+    const group = buildCone(THREE, range, fov, apexY, item.id, floorIndex, detectableIds);
     group.position.set(item.position.x, yOffset, item.position.z);
     group.rotation.y = item.rotation ?? 0;
     group.userData.type = ROOM_OBJECT_TAGS.CameraVision;
@@ -197,6 +215,7 @@ function buildCone(
   THREE: ThreeModule,
   range: number,
   fov: number,
+  apexY: number,
   ownerId: string,
   floorIndex: number,
   detectableIds: ReadonlySet<string>
@@ -225,7 +244,7 @@ function buildCone(
   group.add(wedge);
 
   // Faint volumetric light from the lens down to the floor arc.
-  const volumeGeo = fanGeometry(THREE, [0, CAMERA_MOUNT_HEIGHT, 0], arcPoints(range, fov, FLOOR_Y));
+  const volumeGeo = fanGeometry(THREE, [0, apexY, 0], arcPoints(range, fov, FLOOR_Y));
   const volumeMat = new THREE.MeshBasicMaterial({
     color: CONE_COLOR,
     transparent: true,

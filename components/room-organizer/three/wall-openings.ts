@@ -1,6 +1,5 @@
 import { stairwellRect, winderStairwellOutline } from '../lib/stairs';
-import { stairRise } from '../lib/storeys';
-import { windowSillHeight } from '../lib/street';
+import { fitOpeningToStorey, stairRise } from '../lib/storeys';
 import type { FloorLayout, FurnitureItem, InteriorWall, WallId } from '../lib/types';
 
 /** A rectangular hole in a floor plane (e.g. where stairs connect floors). */
@@ -302,19 +301,17 @@ function buildOpening(
   const clampedCenter = Math.max(-halfWallLength + half, Math.min(halfWallLength - half, centerAlongWall));
 
   // Windows open at their sill — the window's own `sillHeight` or the shared
-  // datum, read through the same helper the window mesh is built around, so
-  // hole and frame stay flush (#212, #204). A window too
-  // tall for the wall drops its sill rather than poking out the top.
-  const bottomFromFloor = classification.groundLevel
-    ? 0
-    : Math.max(0, Math.min(wallHeight - item.height, windowSillHeight(item)));
+  // datum — and anything too tall for the storey is fitted to it, through the
+  // same helper the door and window meshes are built around, so hole and
+  // frame stay flush on every storey height (#212, #204, #277).
+  const fitted = fitOpeningToStorey(item, wallHeight);
 
   return {
     id: item.id,
     centerAlongWall: clampedCenter,
-    bottomFromFloor,
+    bottomFromFloor: classification.groundLevel ? 0 : fitted.sill,
     width,
-    height: Math.min(item.height, wallHeight - bottomFromFloor - 0.05),
+    height: fitted.height,
   };
 }
 

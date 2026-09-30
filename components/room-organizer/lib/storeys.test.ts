@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { WINDOW_SILL_HEIGHT } from './constants';
 import {
+  CAMERA_CEILING_CLEARANCE,
   MAX_STOREY_HEIGHT,
   MIN_STOREY_HEIGHT,
   buildingHeight,
+  OPENING_HEAD_CLEARANCE,
   clampStoreyHeight,
+  fitOpeningToStorey,
   floorElevation,
   interiorWallHeight,
   isStoreyHeight,
@@ -55,5 +59,49 @@ describe('storey heights (#202)', () => {
     expect(clampStoreyHeight(99)).toBe(MAX_STOREY_HEIGHT);
     expect(clampStoreyHeight(Number.NaN)).toBe(FLOOR_HEIGHT_METERS);
     expect(storeyHeight({ height: 2.5 })).toBe(2.5);
+  });
+});
+
+describe('fitOpeningToStorey (#277)', () => {
+  const door = { type: 'door', height: 2.05 } as const;
+  const window = { type: 'window', height: 1.2 } as const;
+  const camera = { type: 'security-camera', height: 2.4 } as const;
+
+  it('leaves every catalog opening untouched on a classic 3 m storey', () => {
+    expect(fitOpeningToStorey(door, FLOOR_HEIGHT_METERS)).toEqual({ sill: 0, height: 2.05 });
+    expect(fitOpeningToStorey(window, FLOOR_HEIGHT_METERS)).toEqual({ sill: WINDOW_SILL_HEIGHT, height: 1.2 });
+    expect(fitOpeningToStorey({ ...window, sillHeight: 0.4 }, FLOOR_HEIGHT_METERS)).toEqual({ sill: 0.4, height: 1.2 });
+    expect(fitOpeningToStorey(camera, FLOOR_HEIGHT_METERS)).toEqual({ sill: 0, height: 2.4 });
+  });
+
+  it('cuts a door down to the head clearance on a 2 m storey', () => {
+    const fitted = fitOpeningToStorey(door, 2);
+    expect(fitted.sill).toBe(0);
+    expect(fitted.height).toBeCloseTo(2 - OPENING_HEAD_CLEARANCE);
+  });
+
+  it('drops a window sill first, then trims the frame, on a 2 m storey', () => {
+    // Hole and mesh were 0.80–1.95 m vs 0.90–2.10 m; both now read this.
+    const fitted = fitOpeningToStorey(window, 2);
+    expect(fitted.sill).toBeCloseTo(0.8);
+    expect(fitted.height).toBeCloseTo(1.15);
+    expect(fitted.sill + fitted.height).toBeCloseTo(2 - OPENING_HEAD_CLEARANCE);
+  });
+
+  it('puts a window on the floor of a 1.1 m loft knee wall', () => {
+    const fitted = fitOpeningToStorey(window, 1.1);
+    expect(fitted.sill).toBe(0);
+    expect(fitted.height).toBeCloseTo(1.05);
+    expect(fitOpeningToStorey(door, 1.1).height).toBeCloseTo(1.05);
+  });
+
+  it('shortens a wall camera mount run to the storey, with room for the head', () => {
+    expect(fitOpeningToStorey(camera, 1.1).sill).toBe(0);
+    expect(fitOpeningToStorey(camera, 1.1).height).toBeCloseTo(1.1 - CAMERA_CEILING_CLEARANCE);
+    expect(fitOpeningToStorey(camera, 2).height).toBeCloseTo(1.85);
+  });
+
+  it('never returns a negative height', () => {
+    expect(fitOpeningToStorey(door, 0.02).height).toBe(0);
   });
 });
