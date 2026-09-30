@@ -208,9 +208,15 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 ### UI / chrome
 
 - **Floating glass panels** overlaid on the viewport: `BuildToolsPanel`
-  (bottom-left, category picker + wall-draw + 2D/walkthrough toggles),
-  `CatalogStrip` (bottom-centre, drag-source tile row), `ModePanel`
-  (bottom-right, LIVE / BUILD / BUY mode and stats).
+  (bottom-left, category picker + wall-draw toggle), `CatalogStrip`
+  (bottom-centre, drag-source tile row), `ModePanel` (bottom-right,
+  EXPLORE / DESIGN / FURNISH mode and stats).
+- **Three real modes**: **DESIGN** shows the structure tools (walls,
+  doors/windows/stairs) and opens the sidebar's Build tab; **FURNISH**
+  shows the furniture categories and opens the Buy tab; **EXPLORE** is
+  the first-person walkthrough with the build HUD hidden. Switching mode
+  is how you reach the other half of the tools; a tab you pick afterwards
+  stays until the next mode change.
 - **Sidebar tabs** for the optional expanded sidebar: **Build / Buy /
   Style / Manage**. Sidebar is **collapsed by default** for full-viewport
   editing; toggled from the header's "◀ Show panels" button.
@@ -307,6 +313,7 @@ components/
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys
     │   ├── themes.ts                    Theme definitions + applyTheme
+    │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── furniture-sets.ts            Pre-built combos
     │   ├── surprise.ts                  Random one-shot floor populate
     │   ├── sounds.ts                    Web-Audio synth for UI cues
@@ -391,9 +398,9 @@ components/
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
         ├── sidebar-drawer.tsx           Full sidebar with 4-tab panel layout
         ├── sidebar-tabs.tsx             Build / Buy / Style / Manage tabs
-        ├── build-tools-panel.tsx        Bottom-left glass panel (categories + mode)
+        ├── build-tools-panel.tsx        Bottom-left glass panel (mode's categories + wall tool)
         ├── catalog-strip.tsx            Bottom-centre drag-source tile row
-        ├── mode-panel.tsx               Bottom-right LIVE / BUILD / BUY + stats
+        ├── mode-panel.tsx               Bottom-right EXPLORE / DESIGN / FURNISH + stats
         ├── item-context-popover.tsx     Floating per-item editor on selection
         ├── color-swatch-picker.tsx      Shared swatch + recent-colours picker
         ├── slider-row.tsx               Shared label + range + readout row

@@ -12,15 +12,18 @@ export interface ModePanelProps {
   onSurprise(): void;
 }
 
+// Each mode owns a slice of the HUD (#151): DESIGN the structure tools and
+// the Build tab, FURNISH the furniture tools and the Buy tab, EXPLORE the
+// first-person walkthrough with the build HUD out of the way.
 const MODES: ReadonlyArray<{
   key: GameMode;
   label: string;
   icon: PlotcraftIconName;
   hint: string;
 }> = [
-  { key: 'live',  label: 'EXPLORE', icon: 'live',  hint: 'Walkthrough mode' },
-  { key: 'build', label: 'DESIGN', icon: 'build', hint: 'Walls, windows, doors' },
-  { key: 'buy',   label: 'FURNISH', icon: 'buy',   hint: 'Furniture catalog' },
+  { key: 'live',  label: 'EXPLORE', icon: 'live',  hint: 'Explore — walk through the house in first person' },
+  { key: 'build', label: 'DESIGN',  icon: 'build', hint: 'Design — walls, doors, windows, stairs' },
+  { key: 'buy',   label: 'FURNISH', icon: 'buy',   hint: 'Furnish — the furniture catalog' },
 ];
 
 export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Element {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
@@ -33,6 +33,8 @@ import { TimeOfDayPanel } from './time-of-day-panel';
 import { WallsPanel } from './walls-panel';
 import type { AlignEdge, DistributeAxis } from '../lib/alignment';
 import type { CameraPreset, CatalogItem } from '../lib/types';
+
+const SIDEBAR_TAB_KEY = 'standalone-room-organizer-sidebar-tab';
 
 export interface SidebarDrawerProps {
   collapsed: boolean;
@@ -67,7 +69,7 @@ export function SidebarDrawer({
   placeCatalogItem,
   removeItem,
 }: SidebarDrawerProps): JSX.Element {
-  const { layout, activeFloor, actions, view, isReady, playCue, catalogQuery, setCatalogQuery } = useRoomEditor();
+  const { layout, activeFloor, actions, view, isReady, playCue, catalogQuery, setCatalogQuery, gameMode } = useRoomEditor();
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   const drawerRef = useRef<HTMLElement>(null);
   // The drawer is a modal overlay (a backdrop covers the canvas), so it
@@ -76,13 +78,24 @@ export function SidebarDrawer({
   useDialogFocus(!collapsed, drawerRef, { trap: true, onEscape: onCollapse });
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
     if (typeof window === 'undefined') return 'build';
-    const saved = localStorage.getItem('standalone-room-organizer-sidebar-tab');
+    const saved = localStorage.getItem(SIDEBAR_TAB_KEY);
     return (saved === 'build' || saved === 'buy' || saved === 'style' || saved === 'manage') ? saved : 'build';
   });
   const setSidebarTab = (tab: SidebarTab) => {
     setSidebarTabRaw(tab);
-    localStorage.setItem('standalone-room-organizer-sidebar-tab', tab);
+    localStorage.setItem(SIDEBAR_TAB_KEY, tab);
   };
+  // The tab follows a mode *change* — DESIGN opens Build, FURNISH opens Buy
+  // (#151) — but not the mount, so the saved tab still wins on reload, and a
+  // tab picked afterwards stays put until the mode changes again.
+  const lastModeRef = useRef(gameMode);
+  useEffect(() => {
+    if (lastModeRef.current === gameMode) return;
+    lastModeRef.current = gameMode;
+    if (gameMode === 'live') return;
+    setSidebarTabRaw(gameMode);
+    localStorage.setItem(SIDEBAR_TAB_KEY, gameMode);
+  }, [gameMode]);
 
   const handleFloorPlanUpload = async (file: File) => {
     try {

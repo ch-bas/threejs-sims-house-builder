@@ -5,6 +5,7 @@ import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
+import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
 import { generateRoomShape } from '../lib/room-shapes';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
@@ -29,6 +30,10 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
   const { layout, activeFloor, actions, view, toggle, setView, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
+  // Each mode shows its own half of the tools (#151): a pick from the other
+  // half falls back to this mode's first tool. Derived, not synced, so the
+  // pick survives a round trip through the other mode.
+  const buildTool = resolveToolForMode(gameMode, buildToolCategory);
 
   if (!isReady || error) return <></>;
 
@@ -101,7 +106,7 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
             </>
           )}
           <BuildToolsPanel
-            active={buildToolCategory}
+            active={buildTool}
             drawWallMode={view.drawWallMode}
             onSelect={(tool) => {
               setBuildToolCategory(tool);
@@ -129,7 +134,10 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
 
       {gameMode !== 'live' ? (
         <CatalogStrip
-          category={buildToolCategory === 'walls' ? 'all' : buildToolCategory}
+          // The strip follows the mode's tool, so DESIGN browses structure
+          // and FURNISH furniture; the wall tool browses the openings that
+          // go on walls rather than the whole catalog (#151).
+          category={catalogCategoryForTool(buildTool)}
           onAdd={(catalogItem) => {
             const id = placeCatalogItem(catalogItem);
             // '' = placement declined (budget confirm) or refused — nothing
@@ -146,6 +154,9 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
       <ModePanel
         onSetMode={(mode) => {
           setGameMode(mode);
+          // The wall tool lives in DESIGN only; don't leave the draw mode
+          // (and its paint/stamp panels) armed with no tile to disarm it (#151).
+          if (mode === 'buy' && view.drawWallMode) toggle('drawWallMode');
           if (mode === 'live') {
             // Walkthrough needs the 3D view — the hook requires `!view2D`, so
             // entering Live from the 2D top-down view is otherwise a silent
