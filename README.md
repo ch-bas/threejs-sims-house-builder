@@ -242,7 +242,13 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Auto-save** to `localStorage` (1.5s debounce). Legacy single-floor
   saves continue to load thanks to the schema migration.
 - **Saved-layouts library**: name, save, list, load (undoable), delete;
-  entry stores item and floor counts.
+  entry stores item and floor counts. Library, paste-board and History
+  rows carry a small top-down **plan thumbnail**, drawn on demand by the
+  2D renderer as each row scrolls into view — nothing is stored.
+- **Share-URL paste-board**: paste a share link a friend sent to keep
+  their house in a local gallery (name, floors, cost, thumbnail) instead
+  of replacing your own; load any of them (undoable) or remove them. Bad
+  or truncated links get an inline message.
 - **Export / import layout** as JSON (with structural validation).
 - **Inventory CSV** with a Floor column.
 - **PNG screenshot** of the current viewport.
@@ -253,8 +259,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   editing, on page close, and before anything replaces the whole house
   (share link, template, saved layout, import). Restorable — and
   undoable — from the library's History section, which names the house
-  each one belongs to. Restore points give way to saves when browser
-  storage runs short.
+  each one belongs to, and says what each one changed (items and floors
+  added or removed) relative to the one before. Restore points give way
+  to saves when browser storage runs short.
 
 ### Game-y
 
@@ -324,6 +331,7 @@ components/
     │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots)
     │   ├── restore-point.ts             Forced restore point before a whole-layout replacement
     │   ├── share.ts                     Share-URL encode/decode (base64url)
+    │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys
     │   ├── themes.ts                    Theme definitions + applyTheme
@@ -449,6 +457,7 @@ components/
         ├── shortcuts-panel.tsx
         ├── welcome-banner.tsx
         ├── minimap.tsx
+        ├── plan-thumb.tsx
         ├── achievements-panel.tsx
         ├── achievement-toast.tsx
         ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
