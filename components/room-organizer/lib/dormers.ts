@@ -131,6 +131,11 @@ export function isDormerSpec(value: unknown): value is DormerSpec {
 const clamp = (value: number, min: number, max: number, fallback: number) =>
   Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 
+/** Round a reachable limit inward to the centimetre, so a field never shows 3.5999999999999996. */
+export function toCentimetre(limit: number): number {
+  return Math.floor(limit * 100 + 1e-6) / 100;
+}
+
 /** Clamp a dormer's numbers into range (reducer-side, like room dimensions). */
 export function clampDormer(dormer: DormerSpec): DormerSpec {
   const next: DormerSpec = { ...dormer, width: clamp(dormer.width, MIN_DORMER_WIDTH, MAX_DORMER_WIDTH, 2) };
@@ -222,21 +227,17 @@ function localX(side: WallId, offset: number): number {
   return side === 'north' || side === 'east' ? offset : -offset;
 }
 
-/**
- * Fit a dormer onto its slope: the face stands `setback` behind the wall
- * line, its foot on the slope; the height is trimmed to clear the ridge, the
- * width and offset to stay inside the walls (and, on a hipped roof, inside
- * the narrowing face). Null when the side has no slope or nothing fits.
- */
-export function dormerFrame(
-  style: RoofStyle,
-  roomWidth: number,
-  roomDepth: number,
-  baseY: number,
-  dormer: DormerSpec
-): DormerFrame | null {
-  const slope = roofSlope(style, roomWidth, roomDepth, dormer.side);
-  if (!slope) return null;
+/** The vertical fit of a dormer on its slope, before its width is considered. */
+interface DormerRise {
+  faceZ: number;
+  backZ: number;
+  bottomY: number;
+  topY: number;
+  /** Half the width available to the face along the ridge, margins taken off. */
+  halfAvailable: number;
+}
+
+function dormerRise(slope: RoofSlope, baseY: number, dormer: DormerSpec): DormerRise | null {
   const surfaceY = (z: number) => baseY + slope.peak * (1 - Math.abs(z) / slope.halfRun);
 
   const setback = Math.min(dormer.setback ?? DEFAULT_DORMER_SETBACK, slope.wallHalfRun * 0.8);
@@ -252,8 +253,61 @@ export function dormerFrame(
   const along = slope.tapers
     ? Math.min(slope.wallHalfAlong, slope.halfAlong * (1 - (topY - baseY) / slope.peak))
     : slope.wallHalfAlong;
-  const halfAvailable = along - SIDE_MARGIN;
-  if (halfAvailable * 2 < MIN_DORMER_WIDTH) return null;
+  return { faceZ, backZ, bottomY, topY, halfAvailable: along - SIDE_MARGIN };
+}
+
+/**
+ * The offsets a dormer can actually take on its slope, given its (fitted)
+ * width — what `dormerFrame` clamps to. The Roof panel clamps its Offset
+ * field to this so the value shown is the value built (#281). Null when
+ * the side has no slope or the dormer doesn't fit at all.
+ */
+export function dormerOffsetRange(
+  style: RoofStyle,
+  roomWidth: number,
+  roomDepth: number,
+  baseY: number,
+  dormer: DormerSpec
+): [number, number] | null {
+  const slope = roofSlope(style, roomWidth, roomDepth, dormer.side);
+  const rise = slope && dormerRise(slope, baseY, dormer);
+  if (!rise || rise.halfAvailable * 2 < MIN_DORMER_WIDTH) return null;
+  const width = Math.min(dormer.width, rise.halfAvailable * 2);
+  const maxCenter = toCentimetre(rise.halfAvailable - width / 2);
+  return [-maxCenter, maxCenter];
+}
+
+/** The widest face this slope takes at the dormer's height (#281), or null when nothing fits. */
+export function dormerMaxWidth(
+  style: RoofStyle,
+  roomWidth: number,
+  roomDepth: number,
+  baseY: number,
+  dormer: DormerSpec
+): number | null {
+  const slope = roofSlope(style, roomWidth, roomDepth, dormer.side);
+  const rise = slope && dormerRise(slope, baseY, dormer);
+  if (!rise || rise.halfAvailable * 2 < MIN_DORMER_WIDTH) return null;
+  return Math.min(MAX_DORMER_WIDTH, toCentimetre(rise.halfAvailable * 2));
+}
+
+/**
+ * Fit a dormer onto its slope: the face stands `setback` behind the wall
+ * line, its foot on the slope; the height is trimmed to clear the ridge, the
+ * width and offset to stay inside the walls (and, on a hipped roof, inside
+ * the narrowing face). Null when the side has no slope or nothing fits.
+ */
+export function dormerFrame(
+  style: RoofStyle,
+  roomWidth: number,
+  roomDepth: number,
+  baseY: number,
+  dormer: DormerSpec
+): DormerFrame | null {
+  const slope = roofSlope(style, roomWidth, roomDepth, dormer.side);
+  const rise = slope && dormerRise(slope, baseY, dormer);
+  if (!rise || rise.halfAvailable * 2 < MIN_DORMER_WIDTH) return null;
+  const { faceZ, backZ, bottomY, topY, halfAvailable } = rise;
   const width = Math.min(dormer.width, halfAvailable * 2);
   const maxCenter = halfAvailable - width / 2;
   const centerX = Math.max(-maxCenter, Math.min(maxCenter, localX(dormer.side, dormer.offset ?? 0)));

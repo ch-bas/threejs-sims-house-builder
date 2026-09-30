@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { WINDOW_SILL_HEIGHT } from './constants';
 import {
+  STREET_TOLERANCE,
   clampEntrance,
   entranceBackWall,
   entranceFloorIndex,
   entranceGeometry,
+  entranceOffsetRange,
+  entranceProblem,
   entranceSteps,
   entranceWallCut,
   isEntranceSpec,
   isSillHeight,
+  sameEntrance,
   windowSillHeight,
 } from './street';
 
@@ -45,6 +49,46 @@ describe('recessed entrance (#204)', () => {
     expect(steps.rise * steps.count).toBeCloseTo(1.3);
   });
 
+  it('builds nothing when the street is above every floor, and says why (#274)', () => {
+    // The default "Sloped site" preset: one 3 m storey, street at 3.
+    const buried = { width: 8, depth: 8, floors: [{}], terrain: { frontY: 3, backY: 0 } };
+    expect(entranceFloorIndex(buried.floors, 3)).toBeNull();
+    expect(entranceGeometry({ width: 1.4, depth: 1.2 }, buried)).toBeNull();
+    expect(entranceProblem({ width: 1.4, depth: 1.2 }, buried)).toBe('no-street-storey');
+    // Half a metre of street above a single storey blocks the opening the same way.
+    expect(entranceGeometry({ width: 1.4, depth: 1.2 }, { ...buried, terrain: { frontY: 0.5, backY: 0 } })).toBeNull();
+    // A storey above the street hosts it, up the steps.
+    const g = entranceGeometry({ width: 1.4, depth: 1.2 }, { ...buried, floors: [{}, {}] })!;
+    expect(g.floorIndex).toBe(1);
+    expect(entranceProblem({ width: 1.4, depth: 1.2 }, { ...buried, floors: [{}, {}] })).toBeNull();
+  });
+
+  it('keeps the porch on the storey a kerb below the street instead of a flight up (#274)', () => {
+    const kerb = { ...flat, terrain: { frontY: 0.1, backY: 0 } };
+    expect(entranceFloorIndex(kerb.floors, 0.1)).toBe(0);
+    const g = entranceGeometry({ width: 1.4, depth: 1.2 }, kerb)!;
+    expect(g).toMatchObject({ floorIndex: 0, bottomY: 0, streetY: 0.1 });
+    expect(entranceSteps(g).count).toBe(0);
+    expect(entranceFloorIndex(flat.floors, STREET_TOLERANCE)).toBe(0);
+    expect(entranceFloorIndex(flat.floors, STREET_TOLERANCE + 0.05)).toBe(1);
+    // The nearest floor wins on either side of the street.
+    expect(entranceFloorIndex(flat.floors, 3 - STREET_TOLERANCE)).toBe(1);
+  });
+
+  it('exposes the offsets the recess can reach, and clamps to exactly them (#281)', () => {
+    expect(entranceOffsetRange({ width: 1.4 }, 6)).toEqual([-2, 2]);
+    const [, max] = entranceOffsetRange({ width: 1.4 }, 6);
+    const g = entranceGeometry({ width: 1.4, depth: 1.2, offset: 8 }, flat)!;
+    expect((g.x0 + g.x1) / 2).toBeCloseTo(max);
+    // A recess wider than the wall allows is fitted first, then has no play.
+    const [none0, none1] = entranceOffsetRange({ width: 4 }, 4);
+    expect(none0).toBeCloseTo(0);
+    expect(none1).toBeCloseTo(0);
+    expect(entranceProblem({ width: 1.4, depth: 1.2 }, { ...flat, width: 1.2 })).toBe('facade-too-narrow');
+    expect(entranceProblem({ width: 1.4, depth: 1.2 }, { ...flat, depth: 1.2 })).toBe('house-too-shallow');
+    expect(entranceProblem({ width: 1.4, depth: 1.2 }, { ...flat, floors: [{ height: 1.5 }] })).toBe('too-low');
+  });
+
   it('fits the recess inside the facade and the house', () => {
     const g = entranceGeometry({ width: 4, depth: 3, offset: 10 }, { ...flat, width: 3, depth: 3.5 })!;
     expect(g.x0).toBeGreaterThanOrEqual(-1.5 + 0.3 - 1e-9);
@@ -77,5 +121,14 @@ describe('recessed entrance (#204)', () => {
     expect(isEntranceSpec({ width: 1.4 })).toBe(false);
     expect(isEntranceSpec('porch')).toBe(false);
     expect(clampEntrance({ width: 99, depth: -1, height: Number.NaN })).toEqual({ width: 4, depth: 0.3, height: 2.4 });
+  });
+
+  it('keeps the deleted-door flag through validation, clamping and comparison (#273)', () => {
+    expect(isEntranceSpec({ width: 1.4, depth: 1.2, door: false })).toBe(true);
+    expect(isEntranceSpec({ width: 1.4, depth: 1.2, door: true })).toBe(false);
+    expect(clampEntrance({ width: 1.4, depth: 1.2, door: false })).toEqual({ width: 1.4, depth: 1.2, door: false });
+    expect(sameEntrance({ width: 1.4, depth: 1.2 }, { width: 1.4, depth: 1.2 })).toBe(true);
+    expect(sameEntrance({ width: 1.4, depth: 1.2 }, { width: 1.4, depth: 1.2, door: false })).toBe(false);
+    expect(sameEntrance({ width: 1.4, depth: 1.2, offset: 0 }, { width: 1.4, depth: 1.2 })).toBe(false);
   });
 });

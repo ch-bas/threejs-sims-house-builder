@@ -4,15 +4,19 @@ import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import { clampTerrainY } from '../lib/site';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
-import { clampStoreyHeight } from '../lib/storeys';
+import { clampStoreyHeight, storeyHeight } from '../lib/storeys';
 import {
   ENTRANCE_DOOR_ID,
+  ENTRANCE_LIMITS,
   ENTRANCE_WALL_ID,
   MAX_SILL_HEIGHT,
   MIN_SILL_HEIGHT,
   clampEntrance,
   entranceBackWall,
+  entranceFloorIndex,
   entranceGeometry,
+  sameEntrance,
+  streetLevel,
 } from '../lib/street';
 import type {
   CatalogItem,
@@ -144,10 +148,30 @@ const ENTRANCE_RESYNC_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
   'reorderFloor',
 ]);
 
+/**
+ * Actions through which the user can delete the porch door. When one of
+ * them takes the door away, that intent is recorded on the entrance, so a
+ * later re-fit doesn't bring the door back; a re-fit that removes the door
+ * itself (a momentarily unbuildable recess, a removed storey) leaves the
+ * flag alone and re-creates the door once the recess is back (#273).
+ */
+const DOOR_REMOVAL_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set(['removeItem', 'replaceItems', 'clearItems']);
+
 export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
   const next = reduceLayout(state, action);
-  if (next === state || !next.layout.entrance || !ENTRANCE_RESYNC_ACTIONS.has(action.type)) return next;
-  return { ...next, layout: syncEntrance(next.layout, next.layout.entrance) };
+  const entrance = next.layout.entrance;
+  if (next === state || !entrance) return next;
+  if (DOOR_REMOVAL_ACTIONS.has(action.type) && entrance.door === undefined) {
+    if (findEntranceDoor(state.layout.floors) && !findEntranceDoor(next.layout.floors)) {
+      return { ...next, layout: { ...next.layout, entrance: { ...entrance, door: false } } };
+    }
+    return next;
+  }
+  if (!ENTRANCE_RESYNC_ACTIONS.has(action.type)) return next;
+  // The pre-action layout is the fallback for the door and the wall's
+  // colour: removeFloor takes the street storey away with them on it.
+  const layout = syncEntrance(next.layout, entrance, state.layout);
+  return layout === next.layout ? next : { ...next, layout };
 }
 
 function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
@@ -160,9 +184,15 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // on the next load, and the fallback layout then autosaves over the
     // user's house (#113).
     case 'setWidth':
-      return withLayout(state, (layout) => ({ ...layout, width: clampRoomDimension(action.width) }));
+      return withLayout(state, (layout) => {
+        const width = clampRoomDimension(action.width);
+        return width === layout.width ? layout : { ...layout, width };
+      });
     case 'setHeight':
-      return withLayout(state, (layout) => ({ ...layout, height: clampRoomDimension(action.height) }));
+      return withLayout(state, (layout) => {
+        const height = clampRoomDimension(action.height);
+        return height === layout.height ? layout : { ...layout, height };
+      });
 
     // -- site (#202) -------------------------------------------------------
     // Clamped here too, so an out-of-range slope can't reach the save and
@@ -174,7 +204,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           const { terrain: _flat, ...rest } = layout;
           return rest;
         }
-        return { ...layout, terrain: clampTerrain(action.terrain) };
+        const terrain = clampTerrain(action.terrain);
+        // A re-typed value keeps identity: no undo entry, no autosave (#279).
+        if (layout.terrain?.frontY === terrain.frontY && layout.terrain.backY === terrain.backY) return layout;
+        return { ...layout, terrain };
       });
     // A recessed entrance (#204) owns an interior wall across the back of the
     // recess and, when first added, an ordinary door on it. Both follow the
@@ -218,7 +251,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           return rest;
         }
         const height = clampStoreyHeight(action.height);
-        return floor.height === height ? floor : { ...floor, height };
+        // Re-typing the height a floor already has — explicit or the 3 m
+        // default — is a no-op: storing an explicit default would add a
+        // Reset button and change the stair rise for nothing (#279).
+        return storeyHeight(floor) === height ? floor : { ...floor, height };
       });
     case 'setWallColor':
       return withActiveFloor(state, (floor) => {
@@ -602,14 +638,14 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // unique, keeping the reducer fully deterministic in its inputs — the
       // Date.now() stamp it used to mix in broke that purity for no extra
       // collision protection (#122).
-      const clonedItems: FurnitureItem[] = source.items.map((item, idx) => ({
-        ...item,
-        id: `${item.type}-${action.idSuffix}-${idx}`,
-      }));
-      const clonedWalls: InteriorWall[] | undefined = source.interiorWalls?.map((wall, idx) => ({
-        ...wall,
-        id: `wall-${action.idSuffix}-${idx}`,
-      }));
+      // The porch's back wall and door belong to the street storey only;
+      // cloned under fresh ids they would outlive every re-fit (#273).
+      const clonedItems: FurnitureItem[] = source.items
+        .filter((item) => item.id !== ENTRANCE_DOOR_ID)
+        .map((item, idx) => ({ ...item, id: `${item.type}-${action.idSuffix}-${idx}` }));
+      const clonedWalls: InteriorWall[] | undefined = source.interiorWalls
+        ?.filter((wall) => wall.id !== ENTRANCE_WALL_ID)
+        .map((wall, idx) => ({ ...wall, id: `wall-${action.idSuffix}-${idx}` }));
       const floor: FloorLayout = {
         ...source,
         id: action.newId,
@@ -769,24 +805,89 @@ function normaliseLayout(layout: RoomLayout): RoomLayout {
   };
 }
 
+function findEntranceDoor(floors: readonly FloorLayout[]): FurnitureItem | undefined {
+  for (const floor of floors) {
+    const door = floor.items.find((item) => item.id === ENTRANCE_DOOR_ID);
+    if (door) return door;
+  }
+  return undefined;
+}
+
+function catalogEntranceDoor(): FurnitureItem | undefined {
+  const catalogDoor = FURNITURE_CATALOG.find((item) => item.type === 'door');
+  return catalogDoor && { ...catalogDoor, id: ENTRANCE_DOOR_ID, locked: true };
+}
+
+function findEntranceWall(floors: readonly FloorLayout[]): InteriorWall | undefined {
+  for (const floor of floors) {
+    const wall = floor.interiorWalls?.find((wall) => wall.id === ENTRANCE_WALL_ID);
+    if (wall) return wall;
+  }
+  return undefined;
+}
+
+function sameWall(a: InteriorWall, b: InteriorWall): boolean {
+  return a.id === b.id && a.x1 === b.x1 && a.z1 === b.z1 && a.x2 === b.x2 && a.z2 === b.z2 && a.color === b.color;
+}
+
+function sameItem(a: FurnitureItem, b: FurnitureItem): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof FurnitureItem>;
+  for (const key of keys) {
+    if (key === 'position') {
+      if (a.position?.x !== b.position?.x || a.position?.z !== b.position?.z) return false;
+    } else if (a[key] !== b[key]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Put the entrance's wall and door on one floor (or take them off it),
+ * keeping the floor's identity when it already holds exactly that (#279).
+ */
+function syncEntranceFloor(floor: FloorLayout, wall: InteriorWall | null, door: FurnitureItem | null): FloorLayout {
+  let next = floor;
+  const currentWall = floor.interiorWalls?.find((w) => w.id === ENTRANCE_WALL_ID);
+  if (wall ? !currentWall || !sameWall(currentWall, wall) : currentWall) {
+    const others = (floor.interiorWalls ?? []).filter((w) => w.id !== ENTRANCE_WALL_ID);
+    next = { ...next, interiorWalls: wall ? [...others, wall] : others };
+  }
+  const currentDoor = floor.items.find((item) => item.id === ENTRANCE_DOOR_ID);
+  if (door ? !currentDoor || !sameItem(currentDoor, door) : currentDoor) {
+    const others = floor.items.filter((item) => item.id !== ENTRANCE_DOOR_ID);
+    next = { ...next, items: door ? [...others, door] : others };
+  }
+  return next;
+}
+
 /**
  * Apply an entrance change and keep its back wall and door in step: the wall
- * always spans the recess on the street storey; the door is created with the
- * entrance and afterwards only re-centred (a user who deleted it keeps it
- * deleted). Removing the entrance removes both.
+ * always spans the recess on the street storey, keeping its painted colour;
+ * the door is created whenever the recess can be built and the user hasn't
+ * deleted it (`entrance.door === false`), otherwise only re-centred. Both
+ * are looked up in `previous` too, so a storey removed from under them
+ * doesn't lose them (#273). Removing the entrance removes both. A sync that
+ * changes nothing returns `layout` itself, floors included (#279).
  */
-function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null): RoomLayout {
-  const entrance = requested === null ? null : clampEntrance(requested);
-  if (entrance === null && layout.entrance === undefined) return layout;
-  const hadEntrance = layout.entrance !== undefined;
-  let door = layout.floors.flatMap((floor) => floor.items).find((item) => item.id === ENTRANCE_DOOR_ID);
-  const floors = layout.floors.map((floor) => {
-    const next: FloorLayout = { ...floor, items: floor.items.filter((item) => item.id !== ENTRANCE_DOOR_ID) };
-    if (floor.interiorWalls) next.interiorWalls = floor.interiorWalls.filter((wall) => wall.id !== ENTRANCE_WALL_ID);
-    return next;
-  });
-  const { entrance: _old, ...rest } = layout;
-  if (entrance === null) return { ...rest, floors };
+function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previous: RoomLayout = layout): RoomLayout {
+  if (requested === null) {
+    if (layout.entrance === undefined) return layout;
+    const { entrance: _old, ...rest } = layout;
+    return { ...rest, floors: layout.floors.map((floor) => syncEntranceFloor(floor, null, null)) };
+  }
+  const entrance = clampEntrance(requested);
+  // The deleted-door flag is the reducer's own record: a panel re-sending
+  // the spec without it must not resurrect the door.
+  if (layout.entrance?.door === false) entrance.door = false;
+  const streetIndex = entranceFloorIndex(layout.floors, streetLevel(layout.terrain, layout.height));
+  // The back wall exists on the street storey only, so a porch must not
+  // reach into the storey above it (#275) — the spec is clamped, not just
+  // the geometry, so the value survives saves and share links.
+  if (entrance.height !== undefined && streetIndex !== null) {
+    const storey = storeyHeight(layout.floors[streetIndex]);
+    entrance.height = Math.max(ENTRANCE_LIMITS.height[0], Math.min(entrance.height, storey));
+  }
 
   const geometry = entranceGeometry(entrance, {
     width: layout.width,
@@ -794,21 +895,27 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null): RoomL
     floors: layout.floors,
     terrain: layout.terrain,
   });
+  let wall: InteriorWall | null = null;
+  let door: FurnitureItem | null = null;
   if (geometry) {
-    const target = floors[geometry.floorIndex]!;
-    target.interiorWalls = [...(target.interiorWalls ?? []), { id: ENTRANCE_WALL_ID, ...entranceBackWall(geometry) }];
-    if (!door && !hadEntrance) {
-      const catalogDoor = FURNITURE_CATALOG.find((item) => item.type === 'door');
-      if (catalogDoor) door = { ...catalogDoor, id: ENTRANCE_DOOR_ID, locked: true, rotation: 0 };
-    }
-    if (door) {
-      target.items = [
-        ...target.items,
-        { ...door, position: { x: (geometry.x0 + geometry.x1) / 2, z: geometry.backZ }, rotation: 0 },
-      ];
+    const existingWall = findEntranceWall(layout.floors) ?? findEntranceWall(previous.floors);
+    wall = { id: ENTRANCE_WALL_ID, ...entranceBackWall(geometry) };
+    if (existingWall?.color !== undefined) wall.color = existingWall.color;
+    if (entrance.door !== false) {
+      const existing = findEntranceDoor(layout.floors) ?? findEntranceDoor(previous.floors) ?? catalogEntranceDoor();
+      if (existing) door = { ...existing, position: { x: (geometry.x0 + geometry.x1) / 2, z: geometry.backZ }, rotation: 0 };
     }
   }
-  return { ...rest, entrance, floors };
+
+  let changed = false;
+  const floors = layout.floors.map((floor, index) => {
+    const onStreet = geometry !== null && index === geometry.floorIndex;
+    const next = syncEntranceFloor(floor, onStreet ? wall : null, onStreet ? door : null);
+    if (next !== floor) changed = true;
+    return next;
+  });
+  if (!changed && layout.entrance !== undefined && sameEntrance(layout.entrance, entrance)) return layout;
+  return { ...layout, entrance, floors: changed ? floors : layout.floors };
 }
 
 function clampTerrain(terrain: TerrainSpec): TerrainSpec {

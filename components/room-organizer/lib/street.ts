@@ -1,4 +1,5 @@
 import { WINDOW_SILL_HEIGHT } from './constants';
+import { toCentimetre } from './dormers';
 import { groundHeightAt } from './site';
 import { floorElevation, storeyHeight } from './storeys';
 import type { EntranceSpec, FloorLayout, FurnitureItem, TerrainSpec } from './types';
@@ -44,8 +45,16 @@ const DEFAULT_ENTRANCE_HEIGHT = 2.4;
 /** The recess keeps this much front wall either side, and this much house behind it. */
 const MIN_PIER = 0.3;
 const MIN_HOUSE_BEHIND = 1;
+/** A porch lower than this isn't a doorway. */
+const MIN_PORCH_HEIGHT = 1.8;
 const STEP_RISE = 0.18;
 const STEP_GOING = 0.28;
+/**
+ * A storey floor this close to the street hosts the porch even when it is
+ * a little below it — a kerb or threshold step down — rather than sending
+ * the entrance a whole storey up the steps (#274).
+ */
+export const STREET_TOLERANCE = 0.25;
 
 /** The interior wall across the back of the recess, and the door on it. */
 export const ENTRANCE_WALL_ID = 'entrance-back';
@@ -60,6 +69,7 @@ export function isEntranceSpec(value: unknown): value is EntranceSpec {
     const [min, max] = ENTRANCE_LIMITS[key];
     return typeof n === 'number' && Number.isFinite(n) && n >= min && n <= max;
   };
+  if (v.door !== undefined && v.door !== false) return false;
   return within('width', false) && within('depth', false) && within('height', true) && within('offset', true);
 }
 
@@ -74,7 +84,13 @@ export function clampEntrance(entrance: EntranceSpec): EntranceSpec {
   };
   if (entrance.offset !== undefined) next.offset = clamp('offset', entrance.offset, 0);
   if (entrance.height !== undefined) next.height = clamp('height', entrance.height, DEFAULT_ENTRANCE_HEIGHT);
+  if (entrance.door === false) next.door = false;
   return next;
+}
+
+/** Field-by-field equality, so a re-typed value can keep state identity (#279). */
+export function sameEntrance(a: EntranceSpec, b: EntranceSpec): boolean {
+  return a.width === b.width && a.depth === b.depth && a.offset === b.offset && a.height === b.height && a.door === b.door;
 }
 
 /** Street level at the front wall: the terrain's front height, else 0. */
@@ -83,14 +99,27 @@ export function streetLevel(terrain: TerrainSpec | undefined, roomDepth: number)
 }
 
 /**
- * The storey the entrance opens onto: the lowest one whose floor is at or
- * above the street, so on a hill the porch skips a basement below the road.
+ * The storey the entrance opens onto: the one whose floor is within
+ * STREET_TOLERANCE of the street, else the lowest whose floor is above it
+ * (on a hill the porch skips a basement below the road and climbs steps).
+ * Null when every floor is below the street — the house is buried at the
+ * front and no storey can host a porch (#274).
  */
-export function entranceFloorIndex(floors: readonly Pick<FloorLayout, 'height'>[], streetY: number): number {
+export function entranceFloorIndex(floors: readonly Pick<FloorLayout, 'height'>[], streetY: number): number | null {
+  let nearest: number | null = null;
+  let nearestGap = Number.POSITIVE_INFINITY;
   for (let i = 0; i < floors.length; i++) {
-    if (floorElevation(floors, i) >= streetY - 0.01) return i;
+    const gap = Math.abs(floorElevation(floors, i) - streetY);
+    if (gap < nearestGap) {
+      nearest = i;
+      nearestGap = gap;
+    }
   }
-  return floors.length - 1;
+  if (nearest !== null && nearestGap <= STREET_TOLERANCE) return nearest;
+  for (let i = 0; i < floors.length; i++) {
+    if (floorElevation(floors, i) > streetY) return i;
+  }
+  return null;
 }
 
 export interface EntranceGeometry {
@@ -114,28 +143,75 @@ export interface EntranceContext {
   terrain?: TerrainSpec;
 }
 
+/** Why a recess can't be built; the Site panel shows the label (#274, #281). */
+export type EntranceProblem = 'facade-too-narrow' | 'house-too-shallow' | 'no-street-storey' | 'too-low';
+
+export const ENTRANCE_PROBLEM_LABELS: Record<EntranceProblem, string> = {
+  'facade-too-narrow': "The recess doesn't fit on this front wall — widen the house.",
+  'house-too-shallow': "The recess doesn't fit in this house — deepen the house.",
+  'no-street-storey': 'No storey at street level — lower the street or add a floor above it.',
+  'too-low': 'The storey at street level is too low for a porch.',
+};
+
+/** The recess width the front wall can take: the spec's, trimmed to leave a pier either side. */
+function fittedWidth(entrance: Pick<EntranceSpec, 'width'>, roomWidth: number): number {
+  return Math.min(entrance.width, roomWidth - MIN_PIER * 2);
+}
+
+/** How far off-centre the (fitted) recess can go before it eats a pier. */
+function maxEntranceCenter(entrance: Pick<EntranceSpec, 'width'>, roomWidth: number): number {
+  return Math.max(0, roomWidth / 2 - MIN_PIER - fittedWidth(entrance, roomWidth) / 2);
+}
+
 /**
- * Where the recess actually goes, fitted into the footprint: it keeps a pier
- * of front wall either side and a metre of house behind it, and its soffit
- * never rises above the building.
+ * The offsets the recess can actually take on this front wall, given its
+ * (fitted) width. The Site panel clamps its Offset field to this so the
+ * value shown is the value built (#281).
  */
-export function entranceGeometry(entrance: EntranceSpec, ctx: EntranceContext): EntranceGeometry | null {
-  const halfW = ctx.width / 2;
-  const width = Math.min(entrance.width, ctx.width - MIN_PIER * 2);
+export function entranceOffsetRange(entrance: Pick<EntranceSpec, 'width'>, roomWidth: number): [number, number] {
+  const maxCenter = toCentimetre(maxEntranceCenter(entrance, roomWidth));
+  return [-maxCenter, maxCenter];
+}
+
+function fitEntrance(
+  entrance: EntranceSpec,
+  ctx: EntranceContext
+): { geometry: EntranceGeometry; problem: null } | { geometry: null; problem: EntranceProblem } {
+  const width = fittedWidth(entrance, ctx.width);
   const depth = Math.min(entrance.depth, ctx.depth - MIN_HOUSE_BEHIND);
-  if (width < ENTRANCE_LIMITS.width[0] - 1e-9 || depth < ENTRANCE_LIMITS.depth[0] - 1e-9) return null;
-  const maxCenter = halfW - MIN_PIER - width / 2;
+  if (width < ENTRANCE_LIMITS.width[0] - 1e-9) return { geometry: null, problem: 'facade-too-narrow' };
+  if (depth < ENTRANCE_LIMITS.depth[0] - 1e-9) return { geometry: null, problem: 'house-too-shallow' };
+  const maxCenter = maxEntranceCenter(entrance, ctx.width);
   const center = Math.max(-maxCenter, Math.min(maxCenter, entrance.offset ?? 0));
 
   const streetY = streetLevel(ctx.terrain, ctx.depth);
   const floorIndex = entranceFloorIndex(ctx.floors, streetY);
+  if (floorIndex === null) return { geometry: null, problem: 'no-street-storey' };
   const bottomY = floorElevation(ctx.floors, floorIndex);
   const eaves = floorElevation(ctx.floors, ctx.floors.length);
   const topY = Math.min(bottomY + (entrance.height ?? DEFAULT_ENTRANCE_HEIGHT), eaves - 0.05);
-  if (topY - bottomY < 1.8) return null;
+  if (topY - bottomY < MIN_PORCH_HEIGHT) return { geometry: null, problem: 'too-low' };
 
   const frontZ = -ctx.depth / 2;
-  return { floorIndex, x0: center - width / 2, x1: center + width / 2, frontZ, backZ: frontZ + depth, bottomY, topY, streetY };
+  return {
+    geometry: { floorIndex, x0: center - width / 2, x1: center + width / 2, frontZ, backZ: frontZ + depth, bottomY, topY, streetY },
+    problem: null,
+  };
+}
+
+/**
+ * Where the recess actually goes, fitted into the footprint: it keeps a pier
+ * of front wall either side and a metre of house behind it, and its soffit
+ * never rises above the building. Null when it can't be built; see
+ * `entranceProblem` for why.
+ */
+export function entranceGeometry(entrance: EntranceSpec, ctx: EntranceContext): EntranceGeometry | null {
+  return fitEntrance(entrance, ctx).geometry;
+}
+
+/** Why `entranceGeometry` is null for this spec, or null when it builds. */
+export function entranceProblem(entrance: EntranceSpec, ctx: EntranceContext): EntranceProblem | null {
+  return fitEntrance(entrance, ctx).problem;
 }
 
 /**
@@ -163,7 +239,10 @@ export function entranceWallCut(
   };
 }
 
-/** Steps from the street up to the porch floor: count, rise and going. */
+/**
+ * Steps from the street up to the porch floor: count, rise and going. None
+ * when the porch is level with the street, or a kerb below it (#274).
+ */
 export function entranceSteps(geometry: EntranceGeometry): { count: number; rise: number; going: number } {
   const total = geometry.bottomY - geometry.streetY;
   if (total < 0.1) return { count: 0, rise: 0, going: STEP_GOING };

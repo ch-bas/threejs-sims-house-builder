@@ -3,6 +3,8 @@ import {
   MAX_DORMER_WIDTH,
   clampDormer,
   dormerFrame,
+  dormerMaxWidth,
+  dormerOffsetRange,
   dormerOpeningRects,
   dormerPresetFields,
   dormerPresetOf,
@@ -69,6 +71,22 @@ describe('dormerFrame (#203)', () => {
     const gable = dormerFrame('gable', 10, 8, eaves, dormer({ width: 8 }))!;
     const hipped = dormerFrame('hipped', 10, 8, eaves, dormer({ width: 8 }))!;
     expect(hipped.width).toBeLessThan(gable.width);
+  });
+
+  it('exposes the offsets and width the slope can take, matching its own clamp (#281)', () => {
+    // 10 m ridge, 0.2 m margins, a 2 m face: ±(5 − 0.2 − 1).
+    expect(dormerOffsetRange('gable', 10, 8, eaves, dormer())).toEqual([-3.8, 3.8]);
+    const [, max] = dormerOffsetRange('gable', 10, 8, eaves, dormer())!;
+    const pushed = dormerFrame('gable', 10, 8, eaves, dormer({ offset: 30 }))!;
+    expect(pushed.centerX * Math.cos(pushed.rotationY)).toBeCloseTo(max);
+    expect(dormerMaxWidth('gable', 10, 8, eaves, dormer())).toBeCloseTo(8);
+    expect(dormerMaxWidth('gable', 5, 4, eaves, dormer())).toBeCloseTo(4.6);
+    // A hipped face narrows toward the apex, so it takes less.
+    expect(dormerMaxWidth('hipped', 10, 8, eaves, dormer())!).toBeLessThan(8);
+    // No slope, or nothing fits: no range either.
+    expect(dormerOffsetRange('gable', 10, 8, eaves, dormer({ side: 'east' }))).toBeNull();
+    expect(dormerOffsetRange('gable', 3, 1.2, eaves, dormer())).toBeNull();
+    expect(dormerMaxWidth('flat', 10, 8, eaves, dormer())).toBeNull();
   });
 
   it('builds nothing on a gable end, a flat roof, or a slope too low for a face', () => {

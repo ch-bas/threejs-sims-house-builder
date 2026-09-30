@@ -354,6 +354,8 @@ describe('layoutReducer — storey height (#202)', () => {
     expect(layoutReducer(state, { type: 'setStoreyHeight', height: null })).toBe(state);
     const set = layoutReducer(state, { type: 'setStoreyHeight', height: 2.5 });
     expect(layoutReducer(set, { type: 'setStoreyHeight', height: 2.5 })).toBe(set);
+    // Typing the 3 m default into a default floor stores nothing (#279).
+    expect(layoutReducer(state, { type: 'setStoreyHeight', height: 3 })).toBe(state);
   });
 
   it('duplicating a floor keeps its storey height', () => {
@@ -416,6 +418,91 @@ describe('layoutReducer — entrance, frontage, sills (#204)', () => {
     expect(entranceWall(state, 0)).toBeUndefined();
     expect(entranceDoor(state, 0)).toBeUndefined();
     expect(layoutReducer(state, { type: 'setEntrance', entrance: null })).toBe(state);
+  });
+
+  it('brings the door back once a momentarily unbuildable recess is buildable again (#273)', () => {
+    let state = layoutReducer(stateWith([], 1), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    // Typing "1.5" into Storey height passes through 1, where no porch fits.
+    state = layoutReducer(state, { type: 'setStoreyHeight', height: 1 });
+    expect(entranceWall(state, 0)).toBeUndefined();
+    expect(entranceDoor(state, 0)).toBeUndefined();
+    expect(state.layout.entrance?.door).toBeUndefined();
+    state = layoutReducer(state, { type: 'setStoreyHeight', height: 3 });
+    expect(entranceWall(state, 0)).toBeDefined();
+    expect(entranceDoor(state, 0)).toMatchObject({ type: 'door', locked: true, rotation: 0 });
+  });
+
+  it('keeps the door when the street storey is removed from under it (#273)', () => {
+    let state = layoutReducer(stateWith([], 2), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    state = layoutReducer(state, { type: 'setColor', id: 'entrance-door', color: '#123456' });
+    state = layoutReducer(state, { type: 'removeFloor', index: 0 });
+    expect(state.layout.floors).toHaveLength(1);
+    expect(entranceWall(state, 0)).toBeDefined();
+    expect(entranceDoor(state, 0)?.color).toBe('#123456');
+  });
+
+  it('records a deleted door as intent, so re-fits leave it deleted (#273)', () => {
+    let state = layoutReducer(stateWith([], 1), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    state = layoutReducer(state, { type: 'removeItem', id: 'entrance-door' });
+    expect(state.layout.entrance?.door).toBe(false);
+    state = layoutReducer(state, { type: 'setHeight', height: 12 });
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 2, depth: 1.2 } });
+    expect(entranceDoor(state, 0)).toBeUndefined();
+    expect(entranceWall(state, 0)).toBeDefined();
+    // Deleting any other item is not about the door.
+    const withChair = layoutReducer(layoutReducer(stateWith([], 1), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } }), {
+      type: 'addCatalogItem',
+      catalogItem: makeCatalogItem(),
+      id: 'chair-1',
+    });
+    expect(layoutReducer(withChair, { type: 'removeItem', id: 'chair-1' }).layout.entrance?.door).toBeUndefined();
+    // Turning the entrance off and on again starts afresh, door included.
+    state = layoutReducer(state, { type: 'setEntrance', entrance: null });
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    expect(entranceDoor(state, 0)).toBeDefined();
+  });
+
+  it('carries the back wall’s painted colour across re-fits (#273)', () => {
+    let state = layoutReducer(stateWith([], 1), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    state = layoutReducer(state, { type: 'setInteriorWallColor', id: 'entrance-back', color: '#abcdef' });
+    state = layoutReducer(state, { type: 'setWidth', width: 10 });
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 2, depth: 1.5 } });
+    expect(entranceWall(state, 0)).toMatchObject({ color: '#abcdef', x1: -1, x2: 1 });
+  });
+
+  it('duplicating the street storey clones neither the back wall nor the door (#273)', () => {
+    let state = layoutReducer(stateWith([makeItem({ id: 'sofa' })], 1), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    state = layoutReducer(state, { type: 'duplicateFloor', sourceIndex: 0, newId: 'copy', idSuffix: 'x' });
+    const copy = state.layout.floors[1]!;
+    expect(copy.items.map((i) => i.type)).toEqual(['chair']);
+    expect(copy.interiorWalls ?? []).toHaveLength(0);
+    expect(entranceDoor(state, 0)).toBeDefined();
+    expect(entranceWall(state, 0)).toBeDefined();
+  });
+
+  it('keeps state identity for no-op edits, and other floors’ identity for real ones (#279)', () => {
+    let state = layoutReducer(stateWith([], 2), { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    expect(layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } })).toBe(state);
+    state = layoutReducer(state, { type: 'setTerrain', terrain: { frontY: 0.1, backY: 0 } });
+    expect(layoutReducer(state, { type: 'setTerrain', terrain: { frontY: 0.1, backY: 0 } })).toBe(state);
+    expect(layoutReducer(state, { type: 'setWidth', width: state.layout.width })).toBe(state);
+    const upper = state.layout.floors[1];
+    const moved = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2, offset: 1 } });
+    expect(moved).not.toBe(state);
+    expect(moved.layout.floors[1]).toBe(upper);
+  });
+
+  it('clamps the porch height to the street storey (#275)', () => {
+    let state = stateWith([], 2);
+    state = layoutReducer(state, { type: 'setStoreyHeight', height: 2.5 });
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2, height: 4 } });
+    expect(state.layout.entrance?.height).toBe(2.5);
+    // A save with a taller porch is clamped on the first re-fit.
+    const imported: LayoutState = {
+      layout: makeLayout({ floors: [makeFloor({ id: 'a' }), makeFloor({ id: 'b' })], entrance: { width: 1.4, depth: 1.2, height: 4 } }),
+      activeFloorIndex: 0,
+    };
+    expect(layoutReducer(imported, { type: 'setWidth', width: 9 }).layout.entrance?.height).toBe(3);
   });
 
   it('switches frontage and drops the default', () => {
