@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { catalogKey } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
@@ -11,6 +12,8 @@ import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, CategoryMeta, FurnitureCategory } from '../lib/types';
 
 type FilterKey = 'all' | FurnitureCategory;
+
+const COLUMNS = 3;
 
 const COUNTS_BY_CATEGORY: ReadonlyMap<FurnitureCategory, number> = (() => {
   const counts = new Map<FurnitureCategory, number>();
@@ -48,6 +51,9 @@ export function FurnitureCatalogPanel({
     });
   }, [filter, query]);
 
+  // Keyboard placement (#168): one tile in the Tab order, arrows rove the grid.
+  const { gridRef, tileProps } = useRovingTiles(filtered.length, COLUMNS);
+
   return (
     <Card className="overflow-hidden">
       <CardHeader className="space-y-3 bg-gradient-to-b from-slate-50 to-transparent">
@@ -73,14 +79,19 @@ export function FurnitureCatalogPanel({
             Try a broader category or clear the search.
           </p>
         ) : (
-          <div className="grid grid-cols-3 gap-2 max-h-[460px] overflow-y-auto pr-1">
-            {filtered.map((item) => (
-              <CatalogTile key={catalogKey(item)} item={item} onAdd={onAdd} />
+          <div ref={gridRef} className="grid grid-cols-3 gap-2 max-h-[460px] overflow-y-auto pr-1">
+            {filtered.map((item, index) => (
+              <CatalogTile
+                key={catalogKey(item)}
+                item={item}
+                onAdd={onAdd}
+                roving={tileProps(index, () => onAdd(item))}
+              />
             ))}
           </div>
         )}
         <p className="text-[10px] text-muted-foreground mt-3 text-center">
-          Click to drop at centre · drag onto the 3D view to place precisely
+          Click to drop at centre · drag onto the 3D view to place precisely · Enter to place and position with the keyboard
         </p>
       </CardContent>
     </Card>
@@ -148,14 +159,16 @@ function CategoryButton({ active, icon, label, count, onClick }: CategoryButtonP
 interface CatalogTileProps {
   item: CatalogItem;
   onAdd(item: CatalogItem): void;
+  roving: RovingTileProps;
 }
 
-function CatalogTile({ item, onAdd }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, onAdd, roving }: CatalogTileProps): JSX.Element {
   return (
     <button
       type="button"
       onClick={() => onAdd(item)}
-      title={`${item.name} — drag onto the 3D view to place precisely, or click to drop at center`}
+      title={`${item.name} — drag onto the 3D view to place precisely, click to drop at center, or press Enter to place and position it with the keyboard`}
+      {...roving}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';

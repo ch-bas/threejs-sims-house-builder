@@ -11,6 +11,7 @@ import { useHistory } from './hooks/use-history';
 import { useImportExport } from './hooks/use-import-export';
 import { useItemDrag } from './hooks/use-item-drag';
 import { useItemPlacement } from './hooks/use-item-placement';
+import { useKeyboardPlacement } from './hooks/use-keyboard-placement';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
@@ -37,6 +38,7 @@ import { FloorPill } from './panels/floor-pill';
 import { HeaderStats } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
+import { PlacementHint } from './panels/placement-hint';
 import { SidebarDrawer } from './panels/sidebar-drawer';
 import { TouchModeToggle } from './panels/touch-mode-toggle';
 import { Viewport } from './panels/viewport';
@@ -583,6 +585,15 @@ export function RoomOrganizer(): JSX.Element {
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
 
+  // Keyboard placement (#168): Enter on a catalog tile places through the
+  // wrapped `placeCatalogItem` and keeps the item unlocked until Enter/Escape.
+  const {
+    placingId,
+    placeCatalogItem: placeFromCatalog,
+    confirmPlacement,
+    cancelPlacement,
+  } = useKeyboardPlacement({ layout, selectedItemId, actions, history, selectOnly, placeCatalogItem });
+
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
   // keyboard gate) are identical to a 3D drag.
@@ -852,8 +863,14 @@ export function RoomOrganizer(): JSX.Element {
       toggleExteriorWall: (id: string) => {
         actions.toggleExteriorWall(id as WallId);
       },
+      // Only while a keyboard placement is pending, so Enter/Escape otherwise
+      // keep their ordinary meaning (#168).
+      ...(placingId ? { confirmPlacement, cancelPlacement } : {}),
     }),
     [
+      placingId,
+      confirmPlacement,
+      cancelPlacement,
       removeItem,
       removeSelected,
       duplicateSelected,
@@ -1092,7 +1109,7 @@ export function RoomOrganizer(): JSX.Element {
           if (camera && controls) zoomCamera(camera, controls, direction);
         }}
         onFit={fitToRoom}
-        placeCatalogItem={placeCatalogItem}
+        placeCatalogItem={placeFromCatalog}
       />
 
       {/* Touch mode toggle — visible on mobile only */}
@@ -1100,6 +1117,9 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Welcome modal — auto-shows once, dismissible */}
       <WelcomeBanner />
+
+      {/* Keyboard-placement key hint (#168) */}
+      <PlacementHint active={placingId !== null} />
 
       {/* Achievement toast */}
       <AchievementToast
@@ -1117,7 +1137,7 @@ export function RoomOrganizer(): JSX.Element {
         onImport={handleImport}
         onExportGlb={handleExportGlb}
         onShareLink={handleShareLink}
-        placeCatalogItem={placeCatalogItem}
+        placeCatalogItem={placeFromCatalog}
         removeItem={removeItem}
       />
     </div>
