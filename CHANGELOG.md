@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.11.0] - 2026-09-30
+
+The **Real Streets hardening** milestone: a street of neighbours, and the recessed entrance, low storeys and winder stairs made solid.
+
+### Added
+- A street of neighbours. *Street* continues the row of houses along the street in both directions; *Across the road* adds a facing row. Every house is different — width, storeys, roof style and colour, brick or render, windows, bays, dormers, doors, chimneys — but the street is seeded, so a design always shows the same one, and *Shuffle street* rolls a new one (undoable). Houses sit on the ground under them on a sloped site, and the immediate neighbours still match the house's eaves so a terrace reads as one ([#310](https://github.com/ch-bas/threejs-sims-house-builder/issues/310))
+- The Site panel says why a recessed entrance can't be built ("No storey at street level…") instead of showing it as on with nothing rendered, and the entrance and dormer Offset and Width fields clamp to what actually fits ([#281](https://github.com/ch-bas/threejs-sims-house-builder/issues/281))
+
+### Fixed
+- The entrance door no longer vanishes for good when the recess is momentarily unbuildable (typing a storey height passes through values too low for it) or its storey is removed; duplicating a floor no longer clones a stray porch wall and door onto the copy; "Clear floor" and "Surprise me" keep the door ([#273](https://github.com/ch-bas/threejs-sims-house-builder/issues/273))
+- A recessed entrance is no longer built underground when no storey is at street level — the default sloped-site preset used to bury the porch behind the earth face ([#274](https://github.com/ch-bas/threejs-sims-house-builder/issues/274))
+- The porch back wall reaches the soffit on every storey height; on storeys under 2.8 m there was an open slot from the street into the house ([#275](https://github.com/ch-bas/threejs-sims-house-builder/issues/275))
+- Porch reveals and soffit no longer flicker against the front wall, and the top step no longer sits in the plinth ([#276](https://github.com/ch-bas/threejs-sims-house-builder/issues/276))
+- On low storeys, doors, windows and cameras fit inside the wall like their holes do, and the walkthrough eye stays under the ceiling — on a 2 m storey the door used to poke through it ([#277](https://github.com/ch-bas/threejs-sims-house-builder/issues/277))
+- Winder stairs stay valid at any size: a stair too shallow for its fan lays out straight instead of producing floating or backwards treads and a broken hole in the floor above ([#278](https://github.com/ch-bas/threejs-sims-house-builder/issues/278))
+- Retyping the same terrain or entrance value no longer adds an undo entry, and an entrance keystroke no longer rebuilds every floor's furniture ([#279](https://github.com/ch-bas/threejs-sims-house-builder/issues/279))
+- Neighbour windows are sized to each facade and skip rows below the ground line ([#280](https://github.com/ch-bas/threejs-sims-house-builder/issues/280))
+
 ## [1.10.1] - 2026-09-30
 
 The **Data safety & history** and **Responsive & mobile** milestones.
