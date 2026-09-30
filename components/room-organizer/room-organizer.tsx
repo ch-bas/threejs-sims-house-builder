@@ -108,6 +108,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   measurementMode: false,
   soundsEnabled: false,
   drawWallMode: false,
+  drawZoneMode: false,
   showHeatmap: false,
   showItemLabels: false,
   showNpcs: false,

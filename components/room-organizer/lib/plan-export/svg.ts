@@ -5,6 +5,7 @@
  * anchoring, same wall styling, same footprint rotation convention.
  */
 
+import { zoneArea } from '../zones';
 import {
   gridLinePositions,
   INTERIOR_WALL_THICKNESS_M,
@@ -81,6 +82,7 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
     `<rect width="${fmt(totalW)}" height="${fmt(totalH)}" fill="${theme.background}"/>`,
     `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeXml(floor.floorColor)}"/>`,
     renderGrid(layout, margin, scale, theme),
+    renderZones(floor, px, py, scale, theme),
     renderRoomOutline(layout, floor, margin, scale, theme),
     renderInteriorWalls(floor, px, py, scale, theme),
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
@@ -137,6 +139,36 @@ function renderRoomOutline(
     return `<line class="wall" x1="${fmt(edge.x1)}" y1="${fmt(edge.y1)}" x2="${fmt(edge.x2)}" y2="${fmt(edge.y2)}" ${style}/>`;
   });
   return lines.join('\n');
+}
+
+/**
+ * Room zones (#155) as tinted rects with the name and area along the top
+ * edge (the centre is where the furniture sits) — between the grid and the
+ * walls, like canvas-2d/render.ts paints them.
+ */
+function renderZones(
+  floor: FloorLayout,
+  px: (x: number) => string,
+  py: (z: number) => string,
+  scale: number,
+  theme: SvgPlanTheme
+): string {
+  const zones = floor.zones ?? [];
+  if (zones.length === 0) return '';
+  return zones
+    .map((zone) => {
+      const color = escapeXml(zone.color);
+      const cx = fmt(Number(px(zone.x)) + (zone.w * scale) / 2);
+      const top = fmt(Number(py(zone.z)) + 15);
+      return [
+        `<g class="zone">`,
+        `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"/>`,
+        `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}">${escapeXml(zone.name)}</text>`,
+        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}">${zoneArea(zone).toFixed(1)} m²</text>`,
+        `</g>`,
+      ].join('');
+    })
+    .join('\n');
 }
 
 function renderInteriorWalls(

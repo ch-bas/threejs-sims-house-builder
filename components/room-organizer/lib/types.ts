@@ -223,6 +223,22 @@ export interface InteriorWall {
   color?: string;
 }
 
+/**
+ * A named, coloured rectangle of a floor — "Bedroom", "Kitchen" — that the
+ * plan, the blueprint and the statistics panel measure and cost per room
+ * (#155); see lib/zones.ts. `x`/`z` is the north-west corner in world metres
+ * (room-centred, like item positions); `w`/`d` extend along +x / +z.
+ */
+export interface RoomZone {
+  id: string;
+  name: string;
+  color: string;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+
 export interface FloorLayout {
   id: string;
   name: string;
@@ -231,8 +247,10 @@ export interface FloorLayout {
   floorPattern?: FloorPattern;
   wallPattern?: WallPattern;
   wallColors?: Partial<Record<WallId, string>>;
-  hiddenWalls?: WallId[]; 
+  hiddenWalls?: WallId[];
   interiorWalls?: InteriorWall[];
+  /** Room zones drawn on this floor (#155). */
+  zones?: RoomZone[];
   /**
    * Floor-to-floor height in metres (#202) — a 2.5 m basement, a 1.1 m loft
    * knee wall. Absent means the classic `FLOOR_HEIGHT_METERS` storey; each
@@ -349,6 +367,8 @@ export interface ViewSettings {
   soundsEnabled: boolean;
   /** When true, clicking pairs of floor points draws an interior wall. */
   drawWallMode: boolean;
+  /** When true, dragging a rectangle on the 2D plan creates a room zone (#155). */
+  drawZoneMode: boolean;
   /** When true, the 2D view overlays a price-density heatmap. */
   showHeatmap: boolean;
   /** When true, every placed item has a name label hovering above it in 3D. */

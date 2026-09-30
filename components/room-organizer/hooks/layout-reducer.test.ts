@@ -1111,3 +1111,55 @@ describe('layoutReducer — persistent groups (#154)', () => {
     expect(next.layout.floors[1]!.items.every((item) => item.groupId === 'g1')).toBe(true);
   });
 });
+
+describe('layoutReducer — room zones (#155)', () => {
+  const bedroom = { id: 'z1', name: 'Bedroom', color: '#3b82f6', x: -4, z: -4, w: 3, d: 2.5 };
+  const withZone = () => layoutReducer(stateWith([]), { type: 'addZone', zone: bedroom });
+  const activeZones = (state: LayoutState) => state.layout.floors[state.activeFloorIndex]!.zones;
+
+  it('addZone appends to the active floor only', () => {
+    const state = layoutReducer(stateWith([], 2, 1), { type: 'addZone', zone: bedroom });
+    expect(state.layout.floors[1]!.zones).toEqual([bedroom]);
+    expect(state.layout.floors[0]!.zones).toBeUndefined();
+  });
+
+  it('addZone rounds and clamps the rectangle to the footprint, and refuses one that clamps away', () => {
+    // The fixture room is 8 × 8: the left edge clamps to −4, the right edge
+    // (−9.04 + 12 = 2.96) rounds to 3.
+    const state = layoutReducer(stateWith([]), {
+      type: 'addZone',
+      zone: { ...bedroom, x: -9.04, z: 1, w: 12, d: 1.26 },
+    });
+    expect(activeZones(state)).toEqual([{ ...bedroom, x: -4, z: 1, w: 7, d: 1.3 }]);
+    const initial = stateWith([]);
+    const outside = layoutReducer(initial, { type: 'addZone', zone: { ...bedroom, x: 6, w: 2 } });
+    expect(outside).toBe(initial);
+  });
+
+  it('addZone is a no-op (same identity) for a duplicate id or a corrupt rectangle', () => {
+    const state = withZone();
+    expect(layoutReducer(state, { type: 'addZone', zone: { ...bedroom, name: 'Again' } })).toBe(state);
+    expect(layoutReducer(state, { type: 'addZone', zone: { ...bedroom, id: 'z2', w: Number.NaN } })).toBe(state);
+  });
+
+  it('updateZone renames / recolours / re-fits, keeping identity when nothing changes', () => {
+    const state = withZone();
+    const renamed = layoutReducer(state, { type: 'updateZone', id: 'z1', patch: { name: 'Study', color: '#f59e0b' } });
+    expect(activeZones(renamed)).toEqual([{ ...bedroom, name: 'Study', color: '#f59e0b' }]);
+    expect(layoutReducer(renamed, { type: 'updateZone', id: 'z1', patch: { name: 'Study' } })).toBe(renamed);
+    // The rectangle is normalised like on add.
+    const moved = layoutReducer(renamed, { type: 'updateZone', id: 'z1', patch: { x: -20, w: 40 } });
+    expect(activeZones(moved)![0]).toMatchObject({ x: -4, w: 8 });
+    // Unknown id and a rectangle that would vanish are both refused.
+    expect(layoutReducer(renamed, { type: 'updateZone', id: 'nope', patch: { name: 'X' } })).toBe(renamed);
+    expect(layoutReducer(renamed, { type: 'updateZone', id: 'z1', patch: { w: 0 } })).toBe(renamed);
+  });
+
+  it('removeZone drops the zone, the field once empty, and is a no-op for an unknown id', () => {
+    const state = withZone();
+    const removed = layoutReducer(state, { type: 'removeZone', id: 'z1' });
+    expect(activeZones(removed)).toBeUndefined();
+    expect(layoutReducer(state, { type: 'removeZone', id: 'nope' })).toBe(state);
+    expect(layoutReducer(removed, { type: 'removeZone', id: 'z1' })).toBe(removed);
+  });
+});

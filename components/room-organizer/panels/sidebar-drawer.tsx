@@ -31,6 +31,7 @@ import { TemplatesPanel } from './templates-panel';
 import { ThemesPanel } from './themes-panel';
 import { TimeOfDayPanel } from './time-of-day-panel';
 import { WallsPanel } from './walls-panel';
+import { ZonesPanel } from './zones-panel';
 import type { AlignEdge, DistributeAxis } from '../lib/alignment';
 import type { CameraPreset, CatalogItem } from '../lib/types';
 
@@ -196,6 +197,8 @@ export function SidebarDrawer({
               />
 
               <WallsPanel />
+
+              <ZonesPanel />
 
               <RoofPanel />
 
