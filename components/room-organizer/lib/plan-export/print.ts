@@ -2,44 +2,94 @@
  * Print-to-scale plan export (#230): embeds the vector SVG plan (not a
  * raster) in a print-styled document with a title block and a declared
  * architectural scale, then calls print() — the browser's Save-as-PDF does
- * the rest. Follows the popup pattern of lib/blueprint.ts (which must stay
- * untouched — it owns the raster blueprint route).
+ * the rest. Follows the popup pattern of lib/blueprint.ts (which owns the
+ * raster blueprint route).
  */
 
-import { DEFAULT_SVG_MARGIN, DEFAULT_SVG_PX_PER_METRE, layoutToSvg } from './svg';
+import { planContentBounds } from './plan-geometry';
+import { DEFAULT_SVG_MARGIN, layoutToSvg, planSheetSize } from './svg';
 import type { FloorLayout, RoomLayout } from '../types';
 
-/** Candidate scale denominators, finest first. */
-const SCALE_DENOMINATORS = [20, 25, 50, 75, 100, 125, 200] as const;
+/** Candidate scale denominators, finest first (#288: coarse end extended
+ * so a whole lot still fits a page rather than being cut off at 1:200). */
+const SCALE_DENOMINATORS = [20, 25, 50, 75, 100, 125, 200, 250, 500, 1000] as const;
 
-/** Printable plan area on A4 portrait with margins + title block, in mm. */
-const PRINTABLE_WIDTH_MM = 180;
-const PRINTABLE_HEIGHT_MM = 230;
+export type PrintOrientation = 'portrait' | 'landscape';
 
 /**
- * Pick the finest standard scale (1:n) at which the whole sheet — room plus
- * annotation margins — fits the A4 printable area. Falls back to the
- * coarsest denominator for outsized lots.
+ * Printable plan area on A4 with 12 mm page margins and the title block
+ * below the plan, in mm. Landscape gives the plan more width but loses
+ * height to the title block.
  */
-export function pickPrintScale(sheetWidthM: number, sheetHeightM: number): number {
+const PRINTABLE_MM: Record<PrintOrientation, { width: number; height: number }> = {
+  portrait: { width: 180, height: 230 },
+  landscape: { width: 265, height: 150 },
+};
+
+/**
+ * Paper size of one SVG px when printing. The emitter draws in px; the print
+ * route picks the px-per-metre so that a px is a fixed paper length at every
+ * scale, which makes text heights and line weights paper-constant — a 10 px
+ * label prints 2.5 mm tall at 1:50 and at 1:500 alike instead of shrinking
+ * with the denominator (#288). The default 50 px/m at 1:80 is the same
+ * 0.25 mm/px, so the printed plan looks like the on-screen SVG export.
+ */
+const PRINT_MM_PER_PX = 0.25;
+
+/** Annotation margin on paper: the emitter's default 60 px band. */
+const PRINT_MARGIN_MM = DEFAULT_SVG_MARGIN * PRINT_MM_PER_PX;
+
+export interface PrintScale {
+  /** Scale denominator: the plan is drawn at 1:denominator. */
+  denominator: number;
+  orientation: PrintOrientation;
+  /**
+   * False when even the coarsest scale overflows A4: the page then prints
+   * the plan shrunk to the printable width and the label says so instead of
+   * claiming a scale that isn't honoured (#288).
+   */
+  fits: boolean;
+}
+
+/** px per metre that maps the given scale onto `PRINT_MM_PER_PX` paper px. */
+export function printPxPerMetre(denominator: number): number {
+  return 1000 / (denominator * PRINT_MM_PER_PX);
+}
+
+/**
+ * Pick the finest standard scale (1:n) and the page orientation at which the
+ * whole sheet — plan content plus the annotation margin — fits the A4
+ * printable area. Portrait is preferred at each scale; landscape is tried
+ * before moving to the next coarser denominator. `fits` is false when
+ * nothing fits, with the coarsest denominator and landscape reported.
+ */
+export function pickPrintScale(contentWidthM: number, contentHeightM: number): PrintScale {
   for (const denominator of SCALE_DENOMINATORS) {
-    const widthMm = (sheetWidthM * 1000) / denominator;
-    const heightMm = (sheetHeightM * 1000) / denominator;
-    if (widthMm <= PRINTABLE_WIDTH_MM && heightMm <= PRINTABLE_HEIGHT_MM) return denominator;
+    const widthMm = (contentWidthM * 1000) / denominator + 2 * PRINT_MARGIN_MM;
+    const heightMm = (contentHeightM * 1000) / denominator + 2 * PRINT_MARGIN_MM;
+    for (const orientation of ['portrait', 'landscape'] as const) {
+      const page = PRINTABLE_MM[orientation];
+      if (widthMm <= page.width && heightMm <= page.height) return { denominator, orientation, fits: true };
+    }
   }
-  return SCALE_DENOMINATORS[SCALE_DENOMINATORS.length - 1]!;
+  return { denominator: SCALE_DENOMINATORS[SCALE_DENOMINATORS.length - 1]!, orientation: 'landscape', fits: false };
+}
+
+/** Human-readable scale for the title block. */
+export function printScaleLabel(scale: PrintScale): string {
+  if (!scale.fits) return `Not to scale — exceeds A4 even at 1:${scale.denominator}, shrunk to fit`;
+  return `1:${scale.denominator} (A4 ${scale.orientation})`;
 }
 
 /** Open a print-ready, true-to-scale vector plan of the given floor. */
 export function openPlanPrintWindow(layout: RoomLayout, floor: FloorLayout): void {
-  const svg = layoutToSvg(layout, floor);
-
-  // The SVG sheet spans the room plus its margins; convert the whole sheet to
-  // metres so the printed page carries the declared scale exactly.
-  const sheetWidthM = layout.width + (2 * DEFAULT_SVG_MARGIN) / DEFAULT_SVG_PX_PER_METRE;
-  const sheetHeightM = layout.height + (2 * DEFAULT_SVG_MARGIN) / DEFAULT_SVG_PX_PER_METRE;
-  const denominator = pickPrintScale(sheetWidthM, sheetHeightM);
-  const sheetWidthMm = (sheetWidthM * 1000) / denominator;
+  // The sheet follows the plan content (room + outdoor items, #287), so the
+  // scale is chosen for that extent, not the room alone.
+  const content = planContentBounds(layout, floor);
+  const scale = pickPrintScale(content.maxX - content.minX, content.maxZ - content.minZ);
+  const pxPerMetre = printPxPerMetre(scale.denominator);
+  const svg = layoutToSvg(layout, floor, { pxPerMetre });
+  const sheet = planSheetSize(layout, floor, { pxPerMetre });
 
   const html = renderPrintHtml({
     title: `${layout.name} — ${floor.name}`,
@@ -47,9 +97,12 @@ export function openPlanPrintWindow(layout: RoomLayout, floor: FloorLayout): voi
     floorName: floor.name,
     dims: `${layout.width} m × ${layout.height} m`,
     itemCount: floor.items.length,
-    scaleLabel: `1:${denominator} (A4)`,
+    scaleLabel: printScaleLabel(scale),
     date: new Date().toLocaleDateString(),
-    sheetWidthMm,
+    orientation: scale.orientation,
+    // Outsized: let the plan fill the printable width (the label already
+    // says it is not to scale) rather than run off the page.
+    sheetWidthCss: scale.fits ? `${(sheet.widthPx * PRINT_MM_PER_PX).toFixed(1)}mm` : '100%',
     svg,
   });
 
@@ -71,7 +124,9 @@ interface PrintHtmlInput {
   itemCount: number;
   scaleLabel: string;
   date: string;
-  sheetWidthMm: number;
+  orientation: PrintOrientation;
+  /** CSS width of the plan block: the sheet in mm, or 100% when not to scale. */
+  sheetWidthCss: string;
   svg: string;
 }
 
@@ -85,9 +140,9 @@ function renderPrintHtml(input: PrintHtmlInput): string {
     <title>${escapeHtml(input.title)} — Floor plan</title>
     <style>
       :root { color-scheme: light; }
-      @page { size: A4 portrait; margin: 12mm; }
+      @page { size: A4 ${input.orientation}; margin: 12mm; }
       body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; }
-      .plan { width: ${input.sheetWidthMm.toFixed(1)}mm; }
+      .plan { width: ${input.sheetWidthCss}; }
       .plan svg { display: block; width: 100%; height: auto; }
       table.titleblock { margin-top: 6mm; border-collapse: collapse; font-size: 9pt; width: 100%; }
       table.titleblock td { border: 0.3mm solid #444; padding: 1.5mm 3mm; }

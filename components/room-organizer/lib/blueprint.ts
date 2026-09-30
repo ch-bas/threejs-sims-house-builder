@@ -1,4 +1,4 @@
-import { render2DTopDown } from '../canvas-2d/render';
+import { ensureFloorPlanImageDecoded, render2DTopDown } from '../canvas-2d/render';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
 import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
 import { entranceKeepOut, entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
@@ -25,7 +25,22 @@ export function floorArea(layout: EntranceBuilding, floorIndex: number): number 
  * load. The data URL embeds the floor plan so the popup can be saved /
  * shared without extra round-trips.
  */
-export function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout): void {
+export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout): Promise<void> {
+  // Open the popup first, synchronously inside the click: browsers only
+  // allow window.open() during the user gesture, and the decode below yields.
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    window.alert('Pop-ups are blocked — allow pop-ups to print the blueprint.');
+    return;
+  }
+
+  // The tracing image is painted from a lazily-warmed decoded-image cache;
+  // in 3D view with the minimap off nothing has rendered the plan yet, so
+  // the first printout captured only the floor colour (#288). Same
+  // ground-floor rule as render.ts drawFloor: the image belongs to floor 0.
+  const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
+  if (layout.floorPlanImage && isGroundFloor) await ensureFloorPlanImageDecoded(layout.floorPlanImage);
+
   const canvas = document.createElement('canvas');
   canvas.width = PAGE_WIDTH;
   canvas.height = PAGE_HEIGHT;
@@ -74,11 +89,6 @@ export function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout)
     stats,
   });
 
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    window.alert('Pop-ups are blocked — allow pop-ups to print the blueprint.');
-    return;
-  }
   printWindow.document.write(html);
   printWindow.document.close();
 }

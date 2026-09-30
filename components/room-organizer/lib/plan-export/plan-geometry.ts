@@ -11,7 +11,7 @@
 
 import { GRID_SIZE_METERS } from '../constants';
 import { isOpening } from '../opening-snap';
-import type { FloorLayout, FurnitureItem } from '../types';
+import type { FloorLayout, FurnitureItem, RoomLayout } from '../types';
 
 /** Duplicated from canvas-2d/render.ts (`INTERIOR_WALL_THICKNESS_M`), which
  * mirrors the 0.16 m modelled in three/interior-walls.ts. */
@@ -103,4 +103,55 @@ export function gridLinePositions(extent: number): number[] {
 /** True when the floor plan should draw this exterior wall dashed-hidden. */
 export function isWallHidden(floor: FloorLayout, wall: 'north' | 'south' | 'east' | 'west'): boolean {
   return (floor.hiddenWalls ?? []).includes(wall);
+}
+
+/** An axis-aligned rectangle in world metres (x right, z down, origin at the room centre). */
+export interface PlanBounds {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+/**
+ * The extent of everything the plan draws: the room rectangle unioned with
+ * the rotated footprint corners of every placed item on the floor. Outdoor
+ * items (trees, fences, pools) sit outside the walls, so the sheet must
+ * follow them — the fixed room + margin sheet clipped them and let them
+ * overprint the scale bar (#287). Openings are left out: they are drawn as
+ * wall marks whose swing opens into the room, and their footprint straddles
+ * the wall line by half its depth, which would pad every sheet by 5 cm.
+ */
+export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
+  const bounds: PlanBounds = {
+    minX: -layout.width / 2,
+    minZ: -layout.height / 2,
+    maxX: layout.width / 2,
+    maxZ: layout.height / 2,
+  };
+  for (const item of splitPlanItems(floor.items).furniture) {
+    for (const corner of itemWorldCorners(item)) {
+      if (corner.x < bounds.minX) bounds.minX = corner.x;
+      if (corner.x > bounds.maxX) bounds.maxX = corner.x;
+      if (corner.z < bounds.minZ) bounds.minZ = corner.z;
+      if (corner.z > bounds.maxZ) bounds.maxZ = corner.z;
+    }
+  }
+  return bounds;
+}
+
+/**
+ * The sheet a plan is drawn on: `planContentBounds` grown by `marginM` on
+ * every side for the title, room dimensions and scale bar. With no item
+ * outside the walls this is exactly the old room + margin sheet, so
+ * indoor-only exports are unchanged (#287).
+ */
+export function planBounds(layout: RoomLayout, floor: FloorLayout, marginM: number): PlanBounds {
+  const content = planContentBounds(layout, floor);
+  return {
+    minX: content.minX - marginM,
+    minZ: content.minZ - marginM,
+    maxX: content.maxX + marginM,
+    maxZ: content.maxZ + marginM,
+  };
 }

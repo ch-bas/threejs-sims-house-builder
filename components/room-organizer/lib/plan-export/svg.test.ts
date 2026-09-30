@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
-import { layoutToSvg } from './svg';
+import { layoutToSvg, planSheetSize } from './svg';
 
 function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
@@ -128,6 +128,48 @@ describe('layoutToSvg', () => {
     const svg = layoutToSvg(makeLayout({ floors: [floor] }), floor);
     expect(count(svg, 'class="furniture"')).toBe(1);
     expect(svg).not.toContain('Tiny Camera</text>');
+  });
+
+  it('keeps the room at the same sheet position when nothing sits outside the walls (#287)', () => {
+    const { layout, floor } = makeFixture();
+    const svg = layoutToSvg(layout, floor);
+    expect(svg).toContain('<g class="plan" transform="translate(0 0)">');
+    expect(planSheetSize(layout, floor)).toEqual({ widthPx: 520, heightPx: 520, widthM: 10.4, heightM: 10.4 });
+  });
+
+  it('grows the sheet to enclose outdoor items and keeps the scale bar clear of them (#287)', () => {
+    // Oak tree 2 m south of the 8 m room's south wall: footprint z 6.0–7.4.
+    const tree = makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 0, z: 6.7 } });
+    const floor = makeFloor({ items: [makeItem(), tree] });
+    const layout = makeLayout({ floors: [floor] });
+    const svg = layoutToSvg(layout, floor);
+    // Content z −4 … 7.4 plus 1.2 m margins = 13.8 m → 690 px tall, width unchanged.
+    expect(svg).toContain('viewBox="0 0 520 690"');
+    expect(planSheetSize(layout, floor)).toEqual({ widthPx: 520, heightPx: 690, widthM: 10.4, heightM: 13.8 });
+    // The room did not move (the sheet only grew southwards) …
+    expect(svg).toContain('<g class="plan" transform="translate(0 0)">');
+    // … the tree is drawn where it stands, fully inside the sheet …
+    expect(svg).toContain('translate(260 595) rotate(0)');
+    expect(svg).toContain('>Oak Tree</text>');
+    // … and the scale bar sits in the bottom margin band below the tree's
+    // lowest edge (7.4 m → 630 px), no longer overprinted.
+    expect(svg).toContain('y1="664" x2="160" y2="664"');
+  });
+
+  it('translates the room when items extend past the north or west walls (#287)', () => {
+    // Pool 2 m off the west wall and a tree past the north wall.
+    const pool = makeItem({ id: 'pool', type: 'pool', name: 'Pool', width: 4, depth: 2.5, position: { x: -8, z: 0 } });
+    const tree = makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 0, z: -6.7 } });
+    const floor = makeFloor({ items: [pool, tree] });
+    const layout = makeLayout({ floors: [floor] });
+    const svg = layoutToSvg(layout, floor);
+    // Content x −10 … 4 (14 m), z −7.4 … 4 (11.4 m) plus margins.
+    expect(svg).toContain('viewBox="0 0 820 690"');
+    // Room top-left moves from (60, 60) to ((−4 + 11.2) × 50, (−4 + 8.6) × 50) = (360, 230).
+    expect(svg).toContain('<g class="plan" transform="translate(300 170)">');
+    // Title and dims hug the content corners in the top margin band.
+    expect(svg).toContain('class="plan-title" x="60" y="38"');
+    expect(svg).toContain('class="plan-dims" x="760" y="38"');
   });
 
   it('draws room zones as tinted rects with name and area, under the walls (#155)', () => {

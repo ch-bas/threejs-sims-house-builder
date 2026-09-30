@@ -847,3 +847,34 @@ function heatColor(ratio: number): string {
   const g = Math.round((1 - k) * 200);
   return `rgba(255, ${g}, 0, 0.45)`;
 }
+
+/**
+ * Resolve once the floor-plan image for `url` is in the decoded-image cache
+ * above, so a synchronous `render2DTopDown` that follows paints it. The
+ * cache is warmed lazily by the first render and repainted via
+ * `addFloorPlanRepaintHandler` — a one-shot consumer with nothing to repaint
+ * (the blueprint printout) captured only the floor colour when nothing had
+ * rendered the plan yet, e.g. in 3D view with the minimap off (#288). Never
+ * rejects: a broken image resolves too, and the render's naturalWidth guard
+ * then skips it exactly as it does for a live repaint.
+ */
+export function ensureFloorPlanImageDecoded(url: string): Promise<void> {
+  let entry = floorPlanImageCache;
+  if (entry?.url !== url) {
+    const img = new Image();
+    entry = { url, image: img };
+    floorPlanImageCache = entry;
+    img.onload = () => {
+      // Same stale-load guard as drawFloor: the plan may change mid-decode.
+      if (floorPlanImageCache?.image === img) requestRepaint();
+    };
+    img.src = url;
+  }
+  const { image } = entry;
+  if (image.complete) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = (): void => resolve();
+    image.addEventListener('load', done, { once: true });
+    image.addEventListener('error', done, { once: true });
+  });
+}

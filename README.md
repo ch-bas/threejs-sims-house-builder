@@ -258,7 +258,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **PNG screenshot** of the current viewport.
 - **GLB / glTF export** of the live Three.js scene — opens in any viewer.
 - **Plan export**: scalable SVG, CAD-ready layered DXF, and a
-  print-to-scale PDF with title block (1:20–1:200, picked to fit A4).
+  print-to-scale PDF with title block (1:20–1:1000, portrait or landscape,
+  picked to fit A4). The sheet follows the content, so garden items outside
+  the walls are on the plan too.
 - **Version history**: automatic restore points every few minutes of
   editing, on page close, and before anything replaces the whole house
   (share link, template, saved layout, import). Restorable — and

@@ -12,6 +12,7 @@ import {
   gridLinePositions,
   INTERIOR_WALL_THICKNESS_M,
   isWallHidden,
+  planBounds,
   splitPlanItems,
   type PlacedItem,
 } from './plan-geometry';
@@ -33,9 +34,17 @@ export interface SvgPlanTheme {
 export interface SvgExportOptions {
   /** Pixels per metre; the default 50 keeps a 10 m room at a crisp 500 px. */
   pxPerMetre?: number;
-  /** Margin (px) around the room for the title, dimensions, and scale bar. */
+  /** Margin (px) around the plan content for the title, dimensions, and scale bar. */
   margin?: number;
   theme?: Partial<SvgPlanTheme>;
+}
+
+/** The sheet `layoutToSvg` draws on, in SVG px and in world metres. */
+export interface SvgSheetSize {
+  widthPx: number;
+  heightPx: number;
+  widthM: number;
+  heightM: number;
 }
 
 export const DEFAULT_SVG_PX_PER_METRE = 50;
@@ -58,6 +67,22 @@ const DEFAULT_THEME: SvgPlanTheme = {
 const MIN_LABEL_EDGE_PX = 22;
 
 /**
+ * Size of the sheet `layoutToSvg` emits for the same layout, floor and
+ * options: the plan content (room + every placed item, outdoor ones
+ * included) plus the annotation margin on each side. The print route sizes
+ * its page from this rather than re-deriving room + margin, which clipped
+ * garden items (#287).
+ */
+export function planSheetSize(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions = {}): SvgSheetSize {
+  const scale = options.pxPerMetre ?? DEFAULT_SVG_PX_PER_METRE;
+  const margin = options.margin ?? DEFAULT_SVG_MARGIN;
+  const bounds = planBounds(layout, floor, margin / scale);
+  const widthM = bounds.maxX - bounds.minX;
+  const heightM = bounds.maxZ - bounds.minZ;
+  return { widthPx: widthM * scale, heightPx: heightM * scale, widthM, heightM };
+}
+
+/**
  * Render one floor of a building as a standalone SVG floor plan: room
  * outline, grid, interior walls, door/window marks, furniture as rotated
  * rects with name labels, a scale bar, and the floor name.
@@ -69,9 +94,18 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
 
   const roomW = layout.width * scale;
   const roomD = layout.height * scale;
-  const totalW = roomW + margin * 2;
-  const totalH = roomD + margin * 2;
-  // World (metres, origin at room centre) → SVG px.
+  // The sheet follows the content, not the room: outdoor items past the walls
+  // used to be cut off by a fixed room + margin viewBox and to overprint the
+  // scale bar (#287). The renderers below keep drawing in room coordinates
+  // (room top-left at (margin, margin)); the root group translates that
+  // origin to where the room sits on the content-fitted sheet, which is a
+  // no-op when nothing pokes out past the walls.
+  const bounds = planBounds(layout, floor, margin / scale);
+  const totalW = (bounds.maxX - bounds.minX) * scale;
+  const totalH = (bounds.maxZ - bounds.minZ) * scale;
+  const rootX = (-layout.width / 2 - bounds.minX) * scale - margin;
+  const rootY = (-layout.height / 2 - bounds.minZ) * scale - margin;
+  // World (metres, origin at room centre) → room-coordinate px.
   const px = (x: number): string => fmt(margin + (x + layout.width / 2) * scale);
   const py = (z: number): string => fmt(margin + (z + layout.height / 2) * scale);
 
@@ -83,6 +117,7 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(totalW)} ${fmt(totalH)}" width="${fmt(totalW)}" height="${fmt(totalH)}" font-family="Helvetica, Arial, sans-serif">`,
     `<title>${escapeXml(title)}</title>`,
     `<rect width="${fmt(totalW)}" height="${fmt(totalH)}" fill="${theme.background}"/>`,
+    `<g class="plan" transform="translate(${fmt(rootX)} ${fmt(rootY)})">`,
     `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeXml(floor.floorColor)}"/>`,
     renderGrid(layout, margin, scale, theme),
     renderZones(floor, px, py, scale, theme),
@@ -90,8 +125,12 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
     renderInteriorWalls(floor, px, py, scale, theme),
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
     ...furniture.map((item) => renderFurniture(item, px, py, scale, theme)),
+    `</g>`,
+    // Annotations sit in the margin band around the content — the content
+    // spans (margin, margin) → (totalW − margin, totalH − margin) on the
+    // sheet — so no item can overprint them.
     `<text class="plan-title" x="${fmt(margin)}" y="${fmt(margin - 22)}" font-size="14" font-weight="bold" fill="${theme.label}">${escapeXml(title)}</text>`,
-    `<text class="plan-dims" x="${fmt(margin + roomW)}" y="${fmt(margin - 22)}" font-size="11" text-anchor="end" fill="${theme.label}">${fmt(layout.width)} m × ${fmt(layout.height)} m</text>`,
+    `<text class="plan-dims" x="${fmt(totalW - margin)}" y="${fmt(margin - 22)}" font-size="11" text-anchor="end" fill="${theme.label}">${fmt(layout.width)} m × ${fmt(layout.height)} m</text>`,
     renderScaleBar(layout, margin, scale, totalH, theme),
     `</svg>`,
   ];

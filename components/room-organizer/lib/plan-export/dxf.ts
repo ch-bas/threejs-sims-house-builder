@@ -235,8 +235,26 @@ function fmt(value: number): string {
   return fixed === '-0.000' ? '0.000' : fixed;
 }
 
-/** Keep DXF TEXT one-line; control characters would corrupt the group pairs. */
+/**
+ * Make a string safe as a DXF TEXT value:
+ * - control characters (incl. newlines) would corrupt the group pairs → space;
+ * - AC1015 is read with the ANSI code page, so raw UTF-8 above ASCII garbles
+ *   ("Maison d'été" → "Maison d'Ã©tÃ©"): every code point above 0x7E goes
+ *   out as the `\U+XXXX` escape CAD readers expand; astral characters have
+ *   no BMP escape and become `?` (#288);
+ * - `%%` introduces a TEXT control code (`%%u` underline, `%%d` degree), so
+ *   every `%` is written as the `%%%` escape for a literal percent sign —
+ *   "%%u" becomes "%%%%%%u", which readers render as "%%u".
+ */
 function sanitizeText(value: string): string {
+  let out = '';
   // eslint-disable-next-line no-control-regex
-  return value.replace(/[\r\n\u0000-\u001f]/g, ' ');
+  for (const char of value.replace(/[\r\n\u0000-\u001f]/g, ' ')) {
+    const code = char.codePointAt(0) ?? 0x3f;
+    if (char === '%') out += '%%%';
+    else if (code <= 0x7e) out += char;
+    else if (code <= 0xffff) out += `\\U+${code.toString(16).toUpperCase().padStart(4, '0')}`;
+    else out += '?';
+  }
+  return out;
 }
