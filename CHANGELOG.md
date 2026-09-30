@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.12.0] - 2026-09-30
+
+The **Gameplay & delight** milestone.
+
+### Added
+- DESIGN and FURNISH are real modes: DESIGN shows the structure tools (openings, walls) and the structure catalog and switches the sidebar to Build; FURNISH shows the furniture categories and switches to Buy. The tab only follows a mode change, so your own tab choice sticks ([#151](https://github.com/ch-bas/threejs-sims-house-builder/issues/151))
+- Persistent furniture groups: Group a selection and clicking any member selects the whole group in both views; Alt-click picks one member; drag, rotate, align, copy and delete all act on the group. Ungroup from the same chip ([#154](https://github.com/ch-bas/threejs-sims-house-builder/issues/154))
+- Room zones: draw a named, coloured rectangle on the 2D plan and the plan, blueprint, SVG export and Statistics panel report that room's cost, item count and area ([#155](https://github.com/ch-bas/threejs-sims-house-builder/issues/155))
+- Walkthrough collides with furniture and interior walls — sliding along sofas and partitions instead of walking through them, and passing through doorways ([#156](https://github.com/ch-bas/threejs-sims-house-builder/issues/156))
+- Keyboard placement: Tab to a catalog tile, Enter to place it at the room centre, arrows and R to position, Enter to confirm, Esc to cancel — with an on-screen hint ([#168](https://github.com/ch-bas/threejs-sims-house-builder/issues/168))
+- Weather: Clear, Rain or Snow over the lot from the Time of Day panel, with overcast lighting and a snow-white or rain-dark ground; nothing falls indoors ([#189](https://github.com/ch-bas/threejs-sims-house-builder/issues/189))
+- Paste-board: paste a friend's share link into the library to keep their house without replacing your own, with a thumbnail, and load it later (undoable) ([#190](https://github.com/ch-bas/threejs-sims-house-builder/issues/190))
+- Save a selection as a reusable custom furniture set, with its colours and sizes, placed from the Furniture Sets panel like the built-ins ([#302](https://github.com/ch-bas/threejs-sims-house-builder/issues/302))
+- Plan thumbnails on Library, Paste-board and History rows, plus a "what changed" line on restore points ([#303](https://github.com/ch-bas/threejs-sims-house-builder/issues/303))
+
+### Fixed
+- The multi-select chip and the placement hint no longer hide behind the header stats at narrow desktop widths
+
 ## [1.11.0] - 2026-09-30
 
 The **Real Streets hardening** milestone: a street of neighbours, and the recessed entrance, low storeys and winder stairs made solid.
