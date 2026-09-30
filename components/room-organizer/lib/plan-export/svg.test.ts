@@ -185,4 +185,37 @@ describe('layoutToSvg', () => {
     expect(svg).toContain('>6.0 m²</text>');
     expect(svg.indexOf('class="zone"')).toBeLessThan(svg.indexOf('class="wall"'));
   });
+
+  it('draws stairs as treads with an up-arrow, and the stairwell on the floor above (#290)', () => {
+    const stairs = makeItem({ id: 'st', type: 'stairs', name: 'Stairs', width: 1.2, depth: 2.4, height: 3, position: { x: 0, z: 0 } });
+    const winder = makeItem({ id: 'w', type: 'stairs', name: 'Winder', width: 2, depth: 2.6, height: 3, stairsShape: 'winder', position: { x: 2, z: 2 } });
+    const ground = makeFloor({ id: 'g', items: [stairs, winder] });
+    const first = makeFloor({ id: 'f', name: 'First Floor' });
+    const layout = makeLayout({ floors: [ground, first] });
+
+    const groundSvg = layoutToSvg(layout, ground);
+    expect(count(groundSvg, 'class="furniture"')).toBe(2);
+    expect(count(groundSvg, 'class="stairs"')).toBe(2);
+    expect(count(groundSvg, 'class="arrow"')).toBe(2);
+    // No name label: the symbol says what it is.
+    expect(groundSvg).not.toContain('>Stairs</text>');
+    // The straight flight's arrow runs down the plan from its first tread to its last.
+    const arrow = /class="arrow" d="M 260 ([\d.]+) L [^"]*L 260 ([\d.]+) M/.exec(groundSvg);
+    expect(arrow).not.toBeNull();
+    expect(Number(arrow![1])).toBeLessThan(260);
+    expect(Number(arrow![2])).toBeGreaterThan(260);
+    // Nothing is cut through the ground floor.
+    expect(groundSvg).not.toContain('class="stairwell"');
+    // A mirrored winder is a different drawing.
+    const mirrored = layoutToSvg(layout, makeFloor({ id: 'g', items: [{ ...winder, mirrored: true }] }));
+    const plain = layoutToSvg(layout, makeFloor({ id: 'g', items: [winder] }));
+    expect(mirrored).not.toBe(plain);
+
+    const firstSvg = layoutToSvg(layout, first);
+    expect(count(firstSvg, 'class="stairwell"')).toBe(2);
+    expect(count(firstSvg, 'stroke-dasharray="6 4"')).toBe(2);
+    // Under the furniture and openings, over the walls.
+    expect(firstSvg.indexOf('class="stairwell"')).toBeGreaterThan(firstSvg.indexOf('class="wall"'));
+    expect(firstSvg).not.toContain('NaN');
+  });
 });

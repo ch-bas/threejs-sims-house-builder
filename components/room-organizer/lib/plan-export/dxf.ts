@@ -19,19 +19,32 @@
 
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../street';
-import { itemWorldCorners, openingAxes, splitPlanItems, type PlacedItem } from './plan-geometry';
+import {
+  itemWorldCorners,
+  openingAxes,
+  splitPlanItems,
+  stairArrow,
+  stairTreadSegments,
+  stairwellOutlines,
+  type PlacedItem,
+} from './plan-geometry';
 import type { FloorLayout, RoomLayout } from '../types';
 
-export const DXF_LAYERS = ['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS'] as const;
+export const DXF_LAYERS = ['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL'] as const;
 
-/** ACI colour per layer (7 white, 8 grey, 5 blue, 3 green, 2 yellow). */
+/** ACI colour per layer (7 white, 8 grey, 5 blue, 3 green, 2 yellow, 1 red). */
 const LAYER_COLOURS: Record<(typeof DXF_LAYERS)[number], number> = {
   WALLS: 7,
   INTERIOR: 8,
   OPENINGS: 5,
   FURNITURE: 3,
   LABELS: 2,
+  STAIRWELL: 1,
 };
+
+/** The entity emitters `layoutToDxf` closes over, as the stair helpers take them (#290). */
+type DxfPolyline = (layer: string, points: ReadonlyArray<readonly [string, string]>, closed: boolean) => void;
+type DxfLine = (layer: string, x1: string, y1: string, x2: string, y2: string) => void;
 
 /** Perpendicular jamb-tick length at each end of an opening, in metres. */
 const OPENING_TICK_M = 0.25;
@@ -157,6 +170,8 @@ export function layoutToDxf(layout: RoomLayout, floor: FloorLayout): string {
     line('INTERIOR', cx(wall.x1), cy(wall.z1), cx(wall.x2), cy(wall.z2));
   }
 
+  emitStairwellHoles(layout, floor, cx, cy, polyline);
+
   // Same bottom-to-top layer order as the on-screen plan (#286).
   const { openings, furniture } = splitPlanItems(planDrawOrder(floor.items));
 
@@ -170,6 +185,7 @@ export function layoutToDxf(layout: RoomLayout, floor: FloorLayout): string {
       true
     );
     text('LABELS', cx(item.position.x), cy(item.position.z), LABEL_TEXT_HEIGHT, item.name, true);
+    if (item.type === 'stairs') emitStairs(item, cx, cy, line, polyline);
   }
 
   // Floor title above the north wall.
@@ -178,6 +194,55 @@ export function layoutToDxf(layout: RoomLayout, floor: FloorLayout): string {
   put(0, 'ENDSEC');
   put(0, 'EOF');
   return lines.join('\n');
+}
+
+/**
+ * A stair's plan symbol (#290) beside its footprint: tread nosings as LINEs
+ * and the up-arrow as an open LWPOLYLINE along the walk line plus two barb
+ * LINEs at the head — all on FURNITURE, since they belong to the item.
+ */
+function emitStairs(
+  item: PlacedItem,
+  cx: (x: number) => string,
+  cy: (z: number) => string,
+  line: DxfLine,
+  polyline: DxfPolyline
+): void {
+  for (const { from, to } of stairTreadSegments(item)) {
+    line('FURNITURE', cx(from.x), cy(from.z), cx(to.x), cy(to.z));
+  }
+  const { shaft, head } = stairArrow(item);
+  if (shaft.length < 2) return;
+  polyline(
+    'FURNITURE',
+    shaft.map((p) => [cx(p.x), cy(p.z)] as const),
+    false
+  );
+  for (const { from, to } of head) {
+    line('FURNITURE', cx(from.x), cy(from.z), cx(to.x), cy(to.z));
+  }
+}
+
+/**
+ * The stairwell the floor below cuts through this floor's slab (#290): one
+ * closed LWPOLYLINE per hole on its own STAIRWELL layer, so CAD users can
+ * hatch or hide the void independently of the furniture.
+ */
+function emitStairwellHoles(
+  layout: RoomLayout,
+  floor: FloorLayout,
+  cx: (x: number) => string,
+  cy: (z: number) => string,
+  polyline: DxfPolyline
+): void {
+  const floorIndex = layout.floors.findIndex((candidate) => candidate === floor || candidate.id === floor.id);
+  for (const outline of stairwellOutlines(layout, floorIndex)) {
+    polyline(
+      'STAIRWELL',
+      outline.map((p) => [cx(p.x), cy(p.z)] as const),
+      true
+    );
+  }
 }
 
 function emitOpening(

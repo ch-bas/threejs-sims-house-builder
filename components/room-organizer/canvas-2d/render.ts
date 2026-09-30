@@ -3,6 +3,7 @@ import { rotatedHalfExtents } from '../lib/geometry';
 import { planDrawOrder } from '../lib/plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
+import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
 export interface Render2DOptions {
@@ -123,6 +124,8 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
+  // The stairwell the floor below cuts through this slab (#290), under everything placed over it.
+  drawStairwellHoles(ctx, layout, planFloorIndex(layout.floors, floor), { scale, offsetX, offsetY });
   // Zone tints sit on the floor under the walls; their labels go over the
   // walls but under the furniture, like a plan's room names (#155).
   drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
@@ -607,8 +610,11 @@ function drawFurniture(
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(item.icon, 0, 0);
+    // Stairs draw their treads and climb arrow in place of the icon (#290),
+    // in world space once the item's rotated frame is restored.
+    if (item.type !== 'stairs') ctx.fillText(item.icon, 0, 0);
     ctx.restore();
+    if (item.type === 'stairs') drawStairsSymbol(ctx, item, options.layout, { scale, offsetX, offsetY });
 
     if (options.showMeasurements) {
       // The label is drawn in screen space (outside the rotated transform), so

@@ -40,10 +40,10 @@ describe('layoutToDxf', () => {
     expect(dxf).toContain('$INSUNITS\n70\n6');
   });
 
-  it('declares the five plan layers in the LAYER table', () => {
+  it('declares the six plan layers in the LAYER table', () => {
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);
-    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS']);
+    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL']);
     for (const layer of DXF_LAYERS) {
       expect(dxf).toContain(`0\nLAYER\n2\n${layer}\n`);
     }
@@ -171,5 +171,25 @@ describe('layoutToDxf', () => {
   it('is deterministic for the same layout', () => {
     const { layout, floor } = makeFixture();
     expect(layoutToDxf(layout, floor)).toBe(layoutToDxf(layout, floor));
+  });
+
+  it('emits stair treads and arrow on FURNITURE, and the stairwell above on its own layer (#290)', () => {
+    const stairs = makeItem({ id: 'st', type: 'stairs', name: 'Stairs', width: 1.2, depth: 2.4, height: 3, position: { x: 0, z: 0 } });
+    const ground = makeFloor({ id: 'g', items: [stairs] });
+    const first = makeFloor({ id: 'f', name: 'First Floor' });
+    const layout = makeLayout({ floors: [ground, first] });
+
+    const groundDxf = layoutToDxf(layout, ground);
+    // 43 tread segments + 2 arrow barbs; the footprint plus the open arrow shaft.
+    expect(count(groundDxf, '0\nLINE')).toBe(14 * 4 - 13 + 2);
+    expect(count(groundDxf, '0\nLWPOLYLINE')).toBe(3);
+    expect(count(groundDxf, '90\n14\n70\n0')).toBe(1);
+    expect(groundDxf).not.toContain('8\nSTAIRWELL');
+
+    const firstDxf = layoutToDxf(layout, first);
+    expect(count(firstDxf, '8\nSTAIRWELL')).toBe(1);
+    // A closed 4-corner hole, 1.3 m wide about the room's centre line x = 4.
+    expect(firstDxf).toContain('8\nSTAIRWELL\n100\nAcDbPolyline\n90\n4\n70\n1\n10\n3.350');
+    expect(count(firstDxf, '0\nLINE')).toBe(0);
   });
 });

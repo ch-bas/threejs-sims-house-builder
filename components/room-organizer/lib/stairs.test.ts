@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { makeFloor, makeItem } from './__testfixtures__/fixtures';
 import {
   MAX_STAIRS_LEAD_IN,
   MIN_WINDER_TREAD,
   STAIR_HEADROOM,
   STAIR_STEP_COUNT,
   WINDER_TREADS,
+  computeFloorOpenings,
+  floorOpeningOutline,
   isStairsLeadIn,
   isStairsShape,
+  stairPlanSymbol,
   stairSteps,
+  stairToWorld,
+  stairTreadLines,
   stairwellRect,
   winderFlights,
   winderLayout,
@@ -259,5 +265,90 @@ describe('shallow winders (#278)', () => {
         }
       }
     }
+  });
+});
+
+describe('stairwell openings and plan symbol (#290)', () => {
+  const placedWinder = { ...makeItem({ id: 'w', type: 'stairs', ...winder, height: 3 }), position: { x: 1, z: 2 } };
+  const placedStraight = { ...makeItem({ id: 's', type: 'stairs', ...straight, height: 3 }), position: { x: -2, z: 0 } };
+
+  it('maps the stair frame to the world like the mesh: rotated, and mirrored across local x first', () => {
+    expect(stairToWorld({ rotation: 0 }, { x: 1, z: 2 })(0.5, -1)).toEqual([1.5, 1]);
+    // Three's rotateY(π/2) takes local +x to world −z and local +z to world +x.
+    const [x, z] = stairToWorld({ rotation: Math.PI / 2 }, { x: 0, z: 0 })(1, 0);
+    expect(x).toBeCloseTo(0);
+    expect(z).toBeCloseTo(-1);
+    expect(stairToWorld({ rotation: 0, mirrored: true }, { x: 1, z: 2 })(0.5, -1)).toEqual([0.5, 1]);
+  });
+
+  it('computes the openings a floor cuts from the stairs below it, in the stair’s own frame', () => {
+    expect(computeFloorOpenings(undefined)).toEqual([]);
+    expect(computeFloorOpenings(makeFloor({ items: [makeItem({ id: 'c' })] }))).toEqual([]);
+    const [plain] = computeFloorOpenings(makeFloor({ items: [placedWinder] }));
+    const [turned] = computeFloorOpenings(makeFloor({ items: [{ ...placedWinder, rotation: Math.PI }] }));
+    const [mirrored] = computeFloorOpenings(makeFloor({ items: [{ ...placedWinder, mirrored: true }] }));
+    expect(plain!.id).toBe('w');
+    expect(plain!.outline).toHaveLength(6);
+    const lowestZOnSide = (o: typeof plain, side: (x: number) => boolean) =>
+      Math.min(...o!.outline!.filter(([x]) => side(x)).map(([, z]) => z));
+    // The return flight (+x of the stair at x = 1) is open to its foot; a mirror swaps the sides.
+    expect(lowestZOnSide(plain, (x) => x > 1.01)).toBeLessThan(lowestZOnSide(plain, (x) => x < 0.99));
+    expect(lowestZOnSide(mirrored, (x) => x < 0.99)).toBeLessThan(lowestZOnSide(mirrored, (x) => x > 1.01));
+    turned!.outline!.forEach(([x, z], i) => {
+      expect(x).toBeCloseTo(2 - plain!.outline![i]![0]);
+      expect(z).toBeCloseTo(4 - plain!.outline![i]![1]);
+    });
+    // A straight flight: a rotated rectangle, no outline; taller storeys cut less.
+    const [classic] = computeFloorOpenings(makeFloor({ items: [placedStraight] }));
+    const [tall] = computeFloorOpenings(makeFloor({ items: [placedStraight], height: 4 }));
+    expect(classic!.outline).toBeUndefined();
+    expect(classic!.rotation).toBe(0);
+    expect(tall!.depth).toBeLessThan(classic!.depth);
+  });
+
+  it('turns an opening into a closed world outline for the plan', () => {
+    const [classic] = computeFloorOpenings(makeFloor({ items: [{ ...placedStraight, rotation: Math.PI / 2 }] }));
+    const outline = floorOpeningOutline(classic!);
+    expect(outline).toHaveLength(4);
+    // Rotated a quarter turn, the hole's 1.3 m width runs along world z.
+    const xs = outline.map(([x]) => x);
+    const zs = outline.map(([, z]) => z);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(1.3);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(classic!.depth);
+    const [plain] = computeFloorOpenings(makeFloor({ items: [placedWinder] }));
+    expect(floorOpeningOutline(plain!)).toBe(plain!.outline);
+  });
+
+  it('lays the plan symbol out in world space, foot first, mirrored and rotated like the mesh', () => {
+    const symbol = stairPlanSymbol(placedStraight);
+    expect(symbol.treads).toHaveLength(STAIR_STEP_COUNT);
+    expect(symbol.walkLine).toHaveLength(STAIR_STEP_COUNT);
+    // The straight flight climbs local +z: the walk line runs down the plan at x = −2.
+    expect(symbol.walkLine[0]![0]).toBeCloseTo(-2);
+    expect(symbol.walkLine[0]![1]).toBeCloseTo(-1.2 + 2.4 / STAIR_STEP_COUNT / 2);
+    expect(symbol.walkLine[STAIR_STEP_COUNT - 1]![1]).toBeCloseTo(1.2 - 2.4 / STAIR_STEP_COUNT / 2);
+
+    const plain = stairPlanSymbol(placedWinder);
+    const mirrored = stairPlanSymbol({ ...placedWinder, mirrored: true });
+    // Up flight on the stair's −x side, return on +x; a mirror swaps them.
+    expect(plain.walkLine[0]![0]).toBeLessThan(1);
+    expect(plain.walkLine[STAIR_STEP_COUNT - 1]![0]).toBeGreaterThan(1);
+    expect(mirrored.walkLine[0]![0]).toBeGreaterThan(1);
+    expect(mirrored.walkLine[STAIR_STEP_COUNT - 1]![0]).toBeLessThan(1);
+    mirrored.walkLine.forEach(([x, z], i) => {
+      expect(x).toBeCloseTo(2 - plain.walkLine[i]![0]);
+      expect(z).toBeCloseTo(plain.walkLine[i]![1]);
+    });
+    // The rise never changes what the plan shows.
+    const tall = { ...placedWinder, height: 7 };
+    expect(stairPlanSymbol(tall)).toEqual(plain);
+  });
+
+  it('draws each shared nosing once', () => {
+    const lines = stairTreadLines(stairPlanSymbol(placedStraight).treads);
+    // 14 rectangles share 13 nosings: 14 × 4 edges − 13 shared.
+    expect(lines).toHaveLength(14 * 4 - 13);
+    const keys = lines.map(([a, b]) => [a, b].map(([x, z]) => `${x.toFixed(5)},${z.toFixed(5)}`).sort().join('|'));
+    expect(new Set(keys).size).toBe(lines.length);
   });
 });
