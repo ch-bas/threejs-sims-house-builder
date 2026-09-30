@@ -1,8 +1,9 @@
 import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { planDrawOrder } from '../lib/plan-order';
+import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
-import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout } from '../lib/types';
+import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
 export interface Render2DOptions {
   canvas: HTMLCanvasElement;
@@ -429,12 +430,31 @@ function drawRoomOutline(
   const y0 = offsetY;
   const x1 = offsetX + layout.width * scale;
   const y1 = offsetY + layout.height * scale;
-  const edges = [
-    { id: 'north', from: [x0, y0], to: [x1, y0] },
+  // The recessed entrance (#285): the north edge breaks across the opening
+  // and the recess's two cheeks run back to its rear wall (an ordinary
+  // interior wall carrying the porch door, drawn with the others). The
+  // recess itself is cleared to the canvas background — the outside — over
+  // the floor, grid, tracing image and zone tints painted before this.
+  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
+  const rx0 = recess ? offsetX + (recess.x0 + layout.width / 2) * scale : x0;
+  const rx1 = recess ? offsetX + (recess.x1 + layout.width / 2) * scale : x1;
+  const ry1 = recess ? offsetY + (recess.backZ + layout.height / 2) * scale : y0;
+  if (recess) ctx.clearRect(rx0, y0, rx1 - rx0, ry1 - y0);
+  type Edge = { id: WallId; from: readonly [number, number]; to: readonly [number, number] };
+  const north: Edge[] = recess
+    ? [
+        { id: 'north', from: [x0, y0], to: [rx0, y0] },
+        { id: 'north', from: [rx0, y0], to: [rx0, ry1] },
+        { id: 'north', from: [rx1, y0], to: [rx1, ry1] },
+        { id: 'north', from: [rx1, y0], to: [x1, y0] },
+      ]
+    : [{ id: 'north', from: [x0, y0], to: [x1, y0] }];
+  const edges: Edge[] = [
+    ...north,
     { id: 'south', from: [x0, y1], to: [x1, y1] },
     { id: 'west', from: [x0, y0], to: [x0, y1] },
     { id: 'east', from: [x1, y0], to: [x1, y1] },
-  ] as const;
+  ];
   for (const edge of edges) {
     const isHidden = hidden.has(edge.id);
     ctx.save();

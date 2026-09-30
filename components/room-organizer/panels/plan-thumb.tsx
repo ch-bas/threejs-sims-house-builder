@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { hasCollisions } from '../lib/geometry';
+import { entranceKeepOut, planFloorIndex } from '../lib/street';
 import type { FloorLayout, RoomLayout } from '../lib/types';
 import type { CSSProperties } from 'react';
 
@@ -99,6 +100,7 @@ export function PlanThumb({
     if (!showFloorPlan) delete building.floorPlanImage;
     const shown = floor ?? building.floors[0];
     if (!shown) return undefined;
+    const keepOut = entranceKeepOut(building, planFloorIndex(building.floors, shown));
 
     const paint = () => {
       // Size the backing store to CSS size × devicePixelRatio (the CSS size is
@@ -118,7 +120,7 @@ export function PlanThumb({
         selectedItemId,
         showMeasurements: false,
         showWiFiSignals: false,
-        hasCollision: (item) => hasCollisions(item, shown.items, building.width, building.height),
+        hasCollision: (item) => hasCollisions(item, shown.items, building.width, building.height, keepOut),
         padding,
       });
     };

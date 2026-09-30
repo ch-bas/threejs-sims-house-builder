@@ -163,11 +163,35 @@ function pairCollides(a: FurnitureItem, b: FurnitureItem): boolean {
   return itemsOverlap(a, b);
 }
 
+/**
+ * A world-space (x/z, metres) rectangle inside the room that indoor furniture
+ * can't occupy — the recessed entrance's porch (#285).
+ */
+export interface KeepOutRect {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+/** True when the item's rotation-aware AABB overlaps the rect (touching edges don't count). */
+function itemEntersRect(item: FurnitureItem, rect: KeepOutRect): boolean {
+  if (!item.position) return false;
+  const { halfW, halfD } = rotatedHalfExtents(item);
+  return (
+    item.position.x - halfW < rect.x1 &&
+    item.position.x + halfW > rect.x0 &&
+    item.position.z - halfD < rect.z1 &&
+    item.position.z + halfD > rect.z0
+  );
+}
+
 export function hasCollisions(
   item: FurnitureItem,
   allItems: readonly FurnitureItem[],
   roomWidth: number,
-  roomDepth: number
+  roomDepth: number,
+  keepOut: readonly KeepOutRect[] = []
 ): boolean {
   if (!item.position) return false;
   const overlapsAnother = (): boolean =>
@@ -184,6 +208,8 @@ export function hasCollisions(
     return overlapsAnother();
   }
   if (!itemInBounds(item, roomWidth, roomDepth)) return true;
+  // The porch is outside too, just inside the footprint (#285).
+  if (keepOut.some((rect) => itemEntersRect(item, rect))) return true;
   return overlapsAnother();
 }
 

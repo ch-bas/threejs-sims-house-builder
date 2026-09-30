@@ -192,6 +192,28 @@ describe('hasCollisions', () => {
   it('returns false for a positionless item', () => {
     expect(hasCollisions(makeItem({ position: undefined }), [], W, D)).toBe(false);
   });
+
+  it('treats a keep-out rect (the entrance porch) as out of bounds for indoor furniture (#285)', () => {
+    // A 1.4 × 1.2 m porch recessed into the north wall, centred.
+    const porch = [{ x0: -0.7, x1: 0.7, z0: -5, z1: -3.8 }];
+    const inPorch = makeItem({ id: 'a', width: 0.8, depth: 0.8, position: { x: 0, z: -4.4 } });
+    expect(hasCollisions(inPorch, [inPorch], W, D)).toBe(false);
+    expect(hasCollisions(inPorch, [inPorch], W, D, porch)).toBe(true);
+    // Poking a corner in counts; a flush neighbour doesn't.
+    const corner = makeItem({ id: 'b', width: 1, depth: 1, position: { x: 1, z: -3.5 } });
+    expect(hasCollisions(corner, [corner], W, D, porch)).toBe(true);
+    const flush = makeItem({ id: 'c', width: 1, depth: 1, position: { x: 1.2, z: -4.5 } });
+    expect(hasCollisions(flush, [flush], W, D, porch)).toBe(false);
+    const behind = makeItem({ id: 'd', width: 1, depth: 1, position: { x: 0, z: -3.3 } });
+    expect(hasCollisions(behind, [behind], W, D, porch)).toBe(false);
+    // Rotation-aware: a 2 × 0.4 bar turned across the porch mouth enters it.
+    const bar = makeItem({ id: 'e', width: 2, depth: 0.4, rotation: Math.PI / 2, position: { x: 1.2, z: -3.7 } });
+    expect(hasCollisions(bar, [bar], W, D, porch)).toBe(false);
+    expect(hasCollisions({ ...bar, position: { x: 0.5, z: -3.7 } }, [bar], W, D, porch)).toBe(true);
+    // The porch door on the recess's back wall is wall-mounted: never bounds-tested.
+    const door = makeItem({ id: 'f', type: 'door', width: 0.9, depth: 0.1, position: { x: 0, z: -3.8 } });
+    expect(hasCollisions(door, [door], W, D, porch)).toBe(false);
+  });
 });
 
 describe('autoOrganize — overflow handling (#128)', () => {

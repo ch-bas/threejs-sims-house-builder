@@ -18,6 +18,7 @@
  */
 
 import { planDrawOrder } from '../plan-order';
+import { entrancePlanOutline, planFloorIndex } from '../street';
 import { itemWorldCorners, openingAxes, splitPlanItems, type PlacedItem } from './plan-geometry';
 import type { FloorLayout, RoomLayout } from '../types';
 
@@ -126,12 +127,26 @@ export function layoutToDxf(layout: RoomLayout, floor: FloorLayout): string {
 
   // Room outline: one closed polyline around the footprint. Hidden walls stay
   // in the export — the footprint is real even when the 2D view fades a wall.
+  // A recessed entrance (#285) notches the north edge: the polyline goes in
+  // along the east cheek, across the recess's back and out along the west
+  // cheek — eight vertices. (The back wall's centreline is on INTERIOR too,
+  // like the 2D view draws it; its door is an ordinary opening.)
+  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
+  const northEdge: ReadonlyArray<readonly [string, string]> = recess
+    ? [
+        [cx(recess.x1), cy(recess.frontZ)],
+        [cx(recess.x1), cy(recess.backZ)],
+        [cx(recess.x0), cy(recess.backZ)],
+        [cx(recess.x0), cy(recess.frontZ)],
+      ]
+    : [];
   polyline(
     'WALLS',
     [
       [fmt(0), fmt(0)],
       [fmt(layout.width), fmt(0)],
       [fmt(layout.width), fmt(layout.height)],
+      ...northEdge,
       [fmt(0), fmt(layout.height)],
     ],
     true

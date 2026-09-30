@@ -7,6 +7,7 @@ import { useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
+import { useEntranceKeepOut } from './hooks/use-entrance-keep-out';
 import { useHistory } from './hooks/use-history';
 import { useImportExport } from './hooks/use-import-export';
 import { useItemDrag } from './hooks/use-item-drag';
@@ -176,15 +177,16 @@ export function RoomOrganizer(): JSX.Element {
     return matches;
   }, [catalogQuery, activeFloor.items]);
 
+  const keepOut = useEntranceKeepOut(layout, activeFloorIndex);
   const collidingIds = useMemo(() => {
     const matches = new Set<string>();
     for (const item of activeFloor.items) {
-      if (hasCollisions(item, activeFloor.items, layout.width, layout.height)) {
+      if (hasCollisions(item, activeFloor.items, layout.width, layout.height, keepOut)) {
         matches.add(item.id);
       }
     }
     return matches;
-  }, [activeFloor.items, layout.width, layout.height]);
+  }, [activeFloor.items, layout.width, layout.height, keepOut]);
 
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
@@ -459,6 +461,7 @@ export function RoomOrganizer(): JSX.Element {
     activeFloorIndex,
     roomWidth: layout.width,
     roomDepth: layout.height,
+    keepOut,
     actions,
     allSelectedIds,
   });
@@ -1151,7 +1154,8 @@ export function RoomOrganizer(): JSX.Element {
             selectedItem,
             activeFloor.items,
             layout.width,
-            layout.height
+            layout.height,
+            keepOut
           )}
           onRotate={(id: string) => {
             if (rotateItemHandler(id)) playCue('rotate');

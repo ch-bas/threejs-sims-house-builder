@@ -1,11 +1,22 @@
 import { render2DTopDown } from '../canvas-2d/render';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
 import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
+import { entranceKeepOut, entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
 import type { FloorLayout, RoomLayout } from './types';
 
 const PAGE_WIDTH = 1200;
 const PAGE_HEIGHT = 900;
+
+/**
+ * The storey's floor area in m²: the footprint less the recessed entrance's
+ * porch, which is outside (#285).
+ */
+export function floorArea(layout: EntranceBuilding, floorIndex: number): number {
+  const recess = entrancePlanOutline(layout, floorIndex);
+  const porch = recess ? (recess.x1 - recess.x0) * (recess.backZ - recess.frontZ) : 0;
+  return layout.width * layout.height - porch;
+}
 
 /**
  * Open a print-ready blueprint of the active floor in a new tab. The new
@@ -18,6 +29,8 @@ export function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout)
   const canvas = document.createElement('canvas');
   canvas.width = PAGE_WIDTH;
   canvas.height = PAGE_HEIGHT;
+  const floorIndex = planFloorIndex(layout.floors, floor);
+  const keepOut = entranceKeepOut(layout, floorIndex);
 
   render2DTopDown({
     canvas,
@@ -29,13 +42,13 @@ export function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout)
     // planning Wi-Fi and camera placement, and hardcoding this off hid the
     // signal rings AND the camera FOV wedges from the printout (#134).
     showWiFiSignals: true,
-    hasCollision: (item) => hasCollisions(item, floor.items, layout.width, layout.height),
+    hasCollision: (item) => hasCollisions(item, floor.items, layout.width, layout.height, keepOut),
   });
 
   const dataUrl = canvas.toDataURL('image/png');
   const stats = {
     items: floor.items.length,
-    area: (layout.width * layout.height).toFixed(1),
+    area: floorArea(layout, floorIndex).toFixed(1),
     footprint: footprintArea(floor.items).toFixed(1),
     cost: totalCost(floor.items).toLocaleString(),
   };

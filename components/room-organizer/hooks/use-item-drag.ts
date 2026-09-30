@@ -1,5 +1,5 @@
 import { useCallback, useRef, type MutableRefObject } from 'react';
-import { hasCollisions } from '../lib/geometry';
+import { hasCollisions, type KeepOutRect } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import type { LayoutActions } from './use-layout-state';
 import type { FloorLayout } from '../lib/types';
@@ -10,6 +10,8 @@ export interface UseItemDragParams {
   activeFloorIndex: number;
   roomWidth: number;
   roomDepth: number;
+  /** The porch of a recessed entrance, out of bounds like the walls (#285). */
+  keepOut: readonly KeepOutRect[];
   actions: LayoutActions;
   allSelectedIds: ReadonlySet<string>;
 }
@@ -67,6 +69,7 @@ export function useItemDrag({
   activeFloorIndex,
   roomWidth,
   roomDepth,
+  keepOut,
   actions,
   allSelectedIds,
 }: UseItemDragParams): UseItemDragResult {
@@ -166,11 +169,11 @@ export function useItemDrag({
       const dragged = candidateItems.find((item) => item.id === id);
       const primaryGroup = findFurnitureGroup(id);
       if (dragged && primaryGroup) {
-        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, roomWidth, roomDepth));
+        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, roomWidth, roomDepth, keepOut));
       }
       invalidateBoxRef.current();
     },
-    [actions, activeFloor.items, roomWidth, roomDepth, findFurnitureGroup, setDragCollisionTint]
+    [actions, activeFloor.items, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint]
   );
 
   const handleDragEnd = useCallback(

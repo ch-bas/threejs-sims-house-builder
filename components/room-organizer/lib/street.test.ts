@@ -6,12 +6,15 @@ import {
   entranceBackWall,
   entranceFloorIndex,
   entranceGeometry,
+  entranceKeepOut,
   entranceOffsetRange,
+  entrancePlanOutline,
   entranceProblem,
   entranceSteps,
   entranceWallCut,
   isEntranceSpec,
   isSillHeight,
+  planFloorIndex,
   sameEntrance,
   windowSillHeight,
 } from './street';
@@ -130,5 +133,63 @@ describe('recessed entrance (#204)', () => {
     expect(sameEntrance({ width: 1.4, depth: 1.2 }, { width: 1.4, depth: 1.2 })).toBe(true);
     expect(sameEntrance({ width: 1.4, depth: 1.2 }, { width: 1.4, depth: 1.2, door: false })).toBe(false);
     expect(sameEntrance({ width: 1.4, depth: 1.2, offset: 0 }, { width: 1.4, depth: 1.2 })).toBe(false);
+  });
+});
+
+describe('entrance on the plan (#285)', () => {
+  const building = {
+    width: 6,
+    height: 9,
+    floors: [{ id: 'g', height: 3 }, { id: 'u', height: 3 }],
+    entrance: { width: 1.4, depth: 1.2, offset: 1 },
+  };
+
+  it('is the fitted recess on the storey it opens onto, and nothing on the others', () => {
+    const g = entranceGeometry(building.entrance, { width: 6, depth: 9, floors: building.floors })!;
+    const outline = entrancePlanOutline(building, 0)!;
+    expect(outline).toEqual({ x0: g.x0, x1: g.x1, frontZ: g.frontZ, backZ: g.backZ });
+    expect(outline.x1 - outline.x0).toBeCloseTo(1.4);
+    expect(outline.frontZ).toBe(-4.5);
+    expect(outline.backZ - outline.frontZ).toBeCloseTo(1.2);
+    expect((outline.x0 + outline.x1) / 2).toBeCloseTo(1);
+    expect(entrancePlanOutline(building, 1)).toBeNull();
+    expect(entrancePlanOutline(building, -1)).toBeNull();
+    expect(entrancePlanOutline(building, 2)).toBeNull();
+  });
+
+  it('notches every storey the porch crosses — exactly the walls 3D cuts', () => {
+    const tall = { ...building, entrance: { ...building.entrance, height: 4 } };
+    expect(entrancePlanOutline(tall, 0)).not.toBeNull();
+    expect(entrancePlanOutline(tall, 1)).toEqual(entrancePlanOutline(tall, 0));
+  });
+
+  it('draws nothing for a house without an entrance, or one that can’t be built', () => {
+    expect(entrancePlanOutline({ ...building, entrance: undefined }, 0)).toBeNull();
+    // Street above the only storey: no-street-storey.
+    expect(
+      entrancePlanOutline({ ...building, floors: [{ height: 3 }], terrain: { frontY: 3, backY: 0 } }, 0)
+    ).toBeNull();
+  });
+
+  it('follows the porch up the hill to the storey at street level', () => {
+    const hillside = {
+      ...building,
+      floors: [{ id: 'b', height: 2.5 }, { id: 'g', height: 3 }],
+      terrain: { frontY: 2.5, backY: 0 },
+    };
+    expect(entrancePlanOutline(hillside, 0)).toBeNull();
+    expect(entrancePlanOutline(hillside, 1)).not.toBeNull();
+  });
+
+  it('is the collision keep-out, and finds a plan’s storey by identity or id', () => {
+    const outline = entrancePlanOutline(building, 0)!;
+    expect(entranceKeepOut(building, 0)).toEqual([
+      { x0: outline.x0, x1: outline.x1, z0: outline.frontZ, z1: outline.backZ },
+    ]);
+    expect(entranceKeepOut(building, 1)).toEqual([]);
+    expect(planFloorIndex(building.floors, building.floors[1]!)).toBe(1);
+    // The 2D drag paints a copy of the active floor.
+    expect(planFloorIndex(building.floors, { id: 'u' })).toBe(1);
+    expect(planFloorIndex(building.floors, { id: 'attic' })).toBe(-1);
   });
 });

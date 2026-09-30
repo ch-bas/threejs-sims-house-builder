@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { useEntranceKeepOut } from '../hooks/use-entrance-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
@@ -70,7 +71,9 @@ export function SidebarDrawer({
   placeCatalogItem,
   removeItem,
 }: SidebarDrawerProps): JSX.Element {
-  const { layout, activeFloor, actions, view, isReady, playCue, catalogQuery, setCatalogQuery, gameMode } = useRoomEditor();
+  const { layout, activeFloor, activeFloorIndex, actions, view, isReady, playCue, catalogQuery, setCatalogQuery, gameMode } =
+    useRoomEditor();
+  const keepOut = useEntranceKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   const drawerRef = useRef<HTMLElement>(null);
   // The drawer is a modal overlay (a backdrop covers the canvas), so it
@@ -253,7 +256,7 @@ export function SidebarDrawer({
 
               {selectedItem && (
                 <ItemResizePanel
-                  hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height)}
+                  hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, keepOut)}
                   onDuplicate={(id) => {
                     const newId = actions.duplicateItem(id);
                     selectOnly(newId);

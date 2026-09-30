@@ -6,6 +6,7 @@
  */
 
 import { planDrawOrder } from '../plan-order';
+import { entrancePlanOutline, planFloorIndex } from '../street';
 import { zoneArea } from '../zones';
 import {
   gridLinePositions,
@@ -14,7 +15,7 @@ import {
   splitPlanItems,
   type PlacedItem,
 } from './plan-geometry';
-import type { FloorLayout, RoomLayout } from '../types';
+import type { FloorLayout, RoomLayout, WallId } from '../types';
 
 /** Line colours; defaults match the blueprint / 2D-view look. */
 export interface SvgPlanTheme {
@@ -127,12 +128,29 @@ function renderRoomOutline(
   const y0 = margin;
   const x1 = margin + layout.width * scale;
   const y1 = margin + layout.height * scale;
-  const edges = [
-    { id: 'north', x1: x0, y1: y0, x2: x1, y2: y0 },
+  // The recessed entrance (#285), as the 2D view draws it: the north edge
+  // breaks across the opening, the two cheeks run back to the recess's rear
+  // wall (an interior wall, emitted with the others), and the recess is
+  // painted in the page colour over the floor, grid and zones — outside.
+  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
+  const rx0 = recess ? margin + (recess.x0 + layout.width / 2) * scale : x0;
+  const rx1 = recess ? margin + (recess.x1 + layout.width / 2) * scale : x1;
+  const ry1 = recess ? margin + (recess.backZ + layout.height / 2) * scale : y0;
+  type Edge = { id: WallId; x1: number; y1: number; x2: number; y2: number };
+  const north: Edge[] = recess
+    ? [
+        { id: 'north', x1: x0, y1: y0, x2: rx0, y2: y0 },
+        { id: 'north', x1: rx0, y1: y0, x2: rx0, y2: ry1 },
+        { id: 'north', x1: rx1, y1: y0, x2: rx1, y2: ry1 },
+        { id: 'north', x1: rx1, y1: y0, x2: x1, y2: y0 },
+      ]
+    : [{ id: 'north', x1: x0, y1: y0, x2: x1, y2: y0 }];
+  const edges: Edge[] = [
+    ...north,
     { id: 'south', x1: x0, y1: y1, x2: x1, y2: y1 },
     { id: 'west', x1: x0, y1: y0, x2: x0, y2: y1 },
     { id: 'east', x1: x1, y1: y0, x2: x1, y2: y1 },
-  ] as const;
+  ];
   const lines = edges.map((edge) => {
     const hidden = isWallHidden(floor, edge.id);
     const style = hidden
@@ -140,6 +158,11 @@ function renderRoomOutline(
       : `stroke="${theme.wall}" stroke-width="3"`;
     return `<line class="wall" x1="${fmt(edge.x1)}" y1="${fmt(edge.y1)}" x2="${fmt(edge.x2)}" y2="${fmt(edge.y2)}" ${style}/>`;
   });
+  if (recess) {
+    lines.unshift(
+      `<rect class="entrance" x="${fmt(rx0)}" y="${fmt(y0)}" width="${fmt(rx1 - rx0)}" height="${fmt(ry1 - y0)}" fill="${theme.background}"/>`
+    );
+  }
   return lines.join('\n');
 }
 
