@@ -19,7 +19,9 @@ export function PlacementHint({ active }: PlacementHintProps): JSX.Element | nul
       role="status"
       style={{
         position: 'absolute',
-        top: 72,
+        // Below the header stats box, which wraps to two lines at narrow
+        // desktop widths (#299); 72 sat inside it.
+        top: 104,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 30,

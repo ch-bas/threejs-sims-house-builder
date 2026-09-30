@@ -125,6 +125,9 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (v.stairsShape !== undefined && !isStairsShape(v.stairsShape)) return false;
   if (v.stairsLeadIn !== undefined && !isStairsLeadIn(v.stairsLeadIn)) return false;
   if (v.cctvModelId !== undefined && typeof v.cctvModelId !== 'string') return false;
+  // A group id only ever compares equal to other items' ids (#154): any
+  // non-empty string is a valid group, anything else is corruption.
+  if (v.groupId !== undefined && (typeof v.groupId !== 'string' || v.groupId === '')) return false;
   // Booleans must be real booleans: a corrupt `locked:"no"` reads truthy for
   // keyboard-delete guards yet fails `=== true` drag checks, desyncing the two.
   if (!isOptionalBoolean(v.locked)) return false;

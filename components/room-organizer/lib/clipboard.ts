@@ -7,32 +7,44 @@
  */
 
 import { rotatedHalfExtents } from './geometry';
+import { remapGroupIds } from './groups';
 import { settleWallMountedItem } from './opening-snap';
 import type { FurnitureItem, InteriorWall, Vec2 } from './types';
 
-interface ClipboardContent {
+export interface CentroidArrangement {
   /** Deep copies with `position` rewritten as the offset from the centroid. */
   readonly items: readonly FurnitureItem[];
   /** Where the selection was copied from — the default paste lands nearby. */
   readonly sourceCentroid: Vec2;
 }
 
-let content: ClipboardContent | null = null;
-
-/** Copy the given items. Returns how many were copied (0 leaves the clipboard untouched). */
-export function copyToClipboard(items: readonly FurnitureItem[]): number {
+/**
+ * Normalise an arrangement around its centroid — the shape both the
+ * clipboard and a saved custom set (#302) store. Unplaced items are
+ * skipped; returns null when nothing is placed.
+ */
+export function arrangeAroundCentroid(items: readonly FurnitureItem[]): CentroidArrangement | null {
   const positioned = items.filter((item) => item.position);
-  if (positioned.length === 0) return 0;
+  if (positioned.length === 0) return null;
   const cx = positioned.reduce((sum, item) => sum + item.position!.x, 0) / positioned.length;
   const cz = positioned.reduce((sum, item) => sum + item.position!.z, 0) / positioned.length;
-  content = {
+  return {
     sourceCentroid: { x: cx, z: cz },
     items: positioned.map((item) => ({
       ...structuredClone(item),
       position: { x: item.position!.x - cx, z: item.position!.z - cz },
     })),
   };
-  return positioned.length;
+}
+
+let content: CentroidArrangement | null = null;
+
+/** Copy the given items. Returns how many were copied (0 leaves the clipboard untouched). */
+export function copyToClipboard(items: readonly FurnitureItem[]): number {
+  const arranged = arrangeAroundCentroid(items);
+  if (!arranged) return 0;
+  content = arranged;
+  return arranged.items.length;
 }
 
 export function clipboardSize(): number {
@@ -64,7 +76,9 @@ export interface PasteOptions {
  * Placement rules mirror duplication (#116): wall-mounted copies settle onto
  * the nearest wall, indoor copies clamp inside the footprint, outdoor copies
  * keep their raw offset (they belong outside). `locked` is stripped so a
- * fresh paste is immediately movable.
+ * fresh paste is immediately movable. Groups (#154) are remapped to fresh
+ * ids, so a pasted group is a new group rather than more members of the
+ * source.
  */
 export function buildPasteItems(options: PasteOptions): FurnitureItem[] {
   if (!content) return [];
@@ -75,7 +89,7 @@ export function buildPasteItems(options: PasteOptions): FurnitureItem[] {
     z: content.sourceCentroid.z + 0.5,
   };
 
-  return content.items.map((entry, index) => {
+  return remapGroupIds(content.items, `paste-${idTag}`).map((entry, index) => {
     const copy: FurnitureItem = {
       ...structuredClone(entry),
       id: `${entry.type}-paste-${idTag}-${index}`,

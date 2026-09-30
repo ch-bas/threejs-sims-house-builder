@@ -23,6 +23,14 @@ export interface ViewportProps {
   selectionCount?: number;
   /** Copy the current multi-selection to the furniture clipboard (#153). */
   onCopySelection?(): void;
+  /** The selection is exactly one persistent group (#154) — the chip says so. */
+  selectionGrouped?: boolean;
+  /** Group the selection; absent when it is already one whole group (#154). */
+  onGroupSelection?(): void;
+  /** Ungroup the selection; absent when nothing in it is grouped (#154). */
+  onUngroupSelection?(): void;
+  /** Save the selection as a reusable custom set (#302). */
+  onSaveSelectionAsSet?(): void;
   showMeasurements: boolean;
   showMinimap: boolean;
   walkthroughActive?: boolean;
@@ -355,6 +363,39 @@ function StatusChip({
   );
 }
 
+/** Pill action inside a StatusChip — the multi-select chip's Copy / Group / Save row. */
+function ChipButton({
+  children,
+  onClick,
+  title,
+}: {
+  children: React.ReactNode;
+  onClick(): void;
+  title: string;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      style={{
+        border: '1px solid currentColor',
+        borderRadius: 999,
+        background: 'transparent',
+        color: 'inherit',
+        fontFamily: 'var(--pc-font-display)',
+        fontWeight: 700,
+        fontSize: 10,
+        padding: '1px 8px',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ViewportOverlays(props: ViewportProps): JSX.Element {
   return (
     <>
@@ -368,32 +409,43 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
 
       {props.selectionCount !== undefined && props.selectionCount > 1 && (
         <div
-          className="absolute top-4 left-1/2"
-          style={{ transform: 'translateX(-50%)' }}
+          className="absolute left-1/2"
+          // Below the header stats box, which can wrap to two lines at
+          // narrow desktop widths and covered a top-16 chip (#299, #154).
+          style={{ top: 104, transform: 'translateX(-50%)', zIndex: 31 }}
         >
           <StatusChip intent="accent">
             <Icon name="copy" size={14} />
-            {props.selectionCount} items selected · drag to move together
+            {props.selectionCount} items
+            {props.selectionGrouped ? ' · grouped · click any to select all' : ' selected · drag to move together'}
             {props.onCopySelection && (
-              <button
-                type="button"
+              <ChipButton
                 onClick={props.onCopySelection}
                 title="Copy the selection (Ctrl+C) — Ctrl+V pastes, here or on another floor"
-                style={{
-                  marginLeft: 8,
-                  border: '1px solid currentColor',
-                  borderRadius: 999,
-                  background: 'transparent',
-                  color: 'inherit',
-                  fontFamily: 'var(--pc-font-display)',
-                  fontWeight: 700,
-                  fontSize: 10,
-                  padding: '1px 8px',
-                  cursor: 'pointer',
-                }}
               >
                 Copy
-              </button>
+              </ChipButton>
+            )}
+            {props.onGroupSelection && (
+              <ChipButton
+                onClick={props.onGroupSelection}
+                title="Group these items — clicking any one selects them all; Alt+click picks a single member"
+              >
+                Group
+              </ChipButton>
+            )}
+            {props.onUngroupSelection && (
+              <ChipButton onClick={props.onUngroupSelection} title="Ungroup the selected items">
+                Ungroup
+              </ChipButton>
+            )}
+            {props.onSaveSelectionAsSet && (
+              <ChipButton
+                onClick={props.onSaveSelectionAsSet}
+                title="Save this arrangement as a reusable set in the Furniture Sets panel"
+              >
+                Save as set
+              </ChipButton>
             )}
           </StatusChip>
         </div>

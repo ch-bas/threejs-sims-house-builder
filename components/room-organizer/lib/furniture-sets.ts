@@ -1,14 +1,31 @@
 import { FURNITURE_CATALOG } from './constants';
 import { itemsOverlap } from './geometry';
+import { remapGroupIds } from './groups';
 import { randomSuffix } from './ids';
-import type { CatalogItem, FurnitureItem, Vec2 } from './types';
+import type { FurnitureItem, Vec2 } from './types';
+
+/**
+ * A placed item minus what a set can't carry: its id and floor position
+ * (the spec's offset), its rotation (the spec's) and its lock. Custom sets
+ * (#302) store one per piece so colour, size and shape overrides survive;
+ * `groupId` survives too, remapped to a fresh group at placement (#154).
+ */
+export type SetItemSnapshot = Omit<FurnitureItem, 'id' | 'position' | 'rotation' | 'locked'>;
+
+export interface FurnitureSetItem {
+  type: string;
+  offset: Vec2;
+  rotation?: number;
+  /** Full item to place instead of the catalog entry for `type` (#302). */
+  snapshot?: SetItemSnapshot;
+}
 
 export interface FurnitureSet {
   key: string;
   label: string;
   icon: string;
   description: string;
-  items: ReadonlyArray<{ type: string; offset: Vec2; rotation?: number }>;
+  items: ReadonlyArray<FurnitureSetItem>;
 }
 
 export const FURNITURE_SETS: readonly FurnitureSet[] = [
@@ -85,8 +102,23 @@ interface BuildSetOptions {
 }
 
 interface ResolvedSpec {
-  spec: FurnitureSet['items'][number];
-  catalog: CatalogItem;
+  spec: FurnitureSetItem;
+  /** The piece as it will be placed: the snapshot, or the catalog entry. */
+  base: SetItemSnapshot;
+}
+
+/**
+ * Pair each spec with the item it places. A built-in spec resolves through
+ * the catalog and is skipped when its type is unknown; a snapshot spec is
+ * self-contained, so a custom set outlives catalog renames (#302).
+ */
+function resolveSpecs(set: FurnitureSet): ResolvedSpec[] {
+  const specs: ResolvedSpec[] = [];
+  for (const spec of set.items) {
+    const base = spec.snapshot ?? FURNITURE_CATALOG.find((entry) => entry.type === spec.type);
+    if (base) specs.push({ spec, base });
+  }
+  return specs;
 }
 
 /**
@@ -110,10 +142,10 @@ function fitScale(specs: readonly ResolvedSpec[], roomWidth: number, roomDepth: 
   // Scale only the offsets: the item half-extents are fixed, so solve
   // s·|offset| + half ≤ usable for the tightest item on each axis.
   let scale = 1;
-  for (const { spec, catalog } of specs) {
+  for (const { spec, base } of specs) {
     const rotated = Math.abs(Math.round(((spec.rotation ?? 0) / (Math.PI / 2)) % 2)) === 1;
-    const halfW = (rotated ? catalog.depth : catalog.width) / 2;
-    const halfD = (rotated ? catalog.width : catalog.depth) / 2;
+    const halfW = (rotated ? base.depth : base.width) / 2;
+    const halfD = (rotated ? base.width : base.depth) / 2;
     if (spec.offset.x !== 0) {
       scale = Math.min(scale, (usableHalfW - halfW) / Math.abs(spec.offset.x));
     }
@@ -130,12 +162,10 @@ function fitScale(specs: readonly ResolvedSpec[], roomWidth: number, roomDepth: 
  */
 export function setFitsRoom(set: FurnitureSet, roomWidth: number, roomDepth: number): boolean {
   const MARGIN = WALL_INSET;
-  for (const spec of set.items) {
-    const catalog = FURNITURE_CATALOG.find((entry) => entry.type === spec.type);
-    if (!catalog) continue;
+  for (const { spec, base } of resolveSpecs(set)) {
     const rotated = Math.abs(Math.round(((spec.rotation ?? 0) / (Math.PI / 2)) % 2)) === 1;
-    const w = rotated ? catalog.depth : catalog.width;
-    const d = rotated ? catalog.width : catalog.depth;
+    const w = rotated ? base.depth : base.width;
+    const d = rotated ? base.width : base.depth;
     if (w > roomWidth - 2 * MARGIN || d > roomDepth - 2 * MARGIN) return false;
   }
   return true;
@@ -152,12 +182,7 @@ export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = 
     roomDepth,
   } = options;
 
-  const specs: ResolvedSpec[] = [];
-  set.items.forEach((spec) => {
-    const catalog = FURNITURE_CATALOG.find((entry) => entry.type === spec.type) as CatalogItem | undefined;
-    if (!catalog) return;
-    specs.push({ spec, catalog });
-  });
+  const specs = resolveSpecs(set);
 
   // If the room is known and even a single item can't fit, refuse the set
   // rather than drop pieces through the walls.
@@ -167,13 +192,18 @@ export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = 
 
   const scale = roomWidth != null && roomDepth != null ? fitScale(specs, roomWidth, roomDepth) : 1;
 
+  // A snapshot set's groups come back as new groups under this stamp's
+  // prefix (#154, #302); built-in specs carry no groupId and stay loose.
   const place = (s: number): FurnitureItem[] =>
-    specs.map(({ spec, catalog }, index) => ({
-      ...catalog,
-      id: `${idPrefix}-${index}`,
-      position: { x: center.x + spec.offset.x * s, z: center.z + spec.offset.z * s },
-      rotation: spec.rotation ?? 0,
-    }));
+    remapGroupIds(
+      specs.map(({ spec, base }, index) => ({
+        ...base,
+        id: `${idPrefix}-${index}`,
+        position: { x: center.x + spec.offset.x * s, z: center.z + spec.offset.z * s },
+        rotation: spec.rotation ?? 0,
+      })),
+      idPrefix
+    );
 
   const items = place(scale);
 

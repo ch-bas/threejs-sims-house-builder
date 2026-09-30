@@ -100,7 +100,10 @@ export type LayoutAction =
   | { type: 'setFrontage'; frontage: Frontage }
   | { type: 'setSillHeight'; id: string; sillHeight: number | null }
   | { type: 'setStairsShape'; id: string; shape: StairsShape; leadIn?: number }
-  | { type: 'applyLayout'; layout: RoomLayout };
+  | { type: 'applyLayout'; layout: RoomLayout }
+  // persistent groups (#154) — target the active floor
+  | { type: 'setGroup'; ids: ReadonlySet<string>; groupId: string }
+  | { type: 'clearGroup'; ids: ReadonlySet<string> };
 
 // ---------------------------------------------------------------------------
 // State shape + defaults
@@ -391,6 +394,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
                   ? offset
                   : clampToFootprint(source, offset, state.layout.width, state.layout.height),
             };
+        // A duplicate is a loose copy: it must not join the source's group
+        // (#154). Paste remaps groups instead — see lib/clipboard.ts.
+        delete copy.groupId;
         return { ...floor, items: [...floor.items, copy] };
       });
 
@@ -726,6 +732,38 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         activeFloorIndex: clampActiveIndex(state.activeFloorIndex, layout.floors.length),
       };
     }
+
+    // -- persistent groups (#154) -------------------------------------------
+    // Grouping is metadata, not geometry: locked members join and leave
+    // groups freely, and stay put during a group move as they do today.
+    case 'setGroup':
+      return withActiveFloor(state, (floor) => {
+        if (action.groupId === '') return floor;
+        // A group needs company — a lone member would select as itself
+        // anyway (lib/groups.ts) and only add bytes to the save.
+        if (floor.items.filter((item) => action.ids.has(item.id)).length < 2) return floor;
+        let changed = false;
+        const items = floor.items.map((item) => {
+          if (!action.ids.has(item.id) || item.groupId === action.groupId) return item;
+          changed = true;
+          return { ...item, groupId: action.groupId };
+        });
+        return changed ? { ...floor, items } : floor;
+      });
+
+    case 'clearGroup':
+      return withActiveFloor(state, (floor) => {
+        let changed = false;
+        const items = floor.items.map((item) => {
+          if (!action.ids.has(item.id) || item.groupId === undefined) return item;
+          changed = true;
+          // Dropped, not set to undefined: an absent key keeps the saved
+          // JSON and share URL identical to a layout that never grouped.
+          const { groupId: _cleared, ...rest } = item;
+          return rest;
+        });
+        return changed ? { ...floor, items } : floor;
+      });
 
     default:
       return assertNever(action);
