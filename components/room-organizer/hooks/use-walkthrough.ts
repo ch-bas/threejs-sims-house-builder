@@ -1,9 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { buildWalkColliders, resolveWalkerStep } from '../lib/walk-collision';
+import type { FurnitureItem, InteriorWall } from '../lib/types';
+import type { WalkCollider, WalkCollisionOptions, WalkerPosition } from '../lib/walk-collision';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { PointerLockControls as PointerLockControlsType } from 'three/examples/jsm/controls/PointerLockControls.js';
 
 type ThreeModule = typeof import('three');
+
+const NO_ITEMS: readonly FurnitureItem[] = [];
+const NO_WALLS: readonly InteriorWall[] = [];
 
 export interface UseWalkthroughOptions {
   enabled: boolean;
@@ -16,6 +22,9 @@ export interface UseWalkthroughOptions {
   /** Room footprint (metres) used to clamp the walker inside the walls. */
   roomWidth?: number;
   roomDepth?: number;
+  /** The active floor's furniture and partitions the walker collides with (#156). */
+  items?: readonly FurnitureItem[];
+  interiorWalls?: readonly InteriorWall[];
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate?: () => void;
   /**
@@ -40,9 +49,13 @@ const MOVEMENT_KEYS = new Set([
 ]);
 
 // Keep the walker a little inside the exterior walls so the camera never clips
-// through them or steps off the floor plate. A full wall-segment collision test
-// is out of scope — this footprint clamp is the minimal guard (see #67).
+// through them or steps off the floor plate. Furniture and interior walls are
+// solid via lib/walk-collision (#156); this footprint clamp stays the outer
+// guard for the exterior walls (see #67).
 const WALL_MARGIN = 0.35;
+// Shoulder-width walker: wide enough that the camera's near plane never pokes
+// into a sofa, narrow enough to fit a 0.8 m doorway with room to spare (#156).
+const WALKER_RADIUS = 0.3;
 
 /**
  * First-person walkthrough mode using PointerLockControls.
@@ -52,7 +65,8 @@ const WALL_MARGIN = 0.35;
  *  - Lazy-loads PointerLockControls and attaches them to the canvas.
  *  - Moves the camera to eye level and listens for WASD / arrow movement,
  *    with Shift for sprint.
- *  - Clamps the walker to the room footprint so it can't leave the plate.
+ *  - Slides the walker around furniture and interior walls (#156) and clamps
+ *    it to the room footprint so it can't leave the plate.
  *  - On disable / unmount, restores orbit controls and the camera pose.
  *
  * `eyeHeight` (which tracks the active floor) is read live from a ref so a floor
@@ -70,9 +84,18 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
     walkSpeed = 3.0,
     roomWidth = Infinity,
     roomDepth = Infinity,
+    items = NO_ITEMS,
+    interiorWalls = NO_WALLS,
     invalidate,
     onExit,
   } = options;
+
+  // Colliders are rebuilt only when the floor's contents change, never per
+  // frame (#156). Outside walkthrough the memo is skipped entirely.
+  const colliders = useMemo<readonly WalkCollider[]>(
+    () => (enabled ? buildWalkColliders(items, interiorWalls, { roomWidth, roomDepth }) : []),
+    [enabled, items, interiorWalls, roomWidth, roomDepth]
+  );
 
   // Live values the RAF loop / Esc handler read without re-running the init
   // effect (which would drop pointer lock). Updated every render.
@@ -80,12 +103,14 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
   const walkSpeedRef = useRef(walkSpeed);
   const roomWidthRef = useRef(roomWidth);
   const roomDepthRef = useRef(roomDepth);
+  const collidersRef = useRef(colliders);
   const invalidateRef = useRef(invalidate);
   const onExitRef = useRef(onExit);
   eyeHeightRef.current = eyeHeight;
   walkSpeedRef.current = walkSpeed;
   roomWidthRef.current = roomWidth;
   roomDepthRef.current = roomDepth;
+  collidersRef.current = colliders;
   invalidateRef.current = invalidate;
   onExitRef.current = onExit;
 
@@ -186,6 +211,12 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
 
       const forward = new THREE.Vector3();
       const right = new THREE.Vector3();
+      // Scratch for the collision step — reused every frame so the loop
+      // allocates nothing (#156).
+      const walkFrom: WalkerPosition = { x: 0, z: 0 };
+      const walkTo: WalkerPosition = { x: 0, z: 0 };
+      const walkOut: WalkerPosition = { x: 0, z: 0 };
+      const walkOptions: WalkCollisionOptions = {};
       let lastTime = performance.now();
       const step = () => {
         rafId = requestAnimationFrame(step);
@@ -219,8 +250,19 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
         right.crossVectors(forward, camera.up).normalize();
 
         const distance = speed * delta;
+        walkFrom.x = camera.position.x;
+        walkFrom.z = camera.position.z;
         camera.position.addScaledVector(forward, -dz * distance);
         camera.position.addScaledVector(right, dx * distance);
+        walkTo.x = camera.position.x;
+        walkTo.z = camera.position.z;
+        // Slide around furniture and interior walls (#156). Room dims decide
+        // whether outdoor items count; Infinity (no room) reads as "inside".
+        walkOptions.roomWidth = roomWidthRef.current;
+        walkOptions.roomDepth = roomDepthRef.current;
+        resolveWalkerStep(collidersRef.current, walkFrom, walkTo, WALKER_RADIUS, walkOut, walkOptions);
+        camera.position.x = walkOut.x;
+        camera.position.z = walkOut.z;
         camera.position.y = eyeHeightRef.current;
         clampToFootprint();
       };
