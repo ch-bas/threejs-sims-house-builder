@@ -264,8 +264,14 @@ export interface EntrancePlanOutline {
   backZ: number;
 }
 
-/** What the plan helpers read of a building: the `RoomLayout` fields the recess is fitted to. */
-export interface EntranceBuilding extends Pick<RoomLayout, 'width' | 'height' | 'terrain' | 'entrance'> {
+/**
+ * What the plan helpers read of a building: the `RoomLayout` fields the
+ * recess is fitted to. `terrain` / `entrance` accept an explicit undefined
+ * (absent) so callers can pass a layout's fields through without spreading.
+ */
+export interface EntranceBuilding extends Pick<RoomLayout, 'width' | 'height'> {
+  terrain?: TerrainSpec | undefined;
+  entrance?: EntranceSpec | undefined;
   floors: readonly Pick<FloorLayout, 'height'>[];
 }
 
@@ -283,7 +289,7 @@ export function entrancePlanOutline(layout: EntranceBuilding, floorIndex: number
     width: layout.width,
     depth: layout.height,
     floors: layout.floors,
-    terrain: layout.terrain,
+    ...(layout.terrain ? { terrain: layout.terrain } : {}),
   });
   if (!geometry || !entranceWallCut(geometry, layout.floors, floorIndex)) return null;
   const { x0, x1, frontZ, backZ } = geometry;

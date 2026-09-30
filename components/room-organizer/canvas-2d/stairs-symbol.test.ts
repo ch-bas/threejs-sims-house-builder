@@ -97,7 +97,8 @@ describe('drawStairsSymbol (#290)', () => {
 
   it('draws nothing for an unplaced item', () => {
     const { ctx, calls } = recordingContext();
-    drawStairsSymbol(ctx, { ...straight, position: undefined }, layout, view);
+    const { position: _placed, ...unplaced } = straight;
+    drawStairsSymbol(ctx, unplaced, layout, view);
     expect(calls).toHaveLength(0);
   });
 });
