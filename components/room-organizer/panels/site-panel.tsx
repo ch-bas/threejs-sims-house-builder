@@ -7,7 +7,13 @@ import { Label } from '@/components/ui/label';
 import { useRoomEditor } from '../contexts';
 import { MAX_TERRAIN_Y, MIN_TERRAIN_Y, NEIGHBOUR_FLAGS } from '../lib/site';
 import { storeyHeight } from '../lib/storeys';
-import { DEFAULT_ENTRANCE, ENTRANCE_LIMITS } from '../lib/street';
+import {
+  DEFAULT_ENTRANCE,
+  ENTRANCE_LIMITS,
+  ENTRANCE_PROBLEM_LABELS,
+  entranceOffsetRange,
+  entranceProblem,
+} from '../lib/street';
 import { RoomDimensionInput } from './room-settings-panel';
 import type { NeighbourFlag } from '../lib/types';
 
@@ -31,6 +37,18 @@ export function SitePanel(): JSX.Element {
   const entranceDepthId = useId();
   const entranceOffsetId = useId();
   const entrance = layout.entrance;
+  // The reachable offset and the reason nothing renders come from the same
+  // helpers the geometry uses, so the field can't be stepped into a dead
+  // zone and an unbuildable recess says why instead of showing "On" (#281).
+  const [offsetMin, offsetMax] = entrance ? entranceOffsetRange(entrance, layout.width) : [-20, 20];
+  const problem = entrance
+    ? entranceProblem(entrance, {
+        width: layout.width,
+        depth: layout.height,
+        floors: layout.floors,
+        terrain: layout.terrain,
+      })
+    : null;
   const pavement = layout.frontage === 'pavement';
   const terrain = layout.terrain;
   const streetOn = layout.neighbours?.street === true || layout.neighbours?.across === true;
@@ -187,12 +205,17 @@ export function SitePanel(): JSX.Element {
                 id={entranceOffsetId}
                 value={entrance.offset ?? 0}
                 onCommit={(offset) => actions.setEntrance({ ...entrance, offset })}
-                min={-20}
-                max={20}
+                min={offsetMin}
+                max={offsetMax}
                 step={0.1}
               />
             </div>
           </div>
+        )}
+        {problem && (
+          <p className="text-[10px] text-amber-700" role="status">
+            {ENTRANCE_PROBLEM_LABELS[problem]}
+          </p>
         )}
         <p className="text-[10px] text-muted-foreground">
           {pavement ? 'The pavement runs right up to the front wall. ' : ''}
