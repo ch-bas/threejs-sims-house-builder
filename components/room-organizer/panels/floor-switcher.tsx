@@ -6,7 +6,13 @@ import { Input } from '@/components/ui/input';
 import { useRoomEditor } from '../contexts';
 import { useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { MAX_FLOORS } from '../lib/constants';
+import { buildingHeight, storeyHeight } from '../lib/storeys';
 import { Icon } from '../plotcraft/icon';
+
+/** "3 m", "2.5 m" — the storey figures the plan and the shell are built from. */
+function formatMetres(value: number): string {
+  return `${Number(value.toFixed(2))} m`;
+}
 
 export function FloorSwitcher(): JSX.Element {
   // Layout slices come from the store via atomic selectors; view/toggle stay on
@@ -182,14 +188,25 @@ export function FloorSwitcher(): JSX.Element {
                     >
                       {floor.name}
                     </span>
+                    {/* Stacked so the storey height (#289) doesn't crowd the
+                        name off its line in the 320px drawer. */}
                     <span
                       className="pc-blurb"
                       style={{
                         fontSize: 10,
+                        lineHeight: 1.2,
                         fontVariantNumeric: 'tabular-nums',
+                        whiteSpace: 'nowrap',
+                        textAlign: 'right',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        flexShrink: 0,
                       }}
                     >
-                      {floor.items.length} item{floor.items.length === 1 ? '' : 's'}
+                      <span>
+                        {floor.items.length} item{floor.items.length === 1 ? '' : 's'}
+                      </span>
+                      <span>{formatMetres(storeyHeight(floor))}</span>
                     </span>
                   </span>
                 )}
@@ -254,11 +271,15 @@ export function FloorSwitcher(): JSX.Element {
           );
         })}
       </ul>
+      {/* Storeys have had their own heights since #202, so the footer quotes
+          the real stack instead of a fixed "3m" that a 2.5 m ground floor
+          contradicts (#289). */}
       <p
         className="pc-blurb"
         style={{ fontSize: 10, margin: 0 }}
       >
-        Double-click a name to rename. Each floor stacks 3m above the one below.
+        Double-click a name to rename. Each floor stacks its storey height above the one below —{' '}
+        {formatMetres(buildingHeight(floors))} to the eaves.
       </p>
     </div>
   );

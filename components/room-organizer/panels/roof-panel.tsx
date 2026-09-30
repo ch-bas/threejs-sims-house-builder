@@ -28,7 +28,7 @@ import type { DormerSpec, RoofStyle, WallId } from '../lib/types';
 const ROOF_STYLES: ReadonlyArray<RoofStyle> = ['none', 'flat', 'gable', 'hipped'];
 
 export function RoofPanel(): JSX.Element {
-  const { layout, actions } = useRoomEditor();
+  const { layout, actions, view } = useRoomEditor();
   const style = layout.roof?.style ?? 'none';
   // Show what the roof actually renders in when it has no colour of its own.
   const color = layout.roof?.color ?? ROOF_STYLE_DEFAULT_COLORS[style];
@@ -39,6 +39,14 @@ export function RoofPanel(): JSX.Element {
         <CardTitle className="text-base">🏠 Roof</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* The plan draws no roof or dormers: say so instead of letting the
+            controls look broken, but keep them live — the 3D view shows the
+            result on the way back (#289). */}
+        {view.view2D && (
+          <p className="text-[10px] text-muted-foreground" role="note">
+            Shown in the 3D view only.
+          </p>
+        )}
         <div>
           <Label className="text-xs">Style</Label>
           <Select value={style} onValueChange={(value) => actions.setRoofStyle(value as RoofStyle)}>

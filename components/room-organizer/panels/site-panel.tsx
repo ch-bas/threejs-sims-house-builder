@@ -30,7 +30,7 @@ const NEIGHBOUR_LABELS: Record<NeighbourFlag, string> = {
  * runs along the north (front) side.
  */
 export function SitePanel(): JSX.Element {
-  const { layout, actions } = useRoomEditor();
+  const { layout, actions, view } = useRoomEditor();
   const frontId = useId();
   const backId = useId();
   const entranceWidthId = useId();
@@ -64,6 +64,14 @@ export function SitePanel(): JSX.Element {
         <CardTitle className="text-base">⛰️ Site</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* None of this is drawn on the plan: say so instead of letting the
+            controls look broken, but keep them live — the 3D view shows the
+            result on the way back (#289). */}
+        {view.view2D && (
+          <p className="text-[10px] text-muted-foreground" role="note">
+            Shown in the 3D view only.
+          </p>
+        )}
         <div className="flex items-center justify-between gap-2">
           <Label className="text-xs">Sloped site</Label>
           <Button
