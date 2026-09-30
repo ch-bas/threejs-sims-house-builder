@@ -5,12 +5,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useRoomEditor } from '../contexts';
 import { TIME_PRESETS, type TimePresetKey } from '../three/lighting';
+import type { Weather } from '../lib/types';
 
 const PRESETS: ReadonlyArray<{ key: TimePresetKey; label: string; icon: string }> = [
   { key: 'dawn', label: 'Dawn', icon: '🌅' },
   { key: 'noon', label: 'Noon', icon: '☀️' },
   { key: 'dusk', label: 'Dusk', icon: '🌇' },
   { key: 'midnight', label: 'Night', icon: '🌙' },
+];
+
+/** Weather over the lot (#189); view-only, like the hour. */
+const WEATHERS: ReadonlyArray<{ key: Weather; label: string; icon: string }> = [
+  { key: 'clear', label: 'Clear', icon: '🌤️' },
+  { key: 'rain', label: 'Rain', icon: '🌧️' },
+  { key: 'snow', label: 'Snow', icon: '❄️' },
 ];
 
 export function TimeOfDayPanel(): JSX.Element {
@@ -66,6 +74,26 @@ export function TimeOfDayPanel(): JSX.Element {
         >
           {autoCycleLighting ? '⏸ Stop time' : '▶ Speed up time'}
         </Button>
+        <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Weather">
+          {WEATHERS.map((option) => {
+            const active = view.weather === option.key;
+            return (
+              <Button
+                key={option.key}
+                size="sm"
+                variant={active ? 'default' : 'outline'}
+                role="radio"
+                aria-checked={active}
+                disabled={disabled}
+                onClick={() => setView((v) => ({ ...v, weather: option.key }))}
+                className="text-[10px] h-8 px-1 flex flex-col"
+              >
+                <span>{option.icon}</span>
+                <span>{option.label}</span>
+              </Button>
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
   );

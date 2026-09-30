@@ -508,14 +508,15 @@ export function useSceneEffects({
         }))
     );
 
-    applyTimeOfDay(THREE, scene, view.timeOfDay, lampPositions);
+    // The weather overcasts the same profile and tints the lot's ground (#189).
+    applyTimeOfDay(THREE, scene, view.timeOfDay, lampPositions, view.weather);
     // The sun's angle/position changed, so the (static) shadow map must be
     // recomputed or shadows would stay frozen at the previous time of day.
     requestShadowUpdate();
     // layout.floors is read for lamp positions only; lampsKey covers exactly
     // that, so a non-lamp item edit doesn't rebuild the sky and lights.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, lampsKey, storeyHeightsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, lampsKey, storeyHeightsKey]);
 
   // Outdoor
   useEffect(() => {

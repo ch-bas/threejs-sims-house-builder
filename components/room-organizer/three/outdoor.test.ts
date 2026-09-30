@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { setOutdoorVisible } from './outdoor';
+import { applyOutdoorWeather, outdoorGroundColor, setOutdoorVisible } from './outdoor';
 
 const WIDTH = 8;
 const DEPTH = 8;
@@ -66,5 +66,47 @@ describe('outdoor scene on a sloped site (#202)', () => {
     const beside = (tree: THREE.Object3D) => tree.position.z < DEPTH / 2 + 6;
     expect(all.some((tree) => beside(tree) && tree.position.x > WIDTH / 2 + 6)).toBe(false);
     expect(all.some((tree) => beside(tree) && tree.position.x < -(WIDTH / 2 + 6))).toBe(true);
+  });
+});
+
+describe('weather ground tint (#189)', () => {
+  const grass = (scene: THREE.Scene) =>
+    outdoor(scene).find((obj) => obj.userData.role === 'ground') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+  const roadColor = (scene: THREE.Scene) => ((road(scene) as THREE.Mesh).material as THREE.MeshStandardMaterial).color.getHex();
+  const luma = (hex: number) => ((hex >> 16) & 0xff) + ((hex >> 8) & 0xff) + (hex & 0xff);
+
+  it('the lot is built with the untouched grass colour by default', () => {
+    const scene = new THREE.Scene();
+    setOutdoorVisible(THREE, scene, true, WIDTH, DEPTH);
+    expect(grass(scene).material.color.getHex()).toBe(0x7cb04a);
+    expect(outdoorGroundColor('clear')).toBe(0x7cb04a);
+  });
+
+  it('snow lightens the grass, rain darkens it, clear restores it', () => {
+    const scene = new THREE.Scene();
+    setOutdoorVisible(THREE, scene, true, WIDTH, DEPTH);
+    applyOutdoorWeather(scene, 'snow');
+    expect(grass(scene).material.color.getHex()).toBe(outdoorGroundColor('snow'));
+    expect(luma(outdoorGroundColor('snow'))).toBeGreaterThan(luma(outdoorGroundColor('clear')));
+    applyOutdoorWeather(scene, 'rain');
+    expect(luma(grass(scene).material.color.getHex())).toBeLessThan(luma(outdoorGroundColor('clear')));
+    applyOutdoorWeather(scene, 'clear');
+    expect(grass(scene).material.color.getHex()).toBe(0x7cb04a);
+  });
+
+  it('a lot rebuilt after the weather was set comes back tinted (the lighting effect does not re-run)', () => {
+    const scene = new THREE.Scene();
+    setOutdoorVisible(THREE, scene, true, WIDTH, DEPTH);
+    applyOutdoorWeather(scene, 'snow');
+    setOutdoorVisible(THREE, scene, true, WIDTH + 2, DEPTH, { terrain: { frontY: 1, backY: 0 } });
+    expect(grass(scene).material.color.getHex()).toBe(outdoorGroundColor('snow'));
+  });
+
+  it('tints the grass only, never the road', () => {
+    const scene = new THREE.Scene();
+    setOutdoorVisible(THREE, scene, true, WIDTH, DEPTH);
+    const before = roadColor(scene);
+    applyOutdoorWeather(scene, 'snow');
+    expect(roadColor(scene)).toBe(before);
   });
 });

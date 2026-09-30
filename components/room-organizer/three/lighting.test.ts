@@ -80,3 +80,53 @@ describe('computeNightSky (#182)', () => {
     expect(computeNightSky(5.5).moonT).toBeNull();
   });
 });
+
+describe('computeSkyProfile — weather overcast (#189)', () => {
+  const HOURS = [0, 3, 6, 9, 12, 15, 18, 21];
+
+  it("'clear' is the default and returns the untouched profile", () => {
+    for (const hour of HOURS) {
+      expect(computeSkyProfile(hour, 'clear')).toEqual(computeSkyProfile(hour));
+    }
+  });
+
+  it('rain dims the sun and the ambient, snow dims only the sun, both by a constant factor', () => {
+    for (const hour of HOURS) {
+      const clear = computeSkyProfile(hour);
+      const rain = computeSkyProfile(hour, 'rain');
+      const snow = computeSkyProfile(hour, 'snow');
+      expect(rain.ambient.intensity, `rain ambient ${hour}`).toBeCloseTo(clear.ambient.intensity * 0.85, 10);
+      expect(rain.sun.intensity, `rain sun ${hour}`).toBeCloseTo(clear.sun.intensity * 0.55, 10);
+      expect(snow.ambient.intensity, `snow ambient ${hour}`).toBeCloseTo(clear.ambient.intensity, 10);
+      expect(snow.sun.intensity, `snow sun ${hour}`).toBeCloseTo(clear.sun.intensity * 0.7, 10);
+      // Sun position and light colours ride along untouched: the arc is the same arc.
+      expect(rain.sun.position).toEqual(clear.sun.position);
+      expect(snow.sun.color).toBe(clear.sun.color);
+      expect(rain.ambient.color).toBe(clear.ambient.color);
+    }
+  });
+
+  it('flattens the sky toward grey: rain darker than clear, snow lighter', () => {
+    const saturation = (hex: number) => Math.max(...channels(hex)) - Math.min(...channels(hex));
+    for (const hour of [9, 12, 15]) {
+      const clear = computeSkyProfile(hour);
+      const rain = computeSkyProfile(hour, 'rain');
+      const snow = computeSkyProfile(hour, 'snow');
+      expect(saturation(rain.backgroundTop)).toBeLessThan(saturation(clear.backgroundTop));
+      expect(saturation(snow.backgroundTop)).toBeLessThan(saturation(clear.backgroundTop));
+      expect(brightness(rain.background)).toBeLessThan(brightness(clear.background));
+      expect(brightness(snow.background)).toBeGreaterThan(brightness(clear.background));
+    }
+  });
+
+  it('keeps the night ramp monotonic under weather (the overcast is hour-independent)', () => {
+    for (const weather of ['rain', 'snow'] as const) {
+      let previous = Number.POSITIVE_INFINITY;
+      for (const hour of [18.25, 19, 20, 21, 22]) {
+        const value = brightness(computeSkyProfile(hour, weather).background);
+        expect(value, `${weather} hour ${hour}`).toBeLessThanOrEqual(previous);
+        previous = value;
+      }
+    }
+  });
+});

@@ -1,4 +1,6 @@
 import { removeAndDispose } from './builder-utils';
+import { applyOutdoorWeather } from './outdoor';
+import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -69,15 +71,20 @@ export interface LampPosition {
  * Apply a continuous time-of-day to the scene's lighting. Sun rises in the
  * east at hour 6, peaks at hour 12, sets in the west at hour 18; nighttime
  * (18..6) dims the sky and triggers warm point lights at every placed lamp.
+ * The weather overcasts the same profile (#189), so rain and snow keep the
+ * sky, sun, and ambient consistent along the whole hour ramp; 'clear' is
+ * the profile untouched.
  */
 export function applyTimeOfDay(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
   hour: number,
-  lampPositions: ReadonlyArray<LampPosition>
+  lampPositions: ReadonlyArray<LampPosition>,
+  weather: Weather = 'clear'
 ): void {
   const time = ((hour % 24) + 24) % 24;
-  const profile = computeSkyProfile(time);
+  const profile = computeSkyProfile(time, weather);
+  applyOutdoorWeather(scene, weather);
 
   // Vertical sky gradient (zenith → horizon) instead of a flat colour. The
   // texture is screen-space, so it reads as atmosphere without a sky dome.
@@ -134,11 +141,48 @@ interface SkyProfile {
 }
 
 /**
+ * How each weather overcasts the clear-sky profile (#189). `grey` is how far
+ * the sky colours pull toward their own luminance (a flat, washed sky), and
+ * `lift` scales them after — under 1 for a dark rain sky, over 1 for the
+ * bright white-out of a snow sky. Sun and ambient are plain multipliers:
+ * cloud cover softens the sun most; rain also takes the ambient down a
+ * touch, while fresh snow bounces enough light back to leave it alone.
+ */
+const OVERCAST: Record<Exclude<Weather, 'clear'>, { grey: number; lift: number; sun: number; ambient: number }> = {
+  rain: { grey: 0.6, lift: 0.9, sun: 0.55, ambient: 0.85 },
+  snow: { grey: 0.55, lift: 1.08, sun: 0.7, ambient: 1 },
+};
+
+/**
  * Smoothly interpolate sky colour, sun position, and intensities for a
  * given hour. The math is deliberately readable — it isn't physically
- * accurate, but the result reads as a coherent day/night cycle.
+ * accurate, but the result reads as a coherent day/night cycle. With rain
+ * or snow the same profile is overcast (see OVERCAST); 'clear' returns it
+ * exactly as computed.
  */
-export function computeSkyProfile(hour: number): SkyProfile {
+export function computeSkyProfile(hour: number, weather: Weather = 'clear'): SkyProfile {
+  const clear = computeClearSkyProfile(hour);
+  if (weather === 'clear') return clear;
+  const cast = OVERCAST[weather];
+  return {
+    ambient: { color: clear.ambient.color, intensity: clear.ambient.intensity * cast.ambient },
+    sun: { ...clear.sun, intensity: clear.sun.intensity * cast.sun },
+    background: overcastHex(clear.background, cast.grey, cast.lift),
+    backgroundTop: overcastHex(clear.backgroundTop, cast.grey, cast.lift),
+  };
+}
+
+/** Pull a colour toward its own luminance by `grey`, then scale it by `lift`. */
+function overcastHex(hex: number, grey: number, lift: number): number {
+  const r = (hex >> 16) & 0xff;
+  const g = (hex >> 8) & 0xff;
+  const b = hex & 0xff;
+  const luma = 0.3 * r + 0.59 * g + 0.11 * b;
+  const channel = (value: number) => Math.max(0, Math.min(255, Math.round((value + (luma - value) * grey) * lift)));
+  return (channel(r) << 16) | (channel(g) << 8) | channel(b);
+}
+
+function computeClearSkyProfile(hour: number): SkyProfile {
   const dayFraction = clamp01((hour - 6) / 12); // 0 at 06:00, 1 at 18:00
   const sunAboveHorizon = hour >= 6 && hour <= 18;
 

@@ -310,6 +310,9 @@ export interface RoomLayout {
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */
 export const FLOOR_HEIGHT_METERS = 3;
 
+/** Outdoor weather over the lot (#189). View-only: never part of a RoomLayout. */
+export type Weather = 'clear' | 'rain' | 'snow';
+
 export interface ViewSettings {
   view2D: boolean;
   showMeasurements: boolean;
@@ -319,6 +322,8 @@ export interface ViewSettings {
   floorPlan3DEffect: boolean;
   /** Hour of the day in [0, 24); drives the continuous sun-arc lighting. */
   timeOfDay: number;
+  /** Rain or snow falling over the lot, with matching overcast lighting (#189). */
+  weather: Weather;
   walkthroughMode: boolean;
   showOutdoor: boolean;
   snapToItems: boolean;
