@@ -25,7 +25,9 @@ import { useWeather } from './hooks/use-weather';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
+import { saveCustomSet } from './lib/custom-sets';
 import { hasCollisions, totalCost } from './lib/geometry';
+import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { snapshotBeforeReplace } from './lib/restore-point';
@@ -339,36 +341,62 @@ export function RoomOrganizer(): JSX.Element {
   // promotion inside a nested setState updater and read the result back
   // synchronously — that only works on React's eager-evaluation path, and
   // StrictMode's double-invoked updaters ran the toggle twice (#117).
+  //
+  // Persistent groups (#154) expand HERE, not in the canvas handlers: both
+  // the 3D raycast and the 2D hit-test report the clicked id and modifier,
+  // and this one place turns a grouped id into its whole group, so the two
+  // views can't drift. 'replace' selects the group with the clicked member
+  // as primary; 'toggle' adds or removes the whole group; 'single'
+  // (Alt+click) is the escape hatch that picks one member on its own.
   const handleSelect = useCallback(
-    (id: string, mode: 'replace' | 'toggle') => {
-      if (mode === 'replace') {
-        selectOnly(id);
+    (id: string, mode: 'replace' | 'toggle' | 'single') => {
+      const members = mode === 'single' ? new Set([id]) : expandSelection(activeFloor.items, id);
+      if (mode !== 'toggle') {
+        if (members.size === 1) {
+          selectOnly(id);
+          return;
+        }
+        setSelectedItemId(id);
+        const extras = new Set(members);
+        extras.delete(id);
+        setExtraSelectedIds(extras);
         return;
       }
       if (selectedItemId === null) {
         setSelectedItemId(id);
+        const extras = new Set(members);
+        extras.delete(id);
+        setExtraSelectedIds(extras);
         return;
       }
-      if (selectedItemId === id) {
-        // Toggling the primary off: promote an extra to primary (keeping the
-        // rest of the multi-select intact) or clear the selection entirely.
-        const [promoted] = extraSelectedIds;
-        if (promoted === undefined) {
-          setSelectedItemId(null);
-          return;
-        }
-        const next = new Set(extraSelectedIds);
-        next.delete(promoted);
-        setExtraSelectedIds(next);
-        setSelectedItemId(promoted);
-        return;
-      }
+      const allIn = Array.from(members).every(
+        (member) => member === selectedItemId || extraSelectedIds.has(member)
+      );
       const next = new Set(extraSelectedIds);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (allIn) {
+        // Toggling off: drop every member. If the primary was among them,
+        // promote a surviving extra (keeping the rest of the multi-select
+        // intact) or clear the selection entirely.
+        for (const member of members) next.delete(member);
+        if (members.has(selectedItemId)) {
+          const [promoted] = next;
+          if (promoted === undefined) {
+            setSelectedItemId(null);
+            setExtraSelectedIds(new Set());
+            return;
+          }
+          next.delete(promoted);
+          setSelectedItemId(promoted);
+        }
+        setExtraSelectedIds(next);
+        return;
+      }
+      for (const member of members) {
+        if (member !== selectedItemId) next.add(member);
+      }
       setExtraSelectedIds(next);
     },
-    [selectedItemId, extraSelectedIds, selectOnly]
+    [activeFloor.items, selectedItemId, extraSelectedIds, selectOnly]
   );
 
   const allSelectedIds = useMemo(() => {
@@ -376,6 +404,46 @@ export function RoomOrganizer(): JSX.Element {
     if (selectedItemId) set.add(selectedItemId);
     return set;
   }, [selectedItemId, extraSelectedIds]);
+
+  // Persistent groups (#154). Group merges whatever is selected — members of
+  // other groups included — into one fresh group; Ungroup frees every
+  // selected item. The selection itself is untouched either way, so a
+  // freshly grouped set stays selected and draggable.
+  const selectionIsGroup = useMemo(
+    () => isWholeGroup(activeFloor.items, allSelectedIds),
+    [activeFloor.items, allSelectedIds]
+  );
+  const selectionHasGroups = useMemo(
+    () => groupIdsIn(activeFloor.items, allSelectedIds).size > 0,
+    [activeFloor.items, allSelectedIds]
+  );
+  const groupSelection = useCallback(() => {
+    if (allSelectedIds.size < 2) return;
+    actions.setGroup(allSelectedIds);
+  }, [actions, allSelectedIds]);
+  const ungroupSelection = useCallback(() => {
+    actions.clearGroup(allSelectedIds);
+  }, [actions, allSelectedIds]);
+
+  // Custom sets (#302): the selection, normalised around its centroid, under
+  // a name the user picks. Groups inside it are kept and come back as fresh
+  // groups when the set is placed.
+  const saveSelectionAsSet = useCallback(() => {
+    const items = activeFloor.items.filter((item) => allSelectedIds.has(item.id));
+    if (items.length < 2) return;
+    const name = window.prompt('Name this set:', `${items[0]!.name} set`);
+    if (name === null) return;
+    if (!name.trim()) {
+      window.alert('Please enter a name for this set.');
+      return;
+    }
+    const saved = saveCustomSet(items, name, { idTag: randomSuffix() });
+    if (!saved) {
+      window.alert('Could not save the set — browser storage is full.');
+      return;
+    }
+    playCue('success');
+  }, [activeFloor.items, allSelectedIds, playCue]);
 
   const {
     sceneBoxRef,
@@ -975,6 +1043,10 @@ export function RoomOrganizer(): JSX.Element {
         selectedItem={selectedItem}
         selectionCount={allSelectedIds.size}
         onCopySelection={copySelectionToClipboard}
+        selectionGrouped={selectionIsGroup}
+        onGroupSelection={selectionIsGroup ? undefined : groupSelection}
+        onUngroupSelection={selectionHasGroups ? ungroupSelection : undefined}
+        onSaveSelectionAsSet={saveSelectionAsSet}
         showMeasurements={view.showMeasurements}
         showMinimap={view.showMinimap}
         walkthroughActive={walkthroughActive}

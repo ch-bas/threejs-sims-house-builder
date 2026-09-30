@@ -30,6 +30,13 @@ describe('isFurnitureItem', () => {
     ).toBe(true);
   });
 
+  it('accepts a string groupId and rejects anything else (#154)', () => {
+    expect(isFurnitureItem(makeItem({ groupId: 'group-abc' }))).toBe(true);
+    expect(isFurnitureItem(makeItem({ groupId: 7 as never }))).toBe(false);
+    expect(isFurnitureItem(makeItem({ groupId: '' }))).toBe(false);
+    expect(isFurnitureItem(makeItem({ groupId: null as never }))).toBe(false);
+  });
+
   it('accepts an item without optional fields', () => {
     const minimal = {
       id: 'a',

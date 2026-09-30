@@ -73,4 +73,19 @@ describe('clipboard (#153)', () => {
     expect(copyToClipboard([makeItem({ id: 'a', position: undefined })])).toBe(0);
     expect(clipboardSize()).toBe(0);
   });
+
+  it('a pasted group is a fresh group, not more members of the source (#154)', () => {
+    copyToClipboard([
+      makeItem({ id: 'a', groupId: 'dining', position: { x: 0, z: 0 } }),
+      makeItem({ id: 'b', groupId: 'dining', position: { x: 1, z: 0 } }),
+      makeItem({ id: 'c', position: { x: 2, z: 0 } }),
+    ]);
+    const first = buildPasteItems({ roomWidth: W, roomDepth: D, idTag: 'one' });
+    const second = buildPasteItems({ roomWidth: W, roomDepth: D, idTag: 'two' });
+    expect(first[0]!.groupId).toBeDefined();
+    expect(first[0]!.groupId).not.toBe('dining');
+    expect(first[1]!.groupId).toBe(first[0]!.groupId);
+    expect(first[2]!.groupId).toBeUndefined();
+    expect(second[0]!.groupId).not.toBe(first[0]!.groupId);
+  });
 });

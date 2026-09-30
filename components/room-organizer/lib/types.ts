@@ -150,6 +150,12 @@ export interface FurnitureItem {
   stairsLeadIn?: number;
   /** Window sill above its floor, overriding the shared datum (#204). */
   sillHeight?: number;
+  /**
+   * Persistent group (#154): items sharing a groupId on a floor select and
+   * move together. Absent on ungrouped items so saves and share links stay
+   * unchanged for layouts that never used groups.
+   */
+  groupId?: string;
 }
 
 export type CameraPreset = 'iso' | 'top' | 'front' | 'corner';

@@ -109,6 +109,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **5 furniture sets** that drop a curated combo (Dining, Bedroom,
   Home Office, Kitchen Line, Lounge) at the current cursor. Sets the
   room can't hold are greyed out with a "Room too small" hint.
+- **Custom sets**: select an arrangement and **Save as set** on the
+  selection chip to keep it — colours, sizes and groups included — beside
+  the built-ins, ready to place in any layout (delete from the Sets panel).
 
 ### Editing
 
@@ -118,6 +121,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   rotates every selected item), plus **Align**
   (left/centre/right/top/centre/bottom) and **Distribute** (X/Z) for 3+
   items.
+- **Groups**: **Group** a multi-selection from the selection chip and it
+  stays together — clicking any member selects the whole group in 3D and
+  2D (Alt+click picks one member); **Ungroup** frees it. Locked members
+  stay put during a group move, as in any multi-select.
 - **Copy / paste** (Ctrl+C / Ctrl+V): copy any selection and paste it
   beside the original — or switch floors first to move a furnished
   corner upstairs. Pastes arrive unlocked, selected, and undo as one
@@ -281,6 +288,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 | Place from catalog | Enter on a focused tile, then arrows / R · Enter confirm · Esc cancel |
 | Focus on item     | F                  |
 | Multi-select      | Ctrl/⌘+click       |
+| Select one of a group | Alt+click      |
 | Group-drag        | Drag any selected  |
 | Switch floor      | PgUp / PgDn        |
 | Time of day       | [ / ]              |
@@ -320,7 +328,9 @@ components/
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
-    │   ├── furniture-sets.ts            Pre-built combos
+    │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement
+    │   ├── custom-sets.ts               User-saved furniture sets: localStorage I/O + parser (#302)
+    │   ├── groups.ts                    Persistent group selection helpers (#154)
     │   ├── surprise.ts                  Random one-shot floor populate
     │   ├── sounds.ts                    Web-Audio synth for UI cues
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls

@@ -9,7 +9,11 @@ export interface HoverInfo {
   clientY: number;
 }
 
-export type SelectionMode = 'replace' | 'toggle';
+/**
+ * 'replace' / 'toggle' select the clicked item's whole group when it has
+ * one; 'single' (Alt+click) picks that one member on its own (#154).
+ */
+export type SelectionMode = 'replace' | 'toggle' | 'single';
 
 /**
  * The React-side callbacks the canvas event handlers feed into. Read through a
@@ -193,7 +197,11 @@ export function attachDragHandlers({
     const target = ascendToFurniture(hits[0]?.object);
     if (!target) return;
 
-    const mode: SelectionMode = event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
+    const mode: SelectionMode = event.altKey
+      ? 'single'
+      : event.ctrlKey || event.metaKey
+        ? 'toggle'
+        : 'replace';
     const itemId = target.userData.id as string;
     handlersRef.current.onItemSelect(itemId, mode);
 

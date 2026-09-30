@@ -1038,3 +1038,76 @@ describe('layoutReducer — the entrance door is structure (#273)', () => {
     expect(activeItems(state).some((item) => item.id === ENTRANCE_DOOR_ID)).toBe(false);
   });
 });
+
+describe('layoutReducer — persistent groups (#154)', () => {
+  const trio = () =>
+    stateWith([
+      makeItem({ id: 'a', position: { x: 0, z: 0 } }),
+      makeItem({ id: 'b', position: { x: 1, z: 0 } }),
+      makeItem({ id: 'c', position: { x: 2, z: 0 } }),
+    ]);
+
+  it('setGroup stamps the ids with the group and leaves the rest alone', () => {
+    const next = layoutReducer(trio(), { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' });
+    expect(activeItems(next).map((item) => item.groupId)).toEqual(['g1', 'g1', undefined]);
+  });
+
+  it('setGroup is an identity no-op when the members already share that group', () => {
+    const grouped = layoutReducer(trio(), { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' });
+    expect(layoutReducer(grouped, { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' })).toBe(grouped);
+  });
+
+  it('setGroup refuses a lone member, an empty group id, and unknown ids', () => {
+    const state = trio();
+    expect(layoutReducer(state, { type: 'setGroup', ids: new Set(['a']), groupId: 'g1' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setGroup', ids: new Set(['a', 'b']), groupId: '' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setGroup', ids: new Set(['x', 'y']), groupId: 'g1' })).toBe(state);
+  });
+
+  it('setGroup merges members of other groups into the new one', () => {
+    let state = layoutReducer(trio(), { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' });
+    state = layoutReducer(state, { type: 'setGroup', ids: new Set(['b', 'c']), groupId: 'g2' });
+    expect(activeItems(state).map((item) => item.groupId)).toEqual(['g1', 'g2', 'g2']);
+  });
+
+  it('clearGroup drops the key entirely and is an identity no-op on ungrouped items', () => {
+    const grouped = layoutReducer(trio(), { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' });
+    const cleared = layoutReducer(grouped, { type: 'clearGroup', ids: new Set(['a', 'b', 'c']) });
+    for (const item of activeItems(cleared)) expect('groupId' in item).toBe(false);
+    expect(layoutReducer(cleared, { type: 'clearGroup', ids: new Set(['a', 'b', 'c']) })).toBe(cleared);
+  });
+
+  it('clearGroup on part of a group leaves the rest grouped', () => {
+    const grouped = layoutReducer(trio(), { type: 'setGroup', ids: new Set(['a', 'b', 'c']), groupId: 'g1' });
+    const next = layoutReducer(grouped, { type: 'clearGroup', ids: new Set(['a']) });
+    expect(activeItems(next).map((item) => item.groupId)).toEqual([undefined, 'g1', 'g1']);
+  });
+
+  it('grouping a locked member is allowed — grouping is metadata, not geometry', () => {
+    const state = stateWith([
+      makeItem({ id: 'a', locked: true }),
+      makeItem({ id: 'b', position: { x: 1, z: 0 } }),
+    ]);
+    const next = layoutReducer(state, { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' });
+    expect(activeItems(next)[0]).toMatchObject({ locked: true, groupId: 'g1' });
+  });
+
+  it('duplicateItem gives the copy no group', () => {
+    const grouped = layoutReducer(trio(), { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' });
+    const next = layoutReducer(grouped, { type: 'duplicateItem', sourceId: 'a', newId: 'a2' });
+    const copy = activeItems(next).find((item) => item.id === 'a2')!;
+    expect('groupId' in copy).toBe(false);
+    expect(activeItems(next).find((item) => item.id === 'a')!.groupId).toBe('g1');
+  });
+
+  it('groups only touch the active floor', () => {
+    const state = stateWith(
+      [makeItem({ id: 'a' }), makeItem({ id: 'b', position: { x: 1, z: 0 } })],
+      2,
+      1
+    );
+    const next = layoutReducer(state, { type: 'setGroup', ids: new Set(['a', 'b']), groupId: 'g1' });
+    expect(next.layout.floors[0]).toBe(state.layout.floors[0]);
+    expect(next.layout.floors[1]!.items.every((item) => item.groupId === 'g1')).toBe(true);
+  });
+});

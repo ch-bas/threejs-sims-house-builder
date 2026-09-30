@@ -92,6 +92,9 @@ export interface LayoutActions {
   clearInteriorWalls(): void;
   toggleExteriorWall(wallId: WallId): void;
   rotateSelection(ids: ReadonlySet<string>, radians: number): void;
+  /** Persistent groups (#154). `setGroup` returns the new group's id. */
+  setGroup(ids: ReadonlySet<string>): string;
+  clearGroup(ids: ReadonlySet<string>): void;
   setLockAll(locked: boolean): void;
   clearItems(): void;
   setActiveFloorIndex(index: number): void;

@@ -46,7 +46,8 @@ export interface UseCanvas2DInteractionParams {
   selectedItemId: string | null;
   extraSelectedIds: ReadonlySet<string>;
   allSelectedIds: ReadonlySet<string>;
-  onItemSelect(id: string, mode: 'replace' | 'toggle'): void;
+  /** 'single' is Alt+click: one member of a group on its own (#154). */
+  onItemSelect(id: string, mode: 'replace' | 'toggle' | 'single'): void;
   /** Pointer went down on empty plan space — clear the selection (#219). */
   onDeselect(): void;
   /** The same snap pipeline the 3D drag applies per move (use-item-placement). */
@@ -189,7 +190,7 @@ export function useCanvas2DInteraction(
         p.onDeselect();
         return;
       }
-      const mode = event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
+      const mode = event.altKey ? 'single' : event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
       p.onItemSelect(hit.id, mode);
       // Locked items select but never drag; a toggle click is selection
       // surgery, not a move — both mirror the 3D canvas (drag-handlers).
