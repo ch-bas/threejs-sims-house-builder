@@ -1,4 +1,4 @@
-import { STAIR_STEP_COUNT, stairSteps } from '../../lib/stairs';
+import { STAIR_STEP_COUNT, stairSteps, winderLayout } from '../../lib/stairs';
 import { windowSillHeight } from '../../lib/street';
 import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
@@ -198,7 +198,11 @@ function buildWinderStairs({ THREE, item, hasCollision, baseColor, opacity }: Bu
   }
 
   // Spine wall between the flights, up to the turn, and the newel at the turn.
-  const fanZ = item.depth / 2 - item.width / 2;
+  // The turn comes from the same layout the treads and the stairwell hole use
+  // — a winder too shallow for its fan lays out straight and gets neither (#278).
+  const layout = winderLayout(item);
+  if (!layout) return group;
+  const { fanZ } = layout;
   const spineLength = fanZ + item.depth / 2;
   const spineHeight = Math.max(0.9, steps[steps.length - 1]!.top * 0.5);
   if (spineLength > 0.05) {
