@@ -4,6 +4,7 @@ import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
 import { isEntranceSpec, isSillHeight } from './street';
+import { MAX_ZONES, isRoomZone } from './zones';
 import type {
   FloorLayout,
   FloorPattern,
@@ -184,6 +185,12 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   // Storey height feeds every floor's elevation and the roof base: a zero,
   // negative or absurd value collapses or launches the whole stack (#202).
   if (v.height !== undefined && !isStoreyHeight(v.height)) return false;
+  // Zone rectangles are painted and measured as-is: a NaN corner or a
+  // negative size must not reach the renderer or the stats (#155).
+  if (v.zones !== undefined) {
+    if (!Array.isArray(v.zones) || v.zones.length > MAX_ZONES) return false;
+    if (!v.zones.every(isRoomZone)) return false;
+  }
   return true;
 }
 

@@ -204,6 +204,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Interactive 2D plan**: select, multi-select, and drag items on the
   top-down plan with the same snapping and settling as 3D; catalog items
   drop straight onto it.
+- **Room zones**: drag named, coloured rectangles ("Bedroom", "Kitchen")
+  onto the 2D plan from the Build tab's Zones panel; they tint the plan,
+  the printed blueprint and the SVG export, and the Statistics panel
+  reports each zone's item count, cost and area.
 - **Walking people**: rigged, animated mannequins (CC0 Quaternius rig)
   that wander the active floor, pause to idle or chat at waypoints, and
   crossfade between clips — with a procedural jointed figure as the
@@ -351,6 +355,7 @@ components/
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder) + headroom stairwells
+    │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings)
@@ -406,7 +411,7 @@ components/
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
     │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop
-    │   ├── use-canvas-2d-interaction.ts 2D plan select/drag via the renderer's inverse transform
+    │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-walkthrough.ts           PointerLock + WASD movement
@@ -433,6 +438,7 @@ components/
         ├── slider-row.tsx               Shared label + range + readout row
         ├── floor-switcher.tsx
         ├── walls-panel.tsx
+        ├── zones-panel.tsx              Room zones: list, rename, recolour, delete, draw toggle
         ├── roof-panel.tsx
         ├── site-panel.tsx               Slope, neighbours + street, frontage, entrance
         ├── room-settings-panel.tsx

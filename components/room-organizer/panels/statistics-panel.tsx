@@ -6,6 +6,7 @@ import { useRoomEditor } from '../contexts';
 import { useLayout } from '../hooks/use-layout-store';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory, totalCost } from '../lib/geometry';
+import { zoneStats } from '../lib/zones';
 
 export function StatisticsPanel(): JSX.Element {
   // `layout` from the store selector; `collidingIds` stays on the context.
@@ -24,6 +25,20 @@ export function StatisticsPanel(): JSX.Element {
   const counts = useMemo(() => itemCountByCategory(allItems), [allItems]);
   const budgetUsedRatio = budget > 0 ? Math.min(1, cost / budget) : 0;
   const overBudget = cost > budget;
+  // Per-room cost / count / area from the zones drawn on each floor (#155);
+  // the floor name only disambiguates once there is more than one floor.
+  const zoneRows = useMemo(
+    () =>
+      layout.floors.flatMap((floor) =>
+        (floor.zones ?? []).map((zone) => ({
+          key: `${floor.id}:${zone.id}`,
+          label: layout.floors.length > 1 ? `${zone.name} · ${floor.name}` : zone.name,
+          color: zone.color,
+          ...zoneStats(zone, floor.items),
+        }))
+      ),
+    [layout.floors]
+  );
 
   return (
     <Card>
@@ -65,6 +80,28 @@ export function StatisticsPanel(): JSX.Element {
               <StatRow key={category.key} label={`${category.icon} ${category.label}`}>
                 {counts.get(category.key) ?? 0}
               </StatRow>
+            ))}
+          </div>
+        )}
+
+        {zoneRows.length > 0 && (
+          <div className="pt-2 border-t space-y-1" aria-label="By zone">
+            <p className="text-muted-foreground">By zone</p>
+            {zoneRows.map((row) => (
+              <div key={row.key} className="flex justify-between items-baseline gap-2">
+                <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style={{ backgroundColor: row.color }}
+                  />
+                  <span className="truncate">{row.label}</span>
+                </span>
+                <span className="shrink-0 font-medium">
+                  {row.itemCount} · {CURRENCY_SYMBOL}
+                  {row.cost.toLocaleString()} · {row.area.toFixed(1)} m²
+                </span>
+              </div>
             ))}
           </div>
         )}

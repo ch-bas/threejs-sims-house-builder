@@ -1,5 +1,6 @@
 import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '../lib/constants';
 import { rotatedHalfExtents } from '../lib/geometry';
+import { zoneArea, type ZoneRect } from '../lib/zones';
 import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout } from '../lib/types';
 
 export interface Render2DOptions {
@@ -14,6 +15,8 @@ export interface Render2DOptions {
   showMeasurements: boolean;
   showWiFiSignals: boolean;
   showHeatmap?: boolean;
+  /** The zone rectangle being dragged out, drawn over everything as a dashed outline (#155). */
+  zoneDraft?: ZoneRect | null;
   hasCollision: (item: FurnitureItem) => boolean;
   /**
    * Margin (CSS px) around the room. The default suits the full-screen 2D
@@ -118,8 +121,12 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
+  // Zone tints sit on the floor under the walls; their labels go over the
+  // walls but under the furniture, like a plan's room names (#155).
+  drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
+  drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements);
 
   if (options.showHeatmap) {
     drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale, viewWidth, viewHeight);
@@ -136,6 +143,131 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.showMeasurements) {
     drawRoomDimensions(ctx, layout, offsetX, offsetY, scale);
   }
+
+  if (options.zoneDraft) {
+    drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale);
+  }
+}
+
+/** Fill / outline alpha of a zone's tint, on top of the floor colour or tracing image. */
+export const ZONE_FILL_ALPHA = 0.18;
+export const ZONE_STROKE_ALPHA = 0.7;
+/** A zone painted smaller than this (px, either edge) is too small for a label — the minimap. */
+const ZONE_MIN_LABEL_EDGE_PX = 36;
+
+/**
+ * `#rgb` / `#rrggbb` → `rgba(...)` at the given alpha. Anything else (a
+ * named colour from an imported file) is returned as-is: it still paints,
+ * just without the tint.
+ */
+export function withAlpha(color: string, alpha: number): string {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color)?.[1];
+  if (!hex) return color;
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function zoneCanvasRect(
+  zone: ZoneRect,
+  layout: RoomLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): { x: number; y: number; w: number; h: number } {
+  return {
+    x: offsetX + (zone.x + layout.width / 2) * scale,
+    y: offsetY + (zone.z + layout.height / 2) * scale,
+    w: zone.w * scale,
+    h: zone.d * scale,
+  };
+}
+
+function drawZoneFills(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const zones = floor.zones ?? [];
+  if (zones.length === 0) return;
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  for (const zone of zones) {
+    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
+    ctx.fillStyle = withAlpha(zone.color, ZONE_FILL_ALPHA);
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = withAlpha(zone.color, ZONE_STROKE_ALPHA);
+    ctx.strokeRect(x, y, w, h);
+  }
+  ctx.restore();
+}
+
+function drawZoneLabels(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  showArea: boolean
+): void {
+  const zones = floor.zones ?? [];
+  if (zones.length === 0) return;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // A white halo keeps the name legible over any floor colour or tracing image.
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.fillStyle = '#333';
+  for (const zone of zones) {
+    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
+    if (Math.min(w, h) < ZONE_MIN_LABEL_EDGE_PX) continue;
+    // Along the top edge rather than the centre: the centre of a room is
+    // where its bed or table sits, and the furniture paints over labels.
+    const cx = x + w / 2;
+    const area = showArea ? `${zoneArea(zone).toFixed(1)} m²` : null;
+    ctx.font = 'bold 12px Arial';
+    ctx.strokeText(zone.name, cx, y + 11);
+    ctx.fillText(zone.name, cx, y + 11);
+    if (area) {
+      ctx.font = '10px Arial';
+      ctx.strokeText(area, cx, y + 25);
+      ctx.fillText(area, cx, y + 25);
+    }
+  }
+  ctx.restore();
+}
+
+function drawZoneDraft(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  draft: ZoneRect,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const { x, y, w, h } = zoneCanvasRect(draft, layout, offsetX, offsetY, scale);
+  ctx.save();
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.strokeRect(x, y, w, h);
+  ctx.setLineDash([]);
+  ctx.font = '10px Arial';
+  ctx.fillStyle = '#1d4ed8';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${draft.w.toFixed(1)}m × ${draft.d.toFixed(1)}m`, x + w / 2, y - 4);
+  ctx.restore();
 }
 
 /**

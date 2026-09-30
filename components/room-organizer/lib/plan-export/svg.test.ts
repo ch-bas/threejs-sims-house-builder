@@ -106,4 +106,18 @@ describe('layoutToSvg', () => {
     expect(count(svg, 'class="furniture"')).toBe(1);
     expect(svg).not.toContain('Tiny Camera</text>');
   });
+
+  it('draws room zones as tinted rects with name and area, under the walls (#155)', () => {
+    const floor = makeFloor({
+      zones: [{ id: 'z1', name: 'Bed & Bath', color: '#3b82f6', x: -4, z: -4, w: 3, d: 2 }],
+    });
+    const svg = layoutToSvg(makeLayout({ floors: [floor] }), floor);
+    // Corner (−4, −4) in an 8×8 room at 50 px/m + 60 px margin → (60, 60), 150×100 px.
+    expect(svg).toContain(
+      '<rect x="60" y="60" width="150" height="100" fill="#3b82f6" fill-opacity="0.18" stroke="#3b82f6"'
+    );
+    expect(svg).toContain('Bed &amp; Bath</text>');
+    expect(svg).toContain('>6.0 m²</text>');
+    expect(svg.indexOf('class="zone"')).toBeLessThan(svg.indexOf('class="wall"'));
+  });
 });

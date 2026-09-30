@@ -18,6 +18,7 @@ import {
   sameEntrance,
   streetLevel,
 } from '../lib/street';
+import { MAX_ZONES, clampZoneRect, sameZone } from '../lib/zones';
 import type {
   CatalogItem,
   DormerSpec,
@@ -31,6 +32,7 @@ import type {
   NeighbourFlag,
   RoofStyle,
   RoomLayout,
+  RoomZone,
   SofaShape,
   StairsShape,
   TerrainSpec,
@@ -103,7 +105,11 @@ export type LayoutAction =
   | { type: 'applyLayout'; layout: RoomLayout }
   // persistent groups (#154) — target the active floor
   | { type: 'setGroup'; ids: ReadonlySet<string>; groupId: string }
-  | { type: 'clearGroup'; ids: ReadonlySet<string> };
+  | { type: 'clearGroup'; ids: ReadonlySet<string> }
+  // room zones (#155) — target the active floor
+  | { type: 'addZone'; zone: RoomZone }
+  | { type: 'updateZone'; id: string; patch: Partial<Omit<RoomZone, 'id'>> }
+  | { type: 'removeZone'; id: string };
 
 // ---------------------------------------------------------------------------
 // State shape + defaults
@@ -763,6 +769,42 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           return rest;
         });
         return changed ? { ...floor, items } : floor;
+      });
+
+    // -- room zones (#155) --------------------------------------------------
+    // The rectangle is normalised on the way in (rounded, clamped to the
+    // footprint) so a stored zone always fits its floor and passes schema
+    // validation on reload (#113); one that clamps to nothing is refused.
+    case 'addZone':
+      return withActiveFloor(state, (floor) => {
+        const zones = floor.zones ?? [];
+        if (zones.length >= MAX_ZONES || zones.some((zone) => zone.id === action.zone.id)) return floor;
+        const rect = clampZoneRect(action.zone, state.layout.width, state.layout.height);
+        if (!rect) return floor;
+        return { ...floor, zones: [...zones, { ...action.zone, ...rect }] };
+      });
+
+    case 'updateZone':
+      return withActiveFloor(state, (floor) => {
+        const current = floor.zones?.find((zone) => zone.id === action.id);
+        if (!current || !floor.zones) return floor;
+        const merged: RoomZone = { ...current, ...action.patch, id: current.id };
+        const rect = clampZoneRect(merged, state.layout.width, state.layout.height);
+        if (!rect) return floor;
+        const next: RoomZone = { ...merged, ...rect };
+        // Re-typing a name or re-picking a colour keeps identity: no undo
+        // entry, no autosave.
+        if (sameZone(current, next)) return floor;
+        return { ...floor, zones: floor.zones.map((zone) => (zone.id === action.id ? next : zone)) };
+      });
+
+    case 'removeZone':
+      return withActiveFloor(state, (floor) => {
+        if (!floor.zones?.some((zone) => zone.id === action.id)) return floor;
+        const zones = floor.zones.filter((zone) => zone.id !== action.id);
+        if (zones.length > 0) return { ...floor, zones };
+        const { zones: _none, ...rest } = floor;
+        return rest;
       });
 
     default:

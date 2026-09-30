@@ -93,6 +93,17 @@ describe('isFloorLayout', () => {
       expect(isFloorLayout({ ...makeFloor(), height })).toBe(false);
     }
   });
+
+  it('accepts room zones and rejects a NaN corner, a non-positive size or a nameless one (#155)', () => {
+    const zone = { id: 'z1', name: 'Bedroom', color: '#3b82f6', x: -2, z: -1, w: 3, d: 2 };
+    expect(isFloorLayout({ ...makeFloor(), zones: [] })).toBe(true);
+    expect(isFloorLayout({ ...makeFloor(), zones: [zone] })).toBe(true);
+    expect(isFloorLayout({ ...makeFloor(), zones: [{ ...zone, x: Number.NaN }] })).toBe(false);
+    expect(isFloorLayout({ ...makeFloor(), zones: [{ ...zone, w: 0 }] })).toBe(false);
+    expect(isFloorLayout({ ...makeFloor(), zones: [{ ...zone, d: -1 }] })).toBe(false);
+    expect(isFloorLayout({ ...makeFloor(), zones: [{ ...zone, name: undefined }] })).toBe(false);
+    expect(isFloorLayout({ ...makeFloor(), zones: zone })).toBe(false);
+  });
 });
 
 describe('isRoomLayout', () => {

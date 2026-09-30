@@ -152,6 +152,15 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     reorderFloor: (from, to) => dispatch({ type: 'reorderFloor', from, to }),
 
     applyLayout: (next: RoomLayout) => dispatch({ type: 'applyLayout', layout: next }),
+
+    // Room zones (#155).
+    addZone: (zone) => {
+      const id = nextId('zone');
+      dispatch({ type: 'addZone', zone: { ...zone, id } });
+      return id;
+    },
+    updateZone: (id, patch) => dispatch({ type: 'updateZone', id, patch }),
+    removeZone: (id) => dispatch({ type: 'removeZone', id }),
   };
 
   return {

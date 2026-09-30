@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
 import { hasCollisions } from '../lib/geometry';
+import { defaultZoneName, nextZoneColor, zoneFromCorners } from '../lib/zones';
+import { useLayoutActions } from './use-layout-store';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 
 // Matches the 3D canvas's click-vs-drag radius (three/drag-handlers.ts).
@@ -42,7 +44,7 @@ export interface UseCanvas2DInteractionParams {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   layout: RoomLayout;
   activeFloor: FloorLayout;
-  view: Pick<ViewSettings, 'showMeasurements' | 'showWiFiSignals' | 'showHeatmap'>;
+  view: Pick<ViewSettings, 'showMeasurements' | 'showWiFiSignals' | 'showHeatmap' | 'drawZoneMode'>;
   selectedItemId: string | null;
   extraSelectedIds: ReadonlySet<string>;
   allSelectedIds: ReadonlySet<string>;
@@ -78,12 +80,20 @@ export interface UseCanvas2DInteractionResult {
  * lightweight "ghost" repaint: no state dispatch, no 3D scene rebuild, no
  * touching the paint effect's dpr/resize plumbing (it already sized the
  * backing store).
+ *
+ * Zone drawing (#155): while `view.drawZoneMode` is on, a press on the plan
+ * drags out a rectangle instead of selecting — the same ghost repaint shows
+ * it snapped and sized — and the release names it and adds it to the active
+ * floor through the store, so the mode needs no wiring from the orchestrator.
  */
 export function useCanvas2DInteraction(
   params: UseCanvas2DInteractionParams
 ): UseCanvas2DInteractionResult {
   const paramsRef = useRef(params);
   paramsRef.current = params;
+  // Stable for the store's lifetime (use-layout-store), so the effect below
+  // can close over it without re-subscribing.
+  const layoutActions = useLayoutActions();
 
   const clientToWorld2D = useCallback((clientX: number, clientY: number) => {
     const canvas = paramsRef.current.canvasRef.current;
@@ -115,29 +125,76 @@ export function useCanvas2DInteraction(
     let gesture: Gesture | null = null;
     let rafId: number | null = null;
 
+    /** A zone rectangle being dragged out (#155); world corners, room-centred. */
+    interface ZoneGesture {
+      pointerId: number;
+      downClientX: number;
+      downClientY: number;
+      started: boolean;
+      start: { x: number; z: number };
+      latest: { x: number; z: number };
+    }
+    let zoneGesture: ZoneGesture | null = null;
+
     const paintGhost = (): void => {
       rafId = null;
-      if (!gesture?.started) return;
       const { layout, activeFloor, view, selectedItemId, extraSelectedIds } = paramsRef.current;
-      const session = gesture;
-      const items = activeFloor.items.map((item) => {
-        const moved = session.latest.get(item.id);
-        return moved ? { ...item, position: moved } : item;
-      });
+      const session = gesture?.started ? gesture : null;
+      const items = session
+        ? activeFloor.items.map((item) => {
+            const moved = session.latest.get(item.id);
+            return moved ? { ...item, position: moved } : item;
+          })
+        : activeFloor.items;
+      const draft = zoneGesture?.started
+        ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height)
+        : null;
       render2DTopDown({
         canvas,
         layout,
-        floor: { ...activeFloor, items },
+        floor: session ? { ...activeFloor, items } : activeFloor,
         selectedItemId,
         extraSelectedIds,
         showMeasurements: view.showMeasurements,
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
+        zoneDraft: draft,
         hasCollision: (item) => hasCollisions(item, items, layout.width, layout.height),
       });
     };
     const schedulePaint = (): void => {
       if (rafId === null) rafId = requestAnimationFrame(paintGhost);
+    };
+
+    const releaseCapture = (pointerId: number): void => {
+      try {
+        canvas.releasePointerCapture(pointerId);
+      } catch {
+        // Ignore if capture was never held or already released.
+      }
+    };
+
+    /**
+     * Release of a zone drag: name the rectangle and add it. A cancelled
+     * prompt or a too-small rectangle adds nothing, so the plan is repainted
+     * here to clear the dashed draft (no state change will do it).
+     */
+    const finishZone = (session: ZoneGesture, commit: boolean): void => {
+      zoneGesture = null;
+      if (!session.started) return;
+      releaseCapture(session.pointerId);
+      const { layout, activeFloor } = paramsRef.current;
+      const rect = commit ? zoneFromCorners(session.start, session.latest, layout.width, layout.height) : null;
+      if (rect) {
+        const zones = activeFloor.zones ?? [];
+        const fallback = defaultZoneName(zones);
+        const name = window.prompt('Name this zone:', fallback);
+        if (name !== null) {
+          layoutActions.addZone({ name: name.trim() || fallback, color: nextZoneColor(zones), ...rect });
+          return;
+        }
+      }
+      schedulePaint();
     };
 
     const beginDrag = (event: PointerEvent): void => {
@@ -171,20 +228,34 @@ export function useCanvas2DInteraction(
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      if (!session?.started) return;
-      try {
-        canvas.releasePointerCapture(session.pointerId);
-      } catch {
-        // Ignore if capture was never held or already released.
+      if (zoneGesture) {
+        const zone = zoneGesture;
+        zoneGesture = null;
+        if (zone.started) releaseCapture(zone.pointerId);
       }
+      if (!session?.started) return;
+      releaseCapture(session.pointerId);
       paramsRef.current.onItemDragCancel(session.itemId);
     };
 
     const onPointerDown = (event: PointerEvent): void => {
-      if (event.button !== 0 || gesture !== null) return;
+      if (event.button !== 0 || gesture !== null || zoneGesture !== null) return;
       const p = paramsRef.current;
       const world = clientToWorld2D(event.clientX, event.clientY);
       if (!world) return;
+      // Zone-draw mode (#155) claims the press: the rectangle starts here
+      // and no item is selected or moved underneath it.
+      if (p.view.drawZoneMode) {
+        zoneGesture = {
+          pointerId: event.pointerId,
+          downClientX: event.clientX,
+          downClientY: event.clientY,
+          started: false,
+          start: world,
+          latest: world,
+        };
+        return;
+      }
       const hit = hitTest2DItems(p.activeFloor.items, world.x, world.z);
       if (!hit) {
         p.onDeselect();
@@ -207,6 +278,25 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerMove = (event: PointerEvent): void => {
+      const zone = zoneGesture;
+      if (zone && event.pointerId === zone.pointerId) {
+        if (!zone.started) {
+          const dx = event.clientX - zone.downClientX;
+          const dy = event.clientY - zone.downClientY;
+          if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+          zone.started = true;
+          try {
+            canvas.setPointerCapture(event.pointerId);
+          } catch {
+            // Capture can throw if the pointer is already gone; safe to ignore.
+          }
+        }
+        const world = clientToWorld2D(event.clientX, event.clientY);
+        if (!world) return;
+        zone.latest = world;
+        schedulePaint();
+        return;
+      }
       const session = gesture;
       if (!session || event.pointerId !== session.pointerId) return;
       if (!session.started) {
@@ -242,6 +332,17 @@ export function useCanvas2DInteraction(
     };
 
     const endGesture = (event: PointerEvent): void => {
+      const zone = zoneGesture;
+      if (zone && event.pointerId === zone.pointerId) {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        // pointercancel (the browser took the pointer for a scroll or a
+        // touch gesture) discards the rectangle rather than naming it.
+        finishZone(zone, event.type === 'pointerup');
+        return;
+      }
       const session = gesture;
       if (!session || event.pointerId !== session.pointerId) return;
       gesture = null;
@@ -251,11 +352,7 @@ export function useCanvas2DInteraction(
       }
       // A release inside the threshold was a select-only click (#65).
       if (!session.started) return;
-      try {
-        canvas.releasePointerCapture(session.pointerId);
-      } catch {
-        // Ignore if capture was never held or already released.
-      }
+      releaseCapture(session.pointerId);
       // Commits once, locks, settles wall-mounted items; the state change
       // re-runs the 2D paint effect for the final frame.
       paramsRef.current.onItemDragEnd(session.itemId);
@@ -265,6 +362,7 @@ export function useCanvas2DInteraction(
       // A started drag holds pointer capture and stays alive off-canvas;
       // only an armed-but-unstarted gesture is abandoned here.
       if (gesture && !gesture.started) gesture = null;
+      if (zoneGesture && !zoneGesture.started) zoneGesture = null;
     };
 
     canvas.addEventListener('pointerdown', onPointerDown);
@@ -283,7 +381,7 @@ export function useCanvas2DInteraction(
       // nothing stale is committed on a later pointerup.
       abortGesture();
     };
-  }, [params.enabled, params.canvasRef, clientToWorld2D]);
+  }, [params.enabled, params.canvasRef, clientToWorld2D, layoutActions]);
 
   return { clientToWorld2D };
 }
