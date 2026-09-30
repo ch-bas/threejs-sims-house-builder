@@ -574,7 +574,14 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       }));
 
     case 'clearItems':
-      return withActiveFloor(state, (floor) => ({ ...floor, items: [] }));
+      // "Clear floor" is about furniture. The entrance door is part of the
+      // recess, so it stays — otherwise clearing a floor would read as the
+      // user deleting the door and the porch would keep a blank back wall
+      // for good (#273).
+      return withActiveFloor(state, (floor) => ({
+        ...floor,
+        items: floor.items.filter((item) => item.id === ENTRANCE_DOOR_ID),
+      }));
 
     // -- interior walls -----------------------------------------------------
     case 'addInteriorWall':

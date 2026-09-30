@@ -14,6 +14,7 @@ import { ModePanel } from './mode-panel';
 import { RoomShapesPanel } from './room-shapes-panel';
 import { WallPaintPanel } from './wall-paint-panel';
 import type { CatalogItem } from '../lib/types';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 
 export interface BottomHudProps {
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
@@ -171,7 +172,8 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
             // Replaces the active floor: spend what the other floors leave (#136).
             maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost),
           });
-          actions.replaceItems(items);
+          // The entrance door is structure, not furniture — keep it (#273).
+          actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);
           setSelectedItemId(null);
           setExtraSelectedIds(new Set());
         }}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeCatalogItem, makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { MAX_FLOORS, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { INITIAL_GROUND_FLOOR, layoutReducer, type LayoutState } from './layout-reducer';
 import type { FurnitureItem } from '../lib/types';
 
@@ -993,5 +994,27 @@ describe('layoutReducer — wall settle rule enforced in the reducer (#210)', ()
     // Reseated on the exterior side of the north wall, wall yaw recorded.
     expect(cam.position!.z).toBeLessThan(-4);
     expect(cam.wallRotation).toBeDefined();
+  });
+});
+
+describe('layoutReducer — the entrance door is structure (#273)', () => {
+  const withEntrance = () => {
+    let state = stateWith([makeItem({ id: 'a', position: { x: 1, z: 1 } })]);
+    state = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2, height: 2.4, offset: 0 } });
+    expect(activeItems(state).some((item) => item.id === ENTRANCE_DOOR_ID)).toBe(true);
+    return state;
+  };
+
+  it('clearItems wipes the furniture but keeps the entrance door and records no deletion', () => {
+    const next = layoutReducer(withEntrance(), { type: 'clearItems' });
+    expect(activeItems(next).map((item) => item.id)).toEqual([ENTRANCE_DOOR_ID]);
+    expect(next.layout.entrance?.door).toBeUndefined();
+  });
+
+  it('a deliberate delete of the door is remembered until the entrance is removed', () => {
+    let state = layoutReducer(withEntrance(), { type: 'removeItem', id: ENTRANCE_DOOR_ID });
+    expect(state.layout.entrance?.door).toBe(false);
+    state = layoutReducer(state, { type: 'setWidth', width: 9 });
+    expect(activeItems(state).some((item) => item.id === ENTRANCE_DOOR_ID)).toBe(false);
   });
 });
