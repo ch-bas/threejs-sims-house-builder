@@ -125,6 +125,14 @@ describe('isRoomLayout', () => {
     }
   });
 
+  it('accepts the street rows and their seed, and rejects a bad seed or flag (#310)', () => {
+    expect(isRoomLayout(makeLayout({ neighbours: { west: true, street: true, across: true, seed: 7 } }))).toBe(true);
+    expect(isRoomLayout(makeLayout({ neighbours: { seed: 0 } }))).toBe(true);
+    for (const neighbours of [{ seed: 1.5 }, { seed: -1 }, { seed: '7' }, { seed: 2 ** 31 }, { street: 'yes' }, { shuffle: true }]) {
+      expect(isRoomLayout({ ...makeLayout(), neighbours })).toBe(false);
+    }
+  });
+
   it('accepts the current multi-floor shape', () => {
     expect(isRoomLayout(makeLayout())).toBe(true);
   });

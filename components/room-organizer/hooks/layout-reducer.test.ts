@@ -595,6 +595,26 @@ describe('layoutReducer — site (#202)', () => {
     expect('neighbours' in state.layout).toBe(false);
   });
 
+  it('toggles the street rows and re-rolls the seed, keeping identity on no-ops (#310)', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'street', present: true });
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'across', present: true });
+    expect(state.layout.neighbours).toEqual({ street: true, across: true });
+    expect(layoutReducer(state, { type: 'setNeighbour', side: 'across', present: true })).toBe(state);
+
+    state = layoutReducer(state, { type: 'shuffleStreet', seed: 42 });
+    expect(state.layout.neighbours).toEqual({ street: true, across: true, seed: 42 });
+    expect(layoutReducer(state, { type: 'shuffleStreet', seed: 42 })).toBe(state);
+    // A seed the schema would reject never lands in the layout.
+    expect(layoutReducer(state, { type: 'shuffleStreet', seed: -1 })).toBe(state);
+    expect(layoutReducer(state, { type: 'shuffleStreet', seed: 1.5 })).toBe(state);
+
+    // Switching the rows off keeps the seed, so the same street comes back.
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'street', present: false });
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'across', present: false });
+    expect(state.layout.neighbours).toEqual({ seed: 42 });
+  });
+
   it('applyLayout clamps an imported slope', () => {
     const state: LayoutState = { layout: makeLayout(), activeFloorIndex: 0 };
     const applied = layoutReducer(state, {

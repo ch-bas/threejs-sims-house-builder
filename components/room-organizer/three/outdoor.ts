@@ -1,4 +1,4 @@
-import { groundHeightAt } from '../lib/site';
+import { LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
 import type { Frontage, NeighbourSpec, TerrainSpec } from '../lib/types';
@@ -53,10 +53,10 @@ export function setOutdoorVisible(
   const rng = makeRng(roomWidth * 1000 + roomDepth);
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
-  const lotMargin = 6;
+  const lotMargin = LOT_MARGIN;
   const lotHalfW = halfW + lotMargin;
   const lotHalfD = halfD + lotMargin;
-  const groundSize = Math.max(roomWidth, roomDepth) * 6 + lotMargin * 2;
+  const groundSize = outdoorGroundSize(roomWidth, roomDepth);
   const { terrain } = site;
   const groundAt = (z: number) => groundHeightAt(terrain, z, halfD);
   const streetY = groundAt(-halfD);
@@ -99,13 +99,14 @@ export function setOutdoorVisible(
   // the flat plane up the way suburban terrain reads.
   // A town frontage has no front garden: the pavement starts at the wall.
   const pavement = site.frontage === 'pavement';
-  const roadBand: readonly [number, number] = pavement ? [halfD, halfD + 6.6] : [lotHalfD + 1.5, lotHalfD + 7];
+  const roadLine = roadEdges(halfD, site.frontage);
+  const roadBand: readonly [number, number] = [roadLine.near - 0.1, roadLine.far + 0.5];
   scatterGrassTufts(THREE, scene, rng, groundSize, lotHalfW, lotHalfD, groundAt, roadBand);
 
   // ---- 2. Sidewalk + road on the north edge ----
-  const roadOffset = pavement ? halfD : lotHalfD + 1.6; // sidewalk starts past the lot (or at the wall)
-  const sidewalkDepth = 1.6;
-  const roadDepth = 4.5;
+  const roadOffset = roadLine.near; // sidewalk starts past the lot (or at the wall)
+  const sidewalkDepth = PAVEMENT_DEPTH;
+  const roadDepth = ROAD_DEPTH;
 
   const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xcfd1cf, roughness: 0.85 });
   const sidewalk = new THREE.Mesh(
@@ -412,8 +413,8 @@ function scatterPerimeter(
       x = -(lotHalfW + 1.5 + rng() * 3.5); // west
       z = (rng() - 0.5) * (lotHalfD * 2);
     }
-    // A neighbour's house stands on that side (#202).
-    if ((side === 1 && neighbours?.east) || (side === 2 && neighbours?.west)) continue;
+    // A neighbour's house stands on that side (#202), or the street row does (#310).
+    if ((side === 1 && hasNeighbourOn(neighbours, 'east')) || (side === 2 && hasNeighbourOn(neighbours, 'west'))) continue;
     if (onStreet(z)) continue;
     treePositions.push([x, z]);
     addTree(THREE, scene, x, groundAt(z), z, TREE_KINDS[i % TREE_KINDS.length]!, rng);

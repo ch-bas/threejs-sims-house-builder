@@ -21,7 +21,7 @@ import type {
   Frontage,
   FurnitureItem,
   InteriorWall,
-  NeighbourSide,
+  NeighbourFlag,
   RoofStyle,
   RoomLayout,
   SofaShape,
@@ -60,7 +60,9 @@ export interface LayoutActions {
   removeDormer(id: string): void;
   /** Sloped site (#202); `null` returns to flat ground. */
   setTerrain(terrain: TerrainSpec | null): void;
-  setNeighbour(side: NeighbourSide, present: boolean): void;
+  setNeighbour(side: NeighbourFlag, present: boolean): void;
+  /** Re-roll the street's seed (#310). */
+  shuffleStreet(): void;
   /** Recessed entrance and street frontage (#204). */
   setEntrance(entrance: EntranceSpec | null): void;
   setFrontage(frontage: Frontage): void;

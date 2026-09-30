@@ -2,9 +2,10 @@ import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { hasCollisions } from '../lib/geometry';
-import { lowestGround, neighbourSides } from '../lib/site';
+import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
+import { generateStreet } from '../lib/street-row';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
@@ -533,36 +534,46 @@ export function useSceneEffects({
     requestShadowUpdate();
   }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.terrain, layout.neighbours, layout.frontage]);
 
-  // Party-wall neighbours (#202). Never touched by applyWallDisplay, so they
-  // stay put in every wall-display mode (#201).
+  // The street of neighbours (#202, #310). Never touched by applyWallDisplay,
+  // so they stay put in every wall-display mode (#201). Keyed on exactly what
+  // the generator reads — the neighbour flags and seed, the roof's style and
+  // colour, the two ground heights, the road line — not on the whole
+  // `layout.roof` / `layout.terrain` objects, so a dormer drag or a colour
+  // picker tick doesn't rebuild the street (#283).
+  const neighboursKey = JSON.stringify(layout.neighbours ?? null);
+  const roofStyle = layout.roof?.style;
+  const roofColor = layout.roof?.color;
+  const terrainFrontY = layout.terrain?.frontY;
+  const terrainBackY = layout.terrain?.backY;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
-    const sides = neighbourSides(layout.neighbours);
-    if (sides.length === 0) {
+    if (!hasNeighbours(layout.neighbours)) {
       removeNeighbours(scene);
     } else {
-      buildNeighbours(THREE, scene, {
+      const houses = generateStreet({
         width: layout.width,
         depth: layout.height,
+        floorYs: layout.floors.map((_floor, index) => floorElevation(layout.floors, index)),
         eavesY: buildingHeight(layout.floors),
-        baseY: lowestGround(layout.terrain) - 0.25,
-        storeys: layout.floors.map((floor, index) => ({
-          y: floorElevation(layout.floors, index),
-          height: storeyHeight(floor),
-        })),
-        roof: layout.roof,
-        sides,
+        ...(roofStyle ? { roof: { style: roofStyle, ...(roofColor ? { color: roofColor } : {}) } } : {}),
+        ...(terrainFrontY !== undefined && terrainBackY !== undefined
+          ? { terrain: { frontY: terrainFrontY, backY: terrainBackY } }
+          : {}),
+        ...(layout.frontage ? { frontage: layout.frontage } : {}),
+        neighbours: layout.neighbours,
       });
+      buildNeighbours(THREE, scene, houses);
     }
     requestShadowUpdate();
     // layout.floors is read for storey heights only (storeyHeightsKey +
-    // floor count), so an item edit doesn't rebuild the neighbours.
+    // floor count), and layout.neighbours / roof / terrain through the
+    // narrow keys above, so an item edit doesn't rebuild the neighbours.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.width, layout.height, layout.floors.length, storeyHeightsKey, layout.terrain, layout.neighbours, layout.roof]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.width, layout.height, layout.floors.length, storeyHeightsKey, neighboursKey, roofStyle, roofColor, terrainFrontY, terrainBackY, layout.frontage]);
 
   // Interior walls
   useEffect(() => {

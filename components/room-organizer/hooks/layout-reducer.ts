@@ -2,7 +2,7 @@ import { DEFAULT_ROOF, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_RO
 import { MAX_DORMERS, clampDormer } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
-import { clampTerrainY } from '../lib/site';
+import { clampTerrainY, isStreetSeed } from '../lib/site';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { clampStoreyHeight, storeyHeight } from '../lib/storeys';
 import {
@@ -28,7 +28,7 @@ import type {
   Frontage,
   FurnitureItem,
   InteriorWall,
-  NeighbourSide,
+  NeighbourFlag,
   RoofStyle,
   RoomLayout,
   SofaShape,
@@ -94,7 +94,8 @@ export type LayoutAction =
   | { type: 'updateDormer'; id: string; patch: Partial<Omit<DormerSpec, 'id'>> }
   | { type: 'removeDormer'; id: string }
   | { type: 'setTerrain'; terrain: TerrainSpec | null }
-  | { type: 'setNeighbour'; side: NeighbourSide; present: boolean }
+  | { type: 'setNeighbour'; side: NeighbourFlag; present: boolean }
+  | { type: 'shuffleStreet'; seed: number }
   | { type: 'setEntrance'; entrance: EntranceSpec | null }
   | { type: 'setFrontage'; frontage: Frontage }
   | { type: 'setSillHeight'; id: string; sillHeight: number | null }
@@ -222,6 +223,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         return rest;
       });
 
+    // Party walls and street rows (#202, #310). The field is dropped once
+    // nothing is left in it; a seed on its own is kept so the street comes
+    // back as it was when a flag is switched on again.
     case 'setNeighbour':
       return withLayout(state, (layout) => {
         if ((layout.neighbours?.[action.side] === true) === action.present) return layout;
@@ -231,6 +235,13 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         if (Object.keys(neighbours).length > 0) return { ...layout, neighbours };
         const { neighbours: _none, ...rest } = layout;
         return rest;
+      });
+    // The seed is rolled by the caller (lib/street-row.ts `randomStreetSeed`)
+    // so the reducer stays pure; the same seed again is a no-op (#310).
+    case 'shuffleStreet':
+      return withLayout(state, (layout) => {
+        if (!isStreetSeed(action.seed) || layout.neighbours?.seed === action.seed) return layout;
+        return { ...layout, neighbours: { ...layout.neighbours, seed: action.seed } };
       });
 
     // -- floor-scoped finishes ----------------------------------------------

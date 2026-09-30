@@ -65,6 +65,13 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   either side built to your eaves, **pavement frontage** right up to
   the front wall, and a **recessed entrance** porch with steps up from
   the street and an ordinary door across its back.
+- **A street of neighbours** (Site panel): switch on *Street* for a
+  row of houses running along both sides, and *Across the road* for a
+  facing row — each one its own width, storeys, roof, brick or render
+  finish, windows, door, chimney, bay or dormer, standing on the ground
+  under it on a sloped site. The street is seeded, so a design always
+  shows the same one (through reloads and share links); *Shuffle
+  street* re-rolls it.
 - **Categorised catalog** with search, filter chips, and price tags ($).
 - **A budget that pushes back**: purchases that would exceed the
   $25,000 budget ask for confirmation, Surprise-me spends only what the
@@ -306,7 +313,8 @@ components/
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
-    │   ├── site.ts                      Sloped ground + party-wall neighbour sides
+    │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
+    │   ├── street-row.ts                Seeded street generator: house specs + window rules
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder) + headroom stairwells
@@ -344,7 +352,7 @@ components/
     │   ├── item-labels.ts               Floating sprite labels above items
     │   ├── roof.ts                      Flat / gable / hipped roof
     │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails
-    │   ├── neighbours.ts                Party-wall terrace neighbours
+    │   ├── neighbours.ts                The street's houses from their specs (merged + instanced)
     │   ├── terrain.ts                   Sloped ground + excavation faces
     │   ├── entrance.ts                  Recessed porch reveals, soffit, steps
     │   ├── baseboard.ts                 Skirting profile + door-gap runs
@@ -390,7 +398,7 @@ components/
         ├── floor-switcher.tsx
         ├── walls-panel.tsx
         ├── roof-panel.tsx
-        ├── site-panel.tsx               Slope, neighbours, frontage, entrance
+        ├── site-panel.tsx               Slope, neighbours + street, frontage, entrance
         ├── room-settings-panel.tsx
         ├── furniture-catalog-panel.tsx
         ├── placed-items-panel.tsx

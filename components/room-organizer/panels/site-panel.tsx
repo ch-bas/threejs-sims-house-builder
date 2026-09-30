@@ -5,17 +5,29 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useRoomEditor } from '../contexts';
-import { MAX_TERRAIN_Y, MIN_TERRAIN_Y, NEIGHBOUR_SIDES } from '../lib/site';
+import { MAX_TERRAIN_Y, MIN_TERRAIN_Y, NEIGHBOUR_FLAGS } from '../lib/site';
 import { storeyHeight } from '../lib/storeys';
-import { DEFAULT_ENTRANCE, ENTRANCE_LIMITS } from '../lib/street';
+import {
+  DEFAULT_ENTRANCE,
+  ENTRANCE_LIMITS,
+  ENTRANCE_PROBLEM_LABELS,
+  entranceOffsetRange,
+  entranceProblem,
+} from '../lib/street';
 import { RoomDimensionInput } from './room-settings-panel';
-import type { NeighbourSide } from '../lib/types';
+import type { NeighbourFlag } from '../lib/types';
 
-const SIDE_LABELS: Record<NeighbourSide, string> = { west: 'West', east: 'East' };
+const NEIGHBOUR_LABELS: Record<NeighbourFlag, string> = {
+  west: 'West',
+  east: 'East',
+  street: 'Street',
+  across: 'Across the road',
+};
 
 /**
- * Sloped site and party-wall neighbours (#202). Ground heights are relative
- * to the ground floor: the street runs along the north (front) side.
+ * Sloped site, party-wall neighbours (#202) and the street of houses beyond
+ * them (#310). Ground heights are relative to the ground floor: the street
+ * runs along the north (front) side.
  */
 export function SitePanel(): JSX.Element {
   const { layout, actions } = useRoomEditor();
@@ -25,8 +37,21 @@ export function SitePanel(): JSX.Element {
   const entranceDepthId = useId();
   const entranceOffsetId = useId();
   const entrance = layout.entrance;
+  // The reachable offset and the reason nothing renders come from the same
+  // helpers the geometry uses, so the field can't be stepped into a dead
+  // zone and an unbuildable recess says why instead of showing "On" (#281).
+  const [offsetMin, offsetMax] = entrance ? entranceOffsetRange(entrance, layout.width) : [-20, 20];
+  const problem = entrance
+    ? entranceProblem(entrance, {
+        width: layout.width,
+        depth: layout.height,
+        floors: layout.floors,
+        terrain: layout.terrain,
+      })
+    : null;
   const pavement = layout.frontage === 'pavement';
   const terrain = layout.terrain;
+  const streetOn = layout.neighbours?.street === true || layout.neighbours?.across === true;
 
   // A sensible first slope: the street a storey up, so the ground floor is
   // a basement at the front and opens onto the garden at the back.
@@ -84,22 +109,33 @@ export function SitePanel(): JSX.Element {
         <div>
           <Label className="text-xs">Neighbours</Label>
           <div className="mt-1 grid grid-cols-2 gap-2" role="group" aria-label="Neighbours">
-            {NEIGHBOUR_SIDES.map((side) => {
-              const present = layout.neighbours?.[side] === true;
+            {NEIGHBOUR_FLAGS.map((flag) => {
+              const present = layout.neighbours?.[flag] === true;
               return (
                 <Button
-                  key={side}
+                  key={flag}
                   variant={present ? 'default' : 'outline'}
                   size="sm"
                   className="text-xs"
                   aria-pressed={present}
-                  onClick={() => actions.setNeighbour(side, !present)}
+                  onClick={() => actions.setNeighbour(flag, !present)}
                 >
-                  {SIDE_LABELS[side]}
+                  {NEIGHBOUR_LABELS[flag]}
                 </Button>
               );
             })}
           </div>
+          {streetOn && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full text-xs"
+              onClick={() => actions.shuffleStreet()}
+              title="Re-roll the houses along the street"
+            >
+              🎲 Shuffle street
+            </Button>
+          )}
         </div>
         <div>
           <Label className="text-xs">Frontage</Label>
@@ -169,18 +205,24 @@ export function SitePanel(): JSX.Element {
                 id={entranceOffsetId}
                 value={entrance.offset ?? 0}
                 onCommit={(offset) => actions.setEntrance({ ...entrance, offset })}
-                min={-20}
-                max={20}
+                min={offsetMin}
+                max={offsetMax}
                 step={0.1}
               />
             </div>
           </div>
         )}
+        {problem && (
+          <p className="text-[10px] text-amber-700" role="status">
+            {ENTRANCE_PROBLEM_LABELS[problem]}
+          </p>
+        )}
         <p className="text-[10px] text-muted-foreground">
           {pavement ? 'The pavement runs right up to the front wall. ' : ''}
           {entrance ? 'The porch opens onto the storey at street level; its door sits on the wall across the back. ' : ''}
-          Heights are relative to the ground floor; the street runs along the north side. Neighbours are
-          terrace houses sharing your party walls, built to your eaves.
+          Heights are relative to the ground floor; the street runs along the north side. West and East are
+          terrace houses sharing your party walls, built to your eaves; Street continues the row beyond them
+          and Across the road adds a facing row, each house its own.
         </p>
       </CardContent>
     </Card>
