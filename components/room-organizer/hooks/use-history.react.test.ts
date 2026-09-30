@@ -32,7 +32,9 @@ describe('useHistory — replacing the whole value', () => {
     const { apply, result, rerender } = setup(current);
 
     rerender({ value: { name: 'Old saved layout' } });
-    act(() => vi.advanceTimersByTime(10));
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
 
     expect(result.current.canUndo).toBe(true);
     act(() => result.current.undo());
@@ -57,7 +59,9 @@ describe('useHistory — replacing the whole value', () => {
 
     act(() => result.current.clear());
     rerender({ value: { name: 'Old saved layout' } });
-    act(() => vi.advanceTimersByTime(10));
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
 
     expect(result.current.canUndo).toBe(false);
   });

@@ -40,7 +40,9 @@ const openFrom = (name: string) => {
   opener.focus();
   act(() => opener.click());
   // Initial focus is deferred past the opening input event.
-  act(() => vi.runAllTimers());
+  act(() => {
+    vi.runAllTimers();
+  });
   return opener;
 };
 
@@ -59,7 +61,9 @@ describe('useDialogFocus (#152)', () => {
     opener.focus();
     act(() => opener.click());
     expect(document.activeElement).toBe(opener);
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
   });
 
@@ -172,11 +176,15 @@ describe('useDialogFocus — stacked overlays (#152 review)', () => {
 
   it('a popover opened from inside a modal does not pull focus out of it, and one Escape closes only the modal', () => {
     render(<Stacked />);
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     const add = screen.getByRole('button', { name: 'add' });
     add.focus();
     act(() => add.click());
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     expect(screen.getByRole('dialog', { name: 'popover' })).toBeTruthy();
     expect(document.activeElement).toBe(add);
 
@@ -187,11 +195,15 @@ describe('useDialogFocus — stacked overlays (#152 review)', () => {
 
   it('with two modals open, Escape closes only the one holding focus', () => {
     render(<Stacked />);
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     const opener = screen.getByRole('button', { name: 'open welcome' });
     opener.focus();
     act(() => opener.click());
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     // Focus stays in the drawer, the modal that already held it.
     expect(document.activeElement).toBe(opener);
 
@@ -241,7 +253,9 @@ describe('useDialogFocus — Escape handled by a control inside (#152 review)', 
 
   it('cancelling an inline edit with Escape does not also close the modal', () => {
     render(<DrawerWithRename />);
-    act(() => vi.runAllTimers());
+    act(() => {
+      vi.runAllTimers();
+    });
     screen.getByRole('textbox', { name: 'floor name' }).focus();
     key('Escape');
     expect(screen.getByText('rename cancelled')).toBeTruthy();

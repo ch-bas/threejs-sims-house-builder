@@ -5,7 +5,7 @@ import { ENTRANCE_WALL_GAP, buildEntrance } from './entrance';
 import { FOUNDATION_OVERHANG, applyWallDisplay } from './room-builder';
 
 const build = (terrain?: { frontY: number; backY: number }, floors: Array<{ height?: number }> = terrain ? [{ height: 2.5 }, {}] : [{}, {}]) => {
-  const geometry = entranceGeometry({ width: 1.4, depth: 1.2 }, { width: 6, depth: 9, floors, terrain })!;
+  const geometry = entranceGeometry({ width: 1.4, depth: 1.2 }, { width: 6, depth: 9, floors, ...(terrain ? { terrain } : {}) })!;
   return buildEntrance(THREE, { geometry, wallColor: '#ffffff', wallTag: 'wall', floorTag: 'floor' });
 };
 

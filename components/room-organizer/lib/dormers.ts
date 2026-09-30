@@ -38,6 +38,13 @@ const MIN_FACE_HEIGHT = 0.5;
 
 export type DormerPreset = 'window' | 'casements' | 'french' | 'juliet';
 
+/** A dormer as handed to `clampDormer`: an optional field set to `undefined` is cleared. */
+export type DormerInput = Pick<DormerSpec, 'id' | 'side' | 'width'> & {
+  [K in Exclude<keyof DormerSpec, 'id' | 'side' | 'width'>]?: DormerSpec[K] | undefined;
+};
+/** Fields `updateDormer` may change; `undefined` clears an optional one. */
+export type DormerPatch = Partial<Omit<DormerInput, 'id'>>;
+
 export const DORMER_PRESET_LABELS: Record<DormerPreset, string> = {
   window: 'Ribbon window',
   casements: 'Casement pair',
@@ -52,7 +59,7 @@ const FRENCH_WITH_SIDELIGHTS: DormerOpening[] = [
 ];
 
 /** The fields a preset sets; applying one clears the others. */
-export function dormerPresetFields(preset: DormerPreset): Pick<DormerSpec, 'window' | 'openings' | 'balcony'> {
+export function dormerPresetFields(preset: DormerPreset): Pick<DormerInput, 'window' | 'openings' | 'balcony'> {
   switch (preset) {
     case 'window':
       return { window: true, openings: undefined, balcony: undefined };
@@ -137,8 +144,8 @@ export function toCentimetre(limit: number): number {
 }
 
 /** Clamp a dormer's numbers into range (reducer-side, like room dimensions). */
-export function clampDormer(dormer: DormerSpec): DormerSpec {
-  const next: DormerSpec = { ...dormer, width: clamp(dormer.width, MIN_DORMER_WIDTH, MAX_DORMER_WIDTH, 2) };
+export function clampDormer(dormer: DormerInput): DormerSpec {
+  const next: DormerInput = { ...dormer, width: clamp(dormer.width, MIN_DORMER_WIDTH, MAX_DORMER_WIDTH, 2) };
   if (dormer.offset !== undefined) next.offset = clamp(dormer.offset, -100, 100, 0);
   if (dormer.height !== undefined) {
     next.height = clamp(dormer.height, MIN_DORMER_HEIGHT, MAX_DORMER_HEIGHT, DEFAULT_DORMER_HEIGHT);
@@ -149,7 +156,8 @@ export function clampDormer(dormer: DormerSpec): DormerSpec {
   for (const key of ['openings', 'window', 'balcony', 'color', 'offset', 'height', 'setback'] as const) {
     if (next[key] === undefined) delete next[key];
   }
-  return next;
+  // Every optional field left is set, which is what the loop above guarantees.
+  return next as DormerSpec;
 }
 
 // ---------------------------------------------------------------------------

@@ -11,9 +11,9 @@ import {
   useLayout,
   useLayoutActions,
 } from './use-layout-store';
+import type { DormerInput, DormerPatch } from '../lib/dormers';
 import type {
   CatalogItem,
-  DormerSpec,
   EntranceSpec,
   FloorLayout,
   FloorPattern,
@@ -56,8 +56,8 @@ export interface LayoutActions {
   setRoofStyle(style: RoofStyle): void;
   setRoofColor(color: string): void;
   /** Roof dormers (#203). `addDormer` returns the new dormer's id. */
-  addDormer(dormer: Omit<DormerSpec, 'id'>): string;
-  updateDormer(id: string, patch: Partial<Omit<DormerSpec, 'id'>>): void;
+  addDormer(dormer: Omit<DormerInput, 'id'>): string;
+  updateDormer(id: string, patch: DormerPatch): void;
   removeDormer(id: string): void;
   /** Sloped site (#202); `null` returns to flat ground. */
   setTerrain(terrain: TerrainSpec | null): void;

@@ -43,17 +43,18 @@ export const VERSION_HISTORY_MIN_INTERVAL_MS = 5 * 60 * 1000;
 /**
  * One stored restore point. The summary fields sit beside the layout so the
  * History list never has to validate a layout (#297); entries written before
- * #296 carry only `savedAt` and `layout`.
+ * #296 carry only `savedAt` and `layout`. A summary field left `undefined`
+ * is simply not written: entries only ever go through JSON.
  */
 interface StoredEntry {
   savedAt: number;
-  layoutId?: string;
-  name?: string;
-  hadFloorPlan?: boolean;
+  layoutId?: string | undefined;
+  name?: string | undefined;
+  hadFloorPlan?: boolean | undefined;
   /** Fingerprint of the floor-plan image the house carried (#296). */
-  floorPlan?: string;
-  itemCount?: number;
-  floorCount?: number;
+  floorPlan?: string | undefined;
+  itemCount?: number | undefined;
+  floorCount?: number | undefined;
   layout: unknown;
 }
 

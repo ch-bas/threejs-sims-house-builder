@@ -39,7 +39,7 @@ function addRings(
     const radius = (range * i) / RING_COUNT;
     const geometry = new THREE.RingGeometry(radius - 0.05, radius + 0.05, 64);
     const material = new THREE.MeshBasicMaterial({
-      color: colors[i - 1],
+      color: colors[i - 1]!,
       transparent: true,
       opacity: startOpacity - (i - 1) * opacityFalloff,
       side: THREE.DoubleSide,

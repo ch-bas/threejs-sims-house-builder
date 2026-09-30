@@ -704,7 +704,7 @@ export function RoomOrganizer(): JSX.Element {
       // Only track the floor pointer while wall-draw mode consumes it — the
       // handler writes React state per mousemove, re-rendering the whole tree,
       // and the hook skips the floor raycast when the handler is absent.
-      onFloorPointerMove: view.drawWallMode ? handleFloorPointerMove : undefined,
+      ...(view.drawWallMode ? { onFloorPointerMove: handleFloorPointerMove } : {}),
       onFloorPointerLeave: handleFloorPointerLeave,
       snapPosition,
       getDragPlaneY,
@@ -725,7 +725,7 @@ export function RoomOrganizer(): JSX.Element {
     roomWidth: layout.width,
     roomDepth: layout.height,
     items: activeFloor.items,
-    interiorWalls: activeFloor.interiorWalls,
+    ...(activeFloor.interiorWalls ? { interiorWalls: activeFloor.interiorWalls } : {}),
     onExit: useCallback(() => {
       setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
       setGameMode((mode) => (mode === 'live' ? 'build' : mode));
@@ -1060,7 +1060,7 @@ export function RoomOrganizer(): JSX.Element {
           view.drawWallMode
             ? {
                 hasAnchor: wallDraft !== null,
-                snapKind: wallSnapResult?.kind,
+                ...(wallSnapResult ? { snapKind: wallSnapResult.kind } : {}),
                 currentLength:
                   wallDraft && wallSnapResult
                     ? Math.hypot(

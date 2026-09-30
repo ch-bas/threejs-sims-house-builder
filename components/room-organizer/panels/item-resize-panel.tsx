@@ -241,7 +241,7 @@ interface PositionInputsProps {
   x: number;
   z: number;
   disabled?: boolean;
-  title?: string;
+  title?: string | undefined;
   onChange(x: number, z: number): void;
 }
 
@@ -299,7 +299,7 @@ function PositionInputs({ x, z, disabled, title, onChange }: PositionInputsProps
 interface RotationInputProps {
   value: number;
   disabled?: boolean;
-  title?: string;
+  title?: string | undefined;
   onChange(value: number): void;
 }
 
@@ -331,7 +331,7 @@ interface DimensionSliderProps {
   item: FurnitureItem;
   dimension: DimensionConfig;
   disabled?: boolean;
-  title?: string;
+  title?: string | undefined;
   onChange(value: number): void;
 }
 
@@ -391,7 +391,7 @@ interface SignalRangeSliderProps {
   step?: number;
   value: number;
   disabled?: boolean;
-  title?: string;
+  title?: string | undefined;
   /** How the value reads in the label; metres by default. */
   format?(value: number): string;
   onChange(value: number): void;

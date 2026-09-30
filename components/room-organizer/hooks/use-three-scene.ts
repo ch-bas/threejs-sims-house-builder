@@ -36,22 +36,7 @@ export interface UseThreeSceneResult {
 }
 
 export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResult {
-  const {
-    canvasRef,
-    walkthroughActive,
-    onItemSelect,
-    onItemDragStart,
-    onItemDrag,
-    onItemDragEnd,
-    onItemDragCancel,
-    onItemHover,
-    onEmptyClick,
-    onWallSelect,
-    onFloorPointerMove,
-    onFloorPointerLeave,
-    snapPosition,
-    getDragPlaneY,
-  } = options;
+  const { canvasRef } = options;
 
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,42 +67,14 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
   // Latest-callback refs: capture handlers without making them part of the
   // init-effect dependency list (which would tear down the scene unnecessarily).
-  const handlersRef = useRef<SceneEventHandlers>({
-    walkthroughActive,
-    onItemSelect,
-    onItemDragStart,
-    onItemDrag,
-    onItemDragEnd,
-    onItemDragCancel,
-    onItemHover,
-    onEmptyClick,
-    onWallSelect,
-    onFloorPointerMove,
-    onFloorPointerLeave,
-    snapPosition,
-    getDragPlaneY,
-  });
-  handlersRef.current = {
-    walkthroughActive,
-    onItemSelect,
-    onItemDragStart,
-    onItemDrag,
-    onItemDragEnd,
-    onItemDragCancel,
-    onItemHover,
-    onEmptyClick,
-    onWallSelect,
-    onFloorPointerMove,
-    onFloorPointerLeave,
-    snapPosition,
-    getDragPlaneY,
-  };
+  const handlersRef = useRef<SceneEventHandlers>(options);
+  handlersRef.current = options;
 
   // Load Three.js + OrbitControls once.
   const [isModuleLoaded, setModuleLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const [three, controls, environments] = await Promise.all([
           import('three'),

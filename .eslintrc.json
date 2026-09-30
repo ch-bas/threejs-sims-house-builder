@@ -1,4 +1,5 @@
 {
+  "root": true,
   "extends": "next/core-web-vitals",
   "rules": {
     "no-console": ["warn", { "allow": ["warn", "error"] }],
@@ -19,5 +20,23 @@
       }
     ],
     "react/self-closing-comp": "warn"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["**/*.ts", "**/*.tsx"],
+      "plugins": ["@typescript-eslint"],
+      "parserOptions": { "project": "./tsconfig.json" },
+      "rules": {
+        "@typescript-eslint/consistent-type-imports": [
+          "warn",
+          { "prefer": "type-imports", "fixStyle": "inline-type-imports", "disallowTypeAnnotations": false }
+        ],
+        "@typescript-eslint/no-floating-promises": "warn",
+        "@typescript-eslint/switch-exhaustiveness-check": [
+          "warn",
+          { "considerDefaultExhaustiveForUnions": true }
+        ]
+      }
+    }
+  ]
 }

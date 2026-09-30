@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canvasToWorld, get2DViewTransform, type View2DTransform } from '../canvas-2d/render';
-import { makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
+import { makeItem, makeLayout, makeUnplacedItem } from '../lib/__testfixtures__/fixtures';
 import { hitTest2DItems } from './use-canvas-2d-interaction';
 
 // Forward mapping exactly as render2DTopDown draws item centres.
@@ -101,7 +101,7 @@ describe('hitTest2DItems (#219)', () => {
   });
 
   it('returns null on empty space and skips unplaced items', () => {
-    const unplaced = makeItem({ id: 'unplaced', position: undefined });
+    const unplaced = makeUnplacedItem({ id: 'unplaced' });
     const placed = makeItem({ id: 'placed', position: { x: 3, z: 3 } });
     expect(hitTest2DItems([unplaced, placed], 0, 0)).toBeNull();
     expect(hitTest2DItems([], 0, 0)).toBeNull();

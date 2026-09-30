@@ -237,7 +237,7 @@ export function useSceneEffects({
           width: layout.width,
           depth: layout.height,
           floors: layout.floors,
-          terrain: layout.terrain,
+          ...(layout.terrain ? { terrain: layout.terrain } : {}),
         })
       : null;
 
@@ -257,16 +257,17 @@ export function useSceneEffects({
       // Stairs on the floor below create openings in this floor's plane.
       const floorBelow = index > 0 ? layout.floors[index - 1] : undefined;
       const floorOpenings = computeFloorOpenings(floorBelow);
+      const ghostOpacity = otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive);
       buildRoom(THREE, {
         scene,
         width: layout.width,
         depth: layout.height,
         floorColor: floor.floorColor,
-        floorPattern: floor.floorPattern,
-        wallPattern: floor.wallPattern,
-        wallColors: floor.wallColors,
+        ...(floor.floorPattern ? { floorPattern: floor.floorPattern } : {}),
+        ...(floor.wallPattern ? { wallPattern: floor.wallPattern } : {}),
+        ...(floor.wallColors ? { wallColors: floor.wallColors } : {}),
         wallOpenings,
-        hiddenWalls: floor.hiddenWalls,
+        ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
         floorOpenings,
         floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
         floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
@@ -275,7 +276,7 @@ export function useSceneEffects({
         yOffset: floorElevation(layout.floors, index),
         wallHeight: storeyHeight(floor),
         groundY: lowestGround(layout.terrain),
-        ghostOpacity: otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
+        ...(ghostOpacity !== undefined ? { ghostOpacity } : {}),
         onTextureLoaded: invalidate,
       });
       if (entrance && index === entrance.floorIndex && !layout.floorPlanImage) {
@@ -284,7 +285,7 @@ export function useSceneEffects({
           wallColor: floor.wallColors?.north ?? '#e8dcc4',
           wallTag: ROOM_OBJECT_TAGS.Wall,
           floorTag: ROOM_OBJECT_TAGS.Floor,
-          ghostOpacity: otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
+          ...(ghostOpacity !== undefined ? { ghostOpacity } : {}),
         })) {
           scene.add(group);
         }
@@ -533,9 +534,9 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
     setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height, {
-      terrain: layout.terrain,
-      neighbours: layout.neighbours,
-      frontage: layout.frontage,
+      ...(layout.terrain ? { terrain: layout.terrain } : {}),
+      ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
+      ...(layout.frontage ? { frontage: layout.frontage } : {}),
     });
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
@@ -572,7 +573,7 @@ export function useSceneEffects({
           ? { terrain: { frontY: terrainFrontY, backY: terrainBackY } }
           : {}),
         ...(layout.frontage ? { frontage: layout.frontage } : {}),
-        neighbours: layout.neighbours,
+        ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
       });
       buildNeighbours(THREE, scene, houses);
     }
@@ -606,7 +607,7 @@ export function useSceneEffects({
           width: layout.width,
           depth: layout.height,
           floors: layout.floors,
-          terrain: layout.terrain,
+          ...(layout.terrain ? { terrain: layout.terrain } : {}),
         })
       : null;
 
@@ -632,7 +633,7 @@ export function useSceneEffects({
           roomWidth: layout.width,
           roomDepth: layout.height,
           wallHeight,
-          wallHeights,
+          ...(wallHeights ? { wallHeights } : {}),
           storeyHeight: storeyHeight(floor),
         }
       );

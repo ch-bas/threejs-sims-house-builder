@@ -46,7 +46,7 @@ export function SitePanel(): JSX.Element {
         width: layout.width,
         depth: layout.height,
         floors: layout.floors,
-        terrain: layout.terrain,
+        ...(layout.terrain ? { terrain: layout.terrain } : {}),
       })
     : null;
   const pavement = layout.frontage === 'pavement';

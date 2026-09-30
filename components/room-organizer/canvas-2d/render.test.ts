@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeItem } from '../lib/__testfixtures__/fixtures';
+import { makeItem, makeUnplacedItem } from '../lib/__testfixtures__/fixtures';
 import { computeFloorPlanPlacement, computeHeatmapCells, HEATMAP_COLS, HEATMAP_ROWS } from './render';
 
 // A 10×10 m room with the default 20×20 grid gives 0.5 m cells, so grid
@@ -67,7 +67,7 @@ describe('computeHeatmapCells — overlap-weighted attribution (#150)', () => {
   });
 
   it('ignores unplaced, free, and zero-area items', () => {
-    const unplaced = makeItem({ id: 'a', price: 500, position: undefined });
+    const unplaced = makeUnplacedItem({ id: 'a', price: 500 });
     const free = makeItem({ id: 'b', price: 0 });
     const zeroArea = makeItem({ id: 'c', price: 500, width: 0 });
     const grid = computeHeatmapCells([unplaced, free, zeroArea], ROOM, ROOM);

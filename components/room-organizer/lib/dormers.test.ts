@@ -17,6 +17,8 @@ import {
 import type { DormerSpec } from './types';
 
 const dormer = (overrides: Partial<DormerSpec> = {}): DormerSpec => ({ id: 'd', side: 'south', width: 2, ...overrides });
+/** `dormer()` wearing a preset, with the fields the preset clears dropped. */
+const preset = (name: DormerPreset): DormerSpec => clampDormer({ ...dormer(), ...dormerPresetFields(name) });
 
 describe('roof slopes (#203)', () => {
   it('has slopes only on a gable’s long sides, and on every side of a hipped roof', () => {
@@ -106,7 +108,7 @@ describe('dormer openings (#203)', () => {
   });
 
   it('lets explicit openings win over the shorthand', () => {
-    const rects = dormerOpeningRects(dormer({ window: true, ...dormerPresetFields('french') }), 2, 1.8);
+    const rects = dormerOpeningRects(dormer({ window: true, ...preset('french') }), 2, 1.8);
     expect(rects.map((r) => r.kind)).toEqual(['sidelight', 'french', 'sidelight']);
   });
 
@@ -134,7 +136,7 @@ describe('dormer openings (#203)', () => {
   });
 
   it('guards the French doors with the Juliet rail, else the whole face', () => {
-    const rects = dormerOpeningRects(dormer(dormerPresetFields('juliet')), 2, 1.8);
+    const rects = dormerOpeningRects(dormer(preset('juliet')), 2, 1.8);
     const [x0, x1] = julietRailSpan(rects, 2);
     expect(x0).toBeCloseTo((0.28 - 0.5) * 2 - 0.05);
     expect(x1).toBeCloseTo((0.72 - 0.5) * 2 + 0.05);
@@ -144,14 +146,14 @@ describe('dormer openings (#203)', () => {
 
 describe('dormer data (#203)', () => {
   it('round-trips every preset', () => {
-    for (const preset of ['window', 'casements', 'french', 'juliet'] as DormerPreset[]) {
-      expect(dormerPresetOf(clampDormer(dormer(dormerPresetFields(preset))))).toBe(preset);
+    for (const name of ['window', 'casements', 'french', 'juliet'] as DormerPreset[]) {
+      expect(dormerPresetOf(clampDormer(dormer(preset(name))))).toBe(name);
     }
     expect(dormerPresetOf(dormer({ openings: [{ kind: 'french', from: 0, to: 1 }] }))).toBeNull();
   });
 
   it('validates specs', () => {
-    expect(isDormerSpec(dormer(dormerPresetFields('juliet')))).toBe(true);
+    expect(isDormerSpec(dormer(preset('juliet')))).toBe(true);
     for (const bad of [
       { ...dormer(), side: 'up' },
       { ...dormer(), width: 0.1 },

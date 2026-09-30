@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { makeItem, makeLayout } from './__testfixtures__/fixtures';
+import { makeItem, makeLayout, makeUnplacedItem } from './__testfixtures__/fixtures';
 import {
   CUSTOM_SETS_STORAGE_KEY,
   MAX_CUSTOM_SETS,
@@ -93,7 +93,7 @@ describe('custom sets — save / list / delete round-trip (#302)', () => {
   it('refuses a blank name and a selection with nothing placed', () => {
     const storage = makeStore();
     expect(saveCustomSet(dining(), '   ', { storage })).toBeNull();
-    expect(saveCustomSet([makeItem({ position: undefined })], 'Ghosts', { storage })).toBeNull();
+    expect(saveCustomSet([makeUnplacedItem()], 'Ghosts', { storage })).toBeNull();
     expect(storage.data.size).toBe(0);
   });
 
@@ -136,7 +136,7 @@ describe('custom sets — corrupt data (#302)', () => {
     expect(parseCustomSet({ ...good, items: [] })).toBeNull();
     expect(parseCustomSet({ ...good, items: [{ id: 'x' }] })).toBeNull();
     // A piece with no offset can't be placed.
-    expect(parseCustomSet({ ...good, items: [makeItem({ position: undefined })] })).toBeNull();
+    expect(parseCustomSet({ ...good, items: [makeUnplacedItem()] })).toBeNull();
     // Item-level schema applies (oversized dimension).
     expect(parseCustomSet({ ...good, items: [makeItem({ width: 1e12 })] })).toBeNull();
   });

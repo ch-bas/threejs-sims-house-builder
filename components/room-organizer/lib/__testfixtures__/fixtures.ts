@@ -17,6 +17,12 @@ export function makeItem(overrides: Partial<FurnitureItem> = {}): FurnitureItem 
   };
 }
 
+/** `makeItem()` without a position: an item that is not placed on the floor. */
+export function makeUnplacedItem(overrides: Partial<FurnitureItem> = {}): FurnitureItem {
+  const { position: _unplaced, ...item } = makeItem(overrides);
+  return item;
+}
+
 /** Build a valid CatalogItem (no id/position/rotation). */
 export function makeCatalogItem(overrides: Partial<CatalogItem> = {}): CatalogItem {
   return {

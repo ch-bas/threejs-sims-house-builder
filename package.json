@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint --ext .ts,.tsx app components",
+    "lint": "eslint --ext .ts,.tsx app components lib",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

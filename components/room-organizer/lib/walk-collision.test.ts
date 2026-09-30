@@ -103,7 +103,7 @@ describe('resolveWalkerPosition — furniture', () => {
   });
 
   it('ignores an unplaced item', () => {
-    const unplaced = { ...BOX, position: undefined };
+    const { position: _placed, ...unplaced } = BOX;
     expect(walk({ x: 0, z: 0 }, { x: 0, z: -3 }, [unplaced]).z).toBeCloseTo(-3, 3);
   });
 });
