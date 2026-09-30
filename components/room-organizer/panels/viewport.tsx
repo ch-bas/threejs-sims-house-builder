@@ -409,8 +409,10 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
 
       {props.selectionCount !== undefined && props.selectionCount > 1 && (
         <div
-          className="absolute top-4 left-1/2"
-          style={{ transform: 'translateX(-50%)' }}
+          className="absolute left-1/2"
+          // Below the header stats box, which can wrap to two lines at
+          // narrow desktop widths and covered a top-16 chip (#299, #154).
+          style={{ top: 104, transform: 'translateX(-50%)', zIndex: 31 }}
         >
           <StatusChip intent="accent">
             <Icon name="copy" size={14} />
