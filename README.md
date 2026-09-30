@@ -415,6 +415,7 @@ components/
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
     │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop
+    │   ├── use-entrance-keep-out.ts     Porch keep-out rect for collisions, memoised (#285)
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import

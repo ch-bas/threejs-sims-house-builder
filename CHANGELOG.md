@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.13.0] - 2026-09-30
+
+The **2D plan & export** milestone: the plan, minimap, blueprint, SVG and DXF now show what the 3D house is made of, and the exports fit their page.
+
+### Added
+- Stairs on the plan draw their treads and a climb arrow instead of a ladder icon, and the floor above shows the stairwell as a dashed "open below" void — the same hole the 3D slab cuts — on the plan, minimap, blueprint, SVG and DXF (new `STAIRWELL` layer) ([#290](https://github.com/ch-bas/threejs-sims-house-builder/issues/290))
+- The recessed entrance appears on the plan: the front wall breaks across the opening, the porch cheeks run back to its wall, the recess is outside (grass on screen, paper on the blueprint), the blueprint's floor area excludes it, and furniture dragged into the porch is flagged like furniture through a wall ([#285](https://github.com/ch-bas/threejs-sims-house-builder/issues/285))
+- The floor switcher shows each storey's height and the building's height to the eaves; the Site and Roof panels say they are shown in 3D only while the plan is up ([#289](https://github.com/ch-bas/threejs-sims-house-builder/issues/289))
+
+### Fixed
+- Wall-mounted items and low items no longer hide under the furniture around them on the plan: doors, windows, rugs and tabletop items draw and hit-test in a layer-aware order, with a little slack for thin wall marks ([#286](https://github.com/ch-bas/threejs-sims-house-builder/issues/286))
+- The SVG and print sheet now follow the plan's content: a tree or pool outside the walls is inside the sheet with the title, dimensions and scale bar clear of it ([#287](https://github.com/ch-bas/threejs-sims-house-builder/issues/287))
+- Print to scale picks portrait or landscape and goes up to 1:1000 so a whole lot fits an A4 page, keeps labels and line weights readable at every scale, and says "Not to scale" instead of claiming a scale it can't honour; DXF text with accents, symbols or percent signs opens correctly in CAD; the first blueprint print carries the tracing image ([#288](https://github.com/ch-bas/threejs-sims-house-builder/issues/288))
+- Starting to draw a zone or wall with the side panels open no longer closes the panels instead of drawing: the drawer steps out of the way while a draw mode is on ([#323](https://github.com/ch-bas/threejs-sims-house-builder/issues/323))
+
+### Internal
+- TypeScript `exactOptionalPropertyTypes` and `verbatimModuleSyntax` are on, and lint adds type-aware checks (floating promises, exhaustive switches, type-only imports) using the plugin the Next config already ships ([#162](https://github.com/ch-bas/threejs-sims-house-builder/issues/162))
+
 ## [1.12.0] - 2026-09-30
 
 The **Gameplay & delight** milestone.
