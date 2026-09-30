@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
 import { DXF_LAYERS, layoutToDxf } from './dxf';
+import { layoutToSvg } from './svg';
 
 function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
@@ -133,6 +134,38 @@ describe('layoutToDxf', () => {
     });
     const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
     expect(dxf).toContain('1\nTwo Lines');
+  });
+
+  it('escapes non-ASCII text as \\U+XXXX for the ANSI-decoded AC1015 reader (#288)', () => {
+    const floor = makeFloor({
+      items: [makeItem({ name: 'Canapé 🛋', position: { x: 0, z: 0 } })],
+    });
+    const dxf = layoutToDxf(makeLayout({ name: "Maison d'été", floors: [floor] }), floor);
+    expect(dxf).toContain("1\nMaison d'\\U+00E9t\\U+00E9 - Ground Floor");
+    // Astral code points have no BMP escape.
+    expect(dxf).toContain('1\nCanap\\U+00E9 ?');
+    // Nothing above 0x7E survives anywhere in the file.
+    expect(dxf).toMatch(/^[\x00-\x7e]*$/);
+  });
+
+  it('escapes % so names cannot be read as TEXT control codes (#288)', () => {
+    const floor = makeFloor({
+      items: [makeItem({ name: '%%u', position: { x: 0, z: 0 } })],
+    });
+    const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+    // %%% is the literal percent sign, so "%%u" reads back as "%%u".
+    expect(dxf).toContain('1\n%%%%%%u\n');
+  });
+
+  it('agrees with the SVG export on which items appear when some sit outside the walls (#287)', () => {
+    const tree = makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 0, z: 6.7 } });
+    const floor = makeFloor({ items: [makeItem(), tree] });
+    const layout = makeLayout({ floors: [floor] });
+    const dxf = layoutToDxf(layout, floor);
+    const svg = layoutToSvg(layout, floor);
+    expect(count(dxf, '1\nOak Tree')).toBe(1);
+    expect(count(svg, '>Oak Tree</text>')).toBe(1);
+    expect(count(dxf, '0\nLWPOLYLINE') - 1).toBe(count(svg, 'class="furniture"'));
   });
 
   it('is deterministic for the same layout', () => {
