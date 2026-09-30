@@ -6,6 +6,7 @@ import { useSelection } from '../contexts';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { generateRoomShape } from '../lib/room-shapes';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
 import { CameraPad } from './camera-pad';
@@ -14,7 +15,6 @@ import { ModePanel } from './mode-panel';
 import { RoomShapesPanel } from './room-shapes-panel';
 import { WallPaintPanel } from './wall-paint-panel';
 import type { CatalogItem } from '../lib/types';
-import { ENTRANCE_DOOR_ID } from '../lib/street';
 
 export interface BottomHudProps {
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;

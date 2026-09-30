@@ -15,9 +15,9 @@ import { downloadTextFile, planExportFileName } from '../lib/plan-export/downloa
 import { layoutToDxf } from '../lib/plan-export/dxf';
 import { openPlanPrintWindow } from '../lib/plan-export/print';
 import { layoutToSvg } from '../lib/plan-export/svg';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
 import type { FurnitureItem } from '../lib/types';
-import { ENTRANCE_DOOR_ID } from '../lib/street';
 
 export interface ActionsPanelProps {
   onImport(file: File): void;
