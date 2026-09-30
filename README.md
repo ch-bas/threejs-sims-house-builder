@@ -167,7 +167,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 
 - **3D / 2D top-down** toggle.
 - **Walkthrough mode**: first-person WASD camera at the active floor's
-  eye height (PointerLockControls + Shift sprint).
+  eye height (PointerLockControls + Shift sprint); slides around furniture
+  and interior walls, passing through doorways.
 - **Camera presets**: Iso, Top-down, Front, Corner, plus **Fit-to-room**.
 - **Show all floors** toggle stacks every level at once with ghosted
   lower floors.
@@ -311,6 +312,7 @@ components/
     │   ├── sounds.ts                    Web-Audio synth for UI cues
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
+    │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture + interior walls
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions

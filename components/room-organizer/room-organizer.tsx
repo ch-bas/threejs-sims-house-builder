@@ -639,6 +639,8 @@ export function RoomOrganizer(): JSX.Element {
     eyeHeight: activeFloorY + Math.min(1.6, activeStoreyHeight - 0.2),
     roomWidth: layout.width,
     roomDepth: layout.height,
+    items: activeFloor.items,
+    interiorWalls: activeFloor.interiorWalls,
     onExit: useCallback(() => {
       setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
       setGameMode((mode) => (mode === 'live' ? 'build' : mode));
