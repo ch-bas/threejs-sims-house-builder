@@ -256,6 +256,12 @@ export interface EntranceSpec {
   offset?: number;
   /** Porch floor to soffit; may span more than one storey. */
   height?: number;
+  /**
+   * `false` once the user has deleted the porch door: the reducer then
+   * stops re-creating it when it re-fits the recess (#273). Cleared with
+   * the entrance.
+   */
+  door?: false;
 }
 
 /** Party-wall neighbour blocks either side, for terraces and semis (#202). */

@@ -244,7 +244,8 @@ export function RoomDimensionInput({
       onChange={(event) => {
         setDraft(event.target.value);
         const parsed = parseFloat(event.target.value);
-        if (Number.isFinite(parsed) && parsed >= min && parsed <= max) {
+        // Same guard as blur: re-typing the current value is not an edit (#279).
+        if (Number.isFinite(parsed) && parsed >= min && parsed <= max && parsed !== value) {
           onCommit(parsed);
         }
       }}

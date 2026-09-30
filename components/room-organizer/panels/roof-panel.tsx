@@ -13,11 +13,14 @@ import {
   MAX_DORMER_WIDTH,
   MAX_DORMERS,
   MIN_DORMER_WIDTH,
+  dormerMaxWidth,
+  dormerOffsetRange,
   dormerPresetFields,
   dormerPresetOf,
   roofSlopeSides,
   type DormerPreset,
 } from '../lib/dormers';
+import { buildingHeight } from '../lib/storeys';
 import { ROOF_LABELS } from '../three/roof';
 import { RoomDimensionInput } from './room-settings-panel';
 import type { DormerSpec, RoofStyle, WallId } from '../lib/types';
@@ -108,11 +111,17 @@ function DormersSection(): JSX.Element {
 }
 
 function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number; sides: readonly WallId[] }): JSX.Element {
-  const { actions } = useRoomEditor();
+  const { layout, actions } = useRoomEditor();
   const widthId = useId();
   const offsetId = useId();
   const preset = dormerPresetOf(dormer);
   const onSlope = sides.includes(dormer.side);
+  // The fields clamp to what the slope can take, so the value shown is the
+  // value built (#281): typing 8 into a 6 m house lands on the roof edge.
+  const style = layout.roof?.style ?? 'none';
+  const baseY = buildingHeight(layout.floors);
+  const offsetRange = dormerOffsetRange(style, layout.width, layout.height, baseY, dormer);
+  const maxWidth = dormerMaxWidth(style, layout.width, layout.height, baseY, dormer);
 
   return (
     <div className="space-y-2 rounded-md border p-2" aria-label={`Dormer ${index + 1}`} role="group">
@@ -169,7 +178,7 @@ function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number
             value={dormer.width}
             onCommit={(width) => actions.updateDormer(dormer.id, { width })}
             min={MIN_DORMER_WIDTH}
-            max={MAX_DORMER_WIDTH}
+            max={maxWidth ?? MAX_DORMER_WIDTH}
             step={0.1}
           />
         </div>
@@ -181,12 +190,17 @@ function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number
             id={offsetId}
             value={dormer.offset ?? 0}
             onCommit={(offset) => actions.updateDormer(dormer.id, { offset })}
-            min={-20}
-            max={20}
+            min={offsetRange?.[0] ?? -20}
+            max={offsetRange?.[1] ?? 20}
             step={0.1}
           />
         </div>
       </div>
+      {onSlope && offsetRange === null && (
+        <p className="text-[10px] text-muted-foreground" role="note">
+          Doesn&apos;t fit on this roof — the slope is too low or too short for a dormer.
+        </p>
+      )}
       <Input
         type="color"
         aria-label="Dormer finish"

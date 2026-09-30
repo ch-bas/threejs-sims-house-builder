@@ -83,6 +83,16 @@ describe('RoomDimensionInput (#217)', () => {
     expect(input.value).toBe('20');
   });
 
+  it('re-typing the current value is not an edit, on change or on blur (#279)', () => {
+    const { input, onCommit, type } = setup(8);
+    type('');
+    type('8');
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(input.value).toBe('8');
+  });
+
   it('leaves an out-of-range stored value alone until the user edits it', () => {
     const { input, onCommit } = setup(30);
     expect(input.value).toBe('30');

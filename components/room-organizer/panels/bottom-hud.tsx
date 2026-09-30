@@ -6,6 +6,7 @@ import { useSelection } from '../contexts';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { generateRoomShape } from '../lib/room-shapes';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
 import { CameraPad } from './camera-pad';
@@ -171,7 +172,8 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
             // Replaces the active floor: spend what the other floors leave (#136).
             maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost),
           });
-          actions.replaceItems(items);
+          // The entrance door is structure, not furniture — keep it (#273).
+          actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);
           setSelectedItemId(null);
           setExtraSelectedIds(new Set());
         }}

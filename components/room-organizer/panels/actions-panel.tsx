@@ -15,6 +15,7 @@ import { downloadTextFile, planExportFileName } from '../lib/plan-export/downloa
 import { layoutToDxf } from '../lib/plan-export/dxf';
 import { openPlanPrintWindow } from '../lib/plan-export/print';
 import { layoutToSvg } from '../lib/plan-export/svg';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
 import type { FurnitureItem } from '../lib/types';
 
@@ -101,7 +102,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 roomDepth: layout.height,
                 maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost),
               });
-              actions.replaceItems(items);
+              // The entrance door is structure, not furniture — keep it (#273).
+              actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);
               setSelectedItemId(null);
               setExtraSelectedIds(new Set());
             }}
