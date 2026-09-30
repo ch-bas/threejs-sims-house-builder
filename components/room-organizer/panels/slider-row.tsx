@@ -18,8 +18,8 @@ export interface SliderRowProps {
    */
   uppercaseLabel?: boolean;
   /** Greys the row out and ignores input; pair with `title` to say why. */
-  disabled?: boolean;
-  title?: string;
+  disabled?: boolean | undefined;
+  title?: string | undefined;
 }
 
 /**

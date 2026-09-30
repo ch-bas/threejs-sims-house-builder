@@ -26,9 +26,9 @@ export interface ViewportProps {
   /** The selection is exactly one persistent group (#154) — the chip says so. */
   selectionGrouped?: boolean;
   /** Group the selection; absent when it is already one whole group (#154). */
-  onGroupSelection?(): void;
+  onGroupSelection?: (() => void) | undefined;
   /** Ungroup the selection; absent when nothing in it is grouped (#154). */
-  onUngroupSelection?(): void;
+  onUngroupSelection?: (() => void) | undefined;
   /** Save the selection as a reusable custom set (#302). */
   onSaveSelectionAsSet?(): void;
   showMeasurements: boolean;

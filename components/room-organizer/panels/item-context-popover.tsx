@@ -344,10 +344,10 @@ interface ActionTileProps {
   icon: PlotcraftIconName;
   label: string;
   onClick(): void;
-  active?: boolean;
-  disabled?: boolean;
+  active?: boolean | undefined;
+  disabled?: boolean | undefined;
   /** Tooltip override — used to explain why a disabled tile can't act. */
-  title?: string;
+  title?: string | undefined;
 }
 
 function ActionTile({ icon, label, onClick, active, disabled, title }: ActionTileProps): JSX.Element {

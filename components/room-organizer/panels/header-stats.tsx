@@ -60,8 +60,8 @@ function RemoteChangeNotice({
   onAdopt,
   onDismiss,
 }: {
-  onAdopt?: () => void;
-  onDismiss?: () => void;
+  onAdopt?: (() => void) | undefined;
+  onDismiss?: (() => void) | undefined;
 }): JSX.Element {
   const buttonStyle: React.CSSProperties = {
     border: '1px solid var(--pc-warn-amber)',

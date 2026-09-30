@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { dormerPresetFields } from '../lib/dormers';
+import { clampDormer, dormerPresetFields } from '../lib/dormers';
 import { buildRoof, removeRoof, ROOF_TAG } from './roof';
 import type { DormerSpec } from '../lib/types';
 
 const DORMERS: DormerSpec[] = [
-  { id: 'rear', side: 'south', width: 2.4, ...dormerPresetFields('juliet') },
+  clampDormer({ id: 'rear', side: 'south', width: 2.4, ...dormerPresetFields('juliet') }),
   { id: 'front', side: 'north', width: 1.6, offset: -2, window: true },
 ];
 

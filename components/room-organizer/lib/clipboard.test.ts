@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeItem } from './__testfixtures__/fixtures';
+import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { buildPasteItems, clearClipboard, clipboardSize, copyToClipboard } from './clipboard';
 
 const W = 10;
@@ -70,7 +70,7 @@ describe('clipboard (#153)', () => {
 
   it('empty clipboard pastes nothing; positionless items are not copied', () => {
     expect(buildPasteItems({ roomWidth: W, roomDepth: D, idTag: 't' })).toEqual([]);
-    expect(copyToClipboard([makeItem({ id: 'a', position: undefined })])).toBe(0);
+    expect(copyToClipboard([makeUnplacedItem({ id: 'a' })])).toBe(0);
     expect(clipboardSize()).toBe(0);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeItem } from './__testfixtures__/fixtures';
+import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { ROOM_TEMPLATES } from './constants';
 import {
   autoOrganize,
@@ -50,7 +50,7 @@ describe('itemsOverlap — OBB via SAT', () => {
   });
 
   it('returns false when either item lacks a position', () => {
-    const a = makeItem({ id: 'a', position: undefined });
+    const a = makeUnplacedItem({ id: 'a' });
     const b = makeItem({ id: 'b', position: { x: 0, z: 0 } });
     expect(itemsOverlap(a, b)).toBe(false);
   });
@@ -95,7 +95,7 @@ describe('itemInBounds', () => {
   });
 
   it('returns false for a positionless item', () => {
-    expect(itemInBounds(makeItem({ position: undefined }), W, D)).toBe(false);
+    expect(itemInBounds(makeUnplacedItem(), W, D)).toBe(false);
   });
 });
 
@@ -190,7 +190,7 @@ describe('hasCollisions', () => {
   });
 
   it('returns false for a positionless item', () => {
-    expect(hasCollisions(makeItem({ position: undefined }), [], W, D)).toBe(false);
+    expect(hasCollisions(makeUnplacedItem(), [], W, D)).toBe(false);
   });
 
   it('treats a keep-out rect (the entrance porch) as out of bounds for indoor furniture (#285)', () => {

@@ -1,5 +1,5 @@
 import { DEFAULT_ROOF, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
-import { MAX_DORMERS, clampDormer } from '../lib/dormers';
+import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { settleWallMountedItem } from '../lib/opening-snap';
 import { clampTerrainY, isStreetSeed } from '../lib/site';
@@ -21,7 +21,6 @@ import {
 import { MAX_ZONES, clampZoneRect, sameZone } from '../lib/zones';
 import type {
   CatalogItem,
-  DormerSpec,
   EntranceSpec,
   FloorLayout,
   FloorPattern,
@@ -92,8 +91,8 @@ export type LayoutAction =
   | { type: 'setFloorPlanFitMode'; mode: FloorPlanFitMode }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
-  | { type: 'addDormer'; dormer: DormerSpec }
-  | { type: 'updateDormer'; id: string; patch: Partial<Omit<DormerSpec, 'id'>> }
+  | { type: 'addDormer'; dormer: DormerInput }
+  | { type: 'updateDormer'; id: string; patch: DormerPatch }
   | { type: 'removeDormer'; id: string }
   | { type: 'setTerrain'; terrain: TerrainSpec | null }
   | { type: 'setNeighbour'; side: NeighbourFlag; present: boolean }
@@ -832,6 +831,9 @@ function withActiveFloor(state: LayoutState, update: (floor: FloorLayout) => Flo
   return { ...state, layout: { ...state.layout, floors: nextFloors } };
 }
 
+/** Fields of an item to change; an explicit `undefined` clears an optional one. */
+type ItemPatch = { [K in keyof FurnitureItem]?: FurnitureItem[K] | undefined };
+
 /**
  * Patch one item on the active floor. A `null` patch means "refused" (e.g.
  * the item is locked): the state is returned with its identity intact, so a
@@ -840,7 +842,7 @@ function withActiveFloor(state: LayoutState, update: (floor: FloorLayout) => Flo
 function patchItem(
   state: LayoutState,
   id: string,
-  patch: (item: FurnitureItem) => Partial<FurnitureItem> | null
+  patch: (item: FurnitureItem) => ItemPatch | null
 ): LayoutState {
   return withActiveFloor(state, (floor) => {
     let changed = false;
@@ -849,7 +851,8 @@ function patchItem(
       const fields = patch(item);
       if (fields === null) return item;
       changed = true;
-      return { ...item, ...fields };
+      // A cleared field stays as an `undefined` key, which every reader treats as absent.
+      return { ...item, ...fields } as FurnitureItem;
     });
     return changed ? { ...floor, items } : floor;
   });
@@ -991,7 +994,7 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previo
     width: layout.width,
     depth: layout.height,
     floors: layout.floors,
-    terrain: layout.terrain,
+    ...(layout.terrain ? { terrain: layout.terrain } : {}),
   });
   let wall: InteriorWall | null = null;
   let door: FurnitureItem | null = null;

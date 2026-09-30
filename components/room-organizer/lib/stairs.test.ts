@@ -215,7 +215,7 @@ describe('headroom stairwell (#205)', () => {
 });
 
 describe('shallow winders (#278)', () => {
-  const shallow = (depth: number, stairsLeadIn?: number) => ({ ...winder, depth, stairsLeadIn });
+  const shallow = (depth: number, stairsLeadIn?: number) => ({ ...winder, depth, ...(stairsLeadIn !== undefined ? { stairsLeadIn } : {}) });
 
   it('keeps the catalogue winder exactly as before: a full half-width fan', () => {
     expect(winderLayout(winder)).toEqual({ up: 4, back: 4, fan: 1, fanZ: 1.3 - 1, going: (1.3 - 1 + 1.3) / 4 });
@@ -261,7 +261,7 @@ describe('shallow winders (#278)', () => {
     for (const width of [0.1, 0.5, 1, 2, 4, 50]) {
       for (const depth of [0.1, 0.3, 0.75, 1, 1.3, 2.6, 5, 50]) {
         for (const stairsLeadIn of [undefined, 2, MAX_STAIRS_LEAD_IN]) {
-          for (const rise of [2.4, 3, 7]) expectValidLayout({ width, depth, stairsShape: 'winder', stairsLeadIn }, rise);
+          for (const rise of [2.4, 3, 7]) expectValidLayout({ width, depth, stairsShape: 'winder', ...(stairsLeadIn !== undefined ? { stairsLeadIn } : {}) }, rise);
         }
       }
     }

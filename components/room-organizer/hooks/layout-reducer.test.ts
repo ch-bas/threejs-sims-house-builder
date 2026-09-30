@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeCatalogItem, makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
+import { makeCatalogItem, makeFloor, makeItem, makeLayout, makeUnplacedItem } from '../lib/__testfixtures__/fixtures';
 import { MAX_FLOORS, MAX_ROOM_DIMENSION } from '../lib/constants';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { INITIAL_GROUND_FLOOR, layoutReducer, type LayoutState } from './layout-reducer';
@@ -301,7 +301,7 @@ describe('layoutReducer — rotateSelection (rigid rotation about centroid)', ()
     // The centroid is computed from positioned items only; a selection of
     // positionless items produces an empty `selected` set and returns the floor
     // unchanged.
-    const before = stateWith([makeItem({ id: 'p', position: undefined, rotation: 0 })]);
+    const before = stateWith([makeUnplacedItem({ id: 'p', rotation: 0 })]);
     const after = layoutReducer(before, {
       type: 'rotateSelection',
       ids: new Set(['p']),
@@ -313,7 +313,7 @@ describe('layoutReducer — rotateSelection (rigid rotation about centroid)', ()
   it('rotates a positionless item in place when a positioned item is also selected', () => {
     const items = [
       makeItem({ id: 'anchor', position: { x: 0, z: 0 }, rotation: 0 }),
-      makeItem({ id: 'p', position: undefined, rotation: 0 }),
+      makeUnplacedItem({ id: 'p', rotation: 0 }),
     ];
     const state = layoutReducer(stateWith(items), {
       type: 'rotateSelection',

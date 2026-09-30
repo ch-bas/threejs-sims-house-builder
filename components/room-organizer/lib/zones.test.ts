@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeItem } from './__testfixtures__/fixtures';
+import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { MAX_ROOM_DIMENSION } from './constants';
 import {
   MIN_ZONE_SIZE,
@@ -86,7 +86,7 @@ describe('zone membership and stats (#155)', () => {
     const inside = makeItem({ id: 'in', position: { x: -2.5, z: -2 } });
     // Centre just outside even though the 1×1 footprint overlaps the edge.
     const straddling = makeItem({ id: 'out', position: { x: -0.6, z: -2 } });
-    const unplaced = makeItem({ id: 'none', position: undefined });
+    const unplaced = makeUnplacedItem({ id: 'none' });
     expect(itemsInZone(bedroom, [inside, straddling, unplaced]).map((item) => item.id)).toEqual(['in']);
   });
 
