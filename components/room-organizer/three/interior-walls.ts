@@ -1,8 +1,8 @@
-import { windowSillHeight } from '../lib/street';
+import { OPENING_HEAD_CLEARANCE, fitOpeningToStorey } from '../lib/storeys';
+import { FLOOR_HEIGHT_METERS, type FurnitureItem, type InteriorWall } from '../lib/types';
 import { BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { classifyOpeningOwners, mergeHoleRects, type OpeningOwner } from './wall-openings';
-import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -38,6 +38,17 @@ export interface RenderInteriorWallsOptions {
   roomDepth?: number;
   /** Partition height for this storey (#202). Defaults to 2.6 m. */
   wallHeight?: number;
+  /**
+   * Per-wall heights overriding `wallHeight`, by wall id — the porch back
+   * wall must reach the soffit, above the partition height (#275).
+   */
+  wallHeights?: ReadonlyMap<string, number>;
+  /**
+   * Floor-to-floor height of the storey, which the door and window meshes are
+   * fitted to (#277); the holes cut here follow the same fit. Defaults to the
+   * classic 3 m storey.
+   */
+  storeyHeight?: number;
 }
 
 export function renderInteriorWalls(
@@ -48,7 +59,7 @@ export function renderInteriorWalls(
   ghostOpacity?: number,
   options: RenderInteriorWallsOptions = {}
 ): void {
-  const wallHeight = options.wallHeight ?? DEFAULT_WALL_HEIGHT;
+  const storeyHeight = options.storeyHeight ?? FLOOR_HEIGHT_METERS;
   // Classify every opening to exactly one wall across the whole floor (exterior
   // + interior). An opening this interior wall doesn't own is cut elsewhere, so
   // it never gets double-cut at a junction.
@@ -60,9 +71,10 @@ export function renderInteriorWalls(
   for (const wall of walls) {
     const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
     if (length < 0.01) continue;
+    const wallHeight = options.wallHeights?.get(wall.id) ?? options.wallHeight ?? DEFAULT_WALL_HEIGHT;
 
     const openings = options.openingCandidates
-      ? computeSegmentOpenings(wall, options.openingCandidates, owners, wallHeight)
+      ? computeSegmentOpenings(wall, options.openingCandidates, owners, wallHeight, storeyHeight)
       : [];
 
     const material = new THREE.MeshStandardMaterial({
@@ -182,7 +194,8 @@ function computeSegmentOpenings(
   wall: InteriorWall,
   items: readonly FurnitureItem[],
   owners: ReadonlyMap<string, OpeningOwner> | null,
-  wallHeight: number
+  wallHeight: number,
+  storeyHeight: number
 ): SegmentOpening[] {
   const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
   if (length < 0.05) return [];
@@ -211,15 +224,18 @@ function computeSegmentOpenings(
     const localX = (item.position.x - cx) * dx + (item.position.z - cz) * dz;
     if (localX + item.width / 2 < -halfLen || localX - item.width / 2 > halfLen) continue;
 
-    // Same sill as the exterior cut and the window mesh (#212, #204).
-    const bottom = item.type === 'door' ? 0 : windowSillHeight(item);
+    // Same sill and height as the exterior cut and the mesh, fitted to the
+    // storey (#212, #204, #277)...
+    const fitted = fitOpeningToStorey(item, storeyHeight);
+    const bottom = fitted.sill;
     // Clamp the width to the segment first, then clamp the centre using the
     // clamped half-width so an oversized opening can't extend past the wall.
     const width = Math.min(item.width, Math.max(0, length - 0.05));
     const halfItem = width / 2;
     const clampedCenter = Math.max(-halfLen + halfItem, Math.min(halfLen - halfItem, localX));
-    // A window sill above a low (loft) partition leaves nothing to cut (#202).
-    const height = Math.min(item.height, wallHeight - bottom - 0.05);
+    // ...then to this partition, which stops short of the ceiling. A window
+    // sill above a low (loft) partition leaves nothing to cut (#202).
+    const height = Math.min(fitted.height, wallHeight - bottom - OPENING_HEAD_CLEARANCE);
     if (height <= 0) continue;
     openings.push({
       centerAlongWall: clampedCenter,

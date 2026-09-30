@@ -3,8 +3,8 @@ import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { hasCollisions } from '../lib/geometry';
 import { lowestGround, neighbourSides } from '../lib/site';
-import { buildingHeight, floorElevation, interiorWallHeight, stairRise, storeyHeight } from '../lib/storeys';
-import { entranceGeometry, entranceWallCut } from '../lib/street';
+import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
+import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
@@ -355,9 +355,9 @@ export function useSceneEffects({
         if (!item.position) continue;
 
         const collision = hasCollisions(item, floor.items, layout.width, layout.height);
-        // Stairs climb to the floor above, whatever this storey's height (#202).
-        const model = item.type === 'stairs' ? { ...item, height: stairRise(item, floor) } : item;
-        const group = createFurnitureModel(THREE, model, collision);
+        // Stairs climb to the floor above and openings are fitted into the
+        // storey, so the mesh matches the hole cut for it (#202, #277).
+        const group = createFurnitureModel(THREE, itemForStorey(item, floor), collision);
         group.position.set(item.position.x, floorY, item.position.z);
         group.rotation.y = item.rotation ?? 0;
         if (item.mirrored) group.scale.x = -1;
@@ -477,7 +477,7 @@ export function useSceneEffects({
         addSignalOverlays(THREE, scene, floor.items, floorY);
       }
       if (view.showCameraVision) {
-        addVisionCones(THREE, scene, floor.items, floorY, index);
+        addVisionCones(THREE, scene, floor.items, floorY, index, storeyHeight(floor));
       }
     }
   }, [
@@ -577,19 +577,44 @@ export function useSceneEffects({
       ? layout.floors.map((floor, index) => ({ floor, index }))
       : [{ floor: activeFloor, index: activeFloorIndex }];
 
+    // The porch back wall is an ordinary partition, but partitions stop 0.4 m
+    // short of the ceiling while the porch soffit sits at `topY`: on any
+    // storey under 2.8 m that left an open slot from the street into the
+    // house (#275). It gets its own height — at least the soffit, never
+    // above its storey (the reducer keeps the recess on the street storey).
+    const entrance = layout.entrance
+      ? entranceGeometry(layout.entrance, {
+          width: layout.width,
+          depth: layout.height,
+          floors: layout.floors,
+          terrain: layout.terrain,
+        })
+      : null;
+
     for (const { floor, index } of floorsToRender) {
       const walls = floor.interiorWalls ?? [];
       if (walls.length === 0) continue;
       const isActive = index === activeFloorIndex;
+      const floorY = floorElevation(layout.floors, index);
+      const wallHeight = interiorWallHeight(floor);
+      const wallHeights =
+        entrance && index === entrance.floorIndex
+          ? new Map([[
+              ENTRANCE_WALL_ID,
+              Math.min(storeyHeight(floor) - 0.01, Math.max(wallHeight, entrance.topY - floorY)),
+            ]])
+          : undefined;
       renderInteriorWalls(
         THREE, scene, walls,
-        floorElevation(layout.floors, index),
+        floorY,
         otherFloorGhostOpacity(view.showAllFloors, view.wallDisplay, isActive),
         {
           openingCandidates: floor.items,
           roomWidth: layout.width,
           roomDepth: layout.height,
-          wallHeight: interiorWallHeight(floor),
+          wallHeight,
+          wallHeights,
+          storeyHeight: storeyHeight(floor),
         }
       );
     }
@@ -600,7 +625,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, activeFloorIndex, view.showAllFloors, view.wallDisplay, layout.width, layout.height]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, activeFloorIndex, view.showAllFloors, view.wallDisplay, layout.width, layout.height, layout.entrance, layout.terrain]);
 
   // Cyan outline on selected wall. Declared AFTER the shell + interior-wall
   // rebuild effects and keyed on the same rebuild keys, so it always snapshots

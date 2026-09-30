@@ -1,7 +1,7 @@
 import { type CctvModel, getCctvModel } from '../../lib/cctv-models';
 import { CAMERA_BRACKET_ARM } from '../../lib/constants';
 import { type BuilderContext, material, mesh } from '../builder-utils';
-import { CAMERA_MOUNT_HEIGHT } from '../camera-vision';
+import { cameraMountHeight } from '../camera-vision';
 import type * as ThreeNS from 'three';
 
 export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
@@ -196,7 +196,8 @@ export function buildSecurityCamera({ THREE, item, hasCollision, baseColor, opac
   });
   const ledMat = material(THREE, 0xff3b30, hasCollision, opacity, { emissive: 0xff3b30, emissiveIntensity: 0.9 });
 
-  const mountY = CAMERA_MOUNT_HEIGHT;
+  // The mount follows the item's storey-fitted height under a low ceiling (#277).
+  const mountY = cameraMountHeight(item);
   const model = getCctvModel(item.cctvModelId);
 
   if (item.cameraBracket) {

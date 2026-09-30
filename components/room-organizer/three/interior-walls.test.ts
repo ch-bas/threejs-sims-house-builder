@@ -52,4 +52,36 @@ describe('renderInteriorWalls storey heights (#202)', () => {
     renderInteriorWalls(THREE, windowOnly, [WALL], 0, undefined, { openingCandidates: [window], wallHeight: 0.7 });
     expect(wallMesh(windowOnly).geometry.type).toBe('BoxGeometry');
   });
+
+  it('cuts a window dropped to the floor of a 1.1 m loft, where its mesh now sits (#277)', () => {
+    const window = makeItem({ id: 'w', type: 'window', width: 1, depth: 0.1, height: 1.2, position: { x: 0, z: 0 } });
+    const scene = new THREE.Scene();
+    renderInteriorWalls(THREE, scene, [WALL], 0, undefined, {
+      openingCandidates: [window],
+      wallHeight: 0.7,
+      storeyHeight: 1.1,
+    });
+    const wall = wallMesh(scene);
+    expect(wall.geometry.type).toBe('ExtrudeGeometry');
+    expect(heightOf(wall).max).toBeCloseTo(0.7);
+  });
+});
+
+describe('renderInteriorWalls per-wall heights (#275)', () => {
+  it('builds one wall taller than the partition height when told to', () => {
+    const back = { id: 'entrance-back', x1: -0.7, z1: -3.3, x2: 0.7, z2: -3.3 };
+    const scene = new THREE.Scene();
+    renderInteriorWalls(THREE, scene, [WALL, back], 0, undefined, {
+      wallHeight: 2.1,
+      wallHeights: new Map([['entrance-back', 2.4]]),
+    });
+    const partition = wallMesh(scene);
+    expect(heightOf(partition).max).toBeCloseTo(2.1);
+    const backTop = Math.max(
+      ...scene.children
+        .filter((obj): obj is THREE.Mesh => obj instanceof THREE.Mesh && obj.userData.wallId === 'entrance-back')
+        .map((mesh) => heightOf(mesh).max)
+    );
+    expect(backTop).toBeCloseTo(2.4);
+  });
 });

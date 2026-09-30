@@ -1,4 +1,5 @@
 import { entranceSteps, type EntranceGeometry } from '../lib/street';
+import { FOUNDATION_OVERHANG } from './room-builder';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -8,7 +9,7 @@ type ThreeModule = typeof import('three');
  * soffit over it, and steps up from the street. The front wall's hole is cut
  * by the shell builder (entranceWallCut); the back of the recess is an
  * ordinary interior wall carrying an ordinary door, kept in step by the
- * reducer.
+ * reducer and built up to the soffit by the interior-wall effect (#275).
  *
  * Reveals and soffit are tagged as part of the north wall, so the cutaway
  * hides them with it; the steps are ground, tagged with the floor.
@@ -16,6 +17,13 @@ type ThreeModule = typeof import('three');
 const REVEAL_THICKNESS = 0.12;
 const SOFFIT_THICKNESS = 0.12;
 const STEP_COLOR = 0xb9b4a8;
+/**
+ * Reveals and soffit start this far behind the front wall's plane. Spanning
+ * exactly `frontZ..backZ` put their street-facing ends in the plane of the
+ * double-sided wall — 12 cm flickering strips around the opening (#276),
+ * like BASEBOARD_WALL_GAP / EARTH_WALL_GAP / PARTY_WALL_GAP guard against.
+ */
+export const ENTRANCE_WALL_GAP = 0.01;
 
 export interface BuildEntranceOptions {
   geometry: EntranceGeometry;
@@ -37,9 +45,10 @@ export function buildEntrance(THREE: ThreeModule, options: BuildEntranceOptions)
 
   const shell = new THREE.Group();
   const finish = translucent(new THREE.MeshStandardMaterial({ color: options.wallColor, roughness: 0.9 }));
-  const depth = g.backZ - g.frontZ;
+  const shellFrontZ = g.frontZ + ENTRANCE_WALL_GAP;
+  const depth = g.backZ - shellFrontZ;
   const height = g.topY - g.bottomY;
-  const midZ = (g.frontZ + g.backZ) / 2;
+  const midZ = (shellFrontZ + g.backZ) / 2;
   // Reveals sit inside the house, just beyond the hole's edges.
   for (const x of [g.x0 - REVEAL_THICKNESS / 2, g.x1 + REVEAL_THICKNESS / 2]) {
     const reveal = new THREE.Mesh(new THREE.BoxGeometry(REVEAL_THICKNESS, height, depth), finish);
@@ -65,12 +74,19 @@ export function buildEntrance(THREE: ThreeModule, options: BuildEntranceOptions)
     const stairs = new THREE.Group();
     const stone = translucent(new THREE.MeshStandardMaterial({ color: STEP_COLOR, roughness: 0.95 }));
     const width = g.x1 - g.x0;
+    // On the ground floor the porch floor is the top of the foundation plinth,
+    // whose ring runs on past the wall: a top step at the wall plane shared
+    // its top face with the ring and had the ring's outer edge poking through
+    // the step below (#276). The ring's ledge is the landing instead, and the
+    // flight starts at its outer edge. On a hill the porch storey sits above
+    // the plinth, so the steps meet the porch floor at the wall.
+    const landingZ = g.floorIndex === 0 ? g.frontZ - FOUNDATION_OVERHANG : g.frontZ;
     // Top step is the porch floor's edge; each one below steps out toward the street.
     for (let i = 0; i < steps.count; i++) {
       const top = g.bottomY - i * steps.rise;
       const blockHeight = top - g.streetY;
       const step = new THREE.Mesh(new THREE.BoxGeometry(width, blockHeight, steps.going), stone);
-      step.position.set((g.x0 + g.x1) / 2, g.streetY + blockHeight / 2, g.frontZ - steps.going * (i + 0.5));
+      step.position.set((g.x0 + g.x1) / 2, g.streetY + blockHeight / 2, landingZ - steps.going * (i + 0.5));
       step.castShadow = ghostOpacity === undefined;
       step.receiveShadow = true;
       stairs.add(step);

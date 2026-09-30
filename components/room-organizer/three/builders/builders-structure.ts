@@ -3,6 +3,13 @@ import { windowSillHeight } from '../../lib/street';
 import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
+/**
+ * Door and window meshes are built to the item's `height` (and a window's
+ * `sillHeight`) exactly as the wall holes are cut, so frame and hole stay
+ * flush (#212). The furniture effect hands them values already fitted to
+ * the storey (`fitOpeningToStorey`, #277), so on a 2 m storey the door is
+ * the 1.95 m of its hole rather than 2.05 m through the ceiling.
+ */
 export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
@@ -54,7 +61,8 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   });
   // Windows sit at their sill (own `sillHeight` or the shared datum), not on
   // the floor — the wall cuts read the same helper so the frame fills the
-  // hole exactly (#212, #204).
+  // hole exactly (#212, #204); a sill dropped to fit a low storey arrives
+  // here as the item's `sillHeight` (#277).
   const sillHeight = windowSillHeight(item);
   const frameThickness = 0.06;
   // Glass pane.

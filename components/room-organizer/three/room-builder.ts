@@ -240,7 +240,8 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   }
 }
 
-const FOUNDATION_OVERHANG = 0.35;
+/** How far the plinth ring reaches past the wall plane; the porch steps start beyond it (#276). */
+export const FOUNDATION_OVERHANG = 0.35;
 const FOUNDATION_HEIGHT = 0.25;
 const FOUNDATION_COLOR = 0xb4afa3;
 

@@ -635,7 +635,8 @@ export function RoomOrganizer(): JSX.Element {
     threeModuleRef,
     cameraRef,
     orbitRef: controlsRef,
-    eyeHeight: activeFloorY + 1.6,
+    // Eye level, ducking under a low ceiling (a 1.1 m loft, #277).
+    eyeHeight: activeFloorY + Math.min(1.6, activeStoreyHeight - 0.2),
     roomWidth: layout.width,
     roomDepth: layout.height,
     onExit: useCallback(() => {
