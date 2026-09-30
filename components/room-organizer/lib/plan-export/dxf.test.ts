@@ -63,6 +63,31 @@ describe('layoutToDxf', () => {
     expect(dxf).toContain('10\n8.000\n20\n8.000');
   });
 
+  it('notches the WALLS outline for the recessed entrance — an 8-vertex closed polyline (#285)', () => {
+    const { floor } = makeFixture();
+    const layout = makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2, offset: 1 } });
+    const dxf = layoutToDxf(layout, floor);
+    expect(count(dxf, '90\n8\n70\n1')).toBe(1);
+    expect(count(dxf, '90\n4\n70\n1')).toBe(2);
+    // Recess x ∈ [0.3, 1.7], z ∈ [−4, −2.8] → CAD x 4.3..5.7, y 6.8..8: the
+    // outline runs along the north wall from the NE corner, in along the east
+    // cheek, across the back, out along the west cheek, on to the NW corner.
+    expect(dxf).toContain(
+      [
+        '10\n8.000\n20\n8.000',
+        '10\n5.700\n20\n8.000',
+        '10\n5.700\n20\n6.800',
+        '10\n4.300\n20\n6.800',
+        '10\n4.300\n20\n8.000',
+        '10\n0.000\n20\n8.000',
+      ].join('\n')
+    );
+    // A storey the porch doesn't reach keeps the plain 4-vertex outline.
+    const upper = { ...floor, id: 'upper' };
+    const two = makeLayout({ floors: [floor, upper], entrance: { width: 1.4, depth: 1.2 } });
+    expect(count(layoutToDxf(two, upper), '90\n8\n70\n1')).toBe(0);
+  });
+
   it('emits LINE work for interior walls and opening marks, plus the door swing ARC', () => {
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);

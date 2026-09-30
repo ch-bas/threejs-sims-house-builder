@@ -67,6 +67,29 @@ describe('layoutToSvg', () => {
     expect(count(svg, 'class="interior-wall"')).toBe(1);
   });
 
+  it('notches the north wall for the recessed entrance and paints the porch as outside (#285)', () => {
+    const { floor } = makeFixture();
+    const layout = makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2, offset: 1 } });
+    const svg = layoutToSvg(layout, floor);
+    // Recess x ∈ [0.3, 1.7], z ∈ [−4, −2.8] in an 8×8 room → px (275..345, 60..120).
+    expect(svg).toContain('<rect class="entrance" x="275" y="60" width="70" height="60" fill="#ffffff"/>');
+    // The north edge is two stubs plus two cheeks; the other three walls are whole.
+    expect(count(svg, 'class="wall"')).toBe(7);
+    expect(svg).toContain('x1="60" y1="60" x2="275" y2="60"');
+    expect(svg).toContain('x1="275" y1="60" x2="275" y2="120"');
+    expect(svg).toContain('x1="345" y1="60" x2="345" y2="120"');
+    expect(svg).toContain('x1="345" y1="60" x2="460" y2="60"');
+    expect(svg).not.toContain('x1="60" y1="60" x2="460" y2="60"');
+    // Painted over the grid and zones, under the walls.
+    expect(svg.indexOf('class="entrance"')).toBeGreaterThan(svg.indexOf('class="grid"'));
+    expect(svg.indexOf('class="entrance"')).toBeLessThan(svg.indexOf('class="wall"'));
+    // A storey the porch doesn't reach keeps its whole north wall.
+    const upper = { ...floor, id: 'upper' };
+    const two = makeLayout({ floors: [floor, upper], entrance: { width: 1.4, depth: 1.2 } });
+    expect(layoutToSvg(two, upper)).not.toContain('class="entrance"');
+    expect(count(layoutToSvg(two, upper), 'class="wall"')).toBe(4);
+  });
+
   it('includes the floor name and a scale bar', () => {
     const { layout, floor } = makeFixture();
     const svg = layoutToSvg(layout, floor);

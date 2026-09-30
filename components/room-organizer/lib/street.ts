@@ -2,7 +2,8 @@ import { WINDOW_SILL_HEIGHT } from './constants';
 import { toCentimetre } from './dormers';
 import { groundHeightAt } from './site';
 import { floorElevation, storeyHeight } from './storeys';
-import type { EntranceSpec, FloorLayout, FurnitureItem, TerrainSpec } from './types';
+import type { KeepOutRect } from './geometry';
+import type { EntranceSpec, FloorLayout, FurnitureItem, RoomLayout, TerrainSpec } from './types';
 
 /**
  * The street face of the house (#204): per-window sill heights, a recessed
@@ -253,4 +254,57 @@ export function entranceSteps(geometry: EntranceGeometry): { count: number; rise
 /** The interior wall closing the back of the recess; the door goes on it. */
 export function entranceBackWall(geometry: EntranceGeometry): { x1: number; z1: number; x2: number; z2: number } {
   return { x1: geometry.x0, z1: geometry.backZ, x2: geometry.x1, z2: geometry.backZ };
+}
+
+/** The recess footprint on a plan: world x of its sides, z of the front wall and the recess back. */
+export interface EntrancePlanOutline {
+  x0: number;
+  x1: number;
+  frontZ: number;
+  backZ: number;
+}
+
+/** What the plan helpers read of a building: the `RoomLayout` fields the recess is fitted to. */
+export interface EntranceBuilding extends Pick<RoomLayout, 'width' | 'height' | 'terrain' | 'entrance'> {
+  floors: readonly Pick<FloorLayout, 'height'>[];
+}
+
+/**
+ * The recess as one storey's plan shows it (#285): the 2D view, minimap,
+ * blueprint and the SVG / DXF exports notch the north edge across it, draw
+ * its two cheeks and paint it as outside. Built on the fitted geometry and
+ * the per-storey wall cut, so it is exactly the hole 3D cuts — a porch that
+ * can't be built notches nothing, and only the storeys it crosses are
+ * notched. Null otherwise.
+ */
+export function entrancePlanOutline(layout: EntranceBuilding, floorIndex: number): EntrancePlanOutline | null {
+  if (!layout.entrance || floorIndex < 0 || floorIndex >= layout.floors.length) return null;
+  const geometry = entranceGeometry(layout.entrance, {
+    width: layout.width,
+    depth: layout.height,
+    floors: layout.floors,
+    terrain: layout.terrain,
+  });
+  if (!geometry || !entranceWallCut(geometry, layout.floors, floorIndex)) return null;
+  const { x0, x1, frontZ, backZ } = geometry;
+  return { x0, x1, frontZ, backZ };
+}
+
+/**
+ * The recess as `hasCollisions` keep-out: furniture can't sit in the porch
+ * any more than beyond the walls (#285). Empty when the storey has none.
+ */
+export function entranceKeepOut(layout: EntranceBuilding, floorIndex: number): KeepOutRect[] {
+  const recess = entrancePlanOutline(layout, floorIndex);
+  return recess ? [{ x0: recess.x0, x1: recess.x1, z0: recess.frontZ, z1: recess.backZ }] : [];
+}
+
+/**
+ * Which storey a plan is of: the floor's index in the building, by identity
+ * then by id (the 2D drag paints a copy of the active floor with in-flight
+ * positions). -1 for a floor that isn't one of the building's storeys.
+ */
+export function planFloorIndex(floors: readonly Pick<FloorLayout, 'id'>[], floor: Pick<FloorLayout, 'id'>): number {
+  const byIdentity = floors.findIndex((candidate) => candidate === floor);
+  return byIdentity >= 0 ? byIdentity : floors.findIndex((candidate) => candidate.id === floor.id);
 }
