@@ -20,6 +20,7 @@ import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
+import { useWeather } from './hooks/use-weather';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
@@ -95,6 +96,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   showMinimap: false,
   floorPlan3DEffect: false,
   timeOfDay: 12,
+  weather: 'clear',
   walkthroughMode: false,
   showOutdoor: true,
   showAllFloors: false,
@@ -688,6 +690,16 @@ export function RoomOrganizer(): JSX.Element {
     roomDepth: layout.height,
     floorY: activeFloorY,
     riggedModelReady: peopleModelReady,
+  });
+
+  useWeather({
+    weather: view.weather,
+    enabled: isReady && !view.view2D,
+    invalidate,
+    threeModuleRef,
+    sceneRef,
+    roomWidth: layout.width,
+    roomDepth: layout.height,
   });
 
   useCameraVision({

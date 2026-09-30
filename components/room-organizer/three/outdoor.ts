@@ -1,12 +1,45 @@
 import { LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
-import type { Frontage, NeighbourSpec, TerrainSpec } from '../lib/types';
+import type { Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
 
 const OUTDOOR_TAG = 'outdoor';
+/** Marks the grass plane so the weather tint can find it among the scenery. */
+const GROUND_ROLE = 'ground';
+/** Where the last-applied weather is remembered, so a rebuilt lot starts tinted. */
+const WEATHER_KEY = 'outdoorWeather';
+
+const GRASS_COLOR = 0x7cb04a;
+
+/**
+ * The grass colour under each weather (#189): a wet lawn reads darker and
+ * duller, a snowed-over one goes near-white. Clear is the untouched colour.
+ */
+export function outdoorGroundColor(weather: Weather): number {
+  switch (weather) {
+    case 'rain': return 0x6a9a44;
+    case 'snow': return 0xe9eef3;
+    default: return GRASS_COLOR;
+  }
+}
+
+/**
+ * Tint the lot's ground for the weather. Called by `applyTimeOfDay`, which
+ * owns weather-driven lighting; remembered on the scene so `setOutdoorVisible`
+ * paints a rebuilt lot the same way (the lighting effect doesn't re-run when
+ * the lot does). Both ends of that hand-off live in this module.
+ */
+export function applyOutdoorWeather(scene: ThreeNS.Scene, weather: Weather): void {
+  scene.userData[WEATHER_KEY] = weather;
+  const color = outdoorGroundColor(weather);
+  for (const obj of scene.children) {
+    if (obj.userData.type !== OUTDOOR_TAG || obj.userData.role !== GROUND_ROLE) continue;
+    ((obj as ThreeNS.Mesh).material as ThreeNS.MeshStandardMaterial).color.setHex(color);
+  }
+}
 
 /**
  * Build a suburban-style suburban lot around the room:
@@ -71,8 +104,9 @@ export function setOutdoorVisible(
   const ROAD_Y = -0.025;
   const DASH_Y = -0.015;
 
-  // ---- 1. Grass plane (warm suburban green) ----
-  const grassMat = new THREE.MeshStandardMaterial({ color: 0x7cb04a, roughness: 1 });
+  // ---- 1. Grass plane (warm suburban green, or as the weather left it) ----
+  const weather = (scene.userData[WEATHER_KEY] as Weather | undefined) ?? 'clear';
+  const grassMat = new THREE.MeshStandardMaterial({ color: outdoorGroundColor(weather), roughness: 1 });
   const grass = terrain
     ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y), grassMat)
     : new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize, 1, 1), grassMat);
@@ -82,6 +116,7 @@ export function setOutdoorVisible(
   }
   grass.receiveShadow = true;
   grass.userData.type = OUTDOOR_TAG;
+  grass.userData.role = GROUND_ROLE;
   freezeMatrix(grass);
   scene.add(grass);
 

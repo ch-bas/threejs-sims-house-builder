@@ -181,6 +181,11 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   warm orange at dawn/dusk, near-black over navy at night — with a
   starfield that fades in as night deepens and a moon that rises after
   dusk, crests at midnight, and sets before dawn.
+- **Weather** (Clear / Rain / Snow, in the Time of Day panel): a field of
+  thousands of streaks or drifting flakes falls over the whole lot but
+  never indoors, and the sky overcasts to match — rain dims the sun and
+  ambient and wets the grass darker, snow softens the sun and whites the
+  ground. View-only: it's never saved into a layout or a share link.
 - **Outdoor garden mode**: grass, stone path ring, scattered bushes.
 - **Top-down minimap** overlay (active floor).
 - **Hover tooltips** showing item icon, name, price ($), and dimensions.
@@ -370,7 +375,8 @@ components/
     │   ├── texture-lru.ts               LRU cache for texture masters (evict + dispose)
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays
-    │   ├── lighting.ts                  Sun-arc continuous time of day
+    │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
+    │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
     │   └── outdoor.ts                   Garden / path / bush scenery
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── plotcraft/icon.tsx                Lucide-react icon wrapper for UI panels
@@ -386,6 +392,7 @@ components/
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-walkthrough.ts           PointerLock + WASD movement
     │   ├── use-npcs.ts                  Animated wandering pedestrians
+    │   ├── use-weather.ts               Self-invalidating rain / snow loop
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus
     │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
     │   ├── use-history.ts               Snapshot undo/redo
@@ -472,7 +479,9 @@ components/
   pointer-lock camera — and the walkthrough hook invalidates its own
   frames. An idle editor draws zero frames. The shadow map (`autoUpdate`
   off) and the NPC loop only refresh when a caster actually moves, and the
-  WebGL context is restored automatically if the GPU drops it.
+  WebGL context is restored automatically if the GPU drops it. The weather
+  loop is the same shape: it runs only while rain or snow is on, and its
+  particles never cast shadows, so the static shadow map stays static.
 - **Instanced outdoor scenery.** The suburban lot's high-count scatter
   (grass tufts, shrubs, flowers, road dashes, stepping stones) renders
   through `InstancedMesh` — hundreds of elements collapse to a handful of
