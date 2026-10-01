@@ -691,6 +691,7 @@ export function RoomOrganizer(): JSX.Element {
     useThreeScene({
       canvasRef,
       walkthroughActive,
+      floorPickOnly: view.drawWallMode,
       onItemSelect: handleSelect,
       onItemDragStart: handleDragStart,
       onItemDrag: handleDrag,
@@ -713,7 +714,7 @@ export function RoomOrganizer(): JSX.Element {
   sceneBoxRef.current = sceneRef;
   invalidateBoxRef.current = invalidate;
 
-  useWalkthrough({
+  const { lockRefused: walkthroughLockRefused } = useWalkthrough({
     enabled: isReady && walkthroughActive,
     invalidate,
     canvasRef,
@@ -911,6 +912,11 @@ export function RoomOrganizer(): JSX.Element {
           setWallDraft(null);
           return;
         }
+        // A second Escape, with no draft pending, leaves wall-draw mode (#349).
+        if (view.drawWallMode) {
+          toggle('drawWallMode');
+          return;
+        }
         setSelectedItemId(null);
         setExtraSelectedIds(new Set());
       },
@@ -966,6 +972,7 @@ export function RoomOrganizer(): JSX.Element {
       rotateItemHandler,
       reseatCamera,
       wallDraft,
+      view.drawWallMode,
     ]
   );
 
@@ -1054,6 +1061,7 @@ export function RoomOrganizer(): JSX.Element {
         showMeasurements={view.showMeasurements}
         showMinimap={view.showMinimap}
         walkthroughActive={walkthroughActive}
+        walkthroughLockRefused={walkthroughLockRefused}
         measurementDistance={measurementDistance(measurementPoints)}
         measurementPointsPlaced={view.measurementMode ? measurementPoints.length : 0}
         wallDrawStatus={
@@ -1177,13 +1185,18 @@ export function RoomOrganizer(): JSX.Element {
           const THREE = threeModuleRef.current;
           const camera = cameraRef.current;
           const controls = controlsRef.current;
-          if (THREE && camera && controls)
-            orbitCamera(THREE, camera, controls, direction);
+          if (!THREE || !camera || !controls) return;
+          orbitCamera(THREE, camera, controls, direction);
+          // controls.update() above consumes the move, so the RAF loop won't
+          // see it; mark the frame dirty explicitly (#337).
+          invalidate();
         }}
         onZoom={(direction) => {
           const camera = cameraRef.current;
           const controls = controlsRef.current;
-          if (camera && controls) zoomCamera(camera, controls, direction);
+          if (!camera || !controls) return;
+          zoomCamera(camera, controls, direction);
+          invalidate();
         }}
         onFit={fitToRoom}
         placeCatalogItem={placeFromCatalog}

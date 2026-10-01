@@ -27,6 +27,11 @@ export interface SceneEventHandlers {
    * furniture, open a popover or start a zero-distance drag (see #67).
    */
   walkthroughActive?: boolean;
+  /**
+   * Wall-draw mode: every press is a floor point for onEmptyClick — furniture
+   * and walls don't claim it, and furniture shows no hover affordance (#349).
+   */
+  floorPickOnly?: boolean;
   onItemSelect: (id: string, mode: SelectionMode) => void;
   onItemDragStart?: (id: string) => void;
   onItemDrag: (id: string, x: number, z: number) => void;
@@ -89,6 +94,9 @@ export function attachDragHandlers({
   handlersRef,
 }: DragHandlersOptions): () => void {
   const raycaster = new THREE.Raycaster();
+  // three's default 1 m line threshold turns any line under a furniture group
+  // into a metre-wide pick target (#333); lines are never meant to be picked.
+  raycaster.params.Line.threshold = 0;
   const pointer = new THREE.Vector2();
   const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const intersection = new THREE.Vector3();
@@ -159,13 +167,14 @@ export function attachDragHandlers({
 
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
+    const floorPickOnly = handlersRef.current.floorPickOnly === true;
     const furniture = furnitureList();
-    const hits = raycaster.intersectObjects(furniture, true);
+    const hits = floorPickOnly ? [] : raycaster.intersectObjects(furniture, true);
     if (hits.length === 0) {
       // Walls get a chance to claim the click before we fall through to the
       // floor's onEmptyClick handler. Required for "pick a wall to
       // paint it" interaction.
-      if (handlersRef.current.onWallSelect) {
+      if (!floorPickOnly && handlersRef.current.onWallSelect) {
         const wallObjects = scene.children.filter(
           (obj) =>
             obj.userData.type === 'wall' || obj.userData.type === 'interior-wall'
@@ -225,7 +234,7 @@ export function attachDragHandlers({
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     const furniture = furnitureList();
-    const hits = raycaster.intersectObjects(furniture, true);
+    const hits = handlersRef.current.floorPickOnly ? [] : raycaster.intersectObjects(furniture, true);
     const target = ascendToFurniture(hits[0]?.object);
     const id = target ? (target.userData.id as string) : null;
 

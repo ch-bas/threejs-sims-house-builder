@@ -34,6 +34,8 @@ export interface ViewportProps {
   showMeasurements: boolean;
   showMinimap: boolean;
   walkthroughActive?: boolean;
+  /** The browser refused pointer lock; the hint asks for another click (#351). */
+  walkthroughLockRefused?: boolean;
   hover?: HoverState | null;
   measurementDistance?: number | null;
   measurementPointsPlaced?: number;
@@ -471,7 +473,9 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
           >
             <StatusChip intent="accent">
               <Icon name="live" size={14} />
-              WASD to walk · Shift to sprint · Esc to release
+              {props.walkthroughLockRefused
+                ? 'Click again to look around'
+                : 'WASD to walk · Shift to sprint · Esc to release'}
             </StatusChip>
           </div>
         </>

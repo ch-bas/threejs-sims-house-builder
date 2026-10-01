@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildWalkColliders, resolveWalkerStep } from '../lib/walk-collision';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type { WalkCollider, WalkCollisionOptions, WalkerPosition } from '../lib/walk-collision';
@@ -73,7 +73,15 @@ const WALKER_RADIUS = 0.3;
  * switch mid-walk only re-seats the camera's height — it never tears the mode
  * down and drops pointer lock (see #67).
  */
-export function useWalkthrough(options: UseWalkthroughOptions): void {
+export interface UseWalkthroughResult {
+  /**
+   * The browser refused the last pointer-lock request (Chrome does for about
+   * a second after Esc released it). Cleared by the next successful lock (#351).
+   */
+  lockRefused: boolean;
+}
+
+export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughResult {
   const {
     enabled,
     canvasRef,
@@ -89,6 +97,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
     invalidate,
     onExit,
   } = options;
+
+  const [lockRefused, setLockRefused] = useState(false);
 
   // Colliders are rebuilt only when the floor's contents change, never per
   // frame (#156). Outside walkthrough the memo is skipped entirely.
@@ -183,9 +193,29 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
       camera.lookAt(0, eyeHeightRef.current, 0);
       clampToFootprint();
 
-      const requestLock = () => controls?.lock();
+      // Not controls.lock(): it drops the promise requestPointerLock returns,
+      // so a refused lock was an unhandled rejection the player never saw
+      // (#351). PointerLockControls still tracks the lock through
+      // pointerlockchange, whoever requested it.
+      const markRefused = () => {
+        if (!cancelled) setLockRefused(true);
+      };
+      const requestLock = () => {
+        if (controls?.isLocked) return;
+        try {
+          // Older Safari returns undefined instead of a promise.
+          void Promise.resolve(canvas.requestPointerLock()).catch(markRefused);
+        } catch {
+          markRefused();
+        }
+      };
+      const clearRefused = () => setLockRefused(false);
       canvas.addEventListener('click', requestLock);
       cleanup.push(() => canvas.removeEventListener('click', requestLock));
+      canvas.ownerDocument.addEventListener('pointerlockerror', markRefused);
+      cleanup.push(() => canvas.ownerDocument.removeEventListener('pointerlockerror', markRefused));
+      controls.addEventListener('lock', clearRefused);
+      cleanup.push(() => controls?.removeEventListener('lock', clearRefused));
       // A keyup fired in another window never reaches us: Alt/Cmd-Tab (blur)
       // and any pointer-lock release strand held codes in `pressed`, and the
       // walker auto-marches on return until the key is tapped again (#216).
@@ -272,6 +302,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
 
     return () => {
       cancelled = true;
+      setLockRefused(false);
       for (const fn of cleanup) {
         try {
           fn();
@@ -282,4 +313,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): void {
       if (orbit) orbit.enabled = true;
     };
   }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef]);
+
+  return { lockRefused };
 }

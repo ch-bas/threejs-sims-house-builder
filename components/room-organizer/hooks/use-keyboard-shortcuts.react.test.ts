@@ -35,7 +35,11 @@ function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
   return event;
 }
 
-const setup = (dragging: boolean, placing = false) => {
+const setup = (
+  dragging: boolean,
+  placing = false,
+  { walkthroughActive = false, hasSignalItems = false } = {}
+) => {
   const handlers = {
     ...makeHandlers(),
     ...(placing ? { confirmPlacement: vi.fn(), cancelPlacement: vi.fn() } : {}),
@@ -44,7 +48,8 @@ const setup = (dragging: boolean, placing = false) => {
     useKeyboardShortcuts({
       selectedItem: makeItem({ id: 'chair', position: { x: 0, z: 0 }, locked: false }),
       selectedWall: null,
-      hasSignalItems: false,
+      hasSignalItems,
+      walkthroughActive,
       isDragActive: () => dragging,
       handlers: handlers as unknown as KeyboardShortcutHandlers,
     })
@@ -142,5 +147,56 @@ describe('useKeyboardShortcuts — pending keyboard placement (#168)', () => {
     expect(enter.defaultPrevented).toBe(false);
     press('Escape');
     expect(calls()).toEqual(['deselect']);
+  });
+});
+
+describe('useKeyboardShortcuts — letter shortcuts ignore case (#294)', () => {
+  afterEach(cleanup);
+
+  it.each([
+    ['F', 'focusOnSelection'],
+    ['M', 'toggleMeasurements'],
+    ['G', 'toggleSnap'],
+    ['W', 'toggleSignals'],
+    ['P', 'toggleSidebar'],
+    ['R', 'rotateItem'],
+  ] as const)('Caps Lock %s still fires %s', (key, handler) => {
+    const { calls } = setup(false, false, { hasSignalItems: true });
+    const event = press(key);
+    expect(calls()).toEqual([handler]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it.each([
+    ['D', 'duplicateItem'],
+    ['C', 'copySelection'],
+    ['V', 'pasteClipboard'],
+    ['Z', 'undo'],
+    ['Y', 'redo'],
+  ] as const)('Caps Lock Ctrl+%s still fires %s', (key, handler) => {
+    const { calls } = setup(false);
+    press(key, { ctrlKey: true });
+    expect(calls()).toEqual([handler]);
+  });
+});
+
+describe('useKeyboardShortcuts — walkthrough gate (#339)', () => {
+  afterEach(cleanup);
+
+  it.each([
+    ['Ctrl+D (duplicate)', 'd'],
+    ['Ctrl+C (copy)', 'c'],
+    ['Ctrl+V (paste)', 'v'],
+  ] as const)('ignores %s while the walkthrough owns the keyboard', (_label, key) => {
+    const { calls } = setup(false, false, { walkthroughActive: true });
+    press(key, { ctrlKey: true });
+    expect(calls()).toEqual([]);
+  });
+
+  it('keeps undo and redo available in the walkthrough', () => {
+    const { calls } = setup(false, false, { walkthroughActive: true });
+    press('z', { ctrlKey: true });
+    press('y', { ctrlKey: true });
+    expect(calls()).toEqual(['undo', 'redo']);
   });
 });
