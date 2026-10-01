@@ -149,14 +149,16 @@ function outlinePoints(shapeId: RoomShapeId, w: number, d: number): readonly Vec
     }
 
     case 'hexagon': {
-      // Regular hexagon inscribed in width × depth, flat top and bottom.
+      // Hexagon filling width × depth, flat top and bottom.
       const out: Vec2[] = [];
       for (let i = 0; i < 6; i += 1) {
         // No phase offset: vertices at 0deg/60deg/... give a flat top and
         // bottom and reach the full requested width, matching the picker
         // thumbnail. The old +30deg phase drew it pointy-top at 87% width (#122).
+        // z is stretched by 1/sin(60deg) so the flat edges land on ±hd and
+        // the shape fills the full requested depth too (#414).
         const a = (Math.PI / 3) * i;
-        out.push({ x: Math.cos(a) * hw, z: Math.sin(a) * hd });
+        out.push({ x: Math.cos(a) * hw, z: (Math.sin(a) / Math.sin(Math.PI / 3)) * hd });
       }
       return out;
     }

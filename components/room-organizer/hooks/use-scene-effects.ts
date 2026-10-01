@@ -281,7 +281,13 @@ export function useSceneEffects({
         ...(ghostOpacity !== undefined ? { ghostOpacity } : {}),
         onTextureLoaded: invalidate,
       });
-      if (entrance && index === entrance.floorIndex && !layout.floorPlanImage) {
+      // The reveals and soffit are part of the north wall, so they are built
+      // exactly when that wall is: not on the traced ground floor (buildRoom
+      // builds no walls there) and not when the north wall is hidden — the
+      // plan dashes the recess then, like the rest of the wall (#392).
+      const tracedGround = index === 0 && !!layout.floorPlanImage;
+      if (entrance && index === entrance.floorIndex && !tracedGround) {
+        const northHidden = floor.hiddenWalls?.includes('north') ?? false;
         for (const group of buildEntrance(THREE, {
           geometry: entrance,
           wallColor: floor.wallColors?.north ?? '#e8dcc4',
@@ -289,7 +295,8 @@ export function useSceneEffects({
           floorTag: ROOM_OBJECT_TAGS.Floor,
           ...(ghostOpacity !== undefined ? { ghostOpacity } : {}),
         })) {
-          scene.add(group);
+          if (northHidden && group.userData.wallId === 'north') disposeObject(group);
+          else scene.add(group);
         }
       }
     }
