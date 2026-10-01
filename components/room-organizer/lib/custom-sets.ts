@@ -73,36 +73,74 @@ export function parseCustomSet(value: unknown): CustomFurnitureSet | null {
   return { id: v.id, name: v.name, savedAt: v.savedAt, items };
 }
 
-/**
- * The stored list. A corrupt entry is dropped on its own rather than
- * costing the whole list; anything that isn't a list at all reads as empty.
- */
-export function parseCustomSets(value: unknown): CustomFurnitureSet[] {
-  if (!isPlainObject(value) || !Array.isArray(value.sets)) return [];
+interface StoredSets {
+  sets: CustomFurnitureSet[];
+  /**
+   * Stored values the current schema rejects, kept verbatim (#340): every
+   * rewrite carries them through, so a schema tightening hides an old set
+   * instead of deleting it, and a later loosening or migration shows it again
+   * on the next read. A blob of the wrong shape is kept as one such value
+   * (the raw string when it isn't even JSON).
+   */
+  unreadable: unknown[];
+  /** Other top-level fields of the stored object, written back untouched. */
+  rest: Record<string, unknown>;
+}
+
+function splitCustomSets(value: unknown): StoredSets {
+  if (value === null || value === undefined) return { sets: [], unreadable: [], rest: {} };
+  if (!isPlainObject(value) || !Array.isArray(value.sets)) {
+    return { sets: [], unreadable: [value], rest: {} };
+  }
+  const { sets: stored, ...rest } = value;
   const sets: CustomFurnitureSet[] = [];
+  const unreadable: unknown[] = [];
   const seen = new Set<string>();
-  for (const entry of value.sets) {
+  for (const entry of stored as unknown[]) {
     const set = parseCustomSet(entry);
-    if (!set || seen.has(set.id)) continue;
+    if (!set || seen.has(set.id)) {
+      unreadable.push(entry);
+      continue;
+    }
     seen.add(set.id);
     sets.push(set);
   }
-  return sets;
+  return { sets, unreadable, rest };
 }
 
-function readSets(storage: VersionHistoryStore): CustomFurnitureSet[] {
+/**
+ * The stored list. A corrupt entry (or a second copy of an id) is left out
+ * on its own rather than costing the whole list; anything that isn't a list
+ * at all reads as empty.
+ */
+export function parseCustomSets(value: unknown): CustomFurnitureSet[] {
+  return splitCustomSets(value).sets;
+}
+
+function readSets(storage: VersionHistoryStore): StoredSets {
+  let raw: string | null;
   try {
-    const raw = storage.getItem(CUSTOM_SETS_STORAGE_KEY);
-    if (!raw) return [];
-    return parseCustomSets(JSON.parse(raw));
+    raw = storage.getItem(CUSTOM_SETS_STORAGE_KEY);
   } catch {
-    return [];
+    return { sets: [], unreadable: [], rest: {} };
   }
+  if (!raw) return { sets: [], unreadable: [], rest: {} };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { sets: [], unreadable: [raw], rest: {} };
+  }
+  return splitCustomSets(parsed);
 }
 
-/** Throws when the store is full even after every restore point is gone. */
-function writeSets(storage: VersionHistoryStore, sets: readonly CustomFurnitureSet[]): void {
-  setItemEvictingSnapshots(storage, CUSTOM_SETS_STORAGE_KEY, JSON.stringify({ sets }));
+/**
+ * Readable sets newest first, then the unreadable values. Throws when the
+ * store is full even after every restore point is gone.
+ */
+function writeSets(storage: VersionHistoryStore, stored: StoredSets): void {
+  const sets: unknown[] = [...stored.sets, ...stored.unreadable];
+  setItemEvictingSnapshots(storage, CUSTOM_SETS_STORAGE_KEY, JSON.stringify({ ...stored.rest, sets }));
 }
 
 // The Sets panel re-reads the list after every save/delete made elsewhere
@@ -125,7 +163,31 @@ function notify(): void {
 export function listCustomSets(opts: CustomSetsOptions = {}): CustomFurnitureSet[] {
   const storage = opts.storage ?? defaultStorage();
   if (!storage) return [];
-  return readSets(storage).sort((a, b) => b.savedAt - a.savedAt);
+  return readSets(storage).sets.sort((a, b) => b.savedAt - a.savedAt);
+}
+
+let unreadableCountCache: { raw: string; count: number } | null = null;
+
+/**
+ * How many stored values the Sets panel can't show (#340). They stay in
+ * storage through every save and delete.
+ */
+export function countUnreadableCustomSets(opts: CustomSetsOptions = {}): number {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return 0;
+  let raw: string | null;
+  try {
+    raw = storage.getItem(CUSTOM_SETS_STORAGE_KEY);
+  } catch {
+    return 0;
+  }
+  if (!raw) return 0;
+  // The panel asks on every render (it re-renders on every layout edit);
+  // re-validate only when the stored blob changed.
+  if (unreadableCountCache?.raw !== raw) {
+    unreadableCountCache = { raw, count: readSets(storage).unreadable.length };
+  }
+  return unreadableCountCache.count;
 }
 
 /**
@@ -156,10 +218,11 @@ export function saveCustomSet(
       return rest;
     }),
   };
-  // Newest first; the oldest falls off the end past the cap.
-  const sets = [set, ...readSets(storage).filter((entry) => entry.id !== set.id)].slice(0, MAX_CUSTOM_SETS);
+  // Newest first; the oldest readable set falls off the end past the cap.
+  const stored = readSets(storage);
+  const sets = [set, ...stored.sets.filter((entry) => entry.id !== set.id)].slice(0, MAX_CUSTOM_SETS);
   try {
-    writeSets(storage, sets);
+    writeSets(storage, { ...stored, sets });
   } catch {
     return null;
   }
@@ -170,11 +233,11 @@ export function saveCustomSet(
 export function deleteCustomSet(id: string, opts: CustomSetsOptions = {}): boolean {
   const storage = opts.storage ?? defaultStorage();
   if (!storage) return false;
-  const sets = readSets(storage);
-  const remaining = sets.filter((set) => set.id !== id);
-  if (remaining.length === sets.length) return false;
+  const stored = readSets(storage);
+  const remaining = stored.sets.filter((set) => set.id !== id);
+  if (remaining.length === stored.sets.length) return false;
   try {
-    writeSets(storage, remaining);
+    writeSets(storage, { ...stored, sets: remaining });
   } catch {
     return false;
   }

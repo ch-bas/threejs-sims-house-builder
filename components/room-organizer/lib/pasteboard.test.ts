@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import {
+  MAX_RECEIVED_LAYOUTS,
   PASTEBOARD_STORAGE_KEY,
   addReceivedLayout,
+  countUnreadableReceivedLayouts,
   listReceivedLayouts,
   removeReceivedLayout,
   shareHashFromText,
@@ -134,11 +136,13 @@ describe('pasteboard (#190)', () => {
     expect(listed[1]!.name).toBe('Kept');
   });
 
-  it('survives a corrupt blob when adding — the new card replaces it', () => {
+  it('survives a corrupt blob when adding — and keeps the blob beside the new card (#340)', () => {
     const storage = makeStore();
     storage.data.set(PASTEBOARD_STORAGE_KEY, '[[[');
     expect(addReceivedLayout(furnished(), { storage })).not.toBeNull();
     expect(listReceivedLayouts({ storage })).toHaveLength(1);
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
+    expect(JSON.parse(storage.data.get(PASTEBOARD_STORAGE_KEY)!)[0]).toBe('[[[');
   });
 
   it('evicts restore points before giving up on a full quota (#295)', () => {
@@ -186,6 +190,112 @@ describe('pasteboard (#190)', () => {
     expect(listReceivedLayouts({ storage })).toEqual([]);
     expect(addReceivedLayout(furnished(), { storage })).toBeNull();
     expect(removeReceivedLayout('x', { storage })).toBe(false);
+  });
+});
+
+describe('pasteboard — unreadable entries survive every rewrite (#340)', () => {
+  const corrupt = { id: 'corrupt', receivedAt: 1, layout: { ...furnished('Corrupt'), width: -1 } };
+  const noTime = { id: 'no-time', layout: furnished('No time') };
+
+  function seeded() {
+    const storage = makeStore();
+    storage.data.set(
+      PASTEBOARD_STORAGE_KEY,
+      JSON.stringify([corrupt, { id: 'good', receivedAt: 2, layout: furnished('Good') }, noTime, 'junk'])
+    );
+    return storage;
+  }
+
+  function stored(storage: ReturnType<typeof makeStore>): unknown[] {
+    return JSON.parse(storage.data.get(PASTEBOARD_STORAGE_KEY)!) as unknown[];
+  }
+
+  it('lists the readable cards and counts the rest', () => {
+    const storage = seeded();
+    expect(listReceivedLayouts({ storage }).map((entry) => entry.name)).toEqual(['Good']);
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(3);
+  });
+
+  it('keeps them verbatim through an add (the audit repro)', () => {
+    const storage = seeded();
+    expect(addReceivedLayout(furnished('Another'), { storage, now: () => 3 })).not.toBeNull();
+    expect(listReceivedLayouts({ storage }).map((entry) => entry.name)).toEqual(['Another', 'Good']);
+    expect(stored(storage)).toEqual(expect.arrayContaining([corrupt, noTime, 'junk']));
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(3);
+  });
+
+  it('keeps them through a remove, even of the last readable card', () => {
+    const storage = seeded();
+    expect(removeReceivedLayout('good', { storage })).toBe(true);
+    expect(listReceivedLayouts({ storage })).toEqual([]);
+    expect(stored(storage)).toEqual([corrupt, noTime, 'junk']);
+  });
+
+  it('keeps a second copy of an id instead of dropping it', () => {
+    const storage = makeStore();
+    const first = { id: 'dup', receivedAt: 1, layout: furnished('First') };
+    const second = { id: 'dup', receivedAt: 2, layout: furnished('Second') };
+    storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify([first, second]));
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
+    expect(removeReceivedLayout('dup', { storage })).toBe(true);
+    expect(stored(storage)).toEqual([second]);
+  });
+
+  it('keeps a well-formed blob of the wrong shape as one unreadable value', () => {
+    const storage = makeStore();
+    storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify({ entries: [1] }));
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
+    addReceivedLayout(furnished(), { storage });
+    expect(stored(storage)[0]).toEqual({ entries: [1] });
+  });
+
+  it('re-counts once the stored blob changes', () => {
+    const storage = seeded();
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(3);
+    storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify(['junk']));
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
+    storage.data.delete(PASTEBOARD_STORAGE_KEY);
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(0);
+  });
+});
+
+describe('pasteboard cap (#355)', () => {
+  it('drops the oldest card past MAX_RECEIVED_LAYOUTS and keeps the newest', () => {
+    const storage = makeStore();
+    for (let i = 0; i <= MAX_RECEIVED_LAYOUTS; i++) {
+      expect(addReceivedLayout(furnished(`House ${i}`), { storage, now: () => 1_000 + i })).not.toBeNull();
+    }
+    const listed = listReceivedLayouts({ storage });
+    expect(listed).toHaveLength(MAX_RECEIVED_LAYOUTS);
+    expect(listed[0]!.name).toBe(`House ${MAX_RECEIVED_LAYOUTS}`);
+    expect(listed.some((entry) => entry.name === 'House 0')).toBe(false);
+    expect(listed.some((entry) => entry.name === 'House 1')).toBe(true);
+  });
+
+  it('drops by receivedAt, not by stored position', () => {
+    const storage = makeStore();
+    const cards = Array.from({ length: MAX_RECEIVED_LAYOUTS }, (_, i) => ({
+      id: `c${i}`,
+      // Stored newest-first, so the oldest card sits last.
+      receivedAt: 100 - i,
+      layout: furnished(`Card ${i}`),
+    }));
+    storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify(cards));
+    addReceivedLayout(furnished('Newest'), { storage, now: () => 1_000 });
+    const names = listReceivedLayouts({ storage }).map((entry) => entry.name);
+    expect(names).toHaveLength(MAX_RECEIVED_LAYOUTS);
+    expect(names).not.toContain(`Card ${MAX_RECEIVED_LAYOUTS - 1}`);
+    expect(names).toContain('Card 0');
+  });
+
+  it('never drops unreadable values to make room', () => {
+    const storage = makeStore();
+    storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify(['junk']));
+    for (let i = 0; i <= MAX_RECEIVED_LAYOUTS; i++) {
+      addReceivedLayout(furnished(`House ${i}`), { storage, now: () => 1_000 + i });
+    }
+    expect(listReceivedLayouts({ storage })).toHaveLength(MAX_RECEIVED_LAYOUTS);
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
   });
 });
 

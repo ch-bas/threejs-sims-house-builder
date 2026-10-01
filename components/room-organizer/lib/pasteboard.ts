@@ -87,51 +87,123 @@ function shortHash(input: string): string {
 }
 
 /**
- * Read the stored collection, tolerating corrupt data: a blob that isn't a
- * JSON array yields an empty board, and entries without an id, a finite
- * `receivedAt` or a layout that passes schema validation are dropped —
- * a broken card must never take the whole gallery down.
+ * The board keeps at most this many readable houses; adding past it drops
+ * the oldest. Uncapped, every paste evicted a restore point until the main
+ * save itself failed (#355). Lower than `MAX_CUSTOM_SETS` because a house
+ * is far bigger than a set.
  */
-function readEntries(storage: VersionHistoryStore): PasteboardEntry[] {
-  let parsed: unknown;
-  try {
-    const raw = storage.getItem(PASTEBOARD_STORAGE_KEY);
-    if (!raw) return [];
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  const entries: PasteboardEntry[] = [];
-  const seen = new Set<string>();
-  for (const candidate of parsed as unknown[]) {
-    if (!isRecord(candidate)) continue;
-    const { id, receivedAt } = candidate;
-    if (typeof id !== 'string' || !id || seen.has(id)) continue;
-    if (typeof receivedAt !== 'number' || !Number.isFinite(receivedAt)) continue;
-    const layout = parseStoredLayout(candidate.layout);
-    if (!layout) continue;
-    seen.add(id);
-    entries.push({
-      id,
-      name: typeof candidate.name === 'string' && candidate.name ? candidate.name : layout.name,
-      receivedAt,
-      layout,
-    });
-  }
-  return entries;
+export const MAX_RECEIVED_LAYOUTS = 30;
+
+interface StoredBoard {
+  entries: PasteboardEntry[];
+  /**
+   * Stored values the current schema rejects, kept verbatim (#340). Every
+   * rewrite carries them through, so a schema tightening hides an old house
+   * instead of deleting it, and a later loosening or migration shows it again
+   * on the next read. A blob that isn't an array is kept as one such value
+   * (the raw string when it isn't even JSON).
+   */
+  unreadable: unknown[];
 }
 
-/** Stored oldest-first; the write is quota-safe (restore points give way, #295). */
-function writeEntries(storage: VersionHistoryStore, entries: PasteboardEntry[]): void {
-  setItemEvictingSnapshots(storage, PASTEBOARD_STORAGE_KEY, JSON.stringify(entries));
+function parseEntry(candidate: unknown): PasteboardEntry | null {
+  if (!isRecord(candidate)) return null;
+  const { id, receivedAt } = candidate;
+  if (typeof id !== 'string' || !id) return null;
+  if (typeof receivedAt !== 'number' || !Number.isFinite(receivedAt)) return null;
+  const layout = parseStoredLayout(candidate.layout);
+  if (!layout) return null;
+  return {
+    id,
+    name: typeof candidate.name === 'string' && candidate.name ? candidate.name : layout.name,
+    receivedAt,
+    layout,
+  };
+}
+
+/**
+ * Read the stored collection, tolerating corrupt data: entries without an
+ * id, a finite `receivedAt` or a layout that passes schema validation — and
+ * second copies of an id — are set aside as unreadable instead of shown, so
+ * a broken card never takes the whole gallery down.
+ */
+function readBoard(storage: VersionHistoryStore): StoredBoard {
+  let raw: string | null;
+  try {
+    raw = storage.getItem(PASTEBOARD_STORAGE_KEY);
+  } catch {
+    return { entries: [], unreadable: [] };
+  }
+  if (!raw) return { entries: [], unreadable: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { entries: [], unreadable: [raw] };
+  }
+  if (parsed === null) return { entries: [], unreadable: [] };
+  if (!Array.isArray(parsed)) return { entries: [], unreadable: [parsed] };
+  const entries: PasteboardEntry[] = [];
+  const unreadable: unknown[] = [];
+  const seen = new Set<string>();
+  for (const candidate of parsed as unknown[]) {
+    const entry = parseEntry(candidate);
+    if (!entry || seen.has(entry.id)) {
+      unreadable.push(candidate);
+      continue;
+    }
+    seen.add(entry.id);
+    entries.push(entry);
+  }
+  return { entries, unreadable };
+}
+
+/**
+ * Unreadable values first, then the cards oldest-first. The write is
+ * quota-safe (restore points give way, #295); the key goes once nothing at
+ * all is left.
+ */
+function writeBoard(storage: VersionHistoryStore, board: StoredBoard): void {
+  if (board.entries.length === 0 && board.unreadable.length === 0 && storage.removeItem) {
+    storage.removeItem(PASTEBOARD_STORAGE_KEY);
+    return;
+  }
+  setItemEvictingSnapshots(
+    storage,
+    PASTEBOARD_STORAGE_KEY,
+    JSON.stringify([...board.unreadable, ...board.entries])
+  );
 }
 
 /** Received houses, newest first. Never throws. */
 export function listReceivedLayouts(opts: PasteboardOptions = {}): PasteboardEntry[] {
   const storage = opts.storage ?? defaultStorage();
   if (!storage) return [];
-  return readEntries(storage).sort((a, b) => b.receivedAt - a.receivedAt);
+  return readBoard(storage).entries.sort((a, b) => b.receivedAt - a.receivedAt);
+}
+
+// The panel asks on every render; re-validating every house each time is
+// wasted work while the stored blob hasn't changed.
+let unreadableCountCache: { raw: string; count: number } | null = null;
+
+/**
+ * How many stored values the board can't show (#340). They stay in storage
+ * through every add and remove. Never throws.
+ */
+export function countUnreadableReceivedLayouts(opts: PasteboardOptions = {}): number {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return 0;
+  let raw: string | null;
+  try {
+    raw = storage.getItem(PASTEBOARD_STORAGE_KEY);
+  } catch {
+    return 0;
+  }
+  if (!raw) return 0;
+  if (unreadableCountCache?.raw !== raw) {
+    unreadableCountCache = { raw, count: readBoard(storage).unreadable.length };
+  }
+  return unreadableCountCache.count;
 }
 
 /**
@@ -139,7 +211,8 @@ export function listReceivedLayouts(opts: PasteboardOptions = {}): PasteboardEnt
  * the write even after the restore-point ring has been evicted, or when
  * storage is unavailable. The tracing image is stripped (see
  * `PasteboardEntry.layout`). Pasting the same link twice yields the existing
- * card (`duplicate: true`) instead of a second copy.
+ * card (`duplicate: true`) instead of a second copy. Past
+ * `MAX_RECEIVED_LAYOUTS` the oldest card is dropped (#355).
  */
 export function addReceivedLayout(
   layout: RoomLayout,
@@ -151,8 +224,8 @@ export function addReceivedLayout(
   delete stored.floorPlanImage;
   const json = JSON.stringify(stored);
 
-  const entries = readEntries(storage);
-  const existing = entries.find((entry) => JSON.stringify(entry.layout) === json);
+  const board = readBoard(storage);
+  const existing = board.entries.find((entry) => JSON.stringify(entry.layout) === json);
   if (existing) return { entry: existing, duplicate: true };
 
   const receivedAt = (opts.now ?? Date.now)();
@@ -162,9 +235,10 @@ export function addReceivedLayout(
     receivedAt,
     layout: stored,
   };
-  entries.push(entry);
+  const oldestFirst = board.entries.sort((a, b) => a.receivedAt - b.receivedAt);
+  const entries = [...oldestFirst, entry].slice(-MAX_RECEIVED_LAYOUTS);
   try {
-    writeEntries(storage, entries);
+    writeBoard(storage, { entries, unreadable: board.unreadable });
   } catch {
     return null;
   }
@@ -175,12 +249,11 @@ export function addReceivedLayout(
 export function removeReceivedLayout(id: string, opts: PasteboardOptions = {}): boolean {
   const storage = opts.storage ?? defaultStorage();
   if (!storage) return false;
-  const entries = readEntries(storage);
-  const kept = entries.filter((entry) => entry.id !== id);
-  if (kept.length === entries.length) return false;
+  const board = readBoard(storage);
+  const kept = board.entries.filter((entry) => entry.id !== id);
+  if (kept.length === board.entries.length) return false;
   try {
-    if (kept.length === 0 && storage.removeItem) storage.removeItem(PASTEBOARD_STORAGE_KEY);
-    else writeEntries(storage, kept);
+    writeBoard(storage, { entries: kept, unreadable: board.unreadable });
   } catch {
     return false;
   }

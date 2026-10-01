@@ -8,27 +8,88 @@ const LIBRARY_INDEX_KEY = `${LIBRARY_KEY_PREFIX}_index`;
 
 interface LibraryIndex {
   entries: SavedLayoutEntry[];
+  /**
+   * Index values that aren't a valid entry, kept verbatim (#348): the panel
+   * never sees them, and every rewrite carries them through so the raw index
+   * stays recoverable. An index of the wrong shape is kept as one such value
+   * (the raw string when it isn't even JSON).
+   */
+  unreadable: unknown[];
+  /** Other top-level fields of the stored index, written back untouched. */
+  rest: Record<string, unknown>;
+}
+
+function emptyIndex(): LibraryIndex {
+  return { entries: [], unreadable: [], rest: {} };
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** One index entry, or null when it can't be listed without throwing (#348). */
+export function parseSavedLayoutEntry(value: unknown): SavedLayoutEntry | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.id !== 'string' || v.id === '') return null;
+  if (typeof v.name !== 'string') return null;
+  if (!isFiniteNumber(v.savedAt) || !isFiniteNumber(v.itemCount) || !isFiniteNumber(v.floorCount)) {
+    return null;
+  }
+  return { id: v.id, name: v.name, savedAt: v.savedAt, itemCount: v.itemCount, floorCount: v.floorCount };
+}
+
+/** Pure half of `readIndex`, exported for tests. */
+export function parseLibraryIndex(raw: string | null): LibraryIndex {
+  if (!raw) return emptyIndex();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { entries: [], unreadable: [raw], rest: {} };
+  }
+  if (parsed === null) return emptyIndex();
+  if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { entries: [], unreadable: [parsed], rest: {} };
+  }
+  const { entries: stored, ...rest } = parsed as Record<string, unknown>;
+  if (!Array.isArray(stored)) return { entries: [], unreadable: [parsed], rest: {} };
+  const entries: SavedLayoutEntry[] = [];
+  const unreadable: unknown[] = [];
+  const seen = new Set<string>();
+  for (const candidate of stored as unknown[]) {
+    const entry = parseSavedLayoutEntry(candidate);
+    if (!entry || seen.has(entry.id)) {
+      unreadable.push(candidate);
+      continue;
+    }
+    seen.add(entry.id);
+    entries.push(entry);
+  }
+  return { entries, unreadable, rest };
 }
 
 function readIndex(): LibraryIndex {
-  if (typeof window === 'undefined') return { entries: [] };
-  try {
-    const raw = window.localStorage.getItem(LIBRARY_INDEX_KEY);
-    if (!raw) return { entries: [] };
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as LibraryIndex).entries)) {
-      return parsed as LibraryIndex;
-    }
-    return { entries: [] };
-  } catch {
-    return { entries: [] };
-  }
+  if (typeof window === 'undefined') return emptyIndex();
+  return parseLibraryIndex(safeGetItem(LIBRARY_INDEX_KEY));
 }
 
 function writeIndex(index: LibraryIndex): void {
   if (typeof window === 'undefined') return;
+  const entries: unknown[] = [...index.entries, ...index.unreadable];
   // Restore points give way to the library on a full quota (#295).
-  setItemEvictingSnapshots(window.localStorage, LIBRARY_INDEX_KEY, JSON.stringify(index));
+  setItemEvictingSnapshots(
+    window.localStorage,
+    LIBRARY_INDEX_KEY,
+    JSON.stringify({ ...index.rest, entries })
+  );
+}
+
+/** The id an unreadable index value still names, if any. */
+function unreadableId(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === 'string' && id !== '' ? id : null;
 }
 
 function layoutKey(id: string): string {
@@ -64,12 +125,28 @@ export function slugify(name: string): string {
   return `${base.slice(0, SLUG_MAX_LENGTH)}-${shortHash(base)}`;
 }
 
+/**
+ * Whether saving under `name` would overwrite a stored blob — including one
+ * whose index entry is unreadable, so a hidden house is never replaced
+ * without the overwrite prompt.
+ */
 export function layoutSlugExists(name: string): boolean {
-  return readIndex().entries.some((entry) => entry.id === slugify(name));
+  const id = slugify(name);
+  const index = readIndex();
+  return (
+    index.entries.some((entry) => entry.id === id) ||
+    index.unreadable.some((value) => unreadableId(value) === id)
+  );
 }
 
+/** Saved layouts, newest first; malformed index entries are left out (#348). Never throws. */
 export function listSavedLayouts(): SavedLayoutEntry[] {
-  return readIndex().entries.slice().sort((a, b) => b.savedAt - a.savedAt);
+  return readIndex().entries.sort((a, b) => b.savedAt - a.savedAt);
+}
+
+/** How many index values the library can't list (#348); they stay in storage. */
+export function countUnreadableSavedLayouts(): number {
+  return readIndex().unreadable.length;
 }
 
 export interface SaveResult {
@@ -115,8 +192,10 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | 
   } else {
     index.entries.push(entry);
   }
+  // An unreadable entry naming this slot described the blob just replaced.
+  const unreadable = index.unreadable.filter((value) => unreadableId(value) !== id);
   try {
-    writeIndex(index);
+    writeIndex({ ...index, unreadable });
   } catch {
     // Best-effort rollback: restoring the blob can ITSELF hit the quota that
     // just failed the index write — never let that escape the save call (#122).
@@ -153,7 +232,7 @@ export function deleteNamedLayout(id: string): boolean {
   // quota throw out of writeIndex, leaving a ghost index entry whose layout
   // was already gone (#122). removeItem itself cannot hit quota.
   try {
-    writeIndex({ entries: filtered });
+    writeIndex({ ...index, entries: filtered });
   } catch {
     return false;
   }

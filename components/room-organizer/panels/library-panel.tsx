@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import {
+  countUnreadableSavedLayouts,
   deleteNamedLayout,
   layoutSlugExists,
   listSavedLayouts,
@@ -16,6 +17,7 @@ import {
 import {
   PASTEBOARD_STORAGE_KEY,
   addReceivedLayout,
+  countUnreadableReceivedLayouts,
   listReceivedLayouts,
   removeReceivedLayout,
   shareHashFromText,
@@ -286,6 +288,11 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
           </Button>
         </div>
         <LoadedStatus note={loaded} section="saved" />
+        {countUnreadableSavedLayouts() > 0 && (
+          <p role="status" className="text-xs text-muted-foreground">
+            {plural(countUnreadableSavedLayouts(), 'saved house')} couldn’t be read — kept in storage, not deleted.
+          </p>
+        )}
         {entries.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2 text-center">No saved layouts yet.</p>
         ) : (
@@ -339,6 +346,12 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             </p>
           )}
           <LoadedStatus note={loaded} section="received" />
+          {countUnreadableReceivedLayouts() > 0 && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {plural(countUnreadableReceivedLayouts(), 'received house')} couldn’t be read — kept in storage, not
+              deleted.
+            </p>
+          )}
           {received.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2 text-center">No received houses yet.</p>
           ) : (

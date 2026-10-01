@@ -1,7 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeLayout } from './__testfixtures__/fixtures';
-import { listSavedLayouts, loadNamedLayout, saveNamedLayout, slugify } from './library';
+import {
+  countUnreadableSavedLayouts,
+  deleteNamedLayout,
+  layoutSlugExists,
+  listSavedLayouts,
+  loadNamedLayout,
+  parseLibraryIndex,
+  parseSavedLayoutEntry,
+  saveNamedLayout,
+  slugify,
+} from './library';
 import { listSnapshots, recordSnapshot } from './version-history';
 
 describe('slugify', () => {
@@ -90,5 +100,80 @@ describe('saveNamedLayout — restore points give way on a full quota (#295)', (
     limitQuota(20);
     expect(saveNamedLayout(makeLayout(), 'Beach House')).toBeNull();
     expect(listSavedLayouts()).toHaveLength(0);
+  });
+});
+
+describe('library index — validated on read (#348)', () => {
+  const INDEX_KEY = 'standalone-room-organizer-library:_index';
+  const good = { id: 'beach-house', name: 'Beach House', savedAt: 2, itemCount: 3, floorCount: 1 };
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  function storedIndex(): Record<string, unknown> {
+    return JSON.parse(window.localStorage.getItem(INDEX_KEY)!) as Record<string, unknown>;
+  }
+
+  it('parseSavedLayoutEntry rejects anything the panel could not render or sort', () => {
+    expect(parseSavedLayoutEntry(good)).toEqual(good);
+    expect(parseSavedLayoutEntry(null)).toBeNull();
+    expect(parseSavedLayoutEntry([])).toBeNull();
+    expect(parseSavedLayoutEntry({ ...good, id: '' })).toBeNull();
+    expect(parseSavedLayoutEntry({ ...good, name: {} })).toBeNull();
+    expect(parseSavedLayoutEntry({ ...good, savedAt: null })).toBeNull();
+    expect(parseSavedLayoutEntry({ ...good, itemCount: Number.NaN })).toBeNull();
+    const { floorCount: _missing, ...partial } = good;
+    expect(parseSavedLayoutEntry(partial)).toBeNull();
+  });
+
+  it('parseLibraryIndex sets malformed entries and duplicate ids aside', () => {
+    const index = parseLibraryIndex(
+      JSON.stringify({ entries: [null, good, { id: 'x', name: {} }, { ...good, name: 'Dup' }] })
+    );
+    expect(index.entries).toEqual([good]);
+    expect(index.unreadable).toEqual([null, { id: 'x', name: {} }, { ...good, name: 'Dup' }]);
+  });
+
+  it('parseLibraryIndex keeps a corrupt or wrong-shaped index as one unreadable value', () => {
+    expect(parseLibraryIndex(null).unreadable).toEqual([]);
+    expect(parseLibraryIndex('null').unreadable).toEqual([]);
+    expect(parseLibraryIndex('{oops').unreadable).toEqual(['{oops']);
+    expect(parseLibraryIndex('[null]').unreadable).toEqual([[null]]);
+    expect(parseLibraryIndex('{"entries":"no"}').unreadable).toEqual([{ entries: 'no' }]);
+  });
+
+  it('lists only the valid entries, without throwing (the audit repro)', () => {
+    window.localStorage.setItem(INDEX_KEY, JSON.stringify({ entries: [null, { id: 'x', name: {} }, good] }));
+    expect(listSavedLayouts()).toEqual([good]);
+    expect(countUnreadableSavedLayouts()).toBe(2);
+  });
+
+  it('keeps unreadable entries and unknown fields through a save and a delete', () => {
+    window.localStorage.setItem(
+      INDEX_KEY,
+      JSON.stringify({ format: 1, entries: [null, { id: 'x', name: {} }, good] })
+    );
+    expect(saveNamedLayout(makeLayout(), 'Cabin')).not.toBeNull();
+    expect(listSavedLayouts().map((entry) => entry.id).sort()).toEqual(['beach-house', 'cabin']);
+    expect(deleteNamedLayout('cabin')).toBe(true);
+    expect(deleteNamedLayout('beach-house')).toBe(true);
+    expect(storedIndex()).toEqual({ format: 1, entries: [null, { id: 'x', name: {} }] });
+    expect(countUnreadableSavedLayouts()).toBe(2);
+  });
+
+  it('keeps a corrupt index blob beside a new save', () => {
+    window.localStorage.setItem(INDEX_KEY, '{oops');
+    expect(saveNamedLayout(makeLayout(), 'Cabin')).not.toBeNull();
+    expect(listSavedLayouts().map((entry) => entry.id)).toEqual(['cabin']);
+    expect((storedIndex().entries as unknown[])[1]).toBe('{oops');
+  });
+
+  it('asks before overwriting the blob of an unreadable entry, and replaces that entry on save', () => {
+    window.localStorage.setItem(INDEX_KEY, JSON.stringify({ entries: [{ id: 'cabin', name: 42 }] }));
+    expect(layoutSlugExists('Cabin')).toBe(true);
+    expect(saveNamedLayout(makeLayout(), 'Cabin')).not.toBeNull();
+    expect(listSavedLayouts().map((entry) => entry.id)).toEqual(['cabin']);
+    expect(countUnreadableSavedLayouts()).toBe(0);
   });
 });

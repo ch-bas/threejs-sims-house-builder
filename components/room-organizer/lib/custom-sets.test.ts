@@ -3,6 +3,7 @@ import { makeItem, makeLayout, makeUnplacedItem } from './__testfixtures__/fixtu
 import {
   CUSTOM_SETS_STORAGE_KEY,
   MAX_CUSTOM_SETS,
+  countUnreadableCustomSets,
   customSetToFurnitureSet,
   deleteCustomSet,
   isCustomSetKey,
@@ -155,6 +156,75 @@ describe('custom sets — corrupt data (#302)', () => {
     expect(listCustomSets({ storage })).toEqual([]);
     storage.data.set(CUSTOM_SETS_STORAGE_KEY, JSON.stringify({ sets: [{ id: 'bad' }] }));
     expect(listCustomSets({ storage })).toEqual([]);
+  });
+});
+
+describe('custom sets — unreadable entries survive every rewrite (#340)', () => {
+  const good = { id: 's1', name: 'Dining', savedAt: 1, items: [makeItem()] };
+  const tooBig = { id: 's2', name: 'Huge', savedAt: 2, items: [makeItem({ width: 1e12 })] };
+
+  function seeded() {
+    const storage = makeStore();
+    storage.data.set(
+      CUSTOM_SETS_STORAGE_KEY,
+      JSON.stringify({ version: 2, sets: [tooBig, good, 'junk', { ...good, name: 'Same id' }] })
+    );
+    return storage;
+  }
+
+  function stored(storage: ReturnType<typeof makeStore>): Record<string, unknown> {
+    return JSON.parse(storage.data.get(CUSTOM_SETS_STORAGE_KEY)!) as Record<string, unknown>;
+  }
+
+  it('lists the readable sets and counts the rest, duplicates included', () => {
+    const storage = seeded();
+    expect(listCustomSets({ storage }).map((set) => set.id)).toEqual(['s1']);
+    expect(countUnreadableCustomSets({ storage })).toBe(3);
+  });
+
+  it('keeps them verbatim (and other top-level fields) through a save and a delete', () => {
+    const storage = seeded();
+    const saved = saveCustomSet(dining(), 'New', { storage, now: () => 5, idTag: 'x' });
+    expect(saved).not.toBeNull();
+    expect(stored(storage).sets).toEqual(
+      expect.arrayContaining([tooBig, 'junk', { ...good, name: 'Same id' }])
+    );
+    expect(stored(storage).version).toBe(2);
+
+    expect(deleteCustomSet(saved!.id, { storage })).toBe(true);
+    expect(stored(storage)).toEqual({ version: 2, sets: [good, tooBig, 'junk', { ...good, name: 'Same id' }] });
+    expect(countUnreadableCustomSets({ storage })).toBe(3);
+
+    // Deleting the first copy of an id surfaces the one it shadowed.
+    expect(deleteCustomSet('s1', { storage })).toBe(true);
+    expect(listCustomSets({ storage }).map((set) => set.name)).toEqual(['Same id']);
+    expect(countUnreadableCustomSets({ storage })).toBe(2);
+  });
+
+  it('keeps a corrupt or wrong-shaped blob as one unreadable value', () => {
+    const storage = makeStore();
+    storage.data.set(CUSTOM_SETS_STORAGE_KEY, '{not json');
+    expect(countUnreadableCustomSets({ storage })).toBe(1);
+    saveCustomSet(dining(), 'New', { storage, idTag: 'y' });
+    expect(stored(storage).sets).toEqual([expect.objectContaining({ name: 'New' }), '{not json']);
+
+    storage.data.set(CUSTOM_SETS_STORAGE_KEY, JSON.stringify({ sets: 'nope' }));
+    saveCustomSet(dining(), 'New', { storage, idTag: 'z' });
+    expect(stored(storage).sets).toEqual([expect.objectContaining({ name: 'New' }), { sets: 'nope' }]);
+  });
+
+  it('never drops an unreadable value to stay under the cap', () => {
+    const storage = makeStore();
+    storage.data.set(CUSTOM_SETS_STORAGE_KEY, JSON.stringify({ sets: ['junk'] }));
+    for (let i = 0; i <= MAX_CUSTOM_SETS; i++) {
+      saveCustomSet(dining(), `Set ${i}`, { storage, now: () => i, idTag: String(i) });
+    }
+    expect(listCustomSets({ storage })).toHaveLength(MAX_CUSTOM_SETS);
+    expect(countUnreadableCustomSets({ storage })).toBe(1);
+  });
+
+  it('counts nothing without a store', () => {
+    expect(countUnreadableCustomSets({ storage: makeStore() })).toBe(0);
   });
 });
 

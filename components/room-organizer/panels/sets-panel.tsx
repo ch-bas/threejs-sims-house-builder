@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import {
+  countUnreadableCustomSets,
   customSetToFurnitureSet,
   deleteCustomSet,
   listCustomSets,
@@ -106,6 +107,12 @@ export function SetsPanel({ onAddSet }: SetsPanelProps): JSX.Element {
               )}
             </div>
           </>
+        )}
+        {countUnreadableCustomSets() > 0 && (
+          <p role="status" className="text-[11px] text-muted-foreground mt-2">
+            {countUnreadableCustomSets()} saved set{countUnreadableCustomSets() === 1 ? '' : 's'} couldn’t be read —
+            kept in storage, not deleted.
+          </p>
         )}
         <p className="text-[11px] text-muted-foreground mt-2">
           Select two or more items and use “Save as set” on the selection chip to add your own.
