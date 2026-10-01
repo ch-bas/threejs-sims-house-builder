@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
@@ -20,7 +20,8 @@ import { surpriseLayout } from '../lib/surprise';
 import type { FurnitureItem } from '../lib/types';
 
 export interface ActionsPanelProps {
-  onImport(file: File): void;
+  /** Resolves true when the file replaced the current house. */
+  onImport(file: File): Promise<boolean>;
   onExportGlb(): void;
   onShareLink(): void;
 }
@@ -29,6 +30,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const { layout, activeFloor, actions, isReady } = useRoomEditor();
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const hasItems = activeFloor.items.length > 0;
   const hasInteriorWalls = (activeFloor.interiorWalls ?? []).length > 0;
@@ -49,8 +51,11 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
 
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) props.onImport(file);
     event.target.value = '';
+    if (!file) return;
+    void props.onImport(file).then((imported) => {
+      if (imported) setImportStatus(`Imported “${file.name}”. Undo brings back the house it replaced.`);
+    });
   };
 
   return (
@@ -238,6 +243,11 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               📄 Print / PDF (to scale)
             </Button>
           </div>
+          {importStatus && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {importStatus}
+            </p>
+          )}
         </Section>
 
         <input ref={fileInputRef} type="file" accept=".json" onChange={handleFile} className="hidden" />
