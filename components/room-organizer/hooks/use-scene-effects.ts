@@ -3,6 +3,7 @@ import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
+import { mountBand } from '../lib/mount-band';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
@@ -444,14 +445,17 @@ export function useSceneEffects({
             : 0x00ff00
           : 0x42a5f5
         : 0xfacc15;
-      const geometry = new THREE.BoxGeometry(item.width, item.height, item.depth);
+      // Around the built mesh, not floor-to-height: a painting hangs at 0.8 m
+      // and a window starts at its sill (#376).
+      const band = mountBand(itemForStorey(item, activeFloor));
+      const geometry = new THREE.BoxGeometry(item.width, band.top - band.bottom, item.depth);
       const edges = new THREE.EdgesGeometry(geometry);
       geometry.dispose();
       const outline = new THREE.LineSegments(
         edges,
         new THREE.LineBasicMaterial({ color: accent, linewidth: 2 })
       );
-      outline.position.y = item.height / 2;
+      outline.position.y = (band.bottom + band.top) / 2;
       outline.userData.type = 'selection-outline';
       // Decoration, not a pointer target: the furniture raycast is recursive
       // and a line's pick threshold would give the item a hit halo (#333).
