@@ -143,6 +143,25 @@ describe('persistence — a load that trims the house keeps the original (#332)'
     expect(kept.map((key) => window.localStorage.getItem(key))).toContain(raw);
   });
 
+  it('opens nothing when the original cannot be kept, so the trimmed house is never autosaved over it', () => {
+    const items = Array.from({ length: 2100 }, (_, i) => ({
+      id: `i${i}`, type: 'chair', name: 'Chair', width: 0.5, depth: 0.5, height: 0.9, color: '#8B4513', icon: 'c', position: { x: 0, z: 0 }, rotation: 0,
+    }));
+    const raw = JSON.stringify({ name: 'Big', width: 20, height: 20, floors: [{ id: 'g', name: 'Ground', floorColor: '#fff', items }] });
+    window.localStorage.setItem(STORAGE_KEY, raw);
+    const realSetItem = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key.startsWith(RECOVERY_STORAGE_KEY)) throw new DOMException('full', 'QuotaExceededError');
+      realSetItem.call(this, key, value);
+    });
+    try {
+      expect(loadLayout()).toBeNull();
+      expect(window.localStorage.getItem(STORAGE_KEY)).toBe(raw);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('takes no backup for a house that loads whole', () => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(makeLayout()));
     loadLayout();

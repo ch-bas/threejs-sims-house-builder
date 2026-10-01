@@ -2,6 +2,7 @@ import { STORAGE_KEY } from './constants';
 import { notify } from './editor-notices';
 import { isUntouched } from './restore-point';
 import { parseStoredLayout, storedEntryCount } from './schema';
+import { classifyStorageError, type StorageErrorKind } from './storage-errors';
 import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout } from './types';
 import type { VersionHistoryStore } from './version-history';
@@ -38,7 +39,9 @@ export function loadLayout(): RoomLayout | null {
     // Over the caps, the load trims the house; the next autosave would make
     // that permanent. Keep the original first (#332).
     if (layout && storedEntryCount(layout) < storedEntryCount(parsed)) {
-      backupStoredLayout();
+      // No room for the copy: treat the save as unopenable, so the caller
+      // holds autosave off and the original stays the only thing stored.
+      if (!backupStoredLayout()) return null;
       notify(
         'This house had more than the editor keeps on one floor, so some items were left out. The original is kept in Manage → Saved Layouts → History.',
         'info'
@@ -207,27 +210,13 @@ export function backupStoredLayout(storage?: RawStore, now: number = Date.now())
 }
 
 /** Why a save didn't reach storage (#472). */
-export type SaveFailureReason = 'quota' | 'blocked' | 'unknown';
+export type SaveFailureReason = StorageErrorKind;
+
+export { classifyStorageError };
 
 /** On success, `json` is exactly what was written — the cross-tab guard compares against it (#334). */
 export type SaveResult = { ok: true; json: string } | { ok: false; reason: SaveFailureReason };
 
-/**
- * A full quota and blocked storage need different advice: deleting things
- * helps the first and does nothing for the second (#472). Quota errors carry
- * the name `QuotaExceededError` (old Firefox: `NS_ERROR_DOM_QUOTA_REACHED`)
- * or the legacy codes 22 / 1014; blocked storage throws a `SecurityError`
- * (code 18), from the `window.localStorage` getter or from the call itself.
- */
-export function classifyStorageError(error: unknown): SaveFailureReason {
-  if (typeof error !== 'object' || error === null) return 'unknown';
-  const { name, code } = error as { name?: unknown; code?: unknown };
-  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || code === 22 || code === 1014) {
-    return 'quota';
-  }
-  if (name === 'SecurityError' || code === 18) return 'blocked';
-  return 'unknown';
-}
 
 /**
  * Persist the layout, or say why it couldn't be (#472). Restore points are

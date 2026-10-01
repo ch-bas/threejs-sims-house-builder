@@ -333,7 +333,7 @@ describe('version-history — lowest-priority tenant (#295)', () => {
     expect(storage.getItem(VERSION_HISTORY_STORAGE_KEY)).toBe(ring);
     expect(listSnapshots({ storage })).toHaveLength(2);
     // The same save through saveLayout reports failure and keeps them too.
-    expect(saveLayout(makeLayout({ name: oversized }), storage)).toBe(false);
+    expect(saveLayout(makeLayout({ name: oversized }), storage)).toEqual({ ok: false, reason: 'quota' });
     expect(listSnapshots({ storage })).toHaveLength(2);
   });
 
