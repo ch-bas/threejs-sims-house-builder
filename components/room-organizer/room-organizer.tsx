@@ -16,6 +16,7 @@ import { useKeyboardPlacement } from './hooks/use-keyboard-placement';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
+import { layoutStore } from './hooks/use-layout-store';
 import { useNpcs } from './hooks/use-npcs';
 import { usePeopleModel } from './hooks/use-people-model';
 import { useRecentColors } from './hooks/use-recent-colors';
@@ -49,7 +50,7 @@ import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { GameMode } from './lib/types';
-import type { RoomLayout, ViewSettings, WallId } from './lib/types';
+import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
   THREE: typeof import('three'),
@@ -548,10 +549,22 @@ export function RoomOrganizer(): JSX.Element {
     [activeFloor.items, actions, reseatCamera]
   );
 
+  const history = useHistory(layout, useCallback(
+    (snapshot: RoomLayout) => {
+      actions.applyLayout(snapshot);
+    },
+    [actions]
+  ));
+  // The stable callbacks, so the wrappers below don't change identity every
+  // time canUndo/canRedo flips.
+  const { commitNow: commitHistoryNow, clear: clearHistory } = history;
+
   // Wrap layout actions with the side-effect of clearing the selection when
-  // the targeted item disappears.
+  // the targeted item disappears. Discrete actions (delete, duplicate, add,
+  // paste) each get an undo step of their own (#425).
   const removeItem = useCallback(
     (id: string) => {
+      commitHistoryNow();
       actions.removeItem(id);
       playCue('remove');
       setSelectedItemId((current) => (current === id ? null : current));
@@ -562,7 +575,7 @@ export function RoomOrganizer(): JSX.Element {
         return next;
       });
     },
-    [actions, playCue]
+    [actions, commitHistoryNow, playCue]
   );
 
   const removeSelected = useCallback(() => {
@@ -571,10 +584,11 @@ export function RoomOrganizer(): JSX.Element {
     // placement and drag, so deletion ignores it like Demolish does (#358).
     const remaining = activeFloor.items.filter((item) => !allSelectedIds.has(item.id));
     if (remaining.length === activeFloor.items.length) return;
+    commitHistoryNow();
     actions.replaceItems(remaining);
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
-  }, [actions, activeFloor.items, allSelectedIds]);
+  }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds]);
 
   // Duplicate the current selection. For a multi-select every selected item is
   // copied (each offset by the reducer) and the copies become the new
@@ -582,6 +596,7 @@ export function RoomOrganizer(): JSX.Element {
   // copy mixed in with the stale originals' ids.
   const duplicateSelected = useCallback(
     (primaryId: string) => {
+      commitHistoryNow();
       if (allSelectedIds.size > 1 && allSelectedIds.has(primaryId)) {
         // Duplicate the primary first so it becomes the new primary, then the
         // remaining selected items in a stable order.
@@ -597,15 +612,8 @@ export function RoomOrganizer(): JSX.Element {
       // Clear stale extras so the selection is only the fresh copy.
       setExtraSelectedIds(new Set());
     },
-    [actions, allSelectedIds]
+    [actions, commitHistoryNow, allSelectedIds]
   );
-
-  const history = useHistory(layout, useCallback(
-    (snapshot: RoomLayout) => {
-      actions.applyLayout(snapshot);
-    },
-    [actions]
-  ));
 
   const { lastSavedAt, saving: isSaving, saveError, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
     layout,
@@ -613,9 +621,11 @@ export function RoomOrganizer(): JSX.Element {
       (saved: RoomLayout) => {
         actions.applyLayout(saved);
         clearTransientSelection();
-        history.clear();
+        // The store dispatch is synchronous, so this is the exact (normalised)
+        // layout the next render shows — an explicit baseline (#354).
+        clearHistory(layoutStore.getState().layout);
       },
-      [actions, history, clearTransientSelection]
+      [actions, clearHistory, clearTransientSelection]
     ),
   });
 
@@ -657,6 +667,14 @@ export function RoomOrganizer(): JSX.Element {
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
 
+  const placeDiscrete = useCallback(
+    (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
+      commitHistoryNow();
+      return placeCatalogItem(catalogItem, position);
+    },
+    [commitHistoryNow, placeCatalogItem]
+  );
+
   // Keyboard placement (#168): Enter on a catalog tile places through the
   // wrapped `placeCatalogItem` and keeps the item unlocked until Enter/Escape.
   const {
@@ -664,7 +682,14 @@ export function RoomOrganizer(): JSX.Element {
     placeCatalogItem: placeFromCatalog,
     confirmPlacement,
     cancelPlacement,
-  } = useKeyboardPlacement({ layout, selectedItemId, actions, history, selectOnly, placeCatalogItem });
+  } = useKeyboardPlacement({
+    layout,
+    selectedItemId,
+    actions,
+    history,
+    selectOnly,
+    placeCatalogItem: placeDiscrete,
+  });
 
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
@@ -852,6 +877,7 @@ export function RoomOrganizer(): JSX.Element {
       idTag: randomSuffix(),
     });
     if (built.length === 0) return false;
+    commitHistoryNow();
     actions.addItems(built);
     selectOnly(built[0]!.id);
     if (built.length > 1) {
@@ -859,7 +885,7 @@ export function RoomOrganizer(): JSX.Element {
     }
     playCue('place');
     return true;
-  }, [layout.width, layout.height, activeFloor.interiorWalls, actions, selectOnly, playCue]);
+  }, [layout.width, layout.height, activeFloor.interiorWalls, actions, commitHistoryNow, selectOnly, playCue]);
 
   const shortcutHandlers = useMemo(
     () => ({
@@ -1091,7 +1117,7 @@ export function RoomOrganizer(): JSX.Element {
           const world = view.view2D
             ? clientToWorld2D(clientX, clientY)
             : worldPositionFromClient(clientX, clientY);
-          const newId = placeCatalogItem(item, world ?? undefined);
+          const newId = placeDiscrete(item, world ?? undefined);
           if (!newId) return;
           selectOnly(newId);
         }}

@@ -9,7 +9,8 @@ import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
  * item at the room centre through the ordinary `placeCatalogItem` path, then
  * keeps it UNLOCKED and selected as a "placing" session so the existing arrow
  * nudge / R rotate shortcuts can position it. Enter locks it (the same
- * lock-on-release a drag performs); Escape undoes the placement.
+ * lock-on-release a drag performs); Escape takes it back out, leaving no trace
+ * in history.
  *
  * The tiles can't tell the orchestrator "this add came from the keyboard" —
  * their `onAdd` is owned by the HUD panels and stays a plain
@@ -115,7 +116,7 @@ export interface UseKeyboardPlacementParams {
   layout: RoomLayout;
   selectedItemId: string | null;
   actions: Pick<LayoutActions, 'setLocked' | 'applyLayout'>;
-  history: Pick<UseHistoryResult, 'undo'>;
+  history: Pick<UseHistoryResult<RoomLayout>, 'commitNow' | 'truncateTo'>;
   selectOnly(id: string | null): void;
   placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
 }
@@ -132,12 +133,6 @@ export interface UseKeyboardPlacementResult {
   confirmPlacement(): void;
   /** Escape: take the item back out and end the session. */
   cancelPlacement(): void;
-}
-
-interface PendingCancel {
-  readonly id: string;
-  /** The layout at Escape time minus the pending item — the fallback result. */
-  readonly remaining: RoomLayout;
 }
 
 function withoutItem(layout: RoomLayout, id: string): RoomLayout {
@@ -164,20 +159,27 @@ export function useKeyboardPlacement({
   placeCatalogItem,
 }: UseKeyboardPlacementParams): UseKeyboardPlacementResult {
   const [placingId, setPlacingId] = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState<PendingCancel | null>(null);
+  const { commitNow, truncateTo } = history;
+  // The layout the session started from, i.e. the history entry the add was
+  // committed on top of. Cancel truncates history back to it (#356).
+  const sessionStartRef = useRef<RoomLayout | null>(null);
 
   const placeTracked = useCallback(
     (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
-      const id = placeCatalogItem(catalogItem, position);
       const armed = consumeKeyboardPlacement();
+      // The add must be an entry of its own, so the session has a clean start
+      // to truncate back to.
+      if (armed) commitNow();
+      const id = placeCatalogItem(catalogItem, position);
       if (!id || !armed) return id;
       // Catalog items are born locked (#11); a locked item ignores the arrow
       // nudges and R, so the pending item has to be unlocked for the session.
       actions.setLocked(id, false);
+      sessionStartRef.current = layout;
       setPlacingId(id);
       return id;
     },
-    [placeCatalogItem, actions]
+    [placeCatalogItem, actions, commitNow, layout]
   );
 
   // The session is tied to the pending item staying the sole selection:
@@ -194,26 +196,20 @@ export function useKeyboardPlacement({
     setPlacingId(null);
   }, [placingId, actions]);
 
-  // Escape is the existing snapshot undo: the add + unlock land in one history
-  // entry, so a quick place-then-cancel leaves no trace (the entry moves to
-  // redo). Undo only steps back one entry, though, and nudges made more than
-  // the debounce window after the add commit as entries of their own — then
-  // one undo merely rewinds the last nudge batch. The effect below checks
-  // the result and, if the item survived, takes just that item out.
+  // Escape takes the item out and erases the session from history: the add
+  // and every nudge since are dropped, so neither undo nor redo can bring the
+  // cancelled item back (#356). applyLayout rather than removeItem: the
+  // replacement must always change the value, which truncateTo relies on.
   const cancelPlacement = useCallback(() => {
     if (placingId === null) return;
     setPlacingId(null);
+    const start = sessionStartRef.current;
+    sessionStartRef.current = null;
     if (!hasItem(layout, placingId)) return;
     selectOnly(null);
-    setCancelling({ id: placingId, remaining: withoutItem(layout, placingId) });
-    history.undo();
-  }, [placingId, layout, history, selectOnly]);
-
-  useEffect(() => {
-    if (!cancelling) return;
-    if (hasItem(layout, cancelling.id)) actions.applyLayout(cancelling.remaining);
-    setCancelling(null);
-  }, [cancelling, layout, actions]);
+    if (start) truncateTo(start);
+    actions.applyLayout(withoutItem(layout, placingId));
+  }, [placingId, layout, truncateTo, actions, selectOnly]);
 
   return useMemo(
     () => ({

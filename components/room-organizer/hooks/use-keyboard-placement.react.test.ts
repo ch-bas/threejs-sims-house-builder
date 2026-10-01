@@ -112,7 +112,7 @@ describe('useKeyboardPlacement (#168)', () => {
     expect(result.current.selectedItemId).toBe(id);
   });
 
-  it('cancel is one undo: a quick place-nudge-cancel leaves nothing to undo', () => {
+  it('a quick place-nudge-cancel leaves nothing to undo or redo', () => {
     const { result } = mount();
     const before = layoutStore.getState().layout;
     act(() => {
@@ -128,9 +128,74 @@ describe('useKeyboardPlacement (#168)', () => {
     expect(layoutStore.getState().layout).toStrictEqual(before);
     expect(result.current.placingId).toBeNull();
     expect(result.current.selectedItemId).toBeNull();
-    // The whole session was one pending edit, moved onto the redo stack.
+    settleHistory();
     expect(result.current.history.canUndo).toBe(false);
-    expect(result.current.history.canRedo).toBe(true);
+    expect(result.current.history.canRedo).toBe(false);
+  });
+
+  // #356: nudges committed as entries of their own used to survive the
+  // cancel in the past stack, so Ctrl+Z resurrected the item.
+  it('undo after place → nudge → nudge → Escape does not resurrect the item', () => {
+    const { result } = mount();
+    const before = layoutStore.getState().layout;
+    let id = '';
+    act(() => {
+      id = result.current.add(true);
+    });
+    settleHistory();
+    act(() => {
+      result.current.actions.moveItem(id, 2, 2);
+    });
+    settleHistory();
+    act(() => {
+      result.current.actions.moveItem(id, 2.5, 2);
+    });
+    settleHistory();
+    act(() => {
+      result.current.cancelPlacement();
+    });
+    settleHistory();
+    expect(activeItems().some((item) => item.id === id)).toBe(false);
+    expect(result.current.history.canUndo).toBe(false);
+    expect(result.current.history.canRedo).toBe(false);
+    act(() => {
+      result.current.history.undo();
+    });
+    act(() => {
+      result.current.history.redo();
+    });
+    settleHistory();
+    expect(activeItems().some((item) => item.id === id)).toBe(false);
+    expect(layoutStore.getState().layout.floors).toStrictEqual(before.floors);
+  });
+
+  it('cancel keeps the history from before the session undoable', () => {
+    const { result } = mount();
+    act(() => {
+      result.current.actions.setFloorColor('#abcdef');
+    });
+    settleHistory();
+    const coloured = layoutStore.getState().layout;
+    let id = '';
+    act(() => {
+      id = result.current.add(true);
+    });
+    settleHistory();
+    act(() => {
+      result.current.actions.moveItem(id, 2, 2);
+    });
+    settleHistory();
+    act(() => {
+      result.current.cancelPlacement();
+    });
+    settleHistory();
+    expect(result.current.history.canUndo).toBe(true);
+    act(() => {
+      result.current.history.undo();
+    });
+    const { layout, activeFloorIndex } = layoutStore.getState();
+    expect(layout.floors[activeFloorIndex]!.floorColor).not.toBe('#abcdef');
+    expect(layout.floors[activeFloorIndex]!.items).toStrictEqual(coloured.floors[activeFloorIndex]!.items);
   });
 
   it('cancel still removes the item when later nudges committed as their own entries', () => {
