@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { notify } from '../lib/editor-notices';
-import { backupStoredLayout, loadLayout, saveLayout } from '../lib/persistence';
-import { snapshotBeforeReplace } from '../lib/restore-point';
+import {
+  EDITOR_SETTLED_MS,
+  clearReloadAttempt,
+  keepStoredLayout,
+  loadLayout,
+  sameLayoutContent,
+  saveLayout,
+} from '../lib/persistence';
+import { isUntouched, snapshotBeforeReplace } from '../lib/restore-point';
 import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash, isShareHashWithinBudget } from '../lib/share';
 import { recordSnapshot } from '../lib/version-history';
+import type { SaveFailureReason } from '../lib/persistence';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseLayoutPersistenceOptions {
@@ -20,11 +28,12 @@ export interface UseLayoutPersistenceResult {
   /** True while the debounce window is pending — the next save is on the way. */
   saving: boolean;
   /**
-   * True when the most recent save attempt failed (e.g. QuotaExceededError from
-   * an oversized floor-plan image). The HUD uses this to avoid falsely showing
-   * "Saved" when the layout never actually made it to localStorage.
+   * Why the most recent save attempt failed — a full quota (typically an
+   * oversized floor-plan image), storage blocked by the browser, or something
+   * else (#472) — or null after a success. The HUD uses it to avoid falsely
+   * showing "Saved" and to say what the user can do.
    */
-  saveError: boolean;
+  saveError: SaveFailureReason | null;
   /**
    * The layout another tab saved over ours, or null. Autosave stays
    * last-writer-wins between tabs (full merge is out of scope, #123), but the
@@ -53,17 +62,44 @@ export function useLayoutPersistence({
   const pendingRef = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  const [saveError, setSaveError] = useState<SaveFailureReason | null>(null);
+  // The exact JSON this tab last wrote: its own echo must not count as
+  // another tab's change (#334).
+  const lastSavedJsonRef = useRef<string | null>(null);
+  // The main save holds a house that couldn't be opened and couldn't be
+  // copied aside (storage full): it's the only copy, so nothing may be
+  // written over it until a copy succeeds.
+  const mainSaveHeldRef = useRef(false);
   const [remoteLayout, setRemoteLayout] = useState<RoomLayout | null>(null);
 
   // Cross-tab guard (#123): the `storage` event only fires in OTHER tabs of
   // the same origin, so any event on our key means a different tab saved.
+  // A different tab, but not necessarily a different house: after one tab
+  // adopts the other's version its autosave writes that same house back, and
+  // flagging it would bounce the notice between the tabs forever (#334).
   useEffect(() => {
     const onStorage = (event: StorageEvent): void => {
       if (event.key !== STORAGE_KEY || event.newValue === null) return;
+      if (event.newValue === lastSavedJsonRef.current) {
+        // Storage is back to what this tab wrote: a notice offering the
+        // other tab's version is stale, and adopting it would restart the
+        // ping-pong (#334).
+        setRemoteLayout(null);
+        return;
+      }
       try {
         const parsed = parseStoredLayout(JSON.parse(event.newValue));
-        if (parsed) setRemoteLayout(parsed);
+        if (!parsed) return;
+        // Both sides through the same schema pass, so defaults it fills in
+        // don't read as a difference.
+        const shown = layoutRef.current;
+        const shownNormalised = parseStoredLayout(JSON.parse(JSON.stringify(shown))) ?? shown;
+        if (sameLayoutContent(parsed, shownNormalised)) {
+          // The other tab now holds what this one shows: any earlier notice is moot.
+          setRemoteLayout(null);
+          return;
+        }
+        setRemoteLayout(parsed);
       } catch {
         /* another tab wrote something unreadable — nothing to offer */
       }
@@ -74,9 +110,28 @@ export function useLayoutPersistence({
 
   const clearRemoteLayout = useCallback(() => setRemoteLayout(null), []);
 
+  // The editor hydrated and stayed up, so the error screen's reload worked: a
+  // later, unrelated crash must not read as the saved house failing again
+  // (#336). A crash before then unmounts the hook and cancels this.
+  useEffect(() => {
+    const handle = window.setTimeout(() => clearReloadAttempt(), EDITOR_SETTLED_MS);
+    return () => window.clearTimeout(handle);
+  }, []);
+
   useEffect(() => {
     if (hasHydratedRef.current) return;
     hasHydratedRef.current = true;
+
+    // Copy the stored house aside, or hold the main save if it can't be.
+    const keepStoredHouseAside = (): void => {
+      const outcome = keepStoredLayout();
+      if (outcome === 'kept') {
+        notify('Your saved house couldn’t be opened, so a copy was kept in Manage → Saved Layouts → History.', 'info');
+      }
+      if (outcome === 'kept' || outcome === 'nothing') return;
+      mainSaveHeldRef.current = true;
+      setSaveError(outcome);
+    };
 
     const hydrateFromLocalSave = (): void => {
       const saved = loadLayout();
@@ -92,7 +147,7 @@ export function useLayoutPersistence({
           // stored blob with the fallback layout ~debounceMs later. That blob
           // is the user's house — stash a copy first, exactly like the
           // unreadable-blob branch below (#206).
-          backupStoredLayout();
+          keepStoredHouseAside();
           hydrationBaseRef.current = null;
         }
       } else {
@@ -100,7 +155,7 @@ export function useLayoutPersistence({
         // A blob that exists but failed to load would otherwise be overwritten
         // by the autosave of the fallback layout ~debounceMs after mount —
         // permanent data loss. Stash a copy first (#113).
-        backupStoredLayout();
+        keepStoredHouseAside();
       }
     };
 
@@ -130,7 +185,11 @@ export function useLayoutPersistence({
           // stored house, so its final state needs a restore point now — the
           // ring's last cadence snapshot may be minutes stale (#298). Reads
           // storage only; the hydration baseline below is untouched.
-          snapshotBeforeReplace(loadLayout());
+          const outgoing = loadLayout();
+          snapshotBeforeReplace(outgoing);
+          // An unreadable save has no restore point to fall back on, and the
+          // shared house would autosave over it (#113).
+          if (!outgoing) keepStoredHouseAside();
           // Re-capture the baseline right before the hydration dispatch.
           hydrationBaseRef.current = layoutRef.current;
           // A corrupt-but-parseable layout can still throw while it's applied
@@ -174,23 +233,35 @@ export function useLayoutPersistence({
     setSaving(true);
     pendingRef.current = true;
     const handle = window.setTimeout(() => {
-      const ok = saveLayout(layout);
-      if (ok) {
+      // Retried on every edit, so freeing space lets saving resume.
+      if (mainSaveHeldRef.current) {
+        const outcome = keepStoredLayout();
+        if (outcome !== 'kept' && outcome !== 'nothing') {
+          setSaveError(outcome);
+          return;
+        }
+        mainSaveHeldRef.current = false;
+      }
+      const result = saveLayout(layout);
+      if (result.ok) {
+        lastSavedJsonRef.current = result.json;
         // Only mark the edit persisted on a real success — otherwise the HUD
         // would show "Saved" for a layout that never reached localStorage.
         pendingRef.current = false;
         setLastSavedAt(Date.now());
         setSaving(false);
-        setSaveError(false);
+        setSaveError(null);
         // Restore point (#231): piggyback on the successful autosave. The
         // ring gates its own cadence and swallows quota failures, so this
-        // can never break the save that just happened.
-        recordSnapshot(layout);
+        // can never break the save that just happened. A blank lot isn't
+        // worth a point — and since #342 each one is a new house, so each
+        // fresh start would add one.
+        if (!isUntouched(layout)) recordSnapshot(layout);
       } else {
         // Keep `saving`/pending truthy and flag the error so the HUD reports
         // the failure instead of a false "Saved". A later successful edit
         // clears the flag.
-        setSaveError(true);
+        setSaveError(result.reason);
       }
     }, debounceMs);
     return () => window.clearTimeout(handle);
@@ -201,12 +272,13 @@ export function useLayoutPersistence({
   // on tab close.
   useEffect(() => {
     const flush = () => {
-      if (!pendingRef.current) return;
+      if (!pendingRef.current || mainSaveHeldRef.current) return;
       pendingRef.current = false;
-      saveLayout(layoutRef.current);
+      const result = saveLayout(layoutRef.current);
+      if (result.ok) lastSavedJsonRef.current = result.json;
       // The page is going away — capture a restore point regardless of the
       // ring's 5-minute cadence (#231).
-      recordSnapshot(layoutRef.current, { force: true });
+      if (!isUntouched(layoutRef.current)) recordSnapshot(layoutRef.current, { force: true });
     };
     window.addEventListener('pagehide', flush);
     return () => {

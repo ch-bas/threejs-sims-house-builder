@@ -35,6 +35,7 @@ import {
   subscribeSnapshots,
 } from '../lib/version-history';
 import { PlanThumb } from './plan-thumb';
+import { RecoveryEntry } from './recovery-entry';
 import type { PasteboardEntry } from '../lib/pasteboard';
 import type { RoomLayout, SavedLayoutEntry } from '../lib/types';
 import type { VersionSummary } from '../lib/version-history';
@@ -428,6 +429,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             Automatic restore points, saved every few minutes while you build.
           </p>
           <LoadedStatus note={loaded} section="history" />
+          <RecoveryEntry currentLayout={currentLayout} onLoad={onLoad} />
           {snapshots.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2 text-center">No restore points yet.</p>
           ) : (

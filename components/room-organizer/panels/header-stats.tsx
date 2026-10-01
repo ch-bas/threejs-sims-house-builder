@@ -6,11 +6,13 @@ import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+import type { SaveFailureReason } from '../lib/persistence';
 
 export interface HeaderStatsProps {
   lastSavedAt?: number | null;
   saving?: boolean;
-  saveError?: boolean;
+  /** Why the last save failed, or null (#472). */
+  saveError?: SaveFailureReason | null;
   /** Another tab saved a different layout (#123). */
   remoteChange?: boolean;
   onAdoptRemote?(): void;
@@ -20,7 +22,7 @@ export interface HeaderStatsProps {
 export function HeaderStats({
   lastSavedAt = null,
   saving = false,
-  saveError = false,
+  saveError = null,
   remoteChange = false,
   onAdoptRemote,
   onDismissRemote,
@@ -113,8 +115,29 @@ function RemoteChangeNotice({
 interface SaveIndicatorProps {
   lastSavedAt: number | null;
   saving: boolean;
-  saveError: boolean;
+  saveError: SaveFailureReason | null;
 }
+
+/**
+ * What a failed save tells the user (#472): a full quota can be fixed by
+ * freeing space, blocked storage can't — only an export keeps the work.
+ */
+const SAVE_FAILURE_COPY: Record<SaveFailureReason, { label: string; detail: string }> = {
+  quota: {
+    label: 'Storage full — changes not saved',
+    detail:
+      'Browser storage is full. Remove the floor-plan image, delete saved layouts, or delete recovered copies in Manage → Saved Layouts → History — or keep your work with Manage → Export / share → JSON.',
+  },
+  blocked: {
+    label: 'Saving is blocked in this browser — export a JSON to keep your work',
+    detail:
+      'This browser blocks site storage (private mode, blocked cookies or a privacy setting), so nothing can be saved here. Manage → Export / share → JSON downloads your house.',
+  },
+  unknown: {
+    label: 'Save failed — export a JSON to keep your work',
+    detail: 'The browser refused to save the house. Manage → Export / share → JSON keeps your work.',
+  },
+};
 
 function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): JSX.Element {
   const [, force] = useState(0);
@@ -123,11 +146,11 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
     return () => window.clearInterval(id);
   }, []);
 
-  // A failed save (typically an oversized floor-plan blowing the localStorage
-  // budget) takes precedence — never claim "Saved" for a layout that didn't
-  // actually persist.
+  // A failed save takes precedence — never claim "Saved" for a layout that
+  // didn't actually persist.
+  const failure = saveError ? SAVE_FAILURE_COPY[saveError] : null;
   let label = 'Auto-save on';
-  if (saveError) label = 'Save failed — storage full';
+  if (failure) label = failure.label;
   else if (saving) label = 'Saving…';
   else if (lastSavedAt) label = `Saved ${formatRelative(Date.now() - lastSavedAt)}`;
 
@@ -139,6 +162,8 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
 
   return (
     <div
+      role={failure ? 'alert' : undefined}
+      title={failure?.detail}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

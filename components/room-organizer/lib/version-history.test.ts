@@ -270,7 +270,7 @@ describe('version-history — lowest-priority tenant (#295)', () => {
     for (const [key, value] of filler.data) storage.setItem(key, value);
     expect(listSnapshots({ storage, now: clock.now })).toHaveLength(4);
 
-    expect(saveLayout(house, storage)).toBe(true);
+    expect(saveLayout(house, storage).ok).toBe(true);
     expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(house));
     const left = listSnapshots({ storage, now: clock.now });
     // Only as much as needed is evicted, and the newest restore points survive.
@@ -280,7 +280,7 @@ describe('version-history — lowest-priority tenant (#295)', () => {
   it('saveLayout still reports failure once the ring is empty', () => {
     const storage = makeQuotaStore(600);
     expect(recordSnapshot(makeLayout(), { storage })).toBe(true);
-    expect(saveLayout(makeHouse(40), storage)).toBe(false);
+    expect(saveLayout(makeHouse(40), storage).ok).toBe(false);
     expect(storage.getItem(VERSION_HISTORY_STORAGE_KEY)).toBeNull();
     expect(storage.getItem(STORAGE_KEY)).toBeNull();
   });
@@ -333,7 +333,7 @@ describe('version-history — lowest-priority tenant (#295)', () => {
     expect(storage.getItem(VERSION_HISTORY_STORAGE_KEY)).toBe(ring);
     expect(listSnapshots({ storage })).toHaveLength(2);
     // The same save through saveLayout reports failure and keeps them too.
-    expect(saveLayout(makeLayout({ name: oversized }), storage)).toBe(false);
+    expect(saveLayout(makeLayout({ name: oversized }), storage)).toEqual({ ok: false, reason: 'quota' });
     expect(listSnapshots({ storage })).toHaveLength(2);
   });
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../lib/constants';
 import { INITIAL_LAYOUT } from '../lib/initial-layout';
-import { RECOVERY_STORAGE_KEY } from '../lib/persistence';
+import { readRecoveryCopies } from '../lib/persistence';
 import { decodeShareUrl } from '../lib/share';
 import { VERSION_HISTORY_STORAGE_KEY } from '../lib/version-history';
 import { useLayoutPersistence } from './use-layout-persistence';
@@ -19,6 +19,8 @@ vi.mock('../lib/share', () => ({
 }));
 
 const mockedDecode = vi.mocked(decodeShareUrl);
+
+const keptRaws = (): string[] => readRecoveryCopies().map(({ raw }) => raw);
 
 describe('useLayoutPersistence — apply-throw must not clobber the save (#206)', () => {
   beforeEach(() => {
@@ -50,7 +52,7 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
     });
 
     // The recovery copy must exist immediately — before the debounce can fire.
-    expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe(blob);
+    expect(keptRaws()).toEqual([blob]);
 
     // Autosave then resumes on purpose (the app must stay usable): the main
     // key ends up holding the fallback layout, but the house survived above.
@@ -58,7 +60,7 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
       const raw = window.localStorage.getItem(STORAGE_KEY);
       expect(raw && (JSON.parse(raw) as RoomLayout).name).toBe('Fallback');
     });
-    expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe(blob);
+    expect(keptRaws()).toEqual([blob]);
   });
 
   it('falls back to the healthy local save when applying a SHARED layout throws', async () => {
@@ -75,7 +77,7 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
 
     await waitFor(() => expect(applied).toEqual(['Shared', 'Local house']));
     // The local save was never the problem — no recovery copy, hash cleared.
-    expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBeNull();
+    expect(keptRaws()).toEqual([]);
     expect(window.location.hash).toBe('');
   });
 
@@ -92,7 +94,7 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
     });
 
     await waitFor(() => expect(applied).toEqual(['Shared', 'Local house']));
-    await waitFor(() => expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe(blob));
+    await waitFor(() => expect(keptRaws()).toEqual([blob]));
   });
 
   const readRing = (): { layout: RoomLayout }[] => {
@@ -121,7 +123,7 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
     // Snapshotting only reads the save: it is neither rewritten nor treated
     // as broken, and the hash is still cleared.
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe(blob);
-    expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBeNull();
+    expect(keptRaws()).toEqual([]);
     expect(window.location.hash).toBe('');
   });
 

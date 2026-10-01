@@ -43,7 +43,7 @@ function sameData(a: unknown, b: unknown): boolean {
  * against a hand-picked list of "work" fields, so zones, colours, the room
  * size, the roof, storey heights — and any field added later — all count.
  */
-function isUntouched(layout: RoomLayout): boolean {
+export function isUntouched(layout: RoomLayout): boolean {
   // Legacy single-floor saves carry no roof; they start from the default one.
   const candidate: RoomLayout = layout.roof ? layout : { ...layout, roof: INITIAL_LAYOUT.roof! };
   const keys = new Set([...Object.keys(candidate), ...Object.keys(INITIAL_LAYOUT)]);

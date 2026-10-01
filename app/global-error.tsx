@@ -1,16 +1,16 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   clearChunkReloadGuard,
   isChunkLoadError,
   reloadOnceForChunkError,
 } from '../components/room-organizer/lib/chunk-reload';
-import { STORAGE_KEY } from '../components/room-organizer/lib/constants';
+import { downloadRawLayout, readStoredLayoutRaw, resetStoredLayout } from '../components/room-organizer/lib/persistence';
 
-// Global error boundary — catches errors thrown in the root layout itself, so
-// it must render its own <html>/<body>. Same recovery path as app/error.tsx:
-// clear the persisted layout that crashed the renderer, then reload.
+// Global error boundary — catches errors thrown in the root layout itself (and
+// in app/error.tsx), so it must render its own <html>/<body>. Starting fresh
+// keeps a copy of the saved house first, like app/error.tsx (#336).
 
 export default function GlobalError({ error }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
   useEffect(() => {
@@ -28,11 +28,25 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
     window.location.reload();
   };
 
+  const [resetProblem, setResetProblem] = useState<string | null>(null);
+  // Read before the reset: on a failed move this is the only copy left.
+  const [lostRaw, setLostRaw] = useState<string | null>(null);
   const resetSavedLayout = () => {
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Ignore — fall through to reload even if storage is unavailable.
+    const raw = readStoredLayoutRaw();
+    const outcome = resetStoredLayout();
+    // Nothing stored (or storage unreadable): nothing to lose, just reload.
+    if (outcome === 'refused' && raw === null) {
+      window.location.reload();
+      return;
+    }
+    if (outcome === 'refused') {
+      setResetProblem('Your house couldn’t be copied aside — browser storage is full or blocked — so it was left as it is. Free some storage, or allow it for this site, and try again.');
+      return;
+    }
+    if (outcome === 'lost') {
+      setLostRaw(raw);
+      setResetProblem('Storage failed while moving your house aside, so this page holds the only copy. Download it before reloading.');
+      return;
     }
     // Hard reload rather than the soft `reset()`: the layout is a module-level
     // Zustand singleton, so a soft remount would keep the crash-causing layout
@@ -70,8 +84,12 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
           <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>
             {chunkFailure
               ? 'Some of the app’s files couldn’t be fetched — a fresh deploy may be rolling out. Reloading usually fixes it, and your saved house is untouched.'
-              : 'The saved layout couldn’t be rendered. Resetting it clears the stored layout and starts fresh.'}
+              : resetProblem ??
+                'The editor couldn’t start. Starting fresh moves your saved house to Manage → Saved Layouts → History, where you can restore it.'}
           </p>
+          {/* After a failed move this page holds the only copy: no button that
+              would reload it away until the user has downloaded it. */}
+          {!lostRaw && (
           <button
             type="button"
             onClick={chunkFailure ? retryChunkLoad : resetSavedLayout}
@@ -89,8 +107,30 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
               fontSize: 12,
             }}
           >
-            {chunkFailure ? 'Reload' : 'Reset saved layout'}
+            {chunkFailure ? 'Reload' : 'Start fresh, keep a copy'}
           </button>
+          )}
+          {lostRaw && (
+            <button
+              type="button"
+              onClick={() => downloadRawLayout(lostRaw, 'my-house.json')}
+              style={{
+                appearance: 'none',
+                cursor: 'pointer',
+                display: 'block',
+                margin: '12px auto 0',
+                border: '1px solid rgba(255, 255, 255, 0.18)',
+                borderRadius: 8,
+                padding: '10px 18px',
+                background: 'transparent',
+                color: '#e2e8f0',
+                fontWeight: 700,
+                fontSize: 12,
+              }}
+            >
+              Download my house
+            </button>
+          )}
         </div>
       </body>
     </html>
