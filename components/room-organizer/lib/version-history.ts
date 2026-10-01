@@ -106,6 +106,22 @@ function defaultStorage(): VersionHistoryStore | null {
   }
 }
 
+// In-tab change signal for the History list (#367): the `storage` event only
+// fires in OTHER tabs, so writes from this tab notify their listeners here.
+const listeners = new Set<() => void>();
+
+/** Called after every in-tab change to the restore-point ring. */
+export function subscribeSnapshots(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notify(): void {
+  for (const listener of listeners) listener();
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -342,6 +358,7 @@ export function recordSnapshot(
     try {
       storage.setItem(VERSION_HISTORY_STORAGE_KEY, serialiseSlots(slots));
       writeMeta(storage, slots);
+      notify();
       return true;
     } catch {
       // Quota — drop the oldest restore point and try again.
@@ -414,6 +431,7 @@ export function clearSnapshots(opts: VersionHistoryOptions = {}): void {
   if (!storage) return;
   removeKey(storage, VERSION_HISTORY_STORAGE_KEY);
   removeKey(storage, VERSION_HISTORY_META_KEY);
+  notify();
 }
 
 /**
@@ -438,6 +456,7 @@ export function evictOldestSnapshot(opts: VersionHistoryOptions = {}): boolean {
   try {
     storage.setItem(VERSION_HISTORY_STORAGE_KEY, serialiseSlots(slots));
     writeMeta(storage, slots);
+    notify();
   } catch {
     clearSnapshots({ storage });
   }

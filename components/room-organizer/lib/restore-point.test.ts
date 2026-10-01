@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { snapshotBeforeReplace } from './restore-point';
+import { confirmReplace, snapshotBeforeReplace } from './restore-point';
 import { recordSnapshot } from './version-history';
 
 vi.mock('./version-history', () => ({
@@ -71,5 +71,31 @@ describe('snapshotBeforeReplace — structure counts as work (#298)', () => {
     vi.mocked(recordSnapshot).mockClear();
     snapshotBeforeReplace(layout);
     expect(recordSnapshot).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('confirmReplace (#364)', () => {
+  it('replaces an untouched house without asking', () => {
+    const ask = vi.fn(() => false);
+    expect(confirmReplace(makeLayout(), 'the Bedroom template', ask)).toBe(true);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('asks once before replacing a house with work, naming what replaces it', () => {
+    const ask = vi.fn(() => true);
+    expect(confirmReplace(furnished(), 'the Bedroom template', ask)).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(ask).toHaveBeenCalledWith('Replace your current house with the Bedroom template? Undo restores it.');
+  });
+
+  it('declining keeps the house', () => {
+    expect(confirmReplace(furnished(), '“Cabin”', () => false)).toBe(false);
+  });
+
+  it('treats structure as work too', () => {
+    const ask = vi.fn(() => false);
+    const walled = makeLayout({ floors: [makeFloor({ interiorWalls: [{ id: 'w', x1: 0, z1: 0, x2: 1, z2: 0 }] })] });
+    expect(confirmReplace(walled, 'this restore point', ask)).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(1);
   });
 });

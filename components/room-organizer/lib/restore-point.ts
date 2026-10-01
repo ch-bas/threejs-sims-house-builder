@@ -35,3 +35,19 @@ export function snapshotBeforeReplace(outgoing: RoomLayout | null | undefined): 
     console.warn('Failed to record a restore point:', error);
   }
 }
+
+/**
+ * The one confirm every whole-house replacement asks before it runs —
+ * template, library, paste-board, History restore, JSON import (#364).
+ * `incoming` names what replaces the house ("the Bedroom template"). Asks
+ * only when the current house holds work; an untouched one is replaced
+ * silently. Returns whether to go ahead.
+ */
+export function confirmReplace(
+  current: RoomLayout,
+  incoming: string,
+  ask: (message: string) => boolean = (message) => window.confirm(message)
+): boolean {
+  if (isUntouched(current)) return true;
+  return ask(`Replace your current house with ${incoming}? Undo restores it.`);
+}

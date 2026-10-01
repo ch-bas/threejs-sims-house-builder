@@ -4,7 +4,7 @@ import {
   downloadSceneAsGlb,
   readLayoutFromFile,
 } from '../lib/file-io';
-import { snapshotBeforeReplace } from '../lib/restore-point';
+import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
 import type { LayoutActions } from './use-layout-state';
 import type { RoomLayout } from '../lib/types';
@@ -27,7 +27,8 @@ export interface UseImportExportResult {
   handleScreenshot(): void;
   handleExportGlb(): Promise<void>;
   handleShareLink(): Promise<void>;
-  handleImport(file: File): Promise<void>;
+  /** Resolves true when the file replaced the current house. */
+  handleImport(file: File): Promise<boolean>;
 }
 
 export function useImportExport({
@@ -90,15 +91,18 @@ export function useImportExport({
     async (file: File) => {
       try {
         const next = await readLayoutFromFile(file);
+        if (!confirmReplace(layout, `the imported “${next.name}”`)) return false;
         snapshotBeforeReplace(layout);
         actions.applyLayout(next);
         onImported();
+        return true;
       } catch (importError) {
         const message =
           importError instanceof Error
             ? importError.message
             : 'Failed to import layout. Please check the file format.';
         window.alert(message);
+        return false;
       }
     },
     [layout, actions, onImported]

@@ -16,6 +16,7 @@ import {
   recordSnapshot,
   setItemEvictingSnapshots,
   snapshotBelongsTo,
+  subscribeSnapshots,
 } from './version-history';
 import type { RoomLayout } from './types';
 import type { VersionHistoryStore } from './version-history';
@@ -576,5 +577,42 @@ describe('floor-plan fingerprint (#296)', () => {
     );
     const [summary] = listSnapshots({ storage, now: () => 2_000 });
     expect(summary!.floorPlanFingerprint).toBeNull();
+  });
+});
+
+describe('version-history — in-tab change signal (#367)', () => {
+  it('notifies subscribers when a restore point is stored, evicted or cleared', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    const listener = vi.fn();
+    const unsubscribe = subscribeSnapshots(listener);
+    try {
+      expect(recordSnapshot(makeHouse(1), { storage, now: clock.now, force: true })).toBe(true);
+      expect(listener).toHaveBeenCalledTimes(1);
+      clock.advance(1);
+      recordSnapshot(makeHouse(2), { storage, now: clock.now, force: true });
+      expect(listener).toHaveBeenCalledTimes(2);
+      evictOldestSnapshot({ storage });
+      expect(listener).toHaveBeenCalledTimes(3);
+      clearSnapshots({ storage });
+      expect(listener).toHaveBeenCalledTimes(4);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('stays silent when nothing was written, and after unsubscribing', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    const listener = vi.fn();
+    const unsubscribe = subscribeSnapshots(listener);
+    recordSnapshot(makeHouse(1), { storage, now: clock.now, force: true });
+    // Identical to the newest snapshot of the house: skipped (#297).
+    recordSnapshot(makeHouse(1), { storage, now: clock.now, force: true });
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    clock.advance(1);
+    recordSnapshot(makeHouse(3), { storage, now: clock.now, force: true });
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

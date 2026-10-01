@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
@@ -22,10 +23,17 @@ const TEMPLATE_OPTIONS = (Object.keys(TEMPLATE_LABELS) as RoomTemplateKey[]).map
 }));
 
 export interface TemplatesPanelProps {
-  onLoadTemplate(template: (typeof ROOM_TEMPLATES)[RoomTemplateKey]): void;
+  /** Resolves false when the user declined replacing the current house. */
+  onLoadTemplate(template: (typeof ROOM_TEMPLATES)[RoomTemplateKey]): boolean;
 }
 
 export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Element {
+  const [status, setStatus] = useState<string | null>(null);
+  const load = (key: RoomTemplateKey) => {
+    if (onLoadTemplate(ROOM_TEMPLATES[key])) {
+      setStatus(`Loaded the ${TEMPLATE_LABELS[key].replace(/^\S+\s/, '')} template. Undo brings back the house it replaced.`);
+    }
+  };
   return (
     <Card>
       <CardHeader>
@@ -36,7 +44,7 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
             twice still fires onValueChange (Radix suppresses same-value
             changes on an uncontrolled select) — re-applying a template after
             edits was a silent no-op (#122). */}
-        <Select value="" onValueChange={(key) => onLoadTemplate(ROOM_TEMPLATES[key as RoomTemplateKey])}>
+        <Select value="" onValueChange={(key) => load(key as RoomTemplateKey)}>
           <SelectTrigger>
             <SelectValue placeholder="Load a template..." />
           </SelectTrigger>
@@ -48,6 +56,11 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
             ))}
           </SelectContent>
         </Select>
+        {status && (
+          <p role="status" className="mt-2 text-xs text-muted-foreground">
+            {status}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

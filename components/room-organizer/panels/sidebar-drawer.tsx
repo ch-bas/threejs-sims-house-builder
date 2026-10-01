@@ -9,7 +9,7 @@ import { alignSelection, distributeSelection } from '../lib/alignment';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
-import { snapshotBeforeReplace } from '../lib/restore-point';
+import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
 import { applyTheme } from '../lib/themes';
 import { Icon } from '../plotcraft/icon';
@@ -47,7 +47,7 @@ export interface SidebarDrawerProps {
   onApplyPreset(preset: CameraPreset): void;
   onFitToRoom(): void;
   onScreenshot(): void;
-  onImport(file: File): void;
+  onImport(file: File): Promise<boolean>;
   onExportGlb(): void;
   onShareLink(): void;
   /** Wall-aware placement (snaps doors/windows/cameras to walls) shared with the bottom catalog. */
@@ -303,12 +303,14 @@ export function SidebarDrawer({
 
               <TemplatesPanel
                 onLoadTemplate={(template) => {
+                  if (!confirmReplace(layout, `the ${template.name} template`)) return false;
                   snapshotBeforeReplace(layout);
                   actions.applyLayout({
                     ...template,
                     floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
                   });
                   selectOnly(null);
+                  return true;
                 }}
               />
 
