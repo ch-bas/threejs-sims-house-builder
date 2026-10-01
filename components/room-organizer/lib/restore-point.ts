@@ -1,27 +1,52 @@
+import { INITIAL_LAYOUT } from './initial-layout';
 import { recordSnapshot } from './version-history';
 import type { RoomLayout } from './types';
 
 /**
- * True for a house nobody has worked on. Furniture is not the only work: a
- * shell with drawn partitions, dormers, a sloped site or a porch and no
- * furniture yet is hours of design, so structure counts too.
+ * Top-level fields that are not work: the name and id are labels, and the
+ * floor-plan opacity and fit only style an image (the image itself counts).
+ */
+const NOT_WORK = new Set<string>(['id', 'name', 'floorPlanOpacity', 'floorPlanFitMode']);
+
+/** Structural equality over JSON-shaped data; a key holding `undefined` counts as absent. */
+function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => sameData(value, b[index]));
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if (!sameData(left[key], right[key])) return false;
+  }
+  return true;
+}
+
+/**
+ * True for a house nobody has worked on: the initial layout, give or take a
+ * name (#346). Compared field by field against `INITIAL_LAYOUT` rather than
+ * against a hand-picked list of "work" fields, so zones, colours, the room
+ * size, the roof, storey heights — and any field added later — all count.
  */
 function isUntouched(layout: RoomLayout): boolean {
-  if (layout.floorPlanImage) return false;
-  if (layout.floors.length > 1) return false;
-  if (layout.terrain || layout.entrance || layout.frontage) return false;
-  if (layout.neighbours && Object.values(layout.neighbours).some(Boolean)) return false;
-  if ((layout.roof?.dormers?.length ?? 0) > 0) return false;
-  return layout.floors.every(
-    (floor) => floor.items.length === 0 && (floor.interiorWalls?.length ?? 0) === 0
-  );
+  const keys = new Set([...Object.keys(layout), ...Object.keys(INITIAL_LAYOUT)]);
+  for (const key of keys) {
+    if (NOT_WORK.has(key)) continue;
+    if (!sameData(layout[key as keyof RoomLayout], INITIAL_LAYOUT[key as keyof RoomLayout])) return false;
+  }
+  return true;
 }
 
 /**
  * Take a forced restore point of the design that is about to be replaced
  * wholesale — share link, library/template load, History restore, JSON
- * import, cross-tab adopt (#298). The autosave cadence alone can leave the outgoing design up
- * to five minutes stale in the ring, or absent from it entirely.
+ * import, cross-tab adopt (#298). The autosave cadence alone can leave the
+ * outgoing design up to five minutes stale in the ring, or absent from it
+ * entirely. Each load path calls this exactly once, in the handler that
+ * applies the new layout (#352).
  *
  * Empty houses are skipped so first-run users don't fill the ring with
  * blanks. Never throws: a failed snapshot must not block the replacement.

@@ -339,8 +339,9 @@ components/
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── persistence.ts               Active-layout localStorage I/O + unreadable-save recovery backup
     │   ├── library.ts                   Named-layout library I/O
-    │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots)
-    │   ├── restore-point.ts             Forced restore point before a whole-layout replacement
+    │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by content sketch
+    │   ├── restore-point.ts             Forced restore point before a whole-layout replacement; "untouched" = equal to INITIAL_LAYOUT
+    │   ├── initial-layout.ts            INITIAL_LAYOUT / INITIAL_GROUND_FLOOR, the house every session starts from
     │   ├── share.ts                     Share-URL encode/decode (base64url)
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
@@ -496,6 +497,12 @@ components/
 - **Snapshot-based undo/redo** works at the layout level, so floor adds,
   alignments, theme application, and individual moves are all reversible
   without bespoke code per action.
+- **Restore points tell houses apart by content.** `layout.id` is rarely
+  set and every new house is "My Home", so the ring's 5-minute cadence and
+  its dedupe are scoped by a sketch of the random ids of what was built
+  (items, partitions, zones, dormers, added storeys): two snapshots of one
+  house share some of it, unrelated houses share none. Entries are looked
+  up by a stable `id` written once, never by `savedAt`, which may be clamped.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere
