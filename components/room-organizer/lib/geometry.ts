@@ -277,7 +277,7 @@ export function snapToGrid(value: number, gridSize: number): number {
 
 export interface SnapToWallOptions {
   position: Vec2;
-  item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation'>;
+  item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation' | 'category'>;
   roomWidth: number;
   roomDepth: number;
   /** Maximum distance (m) from the wall at which snapping is applied. */
@@ -285,9 +285,11 @@ export interface SnapToWallOptions {
 }
 
 /**
- * Snap a position to the nearest wall when within `threshold`. Returns the
- * adjusted position. Considers the item's axis-aligned half-extent only —
- * rotated bounds are handled with a conservative bounding box.
+ * Snap a position flush against the nearest wall face when within
+ * `threshold` of it, on either side. Indoor items snap to the inner face,
+ * outdoor items to the outer one (they live outside the footprint), and only
+ * alongside the wall: an item far from the building is left alone (#380).
+ * Uses the item's rotated axis-aligned half-extents.
  */
 export function snapToWall({
   position,
@@ -297,17 +299,23 @@ export function snapToWall({
   threshold = 0.35,
 }: SnapToWallOptions): Vec2 {
   const { halfW, halfD } = rotatedHalfExtents(item);
-
-  const minX = -roomWidth / 2 + halfW;
-  const maxX = roomWidth / 2 - halfW;
-  const minZ = -roomDepth / 2 + halfD;
-  const maxZ = roomDepth / 2 - halfD;
+  // Inner face: the centre sits half an extent inside the wall; outer: outside.
+  const sign = item.category === 'outdoor' ? 1 : -1;
+  const faceX = roomWidth / 2 + sign * halfW;
+  const faceZ = roomDepth / 2 + sign * halfD;
 
   let { x, z } = position;
-  if (x - minX < threshold) x = minX;
-  else if (maxX - x < threshold) x = maxX;
-  if (z - minZ < threshold) z = minZ;
-  else if (maxZ - z < threshold) z = maxZ;
+  // Beside the wall: the item's extent overlaps the wall's run.
+  const besideXWalls = Math.abs(position.z) < roomDepth / 2 + halfD;
+  const besideZWalls = Math.abs(position.x) < roomWidth / 2 + halfW;
+  if (besideXWalls) {
+    if (Math.abs(x + faceX) < threshold) x = -faceX;
+    else if (Math.abs(x - faceX) < threshold) x = faceX;
+  }
+  if (besideZWalls) {
+    if (Math.abs(z + faceZ) < threshold) z = -faceZ;
+    else if (Math.abs(z - faceZ) < threshold) z = faceZ;
+  }
 
   return { x, z };
 }
@@ -341,6 +349,8 @@ export interface SnapToNeighborOptions {
   position: Vec2;
   movingItem: Pick<FurnitureItem, 'id' | 'width' | 'depth' | 'rotation'>;
   otherItems: readonly FurnitureItem[];
+  /** Items moving with this one (a group drag): their positions are stale, never targets (#380). */
+  excludeIds?: ReadonlySet<string>;
   threshold?: number;
 }
 
@@ -353,6 +363,7 @@ export function snapToNeighbors({
   position,
   movingItem,
   otherItems,
+  excludeIds,
   threshold = 0.2,
 }: SnapToNeighborOptions): Vec2 {
   const { cosAbs, sinAbs } = rotatedExtents(movingItem.rotation ?? 0);
@@ -365,7 +376,7 @@ export function snapToNeighbors({
   let bestZDelta = threshold;
 
   for (const other of otherItems) {
-    if (other.id === movingItem.id || !other.position) continue;
+    if (other.id === movingItem.id || excludeIds?.has(other.id) || !other.position) continue;
     const otherExtents = rotatedExtents(other.rotation ?? 0);
     const otherHalfW = (other.width * otherExtents.cosAbs + other.depth * otherExtents.sinAbs) / 2;
     const otherHalfD = (other.width * otherExtents.sinAbs + other.depth * otherExtents.cosAbs) / 2;

@@ -39,12 +39,24 @@ export interface OpeningSnap {
  */
 const INTERIOR_WALL_HALF_THICKNESS = 0.08;
 
+/** A stretch of the north wall that isn't there: the recessed entrance's cut (#394). */
+export interface WallGap {
+  x0: number;
+  x1: number;
+}
+
 export interface SnapOpeningOptions {
   position: { x: number; z: number };
   itemWidth: number;
   roomWidth: number;
   roomDepth: number;
   interiorWalls?: readonly InteriorWall[];
+  /**
+   * The span the recessed entrance cuts out of the north wall on this storey
+   * (`entrancePlanOutline`): openings land on the piers either side of it,
+   * never in the hole.
+   */
+  frontGap?: WallGap | null;
 }
 
 export function snapOpeningToWall(options: SnapOpeningOptions): OpeningSnap {
@@ -55,33 +67,32 @@ export function snapOpeningToWall(options: SnapOpeningOptions): OpeningSnap {
   const halfD = roomDepth / 2;
   const half = itemWidth / 2;
 
-  interface Candidate extends OpeningSnap {}
-  const candidates: Candidate[] = [
-    {
-      position: { x: clamp(position.x, -halfW + half, halfW - half), z: -halfD },
-      rotation: 0,
+  const candidates: OpeningSnap[] = [];
+  // Ranked by the true distance to the clamped snap point, the same rule the
+  // interior candidates use, so the two kinds compare fairly (#394).
+  const pushExterior = (x: number, z: number, rotation: number) => {
+    candidates.push({
+      position: { x, z },
+      rotation,
       wallKind: 'exterior',
-      distance: Math.abs(position.z - -halfD),
-    },
-    {
-      position: { x: clamp(position.x, -halfW + half, halfW - half), z: halfD },
-      rotation: Math.PI,
-      wallKind: 'exterior',
-      distance: Math.abs(position.z - halfD),
-    },
-    {
-      position: { x: halfW, z: clamp(position.z, -halfD + half, halfD - half) },
-      rotation: -Math.PI / 2,
-      wallKind: 'exterior',
-      distance: Math.abs(position.x - halfW),
-    },
-    {
-      position: { x: -halfW, z: clamp(position.z, -halfD + half, halfD - half) },
-      rotation: Math.PI / 2,
-      wallKind: 'exterior',
-      distance: Math.abs(position.x - -halfW),
-    },
-  ];
+      distance: Math.hypot(position.x - x, position.z - z),
+    });
+  };
+  const northRuns: Array<[number, number]> = options.frontGap
+    ? [
+        [-halfW, options.frontGap.x0],
+        [options.frontGap.x1, halfW],
+      ]
+    : [[-halfW, halfW]];
+  for (const [from, to] of northRuns) {
+    // A pier too narrow for the opening offers no spot; the whole wall always
+    // does (clamp centres an opening wider than the wall, as before).
+    if (options.frontGap && to - from < itemWidth) continue;
+    pushExterior(clamp(position.x, from + half, to - half), -halfD, 0);
+  }
+  pushExterior(clamp(position.x, -halfW + half, halfW - half), halfD, Math.PI);
+  pushExterior(halfW, clamp(position.z, -halfD + half, halfD - half), -Math.PI / 2);
+  pushExterior(-halfW, clamp(position.z, -halfD + half, halfD - half), Math.PI / 2);
 
   for (const wall of interiorWalls) {
     const projected = projectOntoSegment(position, wall, half);
@@ -99,7 +110,7 @@ export function snapOpeningToWall(options: SnapOpeningOptions): OpeningSnap {
   }
 
   candidates.sort((a, b) => a.distance - b.distance);
-  // Always at least four exterior candidates exist, so this is safe.
+  // The south, east and west walls are always candidates, so this is safe.
   return candidates[0]!;
 }
 
@@ -108,7 +119,8 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function projectOntoSegment(
+/** Nearest point of a segment to `point`, kept `endpointInset` clear of both ends. */
+export function projectOntoSegment(
   point: { x: number; z: number },
   segment: { x1: number; z1: number; x2: number; z2: number },
   endpointInset: number
@@ -149,6 +161,35 @@ function interiorWallSide(
   // Perpendicular component of (cursor - wallStart) along N = (-dz, dx).
   const localPerp = (cursor.x - wall.x1) * -dz + (cursor.z - wall.z1) * dx;
   return localPerp >= 0 ? 1 : -1;
+}
+
+/** An opening's cut never runs a partition's full length. */
+const OPENING_CUT_END_MARGIN = 0.05;
+
+/**
+ * Where an opening owned by an interior wall cuts it, as a centre offset
+ * from the segment midpoint along the wall and a width — or null when the
+ * opening's footprint lies entirely past an end, so there is nothing to cut.
+ * The one rule the 3D wall cut (three/interior-walls.ts) and the walker's
+ * door gaps (lib/walk-collision.ts) share, so a wall that looks solid is
+ * solid to walk into (#399). The width is clamped to the segment, then the
+ * centre to the clamped half-width so the cut never overhangs an end.
+ */
+export function interiorWallOpeningSpan(
+  wall: { x1: number; z1: number; x2: number; z2: number },
+  item: { width: number; position: { x: number; z: number } }
+): { centre: number; width: number } | null {
+  const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
+  if (length < 1e-9) return null;
+  const halfLen = length / 2;
+  const along =
+    (item.position.x - (wall.x1 + wall.x2) / 2) * ((wall.x2 - wall.x1) / length) +
+    (item.position.z - (wall.z1 + wall.z2) / 2) * ((wall.z2 - wall.z1) / length);
+  if (along + item.width / 2 < -halfLen || along - item.width / 2 > halfLen) return null;
+  const width = Math.min(item.width, Math.max(0, length - OPENING_CUT_END_MARGIN));
+  if (width <= 0) return null;
+  const half = width / 2;
+  return { centre: Math.max(-halfLen + half, Math.min(halfLen - half, along)), width };
 }
 
 export function isOpening(type: string): boolean {
@@ -266,7 +307,8 @@ export function settleWallMountedItem(
   position: { x: number; z: number },
   roomWidth: number,
   roomDepth: number,
-  interiorWalls: readonly InteriorWall[] = []
+  interiorWalls: readonly InteriorWall[] = [],
+  frontGap?: WallGap | null
 ): SettledPlacement | null {
   if (isOpening(item.type)) {
     const snapped = snapOpeningToWall({
@@ -275,6 +317,7 @@ export function settleWallMountedItem(
       roomWidth,
       roomDepth,
       interiorWalls,
+      ...(frontGap ? { frontGap } : {}),
     });
     const patch: SettledPlacement = { position: snapped.position };
     // A 180° flip is still wall-aligned (it picks the hinge/facing side) —
@@ -291,6 +334,7 @@ export function settleWallMountedItem(
       roomWidth,
       roomDepth,
       interiorWalls,
+      ...(frontGap ? { frontGap } : {}),
     });
     if (item.cameraBracket) {
       const reseated = reseatWallMountedItem({
@@ -300,6 +344,7 @@ export function settleWallMountedItem(
         roomWidth,
         roomDepth,
         interiorWalls,
+        ...(frontGap ? { frontGap } : {}),
         rotation: item.rotation ?? snapped.rotation,
         bracketArm: CAMERA_BRACKET_ARM,
       });
@@ -321,6 +366,7 @@ export function settleWallMountedItem(
       roomWidth,
       roomDepth,
       interiorWalls,
+      ...(frontGap ? { frontGap } : {}),
       rotation,
     });
     const patch: SettledPlacement = { position: reseated, wallRotation: snapped.rotation };

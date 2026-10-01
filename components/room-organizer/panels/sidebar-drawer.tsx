@@ -11,6 +11,7 @@ import { buildFurnitureSet } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
+import { entrancePlanOutline } from '../lib/street';
 import { applyTheme } from '../lib/themes';
 import { Icon } from '../plotcraft/icon';
 import { AchievementsPanel } from './achievements-panel';
@@ -250,6 +251,8 @@ export function SidebarDrawer({
                   const items = buildFurnitureSet(set, {
                     roomWidth: layout.width,
                     roomDepth: layout.height,
+                    interiorWalls: activeFloor.interiorWalls ?? [],
+                    frontGap: entrancePlanOutline(layout, activeFloorIndex),
                   });
                   if (items.length === 0) return;
                   actions.addItems(items);

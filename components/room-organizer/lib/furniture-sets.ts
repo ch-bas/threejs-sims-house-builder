@@ -1,8 +1,9 @@
 import { FURNITURE_CATALOG } from './constants';
-import { itemsOverlap } from './geometry';
+import { itemsOverlap, rotatedHalfExtents } from './geometry';
 import { remapGroupIds } from './groups';
 import { randomSuffix } from './ids';
-import type { FurnitureItem, Vec2 } from './types';
+import { isWallMounted, settleWallMountedItem, type WallGap } from './opening-snap';
+import type { FurnitureItem, InteriorWall, Vec2 } from './types';
 
 /**
  * A placed item minus what a set can't carry: its id and floor position
@@ -99,12 +100,29 @@ interface BuildSetOptions {
   roomWidth?: number;
   /** Interior room depth (m). When given, the set is scaled to fit. */
   roomDepth?: number;
+  /** The active floor's partitions, so doors and windows settle onto them too. */
+  interiorWalls?: readonly InteriorWall[];
+  /** The recessed entrance's cut in the north wall (`entrancePlanOutline`). */
+  frontGap?: WallGap | null;
 }
 
 interface ResolvedSpec {
   spec: FurnitureSetItem;
   /** The piece as it will be placed: the snapshot, or the catalog entry. */
   base: SetItemSnapshot;
+}
+
+/**
+ * How a piece is placed (#384): `fitted` furniture is laid out around the
+ * set's centre and scaled to fit inside the room; `wall` pieces (doors,
+ * windows, cameras) keep their offset and settle onto the nearest wall, like
+ * a paste; `outdoor` pieces keep their offsets and stay outside the house.
+ */
+type PieceKind = 'fitted' | 'wall' | 'outdoor';
+
+function pieceKind(base: Pick<SetItemSnapshot, 'type' | 'category'>): PieceKind {
+  if (isWallMounted(base.type)) return 'wall';
+  return base.category === 'outdoor' ? 'outdoor' : 'fitted';
 }
 
 /**
@@ -121,6 +139,18 @@ function resolveSpecs(set: FurnitureSet): ResolvedSpec[] {
   return specs;
 }
 
+/** World-axis half-extents of a piece at its set rotation, any angle (#384). */
+function specHalfExtents({ spec, base }: ResolvedSpec): { halfW: number; halfD: number } {
+  return rotatedHalfExtents({ width: base.width, depth: base.depth, rotation: spec.rotation ?? 0 });
+}
+
+// Inset from the EXTERIOR half-width used when clamping generated placements.
+// The room dimensions are exterior measurements, so ~0.35 m (wall thickness
+// plus a small margin) keeps pieces from sitting under or inside the walls.
+const WALL_INSET = 0.35;
+/** Gap between the south wall and outdoor pieces moved out of the house. */
+const GARDEN_GAP = 0.5;
+
 /**
  * Compute the shrink factor (≤ 1) needed for the set's overall footprint —
  * item centres AND their half-extents — to fit inside the room with a small
@@ -128,45 +158,34 @@ function resolveSpecs(set: FurnitureSet): ResolvedSpec[] {
  * measure the farthest reach along each axis and scale offsets (not item
  * sizes) uniformly so items never poke through the walls. Rooms can be as
  * small as 2×2 m while the sets assume up to ~4.4 m, so without this clamp
- * items land through the walls (#73).
+ * items land through the walls (#73). Only the fitted pieces count.
  */
-// Inset from the EXTERIOR half-width used when clamping generated placements.
-// The room dimensions are exterior measurements, so ~0.35 m (wall thickness
-// plus a small margin) keeps pieces from sitting under or inside the walls.
-const WALL_INSET = 0.35;
-
 function fitScale(specs: readonly ResolvedSpec[], roomWidth: number, roomDepth: number): number {
-  const MARGIN = WALL_INSET;
-  const usableHalfW = Math.max(0, roomWidth / 2 - MARGIN);
-  const usableHalfD = Math.max(0, roomDepth / 2 - MARGIN);
+  const usableHalfW = Math.max(0, roomWidth / 2 - WALL_INSET);
+  const usableHalfD = Math.max(0, roomDepth / 2 - WALL_INSET);
   // Scale only the offsets: the item half-extents are fixed, so solve
   // s·|offset| + half ≤ usable for the tightest item on each axis.
   let scale = 1;
-  for (const { spec, base } of specs) {
-    const rotated = Math.abs(Math.round(((spec.rotation ?? 0) / (Math.PI / 2)) % 2)) === 1;
-    const halfW = (rotated ? base.depth : base.width) / 2;
-    const halfD = (rotated ? base.width : base.depth) / 2;
-    if (spec.offset.x !== 0) {
-      scale = Math.min(scale, (usableHalfW - halfW) / Math.abs(spec.offset.x));
-    }
-    if (spec.offset.z !== 0) {
-      scale = Math.min(scale, (usableHalfD - halfD) / Math.abs(spec.offset.z));
-    }
+  for (const resolved of specs) {
+    if (pieceKind(resolved.base) !== 'fitted') continue;
+    const { offset } = resolved.spec;
+    const { halfW, halfD } = specHalfExtents(resolved);
+    if (offset.x !== 0) scale = Math.min(scale, (usableHalfW - halfW) / Math.abs(offset.x));
+    if (offset.z !== 0) scale = Math.min(scale, (usableHalfD - halfD) / Math.abs(offset.z));
   }
   return Math.max(0, Math.min(1, scale));
 }
 
 /**
- * The largest item in a set must itself fit the room even at zero offset;
- * if it doesn't, the set can't be placed here at all.
+ * Every fitted piece in a set must itself fit the room even at zero offset;
+ * if one doesn't, the set can't be placed here at all. Wall-mounted and
+ * outdoor pieces don't go inside, so they never refuse a set.
  */
 export function setFitsRoom(set: FurnitureSet, roomWidth: number, roomDepth: number): boolean {
-  const MARGIN = WALL_INSET;
-  for (const { spec, base } of resolveSpecs(set)) {
-    const rotated = Math.abs(Math.round(((spec.rotation ?? 0) / (Math.PI / 2)) % 2)) === 1;
-    const w = rotated ? base.depth : base.width;
-    const d = rotated ? base.width : base.depth;
-    if (w > roomWidth - 2 * MARGIN || d > roomDepth - 2 * MARGIN) return false;
+  for (const resolved of resolveSpecs(set)) {
+    if (pieceKind(resolved.base) !== 'fitted') continue;
+    const { halfW, halfD } = specHalfExtents(resolved);
+    if (2 * halfW > roomWidth - 2 * WALL_INSET || 2 * halfD > roomDepth - 2 * WALL_INSET) return false;
   }
   return true;
 }
@@ -183,25 +202,57 @@ export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = 
   } = options;
 
   const specs = resolveSpecs(set);
+  const room = roomWidth != null && roomDepth != null ? { width: roomWidth, depth: roomDepth } : null;
 
   // If the room is known and even a single item can't fit, refuse the set
   // rather than drop pieces through the walls.
-  if (roomWidth != null && roomDepth != null && !setFitsRoom(set, roomWidth, roomDepth)) {
-    return [];
-  }
+  if (room && !setFitsRoom(set, room.width, room.depth)) return [];
 
-  const scale = roomWidth != null && roomDepth != null ? fitScale(specs, roomWidth, roomDepth) : 1;
+  const scale = room ? fitScale(specs, room.width, room.depth) : 1;
+  const kinds = specs.map(({ base }) => pieceKind(base));
+
+  // Outdoor pieces keep their offsets as one rigid group; when any would land
+  // in or against the house, the whole group moves out past the south wall,
+  // the garden side where outdoor catalog items are placed (#384).
+  let gardenShift = 0;
+  if (room) {
+    let intrudes = false;
+    let northEdge = Infinity;
+    specs.forEach((resolved, index) => {
+      if (kinds[index] !== 'outdoor') return;
+      const { halfW, halfD } = specHalfExtents(resolved);
+      const x = center.x + resolved.spec.offset.x;
+      const z = center.z + resolved.spec.offset.z;
+      if (Math.abs(x) < room.width / 2 + halfW && Math.abs(z) < room.depth / 2 + halfD) intrudes = true;
+      northEdge = Math.min(northEdge, z - halfD);
+    });
+    if (intrudes) gardenShift = room.depth / 2 + GARDEN_GAP - northEdge;
+  }
 
   // A snapshot set's groups come back as new groups under this stamp's
   // prefix (#154, #302); built-in specs carry no groupId and stay loose.
   const place = (s: number): FurnitureItem[] =>
     remapGroupIds(
-      specs.map(({ spec, base }, index) => ({
-        ...base,
-        id: `${idPrefix}-${index}`,
-        position: { x: center.x + spec.offset.x * s, z: center.z + spec.offset.z * s },
-        rotation: spec.rotation ?? 0,
-      })),
+      specs.map(({ spec, base }, index) => {
+        const kind = kinds[index];
+        const k = kind === 'fitted' ? s : 1;
+        const position = {
+          x: center.x + spec.offset.x * k,
+          z: center.z + spec.offset.z * k + (kind === 'outdoor' ? gardenShift : 0),
+        };
+        const item: FurnitureItem = { ...base, id: `${idPrefix}-${index}`, position, rotation: spec.rotation ?? 0 };
+        if (kind !== 'wall' || !room) return item;
+        // The same settle as paste and duplicate, so no opening lands off its wall (#116).
+        const settled = settleWallMountedItem(
+          item,
+          position,
+          room.width,
+          room.depth,
+          options.interiorWalls ?? [],
+          options.frontGap ?? null
+        );
+        return settled ? { ...item, ...settled } : item;
+      }),
       idPrefix
     );
 
@@ -211,11 +262,14 @@ export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = 
   // slide pieces into each other. Some overlaps are authored (the office
   // computer and lamp sit ON the desk), so only an overlap that does NOT
   // exist in the unscaled layout means the room is too narrow — refuse the
-  // set rather than stamp furniture embedded in furniture (#127).
+  // set rather than stamp furniture embedded in furniture (#127). Only the
+  // fitted pieces are scaled, so only they are compared.
   if (scale < 1) {
     const authored = place(1);
     for (let i = 0; i < items.length; i++) {
+      if (kinds[i] !== 'fitted') continue;
       for (let j = i + 1; j < items.length; j++) {
+        if (kinds[j] !== 'fitted') continue;
         if (itemsOverlap(items[i]!, items[j]!) && !itemsOverlap(authored[i]!, authored[j]!)) {
           return [];
         }

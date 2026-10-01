@@ -42,7 +42,7 @@ export interface ViewportProps {
   /** When set, a HUD chip shows the current wall-drawing status. */
   wallDrawStatus?: {
     hasAnchor: boolean;
-    snapKind?: 'vertex' | 'right-angle' | 'none';
+    snapKind?: 'vertex' | 'on-wall' | 'right-angle' | 'none';
     currentLength?: number | null;
   } | null;
   canvasRef: React.RefObject<HTMLCanvasElement>;
@@ -544,6 +544,19 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
                   }}
                 >
                   ⊙ Snapping to vertex
+                </div>
+              )}
+              {props.wallDrawStatus.snapKind === 'on-wall' && (
+                <div
+                  style={{
+                    fontFamily: 'var(--pc-font-display)',
+                    fontWeight: 600,
+                    fontSize: 11,
+                    color: 'var(--pc-confirm-green)',
+                    paddingLeft: 20,
+                  }}
+                >
+                  ⊥ Snapping onto wall
                 </div>
               )}
               {props.wallDrawStatus.snapKind === 'right-angle' && (

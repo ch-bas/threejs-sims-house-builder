@@ -31,7 +31,7 @@ describe('snapWallEndpoint — vertex snap', () => {
   it('respects a custom snapDistance', () => {
     const walls: InteriorWall[] = [{ id: 'w', x1: 2, z1: 2, x2: 3, z2: 3 }];
     // Cursor is exactly 0.4m from the (2,2) endpoint.
-    const near = { point: { x: 2.4, z: 2 }, existingWalls: walls, ...ROOM };
+    const near = { point: { x: 1.6, z: 2 }, existingWalls: walls, ...ROOM };
     expect(snapWallEndpoint({ ...near, snapDistance: 0.3 }).kind).toBe('none');
     expect(snapWallEndpoint({ ...near, snapDistance: 0.5 }).kind).toBe('vertex');
   });
@@ -83,10 +83,59 @@ describe('snapWallEndpoint — clamping', () => {
     expect(result.point).toEqual({ x: 5, z: -5 });
   });
 
-  it('clamps but reports "none" when far from any vertex after clamping', () => {
+  it('clamps onto the building edge when far from any vertex after clamping', () => {
     const result = snapWallEndpoint({ point: { x: 0, z: 20 }, existingWalls: [], ...ROOM });
-    // z clamps to 5, x stays 0 → distance to nearest corner (±5,5) is 5 > snapDistance → none.
-    expect(result.kind).toBe('none');
+    // z clamps to 5, x stays 0 → no corner within range; the point lies on the south edge.
+    expect(result.kind).toBe('on-wall');
     expect(result.point).toEqual({ x: 0, z: 5 });
+  });
+});
+
+describe('snapWallEndpoint — on-wall snap (#412)', () => {
+  const partition: InteriorWall = { id: 'p', x1: -5, z1: 0, x2: 5, z2: 0 };
+
+  it('snaps onto the body of an existing wall', () => {
+    const result = snapWallEndpoint({ point: { x: 1, z: 0.3 }, existingWalls: [partition], ...ROOM });
+    expect(result.kind).toBe('on-wall');
+    expect(result.point).toEqual({ x: 1, z: 0 });
+  });
+
+  it('snaps onto the building edge from inside', () => {
+    const result = snapWallEndpoint({ point: { x: 1, z: -4.7 }, existingWalls: [], ...ROOM });
+    expect(result.kind).toBe('on-wall');
+    expect(result.point).toEqual({ x: 1, z: -5 });
+  });
+
+  it('closes a T-junction square to the chain anchor', () => {
+    // Drawing up from the south wall at x = 1, ending a little askew near the partition.
+    const result = snapWallEndpoint({
+      point: { x: 1.2, z: 0.3 },
+      existingWalls: [partition],
+      fromPoint: { x: 1, z: 5 },
+      ...ROOM,
+    });
+    expect(result.kind).toBe('on-wall');
+    expect(result.point).toEqual({ x: 1, z: 0 });
+  });
+
+  it('keeps a wall drawn alongside another straight', () => {
+    const result = snapWallEndpoint({
+      point: { x: 3, z: 0.35 },
+      existingWalls: [partition],
+      fromPoint: { x: -3, z: 0.4 },
+      ...ROOM,
+    });
+    expect(result.kind).toBe('right-angle');
+    expect(result.point).toEqual({ x: 3, z: 0.4 });
+  });
+
+  it('prefers an endpoint over the wall body', () => {
+    const result = snapWallEndpoint({ point: { x: 4.8, z: 0.1 }, existingWalls: [partition], ...ROOM });
+    expect(result.kind).toBe('vertex');
+  });
+
+  it('leaves a point away from every wall alone', () => {
+    const result = snapWallEndpoint({ point: { x: 1, z: 2 }, existingWalls: [partition], ...ROOM });
+    expect(result.kind).toBe('none');
   });
 });

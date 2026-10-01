@@ -11,7 +11,7 @@
  */
 
 import { rotatedHalfExtents } from './geometry';
-import { isWallMounted } from './opening-snap';
+import { interiorWallOpeningSpan, isWallMounted } from './opening-snap';
 import type { FurnitureItem, InteriorWall, Vec2 } from './types';
 
 /** One solid box in the XZ plane, in the `lib/geometry` OBB convention. */
@@ -68,8 +68,6 @@ const LOW_PROFILE_MAX_HEIGHT = 0.05;
  */
 const INTERIOR_DOOR_THRESHOLD = 0.4;
 const EXTERIOR_DOOR_THRESHOLD = 0.6;
-/** The cut never runs the full segment; matches the renderer's clamp. */
-const DOOR_CUT_END_MARGIN = 0.05;
 /** Solid wall runs shorter than this are dropped. */
 const MIN_RUN_LENGTH = 1e-3;
 
@@ -215,20 +213,12 @@ function solidRuns(
   const half = length / 2;
   const gaps: Array<[number, number]> = [];
   if (doorOwners.size > 0) {
-    const ux = (wall.x2 - wall.x1) / length;
-    const uz = (wall.z2 - wall.z1) / length;
-    const cx = (wall.x1 + wall.x2) / 2;
-    const cz = (wall.z1 + wall.z2) / 2;
     for (const item of items) {
       if (doorOwners.get(item.id) !== wall.id || !item.position) continue;
-      const along = (item.position.x - cx) * ux + (item.position.z - cz) * uz;
-      // Same clamps as the renderer's cut: width to the segment, then centre
-      // to the clamped half-width so the gap never overhangs an end.
-      const width = Math.min(item.width, Math.max(0, length - DOOR_CUT_END_MARGIN));
-      const halfGap = width / 2;
-      if (halfGap <= 0) continue;
-      const centre = Math.max(-half + halfGap, Math.min(half - halfGap, along));
-      gaps.push([centre - halfGap, centre + halfGap]);
+      // The renderer's cut exactly: a door lying past the end cuts nothing (#399).
+      const span = interiorWallOpeningSpan(wall, { width: item.width, position: item.position });
+      if (!span) continue;
+      gaps.push([span.centre - span.width / 2, span.centre + span.width / 2]);
     }
   }
   if (gaps.length === 0) return [[-half, half]];

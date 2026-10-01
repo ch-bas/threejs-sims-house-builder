@@ -218,6 +218,15 @@ describe('resolveWalkerPosition — door gaps', () => {
     expect(result.z).toBeCloseTo(WALL_STANDOFF, 3);
   });
 
+  it('a door owned by a wall but lying past its end cuts nothing, like the renderer (#399)', () => {
+    const stub: InteriorWall = { id: 'stub', x1: 0, z1: 0, x2: 2, z2: 0 };
+    const past = [{ ...door({ x: 2.3, z: 0 }), width: 0.5 }];
+    const colliders = buildWalkColliders(past, [stub], ROOM);
+    expect(colliders).toHaveLength(1);
+    expect(colliders[0]!.hw).toBeCloseTo(1, 5);
+    expect(walk({ x: 1.75, z: -1 }, { x: 1.75, z: 1 }, past, [stub]).z).toBeCloseTo(-WALL_STANDOFF, 3);
+  });
+
   it('two doors leave three solid runs', () => {
     const items = [door({ x: -1, z: 0 }, 'a'), door({ x: 1, z: 0 }, 'b')];
     const colliders = buildWalkColliders(items, [WALL], ROOM);
