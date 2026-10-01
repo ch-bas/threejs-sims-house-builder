@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
@@ -10,6 +10,7 @@ import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
 import { snapshotBeforeReplace } from '../lib/restore-point';
+import { safeGetItem, safeSetItem } from '../lib/safe-storage';
 import { applyTheme } from '../lib/themes';
 import { Icon } from '../plotcraft/icon';
 import { AchievementsPanel } from './achievements-panel';
@@ -87,15 +88,22 @@ export function SidebarDrawer({
   // so it behaves like one for keyboard users: focus moves in, Tab stays
   // inside, Escape closes it, and focus returns to the opener (#152).
   useDialogFocus(!collapsed, drawerRef, { trap: !drawing, onEscape: onCollapse });
+  // Storage access can throw where it is blocked; this drawer is always
+  // mounted, so an unguarded read took the whole editor down (#396).
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
-    if (typeof window === 'undefined') return 'build';
-    const saved = localStorage.getItem(SIDEBAR_TAB_KEY);
+    const saved = safeGetItem(SIDEBAR_TAB_KEY);
     return (saved === 'build' || saved === 'buy' || saved === 'style' || saved === 'manage') ? saved : 'build';
   });
   const setSidebarTab = (tab: SidebarTab) => {
     setSidebarTabRaw(tab);
-    localStorage.setItem(SIDEBAR_TAB_KEY, tab);
+    safeSetItem(SIDEBAR_TAB_KEY, tab);
   };
+  // All tabs share one scroll container: open each at the top instead of at
+  // the previous tab's offset (#378). Layout effect, so it never paints scrolled.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [sidebarTab]);
   // The tab follows a mode *change* — DESIGN opens Build, FURNISH opens Buy
   // (#151) — but not the mount, so the saved tab still wins on reload, and a
   // tab picked afterwards stays put until the mode changes again.
@@ -105,7 +113,7 @@ export function SidebarDrawer({
     lastModeRef.current = gameMode;
     if (gameMode === 'live') return;
     setSidebarTabRaw(gameMode);
-    localStorage.setItem(SIDEBAR_TAB_KEY, gameMode);
+    safeSetItem(SIDEBAR_TAB_KEY, gameMode);
   }, [gameMode]);
 
   const handleFloorPlanUpload = async (file: File) => {
@@ -176,6 +184,7 @@ export function SidebarDrawer({
         </div>
 
         <div
+          ref={scrollRef}
           style={{
             flex: 1,
             overflowY: 'auto',

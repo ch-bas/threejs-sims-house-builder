@@ -1,3 +1,4 @@
+import { safeGetItem, safeRemoveItem } from './safe-storage';
 import { parseStoredLayout } from './schema';
 import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout, SavedLayoutEntry } from './types';
@@ -102,7 +103,7 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | 
   };
 
   const layoutCopy: RoomLayout = { ...layout, id, name: trimmed };
-  const previousBlob = window.localStorage.getItem(layoutKey(id));
+  const previousBlob = safeGetItem(layoutKey(id));
   try {
     setItemEvictingSnapshots(window.localStorage, layoutKey(id), JSON.stringify(layoutCopy));
   } catch {
@@ -156,6 +157,6 @@ export function deleteNamedLayout(id: string): boolean {
   } catch {
     return false;
   }
-  window.localStorage.removeItem(layoutKey(id));
+  safeRemoveItem(layoutKey(id));
   return true;
 }
