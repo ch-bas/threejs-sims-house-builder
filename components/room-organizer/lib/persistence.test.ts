@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLayout } from './__testfixtures__/fixtures';
 import { MAX_ROOM_DIMENSION, STORAGE_KEY } from './constants';
+import { randomId } from './ids';
+import { INITIAL_LAYOUT } from './initial-layout';
 import {
   MAX_RECOVERY_COPIES,
   RECOVERY_STORAGE_KEY,
@@ -15,12 +17,15 @@ import {
   loadLayout,
   localStorageOrNull,
   noteReloadAttempt,
+  parseLayoutJson,
   readRecoveryCopies,
   readRecoveryCopy,
   readStoredLayoutRaw,
   resetStoredLayout,
+  sameLayoutContent,
   saveLayout,
 } from './persistence';
+import { VERSION_HISTORY_STORAGE_KEY } from './version-history';
 import type { RawStore } from './persistence';
 
 function domError(name: string, code = 0): Error {
@@ -334,22 +339,22 @@ describe('persistence — recovery copies are never overwritten (#336)', () => {
     expect(keptRaws(store)).toEqual([unreadable(3), unreadable(2)]);
   });
 
-  it('keeps both copies when the third cannot be written', () => {
+  it('keeps both copies and the save when the third cannot be written even after dropping them', () => {
     const store = quotaStore(Number.MAX_SAFE_INTEGER);
     store.setItem(STORAGE_KEY, unreadable(1));
     backupStoredLayout(store, 1_000);
     store.setItem(STORAGE_KEY, unreadable(2));
     backupStoredLayout(store, 2_000);
-    store.setItem(STORAGE_KEY, 'third');
-    const full = withOverrides(store, {
-      setItem: (key, value) => {
-        if (isRecoveryKey(key)) throw domError('QuotaExceededError', 22);
-        store.setItem(key, value);
-      },
-    });
-    expect(resetStoredLayout(full, 3_000)).toBe('refused');
-    expect(store.getItem(STORAGE_KEY)).toBe('third');
-    expect(keptRaws(store)).toEqual([unreadable(2), unreadable(1)]);
+    const third = `{${'x'.repeat(2_000)}`;
+    store.setItem(STORAGE_KEY, third);
+    const before = [...store.data.keys()].reduce((sum, key) => sum + key.length + (store.getItem(key) ?? '').length, 0);
+    // Room for everything already stored, but not for a 2 000-char copy even
+    // with both older copies gone.
+    const full = quotaStore(before + 100);
+    for (const [key, value] of store.data) full.setItem(key, value);
+    expect(backupStoredLayout(full, 3_000)).toBe(false);
+    expect(full.getItem(STORAGE_KEY)).toBe(third);
+    expect(keptRaws(full)).toEqual([unreadable(2), unreadable(1)]);
   });
 
   it('dates a copy after the newest even when the clock went backwards', () => {
@@ -359,6 +364,151 @@ describe('persistence — recovery copies are never overwritten (#336)', () => {
     store.setItem(STORAGE_KEY, unreadable(2));
     backupStoredLayout(store, 1_000);
     expect(readRecoveryCopies(store).map(({ savedAt }) => savedAt)).toEqual([5_001, 5_000]);
+  });
+});
+
+describe('persistence — recovery copies on a full quota (#336)', () => {
+  const blob = (tag: string): string => `{${tag}${'.'.repeat(1_000)}`;
+
+  /** The reviewer's case: two ~1 KB copies and a ~1 KB unreadable save in a 3 400-char quota. */
+  function nearlyFull(): RawStore & { data: Map<string, string> } {
+    const store = quotaStore(3_400);
+    store.setItem(`${RECOVERY_STORAGE_KEY}-1000-a`, blob('first'));
+    store.setItem(`${RECOVERY_STORAGE_KEY}-2000-b`, blob('second'));
+    store.setItem(STORAGE_KEY, blob('third'));
+    return store;
+  }
+
+  it('drops the oldest copy to keep the newest unreadable house, leaving the save in place', () => {
+    const store = nearlyFull();
+    expect(backupStoredLayout(store, 3_000)).toBe(true);
+    expect(keptRaws(store)).toEqual([blob('third'), blob('second')]);
+    expect(store.getItem(STORAGE_KEY)).toBe(blob('third'));
+  });
+
+  it('evicts restore points before any recovery copy', () => {
+    const store = quotaStore(3_400 + 1_100);
+    store.setItem(`${RECOVERY_STORAGE_KEY}-1000-a`, blob('first'));
+    store.setItem(`${RECOVERY_STORAGE_KEY}-2000-b`, blob('second'));
+    store.setItem(VERSION_HISTORY_STORAGE_KEY, 'r'.repeat(1_050));
+    store.setItem(STORAGE_KEY, blob('third'));
+    expect(backupStoredLayout(store, 3_000)).toBe(true);
+    expect(store.getItem(VERSION_HISTORY_STORAGE_KEY)).toBeNull();
+    // Three copies fit once the ring is gone; the cap then drops the oldest.
+    expect(keptRaws(store)).toEqual([blob('third'), blob('second')]);
+  });
+
+  it('reports failure and touches nothing when even the main save is the only room', () => {
+    const store = quotaStore(1_100 + 40);
+    store.setItem(STORAGE_KEY, blob('only'));
+    expect(backupStoredLayout(store, 1_000)).toBe(false);
+    expect(store.getItem(STORAGE_KEY)).toBe(blob('only'));
+    expect(keptRaws(store)).toEqual([]);
+  });
+
+  it('"start fresh" puts every copy and the save back when nothing makes room', () => {
+    // Too big to fit even with both older copies dropped; then the save is
+    // freed and the copy retried in its space, where old copies must not be
+    // dropped — nothing else holds the house at that point.
+    const big = `{${'x'.repeat(3_000)}`;
+    const seed = new Map([
+      [`${RECOVERY_STORAGE_KEY}-1000-a`, blob('first')],
+      [`${RECOVERY_STORAGE_KEY}-2000-b`, blob('second')],
+      [STORAGE_KEY, big],
+    ]);
+    const used = [...seed].reduce((sum, [key, value]) => sum + key.length + value.length, 0);
+    const store = quotaStore(used + 5);
+    for (const [key, value] of seed) store.setItem(key, value);
+    expect(resetStoredLayout(store, 3_000)).toBe('refused');
+    expect(store.getItem(STORAGE_KEY)).toBe(big);
+    expect(keptRaws(store)).toEqual([blob('second'), blob('first')]);
+  });
+});
+
+describe('persistence — copies hold real houses, once each (#336)', () => {
+  const blank = (): string => JSON.stringify({ ...INITIAL_LAYOUT, id: randomId('house') });
+  const real = JSON.stringify(makeLayout({ name: 'Real house', id: 'house-1' }));
+
+  it('repeated "start fresh" on blank lots keeps the real house', () => {
+    const store = quotaStore(Number.MAX_SAFE_INTEGER);
+    store.setItem(STORAGE_KEY, real);
+    expect(resetStoredLayout(store, 1_000)).toBe('moved');
+    for (const now of [2_000, 3_000, 4_000]) {
+      store.setItem(STORAGE_KEY, blank());
+      expect(resetStoredLayout(store, now)).toBe('moved');
+      expect(store.getItem(STORAGE_KEY)).toBeNull();
+    }
+    expect(keptRaws(store)).toEqual([real]);
+  });
+
+  it('keeps no copy of a blank lot on a failed load either', () => {
+    const store = quotaStore(Number.MAX_SAFE_INTEGER);
+    store.setItem(STORAGE_KEY, blank());
+    expect(backupStoredLayout(store, 1_000)).toBe(true);
+    expect(keptRaws(store)).toEqual([]);
+  });
+
+  it('does not re-keep a restored copy that crashes again in its normalised form', () => {
+    const store = quotaStore(Number.MAX_SAFE_INTEGER);
+    const other = JSON.stringify(makeLayout({ name: 'Other house', width: 10 }));
+    store.setItem(STORAGE_KEY, other);
+    backupStoredLayout(store, 1_000);
+    store.setItem(STORAGE_KEY, real);
+    backupStoredLayout(store, 2_000);
+    // Restored through the schema and autosaved with its keys reordered.
+    const restored = parseLayoutJson(other)!;
+    store.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(Object.entries(restored).reverse())));
+    expect(backupStoredLayout(store, 3_000)).toBe(true);
+    expect(keptRaws(store)).toEqual([real, other]);
+  });
+
+  it('treats the same house under another id as already kept', () => {
+    const store = quotaStore(Number.MAX_SAFE_INTEGER);
+    store.setItem(STORAGE_KEY, real);
+    backupStoredLayout(store, 1_000);
+    store.setItem(STORAGE_KEY, JSON.stringify(makeLayout({ name: 'Real house', id: 'house-2' })));
+    backupStoredLayout(store, 2_000);
+    expect(keptRaws(store)).toEqual([real]);
+  });
+
+  it('compares unreadable blobs raw', () => {
+    const store = quotaStore(Number.MAX_SAFE_INTEGER);
+    store.setItem(STORAGE_KEY, '{a');
+    backupStoredLayout(store, 1_000);
+    store.setItem(STORAGE_KEY, '{b');
+    backupStoredLayout(store, 2_000);
+    expect(keptRaws(store)).toEqual(['{b', '{a']);
+  });
+
+  it('sameLayoutContent ignores the id', () => {
+    expect(sameLayoutContent(makeLayout({ id: 'a' }), makeLayout({ id: 'b' }))).toBe(true);
+    expect(sameLayoutContent(makeLayout({ id: 'a' }), makeLayout({ id: 'a', width: 9 }))).toBe(false);
+  });
+});
+
+describe('persistence — recovery keys (#336)', () => {
+  it('accepts the dated-random shape and the older shapes', () => {
+    expect(isRecoveryKey(RECOVERY_STORAGE_KEY)).toBe(true);
+    expect(isRecoveryKey(`${RECOVERY_STORAGE_KEY}-1700000000000`)).toBe(true);
+    expect(isRecoveryKey(`${RECOVERY_STORAGE_KEY}-1700000000000-k3x9a1`)).toBe(true);
+    expect(isRecoveryKey(`${RECOVERY_STORAGE_KEY}-abc`)).toBe(false);
+    expect(isRecoveryKey(`${RECOVERY_STORAGE_KEY}-1700-K3X!`)).toBe(false);
+    expect(isRecoveryKey(STORAGE_KEY)).toBe(false);
+  });
+
+  it('gives two copies kept in the same millisecond distinct keys', () => {
+    const store = quotaStore(Number.MAX_SAFE_INTEGER);
+    const tabA = withOverrides(store, {});
+    store.setItem(STORAGE_KEY, '{one');
+    backupStoredLayout(tabA, 5_000);
+    // The other tab saw no copy yet when it picked its stamp.
+    const [first] = readRecoveryCopies(store);
+    const blind = withOverrides(store, { getItem: (key) => (key === first!.key ? null : store.getItem(key)) });
+    const hidden = { ...blind, length: 0, key: () => null };
+    store.setItem(STORAGE_KEY, '{two');
+    backupStoredLayout(hidden, 5_000);
+    expect(keptRaws(store).sort()).toEqual(['{one', '{two']);
+    expect(readRecoveryCopy(first!.key, store)?.savedAt).toBe(5_000);
   });
 });
 

@@ -3,7 +3,14 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../lib/constants';
-import { EDITOR_SETTLED_MS, crashRecurredAfterReload, noteReloadAttempt } from '../lib/persistence';
+import {
+  EDITOR_SETTLED_MS,
+  crashRecurredAfterReload,
+  isRecoveryKey,
+  loadLayout,
+  noteReloadAttempt,
+  readRecoveryCopies,
+} from '../lib/persistence';
 import { useLayoutPersistence } from './use-layout-persistence';
 import type { RoomLayout } from '../lib/types';
 
@@ -136,6 +143,14 @@ describe('useLayoutPersistence — no ping-pong between tabs (#334)', () => {
     expect(tab.result.current.remoteLayout).toBeNull();
   });
 
+  it('treats the same house under another id as no change — two tabs on a fresh lot', () => {
+    const tab = mountTab(makeLayout({ id: 'tab-a' }));
+    act(() => fireStorage(STORAGE_KEY, JSON.stringify(makeLayout({ id: 'tab-b' }))));
+    expect(tab.result.current.remoteLayout).toBeNull();
+    act(() => fireStorage(STORAGE_KEY, JSON.stringify(makeLayout({ id: 'tab-b', width: 9 }))));
+    expect(tab.result.current.remoteLayout?.width).toBe(9);
+  });
+
   it('withdraws a pending notice once the other tab writes what this tab shows', () => {
     const shown = makeLayout({ name: 'Mine' });
     const tab = mountTab(shown);
@@ -215,5 +230,58 @@ describe('useLayoutPersistence — save failure reason (#472)', () => {
       vi.advanceTimersByTime(10);
     });
     expect(tab.result.current.saveError).toBeNull();
+  });
+});
+
+describe('useLayoutPersistence — an unreadable save that cannot be copied (#336)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('never writes over it, shows the failure, and resumes once a copy fits', () => {
+    window.localStorage.setItem(STORAGE_KEY, '{unreadable house');
+    const quota = new Error('full');
+    Object.defineProperty(quota, 'name', { value: 'QuotaExceededError' });
+    const original = Storage.prototype.setItem;
+    let full = true;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (full && isRecoveryKey(key)) throw quota;
+      original.call(this, key, value);
+    });
+    const tab = renderHook(({ layout }) => useLayoutPersistence({ layout, onHydrate: () => {}, debounceMs: 10 }), {
+      initialProps: { layout: makeLayout() },
+    });
+    expect(tab.result.current.saveError).toBe('quota');
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(tab.result.current.saveError).toBe('quota');
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('{unreadable house');
+
+    tab.rerender({ layout: makeLayout({ width: 9 }) });
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('{unreadable house');
+    // Nor may the page going away write over it.
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('{unreadable house');
+
+    full = false;
+    tab.rerender({ layout: makeLayout({ width: 10 }) });
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(tab.result.current.saveError).toBeNull();
+    expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual(['{unreadable house']);
+    expect(loadLayout()?.width).toBe(10);
   });
 });

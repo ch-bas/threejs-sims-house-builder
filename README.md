@@ -512,9 +512,12 @@ components/
   upgrading the latter into a one-floor building. Used everywhere
   external data crosses the boundary (localStorage hydrate, JSON import,
   library load, share URL decode). A stored blob that exists but fails to
-  load is copied to a `-recovery` localStorage key before the fallback
-  layout's autosave can overwrite it, so validation failures never
-  destroy a save.
+  load is copied to a dated `-recovery-<savedAt>-<random>` key before the
+  fallback layout's autosave can overwrite it, so validation failures
+  never destroy a save. The copy outranks restore points (they yield
+  first); when it still can't be written, autosave stays suspended so
+  the unreadable save is never overwritten. Untouched houses are never
+  kept, and copies are deduplicated by content without the id.
 - **Three.js init / teardown is encapsulated.** `useThreeScene` owns the
   renderer, camera, controls, animation loop, resize listener, drag,
   hover, and the parameterised drag-plane Y. It always returns a

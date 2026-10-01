@@ -66,6 +66,10 @@ export function useLayoutPersistence({
   // The exact JSON this tab last wrote: its own echo must not count as
   // another tab's change (#334).
   const lastSavedJsonRef = useRef<string | null>(null);
+  // The main save holds a house that couldn't be opened and couldn't be
+  // copied aside (storage full): it's the only copy, so nothing may be
+  // written over it until a copy succeeds.
+  const mainSaveHeldRef = useRef(false);
   const [remoteLayout, setRemoteLayout] = useState<RoomLayout | null>(null);
 
   // Cross-tab guard (#123): the `storage` event only fires in OTHER tabs of
@@ -118,6 +122,13 @@ export function useLayoutPersistence({
     if (hasHydratedRef.current) return;
     hasHydratedRef.current = true;
 
+    // Copy the stored house aside, or hold the main save if it can't be.
+    const keepStoredHouseAside = (): void => {
+      if (backupStoredLayout()) return;
+      mainSaveHeldRef.current = true;
+      setSaveError('quota');
+    };
+
     const hydrateFromLocalSave = (): void => {
       const saved = loadLayout();
       if (saved) {
@@ -132,7 +143,7 @@ export function useLayoutPersistence({
           // stored blob with the fallback layout ~debounceMs later. That blob
           // is the user's house — stash a copy first, exactly like the
           // unreadable-blob branch below (#206).
-          backupStoredLayout();
+          keepStoredHouseAside();
           hydrationBaseRef.current = null;
         }
       } else {
@@ -140,7 +151,7 @@ export function useLayoutPersistence({
         // A blob that exists but failed to load would otherwise be overwritten
         // by the autosave of the fallback layout ~debounceMs after mount —
         // permanent data loss. Stash a copy first (#113).
-        backupStoredLayout();
+        keepStoredHouseAside();
       }
     };
 
@@ -170,7 +181,11 @@ export function useLayoutPersistence({
           // stored house, so its final state needs a restore point now — the
           // ring's last cadence snapshot may be minutes stale (#298). Reads
           // storage only; the hydration baseline below is untouched.
-          snapshotBeforeReplace(loadLayout());
+          const outgoing = loadLayout();
+          snapshotBeforeReplace(outgoing);
+          // An unreadable save has no restore point to fall back on, and the
+          // shared house would autosave over it (#113).
+          if (!outgoing) keepStoredHouseAside();
           // Re-capture the baseline right before the hydration dispatch.
           hydrationBaseRef.current = layoutRef.current;
           // A corrupt-but-parseable layout can still throw while it's applied
@@ -214,6 +229,14 @@ export function useLayoutPersistence({
     setSaving(true);
     pendingRef.current = true;
     const handle = window.setTimeout(() => {
+      // Retried on every edit, so freeing space lets saving resume.
+      if (mainSaveHeldRef.current) {
+        if (!backupStoredLayout()) {
+          setSaveError('quota');
+          return;
+        }
+        mainSaveHeldRef.current = false;
+      }
       const result = saveLayout(layout);
       if (result.ok) {
         lastSavedJsonRef.current = result.json;
@@ -242,7 +265,7 @@ export function useLayoutPersistence({
   // on tab close.
   useEffect(() => {
     const flush = () => {
-      if (!pendingRef.current) return;
+      if (!pendingRef.current || mainSaveHeldRef.current) return;
       pendingRef.current = false;
       const result = saveLayout(layoutRef.current);
       if (result.ok) lastSavedJsonRef.current = result.json;

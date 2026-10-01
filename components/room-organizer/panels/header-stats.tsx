@@ -126,7 +126,7 @@ const SAVE_FAILURE_COPY: Record<SaveFailureReason, { label: string; detail: stri
   quota: {
     label: 'Storage full — changes not saved',
     detail:
-      'Browser storage is full. Remove the floor-plan image or delete saved layouts in Manage, or keep your work with Manage → Export / share → JSON.',
+      'Browser storage is full. Remove the floor-plan image, delete saved layouts, or delete recovered copies in Manage → Saved Layouts → History — or keep your work with Manage → Export / share → JSON.',
   },
   blocked: {
     label: 'Saving is blocked in this browser — export a JSON to keep your work',
