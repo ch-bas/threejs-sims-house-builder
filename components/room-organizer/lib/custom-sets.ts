@@ -236,8 +236,12 @@ export function deleteCustomSet(id: string, opts: CustomSetsOptions = {}): boole
   const stored = readSets(storage);
   const remaining = stored.sets.filter((set) => set.id !== id);
   if (remaining.length === stored.sets.length) return false;
+  // A same-id copy is the set the user just deleted, not a different one.
+  const unreadable = stored.unreadable.filter(
+    (value) => !(isPlainObject(value) && value.id === id)
+  );
   try {
-    writeSets(storage, { ...stored, sets: remaining });
+    writeSets(storage, { ...stored, sets: remaining, unreadable });
   } catch {
     return false;
   }

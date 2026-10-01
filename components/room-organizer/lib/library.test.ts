@@ -162,6 +162,22 @@ describe('library index — validated on read (#348)', () => {
     expect(countUnreadableSavedLayouts()).toBe(2);
   });
 
+  it('deleting a house drops a duplicate index entry for it too, so no unloadable row is left', () => {
+    expect(saveNamedLayout(makeLayout(), 'Villa')).not.toBeNull();
+    const index = storedIndex();
+    const villa = (index.entries as unknown[])[0];
+    window.localStorage.setItem(INDEX_KEY, JSON.stringify({ ...index, entries: [villa, villa] }));
+    expect(deleteNamedLayout('villa')).toBe(true);
+    expect(listSavedLayouts()).toEqual([]);
+    expect(countUnreadableSavedLayouts()).toBe(0);
+  });
+
+  it('keeps fields of a listed entry it does not know through a rewrite', () => {
+    window.localStorage.setItem(INDEX_KEY, JSON.stringify({ entries: [{ ...good, thumbnail: 'data:x' }] }));
+    expect(saveNamedLayout(makeLayout(), 'Cabin')).not.toBeNull();
+    expect(storedIndex().entries).toContainEqual({ ...good, thumbnail: 'data:x' });
+  });
+
   it('keeps a corrupt index blob beside a new save', () => {
     window.localStorage.setItem(INDEX_KEY, '{oops');
     expect(saveNamedLayout(makeLayout(), 'Cabin')).not.toBeNull();

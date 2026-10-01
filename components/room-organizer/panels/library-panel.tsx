@@ -15,6 +15,7 @@ import {
   saveNamedLayout,
 } from '../lib/library';
 import {
+  MAX_RECEIVED_LAYOUTS,
   PASTEBOARD_STORAGE_KEY,
   addReceivedLayout,
   countUnreadableReceivedLayouts,
@@ -114,6 +115,10 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   const [entries, setEntries] = useState<SavedLayoutEntry[]>([]);
   const [snapshots, setSnapshots] = useState<VersionSummary[]>([]);
   const [received, setReceived] = useState<PasteboardEntry[]>([]);
+  // Counted when the lists are re-read from storage, not on every render:
+  // this panel re-renders on each layout edit (#340, #348).
+  const [unreadableSaved, setUnreadableSaved] = useState(0);
+  const [unreadableReceived, setUnreadableReceived] = useState(0);
   const [name, setName] = useState(currentLayout.name);
   const [pasteText, setPasteText] = useState('');
   const [pasteStatus, setPasteStatus] = useState<PasteStatus | null>(null);
@@ -122,8 +127,10 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
 
   const refresh = useCallback(() => {
     setEntries(listSavedLayouts());
+    setUnreadableSaved(countUnreadableSavedLayouts());
     setSnapshots(listSnapshots());
     setReceived(listReceivedLayouts());
+    setUnreadableReceived(countUnreadableReceivedLayouts());
   }, []);
 
   useEffect(() => {
@@ -134,7 +141,10 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   useEffect(() => {
     const onStorage = (event: StorageEvent): void => {
       if (event.key === null || event.key === VERSION_HISTORY_STORAGE_KEY) setSnapshots(listSnapshots());
-      if (event.key === null || event.key === PASTEBOARD_STORAGE_KEY) setReceived(listReceivedLayouts());
+      if (event.key === null || event.key === PASTEBOARD_STORAGE_KEY) {
+        setReceived(listReceivedLayouts());
+        setUnreadableReceived(countUnreadableReceivedLayouts());
+      }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -246,7 +256,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       setPasteStatus(
         result.duplicate
           ? { kind: 'info', text: `“${result.entry.name}” is already on your paste-board.` }
-          : { kind: 'info', text: `Added “${result.entry.name}”.` }
+          : {
+              kind: 'info',
+              text:
+                result.dropped.length > 0
+                  ? `Added “${result.entry.name}”. The board keeps ${MAX_RECEIVED_LAYOUTS} houses, so the oldest, “${result.dropped.join('”, “')}”, was removed.`
+                  : `Added “${result.entry.name}”.`,
+            }
       );
       setPasteText('');
       refresh();
@@ -288,9 +304,9 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
           </Button>
         </div>
         <LoadedStatus note={loaded} section="saved" />
-        {countUnreadableSavedLayouts() > 0 && (
+        {unreadableSaved > 0 && (
           <p role="status" className="text-xs text-muted-foreground">
-            {plural(countUnreadableSavedLayouts(), 'saved house')} couldn’t be read — kept in storage, not deleted.
+            {plural(unreadableSaved, 'saved house')} couldn’t be read — kept in storage, not deleted.
           </p>
         )}
         {entries.length === 0 ? (
@@ -346,9 +362,9 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             </p>
           )}
           <LoadedStatus note={loaded} section="received" />
-          {countUnreadableReceivedLayouts() > 0 && (
+          {unreadableReceived > 0 && (
             <p role="status" className="text-xs text-muted-foreground">
-              {plural(countUnreadableReceivedLayouts(), 'received house')} couldn’t be read — kept in storage, not
+              {plural(unreadableReceived, 'received house')} couldn’t be read — kept in storage, not
               deleted.
             </p>
           )}

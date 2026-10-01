@@ -17,10 +17,15 @@ interface LibraryIndex {
   unreadable: unknown[];
   /** Other top-level fields of the stored index, written back untouched. */
   rest: Record<string, unknown>;
+  /**
+   * The stored object behind each listed entry, by id: fields this version
+   * doesn't know survive a rewrite instead of being rebuilt away.
+   */
+  raw: Map<string, Record<string, unknown>>;
 }
 
 function emptyIndex(): LibraryIndex {
-  return { entries: [], unreadable: [], rest: {} };
+  return { entries: [], unreadable: [], rest: {}, raw: new Map() };
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -46,27 +51,27 @@ export function parseLibraryIndex(raw: string | null): LibraryIndex {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { entries: [], unreadable: [raw], rest: {} };
+    return { ...emptyIndex(), unreadable: [raw] };
   }
   if (parsed === null) return emptyIndex();
   if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { entries: [], unreadable: [parsed], rest: {} };
+    return { ...emptyIndex(), unreadable: [parsed] };
   }
   const { entries: stored, ...rest } = parsed as Record<string, unknown>;
-  if (!Array.isArray(stored)) return { entries: [], unreadable: [parsed], rest: {} };
+  if (!Array.isArray(stored)) return { ...emptyIndex(), unreadable: [parsed] };
   const entries: SavedLayoutEntry[] = [];
   const unreadable: unknown[] = [];
-  const seen = new Set<string>();
+  const rawById = new Map<string, Record<string, unknown>>();
   for (const candidate of stored as unknown[]) {
     const entry = parseSavedLayoutEntry(candidate);
-    if (!entry || seen.has(entry.id)) {
+    if (!entry || rawById.has(entry.id)) {
       unreadable.push(candidate);
       continue;
     }
-    seen.add(entry.id);
+    rawById.set(entry.id, candidate as Record<string, unknown>);
     entries.push(entry);
   }
-  return { entries, unreadable, rest };
+  return { entries, unreadable, rest, raw: rawById };
 }
 
 function readIndex(): LibraryIndex {
@@ -76,7 +81,10 @@ function readIndex(): LibraryIndex {
 
 function writeIndex(index: LibraryIndex): void {
   if (typeof window === 'undefined') return;
-  const entries: unknown[] = [...index.entries, ...index.unreadable];
+  const entries: unknown[] = [
+    ...index.entries.map((entry) => ({ ...index.raw.get(entry.id), ...entry })),
+    ...index.unreadable,
+  ];
   // Restore points give way to the library on a full quota (#295).
   setItemEvictingSnapshots(
     window.localStorage,
@@ -231,8 +239,11 @@ export function deleteNamedLayout(id: string): boolean {
   // Index first, blob second: the old order removed the blob and then let a
   // quota throw out of writeIndex, leaving a ghost index entry whose layout
   // was already gone (#122). removeItem itself cannot hit quota.
+  // A second index entry for this id named the blob being removed: dropped
+  // with it, or it would list a house that can no longer load.
+  const unreadable = index.unreadable.filter((value) => unreadableId(value) !== id);
   try {
-    writeIndex({ ...index, entries: filtered });
+    writeIndex({ ...index, entries: filtered, unreadable });
   } catch {
     return false;
   }

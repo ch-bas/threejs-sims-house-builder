@@ -23,7 +23,16 @@ export function SetsPanel({ onAddSet }: SetsPanelProps): JSX.Element {
   // Custom sets (#302) live in localStorage; the viewport chip saves them
   // from outside this panel, so re-read on its change signal.
   const [customSets, setCustomSets] = useState<CustomFurnitureSet[]>(() => listCustomSets());
-  useEffect(() => subscribeCustomSets(() => setCustomSets(listCustomSets())), []);
+  // Counted when the list is re-read, not on every layout edit (#340).
+  const [unreadableSets, setUnreadableSets] = useState(() => countUnreadableCustomSets());
+  useEffect(
+    () =>
+      subscribeCustomSets(() => {
+        setCustomSets(listCustomSets());
+        setUnreadableSets(countUnreadableCustomSets());
+      }),
+    []
+  );
 
   // Custom sets place through the same `FurnitureSet` shape as the built-ins.
   const customTiles = useMemo(
@@ -108,9 +117,9 @@ export function SetsPanel({ onAddSet }: SetsPanelProps): JSX.Element {
             </div>
           </>
         )}
-        {countUnreadableCustomSets() > 0 && (
+        {unreadableSets > 0 && (
           <p role="status" className="text-[11px] text-muted-foreground mt-2">
-            {countUnreadableCustomSets()} saved set{countUnreadableCustomSets() === 1 ? '' : 's'} couldn’t be read —
+            {unreadableSets} saved set{unreadableSets === 1 ? '' : 's'} couldn’t be read —
             kept in storage, not deleted.
           </p>
         )}

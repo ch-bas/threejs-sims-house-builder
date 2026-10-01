@@ -80,7 +80,7 @@ describe('pasteboard (#190)', () => {
     const storage = makeStore();
     const a = addReceivedLayout(furnished(), { storage, now: () => 1 });
     const b = addReceivedLayout(furnished(), { storage, now: () => 2 });
-    expect(b).toEqual({ entry: a!.entry, duplicate: true });
+    expect(b).toEqual({ entry: a!.entry, duplicate: true, dropped: [] });
     expect(listReceivedLayouts({ storage })).toHaveLength(1);
   });
 
@@ -142,7 +142,7 @@ describe('pasteboard (#190)', () => {
     expect(addReceivedLayout(furnished(), { storage })).not.toBeNull();
     expect(listReceivedLayouts({ storage })).toHaveLength(1);
     expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
-    expect(JSON.parse(storage.data.get(PASTEBOARD_STORAGE_KEY)!)[0]).toBe('[[[');
+    expect(JSON.parse(storage.data.get(PASTEBOARD_STORAGE_KEY)!)).toContain('[[[');
   });
 
   it('evicts restore points before giving up on a full quota (#295)', () => {
@@ -231,14 +231,19 @@ describe('pasteboard — unreadable entries survive every rewrite (#340)', () =>
     expect(stored(storage)).toEqual([corrupt, noTime, 'junk']);
   });
 
-  it('keeps a second copy of an id instead of dropping it', () => {
+  it('keeps the visible card when a hidden same-id copy exists, and removes both together', () => {
     const storage = makeStore();
     const first = { id: 'dup', receivedAt: 1, layout: furnished('First') };
     const second = { id: 'dup', receivedAt: 2, layout: furnished('Second') };
     storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify([first, second]));
     expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
+    // An unrelated write must not let the hidden copy replace the shown one.
+    addReceivedLayout(furnished('Other'), { storage, now: () => 3 });
+    expect(listReceivedLayouts({ storage }).map((entry) => entry.name)).toEqual(['Other', 'First']);
+    // Removing the card removes the copy too — it is the same house.
     expect(removeReceivedLayout('dup', { storage })).toBe(true);
-    expect(stored(storage)).toEqual([second]);
+    expect(listReceivedLayouts({ storage }).map((entry) => entry.name)).toEqual(['Other']);
+    expect(countUnreadableReceivedLayouts({ storage })).toBe(0);
   });
 
   it('keeps a well-formed blob of the wrong shape as one unreadable value', () => {
@@ -246,7 +251,7 @@ describe('pasteboard — unreadable entries survive every rewrite (#340)', () =>
     storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify({ entries: [1] }));
     expect(countUnreadableReceivedLayouts({ storage })).toBe(1);
     addReceivedLayout(furnished(), { storage });
-    expect(stored(storage)[0]).toEqual({ entries: [1] });
+    expect(stored(storage)).toContainEqual({ entries: [1] });
   });
 
   it('re-counts once the stored blob changes', () => {
@@ -286,6 +291,19 @@ describe('pasteboard cap (#355)', () => {
     expect(names).toHaveLength(MAX_RECEIVED_LAYOUTS);
     expect(names).not.toContain(`Card ${MAX_RECEIVED_LAYOUTS - 1}`);
     expect(names).toContain('Card 0');
+  });
+
+  it('names the dropped house, and shrinks an over-full legacy board one card per add', () => {
+    const storage = makeStore();
+    const legacy = Array.from({ length: MAX_RECEIVED_LAYOUTS + 20 }, (_, i) => ({
+      id: `c${i}`,
+      receivedAt: i,
+      layout: furnished(`Card ${i}`),
+    }));
+    storage.data.set(PASTEBOARD_STORAGE_KEY, JSON.stringify(legacy));
+    const result = addReceivedLayout(furnished('Newest'), { storage, now: () => 1_000 });
+    expect(result!.dropped).toEqual(['Card 0']);
+    expect(listReceivedLayouts({ storage })).toHaveLength(MAX_RECEIVED_LAYOUTS + 20);
   });
 
   it('never drops unreadable values to make room', () => {

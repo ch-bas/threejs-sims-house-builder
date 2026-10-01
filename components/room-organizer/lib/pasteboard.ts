@@ -46,6 +46,8 @@ export interface AddReceivedResult {
   entry: PasteboardEntry;
   /** True when the very same house was already on the board — nothing was written. */
   duplicate: boolean;
+  /** Names of the oldest received houses dropped to stay within `MAX_RECEIVED_LAYOUTS` (#355). */
+  dropped: string[];
 }
 
 function defaultStorage(): VersionHistoryStore | null {
@@ -106,6 +108,11 @@ interface StoredBoard {
   unreadable: unknown[];
 }
 
+/** The id a stored value still names, readable or not. */
+function storedId(value: unknown): string | null {
+  return isRecord(value) && typeof value.id === 'string' && value.id ? value.id : null;
+}
+
 function parseEntry(candidate: unknown): PasteboardEntry | null {
   if (!isRecord(candidate)) return null;
   const { id, receivedAt } = candidate;
@@ -159,7 +166,8 @@ function readBoard(storage: VersionHistoryStore): StoredBoard {
 }
 
 /**
- * Unreadable values first, then the cards oldest-first. The write is
+ * The cards oldest-first, then the unreadable values — readable first, so a
+ * hidden same-id copy never moves ahead of the card it shadows. The write is
  * quota-safe (restore points give way, #295); the key goes once nothing at
  * all is left.
  */
@@ -171,7 +179,7 @@ function writeBoard(storage: VersionHistoryStore, board: StoredBoard): void {
   setItemEvictingSnapshots(
     storage,
     PASTEBOARD_STORAGE_KEY,
-    JSON.stringify([...board.unreadable, ...board.entries])
+    JSON.stringify([...board.entries, ...board.unreadable])
   );
 }
 
@@ -226,7 +234,7 @@ export function addReceivedLayout(
 
   const board = readBoard(storage);
   const existing = board.entries.find((entry) => JSON.stringify(entry.layout) === json);
-  if (existing) return { entry: existing, duplicate: true };
+  if (existing) return { entry: existing, duplicate: true, dropped: [] };
 
   const receivedAt = (opts.now ?? Date.now)();
   const entry: PasteboardEntry = {
@@ -235,14 +243,19 @@ export function addReceivedLayout(
     receivedAt,
     layout: stored,
   };
-  const oldestFirst = board.entries.sort((a, b) => a.receivedAt - b.receivedAt);
-  const entries = [...oldestFirst, entry].slice(-MAX_RECEIVED_LAYOUTS);
+  const oldestFirst = [...board.entries.sort((a, b) => a.receivedAt - b.receivedAt), entry];
+  // At most one card per add: a board already past the cap (written before
+  // it existed) shrinks one house at a time, never all at once (#355).
+  const limit = Math.max(MAX_RECEIVED_LAYOUTS, board.entries.length);
+  const excess = Math.max(0, oldestFirst.length - limit);
+  const dropped = oldestFirst.slice(0, excess);
+  const entries = oldestFirst.slice(excess);
   try {
     writeBoard(storage, { entries, unreadable: board.unreadable });
   } catch {
     return null;
   }
-  return { entry, duplicate: false };
+  return { entry, duplicate: false, dropped: dropped.map((card) => card.name) };
 }
 
 /** Take a house off the board. False when it wasn't there or the write failed. */
@@ -252,8 +265,10 @@ export function removeReceivedLayout(id: string, opts: PasteboardOptions = {}): 
   const board = readBoard(storage);
   const kept = board.entries.filter((entry) => entry.id !== id);
   if (kept.length === board.entries.length) return false;
+  // A same-id copy is the house the user just removed, not a different one.
+  const unreadable = board.unreadable.filter((value) => storedId(value) !== id);
   try {
-    writeBoard(storage, { entries: kept, unreadable: board.unreadable });
+    writeBoard(storage, { entries: kept, unreadable });
   } catch {
     return false;
   }

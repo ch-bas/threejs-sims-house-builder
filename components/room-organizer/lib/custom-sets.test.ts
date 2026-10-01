@@ -195,9 +195,9 @@ describe('custom sets — unreadable entries survive every rewrite (#340)', () =
     expect(stored(storage)).toEqual({ version: 2, sets: [good, tooBig, 'junk', { ...good, name: 'Same id' }] });
     expect(countUnreadableCustomSets({ storage })).toBe(3);
 
-    // Deleting the first copy of an id surfaces the one it shadowed.
+    // Deleting a set deletes its same-id copy too: it is the same set.
     expect(deleteCustomSet('s1', { storage })).toBe(true);
-    expect(listCustomSets({ storage }).map((set) => set.name)).toEqual(['Same id']);
+    expect(listCustomSets({ storage })).toEqual([]);
     expect(countUnreadableCustomSets({ storage })).toBe(2);
   });
 
