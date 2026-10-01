@@ -328,7 +328,9 @@ components/
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
     │   ├── constants.ts                 Catalog (69 items), templates, MAX_FLOORS
     │   ├── schema.ts                    Type guards + legacy migration
-    │   ├── geometry.ts                  Collision, bounds, snap, auto-organize
+    │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
+    │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
+    │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
@@ -359,7 +361,7 @@ components/
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
-    │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → wall (#286)
+    │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs)
@@ -416,7 +418,7 @@ components/
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
     │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop
-    │   ├── use-entrance-keep-out.ts     Porch keep-out rect for collisions, memoised (#285)
+    │   ├── use-floor-keep-out.ts        Porch + stairwell keep-out for collisions, memoised (#285, #372)
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import

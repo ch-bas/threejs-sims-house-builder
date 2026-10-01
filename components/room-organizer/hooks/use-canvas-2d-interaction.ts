@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
+import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
-import { entranceKeepOut, planFloorIndex } from '../lib/street';
+import { planFloorIndex } from '../lib/street';
 import { defaultZoneName, nextZoneColor, zoneFromCorners } from '../lib/zones';
 import { useLayoutActions } from './use-layout-store';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
@@ -174,7 +175,7 @@ export function useCanvas2DInteraction(
             return moved ? { ...item, position: moved } : item;
           })
         : activeFloor.items;
-      const keepOut = entranceKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
+      const keepOut = floorKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
       const draft = zoneGesture?.started
         ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height)
         : null;
@@ -188,7 +189,8 @@ export function useCanvas2DInteraction(
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
         zoneDraft: draft,
-        hasCollision: (item) => hasCollisions(item, items, layout.width, layout.height, keepOut),
+        hasCollision: (item) =>
+          hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls }),
       });
     };
     const schedulePaint = (): void => {

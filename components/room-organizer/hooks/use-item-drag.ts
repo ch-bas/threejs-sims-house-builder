@@ -172,11 +172,11 @@ export function useItemDrag({
       const dragged = candidateItems.find((item) => item.id === id);
       const primaryGroup = findFurnitureGroup(id);
       if (dragged && primaryGroup) {
-        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, roomWidth, roomDepth, keepOut));
+        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, roomWidth, roomDepth, { keepOut, interiorWalls: activeFloor.interiorWalls }));
       }
       invalidateBoxRef.current();
     },
-    [actions, activeFloor.items, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint]
+    [actions, activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint]
   );
 
   const handleDragEnd = useCallback(

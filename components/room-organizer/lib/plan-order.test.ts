@@ -18,6 +18,21 @@ describe('planLayer (#286)', () => {
   it('keeps a flat tabletop item above its surface, not in the rug layer', () => {
     expect(planLayer(makeItem({ type: 'books', height: 0.03 }))).toBe('tabletop');
   });
+
+  it('paints wall-hung decor over the furniture it hangs above, under the openings (#376)', () => {
+    expect(planLayer(makeItem({ type: 'painting', height: 0.6 }))).toBe('hung');
+    expect(planLayer(makeItem({ type: 'wall-shelf', height: 0.06 }))).toBe('hung');
+    const sofa = makeItem({ id: 'sofa', type: 'sofa', height: 0.8 });
+    const lamp = makeItem({ id: 'lamp', type: 'lamp', height: 1.5 });
+    const painting = makeItem({ id: 'painting', type: 'painting', height: 0.6 });
+    const window = makeItem({ id: 'window', type: 'window', height: 1.2 });
+    expect(planDrawOrder([window, painting, lamp, sofa]).map((item) => item.id)).toEqual([
+      'sofa',
+      'lamp',
+      'painting',
+      'window',
+    ]);
+  });
 });
 
 describe('planDrawOrder (#286)', () => {

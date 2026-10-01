@@ -1,4 +1,5 @@
 import { isLowProfile, isTabletopType } from './geometry';
+import { isWallHung } from './mount-band';
 import { isWallMounted } from './opening-snap';
 import type { FurnitureItem } from './types';
 
@@ -12,20 +13,24 @@ import type { FurnitureItem } from './types';
  * - `floor`: ordinary floor-standing furniture.
  * - `tabletop`: small items that sit ON a surface (computer on a desk, lamp on
  *   a nightstand), so they paint over the surface beneath them.
+ * - `hung`: wall-hung decor (painting, mirror, shelf, clock, curtains) — it
+ *   hangs above the furniture it shares a footprint with (#376).
  * - `wall`: wall-plane items (doors, windows, cameras) — on top, so a cabinet
  *   flush under a window never hides the opening mark.
  */
-export type PlanLayer = 'low-profile' | 'floor' | 'tabletop' | 'wall';
+export type PlanLayer = 'low-profile' | 'floor' | 'tabletop' | 'hung' | 'wall';
 
 const LAYER_RANK: Record<PlanLayer, number> = {
   'low-profile': 0,
   floor: 1,
   tabletop: 2,
-  wall: 3,
+  hung: 3,
+  wall: 4,
 };
 
 export function planLayer(item: Pick<FurnitureItem, 'type' | 'height'>): PlanLayer {
   if (isWallMounted(item.type)) return 'wall';
+  if (isWallHung(item.type)) return 'hung';
   // Tabletop before low-profile: a flat tabletop item (books, a tray) still
   // belongs ABOVE its desk, not under the rug layer.
   if (isTabletopType(item.type)) return 'tabletop';
