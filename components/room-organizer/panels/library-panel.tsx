@@ -20,13 +20,14 @@ import {
   removeReceivedLayout,
   shareHashFromText,
 } from '../lib/pasteboard';
-import { snapshotBeforeReplace } from '../lib/restore-point';
+import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { decodeShareUrl } from '../lib/share';
 import {
   VERSION_HISTORY_STORAGE_KEY,
   floorPlanFingerprint,
   getSnapshot,
   listSnapshots,
+  subscribeSnapshots,
 } from '../lib/version-history';
 import { PlanThumb } from './plan-thumb';
 import type { PasteboardEntry } from '../lib/pasteboard';
@@ -90,6 +91,23 @@ interface PasteStatus {
   text: string;
 }
 
+type LoadSection = 'saved' | 'received' | 'history';
+
+/** What the last load from this panel put on screen (#364). */
+interface LoadedNote {
+  section: LoadSection;
+  text: string;
+}
+
+function LoadedStatus({ note, section }: { note: LoadedNote | null; section: LoadSection }): JSX.Element | null {
+  if (note?.section !== section) return null;
+  return (
+    <p role="status" className="text-xs text-muted-foreground">
+      {note.text}
+    </p>
+  );
+}
+
 export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.Element {
   const [entries, setEntries] = useState<SavedLayoutEntry[]>([]);
   const [snapshots, setSnapshots] = useState<VersionSummary[]>([]);
@@ -98,6 +116,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   const [pasteText, setPasteText] = useState('');
   const [pasteStatus, setPasteStatus] = useState<PasteStatus | null>(null);
   const [pasting, setPasting] = useState(false);
+  const [loaded, setLoaded] = useState<LoadedNote | null>(null);
 
   const refresh = useCallback(() => {
     setEntries(listSavedLayouts());
@@ -118,6 +137,10 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  // This tab's own restore points — autosave cadence, and the forced one
+  // every replacement takes — have no `storage` event (#367).
+  useEffect(() => subscribeSnapshots(() => setSnapshots(listSnapshots())), []);
 
   useEffect(() => {
     setName(currentLayout.name);
@@ -155,10 +178,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       refresh();
       return;
     }
+    if (!confirmReplace(currentLayout, `“${entry.name}”`)) return;
     onLoad(loaded);
+    setLoaded({ section: 'saved', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
   };
 
   const handleRestore = (summary: VersionSummary) => {
+    if (!confirmReplace(currentLayout, `the restore point from ${formatAge(Date.now() - summary.savedAt)}`)) return;
     const snapshot = getSnapshot(summary.id);
     if (!snapshot) {
       window.alert('Failed to restore this version — it may have been evicted or corrupted.');
@@ -181,6 +207,10 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     // `onLoad` applies via the same undoable path as a library/template load
     // (applyLayout without history.clear, #222) — one Ctrl+Z away.
     onLoad(restored);
+    setLoaded({
+      section: 'history',
+      text: `Restored ${summary.name ?? 'the house'} from ${formatAge(Date.now() - summary.savedAt)}. Undo brings back the house it replaced.`,
+    });
   };
 
   const handlePaste = async () => {
@@ -224,10 +254,12 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   };
 
   const handleLoadReceived = (entry: PasteboardEntry) => {
+    if (!confirmReplace(currentLayout, `“${entry.name}”`)) return;
     // Same undoable path as a library load, with a way back beyond the undo
     // stack (#298) — the board keeps its copy, so this can be tried freely.
     snapshotBeforeReplace(currentLayout);
     onLoad(entry.layout);
+    setLoaded({ section: 'received', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
   };
 
   const handleRemoveReceived = (entry: PasteboardEntry) => {
@@ -253,6 +285,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             💾 Save
           </Button>
         </div>
+        <LoadedStatus note={loaded} section="saved" />
         {entries.length === 0 ? (
           <p className="text-xs text-muted-foreground py-2 text-center">No saved layouts yet.</p>
         ) : (
@@ -305,6 +338,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
               {pasteStatus.text}
             </p>
           )}
+          <LoadedStatus note={loaded} section="received" />
           {received.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2 text-center">No received houses yet.</p>
           ) : (
@@ -357,6 +391,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
           <p className="text-xs text-muted-foreground">
             Automatic restore points, saved every few minutes while you build.
           </p>
+          <LoadedStatus note={loaded} section="history" />
           {snapshots.length === 0 ? (
             <p className="text-xs text-muted-foreground py-2 text-center">No restore points yet.</p>
           ) : (

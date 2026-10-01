@@ -9,7 +9,7 @@ import { alignSelection, distributeSelection } from '../lib/alignment';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
-import { snapshotBeforeReplace } from '../lib/restore-point';
+import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
 import { applyTheme } from '../lib/themes';
 import { Icon } from '../plotcraft/icon';
@@ -303,6 +303,7 @@ export function SidebarDrawer({
 
               <TemplatesPanel
                 onLoadTemplate={(template) => {
+                  if (!confirmReplace(layout, `the ${template.name} template`)) return;
                   snapshotBeforeReplace(layout);
                   actions.applyLayout({
                     ...template,
