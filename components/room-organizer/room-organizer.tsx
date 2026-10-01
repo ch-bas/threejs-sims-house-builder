@@ -35,6 +35,7 @@ import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap
 import { snapshotBeforeReplace } from './lib/restore-point';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
+import { entrancePlanOutline } from './lib/street';
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
@@ -449,6 +450,14 @@ export function RoomOrganizer(): JSX.Element {
     playCue('success');
   }, [activeFloor.items, allSelectedIds, playCue]);
 
+  // The recess's span of the front wall on this storey; openings settle on
+  // its piers (#394). Memoised on what the recess is fitted to.
+  const { width: lotWidth, height: lotDepth, terrain, entrance, floors } = layout;
+  const frontGap = useMemo(
+    () => entrancePlanOutline({ width: lotWidth, height: lotDepth, terrain, entrance, floors }, activeFloorIndex),
+    [lotWidth, lotDepth, terrain, entrance, floors, activeFloorIndex]
+  );
+
   const {
     sceneBoxRef,
     invalidateBoxRef,
@@ -463,6 +472,7 @@ export function RoomOrganizer(): JSX.Element {
     roomWidth: layout.width,
     roomDepth: layout.height,
     keepOut,
+    frontGap,
     actions,
     allSelectedIds,
   });
@@ -663,6 +673,8 @@ export function RoomOrganizer(): JSX.Element {
     buildingCost,
     actions,
     view,
+    allSelectedIds,
+    frontGap,
   });
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
@@ -918,7 +930,14 @@ export function RoomOrganizer(): JSX.Element {
         // translating into the room as a free slab (#116).
         const item = activeFloor.items.find((entry) => entry.id === id);
         const settled = item
-          ? settleWallMountedItem(item, { x, z }, layout.width, layout.height, activeFloor.interiorWalls ?? [])
+          ? settleWallMountedItem(
+              item,
+              { x, z },
+              layout.width,
+              layout.height,
+              activeFloor.interiorWalls ?? [],
+              frontGap
+            )
           : null;
         if (settled) actions.updateItem(id, settled);
         else actions.moveItem(id, x, z);
@@ -971,6 +990,7 @@ export function RoomOrganizer(): JSX.Element {
       placingId,
       confirmPlacement,
       cancelPlacement,
+      frontGap,
       removeItem,
       removeSelected,
       duplicateSelected,

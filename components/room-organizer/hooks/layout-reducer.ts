@@ -2,7 +2,7 @@ import { DEFAULT_ROOF, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_RO
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { remapGroupIds } from '../lib/groups';
-import { isWallMounted, settleWallMountedItem, snapOpeningToWall } from '../lib/opening-snap';
+import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
 import { clampTerrainY, isStreetSeed } from '../lib/site';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { clampStoreyHeight, storeyHeight } from '../lib/storeys';
@@ -16,6 +16,7 @@ import {
   entranceBackWall,
   entranceFloorIndex,
   entranceGeometry,
+  entrancePlanOutline,
   sameEntrance,
   streetLevel,
 } from '../lib/street';
@@ -408,7 +409,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           offset,
           state.layout.width,
           state.layout.height,
-          floor.interiorWalls ?? []
+          floor.interiorWalls ?? [],
+          activeFrontGap(state)
         );
         const copy: FurnitureItem = settled
           ? { ...source, id: action.newId, ...settled }
@@ -450,7 +452,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
               item.position,
               state.layout.width,
               state.layout.height,
-              activeInteriorWalls(state)
+              activeInteriorWalls(state),
+              activeFrontGap(state)
             )
           : null;
         return { rotation, ...settled };
@@ -465,7 +468,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           position,
           state.layout.width,
           state.layout.height,
-          activeInteriorWalls(state)
+          activeInteriorWalls(state),
+          activeFrontGap(state)
         );
         return settled ?? { position };
       });
@@ -487,7 +491,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
                 item.position,
                 state.layout.width,
                 state.layout.height,
-                activeInteriorWalls(state)
+                activeInteriorWalls(state),
+                activeFrontGap(state)
               )
             : null;
         return { [action.dimension]: value, ...settled };
@@ -568,7 +573,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
             position,
             state.layout.width,
             state.layout.height,
-            floor.interiorWalls ?? []
+            floor.interiorWalls ?? [],
+            activeFrontGap(state)
           );
           const moved = { ...item, ...(settled ?? { position }) };
           if (sameItem(item, moved)) return item;
@@ -627,7 +633,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
             position,
             state.layout.width,
             state.layout.height,
-            floor.interiorWalls ?? []
+            floor.interiorWalls ?? [],
+            activeFrontGap(state)
           );
           return { ...item, rotation: nextRotation, ...(settled ?? { position }) };
         });
@@ -1092,6 +1099,11 @@ function followExteriorWall(
 /** Interior walls of the active floor — what wall-mounted items settle against. */
 function activeInteriorWalls(state: LayoutState): readonly InteriorWall[] {
   return state.layout.floors[state.activeFloorIndex]?.interiorWalls ?? [];
+}
+
+/** The recessed entrance's span of the front wall on the active storey: openings settle on its piers (#394). */
+function activeFrontGap(state: LayoutState): WallGap | null {
+  return entrancePlanOutline(state.layout, state.activeFloorIndex);
 }
 
 function clampRoomDimension(value: number): number {

@@ -1,6 +1,6 @@
 import { useCallback, useRef, type MutableRefObject } from 'react';
 import { hasCollisions, type KeepOutRect } from '../lib/geometry';
-import { settleWallMountedItem } from '../lib/opening-snap';
+import { settleWallMountedItem, type WallGap } from '../lib/opening-snap';
 import type { LayoutActions } from './use-layout-state';
 import type { FloorLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -12,6 +12,8 @@ export interface UseItemDragParams {
   roomDepth: number;
   /** The porch of a recessed entrance, out of bounds like the walls (#285). */
   keepOut: readonly KeepOutRect[];
+  /** The recessed entrance's span of the front wall: openings settle on its piers (#394). */
+  frontGap: WallGap | null;
   actions: LayoutActions;
   allSelectedIds: ReadonlySet<string>;
 }
@@ -70,6 +72,7 @@ export function useItemDrag({
   roomWidth,
   roomDepth,
   keepOut,
+  frontGap,
   actions,
   allSelectedIds,
 }: UseItemDragParams): UseItemDragResult {
@@ -213,12 +216,13 @@ export function useItemDrag({
           releasePos,
           roomWidth,
           roomDepth,
-          activeFloor.interiorWalls ?? []
+          activeFloor.interiorWalls ?? [],
+          frontGap
         );
         if (settled) actions.updateItem(movedId, settled);
       }
     },
-    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, actions, findFurnitureGroup, setDragCollisionTint]
+    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, actions, findFurnitureGroup, setDragCollisionTint]
   );
 
   const handleDragCancel = useCallback(() => {

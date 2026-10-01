@@ -25,6 +25,7 @@ describe('useItemDrag — cancelled gestures commit nothing (#207 follow-up)', (
         roomWidth: 10,
         roomDepth: 10,
         keepOut: [],
+        frontGap: null,
         actions,
         allSelectedIds: new Set(['a']),
       })
