@@ -1,5 +1,6 @@
 import { CURRENCY_SYMBOL, DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import { totalCost } from './geometry';
+import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from './street';
 import type { RoomLayout } from './types';
 
 // Furniture types that read as "planted greenery" in the catalog — kept in sync
@@ -128,7 +129,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Drew at least one interior wall.',
     icon: '🧱',
     isMet: (layout) =>
-      layout.floors.some((floor) => (floor.interiorWalls?.length ?? 0) > 0),
+      layout.floors.some((floor) => (floor.interiorWalls ?? []).some((wall) => wall.id !== ENTRANCE_WALL_ID)),
   },
   {
     id: 'decorator',
@@ -149,8 +150,12 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   },
 ];
 
+/**
+ * Everything the player placed. The porch's door and back wall come with the
+ * recessed entrance — structure, not furniture — so they earn nothing (#382).
+ */
 function allItems(layout: RoomLayout): RoomLayout['floors'][number]['items'] {
-  return layout.floors.flatMap((floor) => floor.items);
+  return layout.floors.flatMap((floor) => floor.items.filter((item) => item.id !== ENTRANCE_DOOR_ID));
 }
 
 const STORAGE_KEY = 'standalone-room-organizer-achievements';

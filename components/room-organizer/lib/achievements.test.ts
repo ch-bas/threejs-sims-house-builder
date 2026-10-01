@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INITIAL_LAYOUT } from '../hooks/layout-reducer';
+import { INITIAL_LAYOUT, layoutReducer } from '../hooks/layout-reducer';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { ACHIEVEMENTS } from './achievements';
 import { DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
@@ -149,6 +149,18 @@ describe('achievements — catalogue invariants', () => {
   // click and can never be earned — the Roof It bug (#165) generalised.
   it('none is already met by the initial layout', () => {
     expect(ACHIEVEMENTS.filter((a) => a.isMet(INITIAL_LAYOUT)).map((a) => a.id)).toEqual([]);
+  });
+
+  // The porch's door and back wall are structure: switching on the recessed
+  // entrance earns nothing on an otherwise empty house (#382).
+  it('none is met by switching on the recessed entrance', () => {
+    const { layout } = layoutReducer(
+      { layout: INITIAL_LAYOUT, activeFloorIndex: 0 },
+      { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } }
+    );
+    expect(layout.floors[0]!.items.some((item) => item.type === 'door')).toBe(true);
+    expect(layout.floors[0]!.interiorWalls?.length).toBe(1);
+    expect(ACHIEVEMENTS.filter((a) => a.isMet(layout)).map((a) => a.id)).toEqual([]);
   });
 
   it('the starter roof colour is not any style\'s colourless default', () => {
