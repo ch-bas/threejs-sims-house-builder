@@ -106,6 +106,14 @@ describe('resolveWalkerPosition — furniture', () => {
     const { position: _placed, ...unplaced } = BOX;
     expect(walk({ x: 0, z: 0 }, { x: 0, z: -3 }, [unplaced]).z).toBeCloseTo(-3, 3);
   });
+
+  it('walks under wall-hung decor: it hangs above the path (#376)', () => {
+    for (const type of ['painting', 'mirror', 'wall-shelf', 'wall-clock', 'curtains']) {
+      const decor = item({ type, width: 2, depth: 1, height: 0.6, position: { x: 0, z: -1.5 } });
+      expect(buildWalkColliders([decor], [])).toEqual([]);
+      expect(walk({ x: 0, z: 0 }, { x: 0, z: -3 }, [decor]).z).toBeCloseTo(-3, 3);
+    }
+  });
 });
 
 describe('resolveWalkerPosition — outdoor items', () => {

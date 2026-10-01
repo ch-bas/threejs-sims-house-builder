@@ -1,7 +1,8 @@
 import { ensureFloorPlanImageDecoded, render2DTopDown } from '../canvas-2d/render';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
+import { floorKeepOut } from './floor-keep-out';
 import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
-import { entranceKeepOut, entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
+import { entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
 import type { FloorLayout, RoomLayout } from './types';
 
@@ -45,7 +46,7 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
   canvas.width = PAGE_WIDTH;
   canvas.height = PAGE_HEIGHT;
   const floorIndex = planFloorIndex(layout.floors, floor);
-  const keepOut = entranceKeepOut(layout, floorIndex);
+  const keepOut = floorKeepOut(layout, floorIndex);
 
   render2DTopDown({
     canvas,
@@ -57,7 +58,8 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     // planning Wi-Fi and camera placement, and hardcoding this off hid the
     // signal rings AND the camera FOV wedges from the printout (#134).
     showWiFiSignals: true,
-    hasCollision: (item) => hasCollisions(item, floor.items, layout.width, layout.height, keepOut),
+    hasCollision: (item) =>
+      hasCollisions(item, floor.items, layout.width, layout.height, { keepOut, interiorWalls: floor.interiorWalls }),
   });
 
   const dataUrl = canvas.toDataURL('image/png');

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
+import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
+import { mountBand } from '../lib/mount-band';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
-import { ENTRANCE_WALL_ID, entranceGeometry, entranceKeepOut, entranceWallCut, type EntranceBuilding } from '../lib/street';
+import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
@@ -126,7 +128,7 @@ export function useSceneEffects({
   const storeyHeightsKey = layout.floors.map((floor) => floor.height ?? '').join(',');
   // What the porch keep-out is fitted to (#285) — the effects key on this
   // rather than the whole layout.
-  const entranceBuilding = useMemo<EntranceBuilding>(
+  const entranceBuilding = useMemo<KeepOutBuilding>(
     () => ({ width: layout.width, height: layout.height, terrain: layout.terrain, entrance: layout.entrance, floors: layout.floors }),
     [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors]
   );
@@ -362,7 +364,7 @@ export function useSceneEffects({
       for (const item of floor.items) {
         if (!item.position) continue;
 
-        const collision = hasCollisions(item, floor.items, layout.width, layout.height, entranceKeepOut(entranceBuilding, index));
+        const collision = hasCollisions(item, floor.items, layout.width, layout.height, { keepOut: floorKeepOut(entranceBuilding, index), interiorWalls: floor.interiorWalls });
         // Stairs climb to the floor above and openings are fitted into the
         // storey, so the mesh matches the hole cut for it (#202, #277).
         const group = createFurnitureModel(THREE, itemForStorey(item, floor), collision);
@@ -425,7 +427,7 @@ export function useSceneEffects({
     if (outlineIds.size === 0) return;
 
     const itemsById = new Map(activeFloor.items.map((item) => [item.id, item]));
-    const keepOut = entranceKeepOut(entranceBuilding, activeFloorIndex);
+    const keepOut = floorKeepOut(entranceBuilding, activeFloorIndex);
     for (const group of scene.children) {
       if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
       if (group.userData.floorIndex !== activeFloorIndex) continue;
@@ -435,7 +437,7 @@ export function useSceneEffects({
       if (!item) continue;
 
       const isSelected = selectedItemId === id || extraSelectedIds.has(id);
-      const collision = hasCollisions(item, activeFloor.items, layout.width, layout.height, keepOut);
+      const collision = hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls });
       const accent = isSelected
         ? selectedItemId === id
           ? collision
@@ -443,14 +445,17 @@ export function useSceneEffects({
             : 0x00ff00
           : 0x42a5f5
         : 0xfacc15;
-      const geometry = new THREE.BoxGeometry(item.width, item.height, item.depth);
+      // Around the built mesh, not floor-to-height: a painting hangs at 0.8 m
+      // and a window starts at its sill (#376).
+      const band = mountBand(itemForStorey(item, activeFloor));
+      const geometry = new THREE.BoxGeometry(item.width, band.top - band.bottom, item.depth);
       const edges = new THREE.EdgesGeometry(geometry);
       geometry.dispose();
       const outline = new THREE.LineSegments(
         edges,
         new THREE.LineBasicMaterial({ color: accent, linewidth: 2 })
       );
-      outline.position.y = item.height / 2;
+      outline.position.y = (band.bottom + band.top) / 2;
       outline.userData.type = 'selection-outline';
       // Decoration, not a pointer target: the furniture raycast is recursive
       // and a line's pick threshold would give the item a hit halo (#333).
@@ -794,7 +799,7 @@ export function useSceneEffects({
     const canvas = canvas2DRef.current;
     if (!canvas) return undefined;
 
-    const keepOut = entranceKeepOut(entranceBuilding, activeFloorIndex);
+    const keepOut = floorKeepOut(entranceBuilding, activeFloorIndex);
     const paint = () => {
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
@@ -816,7 +821,7 @@ export function useSceneEffects({
         showMeasurements: view.showMeasurements,
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
-        hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, keepOut),
+        hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls }),
       });
     };
 

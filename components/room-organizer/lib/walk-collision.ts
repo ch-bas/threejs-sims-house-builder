@@ -10,7 +10,7 @@
  * exterior walls are never colliders here.
  */
 
-import { rotatedHalfExtents } from './geometry';
+import { isWallHung } from './mount-band';
 import { interiorWallOpeningSpan, isWallMounted } from './opening-snap';
 import type { FurnitureItem, InteriorWall, Vec2 } from './types';
 
@@ -91,7 +91,9 @@ const RESOLVE_PASSES = 2;
  * change — not per frame — and feed the result to `resolveWalkerStep`.
  *
  * Skipped: unplaced items, low-profile items (rugs), wall-plane items
- * (doors, windows, cameras — they live in the wall, and a door is a gap).
+ * (doors, windows, cameras — they live in the wall, and a door is a gap),
+ * wall-hung decor (a painting or clock hangs on the wall above the walker's
+ * path, #376).
  * Outdoor items are kept but flagged so the resolver can ignore them while
  * the walker is inside the room.
  */
@@ -103,7 +105,7 @@ export function buildWalkColliders(
   const colliders: WalkCollider[] = [];
   for (const item of items) {
     if (!item.position) continue;
-    if (isWallMounted(item.type)) continue;
+    if (isWallMounted(item.type) || isWallHung(item.type)) continue;
     if (item.height <= LOW_PROFILE_MAX_HEIGHT) continue;
     colliders.push(
       boxCollider(
@@ -148,7 +150,10 @@ function boxCollider(
 ): WalkCollider {
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
-  const { halfW, halfD } = rotatedHalfExtents({ width, depth, rotation });
+  // lib/geometry's rotatedHalfExtents, inlined: geometry builds its interior
+  // wall boxes from this module, so importing it back would be a cycle.
+  const halfW = (width * Math.abs(cos) + depth * Math.abs(sin)) / 2;
+  const halfD = (width * Math.abs(sin) + depth * Math.abs(cos)) / 2;
   return {
     cx,
     cz,
