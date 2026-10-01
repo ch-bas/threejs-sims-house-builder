@@ -58,6 +58,19 @@ describe('clipboard (#153)', () => {
     expect(outdoor!.position).toEqual({ x: 7.5, z: 0.5 });
   });
 
+  it('outdoor items are left out of a paste onto an upper floor (#293)', () => {
+    const tree = makeItem({ id: 't', type: 'tree', category: 'outdoor', position: { x: 7, z: 0 } });
+    const sofa = makeItem({ id: 's', position: { x: 1, z: 0 } });
+    copyToClipboard([tree, sofa]);
+    const upstairs = buildPasteItems({ roomWidth: W, roomDepth: D, idTag: 'up', floorIndex: 1 });
+    expect(upstairs.map((item) => item.type)).toEqual([sofa.type]);
+    expect(upstairs[0]!.category).not.toBe('outdoor');
+    const ground = buildPasteItems({ roomWidth: W, roomDepth: D, idTag: 'gf', floorIndex: 0 });
+    expect(ground.map((item) => item.category)).toContain('outdoor');
+    copyToClipboard([tree]);
+    expect(buildPasteItems({ roomWidth: W, roomDepth: D, idTag: 'up', floorIndex: 2 })).toEqual([]);
+  });
+
   it('a pasted door settles onto the nearest wall instead of floating', () => {
     copyToClipboard([
       makeItem({ id: 'd', type: 'door', width: 0.9, depth: 0.12, position: { x: 0, z: -5 }, rotation: 0 }),

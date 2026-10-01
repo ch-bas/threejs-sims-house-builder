@@ -18,6 +18,11 @@ export interface UseItemDragParams {
   allSelectedIds: ReadonlySet<string>;
 }
 
+export interface DragCancelOptions {
+  /** Move the fast-path groups back to the session's origins (#292). */
+  restore?: boolean;
+}
+
 export interface UseItemDragResult {
   /**
    * useThreeScene is called after this hook (its options include the drag
@@ -30,11 +35,12 @@ export interface UseItemDragResult {
   handleDrag(id: string, x: number, z: number): void;
   handleDragEnd(id: string): void;
   /**
-   * Discard the session without committing anything — the canvas handler
-   * aborted the gesture because its captured group was rebuilt away
-   * (#207 follow-up).
+   * Discard the session without committing anything. Either the canvas
+   * handler's captured group was rebuilt away (#207 follow-up) — state is
+   * authoritative, leave the scene alone — or the browser cancelled the
+   * pointer (`restore`, #292): put every member's group back at its origin.
    */
-  handleDragCancel(id: string): void;
+  handleDragCancel(id: string, options?: DragCancelOptions): void;
   /** True between a drag session opening (past the threshold) and release. */
   isDragActive(): boolean;
 }
@@ -225,13 +231,27 @@ export function useItemDrag({
     [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, actions, findFurnitureGroup, setDragCollisionTint]
   );
 
-  const handleDragCancel = useCallback(() => {
-    // No dispatch, no lock, no settle: the rebuild that killed the gesture
-    // came from an authoritative state change (cross-tab adopt, library
-    // load), so the scene already shows the right thing — committing
-    // `latest` would overwrite it with in-flight drag positions.
-    dragSessionRef.current = null;
-  }, []);
+  const handleDragCancel = useCallback(
+    (id: string, options?: DragCancelOptions) => {
+      // No dispatch, no lock, no settle. After a rebuild (cross-tab adopt,
+      // library load) the scene already shows authoritative state —
+      // committing `latest` would overwrite it with in-flight positions.
+      const session = dragSessionRef.current;
+      dragSessionRef.current = null;
+      if (!session || options?.restore !== true) return;
+      // A pointercancel (OS gesture, palm rejection) undoes the drag: the
+      // fast path moved the groups directly, so move them back (#292).
+      for (const [memberId, origin] of session.origins) {
+        const group = findFurnitureGroup(memberId);
+        if (!group) continue;
+        group.position.x = origin.x;
+        group.position.z = origin.z;
+        if (memberId === id) setDragCollisionTint(group, false);
+      }
+      invalidateBoxRef.current();
+    },
+    [findFurnitureGroup, setDragCollisionTint]
+  );
 
   const isDragActive = useCallback(() => dragSessionRef.current !== null, []);
 

@@ -67,6 +67,11 @@ export interface PasteOptions {
    * same-floor paste lands visibly beside the original.
    */
   target?: Vec2;
+  /**
+   * The floor the paste lands on (0 = ground, the default). Outdoor items
+   * are dropped above the ground floor, matching catalog placement (#293).
+   */
+  floorIndex?: number;
 }
 
 /**
@@ -75,7 +80,8 @@ export interface PasteOptions {
  *
  * Placement rules mirror duplication (#116): wall-mounted copies settle onto
  * the nearest wall, indoor copies clamp inside the footprint, outdoor copies
- * keep their raw offset (they belong outside). `locked` is stripped so a
+ * keep their raw offset (they belong outside) and are left out of a paste
+ * onto an upper floor, where they would float past its walls (#293). `locked` is stripped so a
  * fresh paste is immediately movable. Groups (#154) are remapped to fresh
  * ids, so a pasted group is a new group rather than more members of the
  * source.
@@ -89,7 +95,10 @@ export function buildPasteItems(options: PasteOptions): FurnitureItem[] {
     z: content.sourceCentroid.z + 0.5,
   };
 
-  return remapGroupIds(content.items, `paste-${idTag}`).map((entry, index) => {
+  const upperFloor = (options.floorIndex ?? 0) > 0;
+  const entries = upperFloor ? content.items.filter((entry) => entry.category !== 'outdoor') : content.items;
+
+  return remapGroupIds(entries, `paste-${idTag}`).map((entry, index) => {
     const copy: FurnitureItem = {
       ...structuredClone(entry),
       id: `${entry.type}-paste-${idTag}-${index}`,
