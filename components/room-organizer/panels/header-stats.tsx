@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useLayout } from '../hooks/use-layout-store';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
 export interface HeaderStatsProps {
@@ -27,7 +28,9 @@ export function HeaderStats({
   // `layout` from the store selector — re-renders only on layout changes.
   const layout = useLayout();
   const budget = DEFAULT_BUDGET;
-  const allItems = layout.floors.flatMap((floor) => floor.items);
+  // The porch door is structure, not furniture: older saves still carry its
+  // catalog price (#382).
+  const allItems = layout.floors.flatMap((floor) => floor.items).filter((item) => item.id !== ENTRANCE_DOOR_ID);
   const cost = totalCost(allItems);
   const overBudget = cost > budget;
   const ratio = budget > 0 ? Math.min(1, cost / budget) : 0;

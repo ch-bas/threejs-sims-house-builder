@@ -1,7 +1,8 @@
 import { DEFAULT_ROOF, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
-import { settleWallMountedItem } from '../lib/opening-snap';
+import { remapGroupIds } from '../lib/groups';
+import { isWallMounted, settleWallMountedItem, snapOpeningToWall } from '../lib/opening-snap';
 import { clampTerrainY, isStreetSeed } from '../lib/site';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { clampStoreyHeight, storeyHeight } from '../lib/storeys';
@@ -187,20 +188,20 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
   switch (action.type) {
     // -- building-level properties ------------------------------------------
     case 'setName':
-      return withLayout(state, (layout) => ({ ...layout, name: action.name }));
+      return withLayout(state, (layout) => (layout.name === action.name ? layout : { ...layout, name: action.name }));
     // Width/height must be clamped here, not only in normaliseLayout: an
     // out-of-range dimension that reaches localStorage fails schema validation
     // on the next load, and the fallback layout then autosaves over the
-    // user's house (#113).
+    // user's house (#113). Openings and zones follow the new footprint (#431).
     case 'setWidth':
       return withLayout(state, (layout) => {
         const width = clampRoomDimension(action.width);
-        return width === layout.width ? layout : { ...layout, width };
+        return width === layout.width ? layout : refitFootprint(layout, width, layout.height);
       });
     case 'setHeight':
       return withLayout(state, (layout) => {
         const height = clampRoomDimension(action.height);
-        return height === layout.height ? layout : { ...layout, height };
+        return height === layout.height ? layout : refitFootprint(layout, layout.width, height);
       });
 
     // -- site (#202) -------------------------------------------------------
@@ -253,12 +254,19 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       });
 
     // -- floor-scoped finishes ----------------------------------------------
+    // Re-picking the active swatch keeps identity: no undo entry (#416).
     case 'setFloorColor':
-      return withActiveFloor(state, (floor) => ({ ...floor, floorColor: action.color }));
+      return withActiveFloor(state, (floor) =>
+        floor.floorColor === action.color ? floor : { ...floor, floorColor: action.color }
+      );
     case 'setFloorPattern':
-      return withActiveFloor(state, (floor) => ({ ...floor, floorPattern: action.pattern }));
+      return withActiveFloor(state, (floor) =>
+        floor.floorPattern === action.pattern ? floor : { ...floor, floorPattern: action.pattern }
+      );
     case 'setWallPattern':
-      return withActiveFloor(state, (floor) => ({ ...floor, wallPattern: action.pattern }));
+      return withActiveFloor(state, (floor) =>
+        floor.wallPattern === action.pattern ? floor : { ...floor, wallPattern: action.pattern }
+      );
     // Clamped like the room dimensions: an out-of-range height reaching
     // localStorage would fail validation on the next load (#113, #202).
     // `null` restores the default storey by dropping the field.
@@ -277,46 +285,62 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       });
     case 'setWallColor':
       return withActiveFloor(state, (floor) => {
+        if ((action.color ?? undefined) === floor.wallColors?.[action.wall]) return floor;
         const next = { ...(floor.wallColors ?? {}) };
         if (action.color === null) delete next[action.wall];
         else next[action.wall] = action.color;
         return { ...floor, wallColors: next };
       });
     case 'setInteriorWallColor':
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        interiorWalls: (floor.interiorWalls ?? []).map((wall) =>
-          wall.id === action.id ? { ...wall, color: action.color } : wall
-        ),
-      }));
+      return withActiveFloor(state, (floor) => {
+        const walls = floor.interiorWalls;
+        if (!walls?.some((wall) => wall.id === action.id && wall.color !== action.color)) return floor;
+        return {
+          ...floor,
+          interiorWalls: walls.map((wall) => (wall.id === action.id ? { ...wall, color: action.color } : wall)),
+        };
+      });
 
     // -- floor plan ---------------------------------------------------------
     case 'setFloorPlan': {
-      if (action.image === null) {
+      const { image } = action;
+      if (image === null) {
         return withLayout(state, (layout) => {
+          if (layout.floorPlanImage === undefined) return layout;
           const next = { ...layout };
           delete next.floorPlanImage;
           return next;
         });
       }
-      return withLayout(state, (layout) => ({ ...layout, floorPlanImage: action.image! }));
+      return withLayout(state, (layout) =>
+        layout.floorPlanImage === image ? layout : { ...layout, floorPlanImage: image }
+      );
     }
+    // Clamped like every other channel the schema bounds (#418).
     case 'setFloorPlanOpacity':
-      return withLayout(state, (layout) => ({ ...layout, floorPlanOpacity: action.opacity }));
+      return withLayout(state, (layout) => {
+        if (!Number.isFinite(action.opacity)) return layout;
+        const opacity = Math.min(1, Math.max(0, action.opacity));
+        return layout.floorPlanOpacity === opacity ? layout : { ...layout, floorPlanOpacity: opacity };
+      });
     case 'setFloorPlanFitMode':
-      return withLayout(state, (layout) => ({ ...layout, floorPlanFitMode: action.mode }));
+      return withLayout(state, (layout) =>
+        layout.floorPlanFitMode === action.mode ? layout : { ...layout, floorPlanFitMode: action.mode }
+      );
 
     // -- roof ---------------------------------------------------------------
+    // A roof-less house (a migrated legacy save) renders as style 'none', so
+    // both actions start from that: picking a colour must not add a roof (#428).
     case 'setRoofStyle':
-      return withLayout(state, (layout) => ({
-        ...layout,
-        roof: { ...(layout.roof ?? { style: 'none' }), style: action.style },
-      }));
+      return withLayout(state, (layout) => {
+        if ((layout.roof?.style ?? 'none') === action.style) return layout;
+        return { ...layout, roof: { ...(layout.roof ?? { style: 'none' }), style: action.style } };
+      });
     case 'setRoofColor':
-      return withLayout(state, (layout) => ({
-        ...layout,
-        roof: { ...(layout.roof ?? { style: 'flat' }), color: action.color },
-      }));
+      return withLayout(state, (layout) => {
+        if (layout.roof?.color === action.color) return layout;
+        return { ...layout, roof: { ...(layout.roof ?? { style: 'none' }), color: action.color } };
+      });
 
     // -- dormers (#203) -----------------------------------------------------
     // Clamped on the way in so a stray value can't fail validation on reload.
@@ -357,19 +381,16 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withActiveFloor(state, (floor) => ({ ...floor, items: [...floor.items, newItem] }));
     }
 
+    // Locks protect geometry, not existence: every item is locked after
+    // placement and after a drag, so removal ignores the lock.
     case 'removeItem':
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        items: floor.items.filter((item) => item.id !== action.id),
-      }));
+      return withActiveFloor(state, (floor) => {
+        if (!floor.items.some((item) => item.id === action.id)) return floor;
+        return { ...floor, items: floor.items.filter((item) => item.id !== action.id) };
+      });
 
     case 'updateItem':
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        items: floor.items.map((item) =>
-          item.id === action.id ? { ...item, ...action.patch } : item
-        ),
-      }));
+      return patchItem(state, action.id, () => action.patch);
 
     case 'duplicateItem':
       return withActiveFloor(state, (floor) => {
@@ -400,8 +421,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
                   : clampToFootprint(source, offset, state.layout.width, state.layout.height),
             };
         // A duplicate is a loose copy: it must not join the source's group
-        // (#154). Paste remaps groups instead — see lib/clipboard.ts.
+        // (#154). Paste remaps groups instead — see lib/clipboard.ts. It is
+        // about to be moved, so it starts unlocked, as a pasted copy does (#353).
         delete copy.groupId;
+        delete copy.locked;
         return { ...floor, items: [...floor.items, copy] };
       });
 
@@ -409,8 +432,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // bulkSetPositions' #115 guard) and re-run the wall settle rule, so no
     // panel or future caller can move a locked item or strand a door,
     // window, or camera off its wall (#209, #210). `updateItem` stays
-    // unguarded on purpose — it is the internal channel for derived
-    // placement (drag settles, camera reseats).
+    // lock-unguarded on purpose — it is the internal channel for derived
+    // placement (drag settles, camera reseats) — but like every patch it is
+    // range-checked and can't move the entrance door (see patchItem).
     case 'rotateItem':
       return patchItem(state, action.id, (item) => {
         if (item.locked) return null;
@@ -452,9 +476,21 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         // value that reached localStorage would fail schema validation on
         // the next load and cost the whole save.
         if (item.locked || !Number.isFinite(action.value)) return null;
-        return {
-          [action.dimension]: Math.min(MAX_ITEM_DIMENSION, Math.max(0.1, action.value)),
-        };
+        const value = clampItemDimension(action.value);
+        const resized = { ...item, [action.dimension]: value };
+        // A deeper flush camera or a wider door re-seats on its wall like
+        // any other geometry change (#408); height never moves the footprint.
+        const settled =
+          action.dimension !== 'height' && item.position
+            ? settleWallMountedItem(
+                resized,
+                item.position,
+                state.layout.width,
+                state.layout.height,
+                activeInteriorWalls(state)
+              )
+            : null;
+        return { [action.dimension]: value, ...settled };
       });
 
     case 'setSofaShape':
@@ -493,8 +529,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     case 'setLocked':
       return patchItem(state, action.id, () => ({ locked: action.locked }));
 
+    // Mirroring a winder moves its stairwell hole — geometry, so locked
+    // items refuse it (#408).
     case 'toggleMirror':
-      return patchItem(state, action.id, (item) => ({ mirrored: !item.mirrored }));
+      return patchItem(state, action.id, (item) => (item.locked ? null : { mirrored: !item.mirrored }));
 
     case 'setRotation':
       // Raw on purpose apart from the lock: this is the channel the camera
@@ -511,14 +549,15 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withActiveFloor(state, (floor) => ({ ...floor, items: [...floor.items, ...action.items] }));
 
     case 'bulkSetPositions':
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        items: floor.items.map((item) => {
+      return withActiveFloor(state, (floor) => {
+        let changed = false;
+        const items = floor.items.map((item) => {
           // Locked items are immune to bulk moves (group drag, align,
-          // distribute) — enforced here so no caller can shove them (#115).
-          if (item.locked) return item;
+          // distribute) — enforced here so no caller can shove them (#115);
+          // the entrance door belongs to the porch whatever its lock (#357).
+          if (item.locked || item.id === ENTRANCE_DOOR_ID) return item;
           const next = action.positions.get(item.id);
-          if (!next) return item;
+          if (!next || !Number.isFinite(next.x) || !Number.isFinite(next.z)) return item;
           const position = { x: next.x, z: next.z };
           // Align/distribute previously parked doors and windows mid-room;
           // the settle rule applies to bulk commits like any other (#210).
@@ -531,11 +570,16 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
             state.layout.height,
             floor.interiorWalls ?? []
           );
-          return { ...item, ...(settled ?? { position }) };
-        }),
-      }));
+          const moved = { ...item, ...(settled ?? { position }) };
+          if (sameItem(item, moved)) return item;
+          changed = true;
+          return moved;
+        });
+        return changed ? { ...floor, items } : floor;
+      });
 
     case 'rotateSelection':
+      if (!Number.isFinite(action.radians)) return state;
       return withActiveFloor(state, (floor) => {
         // Rotate the whole group about its centroid: each selected item both
         // spins in place (its own rotation) AND orbits the centroid, so the
@@ -558,55 +602,63 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         const theta = action.radians;
         const cos = Math.cos(theta);
         const sin = Math.sin(theta);
-        return {
-          ...floor,
-          items: floor.items.map((item) => {
-            // Locked items neither spin nor orbit — callers filter, but the
-            // reducer is the guarantee (#115/#209).
-            if (!action.ids.has(item.id) || item.locked) return item;
-            const nextRotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
-            if (!item.position) {
-              return { ...item, rotation: nextRotation };
-            }
-            const dx = item.position.x - cx;
-            const dz = item.position.z - cz;
-            const position = {
-              x: cx + dx * cos + dz * sin,
-              z: cz - dx * sin + dz * cos,
-            };
-            // A wall-mounted item swept to an interior point re-snaps to the
-            // nearest wall instead of floating where the orbit dropped it
-            // (#210) — the same rule every other commit path follows.
-            const settled = settleWallMountedItem(
-              { ...item, rotation: nextRotation },
-              position,
-              state.layout.width,
-              state.layout.height,
-              floor.interiorWalls ?? []
-            );
-            return { ...item, rotation: nextRotation, ...(settled ?? { position }) };
-          }),
-        };
+        let changed = false;
+        const items = floor.items.map((item) => {
+          // Locked items neither spin nor orbit — callers filter, but the
+          // reducer is the guarantee (#115/#209); nor does the porch's
+          // door, which belongs to the recess (#357).
+          if (!action.ids.has(item.id) || item.locked || item.id === ENTRANCE_DOOR_ID) return item;
+          changed = true;
+          const nextRotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
+          if (!item.position) {
+            return { ...item, rotation: nextRotation };
+          }
+          const dx = item.position.x - cx;
+          const dz = item.position.z - cz;
+          const position = {
+            x: cx + dx * cos + dz * sin,
+            z: cz - dx * sin + dz * cos,
+          };
+          // A wall-mounted item swept to an interior point re-snaps to the
+          // nearest wall instead of floating where the orbit dropped it
+          // (#210) — the same rule every other commit path follows.
+          const settled = settleWallMountedItem(
+            { ...item, rotation: nextRotation },
+            position,
+            state.layout.width,
+            state.layout.height,
+            floor.interiorWalls ?? []
+          );
+          return { ...item, rotation: nextRotation, ...(settled ?? { position }) };
+        });
+        return changed ? { ...floor, items } : floor;
       });
 
     case 'setLockAll':
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        items: floor.items.map((item) => ({ ...item, locked: action.locked })),
-      }));
+      return withActiveFloor(state, (floor) => {
+        if (floor.items.every((item) => (item.locked === true) === action.locked)) return floor;
+        return {
+          ...floor,
+          items: floor.items.map((item) =>
+            (item.locked === true) === action.locked ? item : { ...item, locked: action.locked }
+          ),
+        };
+      });
 
     case 'clearItems':
       // "Clear floor" is about furniture. The entrance door is part of the
       // recess, so it stays — otherwise clearing a floor would read as the
       // user deleting the door and the porch would keep a blank back wall
       // for good (#273).
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        items: floor.items.filter((item) => item.id === ENTRANCE_DOOR_ID),
-      }));
+      return withActiveFloor(state, (floor) => {
+        const items = floor.items.filter((item) => item.id === ENTRANCE_DOOR_ID);
+        return items.length === floor.items.length ? floor : { ...floor, items };
+      });
 
     // -- interior walls -----------------------------------------------------
+    // Endpoints must be finite, or the save fails validation on reload (#418).
     case 'addInteriorWall':
+      if (!isFiniteWall(action.wall)) return state;
       return withActiveFloor(state, (floor) => ({
         ...floor,
         interiorWalls: [...(floor.interiorWalls ?? []), action.wall],
@@ -615,18 +667,21 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // Batch insert — a room-shape stamp adds every segment in one dispatch so
     // the whole stamp is a single history/undo entry rather than N of them.
     case 'addInteriorWalls': {
-      if (action.walls.length === 0) return state;
+      if (action.walls.length === 0 || !action.walls.every(isFiniteWall)) return state;
       return withActiveFloor(state, (floor) => ({
         ...floor,
         interiorWalls: [...(floor.interiorWalls ?? []), ...action.walls],
       }));
     }
 
+    // The porch's back wall belongs to the recess: it goes when the entrance
+    // does, never on its own (#357).
     case 'removeInteriorWall':
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        interiorWalls: (floor.interiorWalls ?? []).filter((wall) => wall.id !== action.id),
-      }));
+      return withActiveFloor(state, (floor) => {
+        const walls = floor.interiorWalls;
+        if (action.id === ENTRANCE_WALL_ID || !walls?.some((wall) => wall.id === action.id)) return floor;
+        return { ...floor, interiorWalls: walls.filter((wall) => wall.id !== action.id) };
+      });
 
     case 'toggleExteriorWall':
       return withActiveFloor(state, (floor) => {
@@ -641,11 +696,17 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     });
 
     case 'clearInteriorWalls':
-      return withActiveFloor(state, (floor) => ({ ...floor, interiorWalls: [] }));
+      return withActiveFloor(state, (floor) => {
+        const walls = floor.interiorWalls ?? [];
+        const kept = walls.filter((wall) => wall.id === ENTRANCE_WALL_ID);
+        return kept.length === walls.length ? floor : { ...floor, interiorWalls: kept };
+      });
 
     // -- floor / building operations ----------------------------------------
-    case 'setActiveFloorIndex':
-      return { ...state, activeFloorIndex: clampActiveIndex(action.index, state.layout.floors.length) };
+    case 'setActiveFloorIndex': {
+      const activeFloorIndex = clampActiveIndex(action.index, state.layout.floors.length);
+      return activeFloorIndex === state.activeFloorIndex ? state : { ...state, activeFloorIndex };
+    }
 
     case 'addFloor': {
       if (state.layout.floors.length >= MAX_FLOORS) return state;
@@ -668,26 +729,37 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // Date.now() stamp it used to mix in broke that purity for no extra
       // collision protection (#122).
       // The porch's back wall and door belong to the street storey only;
-      // cloned under fresh ids they would outlive every re-fit (#273).
-      const clonedItems: FurnitureItem[] = source.items
-        .filter((item) => item.id !== ENTRANCE_DOOR_ID)
-        .map((item, idx) => ({ ...item, id: `${item.type}-${action.idSuffix}-${idx}` }));
+      // cloned under fresh ids they would outlive every re-fit (#273). The
+      // garden stays on the ground: a cloned tree would float in the sky,
+      // where placement refuses outdoor items anyway (#345).
+      const clonedItems: FurnitureItem[] = remapGroupIds(
+        source.items
+          .filter((item) => item.id !== ENTRANCE_DOOR_ID && item.category !== 'outdoor')
+          .map((item, idx) => ({ ...item, id: `${item.type}-${action.idSuffix}-${idx}` })),
+        action.idSuffix
+      );
       const clonedWalls: InteriorWall[] | undefined = source.interiorWalls
         ?.filter((wall) => wall.id !== ENTRANCE_WALL_ID)
         .map((wall, idx) => ({ ...wall, id: `wall-${action.idSuffix}-${idx}` }));
+      // Zone and group ids are fresh too, so nothing aliases across storeys (#422).
+      const clonedZones: RoomZone[] | undefined = source.zones?.map((zone, idx) => ({
+        ...zone,
+        id: `zone-${action.idSuffix}-${idx}`,
+      }));
       const floor: FloorLayout = {
         ...source,
         id: action.newId,
         name: `${source.name} copy`,
         items: clonedItems,
         ...(clonedWalls ? { interiorWalls: clonedWalls } : {}),
+        ...(clonedZones ? { zones: clonedZones } : {}),
       };
       const floors = [...state.layout.floors, floor];
       return { layout: { ...state.layout, floors }, activeFloorIndex: floors.length - 1 };
     }
 
     case 'removeFloor': {
-      if (state.layout.floors.length <= 1) return state;
+      if (state.layout.floors.length <= 1 || !state.layout.floors[action.index]) return state;
       const floors = state.layout.floors.filter((_, index) => index !== action.index);
       // Removing a floor below the active one shifts the active floor down a
       // slot; without the adjustment the editor silently switches floors.
@@ -700,6 +772,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     }
 
     case 'renameFloor': {
+      // An unedited rename commits on both Enter and blur (#416).
+      const target = state.layout.floors[action.index];
+      if (!target || target.name === action.name) return state;
       const floors = state.layout.floors.map((floor, index) =>
         index === action.index ? { ...floor, name: action.name } : floor
       );
@@ -838,6 +913,8 @@ type ItemPatch = { [K in keyof FurnitureItem]?: FurnitureItem[K] | undefined };
  * Patch one item on the active floor. A `null` patch means "refused" (e.g.
  * the item is locked): the state is returned with its identity intact, so a
  * refused mutation never registers as an edit in undo history or autosave.
+ * So does a patch that changes nothing (#416). Every patch is range-checked
+ * against the schema first (#418).
  */
 function patchItem(
   state: LayoutState,
@@ -848,14 +925,168 @@ function patchItem(
     let changed = false;
     const items = floor.items.map((item) => {
       if (item.id !== id) return item;
-      const fields = patch(item);
-      if (fields === null) return item;
+      const fields = sanitizeItemPatch(item, patch(item));
+      if (fields === null || !changesItem(item, fields)) return item;
       changed = true;
       // A cleared field stays as an `undefined` key, which every reader treats as absent.
       return { ...item, ...fields } as FurnitureItem;
     });
     return changed ? { ...floor, items } : floor;
   });
+}
+
+const MIN_ITEM_DIMENSION = 0.1;
+
+function clampItemDimension(value: number): number {
+  return Math.min(MAX_ITEM_DIMENSION, Math.max(MIN_ITEM_DIMENSION, value));
+}
+
+/**
+ * Bring a patch within what `lib/schema.ts` accepts, or refuse it (`null`):
+ * a NaN, a zero size or a negative range reaching the autosave makes it
+ * unreadable on the next load (#418). Sizes are clamped; non-finite numbers
+ * and non-positive ranges are refused. The entrance door's placement is the
+ * porch's to decide, whatever its lock, so position and rotation are
+ * dropped from its patches (#357).
+ */
+function sanitizeItemPatch(item: FurnitureItem, fields: ItemPatch | null): ItemPatch | null {
+  if (fields === null) return null;
+  const next: ItemPatch = { ...fields };
+  if (item.id === ENTRANCE_DOOR_ID) {
+    delete next.position;
+    delete next.rotation;
+    delete next.wallRotation;
+  }
+  for (const key of ['width', 'depth', 'height'] as const) {
+    const value = next[key];
+    if (value === undefined) continue;
+    if (!Number.isFinite(value)) return null;
+    next[key] = clampItemDimension(value);
+  }
+  for (const key of ['rotation', 'wallRotation', 'price'] as const) {
+    const value = next[key];
+    if (value !== undefined && !Number.isFinite(value)) return null;
+  }
+  for (const key of ['signalRange', 'visionRange'] as const) {
+    const value = next[key];
+    if (value !== undefined && !(Number.isFinite(value) && value > 0)) return null;
+  }
+  if (next.visionFov !== undefined) {
+    if (!(Number.isFinite(next.visionFov) && next.visionFov > 0)) return null;
+    next.visionFov = Math.min(360, next.visionFov);
+  }
+  if (next.position && !(Number.isFinite(next.position.x) && Number.isFinite(next.position.z))) return null;
+  return next;
+}
+
+/** Whether applying `fields` to `item` would change anything. */
+function changesItem(item: FurnitureItem, fields: ItemPatch): boolean {
+  for (const key of Object.keys(fields) as (keyof FurnitureItem)[]) {
+    if (key === 'position') {
+      if (item.position?.x !== fields.position?.x || item.position?.z !== fields.position?.z) return true;
+    } else if (item[key] !== fields[key]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isFiniteWall(wall: InteriorWall): boolean {
+  return [wall.x1, wall.z1, wall.x2, wall.z2].every(Number.isFinite);
+}
+
+/**
+ * Resize the footprint and re-fit what hangs on it (#431): every
+ * wall-mounted item rides along with the exterior wall it was on (or
+ * re-seats on its interior wall), clamped along the new wall; every zone is
+ * clamped to the new footprint and dropped when nothing is left of it. The
+ * entrance door is the porch's re-fit to make (#204). Floors that need no
+ * change keep their identity.
+ */
+function refitFootprint(layout: RoomLayout, width: number, depth: number): RoomLayout {
+  const from = { width: layout.width, depth: layout.height };
+  const to = { width, depth };
+  let changed = false;
+  const floors = layout.floors.map((floor) => {
+    const next = refitFloor(floor, from, to);
+    if (next !== floor) changed = true;
+    return next;
+  });
+  return { ...layout, width, height: depth, floors: changed ? floors : layout.floors };
+}
+
+interface Footprint {
+  readonly width: number;
+  readonly depth: number;
+}
+
+function refitFloor(floor: FloorLayout, from: Footprint, to: Footprint): FloorLayout {
+  const walls = floor.interiorWalls ?? [];
+  let itemsChanged = false;
+  const items = floor.items.map((item) => {
+    if (item.id === ENTRANCE_DOOR_ID || !item.position || !isWallMounted(item.type)) return item;
+    const position = followExteriorWall(item, item.position, from, to, walls);
+    const settled = settleWallMountedItem(item, position, to.width, to.depth, walls);
+    if (!settled) return item;
+    const next = { ...item, ...settled };
+    if (sameItem(item, next)) return item;
+    itemsChanged = true;
+    return next;
+  });
+
+  let zonesChanged = false;
+  const zones = floor.zones?.flatMap((zone) => {
+    const rect = clampZoneRect(zone, to.width, to.depth);
+    if (!rect) {
+      zonesChanged = true;
+      return [];
+    }
+    const next = { ...zone, ...rect };
+    if (sameZone(zone, next)) return [zone];
+    zonesChanged = true;
+    return [next];
+  });
+
+  if (!itemsChanged && !zonesChanged) return floor;
+  let next: FloorLayout = itemsChanged ? { ...floor, items } : floor;
+  if (zonesChanged) {
+    if (zones && zones.length > 0) {
+      next = { ...next, zones };
+    } else {
+      const { zones: _none, ...rest } = next;
+      next = rest;
+    }
+  }
+  return next;
+}
+
+/**
+ * Where a wall-mounted item lands when the footprint changes: one on an
+ * exterior wall moves with that wall (a door on the south wall stays on the
+ * south wall, not on whichever wall is now nearest); anything else stays put.
+ */
+function followExteriorWall(
+  item: FurnitureItem,
+  position: { x: number; z: number },
+  from: Footprint,
+  to: Footprint,
+  interiorWalls: readonly InteriorWall[]
+): { x: number; z: number } {
+  const snap = snapOpeningToWall({
+    position,
+    itemWidth: item.width,
+    roomWidth: from.width,
+    roomDepth: from.depth,
+    interiorWalls,
+  });
+  if (snap.wallKind !== 'exterior') return position;
+  const dx = (to.width - from.width) / 2;
+  const dz = (to.depth - from.depth) / 2;
+  // snapOpeningToWall's exterior candidates: north 0, south π, east −π/2, west π/2.
+  if (snap.rotation === 0) return { x: position.x, z: position.z - dz };
+  if (snap.rotation === Math.PI) return { x: position.x, z: position.z + dz };
+  if (snap.rotation === -Math.PI / 2) return { x: position.x + dx, z: position.z };
+  return { x: position.x - dx, z: position.z };
 }
 
 /** Interior walls of the active floor — what wall-mounted items settle against. */
@@ -916,7 +1147,8 @@ function findEntranceDoor(floors: readonly FloorLayout[]): FurnitureItem | undef
 
 function catalogEntranceDoor(): FurnitureItem | undefined {
   const catalogDoor = FURNITURE_CATALOG.find((item) => item.type === 'door');
-  return catalogDoor && { ...catalogDoor, id: ENTRANCE_DOOR_ID, locked: true };
+  // Structure, not furniture: it adds nothing to the furniture bill (#382).
+  return catalogDoor && { ...catalogDoor, id: ENTRANCE_DOOR_ID, locked: true, price: 0 };
 }
 
 function findEntranceWall(floors: readonly FloorLayout[]): InteriorWall | undefined {

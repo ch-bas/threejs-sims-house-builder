@@ -6,6 +6,7 @@ import { useRoomEditor } from '../contexts';
 import { useLayout } from '../hooks/use-layout-store';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory, totalCost } from '../lib/geometry';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { zoneStats } from '../lib/zones';
 
 export function StatisticsPanel(): JSX.Element {
@@ -15,7 +16,11 @@ export function StatisticsPanel(): JSX.Element {
   const budget = DEFAULT_BUDGET;
   const collisionsOnActiveFloor = collidingIds.size;
 
-  const allItems = useMemo(() => layout.floors.flatMap((floor) => floor.items), [layout.floors]);
+  // The porch door is structure, not furniture (#382).
+  const allItems = useMemo(
+    () => layout.floors.flatMap((floor) => floor.items).filter((item) => item.id !== ENTRANCE_DOOR_ID),
+    [layout.floors]
+  );
 
   const cost = useMemo(() => totalCost(allItems), [allItems]);
   const footprint = useMemo(() => footprintArea(allItems), [allItems]);

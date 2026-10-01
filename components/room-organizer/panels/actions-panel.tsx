@@ -15,7 +15,7 @@ import { downloadTextFile, planExportFileName } from '../lib/plan-export/downloa
 import { layoutToDxf } from '../lib/plan-export/dxf';
 import { openPlanPrintWindow } from '../lib/plan-export/print';
 import { layoutToSvg } from '../lib/plan-export/svg';
-import { ENTRANCE_DOOR_ID } from '../lib/street';
+import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
 import type { FurnitureItem } from '../lib/types';
 
@@ -33,7 +33,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const hasItems = activeFloor.items.length > 0;
-  const hasInteriorWalls = (activeFloor.interiorWalls ?? []).length > 0;
+  // The porch back wall is structure the reducer keeps on a clear (#357).
+  const hasInteriorWalls = (activeFloor.interiorWalls ?? []).some((wall) => wall.id !== ENTRANCE_WALL_ID);
   const allLocked = hasItems && activeFloor.items.every((item) => item.locked === true);
 
   // Doors/windows/cameras must stay on their walls and outdoor items must stay
