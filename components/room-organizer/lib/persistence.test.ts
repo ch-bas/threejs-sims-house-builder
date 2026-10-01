@@ -595,12 +595,6 @@ describe('persistence — third-review fixes (#336)', () => {
   });
 
   it('says why a copy failed, and whether one was made', () => {
-    const blocked = withOverrides(quotaStore(Number.MAX_SAFE_INTEGER), {
-      setItem: () => {
-        throw domError('SecurityError', 18);
-      },
-    });
-    blocked.removeItem(STORAGE_KEY);
     expect(keepStoredLayout(quotaStore(Number.MAX_SAFE_INTEGER), 1)).toBe('nothing');
     const withHouse = quotaStore(Number.MAX_SAFE_INTEGER);
     withHouse.setItem(STORAGE_KEY, JSON.stringify(makeLayout({ name: 'Kept', width: 6 })));
@@ -611,7 +605,6 @@ describe('persistence — third-review fixes (#336)', () => {
         throw domError('SecurityError', 18);
       },
     });
-    unwritable.removeItem(`${RECOVERY_STORAGE_KEY}`);
     for (const { key } of readRecoveryCopies(withHouse)) withHouse.removeItem(key);
     expect(keepStoredLayout(unwritable, 3)).toBe('blocked');
   });

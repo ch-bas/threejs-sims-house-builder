@@ -114,12 +114,15 @@ function recoverySlots(store: RawStore): RecoverySlot[] {
  * restored from, re-serialised by the schema — differ as raw strings, so
  * houses that parse are compared by content without the id.
  */
-/** The layout a stored blob opens as, or null when it can't open or opening it would cut something (#332). */
+/**
+ * The layout a stored blob opens as, or null unless it opens with no repair
+ * at all — the schema returns the very object it was given then (#332).
+ */
 function wholeLayout(raw: string): RoomLayout | null {
   try {
     const json: unknown = JSON.parse(raw);
     const layout = parseStoredLayout(json);
-    return layout && storedEntryCount(layout) === storedEntryCount(json) ? layout : null;
+    return layout !== null && layout === json ? layout : null;
   } catch {
     return null;
   }

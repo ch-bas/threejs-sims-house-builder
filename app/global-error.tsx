@@ -34,8 +34,13 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
   const resetSavedLayout = () => {
     const raw = readStoredLayoutRaw();
     const outcome = resetStoredLayout();
+    // Nothing stored (or storage unreadable): nothing to lose, just reload.
+    if (outcome === 'refused' && raw === null) {
+      window.location.reload();
+      return;
+    }
     if (outcome === 'refused') {
-      setResetProblem('There isn’t room to keep a copy of your house, so it was left as it is. Free some browser storage and try again.');
+      setResetProblem('Your house couldn’t be copied aside — browser storage is full or blocked — so it was left as it is. Free some storage, or allow it for this site, and try again.');
       return;
     }
     if (outcome === 'lost') {
@@ -82,6 +87,9 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
               : resetProblem ??
                 'The editor couldn’t start. Starting fresh moves your saved house to Manage → Saved Layouts → History, where you can restore it.'}
           </p>
+          {/* After a failed move this page holds the only copy: no button that
+              would reload it away until the user has downloaded it. */}
+          {!lostRaw && (
           <button
             type="button"
             onClick={chunkFailure ? retryChunkLoad : resetSavedLayout}
@@ -101,6 +109,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
           >
             {chunkFailure ? 'Reload' : 'Start fresh, keep a copy'}
           </button>
+          )}
           {lostRaw && (
             <button
               type="button"
