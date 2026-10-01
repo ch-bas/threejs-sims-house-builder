@@ -3,6 +3,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../lib/constants';
+import { EDITOR_SETTLED_MS, crashRecurredAfterReload, noteReloadAttempt } from '../lib/persistence';
 import { useLayoutPersistence } from './use-layout-persistence';
 import type { RoomLayout } from '../lib/types';
 
@@ -108,6 +109,25 @@ describe('useLayoutPersistence — no ping-pong between tabs (#334)', () => {
     expect(tabB.result.current.remoteLayout).toBeNull();
   });
 
+  it('withdraws a notice once storage goes back to what this tab wrote', () => {
+    const shown = makeLayout({ name: 'X' });
+    const tabA = mountTab(shown);
+    const tabB = mountTab(shown);
+    act(() => {
+      vi.advanceTimersByTime(DEBOUNCE);
+    });
+    // B edits to W: A is offered W.
+    tabB.rerender({ layout: makeLayout({ name: 'W' }) });
+    saveAndBroadcast();
+    expect(tabA.result.current.remoteLayout?.name).toBe('W');
+    // B undoes back to X, writing exactly the JSON A last saved: the offer is stale.
+    tabB.rerender({ layout: { ...shown } });
+    saveAndBroadcast();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(JSON.stringify(shown));
+    expect(tabA.result.current.remoteLayout).toBeNull();
+    expect(tabB.result.current.remoteLayout).toBeNull();
+  });
+
   it('treats the same house written with a different key order as no change', () => {
     const shown = makeLayout({ name: 'Same' });
     const tab = mountTab(shown);
@@ -123,6 +143,42 @@ describe('useLayoutPersistence — no ping-pong between tabs (#334)', () => {
     expect(tab.result.current.remoteLayout).not.toBeNull();
     act(() => fireStorage(STORAGE_KEY, JSON.stringify(shown)));
     expect(tab.result.current.remoteLayout).toBeNull();
+  });
+});
+
+describe('useLayoutPersistence — reload marker (#336)', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const mount = () =>
+    renderHook(() => useLayoutPersistence({ layout: makeLayout(), onHydrate: () => {}, debounceMs: 60_000 }));
+
+  it('clears the marker once the editor has stayed up', () => {
+    noteReloadAttempt(Date.now());
+    mount();
+    act(() => {
+      vi.advanceTimersByTime(EDITOR_SETTLED_MS);
+    });
+    expect(crashRecurredAfterReload()).toBe(false);
+  });
+
+  it('leaves the marker when the editor goes down before settling', () => {
+    noteReloadAttempt(Date.now());
+    const tab = mount();
+    act(() => {
+      vi.advanceTimersByTime(EDITOR_SETTLED_MS / 2);
+    });
+    tab.unmount();
+    act(() => {
+      vi.advanceTimersByTime(EDITOR_SETTLED_MS);
+    });
+    expect(crashRecurredAfterReload()).toBe(true);
   });
 });
 

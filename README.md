@@ -337,7 +337,7 @@ components/
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
-    │   ├── persistence.ts               Active-layout localStorage I/O + unreadable-save recovery backup
+    │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
     │   ├── library.ts                   Named-layout library I/O
     │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
     │   ├── restore-point.ts             Forced restore point before a whole-layout replacement; "untouched" = equal to INITIAL_LAYOUT
@@ -465,6 +465,7 @@ components/
         ├── templates-panel.tsx
         ├── themes-panel.tsx
         ├── library-panel.tsx
+        ├── recovery-entry.tsx           History rows for kept recovery copies: restore, download, delete
         ├── sets-panel.tsx
         ├── statistics-panel.tsx
         ├── header-stats.tsx

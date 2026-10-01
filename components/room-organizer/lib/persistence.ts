@@ -5,10 +5,32 @@ import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout } from './types';
 import type { VersionHistoryStore } from './version-history';
 
-export function loadLayout(): RoomLayout | null {
+/**
+ * `window.localStorage`, or null where storage is unavailable: the getter
+ * throws where storage is blocked, and Firefox with `dom.storage.enabled=false`
+ * returns null instead (#472).
+ */
+export function localStorageOrNull(): Storage | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse a stored house through the schema, or null when it can't be one. */
+export function parseLayoutJson(raw: string): RoomLayout | null {
+  try {
+    return parseStoredLayout(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function loadLayout(): RoomLayout | null {
+  try {
+    const raw = localStorageOrNull()?.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     const layout = parseStoredLayout(parsed);
@@ -29,12 +51,68 @@ export function loadLayout(): RoomLayout | null {
 }
 
 /**
- * Where a stored blob that exists but can't be used — unreadable (JSON or
- * schema failure, #113) or parseable but crashing on apply (#206) — is
- * stashed before the autosave loop can overwrite it with the fallback
- * layout. The user's house survives for manual recovery.
+ * Prefix of the keys holding houses kept aside: a stored blob that exists but
+ * can't be used — unreadable (JSON or schema failure, #113) or crashing on
+ * apply (#206) — before the autosave loop overwrites it, and the house the
+ * error screen's "start fresh" moved away (#336). Each copy lives under
+ * `<prefix>-<savedAt>`; the bare prefix is where the single copy used to go
+ * and is still read, as the oldest.
  */
 export const RECOVERY_STORAGE_KEY = `${STORAGE_KEY}-recovery`;
+
+/**
+ * How many recovery copies are kept. No copy is ever overwritten: the oldest
+ * goes only once a newer one has been written past this cap, so the copy the
+ * user was just told about, and the one before it, always survive.
+ */
+export const MAX_RECOVERY_COPIES = 2;
+
+/** The slice of `Storage` the recovery helpers use; injectable for tests. */
+export type RawStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
+
+/** Whether a storage key holds a recovery copy. */
+export function isRecoveryKey(key: string): boolean {
+  if (key === RECOVERY_STORAGE_KEY) return true;
+  if (!key.startsWith(`${RECOVERY_STORAGE_KEY}-`)) return false;
+  return /^\d+$/.test(key.slice(RECOVERY_STORAGE_KEY.length + 1));
+}
+
+interface RecoverySlot {
+  key: string;
+  /** When the copy was kept; null for the legacy undated key. */
+  savedAt: number | null;
+}
+
+/** Every recovery copy's key, oldest first. */
+function recoverySlots(store: RawStore): RecoverySlot[] {
+  const slots: RecoverySlot[] = [];
+  for (let index = 0; index < store.length; index += 1) {
+    const key = store.key(index);
+    if (key === null || !isRecoveryKey(key)) continue;
+    const savedAt = key === RECOVERY_STORAGE_KEY ? null : Number(key.slice(RECOVERY_STORAGE_KEY.length + 1));
+    slots.push({ key, savedAt });
+  }
+  return slots.sort((a, b) => (a.savedAt ?? -1) - (b.savedAt ?? -1));
+}
+
+/**
+ * Keep `raw` as a recovery copy, or throw the storage error that stopped it.
+ * A copy with the same content isn't duplicated, no kept copy is replaced,
+ * and the oldest are dropped only after the new one is safely written.
+ */
+function keepRecoveryCopy(store: RawStore, raw: string, now: number): void {
+  const slots = recoverySlots(store);
+  if (slots.some(({ key }) => store.getItem(key) === raw)) return;
+  const newest = slots.reduce((latest, { savedAt }) => Math.max(latest, savedAt ?? 0), 0);
+  store.setItem(`${RECOVERY_STORAGE_KEY}-${Math.max(now, newest + 1)}`, raw);
+  for (const { key } of slots.slice(0, Math.max(0, slots.length + 1 - MAX_RECOVERY_COPIES))) {
+    try {
+      store.removeItem(key);
+    } catch {
+      /* an extra copy costs space, not data */
+    }
+  }
+}
 
 /**
  * Copy the raw stored blob aside before it gets clobbered by the fallback
@@ -43,13 +121,14 @@ export const RECOVERY_STORAGE_KEY = `${STORAGE_KEY}-recovery`;
  * applying a parsed layout threw (#206). Best-effort; a quota failure here
  * must not break the mount.
  */
-export function backupStoredLayout(): void {
-  if (typeof window === 'undefined') return;
+export function backupStoredLayout(storage?: RawStore, now: number = Date.now()): void {
+  const target = storage ?? localStorageOrNull();
+  if (!target) return;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = target.getItem(STORAGE_KEY);
     if (!raw) return;
-    window.localStorage.setItem(RECOVERY_STORAGE_KEY, raw);
-    console.warn(`Saved layout can't be used; a copy was kept under "${RECOVERY_STORAGE_KEY}".`);
+    keepRecoveryCopy(target, raw, now);
+    console.warn('Saved layout can’t be used; a copy was kept in Manage → Saved Layouts → History.');
   } catch (error) {
     console.warn('Failed to back up stored layout:', error);
   }
@@ -87,8 +166,10 @@ export function classifyStorageError(error: unknown): SaveFailureReason {
 export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): SaveResult {
   if (!storage && typeof window === 'undefined') return { ok: false, reason: 'unknown' };
   try {
+    const target = storage ?? localStorageOrNull();
+    if (!target) return { ok: false, reason: 'blocked' };
     const json = JSON.stringify(layout);
-    setItemEvictingSnapshots(storage ?? window.localStorage, STORAGE_KEY, json);
+    setItemEvictingSnapshots(target, STORAGE_KEY, json);
     return { ok: true, json };
   } catch (error) {
     // Reported to the caller so the HUD never shows "Saved" for a layout that
@@ -97,9 +178,6 @@ export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): S
     return { ok: false, reason: classifyStorageError(error) };
   }
 }
-
-/** The slice of `Storage` the recovery helpers use; injectable for tests. */
-export type RawStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 function canonicalJson(value: unknown): string {
   return JSON.stringify(value, (_key, inner: unknown) => {
@@ -118,31 +196,25 @@ export function sameLayoutContent(a: RoomLayout, b: RoomLayout): boolean {
   return a === b || canonicalJson(a) === canonicalJson(b);
 }
 
-// The `window.localStorage` getter itself throws where storage is blocked;
-// every caller sits inside a try.
-function storageOrDefault(storage: RawStore | undefined): RawStore {
-  return storage ?? window.localStorage;
-}
-
 /**
- * What "start fresh" did with the stored house (#336): moved it to the
- * recovery key, refused and left it where it was, or — only if storage
+ * What "start fresh" did with the stored house (#336): moved it to a
+ * recovery copy, refused and left it where it was, or — only if storage
  * misbehaved mid-move — lost it from storage, so the caller's in-memory
  * copy is the last one and must be offered for download.
  */
 export type ResetOutcome = 'moved' | 'refused' | 'lost';
 
 /**
- * Move the stored house aside to the recovery key and clear the main save,
+ * Move the stored house aside to a recovery copy and clear the main save,
  * for the error screen's "start fresh" (#336). Never deletes without a copy:
  * on a full quota the copy is retried in the space the original frees, and
  * the original is put back if even that fails.
  */
-export function resetStoredLayout(storage?: RawStore): ResetOutcome {
-  let target: RawStore;
+export function resetStoredLayout(storage?: RawStore, now: number = Date.now()): ResetOutcome {
+  const target = storage ?? localStorageOrNull();
+  if (!target) return 'refused';
   let raw: string | null;
   try {
-    target = storageOrDefault(storage);
     raw = target.getItem(STORAGE_KEY);
   } catch (error) {
     console.warn('Failed to read the saved layout before resetting:', error);
@@ -150,7 +222,7 @@ export function resetStoredLayout(storage?: RawStore): ResetOutcome {
   }
   if (raw === null) return 'moved';
   try {
-    target.setItem(RECOVERY_STORAGE_KEY, raw);
+    keepRecoveryCopy(target, raw, now);
   } catch (error) {
     if (classifyStorageError(error) !== 'quota') {
       console.warn('Failed to back up the saved layout; leaving it in place:', error);
@@ -158,7 +230,7 @@ export function resetStoredLayout(storage?: RawStore): ResetOutcome {
     }
     try {
       target.removeItem(STORAGE_KEY);
-      target.setItem(RECOVERY_STORAGE_KEY, raw);
+      keepRecoveryCopy(target, raw, now);
       return 'moved';
     } catch (retryError) {
       console.warn('Failed to back up the saved layout; putting it back:', retryError);
@@ -187,40 +259,59 @@ export function resetStoredLayout(storage?: RawStore): ResetOutcome {
 /** The raw stored house (for a download), or null when absent or unreadable. */
 export function readStoredLayoutRaw(storage?: RawStore): string | null {
   try {
-    return storageOrDefault(storage).getItem(STORAGE_KEY);
+    return (storage ?? localStorageOrNull())?.getItem(STORAGE_KEY) ?? null;
   } catch {
     return null;
   }
 }
 
 export interface RecoveryCopy {
+  /** The storage key it lives under — what restore and delete address. */
+  key: string;
+  /** When it was kept; null for a copy from before copies were dated. */
+  savedAt: number | null;
   raw: string;
   /** The copy validated through the schema, or null when it can't be used as a house. */
   layout: RoomLayout | null;
 }
 
-/** The house kept under the recovery key, if any (#336). */
-export function readRecoveryCopy(storage?: RawStore): RecoveryCopy | null {
+/** The houses kept aside (#336), newest first. */
+export function readRecoveryCopies(storage?: RawStore): RecoveryCopy[] {
+  const target = storage ?? localStorageOrNull();
+  if (!target) return [];
+  try {
+    const copies: RecoveryCopy[] = [];
+    for (const { key, savedAt } of recoverySlots(target).reverse()) {
+      const raw = target.getItem(key);
+      if (raw !== null) copies.push({ key, savedAt, raw, layout: parseLayoutJson(raw) });
+    }
+    return copies;
+  } catch {
+    return [];
+  }
+}
+
+/** One recovery copy as it is stored right now, or null when it's gone or unreadable. */
+export function readRecoveryCopy(key: string, storage?: RawStore): RecoveryCopy | null {
+  if (!isRecoveryKey(key)) return null;
   let raw: string | null;
   try {
-    raw = storageOrDefault(storage).getItem(RECOVERY_STORAGE_KEY);
+    raw = (storage ?? localStorageOrNull())?.getItem(key) ?? null;
   } catch {
     return null;
   }
   if (raw === null) return null;
-  let layout: RoomLayout | null;
-  try {
-    layout = parseStoredLayout(JSON.parse(raw));
-  } catch {
-    layout = null;
-  }
-  return { raw, layout };
+  const savedAt = key === RECOVERY_STORAGE_KEY ? null : Number(key.slice(RECOVERY_STORAGE_KEY.length + 1));
+  return { key, savedAt, raw, layout: parseLayoutJson(raw) };
 }
 
-/** Whether the recovery copy is now gone. */
-export function discardRecoveryCopy(storage?: RawStore): boolean {
+/** Whether the recovery copy under `key` is now gone. */
+export function discardRecoveryCopy(key: string, storage?: RawStore): boolean {
+  if (!isRecoveryKey(key)) return false;
   try {
-    storageOrDefault(storage).removeItem(RECOVERY_STORAGE_KEY);
+    const target = storage ?? localStorageOrNull();
+    if (!target) return false;
+    target.removeItem(key);
     return true;
   } catch {
     return false;
@@ -243,12 +334,14 @@ export function downloadRawLayout(raw: string, fileName: string): void {
   }
 }
 
-const RELOAD_ATTEMPT_KEY ='pc-error-reload';
+const RELOAD_ATTEMPT_KEY = 'pc-error-reload';
 /** A crash this soon after the error screen's reload means reloading didn't help. */
 export const RELOAD_RETRY_WINDOW_MS = 2 * 60_000;
+/** How long the editor must stay up after mounting before its reload counts as having worked. */
+export const EDITOR_SETTLED_MS = 10_000;
 
 /** Called by the error screen's "Reload" so the next crash knows it came back. */
-export function noteReloadAttempt(now: number = Date.now(), session?: RawStore): void {
+export function noteReloadAttempt(now: number = Date.now(), session?: Pick<Storage, 'setItem'>): void {
   try {
     (session ?? window.sessionStorage).setItem(RELOAD_ATTEMPT_KEY, String(now));
   } catch {
@@ -257,11 +350,23 @@ export function noteReloadAttempt(now: number = Date.now(), session?: RawStore):
 }
 
 /**
+ * Called once the editor has come up with the saved house: the reload
+ * worked, so a later, unrelated crash must not read as a recurrence.
+ */
+export function clearReloadAttempt(session?: Pick<Storage, 'removeItem'>): void {
+  try {
+    (session ?? window.sessionStorage).removeItem(RELOAD_ATTEMPT_KEY);
+  } catch {
+    /* nothing to clear where session storage is unavailable */
+  }
+}
+
+/**
  * Whether the error screen should suspect the saved house (#336): the crash
  * came back within moments of a reload. Without session storage there's no
  * way to tell, so the answer is yes rather than no way out.
  */
-export function crashRecurredAfterReload(now: number = Date.now(), session?: RawStore): boolean {
+export function crashRecurredAfterReload(now: number = Date.now(), session?: Pick<Storage, 'getItem'>): boolean {
   try {
     const stamp = Number((session ?? window.sessionStorage).getItem(RELOAD_ATTEMPT_KEY));
     return stamp > 0 && now >= stamp && now - stamp < RELOAD_RETRY_WINDOW_MS;

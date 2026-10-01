@@ -9,8 +9,8 @@ import {
 import {
   crashRecurredAfterReload,
   downloadRawLayout,
-  loadLayout,
   noteReloadAttempt,
+  parseLayoutJson,
   readStoredLayoutRaw,
   resetStoredLayout,
 } from '../components/room-organizer/lib/persistence';
@@ -65,7 +65,7 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   // A persistent chunk failure is a deploy problem, not a corrupt save —
   // offering a reset for it would move the user's house aside for nothing (#143).
   const chunkFailure = isChunkLoadError(error);
-  const [storedRaw] = useState(() => (chunkFailure ? null : readStoredLayoutRaw()));
+  const [storedRaw, setStoredRaw] = useState(() => (chunkFailure ? null : readStoredLayoutRaw()));
   const [suspectSave] = useState(() => !chunkFailure && crashRecurredAfterReload());
   const [resetFailure, setResetFailure] = useState<'refused' | 'lost' | null>(null);
 
@@ -83,15 +83,25 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   };
 
   const startFresh = () => {
-    const outgoing = loadLayout();
+    // This screen first rendered before the crashed editor's unmount flush
+    // wrote its last edits; read the house as it is stored now, and keep
+    // that for the download if the reset can't finish.
+    const latest = readStoredLayoutRaw();
+    if (latest !== null) setStoredRaw(latest);
     const outcome = resetStoredLayout();
     if (outcome !== 'moved') {
       setResetFailure(outcome);
       return;
     }
     // A second way back, in the History list itself.
-    snapshotBeforeReplace(outgoing);
+    snapshotBeforeReplace(latest === null ? null : parseLayoutJson(latest));
     window.location.reload();
+  };
+
+  // Once a reset lost the house from storage, the kept value is the only copy.
+  const downloadHouse = () => {
+    const raw = readStoredLayoutRaw() ?? storedRaw;
+    if (raw !== null) downloadRawLayout(raw, 'saved-house.json');
   };
 
   const offerReset = suspectSave && storedRaw !== null;
@@ -149,7 +159,7 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
           {storedRaw !== null && (
             <button
               type="button"
-              onClick={() => downloadRawLayout(storedRaw, 'saved-house.json')}
+              onClick={downloadHouse}
               style={secondaryButton}
             >
               Download my house

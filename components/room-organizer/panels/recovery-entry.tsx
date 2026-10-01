@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  RECOVERY_STORAGE_KEY,
   discardRecoveryCopy,
   downloadRawLayout,
+  isRecoveryKey,
+  readRecoveryCopies,
   readRecoveryCopy,
 } from '../lib/persistence';
 import { confirmReplace } from '../lib/restore-point';
@@ -23,35 +24,44 @@ function countItems(layout: RoomLayout): number {
   return layout.floors.reduce((total, floor) => total + floor.items.length, 0);
 }
 
+function keptLabel(savedAt: number | null): string {
+  return savedAt === null ? 'Kept earlier' : `Kept ${new Date(savedAt).toLocaleString()}`;
+}
+
 /**
- * The house kept under the recovery key when it couldn't be opened, or when
- * the error screen started fresh (#336). Listed in History so it can come
- * back; it is validated through the schema again on restore, never trusted.
+ * The houses kept aside when a saved house couldn't be opened, or when the
+ * error screen started fresh (#336). Listed in History so they can come
+ * back; each is validated through the schema again on restore, never trusted.
  */
 export function RecoveryEntry({ currentLayout, onLoad }: RecoveryEntryProps): JSX.Element | null {
-  const [copy, setCopy] = useState<RecoveryCopy | null>(null);
+  const [copies, setCopies] = useState<RecoveryCopy[]>([]);
   const [status, setStatus] = useState<string | null>(null);
 
-  const refresh = useCallback(() => setCopy(readRecoveryCopy()), []);
-  const loadThumb = useCallback(() => copy?.layout ?? null, [copy]);
+  const refresh = useCallback(() => setCopies(readRecoveryCopies()), []);
 
   useEffect(() => {
     refresh();
     const onStorage = (event: StorageEvent): void => {
-      if (event.key === null || event.key === RECOVERY_STORAGE_KEY) refresh();
+      if (event.key === null || isRecoveryKey(event.key)) refresh();
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, [refresh]);
 
-  if (!copy) return null;
-  const { layout } = copy;
+  if (copies.length === 0 && !status) return null;
 
-  const handleRestore = () => {
-    const fresh = readRecoveryCopy();
+  const handleRestore = (shown: RecoveryCopy) => {
+    const fresh = readRecoveryCopy(shown.key);
     if (!fresh?.layout) {
-      setStatus('The recovered copy is gone or can no longer be read.');
-      setCopy(fresh);
+      setStatus('That recovered copy is gone or can no longer be read.');
+      refresh();
+      return;
+    }
+    // Another tab may have replaced it since this list was drawn: never apply
+    // a house other than the one the user is looking at.
+    if (fresh.raw !== shown.raw) {
+      setStatus('That recovered copy changed since it was shown — check it and restore again.');
+      refresh();
       return;
     }
     if (!confirmReplace(currentLayout, 'the recovered copy')) return;
@@ -59,9 +69,9 @@ export function RecoveryEntry({ currentLayout, onLoad }: RecoveryEntryProps): JS
     setStatus('Restored the recovered copy. Undo brings back the house it replaced.');
   };
 
-  const handleDiscard = () => {
-    if (!window.confirm('Delete the recovered copy for good? Download it first if you might want it.')) return;
-    if (!discardRecoveryCopy()) {
+  const handleDiscard = (copy: RecoveryCopy) => {
+    if (!window.confirm('Delete this recovered copy for good? Download it first if you might want it.')) return;
+    if (!discardRecoveryCopy(copy.key)) {
       setStatus('Couldn’t delete the recovered copy — storage is blocked.');
       return;
     }
@@ -76,49 +86,67 @@ export function RecoveryEntry({ currentLayout, onLoad }: RecoveryEntryProps): JS
           {status}
         </p>
       )}
-      <div className="flex items-center gap-2 rounded border border-dashed p-2 text-xs">
-        {layout && (
-          <PlanThumb
-            layout={loadThumb}
-            width={96}
-            height={64}
-            className="rounded border bg-muted shrink-0"
-          />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="font-medium">Recovered copy</div>
-          {layout ? (
-            <div className="text-muted-foreground truncate">
-              {layout.name} · {countItems(layout)} {countItems(layout) === 1 ? 'item' : 'items'}
-            </div>
-          ) : (
-            <div className="text-muted-foreground">Can’t be opened as a house — download it to keep it.</div>
-          )}
-          <div className="text-muted-foreground/80">Kept when a saved house couldn’t be opened.</div>
-          <div className="flex flex-wrap gap-1 mt-1">
-            {layout && (
-              <Button size="sm" variant="ghost" className="h-6 px-2" onClick={handleRestore}>
-                ↩️ Restore
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2"
-              onClick={() => downloadRawLayout(copy.raw, 'recovered-house.json')}
-            >
-              Download
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2"
-              onClick={handleDiscard}
-              aria-label="Delete the recovered copy"
-            >
-              Delete
-            </Button>
+      {copies.map((copy) => (
+        <RecoveryCopyRow
+          key={copy.key}
+          copy={copy}
+          onRestore={() => handleRestore(copy)}
+          onDiscard={() => handleDiscard(copy)}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface RecoveryCopyRowProps {
+  copy: RecoveryCopy;
+  onRestore(): void;
+  onDiscard(): void;
+}
+
+function RecoveryCopyRow({ copy, onRestore, onDiscard }: RecoveryCopyRowProps): JSX.Element {
+  const { layout } = copy;
+  const loadThumb = useCallback(() => layout, [layout]);
+  return (
+    <div className="flex items-center gap-2 rounded border border-dashed p-2 text-xs">
+      {layout && (
+        <PlanThumb layout={loadThumb} width={96} height={64} className="rounded border bg-muted shrink-0" />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="font-medium">Recovered copy</div>
+        {layout ? (
+          <div className="text-muted-foreground truncate">
+            {layout.name} · {countItems(layout)} {countItems(layout) === 1 ? 'item' : 'items'}
           </div>
+        ) : (
+          <div className="text-muted-foreground">Can’t be opened as a house — download it to keep it.</div>
+        )}
+        <div className="text-muted-foreground/80">
+          {keptLabel(copy.savedAt)}, when a saved house couldn’t be opened.
+        </div>
+        <div className="flex flex-wrap gap-1 mt-1">
+          {layout && (
+            <Button size="sm" variant="ghost" className="h-6 px-2" onClick={onRestore}>
+              ↩️ Restore
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2"
+            onClick={() => downloadRawLayout(copy.raw, 'recovered-house.json')}
+          >
+            Download
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2"
+            onClick={onDiscard}
+            aria-label="Delete the recovered copy"
+          >
+            Delete
+          </Button>
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../components/room-organizer/lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../components/room-organizer/lib/constants';
-import { RECOVERY_STORAGE_KEY } from '../components/room-organizer/lib/persistence';
+import { RECOVERY_STORAGE_KEY, readRecoveryCopies } from '../components/room-organizer/lib/persistence';
 import { VERSION_HISTORY_STORAGE_KEY } from '../components/room-organizer/lib/version-history';
 import ErrorBoundaryPage from './error';
 
@@ -88,7 +88,7 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     expect(screen.getByText(/broke again right after reloading/i)).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
-    expect(window.localStorage.getItem(RECOVERY_STORAGE_KEY)).toBe(house);
+    expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual([house]);
     expect(window.localStorage.getItem(VERSION_HISTORY_STORAGE_KEY)).toContain('Crashy');
     expect(reload).toHaveBeenCalledTimes(2);
   });
@@ -139,5 +139,36 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/only copy/);
     expect(screen.getByRole('button', { name: /download my house/i })).toBeDefined();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an older recovery copy when starting fresh', () => {
+    window.localStorage.setItem(RECOVERY_STORAGE_KEY, 'older copy');
+    crashTwice();
+    fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+    expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual([house, 'older copy']);
+  });
+
+  it('moves and downloads the house as stored at click time, not as first rendered', async () => {
+    crashTwice();
+    // The crashed editor's unmount flush lands after this screen first rendered.
+    const flushed = JSON.stringify(makeLayout({ name: 'Flushed edits' }));
+    window.localStorage.setItem(STORAGE_KEY, flushed);
+    const setItem = failSetItem('QuotaExceededError');
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+    } finally {
+      setItem.mockRestore();
+    }
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+    let downloaded: Blob | null = null;
+    Object.assign(URL, {
+      createObjectURL: (blob: Blob) => {
+        downloaded = blob;
+        return 'blob:test';
+      },
+      revokeObjectURL: () => {},
+    });
+    fireEvent.click(screen.getByRole('button', { name: /download my house/i }));
+    expect(await (downloaded as Blob | null)?.text()).toBe(flushed);
   });
 });

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { notify } from '../lib/editor-notices';
-import { backupStoredLayout, loadLayout, sameLayoutContent, saveLayout } from '../lib/persistence';
+import {
+  EDITOR_SETTLED_MS,
+  backupStoredLayout,
+  clearReloadAttempt,
+  loadLayout,
+  sameLayoutContent,
+  saveLayout,
+} from '../lib/persistence';
 import { snapshotBeforeReplace } from '../lib/restore-point';
 import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash, isShareHashWithinBudget } from '../lib/share';
@@ -69,7 +76,13 @@ export function useLayoutPersistence({
   useEffect(() => {
     const onStorage = (event: StorageEvent): void => {
       if (event.key !== STORAGE_KEY || event.newValue === null) return;
-      if (event.newValue === lastSavedJsonRef.current) return;
+      if (event.newValue === lastSavedJsonRef.current) {
+        // Storage is back to what this tab wrote: a notice offering the
+        // other tab's version is stale, and adopting it would restart the
+        // ping-pong (#334).
+        setRemoteLayout(null);
+        return;
+      }
       try {
         const parsed = parseStoredLayout(JSON.parse(event.newValue));
         if (!parsed) return;
@@ -92,6 +105,14 @@ export function useLayoutPersistence({
   }, []);
 
   const clearRemoteLayout = useCallback(() => setRemoteLayout(null), []);
+
+  // The editor hydrated and stayed up, so the error screen's reload worked: a
+  // later, unrelated crash must not read as the saved house failing again
+  // (#336). A crash before then unmounts the hook and cancels this.
+  useEffect(() => {
+    const handle = window.setTimeout(() => clearReloadAttempt(), EDITOR_SETTLED_MS);
+    return () => window.clearTimeout(handle);
+  }, []);
 
   useEffect(() => {
     if (hasHydratedRef.current) return;
