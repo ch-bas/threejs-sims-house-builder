@@ -13,6 +13,7 @@ import {
   clearReloadAttempt,
   crashRecurredAfterReload,
   discardRecoveryCopy,
+  keepStoredLayout,
   isRecoveryKey,
   loadLayout,
   localStorageOrNull,
@@ -545,5 +546,73 @@ describe('persistence — missing storage object (#472)', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('persistence — third-review fixes (#336)', () => {
+  const chair = (i: number) => ({
+    id: `i${i}`, type: 'chair', name: 'Chair', width: 0.5, depth: 0.5, height: 0.9, color: '#8B4513', icon: 'c', position: { x: 0, z: 0 }, rotation: 0,
+  });
+  const overCap = (extra: string) =>
+    JSON.stringify({
+      name: 'Big', width: 20, height: 20,
+      floors: [{ id: 'g', name: 'Ground', floorColor: '#fff', items: [...Array.from({ length: 2100 }, (_, i) => chair(i)), { ...chair(9999), name: extra }] }],
+    });
+
+  it('keeps an over-cap original even when its trimmed form is already kept', () => {
+    const store = quotaStore(Number.MAX_SAFE_INTEGER);
+    const original = overCap('past the cap');
+    const trimmed = JSON.stringify(parseLayoutJson(original));
+    store.setItem(`${RECOVERY_STORAGE_KEY}-1-aaaaaa`, trimmed);
+    store.setItem(STORAGE_KEY, original);
+    expect(keepStoredLayout(store, 2)).toBe('kept');
+    expect(keptRaws(store)).toContain(original);
+  });
+
+  it('puts dropped copies back when a later drop throws', () => {
+    const base = quotaStore(0);
+    const a = 'a'.repeat(400);
+    const b = 'b'.repeat(400);
+    // Big enough that only dropping BOTH old copies would make room.
+    const house = JSON.stringify({ ...makeLayout({ name: 'H', width: 7 }), padding: 'c'.repeat(600) });
+    base.data.set(`${RECOVERY_STORAGE_KEY}-1-aaaaaa`, a);
+    base.data.set(`${RECOVERY_STORAGE_KEY}-2-bbbbbb`, b);
+    base.data.set(STORAGE_KEY, house);
+    let used = 0;
+    for (const [k, v] of base.data) used += k.length + v.length;
+    const tight = quotaStore(used + 10);
+    for (const [k, v] of base.data) tight.data.set(k, v);
+    const store = withOverrides(tight, {
+      removeItem: (key) => {
+        if (key.endsWith('bbbbbb')) throw new Error('remove failed');
+        tight.removeItem(key);
+      },
+    });
+    expect(keepStoredLayout(store, 3)).not.toBe('kept');
+    expect(tight.data.get(`${RECOVERY_STORAGE_KEY}-1-aaaaaa`)).toBe(a);
+    expect(tight.data.get(`${RECOVERY_STORAGE_KEY}-2-bbbbbb`)).toBe(b);
+    expect(tight.data.get(STORAGE_KEY)).toBe(house);
+  });
+
+  it('says why a copy failed, and whether one was made', () => {
+    const blocked = withOverrides(quotaStore(Number.MAX_SAFE_INTEGER), {
+      setItem: () => {
+        throw domError('SecurityError', 18);
+      },
+    });
+    blocked.removeItem(STORAGE_KEY);
+    expect(keepStoredLayout(quotaStore(Number.MAX_SAFE_INTEGER), 1)).toBe('nothing');
+    const withHouse = quotaStore(Number.MAX_SAFE_INTEGER);
+    withHouse.setItem(STORAGE_KEY, JSON.stringify(makeLayout({ name: 'Kept', width: 6 })));
+    expect(keepStoredLayout(withHouse, 1)).toBe('kept');
+    expect(keepStoredLayout(withHouse, 2)).toBe('nothing');
+    const unwritable = withOverrides(withHouse, {
+      setItem: () => {
+        throw domError('SecurityError', 18);
+      },
+    });
+    unwritable.removeItem(`${RECOVERY_STORAGE_KEY}`);
+    for (const { key } of readRecoveryCopies(withHouse)) withHouse.removeItem(key);
+    expect(keepStoredLayout(unwritable, 3)).toBe('blocked');
   });
 });

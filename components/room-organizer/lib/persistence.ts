@@ -114,10 +114,27 @@ function recoverySlots(store: RawStore): RecoverySlot[] {
  * restored from, re-serialised by the schema — differ as raw strings, so
  * houses that parse are compared by content without the id.
  */
+/** The layout a stored blob opens as, or null when it can't open or opening it would cut something (#332). */
+function wholeLayout(raw: string): RoomLayout | null {
+  try {
+    const json: unknown = JSON.parse(raw);
+    const layout = parseStoredLayout(json);
+    return layout && storedEntryCount(layout) === storedEntryCount(json) ? layout : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether two stored blobs hold the same house. Parsed content decides only
+ * when neither blob loses anything by parsing: an over-cap original and its
+ * trimmed form parse alike, and treating them as one would drop the
+ * original's only copy.
+ */
 function sameStoredHouse(a: string, b: string): boolean {
   if (a === b) return true;
-  const left = parseLayoutJson(a);
-  const right = parseLayoutJson(b);
+  const left = wholeLayout(a);
+  const right = wholeLayout(b);
   return left !== null && right !== null && sameLayoutContent(left, right);
 }
 
@@ -141,39 +158,46 @@ function newRecoveryKey(store: RawStore, now: number, slots: RecoverySlot[]): st
  * house is stored somewhere. If the copy still can't be written, the dropped
  * copies are put back in the room they left and the error is rethrown.
  */
-function keepRecoveryCopy(store: RawStore, raw: string, now: number): void {
+function keepRecoveryCopy(store: RawStore, raw: string, now: number): boolean {
   const parsed = parseLayoutJson(raw);
-  if (parsed && isUntouched(parsed)) return;
+  if (parsed && isUntouched(parsed)) return false;
   const slots = recoverySlots(store);
   const alreadyKept = slots.some(({ key }) => {
     const kept = store.getItem(key);
     return kept !== null && sameStoredHouse(kept, raw);
   });
-  if (alreadyKept) return;
+  if (alreadyKept) return false;
   const key = newRecoveryKey(store, now, slots);
   const dropped: { key: string; raw: string }[] = [];
+  // Every path that gives up puts the dropped copies back first: the new
+  // copy wasn't written, so nothing was traded for them.
+  const putBack = (): void => {
+    for (const copy of dropped.reverse()) {
+      try {
+        store.setItem(copy.key, copy.raw);
+      } catch {
+        /* best effort — the main save still holds the house being copied */
+      }
+    }
+  };
   let remaining = slots;
   for (;;) {
     try {
       setItemEvictingSnapshots(store, key, raw);
       break;
     } catch (error) {
-      const oldest = remaining[0];
-      const mayDrop = oldest !== undefined && classifyStorageError(error) === 'quota' && store.getItem(STORAGE_KEY) === raw;
-      const oldestRaw = mayDrop ? store.getItem(oldest.key) : null;
-      if (!oldest || oldestRaw === null) {
-        for (const copy of dropped.reverse()) {
-          try {
-            store.setItem(copy.key, copy.raw);
-          } catch {
-            /* the main save still holds the new house; this old copy is what was traded for it */
-          }
-        }
-        throw error;
+      try {
+        const oldest = remaining[0];
+        const mayDrop = oldest !== undefined && classifyStorageError(error) === 'quota' && store.getItem(STORAGE_KEY) === raw;
+        const oldestRaw = mayDrop ? store.getItem(oldest.key) : null;
+        if (!oldest || oldestRaw === null) throw error;
+        store.removeItem(oldest.key);
+        dropped.push({ key: oldest.key, raw: oldestRaw });
+        remaining = remaining.slice(1);
+      } catch (failure) {
+        putBack();
+        throw failure;
       }
-      store.removeItem(oldest.key);
-      dropped.push({ key: oldest.key, raw: oldestRaw });
-      remaining = remaining.slice(1);
     }
   }
   for (const { key: stale } of remaining.slice(0, Math.max(0, remaining.length + 1 - MAX_RECOVERY_COPIES))) {
@@ -183,6 +207,7 @@ function keepRecoveryCopy(store: RawStore, raw: string, now: number): void {
       /* an extra copy costs space, not data */
     }
   }
+  return true;
 }
 
 /**
@@ -195,17 +220,30 @@ function keepRecoveryCopy(store: RawStore, raw: string, now: number): void {
  * leave the main save alone, since it's the only copy of the house.
  */
 export function backupStoredLayout(storage?: RawStore, now: number = Date.now()): boolean {
+  const outcome = keepStoredLayout(storage, now);
+  return outcome === 'kept' || outcome === 'nothing';
+}
+
+/**
+ * `backupStoredLayout`, saying what happened: `'kept'` when a new copy was
+ * written, `'nothing'` when there was nothing new worth keeping (no save, an
+ * untouched house, a house already kept), else the storage error that
+ * stopped it — "storage full" and "storage blocked" need different advice
+ * (#472).
+ */
+export function keepStoredLayout(
+  storage?: RawStore,
+  now: number = Date.now()
+): 'kept' | 'nothing' | StorageErrorKind {
   const target = storage ?? localStorageOrNull();
-  if (!target) return true;
+  if (!target) return 'nothing';
   try {
     const raw = target.getItem(STORAGE_KEY);
-    if (!raw) return true;
-    keepRecoveryCopy(target, raw, now);
-    console.warn('Saved layout can’t be used; a copy was kept in Manage → Saved Layouts → History.');
-    return true;
+    if (!raw) return 'nothing';
+    return keepRecoveryCopy(target, raw, now) ? 'kept' : 'nothing';
   } catch (error) {
     console.warn('Failed to back up stored layout; leaving it in place:', error);
-    return false;
+    return classifyStorageError(error);
   }
 }
 

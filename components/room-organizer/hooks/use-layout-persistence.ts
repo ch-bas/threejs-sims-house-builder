@@ -3,13 +3,13 @@ import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { notify } from '../lib/editor-notices';
 import {
   EDITOR_SETTLED_MS,
-  backupStoredLayout,
   clearReloadAttempt,
+  keepStoredLayout,
   loadLayout,
   sameLayoutContent,
   saveLayout,
 } from '../lib/persistence';
-import { snapshotBeforeReplace } from '../lib/restore-point';
+import { isUntouched, snapshotBeforeReplace } from '../lib/restore-point';
 import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash, isShareHashWithinBudget } from '../lib/share';
 import { recordSnapshot } from '../lib/version-history';
@@ -124,9 +124,13 @@ export function useLayoutPersistence({
 
     // Copy the stored house aside, or hold the main save if it can't be.
     const keepStoredHouseAside = (): void => {
-      if (backupStoredLayout()) return;
+      const outcome = keepStoredLayout();
+      if (outcome === 'kept') {
+        notify('Your saved house couldn’t be opened, so a copy was kept in Manage → Saved Layouts → History.', 'info');
+      }
+      if (outcome === 'kept' || outcome === 'nothing') return;
       mainSaveHeldRef.current = true;
-      setSaveError('quota');
+      setSaveError(outcome);
     };
 
     const hydrateFromLocalSave = (): void => {
@@ -231,8 +235,9 @@ export function useLayoutPersistence({
     const handle = window.setTimeout(() => {
       // Retried on every edit, so freeing space lets saving resume.
       if (mainSaveHeldRef.current) {
-        if (!backupStoredLayout()) {
-          setSaveError('quota');
+        const outcome = keepStoredLayout();
+        if (outcome !== 'kept' && outcome !== 'nothing') {
+          setSaveError(outcome);
           return;
         }
         mainSaveHeldRef.current = false;
@@ -248,8 +253,10 @@ export function useLayoutPersistence({
         setSaveError(null);
         // Restore point (#231): piggyback on the successful autosave. The
         // ring gates its own cadence and swallows quota failures, so this
-        // can never break the save that just happened.
-        recordSnapshot(layout);
+        // can never break the save that just happened. A blank lot isn't
+        // worth a point — and since #342 each one is a new house, so each
+        // fresh start would add one.
+        if (!isUntouched(layout)) recordSnapshot(layout);
       } else {
         // Keep `saving`/pending truthy and flag the error so the HUD reports
         // the failure instead of a false "Saved". A later successful edit
@@ -271,7 +278,7 @@ export function useLayoutPersistence({
       if (result.ok) lastSavedJsonRef.current = result.json;
       // The page is going away — capture a restore point regardless of the
       // ring's 5-minute cadence (#231).
-      recordSnapshot(layoutRef.current, { force: true });
+      if (!isUntouched(layoutRef.current)) recordSnapshot(layoutRef.current, { force: true });
     };
     window.addEventListener('pagehide', flush);
     return () => {
