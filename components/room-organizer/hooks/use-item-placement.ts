@@ -1,11 +1,11 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET, GRID_SIZE_METERS } from '../lib/constants';
 import {
   snapToGrid as snapValueToGrid,
   snapToNeighbors,
   snapToWall as snapPositionToWall,
 } from '../lib/geometry';
-import { isOpening, snapOpeningToWall, snapWallMountedItem } from '../lib/opening-snap';
+import { isOpening, snapOpeningToWall, snapWallMountedItem, type WallGap } from '../lib/opening-snap';
 import type { LayoutActions } from './use-layout-state';
 import type { CatalogItem, FloorLayout, ViewSettings } from '../lib/types';
 
@@ -19,6 +19,17 @@ export interface UseItemPlacementParams {
   buildingCost: number;
   actions: LayoutActions;
   view: Pick<ViewSettings, 'snapToGrid' | 'snapToWall' | 'snapToItems'>;
+  /**
+   * The multi-selection. A drag on one of its items moves its unlocked
+   * members together, so snap-to-items must not target their stale
+   * pre-drag positions (#380).
+   */
+  allSelectedIds?: ReadonlySet<string>;
+  /**
+   * The span the recessed entrance cuts out of the active storey's north
+   * wall (`entrancePlanOutline`): openings snap onto the piers beside it (#394).
+   */
+  frontGap?: WallGap | null;
 }
 
 export interface UseItemPlacementResult {
@@ -37,7 +48,18 @@ export function useItemPlacement({
   buildingCost,
   actions,
   view,
+  allSelectedIds,
+  frontGap,
 }: UseItemPlacementParams): UseItemPlacementResult {
+  // Keyed on the numbers, so a fresh outline object each render doesn't
+  // rebuild the callbacks.
+  const gapX0 = frontGap?.x0;
+  const gapX1 = frontGap?.x1;
+  const gap = useMemo(
+    () => (gapX0 !== undefined && gapX1 !== undefined ? { frontGap: { x0: gapX0, x1: gapX1 } } : {}),
+    [gapX0, gapX1]
+  );
+
   const snapPosition = useCallback(
     (itemId: string, x: number, z: number) => {
       let result = { x, z };
@@ -52,6 +74,7 @@ export function useItemPlacement({
           roomWidth,
           roomDepth,
           interiorWalls: activeFloor.interiorWalls ?? [],
+          ...gap,
         });
         return snapped.position;
       }
@@ -67,10 +90,21 @@ export function useItemPlacement({
         };
       }
       if (view.snapToItems && item) {
+        // Same membership as use-item-drag's session: locked co-selected
+        // items stay put, so they remain valid targets.
+        const group =
+          allSelectedIds && allSelectedIds.size > 1 && allSelectedIds.has(itemId)
+            ? new Set(
+                activeFloor.items
+                  .filter((entry) => allSelectedIds.has(entry.id) && !entry.locked)
+                  .map((entry) => entry.id)
+              )
+            : undefined;
         result = snapToNeighbors({
           position: result,
           movingItem: item,
           otherItems: activeFloor.items,
+          ...(group ? { excludeIds: group } : {}),
         });
       }
       if (view.snapToWall && item) {
@@ -89,6 +123,8 @@ export function useItemPlacement({
       view.snapToItems,
       activeFloor.items,
       activeFloor.interiorWalls,
+      allSelectedIds,
+      gap,
       roomWidth,
       roomDepth,
     ]
@@ -122,6 +158,7 @@ export function useItemPlacement({
           roomWidth,
           roomDepth,
           interiorWalls: activeFloor.interiorWalls ?? [],
+          ...gap,
         });
         const id = actions.addCatalogItem(catalogItem, snapped.position);
         // updateItem, not setRotation: catalog items are born locked (#11)
@@ -137,6 +174,7 @@ export function useItemPlacement({
           roomWidth,
           roomDepth,
           interiorWalls: activeFloor.interiorWalls ?? [],
+          ...gap,
         });
         const id = actions.addCatalogItem(catalogItem, snapped.position);
         actions.updateItem(id, { rotation: snapped.rotation, wallRotation: snapped.rotation });
@@ -160,7 +198,7 @@ export function useItemPlacement({
       }
       return actions.addCatalogItem(catalogItem, position);
     },
-    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth, buildingCost]
+    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth, buildingCost, gap]
   );
 
   return { snapPosition, getDragPlaneY, placeCatalogItem };

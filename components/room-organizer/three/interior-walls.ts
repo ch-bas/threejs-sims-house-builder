@@ -1,3 +1,4 @@
+import { interiorWallOpeningSpan } from '../lib/opening-snap';
 import { OPENING_HEAD_CLEARANCE, fitOpeningToStorey } from '../lib/storeys';
 import { FLOOR_HEIGHT_METERS, type FurnitureItem, type InteriorWall } from '../lib/types';
 import { BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
@@ -204,7 +205,6 @@ function computeSegmentOpenings(
   const dz = (wall.z2 - wall.z1) / length;
   const cx = (wall.x1 + wall.x2) / 2;
   const cz = (wall.z1 + wall.z2) / 2;
-  const halfLen = length / 2;
 
   const openings: SegmentOpening[] = [];
   for (const item of items) {
@@ -221,26 +221,22 @@ function computeSegmentOpenings(
       if (Math.abs(localPerp) > OPENING_DISTANCE_THRESHOLD) continue;
     }
 
-    const localX = (item.position.x - cx) * dx + (item.position.z - cz) * dz;
-    if (localX + item.width / 2 < -halfLen || localX - item.width / 2 > halfLen) continue;
+    // Shared with the walker's door gaps, so the two can't disagree (#399).
+    const span = interiorWallOpeningSpan(wall, { width: item.width, position: item.position });
+    if (!span) continue;
 
     // Same sill and height as the exterior cut and the mesh, fitted to the
     // storey (#212, #204, #277)...
     const fitted = fitOpeningToStorey(item, storeyHeight);
     const bottom = fitted.sill;
-    // Clamp the width to the segment first, then clamp the centre using the
-    // clamped half-width so an oversized opening can't extend past the wall.
-    const width = Math.min(item.width, Math.max(0, length - 0.05));
-    const halfItem = width / 2;
-    const clampedCenter = Math.max(-halfLen + halfItem, Math.min(halfLen - halfItem, localX));
     // ...then to this partition, which stops short of the ceiling. A window
     // sill above a low (loft) partition leaves nothing to cut (#202).
     const height = Math.min(fitted.height, wallHeight - bottom - OPENING_HEAD_CLEARANCE);
     if (height <= 0) continue;
     openings.push({
-      centerAlongWall: clampedCenter,
+      centerAlongWall: span.centre,
       bottomFromFloor: bottom,
-      width,
+      width: span.width,
       height,
     });
   }

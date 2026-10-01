@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  interiorWallOpeningSpan,
   isWallMounted,
   reseatWallMountedItem,
   settleWallMountedItem,
@@ -26,7 +27,7 @@ describe('snapOpeningToWall — exterior walls (#123)', () => {
   });
 
   it('clamps the opening inside the wall ends', () => {
-    const snap = snapOpeningToWall({ position: { x: 9, z: -3.8 }, itemWidth: 1.2, roomWidth: W, roomDepth: D });
+    const snap = snapOpeningToWall({ position: { x: 3.9, z: -4.5 }, itemWidth: 1.2, roomWidth: W, roomDepth: D });
     expect(snap.position.x).toBeCloseTo(4 - 0.6, 10);
     expect(snap.position.z).toBe(-4);
   });
@@ -209,7 +210,7 @@ describe('settleWallMountedItem (#116)', () => {
   it('clamps the settled opening within the wall ends', () => {
     const settled = settleWallMountedItem(
       { type: 'door', width: 0.9, depth: 0.12, rotation: 0 },
-      { x: 7.5, z: -3.9 },
+      { x: 3.9, z: -4.3 },
       W,
       D
     );
@@ -228,5 +229,66 @@ describe('isWallMounted (#149)', () => {
 
   it.each(['sofa', 'table', 'wifi-router'])('%s is not wall-mounted', (type) => {
     expect(isWallMounted(type)).toBe(false);
+  });
+});
+
+describe('snapOpeningToWall — porch recess and ranking (#394)', () => {
+  const frontGap = { x0: -0.7, x1: 0.7 };
+
+  it('lands an opening dragged into the recess span on the nearer pier, never in the hole', () => {
+    const snap = snapOpeningToWall({ position: { x: 0.2, z: -4 }, itemWidth: 1, roomWidth: W, roomDepth: D, frontGap });
+    expect(snap.position).toEqual({ x: 1.2, z: -4 });
+    const left = snapOpeningToWall({ position: { x: -0.3, z: -4 }, itemWidth: 1, roomWidth: W, roomDepth: D, frontGap });
+    expect(left.position).toEqual({ x: -1.2, z: -4 });
+    // Without a recess the same drop stays put.
+    expect(snapOpeningToWall({ position: { x: 0.2, z: -4 }, itemWidth: 1, roomWidth: W, roomDepth: D }).position).toEqual({ x: 0.2, z: -4 });
+  });
+
+  it('skips a pier too narrow for the opening', () => {
+    // The gap leaves a 0.5 m pier on the west: a 1 m window can't go there.
+    const snap = snapOpeningToWall({
+      position: { x: -3.6, z: -4 },
+      itemWidth: 1,
+      roomWidth: W,
+      roomDepth: D,
+      frontGap: { x0: -3.5, x1: 3 },
+    });
+    expect(snap.position.x).toBe(-4);
+    expect(snap.position.z).toBeCloseTo(-3.5, 10);
+  });
+
+  it('settles a recess-span opening onto a pier when given the gap', () => {
+    const settled = settleWallMountedItem({ type: 'window', width: 1, depth: 0.1, rotation: 0 }, { x: 0, z: -4 }, W, D, [], frontGap);
+    expect(Math.abs(settled!.position.x)).toBeCloseTo(1.2, 10);
+    expect(settled!.position.z).toBe(-4);
+  });
+
+  it('ranks walls by the distance to the clamped snap point', () => {
+    // 4×4 room, door dragged past the east wall's south end: the south wall's point is nearer.
+    const snap = snapOpeningToWall({ position: { x: 2.1, z: 5 }, itemWidth: 0.9, roomWidth: 4, roomDepth: 4 });
+    expect(snap.position.x).toBeCloseTo(1.55, 10);
+    expect(snap.position.z).toBe(2);
+    expect(snap.distance).toBeCloseTo(Math.hypot(0.55, 3), 10);
+  });
+});
+
+describe('interiorWallOpeningSpan (#399)', () => {
+  const wall = { x1: 0, z1: 0, x2: 2, z2: 0 };
+
+  it('cuts at the opening’s offset from the wall midpoint', () => {
+    const span = interiorWallOpeningSpan(wall, { width: 0.9, position: { x: 0.8, z: 0.05 } })!;
+    expect(span.centre).toBeCloseTo(-0.2, 10);
+    expect(span.width).toBe(0.9);
+  });
+
+  it('clamps an overhanging opening inside the wall, and a too-wide one to the wall', () => {
+    const span = interiorWallOpeningSpan(wall, { width: 0.9, position: { x: 1.9, z: 0 } })!;
+    expect(span.centre).toBeCloseTo(0.55, 10);
+    expect(interiorWallOpeningSpan(wall, { width: 3, position: { x: 1, z: 0 } })).toEqual({ centre: 0, width: 1.95 });
+  });
+
+  it('cuts nothing for an opening lying entirely past an end', () => {
+    expect(interiorWallOpeningSpan(wall, { width: 0.5, position: { x: 2.3, z: 0 } })).toBeNull();
+    expect(interiorWallOpeningSpan(wall, { width: 0.5, position: { x: -0.3, z: 0 } })).toBeNull();
   });
 });

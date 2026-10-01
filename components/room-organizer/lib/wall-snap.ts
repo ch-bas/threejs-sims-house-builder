@@ -1,6 +1,7 @@
+import { projectOntoSegment } from './opening-snap';
 import type { InteriorWall, Vec2 } from './types';
 
-export type WallSnapKind = 'vertex' | 'right-angle' | 'none';
+export type WallSnapKind = 'vertex' | 'on-wall' | 'right-angle' | 'none';
 
 export interface WallSnapResult {
   point: Vec2;
@@ -26,9 +27,12 @@ export interface WallSnapOptions {
  *
  *   1. Snap to any existing wall endpoint (or building corner) within the
  *      snap distance — most useful for closing rectangles.
- *   2. Snap to the orthogonal projection from `fromPoint` when chaining,
+ *   2. Snap onto the body of an existing wall or the building's edge (a
+ *      T-junction), so no gap is left for the walker to slip through (#412).
+ *      When chaining, the point stays square to `fromPoint` if it can.
+ *   3. Snap to the orthogonal projection from `fromPoint` when chaining,
  *      so the user gets clean horizontal / vertical walls.
- *   3. Otherwise return the original pointer.
+ *   4. Otherwise return the original pointer.
  *
  * The final point is always clamped to the lot footprint so users can't
  * draw walls into the grass beyond the building's edge.
@@ -86,17 +90,76 @@ export function snapWallEndpoint({
   }
   if (best) return best;
 
-  // 2. Right-angle snap relative to the chain anchor.
+  // The right-angle snap relative to the chain anchor, if any.
+  let rightAngle: Vec2 | null = null;
   if (fromPoint) {
     const dx = clamped.x - fromPoint.x;
     const dz = clamped.z - fromPoint.z;
-    if (Math.abs(dz) < snapDistance && Math.abs(dx) > 0.05) {
-      return { point: { x: clamped.x, z: fromPoint.z }, kind: 'right-angle' };
-    }
-    if (Math.abs(dx) < snapDistance && Math.abs(dz) > 0.05) {
-      return { point: { x: fromPoint.x, z: clamped.z }, kind: 'right-angle' };
-    }
+    if (Math.abs(dz) < snapDistance && Math.abs(dx) > 0.05) rightAngle = { x: clamped.x, z: fromPoint.z };
+    else if (Math.abs(dx) < snapDistance && Math.abs(dz) > 0.05) rightAngle = { x: fromPoint.x, z: clamped.z };
   }
 
+  // 2. On-wall snap — the nearest wall body, the building's edges included.
+  // While chaining, a junction that would bend a square wall off its axis
+  // gives way to the right-angle snap (a wall drawn alongside another stays straight).
+  const segments: Array<{ x1: number; z1: number; x2: number; z2: number }> = [
+    ...existingWalls,
+    { x1: -halfW, z1: -halfD, x2: halfW, z2: -halfD },
+    { x1: halfW, z1: -halfD, x2: halfW, z2: halfD },
+    { x1: halfW, z1: halfD, x2: -halfW, z2: halfD },
+    { x1: -halfW, z1: halfD, x2: -halfW, z2: -halfD },
+  ];
+  bestDist = snapDistance;
+  for (const segment of segments) {
+    const projected = projectOntoSegment(clamped, segment, 0);
+    if (!projected || projected.distance >= bestDist) continue;
+    const square = fromPoint ? squareOnto(segment, fromPoint, clamped, snapDistance) : null;
+    if (!square && rightAngle) continue;
+    bestDist = projected.distance;
+    best = { point: clampTo(square ?? projected.point, halfW, halfD), kind: 'on-wall' };
+  }
+  if (best) return best;
+
+  // 3. Right-angle snap.
+  if (rightAngle) return { point: rightAngle, kind: 'right-angle' };
+
   return { point: clamped, kind: 'none' };
+}
+
+function clampTo(point: Vec2, halfW: number, halfD: number): Vec2 {
+  return { x: Math.max(-halfW, Math.min(halfW, point.x)), z: Math.max(-halfD, Math.min(halfD, point.z)) };
+}
+
+/**
+ * Where the horizontal or vertical line through `from` crosses the segment,
+ * when that crossing lies within `snapDistance` of the cursor — the square
+ * T-junction a chained wall would make. Null otherwise.
+ */
+function squareOnto(
+  segment: { x1: number; z1: number; x2: number; z2: number },
+  from: Vec2,
+  cursor: Vec2,
+  snapDistance: number
+): Vec2 | null {
+  const dx = segment.x2 - segment.x1;
+  const dz = segment.z2 - segment.z1;
+  let best: Vec2 | null = null;
+  let bestDist = snapDistance;
+  // Horizontal line z = from.z, then vertical line x = from.x.
+  const crossings: Array<number | null> = [
+    Math.abs(dz) > 1e-9 ? (from.z - segment.z1) / dz : null,
+    Math.abs(dx) > 1e-9 ? (from.x - segment.x1) / dx : null,
+  ];
+  for (const t of crossings) {
+    if (t === null || t < 0 || t > 1) continue;
+    const point = { x: segment.x1 + t * dx, z: segment.z1 + t * dz };
+    // A zero-length wall from the anchor onto the line it already sits on isn't a junction.
+    if (Math.hypot(point.x - from.x, point.z - from.z) < 0.05) continue;
+    const distance = Math.hypot(point.x - cursor.x, point.z - cursor.z);
+    if (distance < bestDist) {
+      bestDist = distance;
+      best = point;
+    }
+  }
+  return best;
 }

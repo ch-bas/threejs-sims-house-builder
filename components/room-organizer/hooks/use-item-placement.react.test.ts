@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { makeCatalogItem } from '../lib/__testfixtures__/fixtures';
+import { makeCatalogItem, makeFloor, makeItem } from '../lib/__testfixtures__/fixtures';
 import { snapOpeningToWall, snapWallMountedItem } from '../lib/opening-snap';
 import { INITIAL_LAYOUT } from './layout-reducer';
 import { useItemPlacement } from './use-item-placement';
@@ -74,5 +74,56 @@ describe('useItemPlacement — wall-aligned catalog placement', () => {
 
     expect(activeItem(id).rotation).toBeCloseTo(expected.rotation, 10);
     expect(activeItem(id).wallRotation).toBeCloseTo(expected.rotation, 10);
+  });
+});
+
+describe('useItemPlacement — snapPosition', () => {
+  afterEach(cleanup);
+
+  const a = makeItem({ id: 'a', position: { x: 0, z: 0 } });
+  const b = makeItem({ id: 'b', position: { x: 1.05, z: 3 } });
+  const pinned = makeItem({ id: 'p', position: { x: 1.05, z: -3 }, locked: true });
+  const windowItem = makeItem({ id: 'w', type: 'window', width: 1, depth: 0.1, position: { x: 3, z: -4 } });
+
+  const mount = (extra: { allSelectedIds?: ReadonlySet<string>; frontGap?: { x0: number; x1: number } } = {}) =>
+    renderHook(() =>
+      useItemPlacement({
+        activeFloor: makeFloor({ items: [a, b, windowItem] }),
+        activeFloorY: 0,
+        roomWidth: 8,
+        roomDepth: 8,
+        buildingCost: 0,
+        actions: layoutStore.getState().actions,
+        view: { snapToGrid: false, snapToWall: false, snapToItems: true },
+        ...extra,
+      })
+    );
+
+  it('does not snap a group drag to its own members’ stale positions (#380)', () => {
+    // Alone, a snaps its right edge to b's left edge.
+    expect(mount().result.current.snapPosition('a', 0.1, 0).x).toBeCloseTo(0.05, 10);
+    // Dragged together with b, it doesn't.
+    expect(mount({ allSelectedIds: new Set(['a', 'b']) }).result.current.snapPosition('a', 0.1, 0)).toEqual({ x: 0.1, z: 0 });
+  });
+
+  it('still snaps to a locked co-selected item, which stays put', () => {
+    const { result } = renderHook(() =>
+      useItemPlacement({
+        activeFloor: makeFloor({ items: [a, pinned] }),
+        activeFloorY: 0,
+        roomWidth: 8,
+        roomDepth: 8,
+        buildingCost: 0,
+        actions: layoutStore.getState().actions,
+        view: { snapToGrid: false, snapToWall: false, snapToItems: true },
+        allSelectedIds: new Set(['a', 'p']),
+      })
+    );
+    expect(result.current.snapPosition('a', 0.1, 0).x).toBeCloseTo(0.05, 10);
+  });
+
+  it('keeps a dragged window out of the porch recess span (#394)', () => {
+    const { result } = mount({ frontGap: { x0: -0.7, x1: 0.7 } });
+    expect(result.current.snapPosition('w', 0.2, -4)).toEqual({ x: 1.2, z: -4 });
   });
 });
