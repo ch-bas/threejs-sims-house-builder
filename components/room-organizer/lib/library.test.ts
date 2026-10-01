@@ -70,7 +70,7 @@ describe('saveNamedLayout — restore points give way on a full quota (#295)', (
         const other = this.key(i);
         if (other !== null && other !== key) used += other.length + (this.getItem(other) ?? '').length;
       }
-      if (used > capacity) throw new Error('QuotaExceededError');
+      if (used > capacity) throw new DOMException('QuotaExceededError', 'QuotaExceededError');
       original.call(this, key, value);
     });
   }
@@ -147,6 +147,14 @@ describe('library index — validated on read (#348)', () => {
     window.localStorage.setItem(INDEX_KEY, JSON.stringify({ entries: [null, { id: 'x', name: {} }, good] }));
     expect(listSavedLayouts()).toEqual([good]);
     expect(countUnreadableSavedLayouts()).toBe(2);
+  });
+
+  it('caps a long save name like the schema does, so the saved house loads as it was listed', () => {
+    const result = saveNamedLayout(makeLayout(), 'N'.repeat(300));
+    expect(result).not.toBeNull();
+    const [entry] = listSavedLayouts();
+    expect(entry!.name).toBe('N'.repeat(200));
+    expect(loadNamedLayout(entry!.id)!.name).toBe(entry!.name);
   });
 
   it('keeps unreadable entries and unknown fields through a save and a delete', () => {

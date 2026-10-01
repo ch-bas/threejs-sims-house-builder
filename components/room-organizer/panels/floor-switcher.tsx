@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useRoomEditor } from '../contexts';
 import { useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { MAX_FLOORS } from '../lib/constants';
+import { MAX_NAME_LENGTH } from '../lib/schema';
 import { buildingHeight, storeyHeight } from '../lib/storeys';
 import { Icon } from '../plotcraft/icon';
 
@@ -146,6 +147,7 @@ export function FloorSwitcher(): JSX.Element {
                   <Input
                     autoFocus
                     value={draft}
+                    maxLength={MAX_NAME_LENGTH}
                     onChange={(event) => setDraft(event.target.value)}
                     onClick={(event) => event.stopPropagation()}
                     onKeyDown={(event) => {

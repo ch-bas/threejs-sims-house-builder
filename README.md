@@ -330,7 +330,7 @@ components/
     ├── lib/                             Pure domain code, no React/Three
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
     │   ├── constants.ts                 Catalog (69 items), templates, MAX_FLOORS
-    │   ├── schema.ts                    Type guards + legacy migration
+    │   ├── schema.ts                    Type guards, legacy migration, caps that repair (never refuse)
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
@@ -347,6 +347,7 @@ components/
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
+    │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement

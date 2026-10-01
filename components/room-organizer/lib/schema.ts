@@ -27,13 +27,16 @@ import type {
 
 /*
  * Caps on what a stored, imported or shared layout may carry (#332, #350).
- * Each sits far above anything the editor produces — a real house is never
- * refused — but bounds what a crafted file or link can make the tab hold,
- * render and re-save.
+ * They bound what a crafted file or link can make the tab hold, render and
+ * re-save. They REPAIR, never refuse: parseStoredLayout truncates, clamps
+ * and slices to them, because a save from an older version (or an edit the
+ * reducer let through) that broke a cap must still open — a refused main
+ * save is replaced by the default house on the next autosave. The reducer
+ * applies the same caps, so its output always parses unchanged.
  */
 /** House, floor, item and zone names. */
 export const MAX_NAME_LENGTH = 200;
-/** Ids, group ids, item types, categories and CCTV model ids. */
+/** Ids, group ids, item types and CCTV model ids. */
 export const MAX_ID_LENGTH = 128;
 /** Any colour string: `#rrggbb` in practice, room for a CSS colour name. */
 export const MAX_COLOR_LENGTH = 64;
@@ -42,11 +45,12 @@ export const MAX_ICON_LENGTH = 32;
 export const MAX_ITEMS_PER_FLOOR = 2000;
 export const MAX_INTERIOR_WALLS_PER_FLOOR = 1000;
 /**
- * Item positions and wall ends, in metres from the room centre: the largest
- * room plus its whole lot fits well inside. `1e300` used to pass and turned
+ * Item positions and wall ends, in metres from the room centre. The largest
+ * room's lot reaches ±306 m (`outdoorGroundSize`), and a drag ray can land
+ * beyond it, so this leaves room for both. `1e300` used to pass and turned
  * the camera fit and every matrix non-finite (#350).
  */
-export const MAX_COORDINATE = 2 * MAX_ROOM_DIMENSION;
+export const MAX_COORDINATE = 10 * MAX_ROOM_DIMENSION;
 /**
  * Largest layout JSON the app will read, in bytes — a share link's inflated
  * payload or an imported file (#332). The biggest house the editor can save
@@ -119,40 +123,31 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isBoundedString(value: unknown, maxLength: number): value is string {
-  return typeof value === 'string' && value.length <= maxLength;
-}
-
-function isOptionalBoundedString(value: unknown, maxLength: number): boolean {
-  return value === undefined || isBoundedString(value, maxLength);
-}
-
-function isCoordinate(value: unknown): value is number {
-  return isFiniteNumber(value) && Math.abs(value) <= MAX_COORDINATE;
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
 }
 
 function isVec2(value: unknown): boolean {
-  return isPlainObject(value) && isCoordinate(value.x) && isCoordinate(value.z);
+  return isPlainObject(value) && isFiniteNumber(value.x) && isFiniteNumber(value.z);
 }
 
 export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (!isPlainObject(value)) return false;
   const v = value;
   if (
-    !isBoundedString(v.id, MAX_ID_LENGTH) ||
-    !isBoundedString(v.type, MAX_ID_LENGTH) ||
-    !isBoundedString(v.name, MAX_NAME_LENGTH) ||
+    typeof v.id !== 'string' ||
+    typeof v.type !== 'string' ||
+    typeof v.name !== 'string' ||
     !isItemDimension(v.width) ||
     !isItemDimension(v.depth) ||
     !isItemDimension(v.height) ||
-    !isBoundedString(v.color, MAX_COLOR_LENGTH) ||
-    !isBoundedString(v.icon, MAX_ICON_LENGTH)
+    typeof v.color !== 'string' ||
+    typeof v.icon !== 'string'
   ) {
     return false;
   }
-  // A negative price turns the budget and every cost total upside down (#350).
-  if (v.price !== undefined && (!isFiniteNumber(v.price) || v.price < 0)) return false;
-  if (!isOptionalBoundedString(v.category, MAX_ID_LENGTH)) return false;
+  if (v.price !== undefined && !isFiniteNumber(v.price)) return false;
+  if (!isOptionalString(v.category)) return false;
   if (v.position !== undefined && !isVec2(v.position)) return false;
   if (v.rotation !== undefined && !isFiniteNumber(v.rotation)) return false;
   // Ranges must be positive: negative signal/vision values invert ring and
@@ -171,10 +166,10 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (v.sofaShape !== undefined && !SOFA_SHAPES.includes(v.sofaShape as SofaShape)) return false;
   if (v.stairsShape !== undefined && !isStairsShape(v.stairsShape)) return false;
   if (v.stairsLeadIn !== undefined && !isStairsLeadIn(v.stairsLeadIn)) return false;
-  if (!isOptionalBoundedString(v.cctvModelId, MAX_ID_LENGTH)) return false;
+  if (!isOptionalString(v.cctvModelId)) return false;
   // A group id only ever compares equal to other items' ids (#154): any
   // non-empty string is a valid group, anything else is corruption.
-  if (v.groupId !== undefined && (!isBoundedString(v.groupId, MAX_ID_LENGTH) || v.groupId === '')) return false;
+  if (v.groupId !== undefined && (typeof v.groupId !== 'string' || v.groupId === '')) return false;
   // Booleans must be real booleans: a corrupt `locked:"no"` reads truthy for
   // keyboard-delete guards yet fails `=== true` drag checks, desyncing the two.
   if (!isOptionalBoolean(v.locked)) return false;
@@ -189,9 +184,9 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
 export function isFloorLayout(value: unknown): value is FloorLayout {
   if (!isPlainObject(value)) return false;
   const v = value;
-  if (!isBoundedString(v.id, MAX_ID_LENGTH)) return false;
-  if (!isBoundedString(v.name, MAX_NAME_LENGTH)) return false;
-  if (!isBoundedString(v.floorColor, MAX_COLOR_LENGTH)) return false;
+  if (typeof v.id !== 'string') return false;
+  if (typeof v.name !== 'string') return false;
+  if (typeof v.floorColor !== 'string') return false;
   if (!isItemList(v.items)) return false;
   // Patterns must match their unions, not just be strings: an unknown key
   // reaches `PATTERNS[pattern].draw(...)` in the texture builders and throws
@@ -209,24 +204,22 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   if (v.wallColors !== undefined && !isWallColors(v.wallColors)) return false;
   if (v.hiddenWalls !== undefined) {
     if (!Array.isArray(v.hiddenWalls)) return false;
-    if (!v.hiddenWalls.every((wall) => isBoundedString(wall, MAX_ID_LENGTH))) return false;
+    if (!v.hiddenWalls.every((wall) => typeof wall === 'string')) return false;
   }
   if (v.interiorWalls !== undefined) {
-    if (!Array.isArray(v.interiorWalls) || v.interiorWalls.length > MAX_INTERIOR_WALLS_PER_FLOOR) {
-      return false;
-    }
+    if (!Array.isArray(v.interiorWalls)) return false;
     for (const wall of v.interiorWalls) {
       if (!isPlainObject(wall)) return false;
       if (
-        !isBoundedString(wall.id, MAX_ID_LENGTH) ||
-        !isCoordinate(wall.x1) ||
-        !isCoordinate(wall.z1) ||
-        !isCoordinate(wall.x2) ||
-        !isCoordinate(wall.z2)
+        typeof wall.id !== 'string' ||
+        !isFiniteNumber(wall.x1) ||
+        !isFiniteNumber(wall.z1) ||
+        !isFiniteNumber(wall.x2) ||
+        !isFiniteNumber(wall.z2)
       ) {
         return false;
       }
-      if (!isOptionalBoundedString(wall.color, MAX_COLOR_LENGTH)) return false;
+      if (!isOptionalString(wall.color)) return false;
     }
   }
   // Storey height feeds every floor's elevation and the roof base: a zero,
@@ -236,35 +229,18 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   // negative size must not reach the renderer or the stats (#155).
   if (v.zones !== undefined) {
     if (!Array.isArray(v.zones) || v.zones.length > MAX_ZONES) return false;
-    if (!v.zones.every(isBoundedZone)) return false;
+    if (!v.zones.every(isRoomZone)) return false;
   }
   return true;
 }
 
 function isItemList(value: unknown): value is FurnitureItem[] {
-  return Array.isArray(value) && value.length <= MAX_ITEMS_PER_FLOOR && value.every(isFurnitureItem);
+  return Array.isArray(value) && value.every(isFurnitureItem);
 }
 
 function isWallColors(value: unknown): value is Record<string, string> {
   return (
-    isPlainObject(value) && Object.values(value).every((color) => isBoundedString(color, MAX_COLOR_LENGTH))
-  );
-}
-
-function isBoundedZone(value: unknown): value is RoomZone {
-  return (
-    isRoomZone(value) &&
-    value.id.length <= MAX_ID_LENGTH &&
-    value.name.length <= MAX_NAME_LENGTH &&
-    value.color.length <= MAX_COLOR_LENGTH
-  );
-}
-
-function isBoundedDormer(value: unknown): value is DormerSpec {
-  return (
-    isDormerSpec(value) &&
-    value.id.length <= MAX_ID_LENGTH &&
-    (value.color === undefined || value.color.length <= MAX_COLOR_LENGTH)
+    isPlainObject(value) && Object.values(value).every((color) => typeof color === 'string')
   );
 }
 
@@ -272,8 +248,8 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
   if (!isPlainObject(value)) return false;
   const v = value;
 
-  if (!isBoundedString(v.name, MAX_NAME_LENGTH)) return false;
-  if (!isOptionalBoundedString(v.id, MAX_ID_LENGTH)) return false;
+  if (typeof v.name !== 'string') return false;
+  if (!isOptionalString(v.id)) return false;
   if (!isRoomDimension(v.width)) return false;
   if (!isRoomDimension(v.height)) return false;
   if (
@@ -305,12 +281,12 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
     if (!isPlainObject(v.roof)) return false;
     const roof = v.roof;
     if (!ROOF_STYLES.includes(roof.style as RoofStyle)) return false;
-    if (!isOptionalBoundedString(roof.color, MAX_COLOR_LENGTH)) return false;
+    if (!isOptionalString(roof.color)) return false;
     // Dormer numbers size real geometry on the roof; an absurd width or a
     // non-finite offset must not reach the builder (#203).
     if (roof.dormers !== undefined) {
       if (!Array.isArray(roof.dormers) || roof.dormers.length > MAX_DORMERS) return false;
-      if (!roof.dormers.every(isBoundedDormer)) return false;
+      if (!roof.dormers.every(isDormerSpec)) return false;
     }
   }
 
@@ -344,8 +320,10 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
  * normalises both to the current `RoomLayout` shape. Returns `null` if the
  * input matches neither.
  *
- * The result holds only the fields the app knows (#350) and unique ids
- * (#338). An input that already is exactly that comes back as-is.
+ * The result holds only the fields the app knows (#350), within the caps
+ * above, with unique ids (#338). Only a structurally invalid value is
+ * refused; anything over a cap is repaired. An input that already is
+ * exactly that comes back as-is.
  */
 export function parseStoredLayout(value: unknown): RoomLayout | null {
   const layout = isRoomLayout(value)
@@ -353,7 +331,7 @@ export function parseStoredLayout(value: unknown): RoomLayout | null {
     : isLegacySingleFloorLayout(value)
       ? migrateLegacyLayout(value)
       : null;
-  return layout && withUniqueIds(whitelistLayout(layout));
+  return layout && withUniqueIds(repairLayout(layout));
 }
 
 /*
@@ -476,16 +454,73 @@ function rebuild<T extends object>(value: T, keys: readonly string[], patch: Par
   return { ...picked, ...patch };
 }
 
-function whitelistItem(item: FurnitureItem): FurnitureItem {
-  return rebuild(item, ITEM_KEYS, item.position ? { position: pick(item.position, VEC2_KEYS) } : {});
+/** `text` cut to `max` UTF-16 units, never leaving half a surrogate pair. */
+export function capText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
-function whitelistFloor(floor: FloorLayout): FloorLayout {
-  const patch: Partial<FloorLayout> = { items: mapSame(floor.items, whitelistItem) };
+export function clampCoordinate(value: number): number {
+  return Math.min(MAX_COORDINATE, Math.max(-MAX_COORDINATE, value));
+}
+
+/** The first `max` entries; `list` itself when it already fits. */
+function sliceTo<T>(list: T[], max: number): T[] {
+  return list.length <= max ? list : list.slice(0, max);
+}
+
+function repairVec2(vec: { x: number; z: number }): { x: number; z: number } {
+  const picked = pick(vec, VEC2_KEYS);
+  const x = clampCoordinate(picked.x);
+  const z = clampCoordinate(picked.z);
+  return x === picked.x && z === picked.z ? picked : { x, z };
+}
+
+function repairItem(item: FurnitureItem): FurnitureItem {
+  const patch: Partial<FurnitureItem> = {
+    id: capText(item.id, MAX_ID_LENGTH),
+    type: capText(item.type, MAX_ID_LENGTH),
+    name: capText(item.name, MAX_NAME_LENGTH),
+    color: capText(item.color, MAX_COLOR_LENGTH),
+    icon: capText(item.icon, MAX_ICON_LENGTH),
+  };
+  if (item.cctvModelId !== undefined) patch.cctvModelId = capText(item.cctvModelId, MAX_ID_LENGTH);
+  if (item.groupId !== undefined) patch.groupId = capText(item.groupId, MAX_ID_LENGTH);
+  // A negative price turns the budget and every cost total upside down (#350).
+  if (item.price !== undefined && item.price < 0) patch.price = 0;
+  if (item.position) patch.position = repairVec2(item.position);
+  return rebuild(item, ITEM_KEYS, patch);
+}
+
+function repairWall(wall: InteriorWall): InteriorWall {
+  const patch: Partial<InteriorWall> = {
+    id: capText(wall.id, MAX_ID_LENGTH),
+    x1: clampCoordinate(wall.x1),
+    z1: clampCoordinate(wall.z1),
+    x2: clampCoordinate(wall.x2),
+    z2: clampCoordinate(wall.z2),
+  };
+  if (wall.color !== undefined) patch.color = capText(wall.color, MAX_COLOR_LENGTH);
+  return rebuild(wall, WALL_KEYS, patch);
+}
+
+function repairFloor(floor: FloorLayout): FloorLayout {
+  const patch: Partial<FloorLayout> = {
+    id: capText(floor.id, MAX_ID_LENGTH),
+    name: capText(floor.name, MAX_NAME_LENGTH),
+    floorColor: capText(floor.floorColor, MAX_COLOR_LENGTH),
+    items: mapSame(sliceTo(floor.items, MAX_ITEMS_PER_FLOOR), repairItem),
+  };
   if (floor.wallColors) {
-    const colors = Object.entries(floor.wallColors).filter(([wall]) => WALL_IDS.includes(wall as WallId));
+    const all = floor.wallColors;
+    const colors = Object.entries(all).filter(([wall]) => WALL_IDS.includes(wall as WallId));
+    const clean = colors.every(([, color]) => color.length <= MAX_COLOR_LENGTH);
     patch.wallColors =
-      colors.length === Object.keys(floor.wallColors).length ? floor.wallColors : Object.fromEntries(colors);
+      clean && colors.length === Object.keys(all).length
+        ? all
+        : Object.fromEntries(colors.map(([wall, color]) => [wall, capText(color, MAX_COLOR_LENGTH)]));
   }
   if (floor.hiddenWalls) {
     const all = floor.hiddenWalls;
@@ -494,29 +529,46 @@ function whitelistFloor(floor: FloorLayout): FloorLayout {
   }
   if (floor.interiorWalls) {
     // A zero-length wall has no direction to build, cut or snap to (#350).
-    const all = floor.interiorWalls;
-    const walls = all.filter((wall) => wall.x1 !== wall.x2 || wall.z1 !== wall.z2);
-    patch.interiorWalls = mapSame(walls.length === all.length ? all : walls, (wall) => pick(wall, WALL_KEYS));
+    const repaired = mapSame(floor.interiorWalls, repairWall);
+    const walls = repaired.filter((wall) => wall.x1 !== wall.x2 || wall.z1 !== wall.z2);
+    patch.interiorWalls = sliceTo(walls.length === repaired.length ? repaired : walls, MAX_INTERIOR_WALLS_PER_FLOOR);
   }
-  if (floor.zones) patch.zones = mapSame(floor.zones, (zone) => pick(zone, ZONE_KEYS));
+  if (floor.zones) {
+    patch.zones = mapSame(floor.zones, (zone) =>
+      rebuild(zone, ZONE_KEYS, {
+        id: capText(zone.id, MAX_ID_LENGTH),
+        name: capText(zone.name, MAX_NAME_LENGTH),
+        color: capText(zone.color, MAX_COLOR_LENGTH),
+      })
+    );
+  }
   return rebuild(floor, FLOOR_KEYS, patch);
 }
 
-function whitelistRoof(roof: RoofSpec): RoofSpec {
-  if (!roof.dormers) return pick(roof, ROOF_KEYS);
-  const dormers = mapSame(roof.dormers, (dormer) =>
-    rebuild(
-      dormer,
-      DORMER_KEYS,
-      dormer.openings ? { openings: mapSame(dormer.openings, (opening) => pick(opening, OPENING_KEYS)) } : {}
-    )
-  );
-  return rebuild(roof, ROOF_KEYS, { dormers });
+function repairRoof(roof: RoofSpec): RoofSpec {
+  const patch: Partial<RoofSpec> = {};
+  if (roof.color !== undefined) patch.color = capText(roof.color, MAX_COLOR_LENGTH);
+  if (roof.dormers) {
+    patch.dormers = mapSame(roof.dormers, (dormer) => {
+      const fields: Partial<DormerSpec> = { id: capText(dormer.id, MAX_ID_LENGTH) };
+      if (dormer.color !== undefined) fields.color = capText(dormer.color, MAX_COLOR_LENGTH);
+      if (dormer.openings) {
+        fields.openings = mapSame(dormer.openings, (opening) => pick(opening, OPENING_KEYS));
+      }
+      return rebuild(dormer, DORMER_KEYS, fields);
+    });
+  }
+  return rebuild(roof, ROOF_KEYS, patch);
 }
 
-function whitelistLayout(layout: RoomLayout): RoomLayout {
-  const patch: Partial<RoomLayout> = { floors: mapSame(layout.floors, whitelistFloor) };
-  if (layout.roof) patch.roof = whitelistRoof(layout.roof);
+/** Whitelist every object (#350) and bring every field within the caps above. */
+function repairLayout(layout: RoomLayout): RoomLayout {
+  const patch: Partial<RoomLayout> = {
+    name: capText(layout.name, MAX_NAME_LENGTH),
+    floors: mapSame(layout.floors, repairFloor),
+  };
+  if (layout.id !== undefined) patch.id = capText(layout.id, MAX_ID_LENGTH);
+  if (layout.roof) patch.roof = repairRoof(layout.roof);
   if (layout.terrain) patch.terrain = pick(layout.terrain, TERRAIN_KEYS);
   if (layout.entrance) patch.entrance = pick(layout.entrance, ENTRANCE_KEYS);
   return rebuild(layout, LAYOUT_KEYS, patch);
@@ -593,11 +645,11 @@ function isLegacySingleFloorLayout(value: unknown): value is LegacySingleFloorLa
   if (!isPlainObject(value)) return false;
   const v = value;
   return (
-    isBoundedString(v.name, MAX_NAME_LENGTH) &&
-    isOptionalBoundedString(v.id, MAX_ID_LENGTH) &&
+    typeof v.name === 'string' &&
+    isOptionalString(v.id) &&
     isRoomDimension(v.width) &&
     isRoomDimension(v.height) &&
-    isBoundedString(v.floorColor, MAX_COLOR_LENGTH) &&
+    typeof v.floorColor === 'string' &&
     isItemList(v.items) &&
     (v.wallColors === undefined || isWallColors(v.wallColors)) &&
     !('floors' in v)

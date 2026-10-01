@@ -1,7 +1,7 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { MAX_LAYOUT_JSON_BYTES } from './schema';
+import { MAX_LAYOUT_JSON_BYTES, MAX_NAME_LENGTH } from './schema';
 import {
   MAX_SHARE_HASH_LENGTH,
   decodeShareUrl,
@@ -214,8 +214,8 @@ describe('untrusted share hashes (#332)', () => {
   it('a payload just under the output budget still reaches the schema', async () => {
     const name = 'A'.repeat(MAX_LAYOUT_JSON_BYTES - 200);
     const result = await readShareHash(v2Hash(JSON.stringify({ ...makeLayout(), name })));
-    // Inflated in full, then refused by the schema's name cap rather than the byte budget.
-    expect(result).toEqual({ ok: false, reason: 'unreadable' });
+    // Inflated in full, then repaired by the schema's name cap.
+    expect(result.ok && result.layout.name).toBe('A'.repeat(MAX_NAME_LENGTH));
   });
 
   it('reads a normal link as before', async () => {

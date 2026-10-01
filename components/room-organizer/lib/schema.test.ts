@@ -17,7 +17,7 @@ import {
 } from './schema';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from './street';
 import { MAX_STORAGE_ENTRY_CHARS } from './version-history';
-import type { FurnitureItem } from './types';
+import type { FurnitureItem, RoomLayout } from './types';
 
 describe('isFurnitureItem', () => {
   it('accepts a well-formed item', () => {
@@ -403,7 +403,9 @@ describe('schema hardening (#208)', () => {
 describe('schema caps (#332)', () => {
   const withItem = (item: Record<string, unknown>) => makeLayout({ floors: [makeFloor({ items: [item as never] })] });
 
-  it('accepts strings at their caps and refuses them one past', () => {
+  const only = (layout: RoomLayout | null) => layout!.floors[0]!;
+
+  it('keeps strings at their caps and truncates them past', () => {
     const atCap = makeItem({
       id: 'i'.repeat(MAX_ID_LENGTH),
       name: 'n'.repeat(MAX_NAME_LENGTH),
@@ -411,48 +413,115 @@ describe('schema caps (#332)', () => {
       icon: '🪑'.repeat(MAX_ICON_LENGTH / 2),
       groupId: 'g'.repeat(MAX_ID_LENGTH),
     });
-    expect(isFurnitureItem(atCap)).toBe(true);
+    const clean = withItem({ ...atCap });
+    expect(parseStoredLayout(clean)).toBe(clean);
     for (const [field, max] of [
       ['id', MAX_ID_LENGTH],
       ['type', MAX_ID_LENGTH],
       ['name', MAX_NAME_LENGTH],
       ['color', MAX_COLOR_LENGTH],
       ['icon', MAX_ICON_LENGTH],
-      ['category', MAX_ID_LENGTH],
       ['cctvModelId', MAX_ID_LENGTH],
       ['groupId', MAX_ID_LENGTH],
     ] as const) {
-      expect(isFurnitureItem({ ...atCap, [field]: 'x'.repeat(max + 1) }), field).toBe(false);
+      const item = only(parseStoredLayout(withItem({ ...atCap, [field]: 'x'.repeat(max + 1) }))).items[0]!;
+      expect(item[field], field).toBe('x'.repeat(max));
     }
-    expect(isRoomLayout(makeLayout({ name: 'h'.repeat(MAX_NAME_LENGTH) }))).toBe(true);
-    expect(parseStoredLayout(makeLayout({ name: 'h'.repeat(MAX_NAME_LENGTH + 1) }))).toBeNull();
-    expect(parseStoredLayout(makeLayout({ floors: [makeFloor({ name: 'f'.repeat(MAX_NAME_LENGTH + 1) })] }))).toBeNull();
-    expect(parseStoredLayout(makeLayout({ floors: [makeFloor({ floorColor: '#'.repeat(MAX_COLOR_LENGTH + 1) })] }))).toBeNull();
-    expect(parseStoredLayout({ ...makeLayout(), roof: { style: 'flat', color: '#'.repeat(MAX_COLOR_LENGTH + 1) } })).toBeNull();
-    const wall = { id: 'w', x1: 0, z1: 0, x2: 1, z2: 0, color: '#'.repeat(MAX_COLOR_LENGTH + 1) };
-    expect(parseStoredLayout(makeLayout({ floors: [makeFloor({ interiorWalls: [wall] })] }))).toBeNull();
-    expect(parseStoredLayout(makeLayout({ floors: [makeFloor({ wallColors: { north: '#'.repeat(65) } })] }))).toBeNull();
+    expect(parseStoredLayout(makeLayout({ name: 'h'.repeat(MAX_NAME_LENGTH + 1) }))!.name).toBe('h'.repeat(MAX_NAME_LENGTH));
+    const floor = only(
+      parseStoredLayout(
+        makeLayout({
+          floors: [
+            makeFloor({
+              id: 'i'.repeat(MAX_ID_LENGTH + 1),
+              name: 'f'.repeat(MAX_NAME_LENGTH + 1),
+              floorColor: '#'.repeat(MAX_COLOR_LENGTH + 1),
+              wallColors: { north: '#'.repeat(MAX_COLOR_LENGTH + 1) },
+              interiorWalls: [{ id: 'w'.repeat(MAX_ID_LENGTH + 1), x1: 0, z1: 0, x2: 1, z2: 0, color: '#'.repeat(MAX_COLOR_LENGTH + 1) }],
+              zones: [{ id: 'z', name: 'k'.repeat(MAX_NAME_LENGTH + 1), color: '#abcdef', x: 0, z: 0, w: 2, d: 2 }],
+            }),
+          ],
+        })
+      )
+    );
+    expect(floor.id).toHaveLength(MAX_ID_LENGTH);
+    expect(floor.name).toHaveLength(MAX_NAME_LENGTH);
+    expect(floor.floorColor).toHaveLength(MAX_COLOR_LENGTH);
+    expect(floor.wallColors!.north).toHaveLength(MAX_COLOR_LENGTH);
+    expect(floor.interiorWalls![0]!.id).toHaveLength(MAX_ID_LENGTH);
+    expect(floor.interiorWalls![0]!.color).toHaveLength(MAX_COLOR_LENGTH);
+    expect(floor.zones![0]!.name).toHaveLength(MAX_NAME_LENGTH);
+    const roof = parseStoredLayout({ ...makeLayout(), roof: { style: 'flat', color: '#'.repeat(MAX_COLOR_LENGTH + 1) } })!.roof;
+    expect(roof!.color).toHaveLength(MAX_COLOR_LENGTH);
   });
 
-  it('refuses the 30 M-character name of the share-link probe', () => {
-    expect(parseStoredLayout(makeLayout({ name: ' '.repeat(30_000) }))).toBeNull();
-    expect(parseStoredLayout(withItem({ ...makeItem(), name: 'A'.repeat(1_000_000) }))).toBeNull();
+  it('never cuts a surrogate pair in half', () => {
+    const icon = only(parseStoredLayout(withItem({ ...makeItem(), icon: `a${'🪑'.repeat(MAX_ICON_LENGTH)}` }))).items[0]!.icon;
+    expect(icon).toBe(`a${'🪑'.repeat(MAX_ICON_LENGTH / 2 - 1)}`);
   });
 
-  it('caps items and interior walls per floor', () => {
+  it('truncates the 30 M-character name of the share-link probe', () => {
+    expect(parseStoredLayout(makeLayout({ name: ' '.repeat(30_000) }))!.name).toHaveLength(MAX_NAME_LENGTH);
+    expect(only(parseStoredLayout(withItem({ ...makeItem(), name: 'A'.repeat(1_000_000) }))).items[0]!.name).toHaveLength(
+      MAX_NAME_LENGTH
+    );
+  });
+
+  it('keeps ids unique after truncation', () => {
+    const long = 'i'.repeat(MAX_ID_LENGTH);
+    const items = only(
+      parseStoredLayout(
+        makeLayout({ floors: [makeFloor({ items: [makeItem({ id: `${long}a` }), makeItem({ id: `${long}b` })] })] })
+      )
+    ).items;
+    expect(items.map((item) => item.id)).toEqual([long, `${'i'.repeat(MAX_ID_LENGTH - 2)}-2`]);
+  });
+
+  it('slices items and interior walls past the per-floor caps', () => {
     const items = (count: number) =>
       Array.from({ length: count }, (_, i) => makeItem({ id: `i${i}`, position: { x: 0, z: 0 } }));
     const walls = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `w${i}`, x1: 0, z1: 0, x2: 1, z2: i / 10 }));
-    expect(parseStoredLayout(makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR) })] }))).not.toBeNull();
-    expect(parseStoredLayout(makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR + 1) })] }))).toBeNull();
-    expect(
-      parseStoredLayout(makeLayout({ floors: [makeFloor({ interiorWalls: walls(MAX_INTERIOR_WALLS_PER_FLOOR) })] }))
-    ).not.toBeNull();
-    expect(
+    const full = makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR) })] });
+    expect(parseStoredLayout(full)).toBe(full);
+    expect(only(parseStoredLayout(makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR + 1) })] }))).items).toHaveLength(
+      MAX_ITEMS_PER_FLOOR
+    );
+    const wallFloor = only(
       parseStoredLayout(makeLayout({ floors: [makeFloor({ interiorWalls: walls(MAX_INTERIOR_WALLS_PER_FLOOR + 1) })] }))
-    ).toBeNull();
+    );
+    expect(wallFloor.interiorWalls).toHaveLength(MAX_INTERIOR_WALLS_PER_FLOOR);
     // Legacy saves get the same cap.
-    expect(parseStoredLayout({ name: 'Old', width: 6, height: 7, floorColor: '#fff', items: items(MAX_ITEMS_PER_FLOOR + 1) })).toBeNull();
+    const legacy = parseStoredLayout({ name: 'Old', width: 6, height: 7, floorColor: '#fff', items: items(MAX_ITEMS_PER_FLOOR + 1) });
+    expect(only(legacy).items).toHaveLength(MAX_ITEMS_PER_FLOOR);
+  });
+
+  it('opens a v1.14.0 save with an item at 250 m, a wall to 5 km and a 300-character name', () => {
+    const saved = {
+      name: 'H'.repeat(300),
+      width: 100,
+      height: 100,
+      floors: [
+        {
+          id: 'ground',
+          name: 'Ground Floor',
+          floorColor: '#c9a57d',
+          items: [
+            { ...makeItem({ id: 'tree-1', category: 'outdoor', position: { x: 250, z: -250 } }) },
+            { ...makeItem({ id: 'far', position: { x: 5000, z: -1e300 } }) },
+          ],
+          interiorWalls: [{ id: 'w', x1: 0, z1: 0, x2: 5000, z2: 0 }],
+        },
+      ],
+    };
+    const parsed = parseStoredLayout(JSON.parse(JSON.stringify(saved)));
+    expect(parsed).not.toBeNull();
+    expect(parsed!.name).toBe('H'.repeat(MAX_NAME_LENGTH));
+    const floor = only(parsed);
+    expect(floor.items[0]!.position).toEqual({ x: 250, z: -250 });
+    expect(floor.items[1]!.position).toEqual({ x: MAX_COORDINATE, z: -MAX_COORDINATE });
+    expect(floor.interiorWalls![0]!.x2).toBe(MAX_COORDINATE);
+    // Repaired once, it stays put.
+    expect(parseStoredLayout(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed);
   });
 
   it('a house at every cap still fits in browser storage', () => {
@@ -509,15 +578,24 @@ describe('persisted-field whitelist and bounds (#350)', () => {
     expect(parsed!.entrance).toEqual({ width: 1.4, depth: 1.2 });
   });
 
-  it('refuses the issue probe: position 1e300 and a negative price', () => {
+  it('repairs the issue probe: position 1e300 and a negative price', () => {
     const item = (overrides: Record<string, unknown>) => makeLayout({ floors: [makeFloor({ items: [{ ...makeItem(), ...overrides } as never] })] });
-    expect(parseStoredLayout(item({ position: { x: 1e300, z: 0 } }))).toBeNull();
-    expect(parseStoredLayout(item({ position: { x: 0, z: -(MAX_COORDINATE + 1) } }))).toBeNull();
-    expect(parseStoredLayout(item({ position: { x: MAX_COORDINATE, z: -MAX_COORDINATE } }))).not.toBeNull();
-    expect(parseStoredLayout(item({ price: -5 }))).toBeNull();
-    expect(parseStoredLayout(item({ price: 0 }))).not.toBeNull();
-    const wall = { id: 'w', x1: 0, z1: 0, x2: MAX_COORDINATE + 1, z2: 0 };
-    expect(parseStoredLayout(makeLayout({ floors: [makeFloor({ interiorWalls: [wall] })] }))).toBeNull();
+    const first = (layout: RoomLayout | null) => layout!.floors[0]!.items[0]!;
+    expect(first(parseStoredLayout(item({ position: { x: 1e300, z: 0 } }))).position).toEqual({ x: MAX_COORDINATE, z: 0 });
+    expect(first(parseStoredLayout(item({ position: { x: 0, z: -(MAX_COORDINATE + 1) } }))).position).toEqual({
+      x: 0,
+      z: -MAX_COORDINATE,
+    });
+    const atCap = item({ position: { x: MAX_COORDINATE, z: -MAX_COORDINATE } });
+    expect(parseStoredLayout(atCap)).toBe(atCap);
+    expect(first(parseStoredLayout(item({ price: -5 }))).price).toBe(0);
+    // A wall clamped to nothing (both ends past the same corner) is dropped.
+    const walls = [
+      { id: 'w', x1: 0, z1: 0, x2: MAX_COORDINATE + 1, z2: 0 },
+      { id: 'gone', x1: 2e3, z1: 2e3, x2: 3e3, z2: 3e3 },
+    ];
+    const parsed = parseStoredLayout(makeLayout({ floors: [makeFloor({ interiorWalls: walls })] }));
+    expect(parsed!.floors[0]!.interiorWalls).toEqual([{ id: 'w', x1: 0, z1: 0, x2: MAX_COORDINATE, z2: 0 }]);
   });
 
   it('keeps only real, distinct hidden walls and wall-colour keys', () => {

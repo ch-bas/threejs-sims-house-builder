@@ -1,6 +1,7 @@
 import { STORAGE_KEY } from './constants';
 import { randomId } from './ids';
 import { parseStoredLayout } from './schema';
+import { classifyStorageError } from './storage-errors';
 import type { RoomLayout } from './types';
 
 /**
@@ -529,7 +530,8 @@ export const MAX_STORAGE_ENTRY_CHARS = 5 * 1024 * 1024;
 
 /**
  * `storage.setItem` for data that outranks restore points (#295): on a
- * failed write the ring is evicted oldest-first and the write retried.
+ * quota error the ring is evicted oldest-first and the write retried; any
+ * other error is rethrown at once with the ring untouched.
  * Rethrows the storage error once the ring is empty and the write still
  * fails. An entry that alone exceeds any browser's quota is refused up
  * front with a `QuotaExceededError` and evicts nothing: those restore
@@ -551,7 +553,9 @@ export function setItemEvictingSnapshots(
       storage.setItem(key, value);
       return;
     } catch (error) {
-      if (!evictOldestSnapshot({ storage })) throw error;
+      // Eviction frees space, so only a quota error costs a restore point:
+      // storage that is blocked outright fails the same way afterwards.
+      if (classifyStorageError(error) !== 'quota' || !evictOldestSnapshot({ storage })) throw error;
     }
   }
 }

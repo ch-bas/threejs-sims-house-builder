@@ -1,5 +1,5 @@
 import { safeGetItem, safeRemoveItem } from './safe-storage';
-import { parseStoredLayout } from './schema';
+import { MAX_NAME_LENGTH, capText, parseStoredLayout } from './schema';
 import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout, SavedLayoutEntry } from './types';
 
@@ -175,13 +175,16 @@ function totalItemCount(layout: RoomLayout): number {
  */
 export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | null {
   const trimmed = name.trim() || layout.name || 'Untitled';
+  // The slot comes from the full name, as it always has; the stored name is
+  // capped like the schema caps it, so the saved house parses unchanged.
   const id = slugify(trimmed);
+  const shown = capText(trimmed, MAX_NAME_LENGTH);
   const index = readIndex();
   const existingIndex = index.entries.findIndex((entry) => entry.id === id);
 
   const entry: SavedLayoutEntry = {
     id,
-    name: trimmed,
+    name: shown,
     savedAt: Date.now(),
     itemCount: totalItemCount(layout),
     floorCount: layout.floors.length,
@@ -189,7 +192,7 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | 
 
   // The house keeps its own id: the slug names the library slot, and two
   // houses saved under one name in turn are still different houses (#342).
-  const layoutCopy: RoomLayout = { ...layout, name: trimmed };
+  const layoutCopy: RoomLayout = { ...layout, name: shown };
   const previousBlob = safeGetItem(layoutKey(id));
   try {
     setItemEvictingSnapshots(window.localStorage, layoutKey(id), JSON.stringify(layoutCopy));

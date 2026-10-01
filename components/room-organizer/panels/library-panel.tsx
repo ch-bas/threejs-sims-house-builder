@@ -24,6 +24,7 @@ import {
   shareHashFromText,
 } from '../lib/pasteboard';
 import { confirmReplace } from '../lib/restore-point';
+import { MAX_NAME_LENGTH } from '../lib/schema';
 import { decodeShareUrl, isShareHashWithinBudget } from '../lib/share';
 import {
   VERSION_HISTORY_STORAGE_KEY,
@@ -300,6 +301,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
         <div className="flex gap-2">
           <Input
             value={name}
+            maxLength={MAX_NAME_LENGTH}
             onChange={(event) => setName(event.target.value)}
             placeholder="Layout name"
             className="text-xs"
