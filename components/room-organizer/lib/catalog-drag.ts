@@ -15,3 +15,12 @@ export function findCatalogEntry<T extends { type: string; name: string }>(
 ): T | undefined {
   return catalog.find((entry) => catalogKey(entry) === key) ?? catalog.find((entry) => entry.type === key);
 }
+
+/**
+ * Why a catalogue tile can't place on the active floor, or null when it can.
+ * Placement refuses garden items above the ground floor, so the tiles say so
+ * instead of silently doing nothing (#347).
+ */
+export function catalogTileBlockedReason(item: { category: string }, activeFloorIndex: number): string | null {
+  return item.category === 'outdoor' && activeFloorIndex > 0 ? 'Garden items go on the ground floor' : null;
+}

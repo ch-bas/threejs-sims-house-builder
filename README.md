@@ -339,7 +339,8 @@ components/
     │   ├── share.ts                     Share-URL encode/decode (base64url)
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
-    │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys
+    │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
+    │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement

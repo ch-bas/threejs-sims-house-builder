@@ -70,7 +70,7 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
     // Anchored under the top-right pills instead of at 50%, where it landed on
     // the stacked mobile HUD (#300). Placement and column/row direction are
     // per-breakpoint in globals.css, which also steps it clear of the minimap.
-    // zIndex stays below the HUD (25) and the item bottom sheet (28): wherever
+    // zIndex stays below the HUD (25) and the item bottom sheet (36): wherever
     // the viewport is too small to keep them apart, the panels win the tap.
     <div
       className="pointer-events-auto pc-touch-controls"

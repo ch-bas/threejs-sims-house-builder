@@ -567,9 +567,9 @@ export function RoomOrganizer(): JSX.Element {
 
   const removeSelected = useCallback(() => {
     if (allSelectedIds.size === 0) return;
-    // Locked items survive a group delete — the same immunity the single-item
-    // Delete gate gives them (#115).
-    const remaining = activeFloor.items.filter((item) => !allSelectedIds.has(item.id) || item.locked);
+    // A lock pins position, not existence: every placed item is locked after
+    // placement and drag, so deletion ignores it like Demolish does (#358).
+    const remaining = activeFloor.items.filter((item) => !allSelectedIds.has(item.id));
     if (remaining.length === activeFloor.items.length) return;
     actions.replaceItems(remaining);
     setSelectedItemId(null);
@@ -864,15 +864,11 @@ export function RoomOrganizer(): JSX.Element {
   const shortcutHandlers = useMemo(
     () => ({
       removeItem: (id: string) => {
-        // A multi-select delete removes the unlocked members even when the
-        // primary is locked; a single locked item can't be deleted from the
-        // keyboard, matching 3D drag (#115).
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
           removeSelected();
           return;
         }
-        const item = activeFloor.items.find((entry) => entry.id === id);
-        if (!item?.locked) removeItem(id);
+        removeItem(id);
       },
       duplicateItem: duplicateSelected,
       copySelection: copySelectionToClipboard,

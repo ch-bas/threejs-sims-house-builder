@@ -61,7 +61,9 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         width: 296,
         padding: 0,
         overflow: 'hidden',
-        zIndex: 28,
+        // Above the drawer's backdrop (35) so its controls stay live while the
+        // drawer is open, below the drawer itself (40) (#361).
+        zIndex: 36,
       }}
     >
       <header

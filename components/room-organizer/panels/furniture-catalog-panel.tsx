@@ -3,9 +3,9 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useRoomEditor } from '../contexts';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
-import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
-import { catalogKey } from '../lib/catalog-drag';
+import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { CctvMenu } from './cctv-menu';
@@ -34,6 +34,7 @@ export function FurnitureCatalogPanel({
   query: controlledQuery,
   onQueryChange,
 }: FurnitureCatalogPanelProps): JSX.Element {
+  const { activeFloorIndex } = useRoomEditor();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [internalQuery, setInternalQuery] = useState('');
   const query = controlledQuery ?? internalQuery;
@@ -55,8 +56,10 @@ export function FurnitureCatalogPanel({
   const { gridRef, tileProps } = useRovingTiles(filtered.length, COLUMNS);
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="space-y-3 bg-gradient-to-b from-slate-50 to-transparent">
+    // shrink-0: overflow-hidden gives a flex item min-height 0, so in the
+    // drawer's flex column this card used to collapse to a sliver (#360).
+    <Card className="shrink-0 overflow-hidden">
+      <CardHeader className="space-y-3">
         <CardTitle className="flex items-center justify-between">
           <span>Catalog</span>
           <span className="text-[10px] font-normal text-muted-foreground">{filtered.length} items</span>
@@ -80,14 +83,21 @@ export function FurnitureCatalogPanel({
           </p>
         ) : (
           <div ref={gridRef} className="grid grid-cols-3 gap-2 max-h-[460px] overflow-y-auto pr-1">
-            {filtered.map((item, index) => (
-              <CatalogTile
-                key={catalogKey(item)}
-                item={item}
-                onAdd={onAdd}
-                roving={tileProps(index, () => onAdd(item))}
-              />
-            ))}
+            {filtered.map((item, index) => {
+              const blockedReason = catalogTileBlockedReason(item, activeFloorIndex);
+              const add = () => {
+                if (!blockedReason) onAdd(item);
+              };
+              return (
+                <CatalogTile
+                  key={catalogKey(item)}
+                  item={item}
+                  blockedReason={blockedReason}
+                  onAdd={add}
+                  roving={tileProps(index, add)}
+                />
+              );
+            })}
           </div>
         )}
         <p className="text-[10px] text-muted-foreground mt-3 text-center">
@@ -158,31 +168,44 @@ function CategoryButton({ active, icon, label, count, onClick }: CategoryButtonP
 
 interface CatalogTileProps {
   item: CatalogItem;
-  onAdd(item: CatalogItem): void;
+  /** Why the tile can't place on the active floor; it stays focusable so the roving grid keeps working. */
+  blockedReason: string | null;
+  onAdd(): void;
   roving: RovingTileProps;
 }
 
-function CatalogTile({ item, onAdd, roving }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): JSX.Element {
+  const blocked = blockedReason !== null;
   return (
     <button
       type="button"
-      onClick={() => onAdd(item)}
-      title={`${item.name} — drag onto the 3D view to place precisely, click to drop at center, or press Enter to place and position it with the keyboard`}
+      onClick={onAdd}
+      aria-disabled={blocked || undefined}
+      title={
+        blocked
+          ? `${item.name} — ${blockedReason}`
+          : `${item.name} — drag onto the 3D view to place precisely, click to drop at center, or press Enter to place and position it with the keyboard`
+      }
       {...roving}
-      draggable
+      draggable={!blocked}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';
-        event.dataTransfer.setData(CATALOG_DRAG_MIME, item.type);
+        // The full key, not the bare type: Stairs and Winder Stairs share one (#370).
+        event.dataTransfer.setData(CATALOG_DRAG_MIME, catalogKey(item));
         event.dataTransfer.setData('text/plain', item.name);
       }}
-      className="group relative flex flex-col items-stretch overflow-hidden rounded-xl border bg-gradient-to-b from-white to-slate-50 hover:from-amber-50 hover:to-amber-100 hover:border-amber-300 active:scale-[0.97] transition-all cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md"
+      className={`group relative flex flex-col items-stretch overflow-hidden rounded-xl border bg-card transition-all shadow-sm ${
+        blocked
+          ? 'opacity-40 cursor-not-allowed'
+          : 'hover:bg-muted hover:border-amber-300 active:scale-[0.97] cursor-grab active:cursor-grabbing hover:shadow-md'
+      }`}
     >
-      <div className="flex items-center justify-center aspect-square text-3xl bg-slate-50 group-hover:bg-amber-50/60">
+      <div className="flex items-center justify-center aspect-square text-3xl bg-muted/40">
         <span aria-hidden>{item.icon}</span>
       </div>
-      <div className="px-1.5 py-1 text-center bg-background">
+      <div className="px-1.5 py-1 text-center">
         <p className="text-[10px] leading-tight font-medium truncate">{item.name}</p>
-        <p className="text-[9px] text-amber-700 font-semibold">
+        <p className="text-[9px] text-amber-400 font-semibold">
           {CURRENCY_SYMBOL}
           {item.price.toLocaleString()}
         </p>
