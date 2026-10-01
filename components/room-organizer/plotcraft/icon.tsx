@@ -85,7 +85,11 @@ export type PlotcraftIconName =
   | 'minimap'
   | 'grid'
   | 'sound'
-  | 'vision';
+  | 'vision'
+  | 'eye'
+  | 'tag'
+  | 'magnet'
+  | 'warn';
 
 const PATHS: Record<PlotcraftIconName, ReactNode> = {
   wall: (
@@ -562,6 +566,31 @@ const PATHS: Record<PlotcraftIconName, ReactNode> = {
     <>
       <path d="M5 4l8 7l-8 7z" />
       <path d="M13 11h6M13 7l5 -1M13 15l5 1" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2.5 12s3.5 -6.5 9.5 -6.5s9.5 6.5 9.5 6.5s-3.5 6.5 -9.5 6.5s-9.5 -6.5 -9.5 -6.5z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  tag: (
+    <>
+      <path d="M3 12V4a1 1 0 0 1 1 -1h8l9 9l-9 9z" />
+      <circle cx="8" cy="8" r="1.5" />
+    </>
+  ),
+  magnet: (
+    <>
+      <path d="M6 4v8a6 6 0 0 0 12 0V4" />
+      <path d="M6 4h3v8a3 3 0 0 0 6 0V4h3" />
+      <path d="M6 8h3M15 8h3" />
+    </>
+  ),
+  warn: (
+    <>
+      <path d="M12 4l9 16H3z" />
+      <path d="M12 10v4M12 17v.5" />
     </>
   ),
 };

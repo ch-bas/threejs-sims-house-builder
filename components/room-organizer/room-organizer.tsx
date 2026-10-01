@@ -28,6 +28,7 @@ import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
+import { notify } from './lib/editor-notices';
 import { hasCollisions, totalCost } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { randomSuffix } from './lib/ids';
@@ -45,10 +46,12 @@ import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
 import { PlacementHint } from './panels/placement-hint';
 import { SidebarDrawer } from './panels/sidebar-drawer';
+import { StatusToastHost } from './panels/status-toast';
 import { TouchModeToggle } from './panels/touch-mode-toggle';
 import { Viewport } from './panels/viewport';
 import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
+import { ZoneNameChip } from './panels/zone-name-chip';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { GameMode } from './lib/types';
 import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
@@ -431,23 +434,19 @@ export function RoomOrganizer(): JSX.Element {
   }, [actions, allSelectedIds]);
 
   // Custom sets (#302): the selection, normalised around its centroid, under
-  // a name the user picks. Groups inside it are kept and come back as fresh
-  // groups when the set is placed.
-  const saveSelectionAsSet = useCallback(() => {
+  // a name the user picks — typed into the selection chip (#374). Groups
+  // inside it are kept and come back as fresh groups when the set is placed.
+  const saveSelectionAsSet = useCallback((name: string) => {
     const items = activeFloor.items.filter((item) => allSelectedIds.has(item.id));
-    if (items.length < 2) return;
-    const name = window.prompt('Name this set:', `${items[0]!.name} set`);
-    if (name === null) return;
-    if (!name.trim()) {
-      window.alert('Please enter a name for this set.');
-      return;
-    }
+    if (items.length < 2 || !name.trim()) return false;
     const saved = saveCustomSet(items, name, { idTag: randomSuffix() });
     if (!saved) {
-      window.alert('Could not save the set — browser storage is full.');
-      return;
+      notify('Could not save the set — browser storage is full.', 'error');
+      return false;
     }
+    notify(`Saved “${saved.name}” to Furniture Sets.`, 'success');
     playCue('success');
+    return true;
   }, [activeFloor.items, allSelectedIds, playCue]);
 
   // The recess's span of the front wall on this storey; openings settle on
@@ -728,7 +727,8 @@ export function RoomOrganizer(): JSX.Element {
     useThreeScene({
       canvasRef,
       walkthroughActive,
-      floorPickOnly: view.drawWallMode,
+      // The distance tool measures across furniture, so its clicks go to the floor (#341).
+      floorPickOnly: view.drawWallMode || view.measurementMode,
       onItemSelect: handleSelect,
       selectedIds: allSelectedIds,
       onItemDragStart: handleDragStart,
@@ -960,6 +960,11 @@ export function RoomOrganizer(): JSX.Element {
           toggle('drawWallMode');
           return;
         }
+        // Likewise for the distance tool (#341).
+        if (view.measurementMode) {
+          toggle('measurementMode');
+          return;
+        }
         setSelectedItemId(null);
         setExtraSelectedIds(new Set());
       },
@@ -1017,6 +1022,7 @@ export function RoomOrganizer(): JSX.Element {
       reseatCamera,
       wallDraft,
       view.drawWallMode,
+      view.measurementMode,
     ]
   );
 
@@ -1107,7 +1113,7 @@ export function RoomOrganizer(): JSX.Element {
         walkthroughActive={walkthroughActive}
         walkthroughLockRefused={walkthroughLockRefused}
         measurementDistance={measurementDistance(measurementPoints)}
-        measurementPointsPlaced={view.measurementMode ? measurementPoints.length : 0}
+        {...(view.measurementMode ? { measurementPointsPlaced: measurementPoints.length } : {})}
         wallDrawStatus={
           view.drawWallMode
             ? {
@@ -1254,6 +1260,10 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Keyboard-placement key hint (#168) */}
       <PlacementHint active={placingId !== null} />
+
+      {/* Inline zone naming and export/share status (#374) */}
+      <ZoneNameChip />
+      <StatusToastHost />
 
       {/* Achievement toast */}
       <AchievementToast

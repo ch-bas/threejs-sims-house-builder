@@ -6,6 +6,7 @@ import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
+import { notify } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
@@ -122,7 +123,7 @@ export function SidebarDrawer({
       const dataUrl = await readImageAsDataUrl(file);
       actions.setFloorPlan(dataUrl);
     } catch (uploadError) {
-      window.alert(uploadError instanceof Error ? uploadError.message : 'Failed to upload image.');
+      notify(uploadError instanceof Error ? uploadError.message : 'Failed to upload image.', 'error');
     }
   };
 

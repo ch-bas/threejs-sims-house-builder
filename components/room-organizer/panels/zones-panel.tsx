@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -37,11 +38,24 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
     onDrawStart?.();
   };
 
-  const rename = (zone: RoomZone) => {
-    const name = window.prompt('Zone name:', zone.name);
-    if (name === null) return;
-    const trimmed = name.trim();
-    if (trimmed) actions.updateZone(zone.id, { name: trimmed });
+  // Inline rename, like the floor list's (#374): Enter or leaving the field
+  // keeps the name, Escape drops it, and a blank name keeps the old one.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  // The blur that follows Enter or Escape (the field unmounts) must not
+  // commit a second time, or commit a cancelled draft.
+  const openRenameRef = useRef<string | null>(null);
+  const startRename = (zone: RoomZone) => {
+    openRenameRef.current = zone.id;
+    setRenamingId(zone.id);
+    setDraft(zone.name);
+  };
+  const endRename = (zone: RoomZone, commit: boolean) => {
+    if (openRenameRef.current !== zone.id) return;
+    openRenameRef.current = null;
+    setRenamingId(null);
+    const trimmed = draft.trim();
+    if (commit && trimmed && trimmed !== zone.name) actions.updateZone(zone.id, { name: trimmed });
   };
 
   return (
@@ -80,14 +94,37 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
                     className="h-7 w-8 shrink-0 p-0.5"
                   />
                   <div className="min-w-0 flex-1">
-                    <button
-                      type="button"
-                      className="block max-w-full truncate text-left font-medium hover:underline"
-                      title="Rename"
-                      onClick={() => rename(zone)}
-                    >
-                      {zone.name}
-                    </button>
+                    {renamingId === zone.id ? (
+                      <Input
+                        autoFocus
+                        aria-label={`Rename ${zone.name}`}
+                        value={draft}
+                        maxLength={60}
+                        onChange={(event) => setDraft(event.target.value)}
+                        onFocus={(event) => event.target.select()}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            endRename(zone, true);
+                          } else if (event.key === 'Escape') {
+                            // Cancel the rename without also closing the drawer (#152).
+                            event.preventDefault();
+                            event.stopPropagation();
+                            endRename(zone, false);
+                          }
+                        }}
+                        onBlur={() => endRename(zone, true)}
+                        className="h-6 text-xs"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        className="block max-w-full truncate text-left font-medium hover:underline"
+                        title="Rename"
+                        onClick={() => startRename(zone)}
+                      >
+                        {zone.name}
+                      </button>
+                    )}
                     <span className="block text-muted-foreground">
                       {stats.itemCount} {stats.itemCount === 1 ? 'item' : 'items'} · {CURRENCY_SYMBOL}
                       {stats.cost.toLocaleString()} · {stats.area.toFixed(1)} m²
