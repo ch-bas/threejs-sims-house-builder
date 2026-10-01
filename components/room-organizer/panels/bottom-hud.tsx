@@ -156,8 +156,12 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
           setGameMode(mode);
           // The wall tool lives in DESIGN only; don't leave the draw mode
           // (and its paint/stamp panels) armed with no tile to disarm it (#151).
-          if (mode === 'buy' && view.drawWallMode) toggle('drawWallMode');
+          if (mode !== 'build' && view.drawWallMode) toggle('drawWallMode');
           if (mode === 'live') {
+            // EXPLORE is for looking around: drop the selection so its
+            // popover doesn't float over the walkthrough (#339).
+            selectOnly(null);
+            onSelectedWallChange(null);
             // Walkthrough needs the 3D view — the hook requires `!view2D`, so
             // entering Live from the 2D top-down view is otherwise a silent
             // no-op (see #67). Drop view2D as we switch walkthrough on.

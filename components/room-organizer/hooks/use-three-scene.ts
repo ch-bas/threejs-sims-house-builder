@@ -126,7 +126,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
       // Near plane pulled from 0.1 to 0.3 for better depth precision. The
       // walkthrough eye height is ~1.6m so 0.3 never clips near geometry.
-      const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.3, 1000);
+      // The canvas is display:none when the editor opens in 2D; keep a finite
+      // aspect until the first non-zero resize (#363).
+      const camera = new THREE.PerspectiveCamera(75, aspectOf(canvas), 0.3, 1000);
       camera.position.set(0, 8, 8);
       camera.lookAt(0, 0, 0);
       cameraRef.current = camera;
@@ -146,7 +148,12 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         reversedDepthBuffer: true,
       });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+      // updateStyle = false everywhere: three would otherwise pin the canvas's
+      // inline width/height to pixels, and a 0×0 write while hidden in 2D
+      // kept it collapsed for the rest of the session (#363).
+      if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+        renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+      }
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       // The 2048² directional shadow is expensive; keep it static and only
@@ -238,15 +245,27 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         canvas.removeEventListener('webglcontextrestored', onContextRestored as EventListener);
       });
 
+      // Observing the canvas itself (not the window) also fires when it turns
+      // visible again after the 2D view, which fixes a resize that happened
+      // while it was hidden. A hidden canvas reports 0×0: skip it (#363). The
+      // window listener stays for devicePixelRatio changes (zoom, monitor).
       const onResize = () => {
-        camera.aspect = canvas.clientWidth / canvas.clientHeight;
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        if (width === 0 || height === 0) return;
+        camera.aspect = width / height;
         camera.updateProjectionMatrix();
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        renderer.setSize(width, height, false);
         dirtyRef.current = true;
       };
+      const resizeObserver = new ResizeObserver(onResize);
+      resizeObserver.observe(canvas);
       window.addEventListener('resize', onResize);
-      cleanup.push(() => window.removeEventListener('resize', onResize));
+      cleanup.push(() => {
+        resizeObserver.disconnect();
+        window.removeEventListener('resize', onResize);
+      });
 
       const removeDragHandlers = attachDragHandlers({
         THREE,
@@ -319,6 +338,11 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     controlsRef,
     worldPositionFromClient,
   };
+}
+
+function aspectOf(canvas: HTMLCanvasElement): number {
+  const { clientWidth, clientHeight } = canvas;
+  return clientWidth > 0 && clientHeight > 0 ? clientWidth / clientHeight : 1;
 }
 
 function supportsWebGL(): boolean {

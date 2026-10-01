@@ -452,16 +452,21 @@ export function useSceneEffects({
       );
       outline.position.y = item.height / 2;
       outline.userData.type = 'selection-outline';
+      // Decoration, not a pointer target: the furniture raycast is recursive
+      // and a line's pick threshold would give the item a hit halo (#333).
+      outline.raycast = () => {};
       group.add(outline);
     }
-    // view.showAllFloors is included because the furniture effect rebuilds all
-    // groups when it toggles (destroying the outline LineSegments children); the
-    // outline effect must re-run afterward to reattach outlines, otherwise a
-    // selected item is left with no outline after a Show-All-Floors toggle.
+    // The furniture effect above destroys the outline children whenever it
+    // rebuilds the groups, so this effect also carries every one of its keys
+    // that it doesn't read itself — otherwise a selected item loses its
+    // outline after a Show-All-Floors or wall-display toggle, or once the
+    // rigged person model loads (#335).
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
     activeFloor, activeFloorIndex, layout.width, layout.height, entranceBuilding,
-    selectedItemId, extraSelectedIds, highlightedIds, view.showAllFloors,
+    selectedItemId, extraSelectedIds, highlightedIds,
+    layout.floors, view.showAllFloors, view.wallDisplay, peopleModelReady,
   ]);
 
   // Wi-Fi rings + camera vision cones. Independently tagged overlays, so

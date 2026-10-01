@@ -40,8 +40,8 @@ export interface UseKeyboardShortcutsOptions {
   /**
    * When first-person walkthrough owns the keyboard (WASD/arrows drive the
    * camera), every bare single-key shortcut is gated off so holding e.g. W to
-   * walk forward doesn't also toggle the WiFi overlay (see #67). Ctrl/Cmd chords
-   * (undo/redo/duplicate) and Escape still fire.
+   * walk forward doesn't also toggle the WiFi overlay (see #67). Undo/redo and
+   * Escape still fire; duplicate/copy/paste do not (#339).
    */
   walkthroughActive?: boolean;
   /** Whether an item drag is in progress; read at keypress time. */
@@ -97,19 +97,25 @@ export function useKeyboardShortcuts({
       }
 
       const ctrlOrCmd = event.ctrlKey || event.metaKey;
-      if (ctrlOrCmd && event.key.toLowerCase() === 'z') {
+      // Letter shortcuts match regardless of case, so Caps Lock doesn't
+      // silently disable them (#294).
+      const key = event.key.toLowerCase();
+      if (ctrlOrCmd && key === 'z') {
         event.preventDefault();
         if (event.shiftKey) handlers.redo();
         else handlers.undo();
         return;
       }
-      if (ctrlOrCmd && event.key.toLowerCase() === 'y') {
+      if (ctrlOrCmd && key === 'y') {
         event.preventDefault();
         handlers.redo();
         return;
       }
 
-      if (ctrlOrCmd && event.key.toLowerCase() === 'd' && selectedItem) {
+      // Duplicate / copy / paste edit the house, so they are off while the
+      // walkthrough owns the keyboard, like the bare keys below; undo/redo
+      // above stay available (#339).
+      if (ctrlOrCmd && key === 'd' && selectedItem && !walkthroughActive) {
         event.preventDefault();
         handlers.duplicateItem(selectedItem.id);
         return;
@@ -118,11 +124,11 @@ export function useKeyboardShortcuts({
       // Furniture clipboard (#153). Ctrl+C only engages while furniture is
       // selected, so copying text elsewhere in the page keeps working; Ctrl+V
       // engages only when the clipboard actually has furniture.
-      if (ctrlOrCmd && event.key.toLowerCase() === 'c' && selectedItem) {
+      if (ctrlOrCmd && key === 'c' && selectedItem && !walkthroughActive) {
         if (handlers.copySelection()) event.preventDefault();
         return;
       }
-      if (ctrlOrCmd && event.key.toLowerCase() === 'v') {
+      if (ctrlOrCmd && key === 'v' && !walkthroughActive) {
         if (handlers.pasteClipboard()) event.preventDefault();
         return;
       }
@@ -144,8 +150,8 @@ export function useKeyboardShortcuts({
       // While walkthrough owns the keyboard, WASD/arrows/Shift drive the camera.
       // Gate every bare single-key shortcut below off so walking forward (W)
       // doesn't also toggle the WiFi overlay, `2`/`m`/`g`/`p`/`[`/`]`/PageUp/Down
-      // don't fire mid-walk, etc. (see #67). Ctrl/Cmd chords and Escape above
-      // still work; the walkthrough hook owns its own Esc-to-exit handling.
+      // don't fire mid-walk, etc. (see #67). Undo/redo and Escape above still
+      // work; the walkthrough hook owns its own Esc-to-exit handling.
       if (walkthroughActive) return;
 
       // Everything below is a bare single-key shortcut. Never swallow browser
@@ -157,7 +163,7 @@ export function useKeyboardShortcuts({
       const altGraph = event.getModifierState('AltGraph');
       if (!altGraph && (ctrlOrCmd || event.altKey)) return;
 
-      if (event.key === 'f' && selectedItem) {
+      if (key === 'f' && selectedItem) {
         event.preventDefault();
         handlers.focusOnSelection();
         return;
@@ -182,7 +188,7 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if (event.key.toLowerCase() === 'r' && selectedItem) {
+      if (key === 'r' && selectedItem) {
         event.preventDefault();
         if (event.shiftKey) {
           // Fine-grained 15° rotations when Shift is held.
@@ -221,25 +227,25 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if (event.key === 'm') {
+      if (key === 'm') {
         event.preventDefault();
         handlers.toggleMeasurements();
         return;
       }
 
-      if (event.key === 'g') {
+      if (key === 'g') {
         event.preventDefault();
         handlers.toggleSnap();
         return;
       }
 
-      if (event.key === 'w' && hasSignalItems) {
+      if (key === 'w' && hasSignalItems) {
         event.preventDefault();
         handlers.toggleSignals();
         return;
       }
 
-      if (event.key === 'p') {
+      if (key === 'p') {
         event.preventDefault();
         handlers.toggleSidebar();
         return;
