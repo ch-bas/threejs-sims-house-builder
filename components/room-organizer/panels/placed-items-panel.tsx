@@ -87,8 +87,6 @@ export function PlacedItemsPanel({
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={item.locked}
-                    title={item.locked ? 'Locked — unlock to remove' : undefined}
                     onClick={(event) => {
                       event.stopPropagation();
                       onRemove(item.id);

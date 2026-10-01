@@ -315,12 +315,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         <button
           type="button"
           onClick={() => props.onRemove(item.id)}
-          disabled={item.locked}
-          title={item.locked ? 'Locked — unlock to demolish' : undefined}
           className="pc-tile"
           style={{
-            cursor: item.locked ? 'not-allowed' : 'pointer',
-            opacity: item.locked ? 0.5 : 1,
             width: '100%',
             height: 34,
             borderRadius: 10,
