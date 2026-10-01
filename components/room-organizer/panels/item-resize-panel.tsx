@@ -56,7 +56,9 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
   const { selectedItem } = useSelection();
   if (!selectedItem) return <></>;
   const item = selectedItem;
-  const rotationDeg = Math.round(((item.rotation ?? 0) * 180) / Math.PI) % 360;
+  // Stored rotations can be negative (the studio sofa is -π/2); the input is
+  // min=0, so normalise to 0–359 like the onChange path does (#387).
+  const rotationDeg = ((Math.round(((item.rotation ?? 0) * 180) / Math.PI) % 360) + 360) % 360;
   // The reducer refuses geometry mutations on locked items (#209) — mirror
   // that here so the controls look inert instead of silently no-opping.
   const locked = item.locked === true;

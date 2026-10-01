@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useRoomEditor } from '../contexts';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
-import { CATALOG_DRAG_MIME, catalogKey } from '../lib/catalog-drag';
+import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { CctvMenu } from './cctv-menu';
@@ -17,6 +18,7 @@ export interface CatalogStripProps {
 }
 
 export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Element {
+  const { activeFloorIndex } = useRoomEditor();
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -159,12 +161,17 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   />
                 );
               }
+              const blockedReason = catalogTileBlockedReason(item, activeFloorIndex);
+              const add = () => {
+                if (!blockedReason) onAdd(item);
+              };
               return (
                 <CatalogTile
                   key={catalogKey(item)}
                   item={item}
-                  onAdd={onAdd}
-                  roving={tileProps(index, () => onAdd(item))}
+                  blockedReason={blockedReason}
+                  onAdd={add}
+                  roving={tileProps(index, add)}
                 />
               );
             })}
@@ -262,19 +269,27 @@ function PageButton({ icon, label, disabled, onClick }: PageButtonProps): JSX.El
 
 interface CatalogTileProps {
   item: CatalogItem;
-  onAdd(item: CatalogItem): void;
+  /** Why the tile can't place on the active floor (#347); it stays focusable so the roving grid keeps working. */
+  blockedReason: string | null;
+  onAdd(): void;
   roving: RovingTileProps;
 }
 
-function CatalogTile({ item, onAdd, roving }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): JSX.Element {
   const icon = iconForItem(item.type, item.category);
+  const blocked = blockedReason !== null;
   return (
     <button
       type="button"
-      onClick={() => onAdd(item)}
-      title={`${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Drag onto the 3D view to place precisely, or press Enter to place and position it with the keyboard.`}
+      onClick={onAdd}
+      aria-disabled={blocked || undefined}
+      title={
+        blocked
+          ? `${item.name} — ${blockedReason}`
+          : `${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Drag onto the 3D view to place precisely, or press Enter to place and position it with the keyboard.`
+      }
       {...roving}
-      draggable
+      draggable={!blocked}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';
         event.dataTransfer.setData(CATALOG_DRAG_MIME, catalogKey(item));
@@ -289,7 +304,8 @@ function CatalogTile({ item, onAdd, roving }: CatalogTileProps): JSX.Element {
         justifyContent: 'center',
         gap: 2,
         padding: 4,
-        cursor: 'grab',
+        cursor: blocked ? 'not-allowed' : 'grab',
+        opacity: blocked ? 0.35 : 1,
       }}
     >
       <Icon name={icon} size={20} />

@@ -4,14 +4,22 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
 
-const TEMPLATE_OPTIONS: ReadonlyArray<{ key: RoomTemplateKey; label: string }> = [
-  { key: 'bedroom', label: '🛏️ Bedroom' },
-  { key: 'livingRoom', label: '🛋️ Living Room' },
-  { key: 'office', label: '💼 Home Office' },
-  { key: 'kitchen', label: '🍳 Kitchen' },
-  { key: 'bathroom', label: '🛁 Bathroom' },
-  { key: 'studio', label: '🏠 Studio Apartment' },
-];
+// A Record, not a list, so a template added to ROOM_TEMPLATES without a label
+// here fails the typecheck instead of silently missing from the select (#343).
+const TEMPLATE_LABELS: Readonly<Record<RoomTemplateKey, string>> = {
+  bedroom: '🛏️ Bedroom',
+  livingRoom: '🛋️ Living Room',
+  office: '💼 Home Office',
+  kitchen: '🍳 Kitchen',
+  bathroom: '🛁 Bathroom',
+  studio: '🏠 Studio Apartment',
+  twoStory: '🏡 Two-Story Home',
+};
+
+const TEMPLATE_OPTIONS = (Object.keys(TEMPLATE_LABELS) as RoomTemplateKey[]).map((key) => ({
+  key,
+  label: TEMPLATE_LABELS[key],
+}));
 
 export interface TemplatesPanelProps {
   onLoadTemplate(template: (typeof ROOM_TEMPLATES)[RoomTemplateKey]): void;

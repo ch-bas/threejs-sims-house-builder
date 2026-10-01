@@ -58,7 +58,7 @@ export function PlacedItemsPanel({
                   selectedItemId === item.id
                     ? 'border-primary bg-primary/10'
                     : isColliding
-                      ? 'border-red-400 bg-red-50/60'
+                      ? 'border-red-400 bg-red-500/10'
                       : 'border-border'
                 }`}
                 onClick={() => selectOnly(item.id)}
@@ -87,6 +87,8 @@ export function PlacedItemsPanel({
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={item.locked}
+                    title={item.locked ? 'Locked — unlock to remove' : undefined}
                     onClick={(event) => {
                       event.stopPropagation();
                       onRemove(item.id);
