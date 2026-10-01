@@ -3,6 +3,7 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../lib/constants';
+import { INITIAL_LAYOUT } from '../lib/initial-layout';
 import { RECOVERY_STORAGE_KEY } from '../lib/persistence';
 import { decodeShareUrl } from '../lib/share';
 import { VERSION_HISTORY_STORAGE_KEY } from '../lib/version-history';
@@ -137,7 +138,7 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
 
     // An empty stored house is skipped too.
     window.localStorage.clear();
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(makeLayout({ name: 'Blank' })));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...INITIAL_LAYOUT, name: 'Blank' }));
     window.location.hash = '#layout=whatever';
     applied.length = 0;
     mount((layout) => {

@@ -1,4 +1,5 @@
 import { STORAGE_KEY } from './constants';
+import { randomId } from './ids';
 import { parseStoredLayout } from './schema';
 import type { RoomLayout } from './types';
 
@@ -17,9 +18,10 @@ import type { RoomLayout } from './types';
 export const VERSION_HISTORY_STORAGE_KEY = `${STORAGE_KEY}-versions`;
 
 /**
- * Sidecar holding the newest `savedAt` per house (#297). The cadence gate
- * runs after every debounced autosave; reading this few-bytes key instead of
- * the ring keeps a refused snapshot from parsing up to half a megabyte.
+ * Sidecar listing each ring entry's house and time (#297, #342). The cadence
+ * gate runs after every debounced autosave; reading this few-hundred-byte key
+ * instead of the ring keeps a refused snapshot from parsing up to half a
+ * megabyte.
  */
 export const VERSION_HISTORY_META_KEY = `${VERSION_HISTORY_STORAGE_KEY}-meta`;
 
@@ -42,12 +44,18 @@ export const VERSION_HISTORY_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * One stored restore point. The summary fields sit beside the layout so the
- * History list never has to validate a layout (#297); entries written before
- * #296 carry only `savedAt` and `layout`. A summary field left `undefined`
- * is simply not written: entries only ever go through JSON.
+ * History list never has to validate a layout (#297). Entries written before
+ * #296 carry only `savedAt` and `layout`; entries written before #342/#344
+ * lack `house` and `id`, which are derived on read and persisted by the next
+ * rewrite of the ring. A field left `undefined` is simply not written:
+ * entries only ever go through JSON.
  */
 interface StoredEntry {
+  /** Lookup key, written once and never changed (#344). */
+  id: string;
+  /** Display and ordering only; may be clamped to the present (#297). */
   savedAt: number;
+  /** `layout.id` of the house — see `sameHouse` (#342). */
   layoutId?: string | undefined;
   name?: string | undefined;
   hadFloorPlan?: boolean | undefined;
@@ -66,8 +74,8 @@ interface Slot {
 
 /** Cheap per-entry summary for the History list — no layout blob attached. */
 export interface VersionSummary {
-  /** Stable lookup key for `getSnapshot`; unlike `savedAt` it is never clamped. */
-  id: number;
+  /** Stable lookup key for `getSnapshot`; never rewritten (#344). */
+  id: string;
   /** When the snapshot was taken, clamped to the present (#297). */
   savedAt: number;
   itemCount: number;
@@ -134,14 +142,23 @@ function optionalCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+/** djb2 over the whole string, as an unsigned 32-bit number. */
+function hashString(value: string): number {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) + hash + value.charCodeAt(i)) | 0;
+  }
+  return hash >>> 0;
+}
+
 const FINGERPRINT_SAMPLE = 4096;
 
 /**
  * Short fingerprint of a floor-plan data URL: its length plus a hash of its
- * head and tail. Houses have no dependable identity — `layout.id` is rarely
- * set and every new house is called "My Home" — so whether a restore may put
- * the current image back is decided by the image itself, not by the house
- * it seems to belong to (#296). Sampled so a multi-megabyte image costs the
+ * head and tail. Whether a restore may put the current image back is
+ * decided by the image itself, not by the house it seems to belong to: older
+ * points carry no house id, and copies of a house (saved under two names,
+ * shared) share one (#296). Sampled so a multi-megabyte image costs the
  * same as a small one.
  */
 export function floorPlanFingerprint(image: string | null | undefined): string | null {
@@ -150,25 +167,37 @@ export function floorPlanFingerprint(image: string | null | undefined): string |
     image.length <= FINGERPRINT_SAMPLE * 2
       ? image
       : image.slice(0, FINGERPRINT_SAMPLE) + image.slice(-FINGERPRINT_SAMPLE);
-  let hash = 5381;
-  for (let i = 0; i < sample.length; i++) {
-    hash = ((hash << 5) + hash + sample.charCodeAt(i)) | 0;
-  }
-  return `${image.length}:${(hash >>> 0).toString(36)}`;
+  return `${image.length}:${hashString(sample).toString(36)}`;
+}
+
+interface HouseRef {
+  layoutId?: string | undefined;
+  name?: string | undefined;
 }
 
 /**
- * Cadence and dedupe are scoped to one house (#296): the id when the layout
- * has one, its name otherwise.
+ * Whether two snapshots are of one house, which scopes cadence and dedupe
+ * (#296, #342). Every house gets a random `layout.id` when the store first
+ * holds it (see `withHouseId`), so two houses that are both "My Home" are
+ * still told apart. Only when neither side has an id — points and layouts
+ * from before ids existed — does the name decide, the old rule, which errs
+ * toward fewer restore points and can never flood the ring.
  */
-function houseKey(layoutId: string | undefined, name: string | undefined): string | null {
-  if (layoutId !== undefined) return `id:${layoutId}`;
-  if (name !== undefined) return `name:${name}`;
-  return null;
+function sameHouse(a: HouseRef, b: HouseRef): boolean {
+  if (a.layoutId !== undefined || b.layoutId !== undefined) return a.layoutId === b.layoutId;
+  return a.name !== undefined && a.name === b.name;
 }
 
-function slotHouseKey(slot: Slot): string | null {
-  return houseKey(slot.entry.layoutId, slot.entry.name);
+/** The newest of `entries` that is the same house as `ref`. */
+function newestOfHouse<T extends HouseRef & { savedAt: number }>(
+  entries: readonly T[],
+  ref: HouseRef
+): T | undefined {
+  let newest: T | undefined;
+  for (const entry of entries) {
+    if (sameHouse(entry, ref) && (newest === undefined || entry.savedAt >= newest.savedAt)) newest = entry;
+  }
+  return newest;
 }
 
 /** A negative delta means the clock was corrected backwards — elapsed (#297). */
@@ -182,7 +211,10 @@ function insideInterval(at: number, newest: number): boolean {
  * a JSON array yields an empty ring, and entries without a finite `savedAt`
  * or a layout object are dropped. Layouts are NOT schema-validated here —
  * that is deferred to `getSnapshot` (#297). Entries predating #296 take
- * their identity from the raw layout.
+ * their identity from the raw layout. An entry without an `id` (or with one
+ * already taken) gets one derived from its stored `savedAt` and its place in
+ * the blob: deterministic, so every read agrees until the next rewrite
+ * persists it, after which clamping `savedAt` no longer moves it (#344).
  */
 function readEntries(storage: VersionHistoryStore): StoredEntry[] {
   let parsed: unknown;
@@ -195,12 +227,17 @@ function readEntries(storage: VersionHistoryStore): StoredEntry[] {
   }
   if (!Array.isArray(parsed)) return [];
   const entries: StoredEntry[] = [];
+  const ids = new Set<string>();
   for (const candidate of parsed as unknown[]) {
     if (!isRecord(candidate)) continue;
     const { savedAt, layout } = candidate;
     if (typeof savedAt !== 'number' || !Number.isFinite(savedAt)) continue;
     if (!isRecord(layout)) continue;
+    let id = optionalString(candidate.id) ?? `at-${savedAt}`;
+    for (let n = 2; ids.has(id); n++) id = `at-${savedAt}-${n}`;
+    ids.add(id);
     entries.push({
+      id,
       savedAt,
       layoutId: optionalString(candidate.layoutId) ?? optionalString(layout.id),
       name: optionalString(candidate.name) ?? optionalString(layout.name),
@@ -228,17 +265,31 @@ function serialisedLength(slots: Slot[]): number {
   return slots.reduce((sum, slot) => sum + slot.json.length, 0) + Math.max(slots.length - 1, 0) + 2;
 }
 
-function readMeta(storage: VersionHistoryStore): Record<string, number> | null {
+/** One ring entry as the sidecar knows it: enough to run the gate. */
+interface MetaEntry extends HouseRef {
+  savedAt: number;
+}
+
+/**
+ * The sidecar's per-entry list (#342). A sidecar in the older per-name shape
+ * (`{ houses }`) reads as missing and is rebuilt from the ring.
+ */
+function readMeta(storage: VersionHistoryStore): MetaEntry[] | null {
   try {
     const raw = storage.getItem(VERSION_HISTORY_META_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed) || !isRecord(parsed.houses)) return null;
-    const houses: Record<string, number> = {};
-    for (const [key, value] of Object.entries(parsed.houses)) {
-      if (typeof value === 'number' && Number.isFinite(value)) houses[key] = value;
+    if (!isRecord(parsed) || !Array.isArray(parsed.entries)) return null;
+    const entries: MetaEntry[] = [];
+    for (const entry of parsed.entries as unknown[]) {
+      if (!isRecord(entry) || typeof entry.savedAt !== 'number') return null;
+      entries.push({
+        savedAt: entry.savedAt,
+        layoutId: optionalString(entry.layoutId),
+        name: optionalString(entry.name),
+      });
     }
-    return houses;
+    return entries;
   } catch {
     return null;
   }
@@ -246,13 +297,13 @@ function readMeta(storage: VersionHistoryStore): Record<string, number> | null {
 
 /** Best-effort: a stale or missing sidecar only costs one ring read. */
 function writeMeta(storage: VersionHistoryStore, slots: Slot[]): void {
-  const houses: Record<string, number> = {};
-  for (const slot of slots) {
-    const key = slotHouseKey(slot);
-    if (key !== null) houses[key] = Math.max(houses[key] ?? -Infinity, slot.entry.savedAt);
-  }
+  const entries: MetaEntry[] = slots.map(({ entry }) => ({
+    savedAt: entry.savedAt,
+    layoutId: entry.layoutId,
+    name: entry.name,
+  }));
   try {
-    storage.setItem(VERSION_HISTORY_META_KEY, JSON.stringify({ houses }));
+    storage.setItem(VERSION_HISTORY_META_KEY, JSON.stringify({ entries }));
   } catch {
     /* quota — the gate falls back to the ring itself */
   }
@@ -289,50 +340,49 @@ export function recordSnapshot(
   const storage = opts.storage ?? defaultStorage();
   if (!storage) return false;
   const at = (opts.now ?? Date.now)();
-  const house = houseKey(layout.id, layout.name);
+  const ref: HouseRef = { layoutId: layout.id, name: layout.name };
 
   // Cheap gate first (#297): only a snapshot that may actually be written
   // pays for reading the ring.
   const meta = opts.force ? null : readMeta(storage);
-  const gated = house === null ? undefined : meta?.[house];
-  if (gated !== undefined && insideInterval(at, gated)) return false;
+  const gated = meta ? newestOfHouse(meta, ref) : undefined;
+  if (gated && insideInterval(at, gated.savedAt)) return false;
 
   const slots = readSlots(storage);
-
-  let newestOfHouse: Slot | undefined;
-  for (const slot of slots) {
-    if (house !== null && slotHouseKey(slot) === house) newestOfHouse = slot;
-  }
+  const previous = newestOfHouse(
+    slots.map((slot) => slot.entry),
+    ref
+  );
 
   // The sidecar was missing or stale — the ring is the source of truth.
-  if (!opts.force && newestOfHouse && insideInterval(at, newestOfHouse.entry.savedAt)) {
+  if (!opts.force && previous && insideInterval(at, previous.savedAt)) {
     if (meta === null) writeMeta(storage, slots);
     return false;
-  }
-
-  // A `savedAt` ahead of the clock would sort as newest forever and be
-  // evicted last (#297). Pull such entries back, keeping keys unique. Done
-  // after the gate, which must see the stored timestamps.
-  let previous = -Infinity;
-  for (const slot of slots) {
-    const clamped = Math.max(Math.min(slot.entry.savedAt, at), previous + 1);
-    if (clamped !== slot.entry.savedAt) {
-      slot.entry = { ...slot.entry, savedAt: clamped };
-      slot.json = JSON.stringify(slot.entry);
-    }
-    previous = clamped;
   }
 
   const snapshotted: RoomLayout = { ...layout };
   delete snapshotted.floorPlanImage;
   const layoutJson = JSON.stringify(snapshotted);
-  if (newestOfHouse && JSON.stringify(newestOfHouse.entry.layout) === layoutJson) return false;
+  if (previous && JSON.stringify(previous.layout) === layoutJson) return false;
+
+  // A `savedAt` ahead of the clock would sort as newest forever and be
+  // evicted last (#297). Pull such entries back, keeping the order strict.
+  // Done after the gate, which must see the stored timestamps; lookups go by
+  // `id`, which this leaves alone (#344).
+  let earlier = -Infinity;
+  for (const slot of slots) {
+    const clamped = Math.max(Math.min(slot.entry.savedAt, at), earlier + 1);
+    if (clamped !== slot.entry.savedAt) {
+      slot.entry = { ...slot.entry, savedAt: clamped };
+      slot.json = JSON.stringify(slot.entry);
+    }
+    earlier = clamped;
+  }
 
   const newest = slots[slots.length - 1];
   const header: Omit<StoredEntry, 'layout'> = {
-    // `savedAt` doubles as the lookup key in getSnapshot, so a force-snapshot
-    // landing in the same millisecond as the newest entry is nudged forward
-    // to keep keys unique.
+    id: randomId('rp'),
+    // Strictly after the newest entry, so the ring's order is unambiguous.
     savedAt: newest ? Math.max(at, newest.entry.savedAt + 1) : at,
     layoutId: layout.id,
     name: layout.name,
@@ -387,7 +437,7 @@ export function listSnapshots(opts: VersionHistoryOptions = {}): VersionSummary[
       floorCount = validated.floors.length;
     }
     summaries.push({
-      id: entry.savedAt,
+      id: entry.id,
       savedAt: Math.min(entry.savedAt, at),
       itemCount,
       floorCount,
@@ -406,23 +456,30 @@ export function listSnapshots(opts: VersionHistoryOptions = {}): VersionSummary[
  * fails schema validation (which also upgrades legacy single-floor
  * snapshots).
  */
-export function getSnapshot(id: number, opts: VersionHistoryOptions = {}): RoomLayout | null {
+export function getSnapshot(id: string, opts: VersionHistoryOptions = {}): RoomLayout | null {
   const storage = opts.storage ?? defaultStorage();
   if (!storage) return null;
-  const entry = readEntries(storage).find((candidate) => candidate.savedAt === id);
+  const entry = readEntries(storage).find((candidate) => candidate.id === id);
   return entry ? parseStoredLayout(entry.layout) : null;
 }
 
+type HouseFields = Pick<VersionSummary, 'layoutId' | 'name'>;
+
+function summaryRef(summary: HouseFields): HouseRef {
+  return { layoutId: summary.layoutId ?? undefined, name: summary.name ?? undefined };
+}
+
+/** Whether two restore points are of one house (#296, #342). */
+export function snapshotsShareHouse(a: HouseFields, b: HouseFields): boolean {
+  return sameHouse(summaryRef(a), summaryRef(b));
+}
+
 /**
- * Whether a restore point was taken from `layout`'s house (#296): the same
- * id, or the same name when neither side has an id.
+ * Whether a restore point was taken from `layout`'s house (#296, #342): the
+ * same id, or — when either side predates ids — the same name.
  */
-export function snapshotBelongsTo(
-  summary: Pick<VersionSummary, 'layoutId' | 'name'>,
-  layout: Pick<RoomLayout, 'id' | 'name'>
-): boolean {
-  if (summary.layoutId !== null || layout.id !== undefined) return summary.layoutId === layout.id;
-  return summary.name !== null && summary.name === layout.name;
+export function snapshotBelongsTo(summary: HouseFields, layout: RoomLayout): boolean {
+  return sameHouse(summaryRef(summary), { layoutId: layout.id, name: layout.name });
 }
 
 /** Drop every restore point, freeing the ring's whole share of the quota. */

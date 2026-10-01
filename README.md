@@ -339,8 +339,9 @@ components/
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── persistence.ts               Active-layout localStorage I/O + unreadable-save recovery backup
     │   ├── library.ts                   Named-layout library I/O
-    │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots)
-    │   ├── restore-point.ts             Forced restore point before a whole-layout replacement
+    │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
+    │   ├── restore-point.ts             Forced restore point before a whole-layout replacement; "untouched" = equal to INITIAL_LAYOUT
+    │   ├── initial-layout.ts            INITIAL_LAYOUT / INITIAL_GROUND_FLOOR, the house every session starts from
     │   ├── share.ts                     Share-URL encode/decode (base64url)
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
@@ -496,6 +497,14 @@ components/
 - **Snapshot-based undo/redo** works at the layout level, so floor adds,
   alignments, theme application, and individual moves are all reversible
   without bespoke code per action.
+- **Every house has an id.** Every new house is "My Home", so the name
+  can't tell two apart. The store gives each layout it takes in a random
+  `layout.id` when it has none (`withHouseId`), and the house keeps it
+  through edits, undo, saves, exports and share links. The restore-point
+  ring's 5-minute cadence and its dedupe are scoped by that id, falling back
+  to the name only for points saved before ids existed. Entries are looked
+  up by a stable entry `id` written once, never by `savedAt`, which may be
+  clamped.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere

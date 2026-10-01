@@ -126,10 +126,10 @@ describe('version-history — ring eviction', () => {
     const summaries = listSnapshots({ storage });
     expect(summaries).toHaveLength(VERSION_HISTORY_LIMIT);
     // Newest first; the two oldest revisions are gone.
-    expect(getSnapshot(summaries[0]!.savedAt, { storage })?.name).toBe(
+    expect(getSnapshot(summaries[0]!.id, { storage })?.name).toBe(
       `Rev ${VERSION_HISTORY_LIMIT + 1}`
     );
-    expect(getSnapshot(summaries[summaries.length - 1]!.savedAt, { storage })?.name).toBe('Rev 2');
+    expect(getSnapshot(summaries[summaries.length - 1]!.id, { storage })?.name).toBe('Rev 2');
   });
 });
 
@@ -156,7 +156,7 @@ describe('version-history — quota discipline', () => {
     expect(failures).toBeGreaterThan(0);
     const summaries = listSnapshots({ storage });
     expect(summaries).toHaveLength(2);
-    expect(getSnapshot(summaries[0]!.savedAt, { storage })?.name).toBe('Rev 4');
+    expect(getSnapshot(summaries[0]!.id, { storage })?.name).toBe('Rev 4');
   });
 
   it('gives up silently when storage rejects every write', () => {
@@ -173,7 +173,7 @@ describe('version-history — corrupt-entry tolerance', () => {
     const storage = makeStore();
     storage.data.set(VERSION_HISTORY_STORAGE_KEY, '{not json');
     expect(listSnapshots({ storage })).toHaveLength(0);
-    expect(getSnapshot(123, { storage })).toBeNull();
+    expect(getSnapshot('123', { storage })).toBeNull();
   });
 
   it('returns an empty ring for a non-array blob', () => {
@@ -196,8 +196,8 @@ describe('version-history — corrupt-entry tolerance', () => {
     );
     const summaries = listSnapshots({ storage });
     expect(summaries.map((summary) => summary.savedAt)).toEqual([3, 1]);
-    expect(getSnapshot(1, { storage })?.name).toBe('Good');
-    expect(getSnapshot(2, { storage })).toBeNull();
+    expect(getSnapshot('at-1', { storage })?.name).toBe('Good');
+    expect(getSnapshot('at-2', { storage })).toBeNull();
   });
 
   it('a corrupt ring does not block recording a fresh snapshot', () => {
@@ -218,7 +218,7 @@ describe('version-history — floor-plan image stripping', () => {
     });
     recordSnapshot(layout, { storage });
     const [summary] = listSnapshots({ storage });
-    const restored = getSnapshot(summary!.savedAt, { storage });
+    const restored = getSnapshot(summary!.id, { storage });
     expect(restored).not.toBeNull();
     expect(restored?.floorPlanImage).toBeUndefined();
     expect(restored?.floorPlanOpacity).toBe(0.5);
@@ -403,19 +403,22 @@ describe('version-history — per house (#296)', () => {
   it('tells houses apart by name when they have no id', () => {
     const storage = makeStore();
     const clock = makeClock();
-    expect(recordSnapshot(makeLayout({ name: 'A' }), { storage, now: clock.now })).toBe(true);
-    expect(recordSnapshot(makeLayout({ name: 'B' }), { storage, now: clock.now })).toBe(true);
-    expect(recordSnapshot(makeHouse(1, { name: 'A' }), { storage, now: clock.now })).toBe(false);
+    expect(recordSnapshot(makeHouse(1, { name: 'A' }), { storage, now: clock.now })).toBe(true);
+    expect(recordSnapshot(makeHouse(1, { name: 'B' }), { storage, now: clock.now })).toBe(true);
+    expect(recordSnapshot(makeHouse(2, { name: 'A' }), { storage, now: clock.now })).toBe(false);
   });
 
-  it('matches a snapshot to a layout by id, or by name when neither has an id', () => {
-    expect(snapshotBelongsTo({ layoutId: 'a', name: 'X' }, { id: 'a', name: 'Renamed' })).toBe(true);
-    expect(snapshotBelongsTo({ layoutId: 'a', name: 'X' }, { id: 'b', name: 'X' })).toBe(false);
-    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, { name: 'X' })).toBe(true);
-    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, { name: 'Y' })).toBe(false);
-    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, { id: 'x', name: 'X' })).toBe(false);
-    expect(snapshotBelongsTo({ layoutId: 'x', name: 'X' }, { name: 'X' })).toBe(false);
-    expect(snapshotBelongsTo({ layoutId: null, name: null }, { name: 'X' })).toBe(false);
+  it('matches a snapshot to a layout by id, and by name only when neither has one', () => {
+    const at = (overrides: Partial<RoomLayout>) => makeHouse(2, overrides);
+    expect(snapshotBelongsTo({ layoutId: 'a', name: 'X' }, at({ id: 'a', name: 'Renamed' }))).toBe(true);
+    expect(snapshotBelongsTo({ layoutId: 'a', name: 'X' }, at({ id: 'b', name: 'X' }))).toBe(false);
+    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, at({ name: 'X' }))).toBe(true);
+    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, at({ name: 'Y' }))).toBe(false);
+    // A point from before ids existed doesn't claim an id'd house by its name:
+    // every default-named house would share its cadence.
+    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, at({ id: 'x', name: 'X' }))).toBe(false);
+    expect(snapshotBelongsTo({ layoutId: 'x', name: 'X' }, at({ name: 'X' }))).toBe(false);
+    expect(snapshotBelongsTo({ layoutId: null, name: null }, at({ name: 'X' }))).toBe(false);
   });
 
   it('loads entries written before identities were stored', () => {
@@ -429,14 +432,14 @@ describe('version-history — per house (#296)', () => {
       ])
     );
     const [newer, older] = listSnapshots({ storage, now: clock.now });
-    expect(older).toMatchObject({ id: 1, itemCount: 2, floorCount: 1, hadFloorPlan: false });
-    expect(newer).toMatchObject({ id: 2, itemCount: 1, floorCount: 1, hadFloorPlan: false });
-    expect(getSnapshot(1, { storage })?.name).toBe('Old house');
+    expect(older).toMatchObject({ id: 'at-1', itemCount: 2, floorCount: 1, hadFloorPlan: false });
+    expect(newer).toMatchObject({ id: 'at-2', itemCount: 1, floorCount: 1, hadFloorPlan: false });
+    expect(getSnapshot('at-1', { storage })?.name).toBe('Old house');
 
     // Recording next to them keeps them restorable.
     expect(recordSnapshot(makeLayout({ id: 'new' }), { storage, now: clock.now })).toBe(true);
     expect(listSnapshots({ storage, now: clock.now })).toHaveLength(3);
-    expect(getSnapshot(1, { storage })?.name).toBe('Old house');
+    expect(getSnapshot('at-1', { storage })?.name).toBe('Old house');
   });
 });
 
@@ -471,8 +474,22 @@ describe('version-history — gate hygiene (#297)', () => {
     recordSnapshot(makeHouse(2), { storage, now: clock.now });
     const summaries = listSnapshots({ storage, now: clock.now });
     expect(summaries.map((summary) => summary.itemCount)).toEqual([2, 1]);
-    expect(summaries.every((summary) => summary.id <= clock.now() + 1)).toBe(true);
+    expect(summaries.every((summary) => summary.savedAt <= clock.now() + 1)).toBe(true);
     expect(new Set(summaries.map((summary) => summary.id)).size).toBe(2);
+  });
+
+  it('keeps the id a History row holds restorable after its savedAt is clamped (#344)', () => {
+    const storage = makeStore();
+    const day = 24 * 60 * 60 * 1000;
+    const clock = makeClock(10 * day);
+    recordSnapshot(makeHouse(1), { storage, now: clock.now });
+    // The panel lists it while the clock is still ahead…
+    const [listed] = listSnapshots({ storage, now: clock.now });
+    clock.advance(-day);
+    // …then a forced snapshot rewrites the ring and clamps that entry.
+    expect(recordSnapshot(makeHouse(2), { storage, now: clock.now, force: true })).toBe(true);
+    expect(getSnapshot(listed!.id, { storage })?.floors[0]?.items).toHaveLength(1);
+    expect(listSnapshots({ storage, now: clock.now }).map((summary) => summary.id)).toContain(listed!.id);
   });
 
   it('skips a layout identical to the newest entry of its house', () => {
@@ -529,7 +546,7 @@ describe('version-history — gate hygiene (#297)', () => {
     );
     expect(listSnapshots({ storage })).toEqual([
       {
-        id: 5,
+        id: 'at-5',
         savedAt: 5,
         itemCount: 7,
         floorCount: 2,
@@ -540,7 +557,7 @@ describe('version-history — gate hygiene (#297)', () => {
       },
     ]);
     // Validation happens on restore.
-    expect(getSnapshot(5, { storage })).toBeNull();
+    expect(getSnapshot('at-5', { storage })).toBeNull();
   });
 });
 
@@ -614,5 +631,125 @@ describe('version-history — in-tab change signal (#367)', () => {
     clock.advance(1);
     recordSnapshot(makeHouse(3), { storage, now: clock.now, force: true });
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A default-named house whose things carry editor-style random ids. */
+function myHome(ids: string[], houseId?: string): RoomLayout {
+  return makeLayout({
+    ...(houseId ? { id: houseId } : {}),
+    floors: [makeFloor({ items: ids.map((id) => makeItem({ id })) })],
+  });
+}
+
+describe('version-history — same-named houses (#342)', () => {
+  const a = ['sofa-1759300000000-k2x9', 'bed-1759300004000-p0qa', 'lamp-1759300009000-zz01'];
+  const b = ['table-1759310000000-m3c7', 'chair-1759310002000-a8b2'];
+
+  it('gives two different "My Home" houses their own restore points', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    expect(recordSnapshot(myHome(a, 'house-a'), { storage, now: clock.now })).toBe(true);
+    clock.advance(1_000);
+    expect(recordSnapshot(myHome(b, 'house-b'), { storage, now: clock.now })).toBe(true);
+    clock.advance(1_000);
+    // Each house keeps its own cadence.
+    expect(recordSnapshot(myHome([...a, 'rug-1'], 'house-a'), { storage, now: clock.now })).toBe(false);
+    expect(recordSnapshot(myHome(b.slice(1), 'house-b'), { storage, now: clock.now })).toBe(false);
+    clock.advance(VERSION_HISTORY_MIN_INTERVAL_MS);
+    expect(recordSnapshot(myHome([...a, 'rug-1'], 'house-a'), { storage, now: clock.now })).toBe(true);
+  });
+
+  it('tells houses apart even when both use fixed ids (porch door, template items)', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    const shared = ['entrance-door', 'bed-1', 'lamp-1'];
+    expect(recordSnapshot(myHome(shared, 'house-a'), { storage, now: clock.now })).toBe(true);
+    clock.advance(1_000);
+    expect(recordSnapshot(myHome(shared, 'house-b'), { storage, now: clock.now })).toBe(true);
+  });
+
+  it('never floods the ring when every item is replaced (Surprise) — other houses keep their points', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    expect(recordSnapshot(makeHouse(1, { id: 'mum', name: 'Mum' }), { storage, now: clock.now })).toBe(true);
+    for (let i = 0; i < 12; i++) {
+      clock.advance(2_000);
+      recordSnapshot(myHome([`surprise-${i}-a`, `surprise-${i}-b`], 'house-a'), { storage, now: clock.now });
+    }
+    const names = listSnapshots({ storage, now: clock.now }).map((summary) => summary.name);
+    expect(names).toContain('Mum');
+    expect(names.filter((name) => name === 'My Home')).toHaveLength(1);
+  });
+
+  it('falls back to the name for layouts without an id, so they can never flood either', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    for (let i = 0; i < 12; i++) {
+      clock.advance(2_000);
+      recordSnapshot(myHome([`surprise-${i}`]), { storage, now: clock.now });
+    }
+    expect(listSnapshots({ storage, now: clock.now })).toHaveLength(1);
+  });
+});
+
+describe('version-history — rings written by v1.14.0 (#342, #344)', () => {
+  const sofa = 'sofa-1759300000000-k2x9';
+
+  /** The on-disk shape before stable ids and house sketches: savedAt keys, a per-name sidecar. */
+  function seedV114(storage: ReturnType<typeof makeStore>): void {
+    storage.data.set(
+      VERSION_HISTORY_STORAGE_KEY,
+      JSON.stringify([
+        { savedAt: 1_000, name: 'My Home', hadFloorPlan: false, itemCount: 1, floorCount: 1, layout: myHome([sofa]) },
+        {
+          savedAt: 2_000,
+          layoutId: 'cabin',
+          name: 'Cabin',
+          hadFloorPlan: true,
+          floorPlan: '4:abc',
+          itemCount: 2,
+          floorCount: 1,
+          layout: makeHouse(2, { id: 'cabin', name: 'Cabin' }),
+        },
+      ])
+    );
+    storage.data.set(VERSION_HISTORY_META_KEY, JSON.stringify({ houses: { 'name:My Home': 1_000, 'id:cabin': 2_000 } }));
+  }
+
+  it('lists and restores every entry', () => {
+    const storage = makeStore();
+    seedV114(storage);
+    const [cabin, home] = listSnapshots({ storage, now: () => 10_000 });
+    expect(cabin).toMatchObject({ id: 'at-2000', name: 'Cabin', layoutId: 'cabin', itemCount: 2, hadFloorPlan: true });
+    expect(home).toMatchObject({ id: 'at-1000', name: 'My Home', layoutId: null, itemCount: 1 });
+    expect(getSnapshot(cabin!.id, { storage })?.name).toBe('Cabin');
+    expect(getSnapshot(home!.id, { storage })?.floors[0]?.items[0]?.id).toBe(sofa);
+  });
+
+  it('keeps the derived ids once the ring is rewritten, and gates by the old entries', () => {
+    const storage = makeStore();
+    seedV114(storage);
+    const ids = listSnapshots({ storage, now: () => 10_000 }).map((summary) => summary.id);
+    // The old sidecar is ignored; the ring still gates an id-less layout of
+    // the same name, while a house with an id has its own cadence.
+    expect(recordSnapshot(myHome([sofa, 'bed-1759300004000-p0qa']), { storage, now: () => 3_000 })).toBe(false);
+    expect(recordSnapshot(myHome(['desk-1759400000000-zz99'], 'house-new'), { storage, now: () => 3_000 })).toBe(true);
+    // A house with its own id is told apart from another house with an id.
+    expect(recordSnapshot(makeHouse(1, { id: 'elsewhere', name: 'Cabin' }), { storage, now: () => 3_000 })).toBe(true);
+    const rewritten = JSON.parse(storage.data.get(VERSION_HISTORY_STORAGE_KEY)!) as Array<{ id: string }>;
+    expect(rewritten.map((entry) => entry.id).slice(0, 2)).toEqual([...ids].reverse());
+    for (const id of ids) expect(getSnapshot(id, { storage })).not.toBeNull();
+    // The sidecar is now in the new shape.
+    expect(JSON.parse(storage.data.get(VERSION_HISTORY_META_KEY)!)).toHaveProperty('entries');
+  });
+
+  it('a derived id survives the clamp of a future-dated entry', () => {
+    const storage = makeStore();
+    storage.data.set(VERSION_HISTORY_STORAGE_KEY, JSON.stringify([{ savedAt: 9_000, layout: myHome([sofa]) }]));
+    const [listed] = listSnapshots({ storage, now: () => 1_000 });
+    expect(recordSnapshot(makeHouse(1, { id: 'other' }), { storage, now: () => 1_000 })).toBe(true);
+    expect(listSnapshots({ storage, now: () => 1_000 }).find((summary) => summary.id === listed!.id)?.savedAt).toBe(1_000);
+    expect(getSnapshot(listed!.id, { storage })).not.toBeNull();
   });
 });

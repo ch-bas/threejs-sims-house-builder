@@ -14,3 +14,16 @@ export function randomId(prefix: string): string {
 export function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 6);
 }
+
+/**
+ * The layout with a house id, minting a random one when it has none (#342).
+ * Houses had no dependable identity — every new house is "My Home" — so
+ * restore-point cadence couldn't tell two of them apart. The store applies
+ * this to every layout it takes in, so each house is labelled once and keeps
+ * its id through edits, undo, saves, exports and share links.
+ */
+export function withHouseId<T extends { id?: string }>(layout: T): T {
+  // Random only: a timestamp would publish when the house was started in
+  // every share link and export.
+  return layout.id ? layout : { ...layout, id: `house-${randomSuffix()}${randomSuffix()}` };
+}

@@ -23,13 +23,14 @@ import {
   removeReceivedLayout,
   shareHashFromText,
 } from '../lib/pasteboard';
-import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
+import { confirmReplace } from '../lib/restore-point';
 import { decodeShareUrl } from '../lib/share';
 import {
   VERSION_HISTORY_STORAGE_KEY,
   floorPlanFingerprint,
   getSnapshot,
   listSnapshots,
+  snapshotsShareHouse,
   subscribeSnapshots,
 } from '../lib/version-history';
 import { PlanThumb } from './plan-thumb';
@@ -39,6 +40,10 @@ import type { VersionSummary } from '../lib/version-history';
 
 export interface LibraryPanelProps {
   currentLayout: RoomLayout;
+  /**
+   * Replace the house with `layout`. Takes the forced restore point of the
+   * outgoing house itself, so the handlers here don't (#352).
+   */
   onLoad(layout: RoomLayout): void;
 }
 
@@ -62,19 +67,13 @@ function signed(delta: number, noun: string): string {
   return `${delta > 0 ? '+' : '−'}${plural(Math.abs(delta), noun)}`;
 }
 
-/** Two restore points of one house (#296): same id, or same name when neither has one. */
-function sameHouse(a: VersionSummary, b: VersionSummary): boolean {
-  if (a.layoutId !== null || b.layoutId !== null) return a.layoutId === b.layoutId;
-  return a.name !== null && a.name === b.name;
-}
-
 /**
  * What a restore point changed relative to the one before it (#303),
  * computed from the two summaries alone — no layout is parsed. Null when
  * there is no older restore point of the same house to compare against.
  */
 function describeChange(summary: VersionSummary, older: VersionSummary | undefined): string | null {
-  if (!older || !sameHouse(summary, older)) return null;
+  if (!older || !snapshotsShareHouse(summary, older)) return null;
   const parts: string[] = [];
   const items = summary.itemCount - older.itemCount;
   const floors = summary.floorCount - older.floorCount;
@@ -213,11 +212,9 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       summary.floorPlanFingerprint === floorPlanFingerprint(currentLayout.floorPlanImage)
         ? { ...snapshot, floorPlanImage: currentLayout.floorPlanImage }
         : snapshot;
-    // Restoring replaces the whole house too — keep a way back to the one
-    // on screen beyond this session's undo stack (#298).
-    snapshotBeforeReplace(currentLayout);
-    // `onLoad` applies via the same undoable path as a library/template load
-    // (applyLayout without history.clear, #222) — one Ctrl+Z away.
+    // `onLoad` takes the forced restore point of the house on screen (#298,
+    // #352) and applies via the same undoable path as a library/template
+    // load (applyLayout without history.clear, #222) — one Ctrl+Z away.
     onLoad(restored);
     setLoaded({
       section: 'history',
@@ -273,9 +270,8 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
 
   const handleLoadReceived = (entry: PasteboardEntry) => {
     if (!confirmReplace(currentLayout, `“${entry.name}”`)) return;
-    // Same undoable path as a library load, with a way back beyond the undo
-    // stack (#298) — the board keeps its copy, so this can be tried freely.
-    snapshotBeforeReplace(currentLayout);
+    // Same undoable path as a library load; `onLoad` takes the restore point
+    // (#298, #352). The board keeps its copy, so this can be tried freely.
     onLoad(entry.layout);
     setLoaded({ section: 'received', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
   };

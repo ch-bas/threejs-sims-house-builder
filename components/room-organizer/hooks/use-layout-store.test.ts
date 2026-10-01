@@ -58,3 +58,24 @@ describe('use-layout-store — wiring', () => {
     expect(layoutStore.getState().activeFloorIndex).toBe(1);
   });
 });
+
+describe('use-layout-store — house identity (#342)', () => {
+  beforeEach(reset);
+
+  it('labels a house it takes in without an id, and keeps an id it already has', () => {
+    layoutStore.getState().actions.applyLayout({ ...INITIAL_LAYOUT, name: 'Template' });
+    const minted = layoutStore.getState().layout.id;
+    expect(minted).toMatch(/^house-/);
+    layoutStore.getState().actions.setName('Edited');
+    expect(layoutStore.getState().layout.id).toBe(minted);
+    layoutStore.getState().actions.applyLayout({ ...INITIAL_LAYOUT, id: 'house-kept' });
+    expect(layoutStore.getState().layout.id).toBe('house-kept');
+  });
+
+  it('gives two loads of id-less houses different ids', () => {
+    layoutStore.getState().actions.applyLayout({ ...INITIAL_LAYOUT });
+    const first = layoutStore.getState().layout.id;
+    layoutStore.getState().actions.applyLayout({ ...INITIAL_LAYOUT });
+    expect(layoutStore.getState().layout.id).not.toBe(first);
+  });
+});
