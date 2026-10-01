@@ -14,6 +14,7 @@ import type { RoomLayout } from '../lib/types';
 // hydration control flow can be driven without CompressionStream.
 vi.mock('../lib/share', () => ({
   isShareHash: (hash: string) => hash.startsWith('#layout='),
+  isShareHashWithinBudget: () => true,
   decodeShareUrl: vi.fn(),
 }));
 

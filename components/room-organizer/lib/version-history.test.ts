@@ -3,6 +3,7 @@ import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { STORAGE_KEY } from './constants';
 import { saveLayout } from './persistence';
 import {
+  MAX_STORAGE_ENTRY_CHARS,
   VERSION_HISTORY_LIMIT,
   VERSION_HISTORY_MAX_CHARS,
   VERSION_HISTORY_META_KEY,
@@ -314,6 +315,26 @@ describe('version-history — lowest-priority tenant (#295)', () => {
     expect(evictOldestSnapshot({ storage })).toBe(true);
     expect(storage.getItem(VERSION_HISTORY_STORAGE_KEY)).toBeNull();
     expect(evictOldestSnapshot({ storage })).toBe(false);
+  });
+
+  it('refuses a value no browser could hold without evicting a single restore point (#332)', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    recordSnapshot(makeHouse(1), { storage, now: clock.now });
+    clock.advance(VERSION_HISTORY_MIN_INTERVAL_MS + 1);
+    recordSnapshot(makeHouse(2), { storage, now: clock.now });
+    const ring = storage.getItem(VERSION_HISTORY_STORAGE_KEY);
+    const setItem = vi.spyOn(storage, 'setItem');
+    const oversized = 'x'.repeat(MAX_STORAGE_ENTRY_CHARS);
+    expect(() => setItemEvictingSnapshots(storage, STORAGE_KEY, oversized)).toThrow(
+      expect.objectContaining({ name: 'QuotaExceededError' })
+    );
+    expect(setItem).not.toHaveBeenCalled();
+    expect(storage.getItem(VERSION_HISTORY_STORAGE_KEY)).toBe(ring);
+    expect(listSnapshots({ storage })).toHaveLength(2);
+    // The same save through saveLayout reports failure and keeps them too.
+    expect(saveLayout(makeLayout({ name: oversized }), storage)).toBe(false);
+    expect(listSnapshots({ storage })).toHaveLength(2);
   });
 
   it('terminates on a store without removeItem', () => {

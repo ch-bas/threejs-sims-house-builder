@@ -521,16 +521,31 @@ export function evictOldestSnapshot(opts: VersionHistoryOptions = {}): boolean {
 }
 
 /**
+ * The most localStorage any major browser gives one origin, in UTF-16 code
+ * units of key plus value (Chromium: 10 MiB of UTF-16; Firefox and Safari:
+ * 5 MiB). An entry over this can never be written, whatever is evicted.
+ */
+export const MAX_STORAGE_ENTRY_CHARS = 5 * 1024 * 1024;
+
+/**
  * `storage.setItem` for data that outranks restore points (#295): on a
  * failed write the ring is evicted oldest-first and the write retried.
  * Rethrows the storage error once the ring is empty and the write still
- * fails.
+ * fails. An entry that alone exceeds any browser's quota is refused up
+ * front with a `QuotaExceededError` and evicts nothing: those restore
+ * points are the only way back to the house it would have replaced (#332).
  */
 export function setItemEvictingSnapshots(
   storage: VersionHistoryStore,
   key: string,
   value: string
 ): void {
+  if (key.length + value.length > MAX_STORAGE_ENTRY_CHARS) {
+    throw new DOMException(
+      `"${key}" is ${value.length} characters, more than browser storage can ever hold.`,
+      'QuotaExceededError'
+    );
+  }
   for (;;) {
     try {
       storage.setItem(key, value);

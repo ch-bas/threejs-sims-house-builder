@@ -24,7 +24,7 @@ import {
   shareHashFromText,
 } from '../lib/pasteboard';
 import { confirmReplace } from '../lib/restore-point';
-import { decodeShareUrl } from '../lib/share';
+import { decodeShareUrl, isShareHashWithinBudget } from '../lib/share';
 import {
   VERSION_HISTORY_STORAGE_KEY,
   floorPlanFingerprint,
@@ -228,6 +228,15 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       setPasteStatus({
         kind: 'error',
         text: "That doesn't look like a share link — it should contain “#layout=…”.",
+      });
+      return;
+    }
+    // Refused before decoding: a hash this long is no house, and inflating
+    // it could take the tab down (#332).
+    if (!isShareHashWithinBudget(hash)) {
+      setPasteStatus({
+        kind: 'error',
+        text: 'This link is far larger than any house, so it was not opened.',
       });
       return;
     }
