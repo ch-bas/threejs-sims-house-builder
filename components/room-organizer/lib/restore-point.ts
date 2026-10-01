@@ -8,9 +8,21 @@ import type { RoomLayout } from './types';
  */
 const NOT_WORK = new Set<string>(['id', 'name', 'floorPlanOpacity', 'floorPlanFitMode']);
 
-/** Structural equality over JSON-shaped data; a key holding `undefined` counts as absent. */
+/** Absent for comparison: undefined, and an empty list or object left behind by edits. */
+function isEmptyValue(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  return typeof value === 'object' && value !== null && Object.keys(value).length === 0;
+}
+
+/**
+ * Structural equality over JSON-shaped data. A key holding `undefined`, `[]`
+ * or `{}` counts as absent — drawing a wall and deleting it leaves an empty
+ * list, which is not work.
+ */
 function sameData(a: unknown, b: unknown): boolean {
   if (a === b) return true;
+  if (isEmptyValue(a) && isEmptyValue(b)) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
   if (Array.isArray(a) && Array.isArray(b)) {
@@ -32,10 +44,12 @@ function sameData(a: unknown, b: unknown): boolean {
  * size, the roof, storey heights — and any field added later — all count.
  */
 function isUntouched(layout: RoomLayout): boolean {
-  const keys = new Set([...Object.keys(layout), ...Object.keys(INITIAL_LAYOUT)]);
+  // Legacy single-floor saves carry no roof; they start from the default one.
+  const candidate: RoomLayout = layout.roof ? layout : { ...layout, roof: INITIAL_LAYOUT.roof! };
+  const keys = new Set([...Object.keys(candidate), ...Object.keys(INITIAL_LAYOUT)]);
   for (const key of keys) {
     if (NOT_WORK.has(key)) continue;
-    if (!sameData(layout[key as keyof RoomLayout], INITIAL_LAYOUT[key as keyof RoomLayout])) return false;
+    if (!sameData(candidate[key as keyof RoomLayout], INITIAL_LAYOUT[key as keyof RoomLayout])) return false;
   }
   return true;
 }

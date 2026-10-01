@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { createStore, useStore } from 'zustand';
-import { randomId, randomSuffix } from '../lib/ids';
+import { randomId, randomSuffix, withHouseId } from '../lib/ids';
 import { randomStreetSeed } from '../lib/street-row';
 import {
   layoutReducer,
@@ -151,7 +151,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     renameFloor: (index, name) => dispatch({ type: 'renameFloor', index, name }),
     reorderFloor: (from, to) => dispatch({ type: 'reorderFloor', from, to }),
 
-    applyLayout: (next: RoomLayout) => dispatch({ type: 'applyLayout', layout: next }),
+    applyLayout: (next: RoomLayout) => dispatch({ type: 'applyLayout', layout: withHouseId(next) }),
 
     // Room zones (#155).
     addZone: (zone) => {
@@ -164,7 +164,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
   };
 
   return {
-    layout: INITIAL_LAYOUT,
+    layout: withHouseId(INITIAL_LAYOUT),
     activeFloorIndex: 0,
     actions,
   };

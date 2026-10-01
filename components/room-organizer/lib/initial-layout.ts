@@ -4,8 +4,8 @@ import type { FloorLayout, RoomLayout } from './types';
 /**
  * The house every new session starts from. Lives in `lib/` so pure modules —
  * `restore-point.ts` decides "untouched" by comparing against it (#346) —
- * can read it; `hooks/layout-reducer.ts` uses it as the reducer's initial
- * state.
+ * can read it; `hooks/layout-reducer.ts` re-exports it as the reducer's
+ * initial state.
  */
 export const INITIAL_GROUND_FLOOR: FloorLayout = {
   id: 'ground',

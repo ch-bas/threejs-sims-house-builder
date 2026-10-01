@@ -45,7 +45,7 @@ function mount() {
 describe('useKeyboardPlacement (#168)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    layoutStore.setState({ layout: INITIAL_LAYOUT, activeFloorIndex: 0 });
+    layoutStore.setState({ layout: { ...INITIAL_LAYOUT, id: 'house-test' }, activeFloorIndex: 0 });
   });
   afterEach(() => {
     cleanup();

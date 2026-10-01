@@ -2,6 +2,7 @@ import { DEFAULT_ROOF, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_RO
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { remapGroupIds } from '../lib/groups';
+import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
 import { clampTerrainY, isStreetSeed } from '../lib/site';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
@@ -121,23 +122,7 @@ export interface LayoutState {
   readonly activeFloorIndex: number;
 }
 
-export const INITIAL_GROUND_FLOOR: FloorLayout = {
-  id: 'ground',
-  name: 'Ground Floor',
-  floorColor: '#c9a57d',
-  floorPattern: 'wood',
-  items: [],
-};
-
-export const INITIAL_LAYOUT: RoomLayout = {
-  name: 'My Home',
-  width: 8,
-  height: 8,
-  floors: [INITIAL_GROUND_FLOOR],
-  roof: DEFAULT_ROOF,
-  floorPlanOpacity: 0.5,
-  floorPlanFitMode: 'stretch',
-};
+export { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT };
 
 // ---------------------------------------------------------------------------
 // Reducer
