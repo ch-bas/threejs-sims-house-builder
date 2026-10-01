@@ -61,10 +61,11 @@ export function interiorWallHeight(floor: StoreyFloor | undefined): number {
 /**
  * The rise a staircase is built with. Stairs bridge to the storey above,
  * so on a floor with an explicit height they climb exactly that; on a
- * classic storey they keep their own height, exactly as before.
+ * classic storey they keep their own height, but never more than the
+ * storey, so an imported 4 m stair can't pierce the floor above (#366).
  */
 export function stairRise(item: { height: number }, floor: StoreyFloor | undefined): number {
-  return floor?.height ?? item.height;
+  return floor?.height ?? Math.min(item.height, storeyHeight(floor));
 }
 
 /**

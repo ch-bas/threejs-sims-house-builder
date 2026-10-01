@@ -306,6 +306,22 @@ describe('stairwell openings and plan symbol (#290)', () => {
     expect(tall!.depth).toBeLessThan(classic!.depth);
   });
 
+  it('measures headroom against the storey, not a shortened stair’s own rise (#366)', () => {
+    // A 1 m stair on a 3 m storey ends 2 m below the floor above: no tread needs headroom.
+    const short = { ...placedStraight, height: 1 };
+    expect(computeFloorOpenings(makeFloor({ items: [short] }))).toEqual([]);
+    expect(computeFloorOpenings(makeFloor({ items: [{ ...placedWinder, height: 1 }] }))).toEqual([]);
+    expect(stairwellRect(straight, 1, 3)).toBeNull();
+    expect(winderStairwellOutline(winder, 1, 3)).toBeNull();
+    // A 2 m stair reaches into the band only over its top treads: a smaller hole than a full one.
+    const [partial] = computeFloorOpenings(makeFloor({ items: [{ ...placedStraight, height: 2.5 }] }));
+    const [full] = computeFloorOpenings(makeFloor({ items: [placedStraight] }));
+    expect(partial!.depth).toBeLessThan(full!.depth);
+    // An imported stair taller than the storey is built to the storey and cuts the same hole.
+    const [tall] = computeFloorOpenings(makeFloor({ items: [{ ...placedStraight, height: 4 }] }));
+    expect(tall).toEqual(full);
+  });
+
   it('turns an opening into a closed world outline for the plan', () => {
     const [classic] = computeFloorOpenings(makeFloor({ items: [{ ...placedStraight, rotation: Math.PI / 2 }] }));
     const outline = floorOpeningOutline(classic!);

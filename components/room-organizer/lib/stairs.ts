@@ -1,4 +1,4 @@
-import { stairRise } from './storeys';
+import { stairRise, storeyHeight } from './storeys';
 import type { FloorLayout, FurnitureItem, StairsShape } from './types';
 
 /**
@@ -166,10 +166,12 @@ export interface StairwellRect {
  * The part of the floor above that has to go: over every tread that comes
  * within the headroom of the ceiling, as one local rectangle (with a small
  * margin), instead of the stair's whole footprint. Null when no tread does
- * (a very short flight under a tall storey).
+ * (a very short flight under a tall storey). `ceiling` is the height of the
+ * floor above, the storey's — not the stair's own rise, or a shortened stair
+ * would cut a bigger hole (#366).
  */
-export function stairwellRect(item: StairItem, rise: number): StairwellRect | null {
-  const low = rise - STAIR_HEADROOM;
+export function stairwellRect(item: StairItem, rise: number, ceiling = rise): StairwellRect | null {
+  const low = ceiling - STAIR_HEADROOM;
   const needed = stairSteps(item, rise).filter((step) => step.top > low);
   if (needed.length === 0) return null;
   const xs = needed.flatMap((step) => step.outline.map(([x]) => x));
@@ -191,11 +193,15 @@ export function stairwellRect(item: StairItem, rise: number): StairwellRect | nu
  * winder too shallow to turn, which stairSteps lays out straight (#278) —
  * or when no tread needs it.
  */
-export function winderStairwellOutline(item: StairItem, rise: number): Array<[number, number]> | null {
+export function winderStairwellOutline(
+  item: StairItem,
+  rise: number,
+  ceiling = rise
+): Array<[number, number]> | null {
   const layout = winderLayout(item);
   if (!layout) return null;
   const steps = stairSteps(item, rise);
-  const first = steps.findIndex((step) => step.top > rise - STAIR_HEADROOM);
+  const first = steps.findIndex((step) => step.top > ceiling - STAIR_HEADROOM);
   if (first < 0) return null;
   const hw = item.width / 2;
   const hd = item.depth / 2;
@@ -296,11 +302,12 @@ export function computeFloorOpenings(floorBelow: FloorLayout | undefined): reado
     // cuts it rotated (no over-inflated AABB); it clamps holes into the floor
     // outline with its epsilon inset (#146).
     const rise = stairRise(item, floorBelow);
-    const rect = stairwellRect(item, rise);
+    const ceiling = storeyHeight(floorBelow);
+    const rect = stairwellRect(item, rise, ceiling);
     if (!rect) continue;
     const toWorld = stairToWorld(item, item.position);
     const [centerX, centerZ] = toWorld(rect.centerX, rect.centerZ);
-    const outline = winderStairwellOutline(item, rise);
+    const outline = winderStairwellOutline(item, rise, ceiling);
     openings.push({
       id: item.id,
       centerX,

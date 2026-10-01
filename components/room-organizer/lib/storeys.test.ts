@@ -47,6 +47,8 @@ describe('storey heights (#202)', () => {
     expect(stairRise({ height: 3 }, {})).toBe(3);
     expect(stairRise({ height: 2.8 }, undefined)).toBe(2.8);
     expect(stairRise({ height: 3 }, { height: 2.5 })).toBe(2.5);
+    // Never taller than the classic storey it stands on (#366).
+    expect(stairRise({ height: 4 }, {})).toBe(3);
   });
 
   it('validates and clamps heights to the allowed range', () => {
