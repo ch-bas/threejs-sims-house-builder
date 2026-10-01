@@ -429,8 +429,13 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
 
       {props.wallDrawStatus && (
         <div
-          className="absolute top-4 right-4 pc-glass pc-glass--dark"
+          // Top-centre like the other tool chips: the top-right corner is the
+          // floor and wall pills, which covered it (#473).
+          className="pc-top-chip absolute left-1/2 pc-glass pc-glass--dark"
           style={{
+            top: 104,
+            transform: 'translateX(-50%)',
+            zIndex: 31,
             padding: '8px 12px',
             display: 'flex',
             flexDirection: 'column',
