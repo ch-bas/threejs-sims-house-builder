@@ -142,7 +142,6 @@ function optionalCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-
 /** djb2 over the whole string, as an unsigned 32-bit number. */
 function hashString(value: string): number {
   let hash = 5381;
@@ -180,12 +179,12 @@ interface HouseRef {
  * Whether two snapshots are of one house, which scopes cadence and dedupe
  * (#296, #342). Every house gets a random `layout.id` when the store first
  * holds it (see `withHouseId`), so two houses that are both "My Home" are
- * still told apart. Entries and layouts from before ids existed fall back to
- * the name — the old rule, which errs toward fewer restore points, never a
- * flood that evicts other houses' points.
+ * still told apart. Only when neither side has an id — points and layouts
+ * from before ids existed — does the name decide, the old rule, which errs
+ * toward fewer restore points and can never flood the ring.
  */
 function sameHouse(a: HouseRef, b: HouseRef): boolean {
-  if (a.layoutId !== undefined && b.layoutId !== undefined) return a.layoutId === b.layoutId;
+  if (a.layoutId !== undefined || b.layoutId !== undefined) return a.layoutId === b.layoutId;
   return a.name !== undefined && a.name === b.name;
 }
 

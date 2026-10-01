@@ -187,7 +187,9 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | 
     floorCount: layout.floors.length,
   };
 
-  const layoutCopy: RoomLayout = { ...layout, id, name: trimmed };
+  // The house keeps its own id: the slug names the library slot, and two
+  // houses saved under one name in turn are still different houses (#342).
+  const layoutCopy: RoomLayout = { ...layout, name: trimmed };
   const previousBlob = safeGetItem(layoutKey(id));
   try {
     setItemEvictingSnapshots(window.localStorage, layoutKey(id), JSON.stringify(layoutCopy));

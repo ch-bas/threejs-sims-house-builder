@@ -23,5 +23,7 @@ export function randomSuffix(): string {
  * its id through edits, undo, saves, exports and share links.
  */
 export function withHouseId<T extends { id?: string }>(layout: T): T {
-  return layout.id ? layout : { ...layout, id: randomId('house') };
+  // Random only: a timestamp would publish when the house was started in
+  // every share link and export.
+  return layout.id ? layout : { ...layout, id: `house-${randomSuffix()}${randomSuffix()}` };
 }

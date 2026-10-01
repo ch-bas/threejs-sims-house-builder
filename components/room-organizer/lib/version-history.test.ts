@@ -408,15 +408,16 @@ describe('version-history — per house (#296)', () => {
     expect(recordSnapshot(makeHouse(2, { name: 'A' }), { storage, now: clock.now })).toBe(false);
   });
 
-  it('matches a snapshot to a layout by id, falling back to the name when either has none', () => {
+  it('matches a snapshot to a layout by id, and by name only when neither has one', () => {
     const at = (overrides: Partial<RoomLayout>) => makeHouse(2, overrides);
     expect(snapshotBelongsTo({ layoutId: 'a', name: 'X' }, at({ id: 'a', name: 'Renamed' }))).toBe(true);
     expect(snapshotBelongsTo({ layoutId: 'a', name: 'X' }, at({ id: 'b', name: 'X' }))).toBe(false);
     expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, at({ name: 'X' }))).toBe(true);
     expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, at({ name: 'Y' }))).toBe(false);
-    // A restore point from before ids existed still belongs to its house.
-    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, at({ id: 'x', name: 'X' }))).toBe(true);
-    expect(snapshotBelongsTo({ layoutId: 'x', name: 'X' }, at({ name: 'X' }))).toBe(true);
+    // A point from before ids existed doesn't claim an id'd house by its name:
+    // every default-named house would share its cadence.
+    expect(snapshotBelongsTo({ layoutId: null, name: 'X' }, at({ id: 'x', name: 'X' }))).toBe(false);
+    expect(snapshotBelongsTo({ layoutId: 'x', name: 'X' }, at({ name: 'X' }))).toBe(false);
     expect(snapshotBelongsTo({ layoutId: null, name: null }, at({ name: 'X' }))).toBe(false);
   });
 
@@ -730,10 +731,10 @@ describe('version-history — rings written by v1.14.0 (#342, #344)', () => {
     const storage = makeStore();
     seedV114(storage);
     const ids = listSnapshots({ storage, now: () => 10_000 }).map((summary) => summary.id);
-    // The old sidecar is ignored; the ring still gates the same house. An
-    // entry from before ids existed falls back to the name.
+    // The old sidecar is ignored; the ring still gates an id-less layout of
+    // the same name, while a house with an id has its own cadence.
     expect(recordSnapshot(myHome([sofa, 'bed-1759300004000-p0qa']), { storage, now: () => 3_000 })).toBe(false);
-    expect(recordSnapshot(myHome(['desk-1759400000000-zz99'], 'house-new'), { storage, now: () => 3_000 })).toBe(false);
+    expect(recordSnapshot(myHome(['desk-1759400000000-zz99'], 'house-new'), { storage, now: () => 3_000 })).toBe(true);
     // A house with its own id is told apart from another house with an id.
     expect(recordSnapshot(makeHouse(1, { id: 'elsewhere', name: 'Cabin' }), { storage, now: () => 3_000 })).toBe(true);
     const rewritten = JSON.parse(storage.data.get(VERSION_HISTORY_STORAGE_KEY)!) as Array<{ id: string }>;
