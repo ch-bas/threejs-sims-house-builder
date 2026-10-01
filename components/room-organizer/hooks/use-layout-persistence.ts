@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { notify } from '../lib/editor-notices';
-import { backupStoredLayout, loadLayout, saveLayout } from '../lib/persistence';
+import { backupStoredLayout, loadLayout, sameLayoutContent, saveLayout } from '../lib/persistence';
 import { snapshotBeforeReplace } from '../lib/restore-point';
 import { parseStoredLayout } from '../lib/schema';
 import { decodeShareUrl, isShareHash, isShareHashWithinBudget } from '../lib/share';
 import { recordSnapshot } from '../lib/version-history';
+import type { SaveFailureReason } from '../lib/persistence';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseLayoutPersistenceOptions {
@@ -20,11 +21,12 @@ export interface UseLayoutPersistenceResult {
   /** True while the debounce window is pending — the next save is on the way. */
   saving: boolean;
   /**
-   * True when the most recent save attempt failed (e.g. QuotaExceededError from
-   * an oversized floor-plan image). The HUD uses this to avoid falsely showing
-   * "Saved" when the layout never actually made it to localStorage.
+   * Why the most recent save attempt failed — a full quota (typically an
+   * oversized floor-plan image), storage blocked by the browser, or something
+   * else (#472) — or null after a success. The HUD uses it to avoid falsely
+   * showing "Saved" and to say what the user can do.
    */
-  saveError: boolean;
+  saveError: SaveFailureReason | null;
   /**
    * The layout another tab saved over ours, or null. Autosave stays
    * last-writer-wins between tabs (full merge is out of scope, #123), but the
@@ -53,17 +55,34 @@ export function useLayoutPersistence({
   const pendingRef = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
+  const [saveError, setSaveError] = useState<SaveFailureReason | null>(null);
+  // The exact JSON this tab last wrote: its own echo must not count as
+  // another tab's change (#334).
+  const lastSavedJsonRef = useRef<string | null>(null);
   const [remoteLayout, setRemoteLayout] = useState<RoomLayout | null>(null);
 
   // Cross-tab guard (#123): the `storage` event only fires in OTHER tabs of
   // the same origin, so any event on our key means a different tab saved.
+  // A different tab, but not necessarily a different house: after one tab
+  // adopts the other's version its autosave writes that same house back, and
+  // flagging it would bounce the notice between the tabs forever (#334).
   useEffect(() => {
     const onStorage = (event: StorageEvent): void => {
       if (event.key !== STORAGE_KEY || event.newValue === null) return;
+      if (event.newValue === lastSavedJsonRef.current) return;
       try {
         const parsed = parseStoredLayout(JSON.parse(event.newValue));
-        if (parsed) setRemoteLayout(parsed);
+        if (!parsed) return;
+        // Both sides through the same schema pass, so defaults it fills in
+        // don't read as a difference.
+        const shown = layoutRef.current;
+        const shownNormalised = parseStoredLayout(JSON.parse(JSON.stringify(shown))) ?? shown;
+        if (sameLayoutContent(parsed, shownNormalised)) {
+          // The other tab now holds what this one shows: any earlier notice is moot.
+          setRemoteLayout(null);
+          return;
+        }
+        setRemoteLayout(parsed);
       } catch {
         /* another tab wrote something unreadable — nothing to offer */
       }
@@ -174,14 +193,15 @@ export function useLayoutPersistence({
     setSaving(true);
     pendingRef.current = true;
     const handle = window.setTimeout(() => {
-      const ok = saveLayout(layout);
-      if (ok) {
+      const result = saveLayout(layout);
+      if (result.ok) {
+        lastSavedJsonRef.current = result.json;
         // Only mark the edit persisted on a real success — otherwise the HUD
         // would show "Saved" for a layout that never reached localStorage.
         pendingRef.current = false;
         setLastSavedAt(Date.now());
         setSaving(false);
-        setSaveError(false);
+        setSaveError(null);
         // Restore point (#231): piggyback on the successful autosave. The
         // ring gates its own cadence and swallows quota failures, so this
         // can never break the save that just happened.
@@ -190,7 +210,7 @@ export function useLayoutPersistence({
         // Keep `saving`/pending truthy and flag the error so the HUD reports
         // the failure instead of a false "Saved". A later successful edit
         // clears the flag.
-        setSaveError(true);
+        setSaveError(result.reason);
       }
     }, debounceMs);
     return () => window.clearTimeout(handle);
@@ -203,7 +223,8 @@ export function useLayoutPersistence({
     const flush = () => {
       if (!pendingRef.current) return;
       pendingRef.current = false;
-      saveLayout(layoutRef.current);
+      const result = saveLayout(layoutRef.current);
+      if (result.ok) lastSavedJsonRef.current = result.json;
       // The page is going away — capture a restore point regardless of the
       // ring's 5-minute cadence (#231).
       recordSnapshot(layoutRef.current, { force: true });
