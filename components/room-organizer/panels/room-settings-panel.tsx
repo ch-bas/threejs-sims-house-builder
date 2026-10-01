@@ -243,6 +243,10 @@ export function RoomDimensionInput({
       value={draft ?? value}
       onChange={(event) => {
         setDraft(event.target.value);
+        // Typed digits wait for blur/Enter: typing "20" passes through 2, and
+        // a footprint change re-fits openings and zones, which 20 can't undo
+        // (#431). Spinner and arrow-key steps (no inputType) apply at once.
+        if ((event.nativeEvent as InputEvent).inputType) return;
         const parsed = parseFloat(event.target.value);
         // Same guard as blur: re-typing the current value is not an edit (#279).
         if (Number.isFinite(parsed) && parsed >= min && parsed <= max && parsed !== value) {

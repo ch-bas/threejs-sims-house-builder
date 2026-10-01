@@ -2,6 +2,7 @@
 
 import { useRoomEditor } from '../contexts';
 import { CURRENCY_SYMBOL } from '../lib/constants';
+import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { GameMode } from '../lib/types';
 
@@ -30,7 +31,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   const { layout, gameMode, autoCycleLighting, setAutoCycleLighting, history, view, toggle } = useRoomEditor();
   const totalCost = layout.floors.reduce(
     (sum, floor) =>
-      sum + floor.items.reduce((acc, item) => acc + (item.price ?? 0), 0),
+      sum + floor.items.reduce((acc, item) => acc + (item.id === ENTRANCE_DOOR_ID ? 0 : item.price ?? 0), 0),
     0
   );
 
