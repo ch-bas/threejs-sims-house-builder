@@ -66,7 +66,7 @@ export function WelcomeBanner(): JSX.Element | null {
       }}
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome to PlotCraft"
+      aria-label="Welcome to the game"
       onClick={dismiss}
     >
       <div
@@ -114,7 +114,7 @@ export function WelcomeBanner(): JSX.Element | null {
                 lineHeight: 1.1,
               }}
             >
-              Welcome to PlotCraft
+              Welcome to the game
             </p>
             <p
               className="pc-hud-header"
