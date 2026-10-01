@@ -17,6 +17,7 @@ import {
 } from './schema';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from './street';
 import { MAX_STORAGE_ENTRY_CHARS } from './version-history';
+import { MAX_ZONES } from './zones';
 import type { FurnitureItem, RoomLayout } from './types';
 
 describe('isFurnitureItem', () => {
@@ -477,22 +478,50 @@ describe('schema caps (#332)', () => {
     expect(items.map((item) => item.id)).toEqual([long, `${'i'.repeat(MAX_ID_LENGTH - 2)}-2`]);
   });
 
-  it('slices items and interior walls past the per-floor caps', () => {
+  it('slices items and interior walls past the per-floor caps, keeping one slot for the porch', () => {
     const items = (count: number) =>
       Array.from({ length: count }, (_, i) => makeItem({ id: `i${i}`, position: { x: 0, z: 0 } }));
     const walls = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `w${i}`, x1: 0, z1: 0, x2: 1, z2: i / 10 }));
-    const full = makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR) })] });
+    // What the reducer can produce — one slot short of the cap — is untouched.
+    const full = makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR - 1) })] });
     expect(parseStoredLayout(full)).toBe(full);
     expect(only(parseStoredLayout(makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR + 1) })] }))).items).toHaveLength(
-      MAX_ITEMS_PER_FLOOR
+      MAX_ITEMS_PER_FLOOR - 1
     );
     const wallFloor = only(
       parseStoredLayout(makeLayout({ floors: [makeFloor({ interiorWalls: walls(MAX_INTERIOR_WALLS_PER_FLOOR + 1) })] }))
     );
-    expect(wallFloor.interiorWalls).toHaveLength(MAX_INTERIOR_WALLS_PER_FLOOR);
+    expect(wallFloor.interiorWalls).toHaveLength(MAX_INTERIOR_WALLS_PER_FLOOR - 1);
     // Legacy saves get the same cap.
     const legacy = parseStoredLayout({ name: 'Old', width: 6, height: 7, floorColor: '#fff', items: items(MAX_ITEMS_PER_FLOOR + 1) });
-    expect(only(legacy).items).toHaveLength(MAX_ITEMS_PER_FLOOR);
+    expect(only(legacy).items).toHaveLength(MAX_ITEMS_PER_FLOOR - 1);
+  });
+
+  it('never cuts the porch door or back wall from a full floor', () => {
+    const items = Array.from({ length: MAX_ITEMS_PER_FLOOR }, (_, i) => makeItem({ id: `i${i}`, position: { x: 0, z: 0 } }));
+    const door = makeItem({ id: ENTRANCE_DOOR_ID, type: 'door', position: { x: 0, z: -4 } });
+    const walls = Array.from({ length: MAX_INTERIOR_WALLS_PER_FLOOR }, (_, i) => ({ id: `w${i}`, x1: 0, z1: 0, x2: 1, z2: i / 10 }));
+    const back = { id: ENTRANCE_WALL_ID, x1: -0.7, z1: -2.8, x2: 0.7, z2: -2.8 };
+    const floor = only(
+      parseStoredLayout(makeLayout({ floors: [makeFloor({ items: [...items, door], interiorWalls: [...walls, back] })] }))
+    );
+    expect(floor.items).toHaveLength(MAX_ITEMS_PER_FLOOR);
+    expect(floor.items.some((item) => item.id === ENTRANCE_DOOR_ID)).toBe(true);
+    expect(floor.interiorWalls).toHaveLength(MAX_INTERIOR_WALLS_PER_FLOOR);
+    expect(floor.interiorWalls!.some((wall) => wall.id === ENTRANCE_WALL_ID)).toBe(true);
+    // And the repaired floor is stable.
+    const again = parseStoredLayout(JSON.parse(JSON.stringify(makeLayout({ floors: [floor] }))));
+    expect(only(again).items).toHaveLength(MAX_ITEMS_PER_FLOOR);
+  });
+
+  it('slices zones past MAX_ZONES instead of refusing the floor, and de-duplicates dormer ids', () => {
+    const zones = Array.from({ length: MAX_ZONES + 3 }, (_, i) => ({ id: `z${i}`, name: 'Z', color: '#123456', x: 0, z: 0, w: 1, d: 1 }));
+    const parsed = parseStoredLayout(makeLayout({ floors: [makeFloor({ zones })] }));
+    expect(only(parsed).zones).toHaveLength(MAX_ZONES);
+    const dormer = { id: 'd', side: 'south' as const, width: 1.6 };
+    const roofed = parseStoredLayout(makeLayout({ roof: { style: 'gable', color: '#555555', dormers: [dormer, dormer] } }));
+    const ids = roofed!.roof!.dormers!.map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(2);
   });
 
   it('opens a v1.14.0 save with an item at 250 m, a wall to 5 km and a 300-character name', () => {

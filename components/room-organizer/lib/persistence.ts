@@ -1,5 +1,6 @@
 import { STORAGE_KEY } from './constants';
-import { parseStoredLayout } from './schema';
+import { notify } from './editor-notices';
+import { parseStoredLayout, storedEntryCount } from './schema';
 import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout } from './types';
 import type { VersionHistoryStore } from './version-history';
@@ -10,7 +11,17 @@ export function loadLayout(): RoomLayout | null {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
-    return parseStoredLayout(parsed);
+    const layout = parseStoredLayout(parsed);
+    // Over the caps, the load trims the house; the next autosave would make
+    // that permanent. Keep the original first (#332).
+    if (layout && storedEntryCount(layout) < storedEntryCount(parsed)) {
+      backupStoredLayout();
+      notify(
+        'This house had more than the editor keeps on one floor, so some items were left out. The original is kept in Manage → Saved Layouts → History.',
+        'info'
+      );
+    }
+    return layout;
   } catch (error) {
     console.warn('Failed to load saved layout:', error);
     return null;

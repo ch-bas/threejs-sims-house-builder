@@ -228,7 +228,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   // Zone rectangles are painted and measured as-is: a NaN corner or a
   // negative size must not reach the renderer or the stats (#155).
   if (v.zones !== undefined) {
-    if (!Array.isArray(v.zones) || v.zones.length > MAX_ZONES) return false;
+    if (!Array.isArray(v.zones)) return false;
     if (!v.zones.every(isRoomZone)) return false;
   }
   return true;
@@ -471,6 +471,29 @@ function sliceTo<T>(list: T[], max: number): T[] {
   return list.length <= max ? list : list.slice(0, max);
 }
 
+/**
+ * Cut a floor's list to its cap while always keeping the porch entry
+ * (`keep`): the porch door and back wall are added by the entrance re-fit
+ * after everything else, so a plain slice dropped them on every reload of a
+ * full floor. Other entries get `max - 1` — the slot the reducer keeps free
+ * for the porch (#332). Returns the input when nothing is cut.
+ */
+function capKeeping<T extends { id: string }>(list: T[], max: number, keep: string): T[] {
+  if (list.length < max) return list;
+  let porchKept = false;
+  let others = 0;
+  const kept = list.filter((entry) => {
+    if (entry.id === keep && !porchKept) {
+      porchKept = true;
+      return true;
+    }
+    if (others >= max - 1) return false;
+    others += 1;
+    return true;
+  });
+  return kept.length === list.length ? list : kept;
+}
+
 function repairVec2(vec: { x: number; z: number }): { x: number; z: number } {
   const picked = pick(vec, VEC2_KEYS);
   const x = clampCoordinate(picked.x);
@@ -511,7 +534,7 @@ function repairFloor(floor: FloorLayout): FloorLayout {
     id: capText(floor.id, MAX_ID_LENGTH),
     name: capText(floor.name, MAX_NAME_LENGTH),
     floorColor: capText(floor.floorColor, MAX_COLOR_LENGTH),
-    items: mapSame(sliceTo(floor.items, MAX_ITEMS_PER_FLOOR), repairItem),
+    items: mapSame(capKeeping(floor.items, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID), repairItem),
   };
   if (floor.wallColors) {
     const all = floor.wallColors;
@@ -531,10 +554,14 @@ function repairFloor(floor: FloorLayout): FloorLayout {
     // A zero-length wall has no direction to build, cut or snap to (#350).
     const repaired = mapSame(floor.interiorWalls, repairWall);
     const walls = repaired.filter((wall) => wall.x1 !== wall.x2 || wall.z1 !== wall.z2);
-    patch.interiorWalls = sliceTo(walls.length === repaired.length ? repaired : walls, MAX_INTERIOR_WALLS_PER_FLOOR);
+    patch.interiorWalls = capKeeping(
+      walls.length === repaired.length ? repaired : walls,
+      MAX_INTERIOR_WALLS_PER_FLOOR,
+      ENTRANCE_WALL_ID
+    );
   }
   if (floor.zones) {
-    patch.zones = mapSame(floor.zones, (zone) =>
+    patch.zones = mapSame(sliceTo(floor.zones, MAX_ZONES), (zone) =>
       rebuild(zone, ZONE_KEYS, {
         id: capText(zone.id, MAX_ID_LENGTH),
         name: capText(zone.name, MAX_NAME_LENGTH),
@@ -601,7 +628,11 @@ function withUniqueIds(layout: RoomLayout): RoomLayout {
     return { ...floor, items, ...(walls ? { interiorWalls: walls } : {}), ...(zones ? { zones } : {}) };
   });
   const unique = uniqueIds(floors);
-  return unique === layout.floors ? layout : { ...layout, floors: unique };
+  // Dormers are edited and removed by id too (#338).
+  const dormers = layout.roof?.dormers && uniqueIds(layout.roof.dormers);
+  const roof = layout.roof && dormers && dormers !== layout.roof.dormers ? { ...layout.roof, dormers } : layout.roof;
+  if (unique === layout.floors && roof === layout.roof) return layout;
+  return { ...layout, floors: unique, ...(roof ? { roof } : {}) };
 }
 
 /** `list` itself when its ids are already unique. */
@@ -699,4 +730,21 @@ function migrateLegacyLayout(legacy: LegacySingleFloorLayout): RoomLayout {
     layout.floorPlanFitMode = legacy.floorPlanFitMode;
   }
   return layout;
+}
+
+/**
+ * How many items, interior walls and zones a stored layout holds, read from
+ * raw JSON in either the current or the legacy single-floor shape. Compared
+ * before and after parsing, it tells whether the repair cut anything (#332).
+ */
+export function storedEntryCount(value: unknown): number {
+  if (!isPlainObject(value)) return 0;
+  const length = (list: unknown): number => (Array.isArray(list) ? list.length : 0);
+  if (!Array.isArray(value.floors)) return length(value.items) + length(value.interiorWalls);
+  let count = 0;
+  for (const floor of value.floors as unknown[]) {
+    if (!isPlainObject(floor)) continue;
+    count += length(floor.items) + length(floor.interiorWalls) + length(floor.zones);
+  }
+  return count;
 }
