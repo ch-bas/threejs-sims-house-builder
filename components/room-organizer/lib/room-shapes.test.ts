@@ -47,4 +47,14 @@ describe('generateRoomShape — hexagon orientation (#122)', () => {
     );
     expect(topVertices.size).toBe(2);
   });
+
+  it('spans the full requested depth as well as the width (#414)', () => {
+    const walls = generateRoomShape('hexagon', 1, -2, 8, 6, 'test');
+    const xs = walls.flatMap((w) => [w.x1, w.x2]);
+    const zs = walls.flatMap((w) => [w.z1, w.z2]);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(8, 10);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(6, 10);
+    expect(Math.max(...zs)).toBeCloseTo(1, 10);
+    expect(Math.min(...zs)).toBeCloseTo(-5, 10);
+  });
 });
