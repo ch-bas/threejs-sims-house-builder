@@ -730,6 +730,7 @@ export function RoomOrganizer(): JSX.Element {
       walkthroughActive,
       floorPickOnly: view.drawWallMode,
       onItemSelect: handleSelect,
+      selectedIds: allSelectedIds,
       onItemDragStart: handleDragStart,
       onItemDrag: handleDrag,
       onItemDragEnd: handleDragEnd,
@@ -887,6 +888,7 @@ export function RoomOrganizer(): JSX.Element {
       roomDepth: layout.height,
       interiorWalls: activeFloor.interiorWalls ?? [],
       idTag: randomSuffix(),
+      floorIndex: activeFloorIndex,
     });
     if (built.length === 0) return false;
     commitHistoryNow();
@@ -897,7 +899,7 @@ export function RoomOrganizer(): JSX.Element {
     }
     playCue('place');
     return true;
-  }, [layout.width, layout.height, activeFloor.interiorWalls, actions, commitHistoryNow, selectOnly, playCue]);
+  }, [layout.width, layout.height, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue]);
 
   const shortcutHandlers = useMemo(
     () => ({

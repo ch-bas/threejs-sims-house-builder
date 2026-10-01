@@ -33,16 +33,23 @@ export interface SceneEventHandlers {
    */
   floorPickOnly?: boolean;
   onItemSelect: (id: string, mode: SelectionMode) => void;
+  /**
+   * The current selection. A plain press on a member of a multi-selection
+   * keeps it so the drag moves the whole set; a release without a drag then
+   * narrows to the pressed item, as file managers do (#291).
+   */
+  selectedIds?: ReadonlySet<string>;
   onItemDragStart?: (id: string) => void;
   onItemDrag: (id: string, x: number, z: number) => void;
   onItemDragEnd?: (id: string) => void;
   /**
    * The gesture was aborted without a commit — the furniture set was rebuilt
    * under the live drag (cross-tab adopt, library load) and the captured
-   * group no longer exists (#207 follow-up). The React side must discard its
-   * drag session so nothing is committed on the next pointerup.
+   * group no longer exists (#207 follow-up), or the browser cancelled the
+   * pointer (`restore`: move the groups back to where they started, #292).
+   * The React side must discard its drag session so nothing is committed.
    */
-  onItemDragCancel?: (id: string) => void;
+  onItemDragCancel?: (id: string, options?: { restore?: boolean }) => void;
   onItemHover?: (info: HoverInfo | null) => void;
   onEmptyClick?: (x: number, z: number) => void;
   onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior' }) => void;
@@ -73,9 +80,28 @@ export const FURNITURE_REVISION_KEY = 'furnitureRevision';
 
 // A pointerdown that never travels past this radius (in CSS pixels) is a click,
 // not a drag: it selects the item without opening a drag session, so a plain
-// tap/click never re-locks the item or writes an undo entry. Real drags cross
-// the threshold and behave exactly as before.
+// tap/click never re-locks the item or writes an undo entry. Finger jitter
+// routinely exceeds the mouse radius, so touch gets a wider one (#292).
 const DRAG_THRESHOLD_PX = 4;
+const TOUCH_DRAG_THRESHOLD_PX = 10;
+
+/** Click-vs-drag radius for a pointer type — shared with the 2D plan. */
+export function dragThresholdPx(pointerType: string): number {
+  return pointerType === 'touch' ? TOUCH_DRAG_THRESHOLD_PX : DRAG_THRESHOLD_PX;
+}
+
+/**
+ * Whether a press on `id` should keep the current selection instead of
+ * selecting on pointerdown (#291): a plain press on a member of a
+ * multi-selection. The narrowing click happens on release instead.
+ */
+export function keepsSelectionOnPress(
+  mode: SelectionMode,
+  id: string,
+  selectedIds: ReadonlySet<string> | undefined
+): boolean {
+  return mode === 'replace' && selectedIds !== undefined && selectedIds.size > 1 && selectedIds.has(id);
+}
 
 /**
  * Wires the canvas pointer events for select / drag / hover / wall-pick /
@@ -129,6 +155,14 @@ export function attachDragHandlers({
   let activePointerId: number | null = null;
   let downClientX = 0;
   let downClientY = 0;
+  let dragThreshold = DRAG_THRESHOLD_PX;
+  // Item position minus the floor point under the press: added to every
+  // move so the item keeps its place under the pointer (#292).
+  let grabOffsetX = 0;
+  let grabOffsetZ = 0;
+  // The press kept a multi-selection (#291); a release without a drag
+  // narrows it to the pressed item.
+  let selectOnRelease = false;
 
   const setPointerFromEvent = (event: { clientX: number; clientY: number }): void => {
     const rect = canvas.getBoundingClientRect();
@@ -140,6 +174,7 @@ export function attachDragHandlers({
     dragTarget = null;
     dragStarted = false;
     activePointerId = null;
+    selectOnRelease = false;
   };
 
   const beginDragSession = (event: PointerEvent): void => {
@@ -212,17 +247,28 @@ export function attachDragHandlers({
         ? 'toggle'
         : 'replace';
     const itemId = target.userData.id as string;
-    handlersRef.current.onItemSelect(itemId, mode);
+    const locked = target.userData.locked === true;
+    const keepSelection = !locked && keepsSelectionOnPress(mode, itemId, handlersRef.current.selectedIds);
+    if (!keepSelection) handlersRef.current.onItemSelect(itemId, mode);
 
-    if (target.userData.locked === true || mode === 'toggle') return;
+    if (locked || mode === 'toggle') return;
 
     // Arm a potential drag, but don't open the session yet: the drag only
-    // begins once the pointer travels past DRAG_THRESHOLD_PX (see onPointerMove).
+    // begins once the pointer travels past the threshold (see onPointerMove).
     dragTarget = target;
     dragStarted = false;
     activePointerId = event.pointerId;
     downClientX = event.clientX;
     downClientY = event.clientY;
+    dragThreshold = dragThresholdPx(event.pointerType);
+    selectOnRelease = keepSelection;
+    grabOffsetX = 0;
+    grabOffsetZ = 0;
+    dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
+    if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
+      grabOffsetX = target.position.x - intersection.x;
+      grabOffsetZ = target.position.z - intersection.z;
+    }
   };
 
   let lastHoverId: string | null = null;
@@ -271,7 +317,7 @@ export function attachDragHandlers({
       if (event.pointerId !== activePointerId) return;
       const dx = event.clientX - downClientX;
       const dy = event.clientY - downClientY;
-      if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+      if (dx * dx + dy * dy < dragThreshold * dragThreshold) return;
       beginDragSession(event);
     }
 
@@ -282,17 +328,22 @@ export function attachDragHandlers({
     // the stale in-flight positions over the fresh state. A detached group
     // has no parent — abort the gesture; state is already authoritative.
     if (dragTarget.parent === null) {
-      abortGesture();
+      abortGesture(false);
       return;
     }
 
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
-    raycaster.ray.intersectPlane(dragPlane, intersection);
+    // A ray at or above the horizon misses the plane — hold the last frame.
+    if (!raycaster.ray.intersectPlane(dragPlane, intersection)) return;
 
     const itemId = dragTarget.userData.id as string;
-    const snapped = handlersRef.current.snapPosition(itemId, intersection.x, intersection.z);
+    const snapped = handlersRef.current.snapPosition(
+      itemId,
+      intersection.x + grabOffsetX,
+      intersection.z + grabOffsetZ
+    );
 
     dragTarget.position.x = snapped.x;
     dragTarget.position.z = snapped.z;
@@ -304,9 +355,11 @@ export function attachDragHandlers({
   };
 
   // Like endGesture, but for a gesture that died under us: no commit — the
-  // React side is told to throw its session away instead.
-  const abortGesture = (): void => {
+  // React side is told to throw its session away instead. `restore` moves
+  // the dragged groups back (a pointercancel); a rebuilt set needs nothing.
+  const abortGesture = (restore: boolean): void => {
     const target = dragTarget;
+    const started = dragStarted;
     if (activePointerId !== null) {
       try {
         canvas.releasePointerCapture(activePointerId);
@@ -316,7 +369,12 @@ export function attachDragHandlers({
     }
     resetDragState();
     controls.enabled = true;
-    if (target) handlersRef.current.onItemDragCancel?.(target.userData.id as string);
+    if (!target || !started) return;
+    handlersRef.current.onItemDragCancel?.(target.userData.id as string, { restore });
+    if (restore) {
+      markDirty();
+      requestShadowUpdate?.();
+    }
   };
 
   const endGesture = (event: PointerEvent): void => {
@@ -330,11 +388,16 @@ export function attachDragHandlers({
         // Ignore if capture was never held or already released.
       }
     }
+    const narrow = selectOnRelease;
     resetDragState();
     if (!target) return;
     // A pointerup that never crossed the drag threshold was a select-only
     // click: no session was opened, so there is nothing to end (see #65).
-    if (!started) return;
+    // A press that kept a multi-selection selects the item now (#291).
+    if (!started) {
+      if (narrow) handlersRef.current.onItemSelect(target.userData.id as string, 'replace');
+      return;
+    }
     controls.enabled = true;
     handlersRef.current.onItemDragEnd?.(target.userData.id as string);
   };
@@ -343,8 +406,11 @@ export function attachDragHandlers({
     endGesture(event);
   };
 
+  // The browser took the pointer (OS gesture, palm rejection, a system
+  // dialog): undo the drag rather than commit and lock it (#292).
   const onPointerCancel = (event: PointerEvent): void => {
-    endGesture(event);
+    if (activePointerId === null || event.pointerId !== activePointerId) return;
+    abortGesture(true);
   };
 
   const onPointerLeave = (event: PointerEvent): void => {

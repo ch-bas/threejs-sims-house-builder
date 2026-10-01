@@ -6,11 +6,10 @@ import { isWallMounted } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
 import { planFloorIndex } from '../lib/street';
 import { defaultZoneName, nextZoneColor, zoneFromCorners } from '../lib/zones';
+import { dragThresholdPx, keepsSelectionOnPress } from '../three/drag-handlers';
 import { useLayoutActions } from './use-layout-store';
+import type { DragCancelOptions } from './use-item-drag';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
-
-// Matches the 3D canvas's click-vs-drag radius (three/drag-handlers.ts).
-const DRAG_THRESHOLD_PX = 4;
 
 /**
  * Extra hit margin (CSS px) around wall-mounted and very small items (#286):
@@ -78,7 +77,7 @@ export interface UseCanvas2DInteractionParams {
   onItemDragStart(id: string): void;
   onItemDrag(id: string, x: number, z: number): void;
   onItemDragEnd(id: string): void;
-  onItemDragCancel(id: string): void;
+  onItemDragCancel(id: string, options?: DragCancelOptions): void;
 }
 
 export interface UseCanvas2DInteractionResult {
@@ -144,7 +143,13 @@ export function useCanvas2DInteraction(
       itemId: string;
       downClientX: number;
       downClientY: number;
-      /** True once the pointer crossed DRAG_THRESHOLD_PX and the session opened. */
+      /** Click-vs-drag radius for this pointer type (#292). */
+      threshold: number;
+      /** Item centre minus the press point, kept through the drag (#292). */
+      grabOffset: { x: number; z: number };
+      /** The press kept a multi-selection; a release without a drag narrows it (#291). */
+      selectOnRelease: boolean;
+      /** True once the pointer crossed the threshold and the session opened. */
       started: boolean;
       /** Overlay members' start positions — mirrors use-item-drag's session. */
       origins: Map<string, { x: number; z: number }>;
@@ -159,6 +164,7 @@ export function useCanvas2DInteraction(
       pointerId: number;
       downClientX: number;
       downClientY: number;
+      threshold: number;
       started: boolean;
       start: { x: number; z: number };
       latest: { x: number; z: number };
@@ -252,7 +258,12 @@ export function useCanvas2DInteraction(
       }
     };
 
-    const abortGesture = (): void => {
+    /**
+     * Drop the gesture without committing. `restore` (a pointercancel, #292)
+     * also repaints from committed state — no state change will clear the
+     * ghost frame — and tells the drag session to put the 3D groups back.
+     */
+    const abortGesture = (restore = false): void => {
       const session = gesture;
       gesture = null;
       if (rafId !== null) {
@@ -266,7 +277,8 @@ export function useCanvas2DInteraction(
       }
       if (!session?.started) return;
       releaseCapture(session.pointerId);
-      paramsRef.current.onItemDragCancel(session.itemId);
+      paramsRef.current.onItemDragCancel(session.itemId, { restore });
+      if (restore) schedulePaint();
     };
 
     const onPointerDown = (event: PointerEvent): void => {
@@ -281,6 +293,7 @@ export function useCanvas2DInteraction(
           pointerId: event.pointerId,
           downClientX: event.clientX,
           downClientY: event.clientY,
+          threshold: dragThresholdPx(event.pointerType),
           started: false,
           start: world,
           latest: world,
@@ -293,15 +306,23 @@ export function useCanvas2DInteraction(
         return;
       }
       const mode = event.altKey ? 'single' : event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
-      p.onItemSelect(hit.id, mode);
+      const locked = hit.locked === true;
+      // A plain press on a member of a multi-selection keeps it, so the drag
+      // moves the whole set (#291) — mirrors the 3D canvas (drag-handlers).
+      const keepSelection = !locked && keepsSelectionOnPress(mode, hit.id, p.allSelectedIds);
+      if (!keepSelection) p.onItemSelect(hit.id, mode);
       // Locked items select but never drag; a toggle click is selection
       // surgery, not a move — both mirror the 3D canvas (drag-handlers).
-      if (hit.locked === true || mode === 'toggle') return;
+      if (locked || mode === 'toggle') return;
+      const position = hit.position ?? world;
       gesture = {
         pointerId: event.pointerId,
         itemId: hit.id,
         downClientX: event.clientX,
         downClientY: event.clientY,
+        threshold: dragThresholdPx(event.pointerType),
+        grabOffset: { x: position.x - world.x, z: position.z - world.z },
+        selectOnRelease: keepSelection,
         started: false,
         origins: new Map(),
         latest: new Map(),
@@ -314,7 +335,7 @@ export function useCanvas2DInteraction(
         if (!zone.started) {
           const dx = event.clientX - zone.downClientX;
           const dy = event.clientY - zone.downClientY;
-          if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+          if (dx * dx + dy * dy < zone.threshold * zone.threshold) return;
           zone.started = true;
           try {
             canvas.setPointerCapture(event.pointerId);
@@ -333,7 +354,7 @@ export function useCanvas2DInteraction(
       if (!session.started) {
         const dx = event.clientX - session.downClientX;
         const dy = event.clientY - session.downClientY;
-        if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+        if (dx * dx + dy * dy < session.threshold * session.threshold) return;
         beginDrag(event);
       }
       const p = paramsRef.current;
@@ -346,7 +367,11 @@ export function useCanvas2DInteraction(
       }
       const world = clientToWorld2D(event.clientX, event.clientY);
       if (!world) return;
-      const snapped = p.snapPosition(session.itemId, world.x, world.z);
+      const snapped = p.snapPosition(
+        session.itemId,
+        world.x + session.grabOffset.x,
+        world.z + session.grabOffset.z
+      );
       // Defers the state dispatch to release (use-item-drag's fast path).
       p.onItemDrag(session.itemId, snapped.x, snapped.z);
       const origin = session.origins.get(session.itemId);
@@ -381,12 +406,27 @@ export function useCanvas2DInteraction(
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      // A release inside the threshold was a select-only click (#65).
-      if (!session.started) return;
+      // A release inside the threshold was a select-only click (#65); a
+      // press that kept a multi-selection selects the item now (#291).
+      if (!session.started) {
+        if (session.selectOnRelease) paramsRef.current.onItemSelect(session.itemId, 'replace');
+        return;
+      }
       releaseCapture(session.pointerId);
       // Commits once, locks, settles wall-mounted items; the state change
       // re-runs the 2D paint effect for the final frame.
       paramsRef.current.onItemDragEnd(session.itemId);
+    };
+
+    const onPointerCancel = (event: PointerEvent): void => {
+      // A zone draft is discarded by endGesture (it checks the event type).
+      if (zoneGesture && event.pointerId === zoneGesture.pointerId) {
+        endGesture(event);
+        return;
+      }
+      // The browser took the pointer mid-drag (OS gesture, palm rejection):
+      // undo the drag instead of committing and locking it (#292).
+      if (gesture && event.pointerId === gesture.pointerId) abortGesture(true);
     };
 
     const onPointerLeave = (): void => {
@@ -399,14 +439,14 @@ export function useCanvas2DInteraction(
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', endGesture);
-    canvas.addEventListener('pointercancel', endGesture);
+    canvas.addEventListener('pointercancel', onPointerCancel);
     canvas.addEventListener('pointerleave', onPointerLeave);
 
     return () => {
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', endGesture);
-      canvas.removeEventListener('pointercancel', endGesture);
+      canvas.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('pointerleave', onPointerLeave);
       // Disabled (view switch) or unmounted mid-drag: discard the session so
       // nothing stale is committed on a later pointerup.
