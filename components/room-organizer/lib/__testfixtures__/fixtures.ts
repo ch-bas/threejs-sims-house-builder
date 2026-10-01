@@ -1,4 +1,4 @@
-import type { CatalogItem, FloorLayout, FurnitureItem, RoomLayout } from '../types';
+import type { CatalogItem, FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../types';
 
 /** Build a valid FurnitureItem with sane defaults; override any field. */
 export function makeItem(overrides: Partial<FurnitureItem> = {}): FurnitureItem {
@@ -56,6 +56,35 @@ export function makeLayout(overrides: Partial<RoomLayout> = {}): RoomLayout {
     height: 8,
     floors: [makeFloor()],
     roof: { style: 'gable', color: '#5d3a23' },
+    ...overrides,
+  };
+}
+
+/** The editor's initial view settings, with overrides. */
+export function makeViewSettings(overrides: Partial<ViewSettings> = {}): ViewSettings {
+  return {
+    view2D: false,
+    showMeasurements: true,
+    showWiFiSignals: true,
+    snapToGrid: false,
+    snapToWall: false,
+    snapToItems: false,
+    showMinimap: false,
+    floorPlan3DEffect: false,
+    timeOfDay: 12,
+    weather: 'clear',
+    walkthroughMode: false,
+    showOutdoor: true,
+    showAllFloors: false,
+    wallDisplay: 'cutaway',
+    measurementMode: false,
+    soundsEnabled: false,
+    drawWallMode: false,
+    drawZoneMode: false,
+    showHeatmap: false,
+    showItemLabels: false,
+    showNpcs: false,
+    showCameraVision: true,
     ...overrides,
   };
 }

@@ -1,8 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
+import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
 import { Icon, iconForItem } from '../plotcraft/icon';
+import { ChipButton, ChipNameField } from './chip-controls';
 import { Minimap } from './minimap';
 import type { FurnitureItem, RoomLayout } from '../lib/types';
 import type { FloorLayout } from '../lib/types';
@@ -29,8 +32,8 @@ export interface ViewportProps {
   onGroupSelection?: (() => void) | undefined;
   /** Ungroup the selection; absent when nothing in it is grouped (#154). */
   onUngroupSelection?: (() => void) | undefined;
-  /** Save the selection as a reusable custom set (#302). */
-  onSaveSelectionAsSet?(): void;
+  /** Save the selection as a reusable custom set under `name` (#302); true when saved. */
+  onSaveSelectionAsSet?(name: string): boolean;
   showMeasurements: boolean;
   showMinimap: boolean;
   walkthroughActive?: boolean;
@@ -38,6 +41,7 @@ export interface ViewportProps {
   walkthroughLockRefused?: boolean;
   hover?: HoverState | null;
   measurementDistance?: number | null;
+  /** Points placed with the distance tool; absent while the tool is off. */
   measurementPointsPlaced?: number;
   /** When set, a HUD chip shows the current wall-drawing status. */
   wallDrawStatus?: {
@@ -365,39 +369,6 @@ function StatusChip({
   );
 }
 
-/** Pill action inside a StatusChip — the multi-select chip's Copy / Group / Save row. */
-function ChipButton({
-  children,
-  onClick,
-  title,
-}: {
-  children: React.ReactNode;
-  onClick(): void;
-  title: string;
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      style={{
-        border: '1px solid currentColor',
-        borderRadius: 999,
-        background: 'transparent',
-        color: 'inherit',
-        fontFamily: 'var(--pc-font-display)',
-        fontWeight: 700,
-        fontSize: 10,
-        padding: '1px 8px',
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 function ViewportOverlays(props: ViewportProps): JSX.Element {
   return (
     <>
@@ -410,47 +381,7 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
       )}
 
       {props.selectionCount !== undefined && props.selectionCount > 1 && (
-        <div
-          className="absolute left-1/2"
-          // Below the header stats box, which can wrap to two lines at
-          // narrow desktop widths and covered a top-16 chip (#299, #154).
-          style={{ top: 104, transform: 'translateX(-50%)', zIndex: 31 }}
-        >
-          <StatusChip intent="accent">
-            <Icon name="copy" size={14} />
-            {props.selectionCount} items
-            {props.selectionGrouped ? ' · grouped · click any to select all' : ' selected · drag to move together'}
-            {props.onCopySelection && (
-              <ChipButton
-                onClick={props.onCopySelection}
-                title="Copy the selection (Ctrl+C) — Ctrl+V pastes, here or on another floor"
-              >
-                Copy
-              </ChipButton>
-            )}
-            {props.onGroupSelection && (
-              <ChipButton
-                onClick={props.onGroupSelection}
-                title="Group these items — clicking any one selects them all; Alt+click picks a single member"
-              >
-                Group
-              </ChipButton>
-            )}
-            {props.onUngroupSelection && (
-              <ChipButton onClick={props.onUngroupSelection} title="Ungroup the selected items">
-                Ungroup
-              </ChipButton>
-            )}
-            {props.onSaveSelectionAsSet && (
-              <ChipButton
-                onClick={props.onSaveSelectionAsSet}
-                title="Save this arrangement as a reusable set in the Furniture Sets panel"
-              >
-                Save as set
-              </ChipButton>
-            )}
-          </StatusChip>
-        </div>
+        <SelectionChip {...props} selectionCount={props.selectionCount} />
       )}
 
       {props.walkthroughActive && (
@@ -481,12 +412,15 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
         </>
       )}
 
-      {props.measurementPointsPlaced !== undefined &&
-        props.measurementPointsPlaced > 0 && (
-          <div className="absolute top-4 right-4">
+      {props.measurementPointsPlaced !== undefined && (
+          // Top-centre under the header: the top-right corner is the floor
+          // and wall pills, which covered this chip (#341).
+          <div className="pc-top-chip absolute left-1/2" style={{ top: 104, transform: 'translateX(-50%)', zIndex: 31 }}>
             <StatusChip intent="info">
               <Icon name="ruler" size={14} />
-              {props.measurementPointsPlaced === 1
+              {props.measurementPointsPlaced === 0
+                ? 'Click a floor point to measure from · Esc to stop'
+                : props.measurementPointsPlaced === 1
                 ? 'Click a second point…'
                 : `Distance: ${(props.measurementDistance ?? 0).toFixed(2)} m`}
             </StatusChip>
@@ -495,8 +429,13 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
 
       {props.wallDrawStatus && (
         <div
-          className="absolute top-4 right-4 pc-glass pc-glass--dark"
+          // Top-centre like the other tool chips: the top-right corner is the
+          // floor and wall pills, which covered it (#473).
+          className="pc-top-chip absolute left-1/2 pc-glass pc-glass--dark"
           style={{
+            top: 104,
+            transform: 'translateX(-50%)',
+            zIndex: 31,
             padding: '8px 12px',
             display: 'flex',
             flexDirection: 'column',
@@ -596,5 +535,77 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
         <HoverTooltip hover={props.hover} containerRef={props.canvasRef} />
       )}
     </>
+  );
+}
+
+/**
+ * The multi-select chip. Save as set names the set right here (#374): the
+ * button turns into a name field, in place of a blocking prompt.
+ */
+function SelectionChip(props: ViewportProps & { selectionCount: number }): JSX.Element {
+  const [namingSet, setNamingSet] = useState(false);
+  const onSaveSet = props.onSaveSelectionAsSet;
+  return (
+    <div
+      className="pc-top-chip absolute left-1/2"
+      // Below the header stats box, which can wrap to two lines at
+      // narrow desktop widths and covered a top-16 chip (#299, #154).
+      style={{ top: 104, transform: 'translateX(-50%)', zIndex: 31, maxWidth: 'calc(100vw - 32px)' }}
+    >
+      <StatusChip intent="accent">
+        <Icon name="copy" size={14} />
+        {namingSet && onSaveSet ? (
+          <>
+            Save {props.selectionCount} items as a set
+            <ChipNameField
+              label="Set name"
+              initialValue={`${props.selectedItem?.name ?? 'My'} set`}
+              submitLabel="Save"
+              maxLength={MAX_CUSTOM_SET_NAME_LENGTH}
+              onSubmit={(name) => {
+                // A failed save (storage full) keeps the field open; the
+                // status toast says why.
+                if (onSaveSet(name)) setNamingSet(false);
+              }}
+              onCancel={() => setNamingSet(false)}
+            />
+          </>
+        ) : (
+          <>
+            {props.selectionCount} items
+            {props.selectionGrouped ? ' · grouped · click any to select all' : ' selected · drag to move together'}
+            {props.onCopySelection && (
+              <ChipButton
+                onClick={props.onCopySelection}
+                title="Copy the selection (Ctrl+C) — Ctrl+V pastes, here or on another floor"
+              >
+                Copy
+              </ChipButton>
+            )}
+            {props.onGroupSelection && (
+              <ChipButton
+                onClick={props.onGroupSelection}
+                title="Group these items — clicking any one selects them all; Alt+click picks a single member"
+              >
+                Group
+              </ChipButton>
+            )}
+            {props.onUngroupSelection && (
+              <ChipButton onClick={props.onUngroupSelection} title="Ungroup the selected items">
+                Ungroup
+              </ChipButton>
+            )}
+            {onSaveSet && (
+              <ChipButton
+                onClick={() => setNamingSet(true)}
+                title="Save this arrangement as a reusable set in the Furniture Sets panel"
+              >
+                Save as set
+              </ChipButton>
+            )}
+          </>
+        )}
+      </StatusChip>
+    </div>
   );
 }

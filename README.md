@@ -196,10 +196,13 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Outdoor garden mode**: grass, stone path ring, scattered bushes.
 - **Top-down minimap** overlay (active floor).
 - **Hover tooltips** showing item icon, name, price ($), and dimensions.
-- **3D measurement tool**: pick two floor points to see the distance.
+- **View menu** (the eye button in the bottom-right panel): switches for
+  the distance tool, item labels, the cost heatmap and outdoor scenery, and
+  for snapping dragged items to walls or to neighbouring items.
+- **3D distance tool**: pick two floor points to see the distance.
 - **Catalog search highlights matching placed items** with an amber
   outline in the active floor.
-- **Floating item labels** sprite above each piece in 3D when enabled.
+- **Floating item labels**: a name sprite above each piece in 3D.
 - **Cost-density heatmap** in the 2D view, with a min/max gradient legend.
 - **Interactive 2D plan**: select, multi-select, and drag items on the
   top-down plan with the same snapping and settling as 3D; catalog items
@@ -306,7 +309,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 | Switch floor      | PgUp / PgDn        |
 | Time of day       | [ / ]              |
 | Toggle 2D         | 2                  |
-| Measurements      | M                  |
+| Dimension labels  | M                  |
 | Snap to grid      | G                  |
 | Signals/Coverage  | W                  |
 | Show / hide panels | P                 |
@@ -361,6 +364,8 @@ components/
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
+    │   ├── view-options.ts              View-menu switches and the view each one needs (#341)
+    │   ├── editor-notices.ts            notify() status messages + zone-name requests (#374)
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
@@ -441,6 +446,7 @@ components/
         ├── build-tools-panel.tsx        Bottom-left glass panel (mode's categories + wall tool)
         ├── catalog-strip.tsx            Bottom-centre drag-source tile row
         ├── mode-panel.tsx               Bottom-right EXPLORE / DESIGN / FURNISH + stats
+        ├── view-options.tsx             View menu: distance tool, labels, heatmap, outdoor, snapping
         ├── item-context-popover.tsx     Floating per-item editor on selection
         ├── color-swatch-picker.tsx      Shared swatch + recent-colours picker
         ├── slider-row.tsx               Shared label + range + readout row
@@ -475,6 +481,9 @@ components/
         ├── achievements-panel.tsx
         ├── achievement-toast.tsx
         ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
+        ├── status-toast.tsx             Status chips for notify() — export / share outcomes
+        ├── zone-name-chip.tsx           Inline name field for a zone just drawn on the plan
+        ├── chip-controls.tsx            Chip buttons + inline name field (no native prompts)
         └── viewport.tsx
 ```
 

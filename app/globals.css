@@ -286,11 +286,19 @@
   /* Action row stays: Undo/Redo and the view toggles exist nowhere else
      (#301). One line on a phone, wrapping on narrower screens. */
   .pc-mode-actions {
-    grid-template-columns: repeat(auto-fit, minmax(32px, 1fr)) !important;
+    grid-template-columns: repeat(auto-fit, minmax(30px, 1fr)) !important;
     gap: 3px !important;
   }
   .pc-mode-actions .pc-tile {
-    min-width: 32px !important;
+    min-width: 30px !important;
+  }
+  /* Top-centre chips (selection, distance, zone name) and status toasts
+     clear the walls pill, which spans the top here. */
+  .pc-top-chip {
+    top: 132px !important;
+  }
+  .pc-status-toasts {
+    top: 184px !important;
   }
   /* Mode pill: compact */
   .pc-mode-pill {

@@ -1,9 +1,11 @@
 'use client';
 
+import { forwardRef, useCallback, useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+import { ViewOptionsMenu } from './view-options';
 import type { GameMode } from '../lib/types';
 
 export type { GameMode };
@@ -34,11 +36,16 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
       sum + floor.items.reduce((acc, item) => acc + (item.id === ENTRANCE_DOOR_ID ? 0 : item.price ?? 0), 0),
     0
   );
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const viewButtonRef = useRef<HTMLButtonElement>(null);
+  const viewMenuId = useId();
+  const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
 
   return (
     <div
       className="pointer-events-auto pc-glass pc-mode-panel"
       style={{
+        position: 'relative',
         width: 248,
         padding: '14px 16px',
         display: 'flex',
@@ -106,7 +113,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
         })}
       </div>
 
-      {/* A wrapping grid, not a flex row: nine 36 px buttons don't fit the
+      {/* A wrapping grid, not a flex row: ten 36 px buttons don't fit the
           panel on one line and flex-shrink squeezed them to ~22 px (#301). */}
       <div
         className="pc-mode-actions"
@@ -181,7 +188,19 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           active={view.showNpcs}
           onClick={() => toggle('showNpcs')}
         />
+        <ActionButton
+          ref={viewButtonRef}
+          label="View options"
+          icon="eye"
+          active={viewMenuOpen}
+          expanded={viewMenuOpen}
+          controls={viewMenuId}
+          onClick={() => setViewMenuOpen((open) => !open)}
+        />
       </div>
+      {viewMenuOpen && (
+        <ViewOptionsMenu id={viewMenuId} anchorRef={viewButtonRef} onClose={closeViewMenu} />
+      )}
     </div>
   );
 }
@@ -194,22 +213,23 @@ interface ActionButtonProps {
   disabled?: boolean;
   /** Flip the glyph horizontally — Redo reuses the Undo arrow. */
   mirrorIcon?: boolean;
+  /** For a button that opens a menu: whether it is open, and the menu's id. */
+  expanded?: boolean;
+  controls?: string;
   onClick(): void;
 }
 
-function ActionButton({
-  icon,
-  label,
-  active,
-  accent,
-  disabled,
-  mirrorIcon,
-  onClick,
-}: ActionButtonProps): JSX.Element {
+const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton(
+  { icon, label, active, accent, disabled, mirrorIcon, expanded, controls, onClick },
+  ref
+) {
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
+      aria-expanded={expanded}
+      aria-controls={expanded ? controls : undefined}
       disabled={disabled}
       title={label}
       aria-label={label}
@@ -234,4 +254,4 @@ function ActionButton({
       />
     </button>
   );
-}
+});

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
+import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
@@ -212,9 +213,10 @@ export function useCanvas2DInteraction(
     };
 
     /**
-     * Release of a zone drag: name the rectangle and add it. A cancelled
-     * prompt or a too-small rectangle adds nothing, so the plan is repainted
-     * here to clear the dashed draft (no state change will do it).
+     * Release of a zone drag: add the rectangle under a default name and ask
+     * for a better one inline (#374). A too-small rectangle adds nothing, so
+     * the plan is repainted here to clear the dashed draft (no state change
+     * will do it).
      */
     const finishZone = (session: ZoneGesture, commit: boolean): void => {
       zoneGesture = null;
@@ -225,11 +227,8 @@ export function useCanvas2DInteraction(
       if (rect) {
         const zones = activeFloor.zones ?? [];
         const fallback = defaultZoneName(zones);
-        const name = window.prompt('Name this zone:', fallback);
-        if (name !== null) {
-          layoutActions.addZone({ name: name.trim() || fallback, color: nextZoneColor(zones), ...rect });
-          return;
-        }
+        requestZoneName(layoutActions.addZone({ name: fallback, color: nextZoneColor(zones), ...rect }));
+        return;
       }
       schedulePaint();
     };

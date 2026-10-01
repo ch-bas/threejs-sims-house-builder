@@ -1,4 +1,5 @@
 import { useCallback, type MutableRefObject, type RefObject } from 'react';
+import { notify } from '../lib/editor-notices';
 import {
   downloadCanvasAsPng,
   downloadSceneAsGlb,
@@ -51,7 +52,7 @@ export function useImportExport({
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
     void downloadCanvasAsPng(canvas, layout.name || 'room-layout').then((ok) => {
-      if (!ok) window.alert('Could not export the screenshot — the image failed to encode.');
+      if (!ok) notify('Could not export the screenshot — the image failed to encode.', 'error');
     });
   }, [view2D, layout.name, canvasRef, canvas2DRef, rendererRef, sceneRef, cameraRef]);
 
@@ -61,7 +62,7 @@ export function useImportExport({
     try {
       await downloadSceneAsGlb(scene, layout.name || 'room-layout');
     } catch (exportError) {
-      window.alert(exportError instanceof Error ? exportError.message : 'GLB export failed.');
+      notify(exportError instanceof Error ? exportError.message : 'GLB export failed.', 'error');
     }
   }, [sceneRef, layout.name]);
 
@@ -70,20 +71,20 @@ export function useImportExport({
     const { url, strippedFloorPlan } = await encodeShareUrl(layout, origin);
 
     if (!isShareUrlReasonablySized(url)) {
-      window.alert(
-        'This layout is too large to fit in a share link. Try exporting it as JSON and sharing the file instead.'
+      notify(
+        'This layout is too large to fit in a share link. Try exporting it as JSON and sharing the file instead.',
+        'error'
       );
       return;
     }
 
     try {
       await navigator.clipboard.writeText(url);
-      const note = strippedFloorPlan
-        ? '\n\n(The floor-plan image was removed from the link to keep it short.)'
-        : '';
-      window.alert(`Share link copied to clipboard.${note}`);
+      const note = strippedFloorPlan ? ' The floor-plan image was left out to keep it short.' : '';
+      notify(`Share link copied to clipboard.${note}`, 'success');
     } catch {
-      window.prompt('Copy this share link:', url);
+      // Clipboard refused (permissions, insecure context): hand the link over to copy by hand.
+      notify('Copy this share link:', 'info', { copyText: url });
     }
   }, [layout]);
 
@@ -99,9 +100,9 @@ export function useImportExport({
       } catch (importError) {
         const message =
           importError instanceof Error
-            ? importError.message
+            ? `Import failed: ${importError.message}`
             : 'Failed to import layout. Please check the file format.';
-        window.alert(message);
+        notify(message, 'error');
         return false;
       }
     },
