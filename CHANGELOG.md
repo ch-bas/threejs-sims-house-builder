@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.15.0] - 2026-10-01
+
+The **Data safety & history** milestone: a house that can't be opened, a full or blocked browser storage, a crafted link or an old save can no longer cost you your work.
+
+### Added
+- **Recovered copies.** When a saved house can't be opened, or you start fresh from the error screen, a copy is kept and listed in Manage → Saved Layouts → History with Restore, Download and Delete. Two copies are kept; a blank lot is never kept; the error screen offers Reload first and only offers to start fresh if the crash comes back ([#336](https://github.com/ch-bas/threejs-sims-house-builder/issues/336))
+- Every house now has its own id, so two houses both called "My Home" keep separate restore points ([#342](https://github.com/ch-bas/threejs-sims-house-builder/issues/342))
+
+### Fixed
+- **A tiny share link could unpack to hundreds of megabytes**, and the failed save then deleted every restore point. Oversized links and JSON files are refused up front, and restore points are only ever given up for a real lack of space ([#332](https://github.com/ch-bas/threejs-sims-house-builder/issues/332))
+- Saved houses are repaired, not rejected: names, ids and colours are trimmed, far-away items are pulled in, and over-full floors are cut down (always keeping the porch door and wall), with the original kept aside — a house over the limits used to be replaced by a blank one on reload. Duplicate ids are fixed on load ([#332](https://github.com/ch-bas/threejs-sims-house-builder/issues/332), [#338](https://github.com/ch-bas/threejs-sims-house-builder/issues/338), [#350](https://github.com/ch-bas/threejs-sims-house-builder/issues/350))
+- When storage is full or blocked, the editor never writes over a saved house it couldn't back up, and the header says which it is: "Storage full" or "Saving is blocked in this browser" ([#472](https://github.com/ch-bas/threejs-sims-house-builder/issues/472), [#336](https://github.com/ch-bas/threejs-sims-house-builder/issues/336))
+- "Changed in another tab" no longer appears for the same house, and no longer bounces between tabs ([#334](https://github.com/ch-bas/threejs-sims-house-builder/issues/334))
+- Restore points: stable ids (a future-dated point could become "failed to restore"), houses with only zones, colours, size or roof changes are protected, and each load takes one restore point instead of two ([#344](https://github.com/ch-bas/threejs-sims-house-builder/issues/344), [#346](https://github.com/ch-bas/threejs-sims-house-builder/issues/346), [#352](https://github.com/ch-bas/threejs-sims-house-builder/issues/352))
+- Received houses, custom sets and saved-layout entries that can't be read are kept and counted instead of silently deleted; a corrupt library entry no longer crashes the Library panel; the received-houses board keeps 30 and says which one it dropped ([#340](https://github.com/ch-bas/threejs-sims-house-builder/issues/340), [#348](https://github.com/ch-bas/threejs-sims-house-builder/issues/348), [#355](https://github.com/ch-bas/threejs-sims-house-builder/issues/355))
+- The welcome dialog says "Welcome to the game"
+
 ## [1.14.0] - 2026-10-01
 
 The **Editor integrity** milestone: 53 fixes from the September audit, so that what you see, undo, collide with and save is what you meant.
