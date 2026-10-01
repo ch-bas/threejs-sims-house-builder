@@ -20,7 +20,7 @@ function makeStore(): VersionHistoryStore & { data: Map<string, string>; failWri
     failWrites: false,
     getItem: (key: string) => store.data.get(key) ?? null,
     setItem: (key: string, value: string) => {
-      if (store.failWrites) throw new Error('QuotaExceededError');
+      if (store.failWrites) throw new DOMException('QuotaExceededError', 'QuotaExceededError');
       store.data.set(key, value);
     },
     removeItem: (key: string) => {
@@ -41,7 +41,7 @@ function makeQuotaStore(capacity: number): VersionHistoryStore & { data: Map<str
       for (const [otherKey, otherValue] of data) {
         if (otherKey !== key) used += otherKey.length + otherValue.length;
       }
-      if (used > capacity) throw new Error('QuotaExceededError');
+      if (used > capacity) throw new DOMException('QuotaExceededError', 'QuotaExceededError');
       data.set(key, value);
     },
     removeItem: (key: string) => {

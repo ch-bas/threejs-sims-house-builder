@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
+import { MAX_NAME_LENGTH } from '../lib/schema';
 import { MAX_STOREY_HEIGHT, MIN_STOREY_HEIGHT, storeyHeight } from '../lib/storeys';
 import type { FloorPlanFitMode } from '../lib/types';
 
@@ -54,6 +55,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
           <Input
             id={nameId}
             value={layout.name}
+            maxLength={MAX_NAME_LENGTH}
             onChange={(e) => actions.setName(e.target.value)}
             placeholder="My Room"
           />

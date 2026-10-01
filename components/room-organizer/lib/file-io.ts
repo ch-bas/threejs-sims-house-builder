@@ -1,4 +1,4 @@
-import { parseStoredLayout } from './schema';
+import { MAX_LAYOUT_JSON_BYTES, parseStoredLayout } from './schema';
 import type { RoomLayout } from './types';
 
 export function downloadLayoutAsJson(layout: RoomLayout): void {
@@ -20,6 +20,14 @@ export function downloadLayoutAsJson(layout: RoomLayout): void {
 }
 
 export async function readLayoutFromFile(file: File): Promise<RoomLayout> {
+  // Checked before reading: a multi-hundred-MB file would otherwise be read
+  // and parsed whole before the schema ever saw it (#332).
+  if (file.size > MAX_LAYOUT_JSON_BYTES) {
+    const limitMb = MAX_LAYOUT_JSON_BYTES / (1024 * 1024);
+    throw new Error(
+      `This file is ${(file.size / (1024 * 1024)).toFixed(1)} MB, far larger than any house layout (the limit is ${limitMb} MB), so it was not opened.`
+    );
+  }
   const text = await file.text();
   const parsed: unknown = JSON.parse(text);
   const layout = parseStoredLayout(parsed);

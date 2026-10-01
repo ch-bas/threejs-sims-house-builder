@@ -24,7 +24,8 @@ import {
   shareHashFromText,
 } from '../lib/pasteboard';
 import { confirmReplace } from '../lib/restore-point';
-import { decodeShareUrl } from '../lib/share';
+import { MAX_NAME_LENGTH } from '../lib/schema';
+import { decodeShareUrl, isShareHashWithinBudget } from '../lib/share';
 import {
   VERSION_HISTORY_STORAGE_KEY,
   floorPlanFingerprint,
@@ -231,6 +232,15 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       });
       return;
     }
+    // Refused before decoding: a hash this long is no house, and inflating
+    // it could take the tab down (#332).
+    if (!isShareHashWithinBudget(hash)) {
+      setPasteStatus({
+        kind: 'error',
+        text: 'This link is far larger than any house, so it was not opened.',
+      });
+      return;
+    }
     setPasting(true);
     try {
       // The same hardened decode → schema pipeline the share-link loader uses.
@@ -291,6 +301,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
         <div className="flex gap-2">
           <Input
             value={name}
+            maxLength={MAX_NAME_LENGTH}
             onChange={(event) => setName(event.target.value)}
             placeholder="Layout name"
             className="text-xs"

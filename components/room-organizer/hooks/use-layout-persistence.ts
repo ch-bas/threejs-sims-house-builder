@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
+import { notify } from '../lib/editor-notices';
 import { backupStoredLayout, loadLayout, saveLayout } from '../lib/persistence';
 import { snapshotBeforeReplace } from '../lib/restore-point';
 import { parseStoredLayout } from '../lib/schema';
-import { decodeShareUrl, isShareHash } from '../lib/share';
+import { decodeShareUrl, isShareHash, isShareHashWithinBudget } from '../lib/share';
 import { recordSnapshot } from '../lib/version-history';
 import type { RoomLayout } from '../lib/types';
 
@@ -107,6 +108,14 @@ export function useLayoutPersistence({
     // shared link always lands you on that layout.
     if (typeof window !== 'undefined' && isShareHash(window.location.hash)) {
       const hash = window.location.hash;
+      // Refused before decoding, with the local house left as it was: a hash
+      // this long is no house, and inflating it could take the tab down (#332).
+      if (!isShareHashWithinBudget(hash)) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        notify('This shared link is far larger than any house, so it was not opened. Your own house is unchanged.', 'error');
+        hydrateFromLocalSave();
+        return;
+      }
       // decodeShareUrl is async (DecompressionStream). Set the hydration
       // baseline synchronously so the autosave effect stays suppressed while
       // the decode is in flight — otherwise the fallback layout could be

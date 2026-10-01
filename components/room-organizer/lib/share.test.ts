@@ -1,6 +1,16 @@
+import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { decodeShareUrl, encodeShareUrl, isShareHash, isShareUrlReasonablySized } from './share';
+import { MAX_LAYOUT_JSON_BYTES, MAX_NAME_LENGTH } from './schema';
+import {
+  MAX_SHARE_HASH_LENGTH,
+  decodeShareUrl,
+  encodeShareUrl,
+  isShareHash,
+  isShareHashWithinBudget,
+  isShareUrlReasonablySized,
+  readShareHash,
+} from './share';
 import type { RoomLayout } from './types';
 
 // share.ts relies on btoa/atob and CompressionStream/DecompressionStream —
@@ -171,5 +181,48 @@ describe('isShareUrlReasonablySized', () => {
   it('accepts a short URL and rejects an oversized one', () => {
     expect(isShareUrlReasonablySized('https://x.com/#layout=abc')).toBe(true);
     expect(isShareUrlReasonablySized('x'.repeat(12_001))).toBe(false);
+  });
+});
+
+describe('untrusted share hashes (#332)', () => {
+  /** A v2 hash carrying exactly `json`, deflated with node's zlib. */
+  function v2Hash(json: string): string {
+    return `${PREFIX}2.${deflateRawSync(Buffer.from(json), { level: 9 }).toString('base64url')}`;
+  }
+
+  it('refuses a hash over the length budget without decoding it', async () => {
+    // The issue's 200 MB-name bomb deflates to a 271,811-character hash.
+    const hash = `${PREFIX}2.${'A'.repeat(271_811)}`;
+    expect(isShareHashWithinBudget(hash)).toBe(false);
+    expect(await readShareHash(hash)).toEqual({ ok: false, reason: 'too-large' });
+    expect(await decodeShareUrl(hash)).toBeNull();
+    expect(isShareHashWithinBudget(`${PREFIX}2.${'A'.repeat(MAX_SHARE_HASH_LENGTH - 10)}`)).toBe(true);
+  });
+
+  it('cuts a deflate bomb off at the output budget, cheaply', async () => {
+    // The issue's smaller probe: a 30 M-space name compresses to ~39 K characters.
+    const json = `{"name":"${' '.repeat(30_000_000)}","width":8,"height":8,"floors":[]}`;
+    const hash = v2Hash(json);
+    expect(hash.length).toBeLessThan(MAX_SHARE_HASH_LENGTH);
+    const started = performance.now();
+    expect(await readShareHash(hash)).toEqual({ ok: false, reason: 'too-large' });
+    // Inflating stops at MAX_LAYOUT_JSON_BYTES instead of materialising 30 MB
+    // and parsing it; generous for slow CI machines.
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('a payload just under the output budget still reaches the schema', async () => {
+    const name = 'A'.repeat(MAX_LAYOUT_JSON_BYTES - 200);
+    const result = await readShareHash(v2Hash(JSON.stringify({ ...makeLayout(), name })));
+    // Inflated in full, then repaired by the schema's name cap.
+    expect(result.ok && result.layout.name).toBe('A'.repeat(MAX_NAME_LENGTH));
+  });
+
+  it('reads a normal link as before', async () => {
+    const layout = makeLargeLayout();
+    const { url } = await encodeShareUrl(layout, ORIGIN);
+    expect(await readShareHash(hashOf(url))).toEqual({ ok: true, layout });
+    expect(await readShareHash(`${PREFIX}2.@@@`)).toEqual({ ok: false, reason: 'unreadable' });
+    expect(await readShareHash('#other')).toEqual({ ok: false, reason: 'unreadable' });
   });
 });

@@ -4,6 +4,13 @@ import { rotatedHalfExtents } from '../lib/geometry';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
+import {
+  MAX_INTERIOR_WALLS_PER_FLOOR,
+  MAX_ITEMS_PER_FLOOR,
+  MAX_NAME_LENGTH,
+  capText,
+  clampCoordinate,
+} from '../lib/schema';
 import { clampTerrainY, isStreetSeed } from '../lib/site';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { clampStoreyHeight, storeyHeight } from '../lib/storeys';
@@ -174,7 +181,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
   switch (action.type) {
     // -- building-level properties ------------------------------------------
     case 'setName':
-      return withLayout(state, (layout) => (layout.name === action.name ? layout : { ...layout, name: action.name }));
+      return withLayout(state, (layout) => {
+        const name = capName(action.name);
+        return layout.name === name ? layout : { ...layout, name };
+      });
     // Width/height must be clamped here, not only in normaliseLayout: an
     // out-of-range dimension that reaches localStorage fails schema validation
     // on the next load, and the fallback layout then autosaves over the
@@ -360,11 +370,15 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         ...action.catalogItem,
         id: action.id,
         locked: true,
-        position: action.position ?? { x: 0, z: 0 },
+        position: clampPosition(action.position ?? { x: 0, z: 0 }),
         rotation: 0,
         ...(action.catalogItem.type === 'sofa' ? { sofaShape: 'standard' as const } : {}),
       };
-      return withActiveFloor(state, (floor) => ({ ...floor, items: [...floor.items, newItem] }));
+      return withActiveFloor(state, (floor) =>
+        hasRoomFor(floor.items, 1, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID)
+          ? { ...floor, items: [...floor.items, newItem] }
+          : floor
+      );
     }
 
     // Locks protect geometry, not existence: every item is locked after
@@ -381,7 +395,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     case 'duplicateItem':
       return withActiveFloor(state, (floor) => {
         const source = floor.items.find((item) => item.id === action.sourceId);
-        if (!source) return floor;
+        if (!source || !hasRoomFor(floor.items, 1, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID)) return floor;
         const position = source.position ?? { x: 0, z: 0 };
         const offset = { x: position.x + 0.5, z: position.z + 0.5 };
         // The raw +0.5/+0.5 offset stranded duplicated doors/windows/cameras
@@ -404,7 +418,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
               id: action.newId,
               position:
                 source.category === 'outdoor'
-                  ? offset
+                  ? clampPosition(offset)
                   : clampToFootprint(source, offset, state.layout.width, state.layout.height),
             };
         // A duplicate is a loose copy: it must not join the source's group
@@ -533,10 +547,15 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
 
     // -- bulk item operations -----------------------------------------------
     case 'replaceItems':
-      return withActiveFloor(state, (floor) => ({ ...floor, items: action.items }));
+      if (!hasRoomFor(action.items, 0, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID)) return state;
+      return withActiveFloor(state, (floor) => ({ ...floor, items: action.items.map(boundItem) }));
 
     case 'addItems':
-      return withActiveFloor(state, (floor) => ({ ...floor, items: [...floor.items, ...action.items] }));
+      return withActiveFloor(state, (floor) =>
+        hasRoomFor(floor.items, action.items.length, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID)
+          ? { ...floor, items: [...floor.items, ...action.items.map(boundItem)] }
+          : floor
+      );
 
     case 'bulkSetPositions':
       return withActiveFloor(state, (floor) => {
@@ -548,7 +567,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           if (item.locked || item.id === ENTRANCE_DOOR_ID) return item;
           const next = action.positions.get(item.id);
           if (!next || !Number.isFinite(next.x) || !Number.isFinite(next.z)) return item;
-          const position = { x: next.x, z: next.z };
+          const position = clampPosition({ x: next.x, z: next.z });
           // Align/distribute previously parked doors and windows mid-room;
           // the settle rule applies to bulk commits like any other (#210).
           // The drag path settles before dispatching — re-settling an
@@ -606,10 +625,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           }
           const dx = item.position.x - cx;
           const dz = item.position.z - cz;
-          const position = {
+          const position = clampPosition({
             x: cx + dx * cos + dz * sin,
             z: cz - dx * sin + dz * cos,
-          };
+          });
           // A wall-mounted item swept to an interior point re-snaps to the
           // nearest wall instead of floating where the orbit dropped it
           // (#210) — the same rule every other commit path follows.
@@ -649,21 +668,28 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
 
     // -- interior walls -----------------------------------------------------
     // Endpoints must be finite, or the save fails validation on reload (#418).
-    case 'addInteriorWall':
+    case 'addInteriorWall': {
       if (!isFiniteWall(action.wall)) return state;
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        interiorWalls: [...(floor.interiorWalls ?? []), action.wall],
-      }));
+      const wall = clampWall(action.wall);
+      if (!wall) return state;
+      return withActiveFloor(state, (floor) =>
+        hasRoomFor(floor.interiorWalls, 1, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
+          ? { ...floor, interiorWalls: [...(floor.interiorWalls ?? []), wall] }
+          : floor
+      );
+    }
 
     // Batch insert — a room-shape stamp adds every segment in one dispatch so
     // the whole stamp is a single history/undo entry rather than N of them.
     case 'addInteriorWalls': {
       if (action.walls.length === 0 || !action.walls.every(isFiniteWall)) return state;
-      return withActiveFloor(state, (floor) => ({
-        ...floor,
-        interiorWalls: [...(floor.interiorWalls ?? []), ...action.walls],
-      }));
+      const walls = action.walls.map(clampWall).filter((wall): wall is InteriorWall => wall !== null);
+      if (walls.length === 0) return state;
+      return withActiveFloor(state, (floor) =>
+        hasRoomFor(floor.interiorWalls, walls.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
+          ? { ...floor, interiorWalls: [...(floor.interiorWalls ?? []), ...walls] }
+          : floor
+      );
     }
 
     // The porch's back wall belongs to the recess: it goes when the entrance
@@ -702,7 +728,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
 
     case 'addFloor': {
       if (state.layout.floors.length >= MAX_FLOORS) return state;
-      const name = action.floor.name ?? defaultFloorName(state.layout.floors);
+      const name = capName(action.floor.name ?? defaultFloorName(state.layout.floors));
       const floor: FloorLayout = { ...action.floor, name };
       const floors = [...state.layout.floors, floor];
       return {
@@ -741,7 +767,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       const floor: FloorLayout = {
         ...source,
         id: action.newId,
-        name: `${source.name} copy`,
+        name: capName(`${source.name} copy`),
         items: clonedItems,
         ...(clonedWalls ? { interiorWalls: clonedWalls } : {}),
         ...(clonedZones ? { zones: clonedZones } : {}),
@@ -766,10 +792,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     case 'renameFloor': {
       // An unedited rename commits on both Enter and blur (#416).
       const target = state.layout.floors[action.index];
-      if (!target || target.name === action.name) return state;
-      const floors = state.layout.floors.map((floor, index) =>
-        index === action.index ? { ...floor, name: action.name } : floor
-      );
+      const name = capName(action.name);
+      if (!target || target.name === name) return state;
+      const floors = state.layout.floors.map((floor, index) => (index === action.index ? { ...floor, name } : floor));
       return { ...state, layout: { ...state.layout, floors } };
     }
 
@@ -847,7 +872,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         if (zones.length >= MAX_ZONES || zones.some((zone) => zone.id === action.zone.id)) return floor;
         const rect = clampZoneRect(action.zone, state.layout.width, state.layout.height);
         if (!rect) return floor;
-        return { ...floor, zones: [...zones, { ...action.zone, ...rect }] };
+        return { ...floor, zones: [...zones, { ...action.zone, ...rect, name: capName(action.zone.name) }] };
       });
 
     case 'updateZone':
@@ -855,6 +880,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         const current = floor.zones?.find((zone) => zone.id === action.id);
         if (!current || !floor.zones) return floor;
         const merged: RoomZone = { ...current, ...action.patch, id: current.id };
+        merged.name = capName(merged.name);
         const rect = clampZoneRect(merged, state.layout.width, state.layout.height);
         if (!rect) return floor;
         const next: RoomZone = { ...merged, ...rect };
@@ -959,6 +985,8 @@ function sanitizeItemPatch(item: FurnitureItem, fields: ItemPatch | null): ItemP
     const value = next[key];
     if (value !== undefined && !Number.isFinite(value)) return null;
   }
+  if (next.price !== undefined && next.price < 0) next.price = 0;
+  if (next.name !== undefined) next.name = capName(next.name);
   for (const key of ['signalRange', 'visionRange'] as const) {
     const value = next[key];
     if (value !== undefined && !(Number.isFinite(value) && value > 0)) return null;
@@ -967,7 +995,10 @@ function sanitizeItemPatch(item: FurnitureItem, fields: ItemPatch | null): ItemP
     if (!(Number.isFinite(next.visionFov) && next.visionFov > 0)) return null;
     next.visionFov = Math.min(360, next.visionFov);
   }
-  if (next.position && !(Number.isFinite(next.position.x) && Number.isFinite(next.position.z))) return null;
+  if (next.position) {
+    if (!(Number.isFinite(next.position.x) && Number.isFinite(next.position.z))) return null;
+    next.position = clampPosition(next.position);
+  }
   return next;
 }
 
@@ -985,6 +1016,51 @@ function changesItem(item: FurnitureItem, fields: ItemPatch): boolean {
 
 function isFiniteWall(wall: InteriorWall): boolean {
   return [wall.x1, wall.z1, wall.x2, wall.z2].every(Number.isFinite);
+}
+
+/*
+ * The schema's caps, applied on the way in so the reducer's output always
+ * parses back unchanged: a refused or repaired main save would cost the
+ * user their house or their edit on the next load.
+ */
+function capName(name: string): string {
+  return capText(name, MAX_NAME_LENGTH);
+}
+
+/** A drag ray can land anywhere on its infinite plane; the save can't. */
+function clampPosition(position: { x: number; z: number }): { x: number; z: number } {
+  const x = clampCoordinate(position.x);
+  const z = clampCoordinate(position.z);
+  return x === position.x && z === position.z ? position : { x, z };
+}
+
+/** Ends clamped like positions; null when that leaves no wall at all. */
+function clampWall(wall: InteriorWall): InteriorWall | null {
+  const x1 = clampCoordinate(wall.x1);
+  const z1 = clampCoordinate(wall.z1);
+  const x2 = clampCoordinate(wall.x2);
+  const z2 = clampCoordinate(wall.z2);
+  if (x1 === x2 && z1 === z2) return null;
+  const same = x1 === wall.x1 && z1 === wall.z1 && x2 === wall.x2 && z2 === wall.z2;
+  return same ? wall : { ...wall, x1, z1, x2, z2 };
+}
+
+/** An incoming item (paste, set, Surprise) with its position and name within the caps. */
+function boundItem(item: FurnitureItem): FurnitureItem {
+  const name = capName(item.name);
+  const position = item.position && clampPosition(item.position);
+  if (name === item.name && position === item.position) return item;
+  return { ...item, name, ...(position ? { position } : {}) };
+}
+
+/**
+ * Whether a floor holding `list` can take `count` more entries. One slot
+ * under the cap stays free for the porch's door or back wall (`porchId`),
+ * which the entrance re-fit adds on its own.
+ */
+function hasRoomFor(list: readonly { id: string }[] | undefined, count: number, max: number, porchId: string): boolean {
+  const own = (list ?? []).filter((entry) => entry.id !== porchId).length;
+  return own + count <= max - 1;
 }
 
 /**

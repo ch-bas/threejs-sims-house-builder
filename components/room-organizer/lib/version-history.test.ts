@@ -3,6 +3,7 @@ import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { STORAGE_KEY } from './constants';
 import { saveLayout } from './persistence';
 import {
+  MAX_STORAGE_ENTRY_CHARS,
   VERSION_HISTORY_LIMIT,
   VERSION_HISTORY_MAX_CHARS,
   VERSION_HISTORY_META_KEY,
@@ -28,7 +29,7 @@ function makeStore(): VersionHistoryStore & { data: Map<string, string>; failWri
     failWrites: false,
     getItem: (key: string) => store.data.get(key) ?? null,
     setItem: (key: string, value: string) => {
-      if (store.failWrites) throw new Error('QuotaExceededError');
+      if (store.failWrites) throw new DOMException('QuotaExceededError', 'QuotaExceededError');
       store.data.set(key, value);
     },
     removeItem: (key: string) => {
@@ -49,7 +50,7 @@ function makeQuotaStore(capacity: number): VersionHistoryStore & { data: Map<str
       for (const [otherKey, otherValue] of data) {
         if (otherKey !== key) used += otherKey.length + otherValue.length;
       }
-      if (used > capacity) throw new Error('QuotaExceededError');
+      if (used > capacity) throw new DOMException('QuotaExceededError', 'QuotaExceededError');
       data.set(key, value);
     },
     removeItem: (key: string) => {
@@ -148,7 +149,7 @@ describe('version-history — quota discipline', () => {
       const entries = JSON.parse(value) as unknown[];
       if (entries.length > 2) {
         failures++;
-        throw new Error('QuotaExceededError');
+        throw new DOMException('QuotaExceededError', 'QuotaExceededError');
       }
       original(key, value);
     };
@@ -316,12 +317,43 @@ describe('version-history — lowest-priority tenant (#295)', () => {
     expect(evictOldestSnapshot({ storage })).toBe(false);
   });
 
+  it('refuses a value no browser could hold without evicting a single restore point (#332)', () => {
+    const storage = makeStore();
+    const clock = makeClock();
+    recordSnapshot(makeHouse(1), { storage, now: clock.now });
+    clock.advance(VERSION_HISTORY_MIN_INTERVAL_MS + 1);
+    recordSnapshot(makeHouse(2), { storage, now: clock.now });
+    const ring = storage.getItem(VERSION_HISTORY_STORAGE_KEY);
+    const setItem = vi.spyOn(storage, 'setItem');
+    const oversized = 'x'.repeat(MAX_STORAGE_ENTRY_CHARS);
+    expect(() => setItemEvictingSnapshots(storage, STORAGE_KEY, oversized)).toThrow(
+      expect.objectContaining({ name: 'QuotaExceededError' })
+    );
+    expect(setItem).not.toHaveBeenCalled();
+    expect(storage.getItem(VERSION_HISTORY_STORAGE_KEY)).toBe(ring);
+    expect(listSnapshots({ storage })).toHaveLength(2);
+    // The same save through saveLayout reports failure and keeps them too.
+    expect(saveLayout(makeLayout({ name: oversized }), storage)).toBe(false);
+    expect(listSnapshots({ storage })).toHaveLength(2);
+  });
+
+  it('keeps every restore point when storage is blocked rather than full', () => {
+    const storage = makeStore();
+    recordSnapshot(makeHouse(1), { storage });
+    const blocked = new DOMException('The operation is insecure.', 'SecurityError');
+    vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw blocked;
+    });
+    expect(() => setItemEvictingSnapshots(storage, STORAGE_KEY, 'x')).toThrow(blocked);
+    expect(listSnapshots({ storage })).toHaveLength(1);
+  });
+
   it('terminates on a store without removeItem', () => {
     const data = new Map<string, string>();
     const storage: VersionHistoryStore = {
       getItem: (key) => data.get(key) ?? null,
       setItem: (key, value) => {
-        if (key === 'other') throw new Error('QuotaExceededError');
+        if (key === 'other') throw new DOMException('QuotaExceededError', 'QuotaExceededError');
         data.set(key, value);
       },
     };
