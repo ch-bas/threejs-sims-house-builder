@@ -14,7 +14,6 @@ import type {
   RoofStyle,
   RoomLayout,
   SofaShape,
-  StairsDirection,
   WallPattern,
 } from './types';
 
@@ -30,7 +29,6 @@ const WALL_PATTERNS: readonly WallPattern[] = [
 ];
 const ROOF_STYLES: readonly RoofStyle[] = ['none', 'flat', 'gable', 'hipped'];
 const SOFA_SHAPES: readonly SofaShape[] = ['standard', 'L-shape', 'U-shape'];
-const STAIRS_DIRECTIONS: readonly StairsDirection[] = ['north', 'south', 'east', 'west'];
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -113,16 +111,11 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   // Sill height places the window hole in the wall (#204).
   if (v.sillHeight !== undefined && !isSillHeight(v.sillHeight)) return false;
   // Enum-ish fields ingested from external data must match their unions —
-  // an unknown sofaShape/stairsDirection reaches builder switch statements
-  // unchecked (#121). cctvModelId only needs to be a string: unknown ids
-  // fall back to the default model at lookup time.
+  // an unknown sofaShape reaches builder switch statements unchecked (#121).
+  // cctvModelId only needs to be a string: unknown ids fall back to the
+  // default model at lookup time. The retired `stairsDirection` is not
+  // checked at all — parseStoredLayout strips it (#410).
   if (v.sofaShape !== undefined && !SOFA_SHAPES.includes(v.sofaShape as SofaShape)) return false;
-  if (
-    v.stairsDirection !== undefined &&
-    !STAIRS_DIRECTIONS.includes(v.stairsDirection as StairsDirection)
-  ) {
-    return false;
-  }
   if (v.stairsShape !== undefined && !isStairsShape(v.stairsShape)) return false;
   if (v.stairsLeadIn !== undefined && !isStairsLeadIn(v.stairsLeadIn)) return false;
   if (v.cctvModelId !== undefined && typeof v.cctvModelId !== 'string') return false;
@@ -151,7 +144,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   // reaches `PATTERNS[pattern].draw(...)` in the texture builders and throws
   // on every scene build — and because the layout would keep validating, it
   // would keep autosaving and crash every subsequent mount too (#208). Same
-  // class as the sofaShape/stairsDirection checks above (#121).
+  // class as the sofaShape check above (#121).
   if (v.floorPattern !== undefined && !FLOOR_PATTERNS.includes(v.floorPattern as FloorPattern)) {
     return false;
   }
@@ -271,9 +264,38 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
  * input matches neither.
  */
 export function parseStoredLayout(value: unknown): RoomLayout | null {
-  if (isRoomLayout(value)) return value;
-  if (isLegacySingleFloorLayout(value)) return migrateLegacyLayout(value);
+  if (isRoomLayout(value)) return stripRetiredItemFields(value);
+  if (isLegacySingleFloorLayout(value)) return stripRetiredItemFields(migrateLegacyLayout(value));
   return null;
+}
+
+/**
+ * Item fields older saves carry that nothing reads any more. They are
+ * accepted on load and dropped here so they stop riding along in every
+ * save and share link: `stairsDirection` (#410) — the climb direction
+ * comes from `rotation` alone.
+ */
+const RETIRED_ITEM_FIELDS = ['stairsDirection'] as const;
+
+function stripRetiredItemFields(layout: RoomLayout): RoomLayout {
+  const hasRetired = (item: FurnitureItem) => RETIRED_ITEM_FIELDS.some((key) => key in item);
+  if (!layout.floors.some((floor) => floor.items.some(hasRetired))) return layout;
+  return {
+    ...layout,
+    floors: layout.floors.map((floor) =>
+      floor.items.some(hasRetired)
+        ? {
+            ...floor,
+            items: floor.items.map((item) => {
+              if (!hasRetired(item)) return item;
+              const copy: Record<string, unknown> = { ...item };
+              for (const key of RETIRED_ITEM_FIELDS) delete copy[key];
+              return copy as unknown as FurnitureItem;
+            }),
+          }
+        : floor
+    ),
+  };
 }
 
 interface LegacySingleFloorLayout {

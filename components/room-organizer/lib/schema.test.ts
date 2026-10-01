@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { isFloorLayout, isFurnitureItem, isRoomLayout, parseStoredLayout } from './schema';
+import type { FurnitureItem } from './types';
 
 describe('isFurnitureItem', () => {
   it('accepts a well-formed item', () => {
@@ -15,7 +16,6 @@ describe('isFurnitureItem', () => {
     ['negative visionRange', makeItem({ visionRange: -1 })],
     ['visionFov over a full circle', makeItem({ visionFov: 720 })],
     ['unknown sofaShape', makeItem({ sofaShape: 'Z-shape' as never })],
-    ['unknown stairsDirection', makeItem({ stairsDirection: 'up' as never })],
     ['non-string cctvModelId', makeItem({ cctvModelId: 42 as never })],
     ['non-boolean hasVisionCone', makeItem({ hasVisionCone: 'yes' as never })],
   ])('rejects %s (#121)', (_label, value) => {
@@ -25,7 +25,7 @@ describe('isFurnitureItem', () => {
   it('accepts valid enum/range fields (#121)', () => {
     expect(
       isFurnitureItem(
-        makeItem({ sofaShape: 'L-shape', stairsDirection: 'north', visionFov: 90, visionRange: 5, signalRange: 8, hasVisionCone: true, cctvModelId: 'some-model' })
+        makeItem({ sofaShape: 'L-shape', visionFov: 90, visionRange: 5, signalRange: 8, hasVisionCone: true, cctvModelId: 'some-model' })
       )
     ).toBe(true);
   });
@@ -204,6 +204,39 @@ describe('parseStoredLayout', () => {
   it('accepts and returns the current multi-floor shape as-is', () => {
     const layout = makeLayout();
     expect(parseStoredLayout(layout)).toBe(layout);
+  });
+
+  it('accepts saves carrying the retired stairsDirection and strips it (#410)', () => {
+    const stairs = { ...makeItem({ id: 'st', type: 'stairs' }), stairsDirection: 'north' };
+    const sofa = makeItem({ id: 'sofa' });
+    const untouchedFloor = makeFloor({ id: 'upper', items: [makeItem({ id: 'bed' })] });
+    const layout = makeLayout({
+      floors: [makeFloor({ items: [stairs as FurnitureItem, sofa] }), untouchedFloor],
+    });
+    const parsed = parseStoredLayout(JSON.parse(JSON.stringify(layout)));
+    expect(parsed).not.toBeNull();
+    const [ground, upper] = parsed?.floors ?? [];
+    expect(ground?.items.map((i) => i.id)).toEqual(['st', 'sofa']);
+    expect(ground?.items.some((i) => 'stairsDirection' in i)).toBe(false);
+    expect(upper?.items).toHaveLength(1);
+    // Any legacy value is tolerated; nothing reads it.
+    const odd = makeLayout({
+      floors: [makeFloor({ items: [{ ...stairs, stairsDirection: 'up' } as FurnitureItem] })],
+    });
+    expect(parseStoredLayout(odd)?.floors[0]?.items[0]).not.toHaveProperty('stairsDirection');
+  });
+
+  it('strips stairsDirection from a legacy single-floor save too (#410)', () => {
+    const legacy = {
+      name: 'Old',
+      width: 6,
+      height: 7,
+      floorColor: '#fff',
+      items: [{ ...makeItem({ id: 'st', type: 'stairs' }), stairsDirection: 'east' }],
+    };
+    const parsed = parseStoredLayout(legacy);
+    expect(parsed?.floors[0]?.items[0]?.id).toBe('st');
+    expect(parsed?.floors[0]?.items[0]).not.toHaveProperty('stairsDirection');
   });
 
   it('migrates a legacy single-floor layout into the multi-floor shape', () => {

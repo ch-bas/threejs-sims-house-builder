@@ -166,8 +166,8 @@ export const FURNITURE_CATALOG = [
   { type: 'pet', category: 'people', name: 'Pet', width: 0.45, depth: 0.65, height: 0.4, color: '#A1887F', icon: '🐕', price: 0 },
 
   // Structure
-  { type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, stairsDirection: 'north' },
-  { type: 'stairs', category: 'structure', name: 'Winder Stairs', width: 2.0, depth: 2.6, height: 3.0, color: '#8B4513', icon: '🪜', price: 2200, stairsDirection: 'north', stairsShape: 'winder' },
+  { type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500 },
+  { type: 'stairs', category: 'structure', name: 'Winder Stairs', width: 2.0, depth: 2.6, height: 3.0, color: '#8B4513', icon: '🪜', price: 2200, stairsShape: 'winder' },
   { type: 'door', category: 'structure', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, color: '#6D4C41', icon: '🚪', price: 320 },
   { type: 'window', category: 'structure', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, color: '#90CAF9', icon: '🪟', price: 240 },
 ] as const satisfies readonly CatalogItem[];
@@ -262,7 +262,7 @@ export const ROOM_TEMPLATES = {
           { id: 'gf-tv', type: 'tv', category: 'electronics', name: 'TV Stand', width: 1.5, depth: 0.4, height: 0.5, color: '#2C3E50', icon: '📺', price: 600, position: { x: -1.4, z: 1.8 }, rotation: Math.PI },
           { id: 'gf-fridge', type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200, position: { x: 2.2, z: -2.0 }, rotation: 0 },
           { id: 'gf-stove', type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850, position: { x: 2.2, z: -1.1 }, rotation: 0 },
-          { id: 'gf-stairs', type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, position: { x: 2.0, z: 1.0 }, rotation: 0, stairsDirection: 'north' },
+          { id: 'gf-stairs', type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, position: { x: 2.0, z: 1.0 }, rotation: 0 },
         ],
       },
       {
@@ -272,7 +272,7 @@ export const ROOM_TEMPLATES = {
         items: [
           { id: 'ff-bed', type: 'bed', category: 'bedroom', name: 'Double Bed', width: 2.0, depth: 1.6, height: 0.6, color: '#E8E8E8', icon: '🛏️', price: 800, position: { x: -1.5, z: -1.5 }, rotation: 0 },
           { id: 'ff-wardrobe', type: 'wardrobe', category: 'bedroom', name: 'Wardrobe', width: 1.4, depth: 0.6, height: 2.1, color: '#6D4C41', icon: '🚪', price: 540, position: { x: -2.0, z: 1.5 }, rotation: 0 },
-          { id: 'ff-stairs', type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, position: { x: 2.0, z: 1.0 }, rotation: 0, stairsDirection: 'north' },
+          { id: 'ff-stairs', type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, position: { x: 2.0, z: 1.0 }, rotation: 0 },
         ],
       },
     ],
