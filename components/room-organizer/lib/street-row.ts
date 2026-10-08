@@ -66,12 +66,12 @@ export interface StreetSite {
 /** Seed used when a layout has none: the street it always showed. */
 export const DEFAULT_STREET_SEED = 1;
 
-/** The row never runs further than this either side of our centre — inside the shadow camera's ±24 m (#282). */
+/** The row never runs further than this either side of our centre; lib/sun-shadow.ts fits the sun's shadow to it (#282). */
 export const STREET_MAX_HALF_LENGTH = 24;
 /** Kept clear at each end so the last house isn't cut by the scenery's edge. */
 const STREET_END_MARGIN = 2;
 /** The facing row's own pavement-to-wall strip with a front garden; a pavement frontage mirrors ours. */
-const FACING_FRONT_GARDEN = 1.2;
+export const FACING_FRONT_GARDEN = 1.2;
 
 /** Clearance between attached houses (and off our wall plane) so party walls never z-fight. */
 export const PARTY_WALL_GAP = 0.02;

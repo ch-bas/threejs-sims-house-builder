@@ -5,10 +5,12 @@ import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { furnitureCollisionKey, furnitureItemsKey, planFurniture } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
+import { collectLampLights, type LampLight } from '../lib/night-lights';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
+import { shadowCasterBounds, type ShadowBox } from '../lib/sun-shadow';
 import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from '../lib/walkthrough-view';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
@@ -183,17 +185,9 @@ export function useSceneEffects({
   const itemsKey = useMemo(() => furnitureItemsKey(furniturePlan), [furniturePlan]);
   const collisionKey = useMemo(() => furnitureCollisionKey(furniturePlan), [furniturePlan]);
 
-  const lampsKey = useMemo(
-    () =>
-      JSON.stringify(
-        layout.floors.map((floor) =>
-          floor.items
-            .filter((item) => (item.type === 'lamp' || item.type === 'floor-lamp') && item.position)
-            .map((item) => [item.position!.x, item.position!.z, item.height])
-        )
-      ),
-    [layout.floors]
-  );
+  // Every night light with its bulb in world space (#215); the string is the
+  // lighting effect's key, so a non-lamp item edit doesn't rebuild the sky.
+  const lampsKey = useMemo(() => JSON.stringify(collectLampLights(layout.floors)), [layout.floors]);
 
   // Wall preview during draw mode
   useEffect(() => {
@@ -565,7 +559,19 @@ export function useSceneEffects({
     view.showWiFiSignals, view.showCameraVision, view.showAllFloors,
   ]);
 
-  // Lighting
+  // Lighting. The sun's shadow camera is fitted to everything that casts a
+  // shadow (#282); the box is a string so the effect keys on its value.
+  const shadowBoxKey = JSON.stringify(
+    shadowCasterBounds({
+      width: layout.width,
+      depth: layout.height,
+      eavesY: buildingHeight(layout.floors),
+      storeys: layout.floors.length,
+      ...(layout.terrain ? { terrain: layout.terrain } : {}),
+      ...(layout.frontage ? { frontage: layout.frontage } : {}),
+      ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
+    })
+  );
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -573,28 +579,13 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    const lampPositions = layout.floors.flatMap((floor, index) =>
-      floor.items
-        .filter((item) => (item.type === 'lamp' || item.type === 'floor-lamp') && item.position)
-        .map((item) => ({
-          x: item.position!.x,
-          z: item.position!.z,
-          // The 0.9 bulb factor belongs to the lamp's own height only —
-          // applied after the floor offset it sank upper-floor glows 0.3 m
-          // per storey, lighting the floor below (#146).
-          height: item.height * 0.9 + floorElevation(layout.floors, index),
-        }))
-    );
-
+    const lamps = JSON.parse(lampsKey) as LampLight[];
     // The weather overcasts the same profile and tints the lot's ground (#189).
-    applyTimeOfDay(THREE, scene, view.timeOfDay, lampPositions, view.weather);
+    applyTimeOfDay(THREE, scene, view.timeOfDay, lamps, view.weather, JSON.parse(shadowBoxKey) as ShadowBox);
     // The sun's angle/position changed, so the (static) shadow map must be
     // recomputed or shadows would stay frozen at the previous time of day.
     requestShadowUpdate();
-    // layout.floors is read for lamp positions only; lampsKey covers exactly
-    // that, so a non-lamp item edit doesn't rebuild the sky and lights.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, lampsKey, storeyHeightsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, lampsKey, shadowBoxKey]);
 
   // Outdoor
   useEffect(() => {

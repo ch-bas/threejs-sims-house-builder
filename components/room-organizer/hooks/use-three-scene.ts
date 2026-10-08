@@ -157,7 +157,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
       }
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      // r186 removed PCFSoftShadowMap (it fell back to PCF with a warning);
+      // PCF softens by the light's `shadow.radius` instead (#379).
+      renderer.shadowMap.type = THREE.PCFShadowMap;
       // The 2048² directional shadow is expensive; keep it static and only
       // recompute it when a caster or the sun actually moves (via
       // requestShadowUpdate). Frame 1 needs the initial pass, so start dirty.

@@ -130,3 +130,55 @@ describe('computeSkyProfile — weather overcast (#189)', () => {
     }
   });
 });
+
+describe('computeSkyProfile — twilight (#215, #375)', () => {
+  const SAMPLES = Array.from({ length: 24 * 20 + 1 }, (_, i) => i / 20);
+
+  it('has no jump anywhere in the day: lights fade through twilight instead of snapping', () => {
+    for (let i = 1; i < SAMPLES.length; i++) {
+      const a = computeSkyProfile(SAMPLES[i - 1]!);
+      const b = computeSkyProfile(SAMPLES[i]!);
+      const at = `hour ${SAMPLES[i]}`;
+      expect(Math.abs(a.sun.intensity - b.sun.intensity), at).toBeLessThan(0.03);
+      expect(Math.abs(a.ambient.intensity - b.ambient.intensity), at).toBeLessThan(0.03);
+      expect(Math.abs(a.hemisphere.intensity - b.hemisphere.intensity), at).toBeLessThan(0.03);
+      expect(Math.abs(a.lamps - b.lamps), at).toBeLessThan(0.06);
+      for (const [x, y] of [
+        [a.ambient.color, b.ambient.color],
+        [a.hemisphere.sky, b.hemisphere.sky],
+        [a.hemisphere.ground, b.hemisphere.ground],
+      ] as const) {
+        const ca = channels(x);
+        const cb = channels(y);
+        for (let c = 0; c < 3; c++) expect(Math.abs(ca[c]! - cb[c]!), at).toBeLessThanOrEqual(12);
+      }
+    }
+  });
+
+  it('ramps the ambient colour through dusk blue to the night colour', () => {
+    const early = computeSkyProfile(19.5).ambient.color;
+    const late = computeSkyProfile(23).ambient.color;
+    expect(early).not.toBe(late);
+    expect(brightness(early)).toBeGreaterThan(brightness(late));
+  });
+
+  it('dims the hemisphere fill at night instead of holding its noon sky-blue', () => {
+    expect(computeSkyProfile(12).hemisphere.intensity).toBeCloseTo(0.55, 10);
+    expect(computeSkyProfile(12).hemisphere.sky).toBe(0xbfe5ff);
+    for (const hour of [21, 23, 0, 3]) {
+      expect(computeSkyProfile(hour).hemisphere.intensity, `hour ${hour}`).toBeLessThan(0.15);
+      expect(brightness(computeSkyProfile(hour).hemisphere.sky), `hour ${hour}`).toBeLessThan(brightness(0xbfe5ff) / 2);
+    }
+  });
+
+  it('overcasts the hemisphere with the weather', () => {
+    expect(computeSkyProfile(12, 'rain').hemisphere.intensity).toBeCloseTo(computeSkyProfile(12).hemisphere.intensity * 0.85, 10);
+  });
+
+  it('switches the lamps on through twilight and off by day', () => {
+    for (const hour of [6, 9, 12, 15, 18]) expect(computeSkyProfile(hour).lamps, `hour ${hour}`).toBe(0);
+    expect(computeSkyProfile(18.5).lamps).toBeGreaterThan(0);
+    expect(computeSkyProfile(18.5).lamps).toBeLessThan(1);
+    for (const hour of [20, 23, 0, 4]) expect(computeSkyProfile(hour).lamps, `hour ${hour}`).toBe(1);
+  });
+});
