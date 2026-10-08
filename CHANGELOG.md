@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.16.0] - 2026-10-08
+
+The **Rendering & lighting polish** milestone: real nights, a walkthrough you can stand inside, and furniture that looks like what it is.
+
+### Added
+- **Walkthrough feels like a house:** every wall and the roof stay up while you walk (your Up/Cut/Down choice comes back when you leave), lower storeys have a ceiling, and stairwells are lined up and down instead of opening onto the sky or the garden ([#359](https://github.com/ch-bas/threejs-sims-house-builder/issues/359))
+- **Lamps light the room at night** — floor lamps, table lamps, pendants and lampposts cast warm light, using a small fixed set of lights given to the lamps nearest you, so it stays fast with many lamps ([#215](https://github.com/ch-bas/threejs-sims-house-builder/issues/215), [#393](https://github.com/ch-bas/threejs-sims-house-builder/issues/393))
+
+### Fixed
+- Nights are actually dark: the sky fill, ambient and environment fade through a smooth dusk instead of switching at 06:00 and 18:00, and weather darkens the night too ([#215](https://github.com/ch-bas/threejs-sims-house-builder/issues/215), [#375](https://github.com/ch-bas/threejs-sims-house-builder/issues/375))
+- Shadows: the sun's shadow now covers the whole lot, including tall houses and the street, and uses soft shadows that still exist in the current Three.js (the console warning on every load is gone) ([#282](https://github.com/ch-bas/threejs-sims-house-builder/issues/282), [#379](https://github.com/ch-bas/threejs-sims-house-builder/issues/379))
+- No stall at the first dusk with lamps placed ([#393](https://github.com/ch-bas/threejs-sims-house-builder/issues/393))
+- The traced floor plan in 3D now matches the 2D plan: correct colours, no smeared edges in "contain" fit, and the 3D relief lines up with the image ([#191](https://github.com/ch-bas/threejs-sims-house-builder/issues/191), [#227](https://github.com/ch-bas/threejs-sims-house-builder/issues/227), [#383](https://github.com/ch-bas/threejs-sims-house-builder/issues/383))
+- Every roof style is shingled properly — the hipped roof had none — at the same scale on any house size ([#211](https://github.com/ch-bas/threejs-sims-house-builder/issues/211))
+- The snap grid no longer flickers through the floor ([#371](https://github.com/ch-bas/threejs-sims-house-builder/issues/371))
+- Pools, bathtubs and ponds show their water; dormers are glazed from the street; the grey slab under windows is gone; paintings, lamp shades, bushes, stair rails, the TV, the pet and the Wi-Fi antennas fit their size ([#365](https://github.com/ch-bas/threejs-sims-house-builder/issues/365), [#369](https://github.com/ch-bas/threejs-sims-house-builder/issues/369), [#362](https://github.com/ch-bas/threejs-sims-house-builder/issues/362), [#388](https://github.com/ch-bas/threejs-sims-house-builder/issues/388), [#167](https://github.com/ch-bas/threejs-sims-house-builder/issues/167))
+- The pendant light hangs from the ceiling of its storey, whatever its height ([#470](https://github.com/ch-bas/threejs-sims-house-builder/issues/470), [#471](https://github.com/ch-bas/threejs-sims-house-builder/issues/471))
+- Painting a wall or drawing a partition no longer rebuilds every piece of furniture; closing the editor frees the whole 3D scene from GPU memory ([#214](https://github.com/ch-bas/threejs-sims-house-builder/issues/214), [#213](https://github.com/ch-bas/threejs-sims-house-builder/issues/213))
+- The zoom slider follows the real zoom (wheel included) and works with the arrow keys; dropping an item from the catalog plays its sound; colliding items fade completely; pages can be pinch-zoomed again on phones ([#167](https://github.com/ch-bas/threejs-sims-house-builder/issues/167))
+
+Mornings and afternoons are slightly darker than before (about 2–3 %), and a floor plan at low opacity now shows the floor colour instead of the lawn through the floor — both deliberate, to match the 2D plan and the time of day.
+
 ## [1.15.0] - 2026-10-01
 
 The **Data safety & history** milestone: a house that can't be opened, a full or blocked browser storage, a crafted link or an old save can no longer cost you your work.
