@@ -360,6 +360,7 @@ components/
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture + interior walls
+    │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359)
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
@@ -406,6 +407,7 @@ components/
     │   ├── measurement.ts               Distance-tool spheres + line
     │   ├── item-labels.ts               Floating sprite labels above items
     │   ├── roof.ts                      Flat / gable / hipped roof
+    │   ├── ceiling.ts                   Walkthrough ceiling + stairwell shafts up and down (#359)
     │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails
     │   ├── neighbours.ts                The street's houses from their specs (merged + instanced)
     │   ├── terrain.ts                   Sloped ground + excavation faces

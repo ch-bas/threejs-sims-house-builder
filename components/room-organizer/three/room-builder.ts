@@ -659,7 +659,7 @@ function buildWallGeometryWithCutouts(
  * The geometry lies in the XY plane (like PlaneGeometry) and must be
  * rotated -90° on X to become horizontal.
  */
-function buildFloorGeometryWithOpenings(
+export function buildFloorGeometryWithOpenings(
   THREE: ThreeModule,
   roomWidth: number,
   roomDepth: number,
@@ -678,8 +678,31 @@ function buildFloorGeometryWithOpenings(
   shape.lineTo(-halfW, halfD);
   shape.closePath();
 
-  // The -90° X rotation maps shape-Y to world -Z, so negate Z below.
-  //
+  for (const outline of floorHoleOutlines(roomWidth, roomDepth, openings)) {
+    const hole = new THREE.Path();
+    hole.moveTo(outline[0]![0], outline[0]![1]);
+    for (const [x, y] of outline.slice(1)) hole.lineTo(x, y);
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+
+  return normalizeShapeUvs(new THREE.ShapeGeometry(shape), roomWidth, roomDepth);
+}
+
+/**
+ * The holes `buildFloorGeometryWithOpenings` cuts, as closed polygons in its
+ * shape space, [x, -z]. Shared so whatever lines a stairwell (the walkthrough
+ * shafts, #359) follows the plate's clamped, merged holes, not the raw stairs.
+ */
+export function floorHoleOutlines(
+  roomWidth: number,
+  roomDepth: number,
+  openings: readonly FloorOpening[]
+): Array<Array<[number, number]>> {
+  const halfW = roomWidth / 2;
+  const halfD = roomDepth / 2;
+  const holes: Array<Array<[number, number]>> = [];
+
   // Split openings by whether they're axis-aligned (rotation a multiple of 90°)
   // or genuinely rotated. Axis-aligned holes go through mergeHoleRects so two
   // stacked stairwells fuse into one clean rectangle (overlapping holes are
@@ -700,6 +723,22 @@ function buildFloorGeometryWithOpenings(
   const HOLE_INSET = 0.001;
   const clampX = (v: number) => Math.min(halfW - HOLE_INSET, Math.max(-halfW + HOLE_INSET, v));
   const clampY = (v: number) => Math.min(halfD - HOLE_INSET, Math.max(-halfD + HOLE_INSET, v));
+  const pushBox = (x0: number, y0: number, x1: number, y1: number): void => {
+    if (x1 - x0 <= 0 || y1 - y0 <= 0) return;
+    holes.push([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+  };
+  // A hole with any corner outside the contour is cut as its clamped AABB
+  // instead — a slightly larger hole beats corrupt triangulation (#146).
+  const pushPolygon = (points: Array<[number, number]>): void => {
+    if (!points.some(([x, y]) => x <= -halfW || x >= halfW || y <= -halfD || y >= halfD)) {
+      holes.push(points);
+      return;
+    }
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    pushBox(clampX(Math.min(...xs)), clampY(Math.min(...ys)), clampX(Math.max(...xs)), clampY(Math.max(...ys)));
+  };
+
   const rects: Array<[number, number, number, number]> = [];
   for (const o of axisAligned) {
     // At 90°/270° the footprint's width and depth swap in world space.
@@ -712,16 +751,7 @@ function buildFloorGeometryWithOpenings(
     const y1 = clampY(-(o.centerZ - worldD / 2));
     if (x1 - x0 > 0 && y1 - y0 > 0) rects.push([x0, y0, x1, y1]);
   }
-  for (const [x0, y0, x1, y1] of mergeHoleRects(rects)) {
-    if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
-    const hole = new THREE.Path();
-    hole.moveTo(x0, y0);
-    hole.lineTo(x1, y0);
-    hole.lineTo(x1, y1);
-    hole.lineTo(x0, y1);
-    hole.closePath();
-    shape.holes.push(hole);
-  }
+  for (const [x0, y0, x1, y1] of mergeHoleRects(rects)) pushBox(x0, y0, x1, y1);
 
   for (const o of rotated) {
     if (o.width <= 0 || o.depth <= 0) continue;
@@ -738,67 +768,20 @@ function buildFloorGeometryWithOpenings(
       [hw, hd],
       [-hw, hd],
     ];
-    const corners: Array<[number, number]> = localCorners.map(([lx, lz]) => {
-      const worldX = o.centerX + lx * cos + lz * sin;
-      const worldZ = o.centerZ - lx * sin + lz * cos;
-      return [worldX, -worldZ];
-    });
-    // A rotated hole with any corner outside the contour falls back to its
-    // clamped AABB — a slightly larger hole beats corrupt triangulation (#146).
-    if (corners.some(([x, y]) => x <= -halfW || x >= halfW || y <= -halfD || y >= halfD)) {
-      const xs = corners.map(([x]) => x);
-      const ys = corners.map(([, y]) => y);
-      const x0 = clampX(Math.min(...xs));
-      const x1 = clampX(Math.max(...xs));
-      const y0 = clampY(Math.min(...ys));
-      const y1 = clampY(Math.max(...ys));
-      if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
-      const aabb = new THREE.Path();
-      aabb.moveTo(x0, y0);
-      aabb.lineTo(x1, y0);
-      aabb.lineTo(x1, y1);
-      aabb.lineTo(x0, y1);
-      aabb.closePath();
-      shape.holes.push(aabb);
-      continue;
-    }
-    const hole = new THREE.Path();
-    hole.moveTo(corners[0]![0], corners[0]![1]);
-    hole.lineTo(corners[1]![0], corners[1]![1]);
-    hole.lineTo(corners[2]![0], corners[2]![1]);
-    hole.lineTo(corners[3]![0], corners[3]![1]);
-    hole.closePath();
-    shape.holes.push(hole);
+    pushPolygon(
+      localCorners.map(([lx, lz]): [number, number] => {
+        const worldX = o.centerX + lx * cos + lz * sin;
+        const worldZ = o.centerZ - lx * sin + lz * cos;
+        return [worldX, -worldZ];
+      })
+    );
   }
 
-  // Outlined holes (a winder's L, #205): cut as given, or — if any corner
-  // crosses the floor outline — as their clamped bounding box, like rotated
-  // holes above (#146).
-  for (const o of outlined) {
-    const points = o.outline!.map(([x, z]): [number, number] => [x, -z]);
-    if (points.some(([x, y]) => x <= -halfW || x >= halfW || y <= -halfD || y >= halfD)) {
-      const x0 = clampX(Math.min(...points.map(([x]) => x)));
-      const x1 = clampX(Math.max(...points.map(([x]) => x)));
-      const y0 = clampY(Math.min(...points.map(([, y]) => y)));
-      const y1 = clampY(Math.max(...points.map(([, y]) => y)));
-      if (x1 - x0 <= 0 || y1 - y0 <= 0) continue;
-      const box = new THREE.Path();
-      box.moveTo(x0, y0);
-      box.lineTo(x1, y0);
-      box.lineTo(x1, y1);
-      box.lineTo(x0, y1);
-      box.closePath();
-      shape.holes.push(box);
-      continue;
-    }
-    const hole = new THREE.Path();
-    hole.moveTo(points[0]![0], points[0]![1]);
-    for (const [x, y] of points.slice(1)) hole.lineTo(x, y);
-    hole.closePath();
-    shape.holes.push(hole);
-  }
+  // Outlined holes (a winder's L, #205): cut as given, or as their clamped
+  // bounding box when they cross the floor outline, like rotated holes.
+  for (const o of outlined) pushPolygon(o.outline!.map(([x, z]): [number, number] => [x, -z]));
 
-  return normalizeShapeUvs(new THREE.ShapeGeometry(shape), roomWidth, roomDepth);
+  return holes;
 }
 
 /**
