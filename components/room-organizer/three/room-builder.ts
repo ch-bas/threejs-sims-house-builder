@@ -659,7 +659,7 @@ function buildWallGeometryWithCutouts(
  * The geometry lies in the XY plane (like PlaneGeometry) and must be
  * rotated -90° on X to become horizontal.
  */
-function buildFloorGeometryWithOpenings(
+export function buildFloorGeometryWithOpenings(
   THREE: ThreeModule,
   roomWidth: number,
   roomDepth: number,
