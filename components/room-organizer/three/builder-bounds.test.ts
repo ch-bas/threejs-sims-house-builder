@@ -68,16 +68,17 @@ describe('hung items are built where mountBand says (#471, #470)', () => {
 
   it('hangs the pendant from the ceiling of a 3 m storey by default', () => {
     const box = bounds(build(catalogItem('pendant-light')));
-    expect(box.max.y).toBeLessThan(3);
-    expect(box.max.y).toBeGreaterThan(2.99);
+    // Clear of the walkthrough ceiling plate 1 cm under the storey above (#359).
+    expect(box.max.y).toBeLessThan(3 - 0.01);
+    expect(box.max.y).toBeGreaterThan(2.98);
     expect(box.min.y).toBeCloseTo(2, 5);
   });
 
   it.each([2.4, 3, 4.5])('hangs the pendant from a %s m ceiling, its canopy just below it', (ceiling) => {
     const item = catalogItem('pendant-light');
     const box = bounds(build(item, ceiling));
-    expect(box.max.y).toBeLessThan(ceiling);
-    expect(box.max.y).toBeGreaterThan(ceiling - 0.01);
+    expect(box.max.y).toBeLessThan(ceiling - 0.01);
+    expect(box.max.y).toBeGreaterThan(ceiling - 0.02);
     expect(box.min.y).toBeCloseTo(ceiling - item.height, 5);
   });
 

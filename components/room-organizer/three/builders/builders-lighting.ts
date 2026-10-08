@@ -45,7 +45,9 @@ export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: Bui
   return group;
 }
 
-const PENDANT_CANOPY_GAP = 0.005;
+// Clear of the walkthrough ceiling plate, which sits 1 cm under the storey
+// above (#359), and of the upper floor's plane in show-all-floors.
+const PENDANT_CANOPY_GAP = 0.015;
 
 /**
  * A pendant hangs from the ceiling of its storey (#470): `storeyHeight`
