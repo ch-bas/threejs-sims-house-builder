@@ -37,3 +37,26 @@ export function walkthroughCeiling(
     capY: floorElevation(floors, activeFloorIndex + 2),
   };
 }
+
+export interface WalkthroughPit {
+  /** World Y of the storey below's floor, where a stairwell pit bottoms out. */
+  y: number;
+  /** World Y of the active storey's floor, which the stairwells cut. */
+  topY: number;
+}
+
+/**
+ * The drop the walker looks down through the active storey's stairwells, or
+ * null on the ground floor (#359). The storey below isn't built, so without
+ * a lined pit the stairwell looks straight down into the garden.
+ */
+export function walkthroughPit(
+  floors: readonly Pick<FloorLayout, 'height'>[],
+  activeFloorIndex: number
+): WalkthroughPit | null {
+  if (activeFloorIndex < 1 || activeFloorIndex >= floors.length) return null;
+  return {
+    y: floorElevation(floors, activeFloorIndex - 1),
+    topY: floorElevation(floors, activeFloorIndex),
+  };
+}

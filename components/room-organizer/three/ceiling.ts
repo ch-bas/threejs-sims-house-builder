@@ -1,6 +1,5 @@
-import { floorOpeningOutline } from '../lib/stairs';
 import { removeAndDispose } from './builder-utils';
-import { buildFloorGeometryWithOpenings } from './room-builder';
+import { buildFloorGeometryWithOpenings, floorHoleOutlines } from './room-builder';
 import type { FloorOpening } from './wall-openings';
 import type * as ThreeNS from 'three';
 
@@ -17,70 +16,100 @@ export interface CeilingOptions {
   scene: ThreeNS.Scene;
   width: number;
   depth: number;
-  /** World Y of the storey above's floor. */
-  y: number;
-  /** Top of the storey above, where a stairwell's shaft ends. */
-  capY: number;
-  /** Stairwells cut through the storey above's floor. */
-  openings: readonly FloorOpening[];
+  /**
+   * The storey above: the underside of its floor at `y`, cut by `openings`
+   * (the active storey's stairwells), each closed by a shaft up to `capY`.
+   */
+  above: { y: number; capY: number; openings: readonly FloorOpening[] } | null;
+  /**
+   * The storey below: a pit under each stairwell cut through the active
+   * storey's own floor at `topY` (`openings`, from the stairs below), down to
+   * a floor in `floorColor` at `y`.
+   */
+  below: { y: number; topY: number; openings: readonly FloorOpening[]; floorColor: string } | null;
+  /** Line the stairwells. Off when "show all floors" builds the real storeys there. */
+  shafts: boolean;
 }
 
 /**
- * The underside of the storey above, seen from inside in walkthrough (#359).
- * Only the active storey's shell is built, so without it a lower floor's
- * rooms are open to the sky. Stairwells are cut so the stairs still lead up,
- * and each gets a shaft to the top of the storey above: without it the view
- * up the stairs runs out over the walls into the sky.
+ * What closes the active storey in walkthrough (#359). Only the active
+ * storey's shell is built, so without it a lower floor's rooms are open to
+ * the sky and every stairwell looks out over the walls into the garden.
+ * Returns null when there is nothing to build.
  */
-export function buildCeiling(THREE: ThreeModule, options: CeilingOptions): ThreeNS.Group {
-  // Laid out like the floor plate (normal up) and drawn double-sided for
-  // the walker below; three flips the normal on the back face.
-  const material = new THREE.MeshStandardMaterial({
-    color: CEILING_COLOR,
-    roughness: 0.95,
-    side: THREE.DoubleSide,
-  });
+export function buildCeiling(THREE: ThreeModule, options: CeilingOptions): ThreeNS.Group | null {
+  const { above, below, width, depth } = options;
+  const pitOpenings = options.shafts && below ? below.openings : [];
+  if (!above && pitOpenings.length === 0) return null;
+
   const group = new THREE.Group();
   group.userData.type = CEILING_TAG;
+  const plaster = (side: ThreeNS.Side) =>
+    new THREE.MeshStandardMaterial({ color: CEILING_COLOR, roughness: 0.95, side });
 
-  const geometry =
-    options.openings.length > 0
-      ? buildFloorGeometryWithOpenings(THREE, options.width, options.depth, options.openings)
-      : new THREE.PlaneGeometry(options.width, options.depth);
-  const plate = new THREE.Mesh(geometry, material);
-  plate.rotation.x = -Math.PI / 2;
-  plate.position.y = options.y - CEILING_GAP;
-  plate.castShadow = true;
-  freeze(plate);
-  group.add(plate);
-
-  if (options.openings.length > 0) {
-    // Seen from inside only: back faces draw the walls and top, and the
-    // bottom face, front-facing from below, is culled to leave it open.
-    const shaftMaterial = new THREE.MeshStandardMaterial({
-      color: CEILING_COLOR,
-      roughness: 0.95,
-      side: THREE.BackSide,
-    });
-    const height = options.capY - options.y + CEILING_GAP;
-    for (const opening of options.openings) {
-      const shape = new THREE.Shape();
-      floorOpeningOutline(opening).forEach(([x, z], i) => {
-        // Shape Y becomes world -Z once the extrusion is stood up.
-        if (i === 0) shape.moveTo(x, -z);
-        else shape.lineTo(x, -z);
-      });
-      shape.closePath();
-      const shaftGeometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
-      shaftGeometry.rotateX(-Math.PI / 2);
-      const shaft = new THREE.Mesh(shaftGeometry, shaftMaterial);
-      shaft.position.y = options.y - CEILING_GAP;
-      freeze(shaft);
-      group.add(shaft);
+  if (above) {
+    // Laid out like the floor plate (normal up) and drawn double-sided for
+    // the walker below; three flips the normal on the back face.
+    const geometry =
+      above.openings.length > 0
+        ? buildFloorGeometryWithOpenings(THREE, width, depth, above.openings)
+        : new THREE.PlaneGeometry(width, depth);
+    const plate = new THREE.Mesh(geometry, plaster(THREE.DoubleSide));
+    plate.rotation.x = -Math.PI / 2;
+    plate.position.y = above.y - CEILING_GAP;
+    plate.castShadow = true;
+    freeze(plate);
+    group.add(plate);
+    if (options.shafts) {
+      const material = plaster(THREE.BackSide);
+      addShafts(THREE, group, floorHoleOutlines(width, depth, above.openings), above.y - CEILING_GAP, above.capY, [material, material]);
     }
   }
+
+  if (below && pitOpenings.length > 0) {
+    const floor = new THREE.MeshStandardMaterial({ color: below.floorColor, roughness: 0.8, side: THREE.BackSide });
+    addShafts(THREE, group, floorHoleOutlines(width, depth, pitOpenings), below.y, below.topY, [floor, plaster(THREE.BackSide)]);
+  }
+
   options.scene.add(group);
   return group;
+}
+
+/**
+ * One closed prism per hole, seen from inside only: back faces draw the
+ * sides and the far cap, and the near cap, front-facing to a walker looking
+ * in through the hole, is culled to leave the stairwell open. `materials` is
+ * [caps, sides], ExtrudeGeometry's group order.
+ */
+function addShafts(
+  THREE: ThreeModule,
+  group: ThreeNS.Group,
+  holes: ReadonlyArray<ReadonlyArray<readonly [number, number]>>,
+  bottomY: number,
+  topY: number,
+  materials: [ThreeNS.Material, ThreeNS.Material]
+): void {
+  if (topY <= bottomY) return;
+  for (const outline of holes) {
+    // Hole outlines are in the floor plate's shape space, [x, -z]: standing
+    // the extrusion up with the same -90° X rotation puts them back on the hole.
+    const shape = new THREE.Shape();
+    outline.forEach(([x, y], i) => {
+      if (i === 0) shape.moveTo(x, y);
+      else shape.lineTo(x, y);
+    });
+    shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: topY - bottomY, bevelEnabled: false });
+    geometry.rotateX(-Math.PI / 2);
+    const shaft = new THREE.Mesh(geometry, materials);
+    shaft.position.y = bottomY;
+    // Closes the stairwell to the sun as well: the static shadow map would
+    // otherwise light the stairs through it. A BackSide material casts with
+    // its front (outside) faces, so the prism is solid to the light.
+    shaft.castShadow = true;
+    freeze(shaft);
+    group.add(shaft);
+  }
 }
 
 function freeze(object: ThreeNS.Object3D): void {

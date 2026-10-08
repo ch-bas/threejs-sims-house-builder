@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sceneWallDisplay, walkthroughCeiling } from './walkthrough-view';
+import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from './walkthrough-view';
 
 describe('sceneWallDisplay', () => {
   it('keeps the chosen mode outside walkthrough', () => {
@@ -35,5 +35,22 @@ describe('walkthroughCeiling', () => {
   it('refuses an out-of-range floor index', () => {
     expect(walkthroughCeiling([{}, {}], -1)).toBeNull();
     expect(walkthroughCeiling([{}, {}], 5)).toBeNull();
+  });
+});
+
+describe('walkthroughPit', () => {
+  it('has no pit on the ground floor', () => {
+    expect(walkthroughPit([{}], 0)).toBeNull();
+    expect(walkthroughPit([{}, {}], 0)).toBeNull();
+  });
+
+  it('drops from the active floor to the storey below, following per-storey heights (#202)', () => {
+    const floors = [{ height: 2.5 }, { height: 3.5 }, {}];
+    expect(walkthroughPit(floors, 1)).toEqual({ y: 0, topY: 2.5 });
+    expect(walkthroughPit(floors, 2)).toEqual({ y: 2.5, topY: 6 });
+  });
+
+  it('refuses an out-of-range floor index', () => {
+    expect(walkthroughPit([{}, {}], 2)).toBeNull();
   });
 });
