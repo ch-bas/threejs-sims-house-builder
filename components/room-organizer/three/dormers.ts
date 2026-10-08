@@ -18,6 +18,8 @@ const GLASS_COLOR = 0x9fc3d9;
 const RAIL_COLOR = 0x2b2b2b;
 const FRAME = 0.05;
 const FRAME_DEPTH = 0.07;
+/** How far the glass sits out from the face, within the frame's depth. */
+const GLASS_SETBACK = 0.01;
 const TOP_THICKNESS = 0.08;
 const TOP_OVERHANG = 0.1;
 
@@ -104,7 +106,8 @@ function buildDormer(THREE: ThreeModule, dormer: DormerSpec, frame: DormerFrame,
   if (dormer.balcony) addJulietRail(THREE, group, rects, frame);
 
   for (const child of group.children) {
-    child.castShadow = true;
+    // Glass lets the sun through rather than casting a solid shadow (#369).
+    child.castShadow = child.userData.dormerGlass !== true;
     child.receiveShadow = true;
   }
   // Slide along the ridge in the local frame, then turn onto the real side.
@@ -123,6 +126,7 @@ function addOpenings(THREE: ThreeModule, group: ThreeNS.Group, rects: readonly D
     metalness: 0.1,
     transparent: true,
     opacity: 0.45,
+    side: THREE.DoubleSide,
   });
   const z = frame.faceZ;
   const bar = (w: number, h: number, x: number, y: number, depth = FRAME_DEPTH, dz = 0) => {
@@ -137,9 +141,11 @@ function addOpenings(THREE: ThreeModule, group: ThreeNS.Group, rects: readonly D
     const cx = (rect.x0 + rect.x1) / 2;
     const cy = (rect.y0 + rect.y1) / 2;
 
-    // Glass sits a touch inside the face.
+    // The exterior is −z (lib/dormers.ts): glass a touch outside the face,
+    // inside the frame's depth, and two-sided for the loft view (#369).
     const glass = new THREE.Mesh(new THREE.PlaneGeometry(w, h), glassMat);
-    glass.position.set(cx, frame.bottomY + cy, z + 0.03);
+    glass.position.set(cx, frame.bottomY + cy, z - GLASS_SETBACK);
+    glass.userData.dormerGlass = true;
     group.add(glass);
 
     // Frame: head, sill and jambs.

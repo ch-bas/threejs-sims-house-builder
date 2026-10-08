@@ -1,16 +1,30 @@
 import { windowSillHeight } from './street';
-import type { FurnitureItem } from './types';
+import { FLOOR_HEIGHT_METERS, type FurnitureItem } from './types';
 
 /**
- * Wall-hung decor (#376): items that hang on a wall above the floor rather
- * than standing on it. Their mesh builders bake the hanging height in, so
- * every other layer — collision, the walker, the 2D draw order, the 3D
- * selection outline — reads it from `mountBand` instead.
+ * Hung items (#376, #470): decor that hangs on a wall, and the pendant light
+ * that hangs from the ceiling, above the floor rather than standing on it.
+ * Their mesh builders read the hanging heights below, so the mesh and every
+ * other layer — collision, the walker, the 2D draw order, the 3D selection
+ * outline — agree through `mountBand` (#471).
  */
-const WALL_HUNG_TYPES: ReadonlySet<string> = new Set(['painting', 'mirror', 'wall-shelf', 'wall-clock', 'curtains']);
+const HUNG_TYPES: ReadonlySet<string> = new Set([
+  'painting',
+  'mirror',
+  'wall-shelf',
+  'wall-clock',
+  'curtains',
+  'pendant-light',
+]);
 
+/** Whether an item hangs above the floor (on a wall or from the ceiling). */
 export function isWallHung(type: string): boolean {
-  return WALL_HUNG_TYPES.has(type);
+  return HUNG_TYPES.has(type);
+}
+
+/** Whether an item hangs from the ceiling rather than on a wall. */
+export function isCeilingHung(type: string): boolean {
+  return type === 'pendant-light';
 }
 
 /** Vertical extent of an item's mesh above its floor, in metres. */
@@ -19,23 +33,49 @@ export interface MountBand {
   top: number;
 }
 
-// Mirrors the hanging heights in three/builders/builders-decor.ts.
-const PAINTING_MOUNT_Y = 0.8;
-const MIRROR_MOUNT_Y = 0.4;
-const WALL_CLOCK_MOUNT_Y = 1.25;
-const WALL_SHELF_MOUNT_Y = 1.1;
+// Hanging heights above the floor, read by three/builders/builders-decor.ts.
+export const PAINTING_MOUNT_Y = 0.8;
+export const MIRROR_MOUNT_Y = 0.4;
+export const WALL_CLOCK_MOUNT_Y = 1.25;
+export const WALL_SHELF_MOUNT_Y = 1.1;
 /** The shelf's brackets hang below the board; its ornaments stand on it. */
-const WALL_SHELF_BRACKET_DROP = 0.11;
-const WALL_SHELF_ORNAMENT_RISE = 0.22;
+export const WALL_SHELF_BRACKET_DROP = 0.11;
+export const WALL_SHELF_ORNAMENT_RISE = 0.22;
 /** Curtain panels hang from just under the rod for 95 % of the item height. */
-const CURTAIN_PANEL_TOP_OFFSET = 0.06;
-const CURTAIN_PANEL_FRACTION = 0.95;
+export const CURTAIN_PANEL_TOP_OFFSET = 0.06;
+export const CURTAIN_PANEL_FRACTION = 0.95;
+
+/**
+ * How far a pendant light drops from the ceiling (#470): its item height,
+ * never more than the storey, so on a low storey it stops at the floor.
+ */
+function pendantDrop(item: Pick<FurnitureItem, 'height'>, storeyHeight: number = FLOOR_HEIGHT_METERS): number {
+  return Math.max(0, Math.min(item.height, storeyHeight));
+}
+
+/** The pendant's shade fills this share of its drop, from the bottom up. */
+export const PENDANT_SHADE_FRACTION = 0.18;
+/** The bulb's centre sits this far up the shade. */
+export const PENDANT_BULB_RISE = 0.55;
+
+/**
+ * Height of a pendant's bulb above its storey's floor (#470): the drawn bulb
+ * and the light it casts share this point.
+ */
+export function pendantBulbY(item: { height: number }, storeyHeight: number): number {
+  const drop = pendantDrop(item, storeyHeight);
+  return storeyHeight - drop + drop * PENDANT_SHADE_FRACTION * PENDANT_BULB_RISE;
+}
 
 /**
  * Where an item's mesh sits vertically: wall-hung decor at its hanging
- * height, a window from its sill, anything else from the floor up.
+ * height, a pendant light down from the ceiling of a storey `storeyHeight`
+ * tall, a window from its sill, anything else from the floor up.
  */
-export function mountBand(item: Pick<FurnitureItem, 'type' | 'height' | 'sillHeight'>): MountBand {
+export function mountBand(
+  item: Pick<FurnitureItem, 'type' | 'height' | 'sillHeight'>,
+  storeyHeight: number = FLOOR_HEIGHT_METERS
+): MountBand {
   const { height } = item;
   switch (item.type) {
     case 'painting':
@@ -54,6 +94,8 @@ export function mountBand(item: Pick<FurnitureItem, 'type' | 'height' | 'sillHei
         bottom: Math.max(0, height * (1 - CURTAIN_PANEL_FRACTION) - CURTAIN_PANEL_TOP_OFFSET),
         top: height,
       };
+    case 'pendant-light':
+      return { bottom: storeyHeight - pendantDrop(item, storeyHeight), top: storeyHeight };
     case 'window': {
       const sill = windowSillHeight(item);
       return { bottom: sill, top: sill + height };

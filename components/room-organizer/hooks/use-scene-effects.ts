@@ -418,7 +418,7 @@ export function useSceneEffects({
         const collision = collisions[i] === true;
         // Stairs climb to the floor above and openings are fitted into the
         // storey, so the mesh matches the hole cut for it (#202, #277).
-        const group = createFurnitureModel(THREE, itemForStorey(item, floor), collision);
+        const group = createFurnitureModel(THREE, itemForStorey(item, floor), collision, storeyHeight(floor));
         // Covers builder parts that bypass the shared material() helper (#167).
         if (collision) applyCollisionTint(group);
         group.position.set(item.position.x, floorY, item.position.z);
@@ -508,7 +508,7 @@ export function useSceneEffects({
         : 0xfacc15;
       // Around the built mesh, not floor-to-height: a painting hangs at 0.8 m
       // and a window starts at its sill (#376).
-      const band = mountBand(itemForStorey(item, activeFloor));
+      const band = mountBand(itemForStorey(item, activeFloor), storeyHeight(activeFloor));
       const geometry = new THREE.BoxGeometry(item.width, band.top - band.bottom, item.depth);
       const edges = new THREE.EdgesGeometry(geometry);
       geometry.dispose();
@@ -890,7 +890,7 @@ export function useSceneEffects({
         showMeasurements: view.showMeasurements,
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
-        hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls }),
+        hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
       });
     };
 

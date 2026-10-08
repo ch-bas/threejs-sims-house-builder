@@ -5,6 +5,7 @@ import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
+import { storeyHeight } from '../lib/storeys';
 import { planFloorIndex } from '../lib/street';
 import { defaultZoneName, nextZoneColor, zoneFromCorners } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress } from '../three/drag-handlers';
@@ -197,7 +198,7 @@ export function useCanvas2DInteraction(
         showHeatmap: view.showHeatmap,
         zoneDraft: draft,
         hasCollision: (item) =>
-          hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls }),
+          hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
       });
     };
     const schedulePaint = (): void => {

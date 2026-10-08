@@ -12,6 +12,7 @@ import { buildFurnitureSet } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
+import { storeyHeight } from '../lib/storeys';
 import { entrancePlanOutline } from '../lib/street';
 import { applyTheme } from '../lib/themes';
 import { Icon } from '../plotcraft/icon';
@@ -280,7 +281,7 @@ export function SidebarDrawer({
 
               {selectedItem && (
                 <ItemResizePanel
-                  hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls })}
+                  hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
                   onDuplicate={(id) => {
                     const newId = actions.duplicateItem(id);
                     selectOnly(newId);

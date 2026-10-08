@@ -48,3 +48,14 @@ describe('planFurniture (#214)', () => {
     expect(keys(clear)).toEqual(keys(layout));
   });
 });
+
+describe('planFurniture — storey heights (#470)', () => {
+  it('tests a pendant against the furniture under it at its own storey height', () => {
+    const pendant = makeItem({ id: 'pl', type: 'pendant-light', width: 0.45, depth: 0.45, height: 1, position: { x: 0, z: 0 } });
+    const wardrobe = makeItem({ id: 'w', type: 'wardrobe', width: 1.2, depth: 0.6, height: 2.1, position: { x: 0, z: 0 } });
+    const collisions = (height?: number): readonly boolean[] =>
+      planFurniture(makeLayout({ floors: [makeFloor({ ...(height ? { height } : {}), items: [pendant, wardrobe] })] }), false, 0)[0]!.collisions;
+    expect(collisions()).toEqual([true, true]);
+    expect(collisions(4.5)).toEqual([false, false]);
+  });
+});

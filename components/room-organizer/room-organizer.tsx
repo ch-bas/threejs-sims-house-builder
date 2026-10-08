@@ -187,12 +187,12 @@ export function RoomOrganizer(): JSX.Element {
   const collidingIds = useMemo(() => {
     const matches = new Set<string>();
     for (const item of activeFloor.items) {
-      if (hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls })) {
+      if (hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight })) {
         matches.add(item.id);
       }
     }
     return matches;
-  }, [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, keepOut]);
+  }, [activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, layout.width, layout.height, keepOut]);
 
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
@@ -1216,7 +1216,7 @@ export function RoomOrganizer(): JSX.Element {
             activeFloor.items,
             layout.width,
             layout.height,
-            { keepOut, interiorWalls: activeFloor.interiorWalls }
+            { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight }
           )}
           onRotate={(id: string) => {
             if (rotateItemHandler(id)) playCue('rotate');

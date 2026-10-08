@@ -1,5 +1,6 @@
-import { isWallHung, mountBand } from './mount-band';
+import { isCeilingHung, isWallHung, mountBand } from './mount-band';
 import { isOpening, isWallMounted } from './opening-snap';
+import { interiorWallHeight } from './storeys';
 import { buildWalkColliders, type WalkCollider } from './walk-collision';
 import type { FurnitureItem, InteriorWall, Vec2 } from './types';
 
@@ -158,9 +159,9 @@ function isIntendedStack(a: FurnitureItem, b: FurnitureItem): boolean {
  * only where the two mount bands overlap, so hung items still collide with
  * each other and with furniture tall enough to reach them.
  */
-function bandsOverlap(a: FurnitureItem, b: FurnitureItem): boolean {
-  const bandA = mountBand(a);
-  const bandB = mountBand(b);
+function bandsOverlap(a: FurnitureItem, b: FurnitureItem, storeyHeight: number | undefined): boolean {
+  const bandA = mountBand(a, storeyHeight);
+  const bandB = mountBand(b, storeyHeight);
   return bandA.bottom < bandB.top && bandB.bottom < bandA.top;
 }
 
@@ -171,7 +172,7 @@ function bandsOverlap(a: FurnitureItem, b: FurnitureItem): boolean {
  * intended use. The old symmetric 2D test flagged the shipped Living Room
  * template (rug under sofa) red on load.
  */
-function pairCollides(a: FurnitureItem, b: FurnitureItem): boolean {
+function pairCollides(a: FurnitureItem, b: FurnitureItem, storeyHeight: number | undefined): boolean {
   if (isWallMounted(a.type) !== isWallMounted(b.type)) return false;
   // Within the wall layer, a camera mounts at 2.4 m — clear of every door
   // (2.05 m) and window, so camera-over-the-entrance is intended use, not a
@@ -184,7 +185,7 @@ function pairCollides(a: FurnitureItem, b: FurnitureItem): boolean {
   }
   if (isLowProfile(a) || isLowProfile(b)) return false;
   if (isIntendedStack(a, b)) return false;
-  if ((isWallHung(a.type) || isWallHung(b.type)) && !bandsOverlap(a, b)) return false;
+  if ((isWallHung(a.type) || isWallHung(b.type)) && !bandsOverlap(a, b, storeyHeight)) return false;
   return itemsOverlap(a, b);
 }
 
@@ -276,6 +277,19 @@ export interface CollisionContext {
   keepOut?: readonly KeepOutRect[] | undefined;
   /** The storey's partitions. */
   interiorWalls?: readonly InteriorWall[] | undefined;
+  /** The storey's floor-to-ceiling height (`storeyHeight(floor)`); a pendant hangs from it (#470). */
+  storeyHeight?: number | undefined;
+}
+
+/**
+ * Whether a hung item clears the storey's partitions: wall decor hangs on
+ * them by design, a pendant only when it ends above their top (#470).
+ */
+function hangsClearOfPartitions(item: FurnitureItem, storeyHeight: number | undefined): boolean {
+  if (!isWallHung(item.type)) return false;
+  if (!isCeilingHung(item.type)) return true;
+  const floor = storeyHeight === undefined ? undefined : { height: storeyHeight };
+  return mountBand(item, storeyHeight).bottom >= interiorWallHeight(floor);
 }
 
 export function hasCollisions(
@@ -289,7 +303,7 @@ export function hasCollisions(
   const keepOut = context.keepOut ?? [];
   const interiorWalls = context.interiorWalls ?? [];
   const overlapsAnother = (): boolean =>
-    allItems.some((other) => other.id !== item.id && pairCollides(item, other));
+    allItems.some((other) => other.id !== item.id && pairCollides(item, other, context.storeyHeight));
   // Wall-plane items (doors, windows, cameras) live in — or on the exterior
   // side of — the wall by design, so the room-bounds test never applies:
   // they'd always poke through the wall and read as out-of-bounds.
@@ -312,7 +326,7 @@ export function hasCollisions(
   if (
     interiorWalls.length > 0 &&
     !isLowProfile(item) &&
-    !isWallHung(item.type) &&
+    !hangsClearOfPartitions(item, context.storeyHeight) &&
     straddlesInteriorWall(item, allItems, interiorWalls, roomWidth, roomDepth)
   ) {
     return true;

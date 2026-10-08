@@ -1,4 +1,5 @@
 import { type BuilderContext, material, mesh } from '../builder-utils';
+import { addBasinWater, addRectBasin } from './builders-outdoor';
 import type * as ThreeNS from 'three';
 
 export function buildToilet({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
@@ -22,28 +23,26 @@ export function buildToilet({ THREE, item, hasCollision, baseColor, opacity }: B
 export function buildBathtub({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.25, metalness: 0.05 });
+  const linerMat = material(THREE, 0xeceff1, hasCollision, opacity, { roughness: 0.4 });
   const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x4fc3f7,
+    color: hasCollision ? 0xff0000 : 0x4fc3f7,
     roughness: 0.2,
     transparent: true,
     opacity: 0.55,
   });
 
-  const outer = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), mat);
-  outer.position.y = item.height / 2;
-  group.add(outer);
-
-  const inner = mesh(
+  // Hollow tub, filled to three quarters, so the water shows (#365).
+  const rim = Math.min(0.08, item.width * 0.1, item.depth * 0.1);
+  const floorThickness = item.height * 0.12;
+  const { innerWidth, innerDepth } = addRectBasin(THREE, group, item, rim, floorThickness, mat, linerMat);
+  addBasinWater(
     THREE,
-    new THREE.BoxGeometry(item.width * 0.88, item.height * 0.7, item.depth * 0.8),
-    material(THREE, 0xeceff1, hasCollision, opacity, { roughness: 0.4 })
+    group,
+    (h) => new THREE.BoxGeometry(innerWidth, h, innerDepth),
+    waterMat,
+    floorThickness,
+    item.height * 0.75
   );
-  inner.position.y = item.height * 0.7;
-  group.add(inner);
-
-  const water = mesh(THREE, new THREE.BoxGeometry(item.width * 0.85, 0.04, item.depth * 0.78), waterMat);
-  water.position.y = item.height * 0.95;
-  group.add(water);
   return group;
 }
 

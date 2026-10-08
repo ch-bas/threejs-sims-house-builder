@@ -1,6 +1,7 @@
 import { useCallback, useRef, type MutableRefObject } from 'react';
 import { hasCollisions, type KeepOutRect } from '../lib/geometry';
 import { settleWallMountedItem, type WallGap } from '../lib/opening-snap';
+import { storeyHeight } from '../lib/storeys';
 import type { LayoutActions } from './use-layout-state';
 import type { FloorLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -84,6 +85,7 @@ export function useItemDrag({
 }: UseItemDragParams): UseItemDragResult {
   const sceneBoxRef = useRef<MutableRefObject<ThreeNS.Scene | null> | null>(null);
   const invalidateBoxRef = useRef<() => void>(() => {});
+  const activeStoreyHeight = storeyHeight(activeFloor);
 
   const dragSessionRef = useRef<{
     primaryId: string;
@@ -178,11 +180,11 @@ export function useItemDrag({
       const dragged = candidateItems.find((item) => item.id === id);
       const primaryGroup = findFurnitureGroup(id);
       if (dragged && primaryGroup) {
-        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, roomWidth, roomDepth, { keepOut, interiorWalls: activeFloor.interiorWalls }));
+        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, roomWidth, roomDepth, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight }));
       }
       invalidateBoxRef.current();
     },
-    [actions, activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint]
+    [actions, activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint]
   );
 
   const handleDragEnd = useCallback(

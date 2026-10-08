@@ -94,10 +94,15 @@ const BUILDERS: Record<string, FurnitureBuilder> = {
   window: buildWindow,
 };
 
+/**
+ * `storeyHeight` is the storey's floor-to-ceiling height; ceiling-hung items
+ * (the pendant light) hang from it, and default to the classic 3 m storey.
+ */
 export function createFurnitureModel(
   THREE: ThreeModule,
   item: FurnitureItem,
-  hasCollision: boolean
+  hasCollision: boolean,
+  storeyHeight?: number
 ): ReturnType<FurnitureBuilder> {
   const ctx: BuilderContext = {
     THREE,
@@ -105,6 +110,7 @@ export function createFurnitureModel(
     hasCollision,
     baseColor: hasCollision ? 0xff0000 : item.color,
     opacity: hasCollision ? 0.7 : 1.0,
+    ...(storeyHeight !== undefined ? { storeyHeight } : {}),
   };
   const builder = BUILDERS[item.type] ?? buildFallback;
   return builder(ctx);

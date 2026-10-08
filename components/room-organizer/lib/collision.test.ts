@@ -160,6 +160,41 @@ describe('hasCollisions — wall-hung decor (#376)', () => {
   });
 });
 
+describe('hasCollisions — the pendant light (#470)', () => {
+  const W = 10;
+  const D = 10;
+  const walls = [{ id: 'w', x1: -3, z1: 0, x2: 3, z2: 0 }];
+  const pendant = makeItem({ id: 'pl', type: 'pendant-light', width: 0.45, depth: 0.45, height: 1, position: { x: 0, z: 0 } });
+
+  it('is flagged hanging through a partition, unlike decor hung on it', () => {
+    expect(hasCollisions(pendant, [pendant], W, D, { interiorWalls: walls })).toBe(true);
+    const painting = makeItem({ id: 'p', type: 'painting', width: 0.8, depth: 0.05, height: 0.6, position: { x: 0, z: 0.1 } });
+    expect(hasCollisions(painting, [painting], W, D, { interiorWalls: walls })).toBe(false);
+  });
+
+  it('clears a partition when it ends above the partition top', () => {
+    // A 3 m storey's partitions stop at 2.6 m; a 0.3 m drop ends at 2.7 m.
+    const short = { ...pendant, height: 0.3 };
+    expect(hasCollisions(short, [short], W, D, { interiorWalls: walls })).toBe(false);
+    // A 2.4 m storey's partitions stop at 2.0 m; the same drop ends at 2.1 m.
+    expect(hasCollisions(short, [short], W, D, { interiorWalls: walls, storeyHeight: 2.4 })).toBe(false);
+    expect(hasCollisions(pendant, [pendant], W, D, { interiorWalls: walls, storeyHeight: 4.5 })).toBe(true);
+    // In a 4.5 m storey the partitions reach 4.1 m: a 0.3 m drop ends at 4.2 m.
+    expect(hasCollisions(short, [short], W, D, { interiorWalls: walls, storeyHeight: 4.5 })).toBe(false);
+  });
+
+  it('hangs from the storey height it is given when tested against furniture', () => {
+    const wardrobe = makeItem({ id: 'w', type: 'wardrobe', width: 1.2, depth: 0.6, height: 2.1, position: { x: 0, z: 0 } });
+    const items = [pendant, wardrobe];
+    // 3 m storey: the 1 m drop reaches 2.0 m, into the 2.1 m wardrobe.
+    expect(hasCollisions(pendant, items, W, D)).toBe(true);
+    expect(hasCollisions(wardrobe, items, W, D, { storeyHeight: 3 })).toBe(true);
+    // 4.5 m storey: it ends at 3.5 m, well above it.
+    expect(hasCollisions(pendant, items, W, D, { storeyHeight: 4.5 })).toBe(false);
+    expect(hasCollisions(wardrobe, items, W, D, { storeyHeight: 4.5 })).toBe(false);
+  });
+});
+
 describe('hasCollisions — stacking families (#403)', () => {
   const W = 10;
   const D = 10;

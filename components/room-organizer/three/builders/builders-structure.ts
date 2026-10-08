@@ -107,7 +107,8 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   hMullion.position.set(0, sillHeight + item.height / 2, 0);
   group.add(hMullion);
 
-  // Outer sill — the ledge under the window. 
+  // Outer sill — the ledge under the window. The wall below it is the
+  // wall itself: the hole starts at the sill (#212), so no filler (#362).
   const sill = mesh(
     THREE,
     new THREE.BoxGeometry(item.width + 0.08, frameThickness * 1.2, item.depth * 2.2),
@@ -116,15 +117,6 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   sill.position.set(0, sillHeight, 0);
   group.add(sill);
 
-// Wall fill below the window (the wall section from floor to sill).
-  const wallBelow = mesh(
-    THREE,
-    new THREE.BoxGeometry(item.width, sillHeight, item.depth),
-    material(THREE, 0xcccccc, hasCollision, opacity, { roughness: 0.8 })
-  );
-  wallBelow.position.set(0, sillHeight / 2, 0);
-  group.add(wallBelow);
-
   return group;
 }
 
@@ -132,6 +124,10 @@ export function buildStairs(ctx: BuilderContext): ThreeNS.Group {
   if (ctx.item.stairsShape === 'winder') return buildWinderStairs(ctx);
   return buildStraightStairs(ctx);
 }
+
+/** Handrail height above the stairs' pitch line, and the rail's radius. */
+const RAIL_HEIGHT = 0.9;
+const RAIL_RADIUS = 0.03;
 
 function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
@@ -167,14 +163,26 @@ function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: 
     group.add(stringer);
   }
 
-  // Handrails.
-  const railLength = Math.hypot(item.depth, item.height);
-  const railGeo = new THREE.CylinderGeometry(0.03, 0.03, railLength, 10);
-  for (const dx of [-1, 1]) {
-    const rail = mesh(THREE, railGeo, railMat);
-    rail.rotation.x = Math.atan2(item.depth, item.height);
-    rail.position.set(dx * (item.width / 2 + 0.04), item.height / 2 + 0.4, 0);
-    group.add(rail);
+  // Handrails at RAIL_HEIGHT above the pitch line, inside the stair's
+  // width, stopping where they reach the floor above so they never pierce
+  // it beside the stairwell (#388). A post carries each rail's foot.
+  const climb = item.height - RAIL_HEIGHT;
+  if (climb > 0) {
+    const fraction = climb / item.height;
+    const railLength = Math.hypot(item.depth, item.height) * fraction;
+    const railGeo = new THREE.CylinderGeometry(RAIL_RADIUS, RAIL_RADIUS, railLength, 10);
+    const postGeo = new THREE.CylinderGeometry(RAIL_RADIUS, RAIL_RADIUS, RAIL_HEIGHT, 8);
+    const railX = item.width / 2 - RAIL_RADIUS;
+    const runEnd = -item.depth / 2 + item.depth * fraction;
+    for (const dx of [-1, 1]) {
+      const rail = mesh(THREE, railGeo, railMat);
+      rail.rotation.x = Math.atan2(item.depth, item.height);
+      rail.position.set(dx * railX, RAIL_HEIGHT + climb / 2, (-item.depth / 2 + runEnd) / 2);
+      group.add(rail);
+      const post = mesh(THREE, postGeo, railMat);
+      post.position.set(dx * railX, RAIL_HEIGHT / 2, -item.depth / 2 + RAIL_RADIUS);
+      group.add(post);
+    }
   }
 
   return group;
