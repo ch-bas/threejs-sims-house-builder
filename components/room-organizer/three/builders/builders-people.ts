@@ -47,52 +47,62 @@ function buildProceduralPerson({ THREE, item, hasCollision, baseColor, opacity }
   return group;
 }
 
+/**
+ * A dog laid out nose-to-tail along the item's depth (−z is the nose) and
+ * kept inside its width × depth × height box (#167): collision and wall-snap
+ * read that box, so a snout past it went through walls and neighbours.
+ */
 export function buildPet({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const furMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
   const noseMat = material(THREE, 0x1b1b1b, hasCollision, opacity, { roughness: 0.6 });
+  const { width: w, depth: d, height: h } = item;
+  const front = -d / 2;
 
-  // Body
-  const body = mesh(
-    THREE,
-    new THREE.SphereGeometry(item.width * 0.45, 14, 12),
-    furMat
-  );
-  body.scale.set(1, 0.7, 1.6);
-  body.position.y = item.height * 0.55;
+  // Body: an ellipsoid over the middle 60 % of the depth, a touch to the rear.
+  const bodyRadius = w * 0.4;
+  const body = mesh(THREE, new THREE.SphereGeometry(bodyRadius, 14, 12), furMat);
+  body.scale.set(1, Math.min(0.7, (h * 0.42) / bodyRadius), (d * 0.3) / bodyRadius);
+  body.position.set(0, h * 0.5, d * 0.05);
   group.add(body);
 
-  // Head
-  const head = mesh(THREE, new THREE.SphereGeometry(item.width * 0.32, 14, 12), furMat);
-  head.position.set(0, item.height * 0.8, -item.depth * 0.9);
+  // Head just behind the nose, which touches the front of the box.
+  const headRadius = Math.min(w * 0.3, d * 0.14, h * 0.25);
+  const headY = h * 0.72;
+  const headZ = front + headRadius + 0.02;
+  const head = mesh(THREE, new THREE.SphereGeometry(headRadius, 14, 12), furMat);
+  head.position.set(0, headY, headZ);
   group.add(head);
 
-  // Nose
-  const nose = mesh(THREE, new THREE.SphereGeometry(item.width * 0.06, 8, 8), noseMat);
-  nose.position.set(0, item.height * 0.75, -item.depth * 1.25);
+  const noseRadius = Math.min(w * 0.06, headRadius * 0.35);
+  const nose = mesh(THREE, new THREE.SphereGeometry(noseRadius, 8, 8), noseMat);
+  nose.position.set(0, headY - headRadius * 0.2, front + noseRadius);
   group.add(nose);
 
-  // Ears
-  const earGeo = new THREE.ConeGeometry(item.width * 0.1, item.height * 0.25, 10);
+  // Ears, their tips at the top of the box.
+  const earHeight = h * 0.18;
+  const earGeo = new THREE.ConeGeometry(Math.min(w * 0.1, headRadius * 0.5), earHeight, 10);
   for (const dx of [-1, 1]) {
     const ear = mesh(THREE, earGeo, furMat);
-    ear.position.set(dx * item.width * 0.18, item.height * 1.05, -item.depth * 0.9);
+    ear.position.set(dx * headRadius * 0.55, h - earHeight / 2, headZ);
     ear.rotation.z = dx * 0.2;
     group.add(ear);
   }
 
-  // Legs
-  const legGeo = new THREE.CylinderGeometry(0.04, 0.05, item.height * 0.45, 8);
-  for (const [x, y, z] of cornerPositions(item.width * 0.25, item.height * 0.225, item.depth * 0.55)) {
+  // Legs under the body.
+  const legGeo = new THREE.CylinderGeometry(0.04, 0.05, h * 0.45, 8);
+  for (const [x, y, z] of cornerPositions(w * 0.25, h * 0.225, d * 0.22)) {
     const leg = mesh(THREE, legGeo, furMat);
-    leg.position.set(x, y, z);
+    leg.position.set(x, y, z + d * 0.05);
     group.add(leg);
   }
 
-  // Tail
-  const tail = mesh(THREE, new THREE.CylinderGeometry(0.03, 0.05, item.depth * 0.7, 8), furMat);
-  tail.position.set(0, item.height * 0.7, item.depth * 0.95);
-  tail.rotation.x = -Math.PI / 3;
+  // Tail raised up and back, its tip at the back of the box.
+  const tailLength = d * 0.22;
+  const tailAngle = Math.PI / 4;
+  const tail = mesh(THREE, new THREE.CylinderGeometry(0.03, 0.05, tailLength, 8), furMat);
+  tail.rotation.x = tailAngle;
+  tail.position.set(0, h * 0.6, d / 2 - 0.05 - (Math.sin(tailAngle) * tailLength) / 2);
   group.add(tail);
 
   return group;

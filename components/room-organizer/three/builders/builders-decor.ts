@@ -1,5 +1,18 @@
+import {
+  CURTAIN_PANEL_FRACTION,
+  CURTAIN_PANEL_TOP_OFFSET,
+  MIRROR_MOUNT_Y,
+  PAINTING_MOUNT_Y,
+  WALL_CLOCK_MOUNT_Y,
+  WALL_SHELF_BRACKET_DROP,
+  WALL_SHELF_MOUNT_Y,
+  WALL_SHELF_ORNAMENT_RISE,
+} from '../../lib/mount-band';
 import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
+
+/** Keeps a hung frame's back face off the wall plane it hangs on (#388). */
+const HUNG_WALL_GAP = 0.01;
 
 export function buildRug({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
@@ -20,30 +33,38 @@ export function buildPainting({ THREE, item, hasCollision, baseColor, opacity }:
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
   const canvasMat = material(THREE, 0xfff3e0, hasCollision, opacity, { roughness: 0.8 });
+  const centerY = item.height / 2 + PAINTING_MOUNT_Y;
 
-  const frame = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), frameMat);
-  frame.position.y = item.height / 2 + 0.8;
+  // Back to front (z): frame from just off the wall to 0.2 × depth, the
+  // canvas proud of it to 0.35 × depth, paint up to 0.48 × depth. The gap
+  // keeps the frame's back off the wall plane (#388, see #276).
+  const frameDepth = item.depth * 0.7 - HUNG_WALL_GAP;
+  const frame = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, frameDepth), frameMat);
+  frame.position.set(0, centerY, item.depth * 0.2 - frameDepth / 2);
   group.add(frame);
 
   const canvas = mesh(
     THREE,
-    new THREE.BoxGeometry(item.width * 0.85, item.height * 0.85, item.depth * 0.5),
+    new THREE.BoxGeometry(item.width * 0.85, item.height * 0.85, item.depth * 0.2),
     canvasMat
   );
-  canvas.position.set(0, item.height / 2 + 0.8, item.depth * 0.3);
+  canvas.position.set(0, centerY, item.depth * 0.25);
   group.add(canvas);
 
-  // a few abstract blobs of color
+  // A few abstract blobs of paint, flattened onto the canvas face so they
+  // stay inside the item's depth instead of poking through the wall (#388).
   const blobColors = [0xef5350, 0x42a5f5, 0xffca28];
+  const blobRadius = Math.min(item.width, item.height) * 0.16;
   // Every blob is the same size — share one geometry; only the colour differs.
-  const blobGeo = new THREE.SphereGeometry(item.width * 0.12, 10, 10);
+  const blobGeo = new THREE.SphereGeometry(blobRadius, 10, 10);
   blobColors.forEach((color, i) => {
     const blob = mesh(
       THREE,
       blobGeo,
       material(THREE, color, hasCollision, opacity, { roughness: 0.7 })
     );
-    blob.position.set(item.width * (i - 1) * 0.25, item.height / 2 + 0.8 + Math.sin(i) * 0.1, item.depth * 0.32);
+    blob.scale.z = (item.depth * 0.08) / blobRadius;
+    blob.position.set(item.width * (i - 1) * 0.25, centerY + Math.sin(i) * item.height * 0.15, item.depth * 0.4);
     group.add(blob);
   });
   return group;
@@ -69,16 +90,18 @@ export function buildMirror({ THREE, item, hasCollision, baseColor, opacity }: B
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5 });
   const reflectMat = material(THREE, 0xb3e5fc, hasCollision, opacity, { roughness: 0.05, metalness: 0.95 });
 
-  const frame = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), frameMat);
-  frame.position.y = item.height / 2 + 0.4;
+  // Frame from just off the wall to 0.3 × depth, the glass proud of it.
+  const frameDepth = item.depth * 0.8 - HUNG_WALL_GAP;
+  const frame = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, frameDepth), frameMat);
+  frame.position.set(0, item.height / 2 + MIRROR_MOUNT_Y, item.depth * 0.3 - frameDepth / 2);
   group.add(frame);
 
   const surface = mesh(
     THREE,
-    new THREE.BoxGeometry(item.width * 0.9, item.height * 0.9, item.depth * 0.4),
+    new THREE.BoxGeometry(item.width * 0.9, item.height * 0.9, item.depth * 0.25),
     reflectMat
   );
-  surface.position.set(0, item.height / 2 + 0.4, item.depth * 0.31);
+  surface.position.set(0, item.height / 2 + MIRROR_MOUNT_Y, item.depth * 0.325);
   group.add(surface);
   return group;
 }
@@ -110,7 +133,7 @@ export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }:
   // between them is still visible. Each panel uses a tall thin geometry
   // with a few gathers along the bottom.
   const panelWidth = item.width * 0.45;
-  const panelHeight = item.height * 0.95;
+  const panelHeight = item.height * CURTAIN_PANEL_FRACTION;
   for (const sign of [-1, 1] as const) {
     const panel = new THREE.Group();
     const main = mesh(
@@ -128,7 +151,7 @@ export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }:
     );
     hem.position.y = -panelHeight * 0.96;
     panel.add(hem);
-    panel.position.set(sign * (item.width / 2 - panelWidth / 2), item.height - 0.06, 0);
+    panel.position.set(sign * (item.width / 2 - panelWidth / 2), item.height - CURTAIN_PANEL_TOP_OFFSET, 0);
     group.add(panel);
   }
 
@@ -137,9 +160,7 @@ export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }:
 
 // Wall decor bakes its hanging height into the builder — furniture groups are
 // placed at floor level, so a wall item that models itself from y=0 lies on
-// the floor (#163). Painting (+0.8) and mirror (+0.4) follow the same rule.
-const WALL_SHELF_MOUNT_Y = 1.1;
-const WALL_CLOCK_MOUNT_Y = 1.25;
+// the floor (#163). The heights live in lib/mount-band.ts (#471).
 
 export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
@@ -163,10 +184,11 @@ export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }
   hung.add(shelf);
 
   // L-shaped brackets under the shelf, one near each end.
-  const bracketGeo = new THREE.BoxGeometry(0.02, 0.12, item.depth * 0.85);
+  const bracketHeight = 0.12;
+  const bracketGeo = new THREE.BoxGeometry(0.02, bracketHeight, item.depth * 0.85);
   for (const sign of [-1, 1] as const) {
     const bracket = mesh(THREE, bracketGeo, bracketMat);
-    bracket.position.set(sign * (item.width / 2 - 0.08), -0.05, 0);
+    bracket.position.set(sign * (item.width / 2 - 0.08), bracketHeight / 2 - WALL_SHELF_BRACKET_DROP, 0);
     hung.add(bracket);
   }
 
@@ -188,8 +210,10 @@ export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }
   pot.position.set(item.width * 0.30, item.height + 0.04, 0);
   hung.add(pot);
   const leafMat = material(THREE, 0x4caf50, hasCollision, opacity, { roughness: 0.9 });
-  const leaf = mesh(THREE, new THREE.SphereGeometry(0.08, 10, 8), leafMat);
-  leaf.position.set(item.width * 0.30, item.height + 0.14, 0);
+  const leafRadius = 0.08;
+  const leaf = mesh(THREE, new THREE.SphereGeometry(leafRadius, 10, 8), leafMat);
+  // The tallest ornament: its top is the shelf's mount band top.
+  leaf.position.set(item.width * 0.30, item.height + WALL_SHELF_ORNAMENT_RISE - leafRadius, 0);
   hung.add(leaf);
 
   return group;

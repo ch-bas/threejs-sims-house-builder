@@ -57,4 +57,22 @@ describe('dormers on the roof (#203)', () => {
     removeRoof(scene);
     expect(scene.children).toHaveLength(0);
   });
+
+  it('glazes the opening on the street side, seen from outside, without a solid shadow (#369)', () => {
+    const scene = new THREE.Scene();
+    buildRoof(THREE, { scene, width: 10, depth: 8, baseY: 6, spec: { style: 'gable', dormers: DORMERS } });
+    scene.updateMatrixWorld(true);
+    const front = dormerGroups(scene)[1]!;
+    const glass = front.children.filter((c) => c.userData.dormerGlass === true) as THREE.Mesh[];
+    expect(glass.length).toBeGreaterThan(0);
+    for (const pane of glass) {
+      expect(pane.castShadow).toBe(false);
+      // From the street (north, −z) the first thing a ray meets is the pane.
+      const at = pane.getWorldPosition(new THREE.Vector3());
+      const { width, height } = (pane.geometry as THREE.PlaneGeometry).parameters;
+      // Aim a quarter in from the centre, clear of the mullion and transom.
+      const ray = new THREE.Raycaster(new THREE.Vector3(at.x + width / 4, at.y - height / 4, -50), new THREE.Vector3(0, 0, 1));
+      expect(ray.intersectObject(front, true)[0]?.object).toBe(pane);
+    }
+  });
 });

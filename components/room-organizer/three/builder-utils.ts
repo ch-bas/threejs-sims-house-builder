@@ -9,6 +9,8 @@ export interface BuilderContext {
   hasCollision: boolean;
   baseColor: ThreeNS.ColorRepresentation;
   opacity: number;
+  /** Floor-to-ceiling height of the item's storey; a pendant hangs from it (#470). */
+  storeyHeight?: number;
 }
 
 export type FurnitureBuilder = (ctx: BuilderContext) => ThreeNS.Group;

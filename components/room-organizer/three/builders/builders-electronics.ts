@@ -20,7 +20,8 @@ export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: Build
     new THREE.BoxGeometry(item.width * 0.7, item.height * 0.8, item.depth * 0.1),
     material(THREE, hasCollision ? 0xff0000 : 0x1a1a1a, hasCollision, opacity, { roughness: 0.1, metalness: 0.8 })
   );
-  screen.position.set(0, item.height * 0.9, -item.depth * 0.35);
+  // 1 cm forward of the bezel, so the two back faces aren't coplanar (#388).
+  screen.position.set(0, item.height * 0.9, -item.depth * 0.35 + 0.01);
   group.add(screen);
 
   const bezel = mesh(
@@ -53,31 +54,54 @@ export function buildComputer({ THREE, item, hasCollision, baseColor, opacity }:
   return group;
 }
 
+/**
+ * Antennas tilted by `tilt` that rise from `baseY` to the top of the item,
+ * their feet at `xs` (#167: they reached 3–4× the item's height).
+ */
+function addAntennas(
+  THREE: BuilderContext['THREE'],
+  group: ThreeNS.Group,
+  mat: ThreeNS.Material,
+  item: BuilderContext['item'],
+  baseY: number,
+  xs: readonly number[],
+  radius: number,
+  tilt: number
+): void {
+  const rise = item.height - baseY - radius;
+  if (rise <= 0) return;
+  const length = rise / Math.cos(tilt);
+  const geo = new THREE.CylinderGeometry(radius, radius, length, 8);
+  xs.forEach((x, index) => {
+    // Alternate the lean; rotation.z = θ turns the axis toward −x for θ > 0.
+    const angle = index % 2 === 0 ? -tilt : tilt;
+    const antenna = mesh(THREE, geo, mat);
+    antenna.rotation.z = angle;
+    antenna.position.set(x - (Math.sin(angle) * length) / 2, baseY + rise / 2, 0);
+    group.add(antenna);
+  });
+}
+
 export function buildWiFi({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
+  const bodyHeight = item.height * 0.45;
 
   const body = mesh(
     THREE,
-    new THREE.BoxGeometry(item.width, item.height, item.depth),
+    new THREE.BoxGeometry(item.width, bodyHeight, item.depth),
     material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.3 })
   );
-  body.position.y = item.height / 2;
+  body.position.y = bodyHeight / 2;
   group.add(body);
 
   const antennaMat = material(THREE, 0x333333, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 });
-  const antennaGeo = new THREE.CylinderGeometry(0.01, 0.01, item.height * 3, 8);
-  for (const dx of [-item.width * 0.3, item.width * 0.3]) {
-    const antenna = mesh(THREE, antennaGeo, antennaMat);
-    antenna.position.set(dx, item.height * 1.7, 0);
-    antenna.rotation.z = dx < 0 ? -0.3 : 0.3;
-    group.add(antenna);
-  }
+  addAntennas(THREE, group, antennaMat, item, bodyHeight, [-item.width * 0.3, item.width * 0.3], 0.01, 0.3);
 
   const ledGeo = new THREE.SphereGeometry(0.015, 8, 8);
   const ledMat = material(THREE, 0x00ff00, hasCollision, opacity, { emissive: 0x00ff00, emissiveIntensity: 0.8 });
   for (let i = 0; i < 3; i++) {
     const led = mesh(THREE, ledGeo, ledMat);
-    led.position.set(-item.width * 0.2 + i * item.width * 0.2, item.height * 0.6, item.depth * 0.51);
+    led.position.set(-item.width * 0.2 + i * item.width * 0.2, bodyHeight * 0.5, item.depth / 2);
     group.add(led);
   }
 
@@ -86,30 +110,25 @@ export function buildWiFi({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildRouter({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
+  const bodyHeight = item.height * 0.4;
 
   const body = mesh(
     THREE,
-    new THREE.BoxGeometry(item.width, item.height, item.depth),
+    new THREE.BoxGeometry(item.width, bodyHeight, item.depth),
     material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.2 })
   );
-  body.position.y = item.height / 2;
+  body.position.y = bodyHeight / 2;
   group.add(body);
 
   const antennaMat = material(THREE, 0x1a1a1a, hasCollision, opacity, { roughness: 0.6, metalness: 0.5 });
-  const antennaGeo = new THREE.CylinderGeometry(0.008, 0.008, item.height * 4, 8);
   const antennaXs = [-item.width * 0.35, -item.width * 0.15, item.width * 0.15, item.width * 0.35];
-  antennaXs.forEach((x, index) => {
-    const antenna = mesh(THREE, antennaGeo, antennaMat);
-    antenna.position.set(x, item.height * 2.2, 0);
-    antenna.rotation.z = index % 2 === 0 ? -0.2 : 0.2;
-    group.add(antenna);
-  });
+  addAntennas(THREE, group, antennaMat, item, bodyHeight, antennaXs, 0.008, 0.2);
 
   const ledMat = material(THREE, 0x00ff00, hasCollision, opacity, { emissive: 0x00ff00, emissiveIntensity: 0.6 });
   const ledGeo = new THREE.SphereGeometry(0.012, 8, 8);
   for (let i = 0; i < 5; i++) {
     const led = mesh(THREE, ledGeo, ledMat);
-    led.position.set(-item.width * 0.3 + i * item.width * 0.15, item.height * 0.6, item.depth * 0.51);
+    led.position.set(-item.width * 0.3 + i * item.width * 0.15, bodyHeight * 0.6, item.depth / 2);
     group.add(led);
   }
 
@@ -117,7 +136,7 @@ export function buildRouter({ THREE, item, hasCollision, baseColor, opacity }: B
   const portGeo = new THREE.BoxGeometry(0.02, 0.015, 0.01);
   for (let i = 0; i < 4; i++) {
     const port = mesh(THREE, portGeo, portMat);
-    port.position.set(-item.width * 0.25 + i * item.width * 0.17, item.height * 0.5, -item.depth * 0.51);
+    port.position.set(-item.width * 0.25 + i * item.width * 0.17, bodyHeight * 0.5, -item.depth / 2);
     group.add(port);
   }
 

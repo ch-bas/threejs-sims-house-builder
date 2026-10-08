@@ -50,7 +50,7 @@ describe('window sill datum (#212)', () => {
     const item = makeItem({ type: 'window', width: 1.2, depth: 0.15, height: 1.2, sillHeight: 0.4, position: { x: 0, z: -5 } });
     const opening = windowOn(item);
     expect(opening!.bottomFromFloor).toBeCloseTo(0.4, 10);
-    // The mesh (frame over a filler panel down to the floor) tops out where the hole does.
+    // The mesh (frame and sill ledge) tops out where the hole does.
     const mesh = bounds(buildWindow(context(item)));
     expect(mesh.max.y).toBeCloseTo(0.4 + 1.2, 5);
     expect(opening!.bottomFromFloor + opening!.height).toBeCloseTo(mesh.max.y, 5);

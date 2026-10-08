@@ -158,6 +158,8 @@ export function buildPineTree({ THREE, item, hasCollision, baseColor, opacity }:
 
 export function buildBush({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
+  const clump = new THREE.Group();
+  group.add(clump);
   const baseHex = typeof baseColor === 'string' ? baseColor : '#4caf50';
   const altHex = lightenHex(baseHex, 0.18);
   const blobs: ReadonlyArray<readonly [number, number, number, number, boolean]> = [
@@ -177,9 +179,29 @@ export function buildBush({ THREE, item, hasCollision, baseColor, opacity }: Bui
       i * 13 + 7
     );
     blob.position.set(item.width * x, item.height * y, item.depth * z);
-    group.add(blob);
+    clump.add(blob);
   });
+  fitIntoItemBox(THREE, clump, item);
   return group;
+}
+
+/**
+ * Shrink a clump of jittered blobs into the item's box, standing on the
+ * floor (#388: the bush's lowest blob reached below it and its sides past
+ * the footprint).
+ */
+function fitIntoItemBox(THREE: BuilderContext['THREE'], clump: ThreeNS.Group, item: BuilderContext['item']): void {
+  const box = new THREE.Box3().setFromObject(clump);
+  const size = box.getSize(new THREE.Vector3());
+  const sx = size.x > item.width ? item.width / size.x : 1;
+  const sy = size.y > item.height ? item.height / size.y : 1;
+  const sz = size.z > item.depth ? item.depth / size.z : 1;
+  clump.scale.set(sx, sy, sz);
+  clump.position.set(
+    -((box.min.x + box.max.x) / 2) * sx,
+    -box.min.y * sy,
+    -((box.min.z + box.max.z) / 2) * sz
+  );
 }
 
 export function buildHedge({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {

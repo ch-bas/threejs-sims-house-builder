@@ -23,6 +23,62 @@ export function buildFence({ THREE, item, hasCollision, baseColor, opacity }: Bu
   return group;
 }
 
+/** Water stands this far below a basin's rim. */
+const WATER_BELOW_RIM = 0.01;
+
+/**
+ * A hollow rectangular basin — four rim walls round a floor slab — so the
+ * water inside is visible from above (#365: a solid box hid it).
+ * Returns the inner width and depth.
+ */
+export function addRectBasin(
+  THREE: BuilderContext['THREE'],
+  group: ThreeNS.Group,
+  item: BuilderContext['item'],
+  rim: number,
+  floorThickness: number,
+  rimMat: ThreeNS.Material,
+  floorMat: ThreeNS.Material
+): { innerWidth: number; innerDepth: number } {
+  const { width, depth, height } = item;
+  const innerWidth = Math.max(0, width - rim * 2);
+  const innerDepth = Math.max(0, depth - rim * 2);
+  const longGeo = new THREE.BoxGeometry(width, height, rim);
+  for (const sign of [-1, 1]) {
+    const wall = mesh(THREE, longGeo, rimMat);
+    wall.position.set(0, height / 2, sign * (depth / 2 - rim / 2));
+    group.add(wall);
+  }
+  const shortGeo = new THREE.BoxGeometry(rim, height, innerDepth);
+  for (const sign of [-1, 1]) {
+    const wall = mesh(THREE, shortGeo, rimMat);
+    wall.position.set(sign * (width / 2 - rim / 2), height / 2, 0);
+    group.add(wall);
+  }
+  const floor = mesh(THREE, new THREE.BoxGeometry(innerWidth, floorThickness, innerDepth), floorMat);
+  floor.position.y = floorThickness / 2;
+  group.add(floor);
+  return { innerWidth, innerDepth };
+}
+
+/** Water filling a basin from `floorTop` to just under the rim; null when there's no room. */
+export function addBasinWater(
+  THREE: BuilderContext['THREE'],
+  group: ThreeNS.Group,
+  geometryAt: (waterHeight: number) => ThreeNS.BufferGeometry,
+  waterMat: ThreeNS.Material,
+  floorTop: number,
+  rimTop: number
+): ThreeNS.Mesh | null {
+  const waterHeight = rimTop - WATER_BELOW_RIM - floorTop;
+  if (waterHeight <= 0) return null;
+  const water = mesh(THREE, geometryAt(waterHeight), waterMat);
+  water.position.y = floorTop + waterHeight / 2;
+  water.castShadow = false;
+  group.add(water);
+  return water;
+}
+
 export function buildPool({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const tileMat = material(THREE, 0xeceff1, hasCollision, opacity, { roughness: 0.7 });
@@ -31,20 +87,21 @@ export function buildPool({ THREE, item, hasCollision, baseColor, opacity }: Bui
     roughness: 0.15,
     metalness: 0.05,
     transparent: true,
-    opacity: hasCollision ? 0.7 : 0.7,
+    opacity: 0.7,
   });
 
-  const lip = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, item.depth), tileMat);
-  lip.position.y = item.height / 2;
-  group.add(lip);
-
-  const water = mesh(
+  // Coping round the edge; the item colour is the water inside it.
+  const rim = Math.min(0.25, item.width * 0.08, item.depth * 0.08);
+  const floorThickness = item.height * 0.15;
+  const { innerWidth, innerDepth } = addRectBasin(THREE, group, item, rim, floorThickness, tileMat, tileMat);
+  addBasinWater(
     THREE,
-    new THREE.BoxGeometry(item.width * 0.92, item.height * 0.6, item.depth * 0.92),
-    waterMat
+    group,
+    (h) => new THREE.BoxGeometry(innerWidth, h, innerDepth),
+    waterMat,
+    floorThickness,
+    item.height
   );
-  water.position.y = item.height * 0.55;
-  group.add(water);
   return group;
 }
 
@@ -205,22 +262,36 @@ export function buildPond({ THREE, item, hasCollision, baseColor, opacity }: Bui
     opacity: 0.85,
   });
 
-  const basin = mesh(
+  // A ring of rocks round a shallow bed, hollow so the water shows (#365).
+  // Built round, then stretched to the item's depth.
+  const outerRadius = item.width / 2;
+  const innerRadius = Math.max(0.05, outerRadius - 0.12);
+  const ringShape = new THREE.Shape();
+  ringShape.absarc(0, 0, outerRadius, 0, Math.PI * 2, false);
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, innerRadius, 0, Math.PI * 2, true);
+  ringShape.holes.push(hole);
+  const ringGeo = new THREE.ExtrudeGeometry(ringShape, { depth: item.height, bevelEnabled: false, curveSegments: 24 });
+  ringGeo.rotateX(-Math.PI / 2);
+  const ring = mesh(THREE, ringGeo, rockMat);
+  ring.scale.z = item.depth / item.width;
+  group.add(ring);
+
+  const bedThickness = item.height * 0.2;
+  const bed = mesh(THREE, new THREE.CylinderGeometry(innerRadius, innerRadius, bedThickness, 24), rockMat);
+  bed.position.y = bedThickness / 2;
+  bed.scale.z = item.depth / item.width;
+  group.add(bed);
+
+  const water = addBasinWater(
     THREE,
-    new THREE.CylinderGeometry(item.width / 2, item.width / 2 - 0.1, item.height, 24),
-    rockMat
+    group,
+    (h) => new THREE.CylinderGeometry(innerRadius, innerRadius, h, 24),
+    waterMat,
+    bedThickness,
+    item.height
   );
-  basin.position.y = item.height / 2;
-  basin.scale.z = item.depth / item.width;
-  group.add(basin);
-  const water = mesh(
-    THREE,
-    new THREE.CylinderGeometry(item.width / 2 - 0.12, item.width / 2 - 0.12, item.height * 0.6, 24),
-    waterMat
-  );
-  water.position.y = item.height * 0.6;
-  water.scale.z = item.depth / item.width;
-  group.add(water);
+  if (water) water.scale.z = item.depth / item.width;
   // A handful of cattails poking out
   const stemMat = material(THREE, 0x33691e, hasCollision, opacity, { roughness: 0.9 });
   const bulbMat = material(THREE, 0x4e342e, hasCollision, opacity, { roughness: 0.9 });
