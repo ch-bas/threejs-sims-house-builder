@@ -84,7 +84,7 @@ function isPositiveNumber(value: unknown): value is number {
 
 /**
  * A room dimension must be finite AND strictly positive (0/negative break
- * PlaneGeometry, fitTextureToRoom, and collision math) and sanely bounded so a
+ * PlaneGeometry, the floor-plan fit, and collision math) and sanely bounded so a
  * corrupt value can't blow up the geometry.
  */
 function isRoomDimension(value: unknown): value is number {

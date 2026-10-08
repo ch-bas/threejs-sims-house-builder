@@ -1,10 +1,13 @@
 import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '../lib/constants';
+import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { planDrawOrder } from '../lib/plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
-import type { FloorLayout, FloorPlanFitMode, FurnitureItem, RoomLayout, WallId } from '../lib/types';
+import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
+
+export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 
 export interface Render2DOptions {
   canvas: HTMLCanvasElement;
@@ -273,49 +276,6 @@ function drawZoneDraft(
   ctx.textBaseline = 'bottom';
   ctx.fillText(`${draft.w.toFixed(1)}m × ${draft.d.toFixed(1)}m`, x + w / 2, y - 4);
   ctx.restore();
-}
-
-/**
- * Where to paint the tracing image, honouring the fit mode the 3D floor uses
- * (`fitTextureToRoom` in three/room-builder.ts) — the 2D plan used to stretch
- * unconditionally, shifting the image relative to furniture aligned against
- * the fitted 3D rendering (#218). Pure and exported for tests.
- *
- * `source` is in image pixels (cover crops it); `dest` is normalized to the
- * room rectangle, each axis 0..1 (contain letterboxes it — the bands show the
- * floor colour, which the caller fills first).
- */
-export function computeFloorPlanPlacement(
-  imageWidth: number,
-  imageHeight: number,
-  roomAspect: number,
-  mode: FloorPlanFitMode
-): {
-  source: { x: number; y: number; w: number; h: number };
-  dest: { x: number; y: number; w: number; h: number };
-} {
-  const fullSource = { x: 0, y: 0, w: imageWidth, h: imageHeight };
-  const fullDest = { x: 0, y: 0, w: 1, h: 1 };
-  const imageAspect = imageWidth / imageHeight;
-  if (mode === 'cover') {
-    // Crop the image (centered) to the room's aspect; fill the whole room.
-    if (imageAspect > roomAspect) {
-      const w = imageHeight * roomAspect;
-      return { source: { x: (imageWidth - w) / 2, y: 0, w, h: imageHeight }, dest: fullDest };
-    }
-    const h = imageWidth / roomAspect;
-    return { source: { x: 0, y: (imageHeight - h) / 2, w: imageWidth, h }, dest: fullDest };
-  }
-  if (mode === 'contain') {
-    // Whole image visible, centered, aspect kept; bands show the floor.
-    if (imageAspect > roomAspect) {
-      const h = roomAspect / imageAspect;
-      return { source: fullSource, dest: { x: 0, y: (1 - h) / 2, w: 1, h } };
-    }
-    const w = imageAspect / roomAspect;
-    return { source: fullSource, dest: { x: (1 - w) / 2, y: 0, w, h: 1 } };
-  }
-  return { source: fullSource, dest: fullDest };
 }
 
 function drawFloor(

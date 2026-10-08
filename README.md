@@ -371,6 +371,7 @@ components/
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341)
     │   ├── editor-notices.ts            notify() status messages + zone-name requests (#374)
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
+    │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode, shared by the 2D plan and the 3D floor canvas (#191)
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs)

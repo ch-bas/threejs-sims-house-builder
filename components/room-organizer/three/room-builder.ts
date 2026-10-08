@@ -1,8 +1,10 @@
 import { GRID_SIZE_METERS } from '../lib/constants';
+import { floorPlanCanvasLayout } from '../lib/floor-plan-fit';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
+import { getMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, WallId, WallPattern } from '../lib/types';
@@ -300,8 +302,19 @@ function addFoundation(
 // Data-URL floor plans are multi-MB and decoding them dominates a shell
 // rebuild. Cache the decoded image element (not the Texture — textures are
 // disposed along with their meshes) keyed on the URL; single entry, since a
-// building has one floor plan.
-let floorPlanImageCache: { url: string; image: HTMLImageElement } | null = null;
+// building has one floor plan. `image` is null while the one decode is in
+// flight: rebuilds that land meanwhile (opacity slider, fit mode) queue on it
+// instead of starting another decode. The fitted composites sit beside it,
+// one per texture role.
+interface FloorPlanImageEntry {
+  url: string;
+  image: HTMLImageElement | null;
+  waiters: Array<(image: HTMLImageElement) => void>;
+  composites: Partial<Record<FloorPlanRole, { key: string; canvas: HTMLCanvasElement }>>;
+}
+type FloorPlanRole = 'map' | 'displacement';
+
+let floorPlanImageCache: FloorPlanImageEntry | null = null;
 
 /**
  * Drop the decoded floor-plan cache. Call when the building no longer has a
@@ -312,136 +325,131 @@ export function clearFloorPlanImageCache(): void {
   floorPlanImageCache = null;
 }
 
+function withFloorPlanImage(THREE: ThreeModule, url: string, onReady: (image: HTMLImageElement) => void): void {
+  if (floorPlanImageCache?.url === url) {
+    if (floorPlanImageCache.image) onReady(floorPlanImageCache.image);
+    else floorPlanImageCache.waiters.push(onReady);
+    return;
+  }
+  const entry: FloorPlanImageEntry = { url, image: null, waiters: [onReady], composites: {} };
+  floorPlanImageCache = entry;
+  new THREE.ImageLoader().load(
+    url,
+    (image) => {
+      entry.image = image;
+      const waiters = entry.waiters;
+      entry.waiters = [];
+      for (const waiter of waiters) waiter(image);
+    },
+    undefined,
+    () => {
+      // A broken image must not park every later rebuild's waiter forever.
+      entry.waiters = [];
+      if (floorPlanImageCache === entry) floorPlanImageCache = null;
+    }
+  );
+}
+
+/**
+ * The plan fitted to the room on an offscreen canvas that maps 1:1 onto the
+ * floor, placed exactly as the 2D plan draws it. UVs outside [0,1] smeared the
+ * image's border rows across the contain bands (#191). The colour map paints
+ * the bands in the floor colour and blends the image over it at the plan
+ * opacity, as the 2D plan does; the displacement copy is the bare fitted image
+ * on black, so the bands stay flat and the relief sits under the picture (#227).
+ */
+function fittedFloorPlan(
+  image: HTMLImageElement,
+  role: FloorPlanRole,
+  options: RoomBuilderOptions
+): HTMLCanvasElement | HTMLImageElement {
+  const roomAspect = options.width / options.depth;
+  const mode = options.floorPlanFitMode;
+  if (role === 'displacement' && mode === 'stretch') return image;
+
+  const key = role === 'map'
+    ? `${mode}|${roomAspect}|${options.floorColor}|${options.floorPlanOpacity}`
+    : `${mode}|${roomAspect}`;
+  const cache = floorPlanImageCache?.image === image ? floorPlanImageCache : null;
+  const cached = cache?.composites[role];
+  if (cached?.key === key) return cached.canvas;
+
+  const { width, height, source, dest } = floorPlanCanvasLayout(
+    image.naturalWidth || image.width,
+    image.naturalHeight || image.height,
+    roomAspect,
+    mode
+  );
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return image;
+  ctx.fillStyle = role === 'map' ? options.floorColor : '#000';
+  ctx.fillRect(0, 0, width, height);
+  if (role === 'map') ctx.globalAlpha = options.floorPlanOpacity;
+  ctx.drawImage(image, source.x, source.y, source.w, source.h, dest.x, dest.y, dest.w, dest.h);
+  if (cache) cache.composites[role] = { key, canvas };
+  return canvas;
+}
+
+/** A 1×1 canvas of `color`, or null outside a browser. */
+function solidCanvas(color: string): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 1, 1);
+  return canvas;
+}
+
 function buildFloorPlanMaterial(
   THREE: ThreeModule,
   options: RoomBuilderOptions,
   imageUrl: string
 ): ThreeNS.MeshStandardMaterial {
-  // With the 3D effect on we build two textures (map + displacement) from the
-  // same URL. On a cache miss we must not kick off two independent decodes of a
-  // multi-MB data URL — share a single in-flight decode. The first cache-miss
-  // call starts one loader; later synchronous calls in the same build return a
-  // placeholder Texture whose pixels are filled in when the shared load
-  // resolves. `onLoad` fires for every texture once the image is ready.
-  let sharedLoad: {
-    started: boolean;
-    resolved: boolean;
-    image: HTMLImageElement | null;
-    pending: Array<{ texture: ThreeNS.Texture; onLoad?: (texture: ThreeNS.Texture) => void }>;
-  } | null = null;
+  // Both textures start empty and receive their composite together once the
+  // plan is decoded (synchronously on a warm cache). The map is sRGB like
+  // every other albedo texture (#383); the displacement stays linear data.
+  // Until the plan decodes the map is the floor colour: an empty texture
+  // samples as black on this opaque material, a black flash on every load.
+  const map = new THREE.Texture();
+  const placeholder = solidCanvas(options.floorColor);
+  if (placeholder) {
+    map.image = placeholder;
+    map.needsUpdate = true;
+  }
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = getMaxAnisotropy();
+  const displacement = options.floorPlan3DEffect ? new THREE.Texture() : null;
+  for (const texture of displacement ? [map, displacement] : [map]) {
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+  }
 
-  const acquireTexture = (onLoad?: (texture: ThreeNS.Texture) => void): ThreeNS.Texture => {
-    // Cache warm (from a previous build) — decode already available.
-    if (floorPlanImageCache?.url === imageUrl) {
-      const texture = new THREE.Texture(floorPlanImageCache.image);
-      texture.needsUpdate = true;
-      onLoad?.(texture);
-      return texture;
+  let decoding = false;
+  withFloorPlanImage(THREE, imageUrl, (image) => {
+    map.image = fittedFloorPlan(image, 'map', options);
+    map.needsUpdate = true;
+    if (displacement) {
+      displacement.image = fittedFloorPlan(image, 'displacement', options);
+      displacement.needsUpdate = true;
     }
-
-    if (!sharedLoad) {
-      sharedLoad = { started: false, resolved: false, image: null, pending: [] };
-    }
-
-    // Second (and later) calls before the load resolves: attach a placeholder
-    // texture that gets its image + onLoad when the single decode finishes.
-    if (sharedLoad.started) {
-      if (sharedLoad.resolved && sharedLoad.image) {
-        const texture = new THREE.Texture(sharedLoad.image);
-        texture.needsUpdate = true;
-        onLoad?.(texture);
-        return texture;
-      }
-      const texture = new THREE.Texture();
-      sharedLoad.pending.push({ texture, ...(onLoad ? { onLoad } : {}) });
-      return texture;
-    }
-
-    // First cache-miss call: kick off the one and only decode for this build.
-    sharedLoad.started = true;
-    const loader = new THREE.TextureLoader();
-    return loader.load(imageUrl, (loaded) => {
-      const image = loaded.image as HTMLImageElement;
-      floorPlanImageCache = { url: imageUrl, image };
-      if (sharedLoad) {
-        sharedLoad.resolved = true;
-        sharedLoad.image = image;
-        for (const { texture, onLoad: pendingOnLoad } of sharedLoad.pending) {
-          texture.image = image;
-          texture.needsUpdate = true;
-          pendingOnLoad?.(texture);
-        }
-        sharedLoad.pending = [];
-      }
-      onLoad?.(loaded);
-    });
-  };
-
-  const texture = acquireTexture((loaded) => {
-    fitTextureToRoom(loaded, options.width, options.depth, options.floorPlanFitMode);
-    options.onTextureLoaded?.();
+    if (decoding) options.onTextureLoaded?.();
   });
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
+  decoding = true;
 
-  const params: ThreeNS.MeshStandardMaterialParameters = {
-    map: texture,
-    transparent: true,
-    opacity: options.floorPlanOpacity,
+  // Opaque: the plan opacity is already baked into the map over the floor
+  // colour, so the 3D floor shows the same colours as the 2D plan.
+  return new THREE.MeshStandardMaterial({
+    map,
     roughness: 0.8,
     metalness: 0.2,
-  };
-
-  if (options.floorPlan3DEffect) {
-    const displacement = acquireTexture();
-    displacement.wrapS = THREE.ClampToEdgeWrapping;
-    displacement.wrapT = THREE.ClampToEdgeWrapping;
-    params.displacementMap = displacement;
-    params.displacementScale = 0.3;
-  }
-
-  return new THREE.MeshStandardMaterial(params);
-}
-
-function fitTextureToRoom(
-  texture: ThreeNS.Texture,
-  roomWidth: number,
-  roomDepth: number,
-  mode: FloorPlanFitMode
-): void {
-  const image = texture.image as HTMLImageElement | undefined;
-  if (!image) return;
-
-  const imageAspect = image.width / image.height;
-  const roomAspect = roomWidth / roomDepth;
-
-  if (mode === 'stretch') {
-    texture.repeat.set(1, 1);
-    texture.offset.set(0, 0);
-    return;
-  }
-
-  const wider = imageAspect > roomAspect;
-  if (mode === 'cover') {
-    const scale = wider ? roomAspect / imageAspect : imageAspect / roomAspect;
-    if (wider) {
-      texture.repeat.set(scale, 1);
-      texture.offset.set((1 - scale) / 2, 0);
-    } else {
-      texture.repeat.set(1, scale);
-      texture.offset.set(0, (1 - scale) / 2);
-    }
-    return;
-  }
-
-  const scale = wider ? imageAspect / roomAspect : roomAspect / imageAspect;
-  if (wider) {
-    texture.repeat.set(1, scale);
-    texture.offset.set(0, (1 - scale) / 2);
-  } else {
-    texture.repeat.set(scale, 1);
-    texture.offset.set((1 - scale) / 2, 0);
-  }
+    ...(displacement ? { displacementMap: displacement, displacementScale: 0.3 } : {}),
+  });
 }
 
 function buildWalls(
@@ -523,11 +531,18 @@ function buildWalls(
     const divisions = Math.max(2, Math.ceil(span / GRID_SIZE_METERS));
     const size = divisions * GRID_SIZE_METERS;
     const grid = new THREE.GridHelper(size, divisions);
+    // Lines and triangles rasterise depth differently, so a grid coplanar
+    // with the floor z-fought through it; lift it clear (#371). It still
+    // writes depth: without that, ground meshes drawn after it painted over
+    // its lines outside the house.
+    grid.position.y = SNAP_GRID_FLOOR_GAP;
     grid.userData.type = ROOM_OBJECT_TAGS.Wall;
     makeStatic(grid);
     scene.add(grid);
   }
 }
+
+const SNAP_GRID_FLOOR_GAP = 0.003;
 
 const BASEBOARD_COLOR = 0x4a3a2a;
 
