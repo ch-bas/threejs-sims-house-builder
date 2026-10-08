@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem } from './__testfixtures__/fixtures';
 import { WINDOW_SILL_HEIGHT } from './constants';
-import { isWallHung, mountBand } from './mount-band';
+import { isCeilingHung, isWallHung, mountBand, pendantBulbY } from './mount-band';
 
 describe('isWallHung (#376, #470)', () => {
   it('covers the hung decor family and the ceiling pendant only', () => {
@@ -29,6 +29,19 @@ describe('mountBand (#376)', () => {
     expect(mountBand(makeItem({ type: 'pendant-light', height: 1 }))).toEqual({ bottom: 2, top: 3 });
     expect(mountBand(makeItem({ type: 'pendant-light', height: 1 }), 2.5)).toEqual({ bottom: 1.5, top: 2.5 });
     expect(mountBand(makeItem({ type: 'pendant-light', height: 2 }), 1.5)).toEqual({ bottom: 0, top: 1.5 });
+  });
+
+  it('puts the pendant bulb inside the shade at the bottom of the drop (#470)', () => {
+    const pendant = makeItem({ type: 'pendant-light', height: 1 });
+    for (const ceiling of [2.4, 3, 4.5]) {
+      const band = mountBand(pendant, ceiling);
+      const y = pendantBulbY(pendant, ceiling);
+      expect(y).toBeGreaterThan(band.bottom);
+      expect(y).toBeLessThan(band.bottom + 0.18);
+      expect(y).toBeCloseTo(ceiling - 1 + 0.18 * 0.55, 6);
+    }
+    expect(isCeilingHung('pendant-light')).toBe(true);
+    expect(isCeilingHung('painting')).toBe(false);
   });
 
   it('starts a window at its sill', () => {

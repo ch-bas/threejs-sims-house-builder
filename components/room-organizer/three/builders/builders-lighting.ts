@@ -1,4 +1,5 @@
-import { mountBand } from '../../lib/mount-band';
+import { mountBand, PENDANT_SHADE_FRACTION, pendantBulbY } from '../../lib/mount-band';
+import { FLOOR_HEIGHT_METERS } from '../../lib/types';
 import { type BuilderContext, material, mesh } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
@@ -44,6 +45,8 @@ export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: Bui
   return group;
 }
 
+const PENDANT_CANOPY_GAP = 0.005;
+
 /**
  * A pendant hangs from the ceiling of its storey (#470): `storeyHeight`
  * (classic 3 m when the caller doesn't know it) minus its drop, the band
@@ -61,25 +64,28 @@ export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacit
   });
   const bulbMat = material(THREE, 0xfff8c0, hasCollision, opacity, { roughness: 0.1, emissive: 0xfff066, emissiveIntensity: 0.6 });
 
-  const band = mountBand(item, storeyHeight);
+  const ceiling = storeyHeight ?? FLOOR_HEIGHT_METERS;
+  const band = mountBand(item, ceiling);
   const drop = band.top - band.bottom;
   // Modelled from the shade's rim at y=0 up to the ceiling at y=drop.
   const hung = new THREE.Group();
   hung.position.y = band.bottom;
   group.add(hung);
 
-  // Ceiling rosette / canopy.
+  // Ceiling rosette / canopy, a hair under the ceiling so its top isn't
+  // coplanar with the slab of the storey above.
+  const canopyGap = Math.min(PENDANT_CANOPY_GAP, drop * 0.05);
   const canopyHeight = Math.min(0.04, drop * 0.1);
   const canopy = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.18, item.width * 0.16, canopyHeight, 12),
     shadeMat
   );
-  canopy.position.y = drop - canopyHeight / 2;
+  canopy.position.y = drop - canopyGap - canopyHeight / 2;
   hung.add(canopy);
 
   // Bowl-shaped shade at the bottom of the drop — open, so both faces render.
-  const shadeHeight = drop * 0.18;
+  const shadeHeight = drop * PENDANT_SHADE_FRACTION;
   const shade = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.36, item.width * 0.5, shadeHeight, 16, 1, true),
@@ -89,7 +95,7 @@ export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacit
   hung.add(shade);
 
   // Cord from the canopy down to the shade.
-  const cordLength = Math.max(0, drop - canopyHeight - shadeHeight);
+  const cordLength = Math.max(0, drop - canopyGap - canopyHeight - shadeHeight);
   if (cordLength > 0) {
     const cord = mesh(THREE, new THREE.CylinderGeometry(0.012, 0.012, cordLength, 8), cordMat);
     cord.position.y = shadeHeight + cordLength / 2;
@@ -98,7 +104,7 @@ export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacit
 
   // A glowing bulb just inside the shade.
   const bulb = mesh(THREE, new THREE.SphereGeometry(Math.min(item.width * 0.18, shadeHeight * 0.45), 12, 10), bulbMat);
-  bulb.position.y = shadeHeight * 0.55;
+  bulb.position.y = pendantBulbY(item, ceiling) - band.bottom;
   hung.add(bulb);
 
   return group;

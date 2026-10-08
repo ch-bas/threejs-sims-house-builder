@@ -22,6 +22,11 @@ export function isWallHung(type: string): boolean {
   return HUNG_TYPES.has(type);
 }
 
+/** Whether an item hangs from the ceiling rather than on a wall. */
+export function isCeilingHung(type: string): boolean {
+  return type === 'pendant-light';
+}
+
 /** Vertical extent of an item's mesh above its floor, in metres. */
 export interface MountBand {
   bottom: number;
@@ -46,6 +51,20 @@ export const CURTAIN_PANEL_FRACTION = 0.95;
  */
 function pendantDrop(item: Pick<FurnitureItem, 'height'>, storeyHeight: number = FLOOR_HEIGHT_METERS): number {
   return Math.max(0, Math.min(item.height, storeyHeight));
+}
+
+/** The pendant's shade fills this share of its drop, from the bottom up. */
+export const PENDANT_SHADE_FRACTION = 0.18;
+/** The bulb's centre sits this far up the shade. */
+export const PENDANT_BULB_RISE = 0.55;
+
+/**
+ * Height of a pendant's bulb above its storey's floor (#470): the drawn bulb
+ * and the light it casts share this point.
+ */
+export function pendantBulbY(item: { height: number }, storeyHeight: number): number {
+  const drop = pendantDrop(item, storeyHeight);
+  return storeyHeight - drop + drop * PENDANT_SHADE_FRACTION * PENDANT_BULB_RISE;
 }
 
 /**

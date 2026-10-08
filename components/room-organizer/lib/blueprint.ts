@@ -2,6 +2,7 @@ import { ensureFloorPlanImageDecoded, render2DTopDown } from '../canvas-2d/rende
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
 import { floorKeepOut } from './floor-keep-out';
 import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
+import { storeyHeight } from './storeys';
 import { entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
 import type { FloorLayout, RoomLayout } from './types';
@@ -59,7 +60,7 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     // signal rings AND the camera FOV wedges from the printout (#134).
     showWiFiSignals: true,
     hasCollision: (item) =>
-      hasCollisions(item, floor.items, layout.width, layout.height, { keepOut, interiorWalls: floor.interiorWalls }),
+      hasCollisions(item, floor.items, layout.width, layout.height, { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) }),
   });
 
   const dataUrl = canvas.toDataURL('image/png');

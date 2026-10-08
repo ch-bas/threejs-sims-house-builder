@@ -1,5 +1,6 @@
 import { floorKeepOut, type KeepOutBuilding } from './floor-keep-out';
 import { hasCollisions } from './geometry';
+import { storeyHeight } from './storeys';
 import type { FurnitureItem } from './types';
 
 /** The placed items of one rendered storey and whether each one collides. */
@@ -30,7 +31,7 @@ export function planFurniture(
     const keepOut = floorKeepOut(building, index);
     const items = floor.items.filter((item) => item.position);
     const collisions = items.map((item) =>
-      hasCollisions(item, floor.items, building.width, building.height, { keepOut, interiorWalls: floor.interiorWalls })
+      hasCollisions(item, floor.items, building.width, building.height, { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) })
     );
     plan.push({ index, items, collisions });
   }

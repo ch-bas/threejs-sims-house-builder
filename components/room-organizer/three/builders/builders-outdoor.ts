@@ -265,7 +265,8 @@ export function buildPond({ THREE, item, hasCollision, baseColor, opacity }: Bui
   // A ring of rocks round a shallow bed, hollow so the water shows (#365).
   // Built round, then stretched to the item's depth.
   const outerRadius = item.width / 2;
-  const innerRadius = Math.max(0.05, outerRadius - 0.12);
+  // A 12 cm rock rim, but never more than 40 % of a small pond's radius.
+  const innerRadius = outerRadius - Math.min(0.12, outerRadius * 0.4);
   const ringShape = new THREE.Shape();
   ringShape.absarc(0, 0, outerRadius, 0, Math.PI * 2, false);
   const hole = new THREE.Path();

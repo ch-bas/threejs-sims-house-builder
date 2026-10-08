@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
+import { storeyHeight } from '../lib/storeys';
 import { planFloorIndex } from '../lib/street';
 import type { FloorLayout, RoomLayout } from '../lib/types';
 import type { CSSProperties } from 'react';
@@ -122,7 +123,7 @@ export function PlanThumb({
         showMeasurements: false,
         showWiFiSignals: false,
         hasCollision: (item) =>
-          hasCollisions(item, shown.items, building.width, building.height, { keepOut, interiorWalls: shown.interiorWalls }),
+          hasCollisions(item, shown.items, building.width, building.height, { keepOut, interiorWalls: shown.interiorWalls, storeyHeight: storeyHeight(shown) }),
         padding,
       });
     };

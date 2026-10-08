@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { FURNITURE_CATALOG, WINDOW_SILL_HEIGHT } from '../lib/constants';
-import { isWallHung, mountBand } from '../lib/mount-band';
+import { isWallHung, mountBand, pendantBulbY } from '../lib/mount-band';
 import { createFurnitureModel } from './furniture-builders';
 import type { FurnitureItem } from '../lib/types';
 
@@ -68,26 +68,55 @@ describe('hung items are built where mountBand says (#471, #470)', () => {
 
   it('hangs the pendant from the ceiling of a 3 m storey by default', () => {
     const box = bounds(build(catalogItem('pendant-light')));
-    expect(box.max.y).toBeCloseTo(3, 5);
+    expect(box.max.y).toBeLessThan(3);
+    expect(box.max.y).toBeGreaterThan(2.99);
     expect(box.min.y).toBeCloseTo(2, 5);
+  });
+
+  it.each([2.4, 3, 4.5])('hangs the pendant from a %s m ceiling, its canopy just below it', (ceiling) => {
+    const item = catalogItem('pendant-light');
+    const box = bounds(build(item, ceiling));
+    expect(box.max.y).toBeLessThan(ceiling);
+    expect(box.max.y).toBeGreaterThan(ceiling - 0.01);
+    expect(box.min.y).toBeCloseTo(ceiling - item.height, 5);
+  });
+
+  it('draws the bulb at pendantBulbY', () => {
+    const item = catalogItem('pendant-light');
+    for (const ceiling of [2.4, 3, 4.5]) {
+      const bulb = meshes(build(item, ceiling)).find((m) => m.geometry instanceof THREE.SphereGeometry)!;
+      const centre = bounds(bulb).getCenter(new THREE.Vector3());
+      expect(centre.y).toBeCloseTo(pendantBulbY(item, ceiling), 5);
+    }
   });
 
   it('hangs the pendant from a lower ceiling, and never through the floor', () => {
     const item = catalogItem('pendant-light');
     const low = bounds(build(item, 2.4));
-    expect(low.max.y).toBeCloseTo(2.4, 5);
+    expect(low.max.y).toBeCloseTo(2.4, 1);
     expect(low.min.y).toBeCloseTo(2.4 - item.height, 5);
     expect(mountBand(item, 2.4)).toEqual({ bottom: 2.4 - item.height, top: 2.4 });
     const tiny = bounds(build({ ...item, height: 1.5 }, 1.2));
     expect(tiny.min.y).toBeGreaterThanOrEqual(-1e-6);
-    expect(tiny.max.y).toBeCloseTo(1.2, 5);
+    expect(tiny.max.y).toBeCloseTo(1.2, 1);
   });
 });
 
-describe('builders stay inside their catalog box (#388, #167)', () => {
+describe('the builders fitted in #388 and #167 stay inside their catalog box', () => {
   it.each(['lamp', 'floor-lamp', 'pendant-light', 'painting', 'bush', 'pet', 'wifi', 'router', 'pool', 'bathtub'])(
     '%s',
     (type) => expectInsideBox(type)
+  );
+
+  // Measured with expectInsideBox's 2.5 cm slack; these builders predate the
+  // fit and still overflow their catalog box.
+  it.todo(
+    'fit the rest of the catalog: bed / nightstand / wardrobe / dresser / cabinet / fridge / stove / ' +
+      'dishwasher backs (z, 3-6 cm), kitchen-sink and bathroom-sink taps (y), tv and computer stands (y), ' +
+      'security-camera (x, y), plant (x 0.8 m in a 0.4 m box), curtains (x), candles (y), tree, pine-tree and ' +
+      'hedge canopies (x, z, y), tulips (y), bbq (x, z, y; firebox starts 0.19 m up), mailbox (x, y), ' +
+      'lamppost (y), picnic-table (y), pond cattails (y 1.0 m in a 0.25 m box), person (x, y), ' +
+      'window frame and ledge (x, z)'
   );
 
   it.each(['painting', 'mirror'])('keeps the %s off the wall plane and inside its depth', (type) => {
@@ -153,6 +182,15 @@ describe('basins are hollow, so their water shows (#365)', () => {
     const item = catalogItem('pool');
     const hit = firstHitFromAbove(build(item)) as THREE.Mesh;
     expect(materialOf(hit).color.getHexString()).toBe(new THREE.Color(item.color).getHexString());
+  });
+
+  it('keeps a hollow bed in a pond narrower than its rim', () => {
+    const item = { ...catalogItem('pond'), width: 0.2, depth: 0.2 };
+    const hit = firstHitFromAbove(build(item)) as THREE.Mesh | undefined;
+    expect(materialOf(hit!).transparent).toBe(true);
+    // The water fills the inner 60 %, inside the rim rather than a 5 cm disc past it.
+    const water = bounds(hit!);
+    expect(water.max.x - water.min.x).toBeCloseTo(item.width * 0.6, 3);
   });
 
   it('keeps the water just under the rim', () => {
