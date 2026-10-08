@@ -1,12 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, type MutableRefObject } from 'react';
+import { nextZoomStep, zoomSliderDistance, zoomSliderValue } from '../lib/camera-zoom';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export interface CameraPadProps {
   onOrbit(direction: 'left' | 'right' | 'up' | 'down'): void;
   onZoom(direction: '+' | '-'): void;
   onFit(): void;
+  /** Read-only: the slider shows the real orbit distance (#167). */
+  controlsRef: MutableRefObject<OrbitControls | null>;
+}
+
+/** Max steps one slider move may take, so a jump end to end stays bounded. */
+const MAX_SLIDER_STEPS = 40;
+
+function orbitDistance(controls: OrbitControls | null): number | null {
+  return controls ? controls.object.position.distanceTo(controls.target) : null;
 }
 
 /**
@@ -16,9 +27,42 @@ export interface CameraPadProps {
  * world, not the HUD" per the design system.
  */
 export function CameraPad(props: CameraPadProps): JSX.Element {
-  // Local slider position. We translate movement into stepwise zoom calls so
-  // the slider feels continuous without needing absolute zoom in the engine.
-  const [zoomPos, setZoomPos] = useState(50);
+  const { controlsRef } = props;
+  // Derived from the camera, not a local proxy: wheel/pinch zoom, the +/−
+  // buttons, Fit and presets all move the thumb, and it can't saturate while
+  // the camera keeps zooming (#167). OrbitControls fires 'change' for every
+  // camera move, including the ones above.
+  const [zoomPos, setZoomPos] = useState(() => zoomSliderValue(orbitDistance(controlsRef.current) ?? 0));
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return undefined;
+    const sync = () => setZoomPos(zoomSliderValue(orbitDistance(controls) ?? 0));
+    sync();
+    controls.addEventListener('change', sync);
+    return () => controls.removeEventListener('change', sync);
+  }, [controlsRef]);
+
+  const zoom = (direction: '+' | '-') => {
+    props.onZoom(direction);
+    const distance = orbitDistance(controlsRef.current);
+    if (distance !== null) setZoomPos(zoomSliderValue(distance));
+  };
+
+  const zoomTo = (value: number) => {
+    const target = zoomSliderDistance(value);
+    let stepped = 0;
+    for (; stepped < MAX_SLIDER_STEPS; stepped += 1) {
+      const distance = orbitDistance(controlsRef.current);
+      const step = distance === null ? null : nextZoomStep(distance, target);
+      if (!step) break;
+      props.onZoom(step);
+    }
+    // A keyboard nudge (±1) is smaller than one zoom step and would snap
+    // back with nothing done: take one step its way instead.
+    if (stepped === 0 && value !== zoomPos) props.onZoom(value > zoomPos ? '+' : '-');
+    const distance = orbitDistance(controlsRef.current);
+    setZoomPos(distance === null ? value : zoomSliderValue(distance));
+  };
 
   return (
     <div
@@ -165,10 +209,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
       >
         <button
           type="button"
-          onClick={() => {
-            props.onZoom('-');
-            setZoomPos((p) => Math.max(0, p - 10));
-          }}
+          onClick={() => zoom('-')}
           title="Zoom out"
           aria-label="Zoom out"
           className="pc-tile"
@@ -191,18 +232,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
           min={0}
           max={100}
           value={zoomPos}
-          onChange={(event) => {
-            const next = parseInt(event.target.value, 10);
-            const delta = next - zoomPos;
-            if (Math.abs(delta) < 1) return;
-            // Translate slider drag into discrete zoom steps in the same
-            // direction. One step per ~8% drag keeps the motion smooth.
-            const steps = Math.max(1, Math.round(Math.abs(delta) / 8));
-            for (let i = 0; i < steps; i += 1) {
-              props.onZoom(delta > 0 ? '+' : '-');
-            }
-            setZoomPos(next);
-          }}
+          onChange={(event) => zoomTo(parseInt(event.target.value, 10))}
           aria-label="Zoom"
           style={{
             flex: 1,
@@ -212,10 +242,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
         />
         <button
           type="button"
-          onClick={() => {
-            props.onZoom('+');
-            setZoomPos((p) => Math.min(100, p + 10));
-          }}
+          onClick={() => zoom('+')}
           title="Zoom in"
           aria-label="Zoom in"
           className="pc-tile"

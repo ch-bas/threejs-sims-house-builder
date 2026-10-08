@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type MutableRefObject } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { DEFAULT_BUDGET } from '../lib/constants';
@@ -16,6 +16,7 @@ import { ModePanel } from './mode-panel';
 import { RoomShapesPanel } from './room-shapes-panel';
 import { WallPaintPanel } from './wall-paint-panel';
 import type { CatalogItem } from '../lib/types';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export interface BottomHudProps {
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
@@ -23,10 +24,12 @@ export interface BottomHudProps {
   onOrbit(direction: 'left' | 'right' | 'up' | 'down'): void;
   onZoom(direction: '+' | '-'): void;
   onFit(): void;
+  /** Read by the camera pad's zoom slider (#167). */
+  controlsRef: MutableRefObject<OrbitControls | null>;
   placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
 }
 
-export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, placeCatalogItem }: BottomHudProps): JSX.Element {
+export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem }: BottomHudProps): JSX.Element {
   const { layout, activeFloor, actions, view, toggle, setView, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
@@ -125,6 +128,7 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
               onOrbit={onOrbit}
               onZoom={onZoom}
               onFit={onFit}
+              controlsRef={controlsRef}
             />
           )}
         </div>

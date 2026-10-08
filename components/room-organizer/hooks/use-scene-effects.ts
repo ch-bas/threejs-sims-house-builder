@@ -2,6 +2,7 @@ import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
+import { furnitureCollisionKey, furnitureItemsKey, planFurniture } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
 import { hasNeighbours, lowestGround } from '../lib/site';
@@ -10,6 +11,7 @@ import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/stre
 import { generateStreet } from '../lib/street-row';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
+import { applyCollisionTint, fadeGroup } from '../three/collision-tint';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
 import { buildEntrance } from '../three/entrance';
 import { createFurnitureModel } from '../three/furniture-builders';
@@ -31,15 +33,6 @@ import { computeFloorOpenings, computeWallOpenings } from '../three/wall-opening
 import type { FloorLayout, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-interface MaterialLike {
-  transparent: boolean;
-  opacity: number;
-}
-
-interface MeshLike {
-  material?: MaterialLike | readonly MaterialLike[] | null;
-}
-
 /**
  * Opacity for another storey's shell and interior walls in "show all floors",
  * or undefined to draw it solid. Other storeys are ghosted so the active one
@@ -55,19 +48,7 @@ export function otherFloorGhostOpacity(
 }
 
 function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
-  group.traverse((node) => {
-    const material = (node as MeshLike).material;
-    if (!material) return;
-    const apply = (m: MaterialLike) => {
-      m.transparent = true;
-      m.opacity = Math.min(m.opacity, opacity);
-    };
-    if (Array.isArray(material)) {
-      material.forEach(apply);
-    } else {
-      apply(material as MaterialLike);
-    }
-  });
+  fadeGroup(group, opacity);
 }
 
 export interface UseSceneEffectsParams {
@@ -182,6 +163,14 @@ export function useSceneEffects({
     () => JSON.stringify(layout.floors.map((floor) => floor.interiorWalls ?? [])),
     [layout.floors]
   );
+
+  // What the furniture meshes are built from, and its two signatures (#214).
+  const furniturePlan = useMemo(
+    () => planFurniture(entranceBuilding, view.showAllFloors, activeFloorIndex),
+    [entranceBuilding, view.showAllFloors, activeFloorIndex]
+  );
+  const itemsKey = useMemo(() => furnitureItemsKey(furniturePlan), [furniturePlan]);
+  const collisionKey = useMemo(() => furnitureCollisionKey(furniturePlan), [furniturePlan]);
 
   const lampsKey = useMemo(
     () =>
@@ -360,21 +349,20 @@ export function useSceneEffects({
 
     removeTagged(scene, ROOM_OBJECT_TAGS.Furniture);
 
-    const floorsToRender = view.showAllFloors
-      ? layout.floors.map((floor, index) => ({ floor, index }))
-      : [{ floor: activeFloor, index: activeFloorIndex }];
-
-    for (const { floor, index } of floorsToRender) {
+    for (const { index, items, collisions } of furniturePlan) {
+      const floor = layout.floors[index];
       const isActive = index === activeFloorIndex;
       const floorY = floorElevation(layout.floors, index);
 
-      for (const item of floor.items) {
-        if (!item.position) continue;
+      items.forEach((item, i) => {
+        if (!item.position) return;
 
-        const collision = hasCollisions(item, floor.items, layout.width, layout.height, { keepOut: floorKeepOut(entranceBuilding, index), interiorWalls: floor.interiorWalls });
+        const collision = collisions[i] === true;
         // Stairs climb to the floor above and openings are fitted into the
         // storey, so the mesh matches the hole cut for it (#202, #277).
         const group = createFurnitureModel(THREE, itemForStorey(item, floor), collision);
+        // Covers builder parts that bypass the shared material() helper (#167).
+        if (collision) applyCollisionTint(group);
         group.position.set(item.position.x, floorY, item.position.z);
         group.rotation.y = item.rotation ?? 0;
         if (item.mirrored) group.scale.x = -1;
@@ -391,7 +379,7 @@ export function useSceneEffects({
         }
 
         scene.add(group);
-      }
+      });
     }
 
     // The furniture set just changed — bump the revision so the drag/hover
@@ -400,10 +388,16 @@ export function useSceneEffects({
     scene.userData[FURNITURE_REVISION_KEY] =
       ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
     requestShadowUpdate();
+    // Keyed on the plan's signatures, not `layout.floors` identity: wall
+    // paint, floor patterns and interior walls give the floors a new
+    // identity without touching an item, and rebuilt every mesh plus the
+    // shadow map per colour-input event (#214). storeyHeightsKey covers the
+    // floor elevations and itemForStorey's fitting.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
-    layout.floors, layout.width, layout.height, entranceBuilding,
-    activeFloor, activeFloorIndex, view.showAllFloors, view.wallDisplay,
+    itemsKey, collisionKey, storeyHeightsKey,
+    activeFloorIndex, view.showAllFloors, view.wallDisplay,
     // Not read in the body: createFurnitureModel picks the rigged person up
     // from the model cache, and this re-runs the build once it's filled.
     peopleModelReady,
@@ -433,18 +427,20 @@ export function useSceneEffects({
     if (selectedItemId) outlineIds.add(selectedItemId);
     if (outlineIds.size === 0) return;
 
-    const itemsById = new Map(activeFloor.items.map((item) => [item.id, item]));
-    const keepOut = floorKeepOut(entranceBuilding, activeFloorIndex);
+    const activePlan = furniturePlan.find((floor) => floor.index === activeFloorIndex);
+    if (!activePlan) return;
+    const planIndexById = new Map(activePlan.items.map((item, i) => [item.id, i]));
     for (const group of scene.children) {
       if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
       if (group.userData.floorIndex !== activeFloorIndex) continue;
       const id = group.userData.id as string;
       if (!outlineIds.has(id)) continue;
-      const item = itemsById.get(id);
-      if (!item) continue;
+      const planIndex = planIndexById.get(id);
+      const item = planIndex === undefined ? undefined : activePlan.items[planIndex];
+      if (planIndex === undefined || !item) continue;
 
       const isSelected = selectedItemId === id || extraSelectedIds.has(id);
-      const collision = hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls });
+      const collision = activePlan.collisions[planIndex] === true;
       const accent = isSelected
         ? selectedItemId === id
           ? collision
@@ -473,12 +469,13 @@ export function useSceneEffects({
     // rebuilds the groups, so this effect also carries every one of its keys
     // that it doesn't read itself — otherwise a selected item loses its
     // outline after a Show-All-Floors or wall-display toggle, or once the
-    // rigged person model loads (#335).
+    // rigged person model loads (#335). It reads the same plan, so it is
+    // keyed on the same signatures (#214).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
-    activeFloor, activeFloorIndex, layout.width, layout.height, entranceBuilding,
-    selectedItemId, extraSelectedIds, highlightedIds,
-    layout.floors, view.showAllFloors, view.wallDisplay, peopleModelReady,
+    activeFloorIndex, selectedItemId, extraSelectedIds, highlightedIds,
+    itemsKey, collisionKey, storeyHeightsKey, view.showAllFloors, view.wallDisplay, peopleModelReady,
   ]);
 
   // Wi-Fi rings + camera vision cones. Independently tagged overlays, so
@@ -493,22 +490,20 @@ export function useSceneEffects({
     removeTagged(scene, ROOM_OBJECT_TAGS.Signal, ROOM_OBJECT_TAGS.CameraVision);
     if (!view.showWiFiSignals && !view.showCameraVision) return;
 
-    const floorsToRender = view.showAllFloors
-      ? layout.floors.map((floor, index) => ({ floor, index }))
-      : [{ floor: activeFloor, index: activeFloorIndex }];
-
-    for (const { floor, index } of floorsToRender) {
+    for (const { index, items } of furniturePlan) {
       const floorY = floorElevation(layout.floors, index);
       if (view.showWiFiSignals) {
-        addSignalOverlays(THREE, scene, floor.items, floorY);
+        addSignalOverlays(THREE, scene, items, floorY);
       }
       if (view.showCameraVision) {
-        addVisionCones(THREE, scene, floor.items, floorY, index, storeyHeight(floor));
+        addVisionCones(THREE, scene, items, floorY, index, storeyHeight(layout.floors[index]));
       }
     }
+    // Item-content key, not `layout.floors` identity (#214).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
-    layout.floors, activeFloor, activeFloorIndex,
+    itemsKey, storeyHeightsKey, activeFloorIndex,
     view.showWiFiSignals, view.showCameraVision, view.showAllFloors,
   ]);
 

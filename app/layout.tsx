@@ -6,11 +6,12 @@ export const metadata: Metadata = {
   description: 'Design and visualize rooms in 3D with furniture, Wi-Fi, and CCTV planning',
 };
 
+// No maximumScale / userScalable: page zoom must stay available for the
+// panels (WCAG 1.4.4). Both canvases set `touch-action: none`, so a pinch
+// on them still drives the camera, not the page (#167).
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 // Stale-chunk recovery for the GitHub Pages static export. index.html is cached
