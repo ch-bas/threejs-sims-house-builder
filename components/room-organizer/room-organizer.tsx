@@ -24,6 +24,7 @@ import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects'
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
 import { useWeather } from './hooks/use-weather';
+import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
@@ -90,7 +91,7 @@ function zoomCamera(
   direction: '+' | '-'
 ): void {
   const offset = camera.position.clone().sub(controls.target);
-  const factor = direction === '+' ? 0.85 : 1.18;
+  const factor = direction === '+' ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR;
   offset.multiplyScalar(factor);
   camera.position.copy(controls.target).add(offset);
   controls.update();
@@ -1148,6 +1149,8 @@ export function RoomOrganizer(): JSX.Element {
           const newId = placeDiscrete(item, world ?? undefined);
           if (!newId) return;
           selectOnly(newId);
+          // Same chime as both click-to-add paths (#167).
+          playCue('place');
         }}
       />
 
@@ -1249,6 +1252,7 @@ export function RoomOrganizer(): JSX.Element {
           invalidate();
         }}
         onFit={fitToRoom}
+        controlsRef={controlsRef}
         placeCatalogItem={placeFromCatalog}
       />
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { reloadOnceForChunkError } from '../lib/chunk-reload';
+import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { addLights } from '../three/lighting';
 import { setMaxAnisotropy } from '../three/texture-settings';
@@ -168,6 +169,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
       rendererRef.current = renderer;
       cleanup.push(() => renderer.dispose());
+      // Cleanups run last-in-first-out, so this frees the whole graph (stars,
+      // moon, furniture, shell, instanced outdoor meshes, sky background)
+      // while the renderer still tracks their GL handles (#213).
+      cleanup.push(() => disposeScene(scene));
 
       // Image-based lighting from a neutral studio environment. This is what
       // makes MeshStandardMaterial respond with believable specular/diffuse
@@ -176,13 +181,17 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       const RoomEnvironment = roomEnvCtorRef.current;
       if (RoomEnvironment) {
         const pmrem = new THREE.PMREMGenerator(renderer);
-        const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        const roomEnvironment = new RoomEnvironment();
+        const envTarget = pmrem.fromScene(roomEnvironment, 0.04);
         pmrem.dispose();
-        scene.environment = envTexture;
+        // The studio scene's own meshes are only needed for the bake (#213).
+        disposeScene(roomEnvironment);
+        scene.environment = envTarget.texture;
         scene.environmentIntensity = 0.5;
         cleanup.push(() => {
           scene.environment = null;
-          envTexture.dispose();
+          // The render target, not just its texture: its framebuffer is GPU memory too.
+          envTarget.dispose();
         });
       }
 
@@ -288,18 +297,16 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
     return () => {
       setIsReady(false);
-      for (const fn of cleanup) {
+      // Reverse order of setup: listeners and the RAF loop stop first, the
+      // scene graph (incl. the #122 sky-gradient background) is freed next,
+      // and renderer.dispose() runs last (#213).
+      for (const fn of cleanup.reverse()) {
         try {
           fn();
         } catch {
           /* swallow */
         }
       }
-      // The sky-gradient CanvasTexture installed by applyTimeOfDay lives on
-      // scene.background — the swap path only disposes its predecessor, so
-      // the final one leaks on full editor unmount without this (#122).
-      const background = sceneRef.current?.background;
-      if (background && 'dispose' in background) background.dispose();
       sceneRef.current = null;
       cameraRef.current = null;
       rendererRef.current = null;

@@ -56,6 +56,26 @@ export function removeAndDispose(scene: ThreeNS.Scene, obj: ThreeNS.Object3D): v
   disposeObject(obj);
 }
 
+/**
+ * Free everything a scene still holds when the editor unmounts (#213): every
+ * child subtree (instanced meshes' per-instance buffers included) and a
+ * texture background such as the sky gradient. Must run before
+ * `renderer.dispose()`, which forgets the GL handles these release.
+ */
+export function disposeScene(scene: ThreeNS.Scene): void {
+  for (const child of [...scene.children]) {
+    scene.remove(child);
+    child.traverse((node) => {
+      const inst = node as ThreeNS.InstancedMesh;
+      if (inst.isInstancedMesh) inst.dispose();
+    });
+    disposeObject(child);
+  }
+  const background = scene.background as ThreeNS.Texture | ThreeNS.Color | null;
+  if (background && 'isTexture' in background) background.dispose();
+  scene.background = null;
+}
+
 export function mesh(THREE: ThreeModule, geometry: ThreeNS.BufferGeometry, material: ThreeNS.Material): ThreeNS.Mesh {
   const m = new THREE.Mesh(geometry, material);
   m.castShadow = true;
