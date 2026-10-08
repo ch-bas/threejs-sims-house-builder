@@ -25,6 +25,8 @@ const shingleTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
 /** Eaves: how far the roof overhangs past the wall plane (metres). Mirrored by lib/dormers.ts. */
 const EAVE_OVERHANG = ROOF_EAVE_OVERHANG;
 const FLAT_ROOF_THICKNESS = 0.2;
+/** Shingle texture tiles per metre of roof surface, the same on every roof style and size (#211). */
+const SHINGLE_TILES_PER_METRE = 0.6;
 
 export const ROOF_LABELS: Record<RoofStyle, string> = {
   none: 'No roof',
@@ -119,8 +121,8 @@ function buildFlatRoof(
   const thickness = FLAT_ROOF_THICKNESS;
   const w = width + EAVE_OVERHANG * 2;
   const d = depth + EAVE_OVERHANG * 2;
-  const material = buildShingleMaterial(THREE, color, w, d);
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, thickness, d), material);
+  const material = buildShingleMaterial(THREE, color);
+  const mesh = new THREE.Mesh(withSurfaceUvs(THREE, new THREE.BoxGeometry(w, thickness, d)), material);
   mesh.position.set(0, baseY + thickness / 2, 0);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -153,9 +155,8 @@ function buildGableRoof(
   // Centre the extrude along its axis.
   geometry.translate(0, 0, -length / 2);
 
-  const slopeLength = Math.hypot(span / 2, peakHeight);
-  const material = buildShingleMaterial(THREE, color, slopeLength, length, true);
-  const mesh = new THREE.Mesh(geometry, material);
+  const material = buildShingleMaterial(THREE, color, true);
+  const mesh = new THREE.Mesh(withSurfaceUvs(THREE, geometry), material);
   mesh.position.y = baseY;
   if (ridgeAlongX) mesh.rotation.y = Math.PI / 2;
   mesh.castShadow = true;
@@ -182,34 +183,29 @@ function buildHippedRoof(
   const halfW = w / 2;
   const halfD = d / 2;
 
-  // Five vertices: four base corners and one apex.
-  const vertices = new Float32Array([
-    -halfW, 0, -halfD, // 0 back-left
-     halfW, 0, -halfD, // 1 back-right
-     halfW, 0,  halfD, // 2 front-right
-    -halfW, 0,  halfD, // 3 front-left
-     0,     peakHeight, 0, // 4 apex
-  ]);
+  // Four base corners and the apex.
+  const corners: ReadonlyArray<readonly [number, number, number]> = [
+    [-halfW, 0, -halfD], // 0 back-left
+    [halfW, 0, -halfD], // 1 back-right
+    [halfW, 0, halfD], // 2 front-right
+    [-halfW, 0, halfD], // 3 front-left
+    [0, peakHeight, 0], // 4 apex
+  ];
 
   // Four triangle faces (one per side). Wound counter-clockwise when viewed
   // from outside so each slope's normal points up-and-outward; the naive
   // (0,1,4)… order winds them inward/down (normals verified by cross-product),
   // which reads inside-out under shadows/AO and vanishes without DoubleSide.
-  const indices = new Uint16Array([
-    1, 0, 4,
-    2, 1, 4,
-    3, 2, 4,
-    0, 3, 4,
-  ]);
+  // Unshared vertices: each slope gets its own flat normal and UVs (#211).
+  const faces = [1, 0, 4, 2, 1, 4, 3, 2, 4, 0, 3, 4];
+  const vertices = new Float32Array(faces.flatMap((i) => corners[i] ?? []));
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
 
-  const slopeLength = Math.hypot(Math.min(halfW, halfD), peakHeight);
-  const material = buildShingleMaterial(THREE, color, slopeLength * 2, slopeLength * 2, true);
-  const mesh = new THREE.Mesh(geometry, material);
+  const material = buildShingleMaterial(THREE, color, true);
+  const mesh = new THREE.Mesh(withSurfaceUvs(THREE, geometry), material);
   mesh.position.y = baseY;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -254,6 +250,59 @@ function addFascia(
 }
 
 /**
+ * Planar UVs in metres for a non-indexed triangle list: per face, u runs along
+ * the eave (horizontal, in the face plane) and v up the slope, so shingle rows
+ * lie parallel to the eaves and one constant texture repeat gives the same row
+ * height on every roof style and size (#211). Horizontal faces map u to x.
+ * Pure, exported for tests.
+ */
+export function roofSurfaceUvs(positions: ArrayLike<number>): Float32Array {
+  const at = (i: number): number => positions[i] ?? 0;
+  const uvs = new Float32Array((positions.length / 3) * 2);
+  for (let t = 0; t + 9 <= positions.length; t += 9) {
+    const e1x = at(t + 3) - at(t), e1y = at(t + 4) - at(t + 1), e1z = at(t + 5) - at(t + 2);
+    const e2x = at(t + 6) - at(t), e2y = at(t + 7) - at(t + 1), e2z = at(t + 8) - at(t + 2);
+    let nx = e1y * e2z - e1z * e2y;
+    let ny = e1z * e2x - e1x * e2z;
+    let nz = e1x * e2y - e1y * e2x;
+    const nLen = Math.hypot(nx, ny, nz) || 1;
+    nx /= nLen;
+    ny /= nLen;
+    nz /= nLen;
+    // Eave axis: up × n, horizontal and in the face plane.
+    let ux = nz;
+    let uz = -nx;
+    const uLen = Math.hypot(ux, uz);
+    if (uLen < 1e-6) {
+      ux = 1;
+      uz = 0;
+    } else {
+      ux /= uLen;
+      uz /= uLen;
+    }
+    // Up-slope axis: n × eave.
+    const vx = ny * uz;
+    const vy = nz * ux - nx * uz;
+    const vz = -ny * ux;
+    for (let i = t; i < t + 9; i += 3) {
+      uvs[(i / 3) * 2] = at(i) * ux + at(i + 2) * uz;
+      uvs[(i / 3) * 2 + 1] = at(i) * vx + at(i + 1) * vy + at(i + 2) * vz;
+    }
+  }
+  return uvs;
+}
+
+function withSurfaceUvs(THREE: ThreeModule, geometry: ThreeNS.BufferGeometry): ThreeNS.BufferGeometry {
+  let flat = geometry;
+  if (geometry.index) {
+    flat = geometry.toNonIndexed();
+    geometry.dispose();
+  }
+  flat.setAttribute('uv', new THREE.BufferAttribute(roofSurfaceUvs(flat.getAttribute('position').array), 2));
+  return flat;
+}
+
+/**
  * Canvas-painted asphalt-shingle pattern. Rows of staggered rectangles in
  * subtle tonal shifts of the base roof colour. Cheap to build, reads as
  * shingles at orbit-camera distance.
@@ -261,8 +310,6 @@ function addFascia(
 function buildShingleMaterial(
   THREE: ThreeModule,
   color: string,
-  surfaceWidth: number,
-  surfaceLength: number,
   doubleSided = false
 ): ThreeNS.MeshStandardMaterial {
   const master = getShingleTexture(THREE, color);
@@ -275,11 +322,10 @@ function buildShingleMaterial(
   }
 
   // Clone per roof so each surface owns a disposable copy sharing the cached
-  // canvas image; per-surface `repeat` is set on the clone, not the master.
-  // (`Texture.clone()` already flags needsUpdate, so no explicit re-upload.)
+  // canvas image. (`Texture.clone()` already flags needsUpdate, so no
+  // explicit re-upload.) The geometry's UVs are in metres (roofSurfaceUvs).
   const texture = master.clone();
-  // Aim for ~3 shingle rows per metre of slope.
-  texture.repeat.set(Math.max(1, surfaceWidth * 0.6), Math.max(1, surfaceLength * 0.6));
+  texture.repeat.set(SHINGLE_TILES_PER_METRE, SHINGLE_TILES_PER_METRE);
 
   return new THREE.MeshStandardMaterial({
     map: texture,
