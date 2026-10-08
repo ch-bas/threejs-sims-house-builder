@@ -50,12 +50,16 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
 
   const zoomTo = (value: number) => {
     const target = zoomSliderDistance(value);
-    for (let i = 0; i < MAX_SLIDER_STEPS; i += 1) {
+    let stepped = 0;
+    for (; stepped < MAX_SLIDER_STEPS; stepped += 1) {
       const distance = orbitDistance(controlsRef.current);
       const step = distance === null ? null : nextZoomStep(distance, target);
       if (!step) break;
       props.onZoom(step);
     }
+    // A keyboard nudge (±1) is smaller than one zoom step and would snap
+    // back with nothing done: take one step its way instead.
+    if (stepped === 0 && value !== zoomPos) props.onZoom(value > zoomPos ? '+' : '-');
     const distance = orbitDistance(controlsRef.current);
     setZoomPos(distance === null ? value : zoomSliderValue(distance));
   };

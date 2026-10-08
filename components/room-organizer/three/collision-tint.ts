@@ -4,11 +4,12 @@ import type * as ThreeNS from 'three';
 export const COLLISION_OPACITY = 0.7;
 
 /**
- * Make every part of a colliding item see-through, not only the parts whose
- * builder used the shared `material()` helper (#167). Builders create fresh
- * materials per item, so mutating them here touches no other mesh.
+ * Make every material under `group` see-through, at most `opacity`. Builders
+ * create fresh materials per item, so this touches no other mesh. The first
+ * transparent use of each material type compiles one more shader variant,
+ * then it is cached.
  */
-export function applyCollisionTint(group: ThreeNS.Object3D, opacity = COLLISION_OPACITY): void {
+export function fadeGroup(group: ThreeNS.Object3D, opacity: number): void {
   group.traverse((node) => {
     const material = (node as ThreeNS.Mesh).material as ThreeNS.Material | ThreeNS.Material[] | undefined;
     if (!material) return;
@@ -17,4 +18,12 @@ export function applyCollisionTint(group: ThreeNS.Object3D, opacity = COLLISION_
       m.opacity = Math.min(m.opacity, opacity);
     }
   });
+}
+
+/**
+ * Every part of a colliding item, not only the parts whose builder used the
+ * shared `material()` helper (#167).
+ */
+export function applyCollisionTint(group: ThreeNS.Object3D, opacity = COLLISION_OPACITY): void {
+  fadeGroup(group, opacity);
 }

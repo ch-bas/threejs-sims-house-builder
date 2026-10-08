@@ -431,3 +431,23 @@
     right: 173px;
   }
 }
+
+/* Page pinch-zoom is allowed for accessibility (#167); the canvases opt out
+   with touch-action: none. Taps on the HUD shouldn't double-tap-zoom the
+   page, and iOS zooms in on focus for any control under 16px, then stays
+   zoomed — so touch devices get 16px form controls. */
+.pc-glass,
+.pc-tile,
+.pc-sidebar,
+.pc-catalog-strip,
+.pc-touch-controls,
+button {
+  touch-action: manipulation;
+}
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

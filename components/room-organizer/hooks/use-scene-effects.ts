@@ -11,7 +11,7 @@ import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/stre
 import { generateStreet } from '../lib/street-row';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
-import { applyCollisionTint } from '../three/collision-tint';
+import { applyCollisionTint, fadeGroup } from '../three/collision-tint';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
 import { buildEntrance } from '../three/entrance';
 import { createFurnitureModel } from '../three/furniture-builders';
@@ -33,15 +33,6 @@ import { computeFloorOpenings, computeWallOpenings } from '../three/wall-opening
 import type { FloorLayout, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-interface MaterialLike {
-  transparent: boolean;
-  opacity: number;
-}
-
-interface MeshLike {
-  material?: MaterialLike | readonly MaterialLike[] | null;
-}
-
 /**
  * Opacity for another storey's shell and interior walls in "show all floors",
  * or undefined to draw it solid. Other storeys are ghosted so the active one
@@ -57,19 +48,7 @@ export function otherFloorGhostOpacity(
 }
 
 function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
-  group.traverse((node) => {
-    const material = (node as MeshLike).material;
-    if (!material) return;
-    const apply = (m: MaterialLike) => {
-      m.transparent = true;
-      m.opacity = Math.min(m.opacity, opacity);
-    };
-    if (Array.isArray(material)) {
-      material.forEach(apply);
-    } else {
-      apply(material as MaterialLike);
-    }
-  });
+  fadeGroup(group, opacity);
 }
 
 export interface UseSceneEffectsParams {
