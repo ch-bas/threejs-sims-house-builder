@@ -373,8 +373,9 @@ export function useSceneEffects({
       scene,
       width: layout.width,
       depth: layout.height,
+      // "Show all floors" draws the real storey above, plate and all.
       above:
-        ceilingY !== undefined && ceilingCapY !== undefined
+        !view.showAllFloors && ceilingY !== undefined && ceilingCapY !== undefined
           ? { y: ceilingY, capY: ceilingCapY, openings: computeFloorOpenings(activeFloor) }
           : null,
       below:
