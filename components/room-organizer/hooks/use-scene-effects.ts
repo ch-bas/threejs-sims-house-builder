@@ -5,7 +5,7 @@ import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { furnitureCollisionKey, furnitureItemsKey, planFurniture } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
-import { collectLampLights, type LampLight } from '../lib/night-lights';
+import { collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
@@ -26,7 +26,7 @@ import {
   renderInteriorWallPreview,
 } from '../three/interior-walls';
 import { clearItemLabels, renderItemLabels } from '../three/item-labels';
-import { applyTimeOfDay } from '../three/lighting';
+import { applyLampPool, applyTimeOfDay, computeSkyProfile, isLampPrewarmHour, prewarmLampPool } from '../three/lighting';
 import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { setOutdoorVisible } from '../three/outdoor';
@@ -185,9 +185,13 @@ export function useSceneEffects({
   const itemsKey = useMemo(() => furnitureItemsKey(furniturePlan), [furniturePlan]);
   const collisionKey = useMemo(() => furnitureCollisionKey(furniturePlan), [furniturePlan]);
 
-  // Every night light with its bulb in world space (#215); the string is the
-  // lighting effect's key, so a non-lamp item edit doesn't rebuild the sky.
-  const lampsKey = useMemo(() => JSON.stringify(collectLampLights(layout.floors)), [layout.floors]);
+  // Every night light on a rendered storey, bulb in world space (#215). The
+  // string is the lamp effect's key, so a non-lamp item edit doesn't touch the
+  // lights, while a floor switch or Show All Floors does.
+  const lampsKey = useMemo(
+    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex, showAllFloors: view.showAllFloors })),
+    [layout.floors, activeFloorIndex, view.showAllFloors]
+  );
 
   // Wall preview during draw mode
   useEffect(() => {
@@ -579,13 +583,43 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    const lamps = JSON.parse(lampsKey) as LampLight[];
     // The weather overcasts the same profile and tints the lot's ground (#189).
-    applyTimeOfDay(THREE, scene, view.timeOfDay, lamps, view.weather, JSON.parse(shadowBoxKey) as ShadowBox);
+    applyTimeOfDay(THREE, scene, view.timeOfDay, view.weather, JSON.parse(shadowBoxKey) as ShadowBox);
     // The sun's angle/position changed, so the (static) shadow map must be
     // recomputed or shadows would stay frozen at the previous time of day.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, lampsKey, shadowBoxKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, shadowBoxKey]);
+
+  // Lamps (#393): a fixed pool of point lights given to the lamps nearest
+  // where the camera looks, re-assigned on an hour step, a lamp edit, and
+  // when a camera move ends — never per frame. Point lights cast no shadow,
+  // so neither the sky nor the shadow map is rebuilt here.
+  const lampLevel = computeSkyProfile(view.timeOfDay).lamps;
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const scene = sceneRef.current;
+    const controls = controlsRef.current;
+    if (!scene) return;
+
+    const lamps = JSON.parse(lampsKey) as LampLight[];
+    const assign = () => {
+      const focus = controls?.target ?? { x: 0, y: 0, z: 0 };
+      applyLampPool(scene, planLampPool(lamps, focus, lampLevel));
+      invalidate();
+    };
+    assign();
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    // Before dusk, compile the lit-pool shaders so the lamps come on without
+    // a stall; repeated each hour step, it only compiles what is new.
+    if (lampLevel === 0 && lamps.length > 0 && isLampPrewarmHour(view.timeOfDay) && renderer && camera) {
+      prewarmLampPool(renderer, scene, camera);
+    }
+    if (!controls || lampLevel === 0) return;
+    controls.addEventListener('end', assign);
+    return () => controls.removeEventListener('end', assign);
+  }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, lampLevel, view.timeOfDay]);
 
   // Outdoor
   useEffect(() => {

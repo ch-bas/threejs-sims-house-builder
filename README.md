@@ -366,7 +366,7 @@ components/
     │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
     │   ├── sun-shadow.ts                Shadow-caster box + sun shadow-camera fit (#282)
-    │   ├── night-lights.ts              Which items light the night, bulb heights, candela (#215)
+    │   ├── night-lights.ts              Which items light the night, bulb heights, candela; the lamp pool (#215, #393)
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
@@ -539,9 +539,11 @@ components/
   environment, hemisphere, and ambient intensities are driven by the
   time-of-day system and fade through twilight, so nights stay dark. The
   sun's shadow camera is fitted to a box around every shadow caster (house,
-  roof, trees, the street), and every lamp keeps a PointLight at zero
-  intensity by day so the light count, and with it the compiled shaders,
-  stays the same at dusk. Procedural CanvasTextures get max anisotropy + sRGB tagging so
+  roof, trees, the street). Lamps share a fixed pool of eight point
+  lights, given to the lamps on the drawn storeys nearest where the camera
+  looks; the pool is drawn only while a lamp is lit, so days carry no point
+  lights at all, and its shaders are compiled in the hours before dusk so
+  nightfall and lamp edits never recompile them. Procedural CanvasTextures get max anisotropy + sRGB tagging so
   floors and walls don't shimmer at grazing angles in walkthrough mode.
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is

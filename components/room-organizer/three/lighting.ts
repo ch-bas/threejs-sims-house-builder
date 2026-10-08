@@ -1,7 +1,6 @@
+import { LAMP_POOL_SIZE, type LampPoolPlan } from '../lib/night-lights';
 import { fitSunShadow, type ShadowBox, type SunShadowFit, type Vec3 } from '../lib/sun-shadow';
-import { removeAndDispose } from './builder-utils';
 import { applyOutdoorWeather } from './outdoor';
-import type { LampLight } from '../lib/night-lights';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -11,7 +10,7 @@ export const LIGHTING_TAGS = {
   Ambient: 'light:ambient',
   Directional: 'light:directional',
   Hemisphere: 'light:hemi',
-  Lamp: 'light:lamp',
+  LampPool: 'light:lamp-pool',
   Stars: 'sky:stars',
   Moon: 'sky:moon',
 } as const;
@@ -38,6 +37,9 @@ export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
   directional.castShadow = true;
   directional.shadow.mapSize.set(2048, 2048);
   directional.shadow.bias = -0.0005;
+  // Offsets the lookup along the normal: with the fitted frustum and the PCF
+  // blur, sun-facing walls otherwise speckle with self-shadow acne (#379).
+  directional.shadow.normalBias = 0.03;
   // PCFShadowMap blurs over `radius` shadow-map texels (#379).
   directional.shadow.radius = 3;
   directional.userData.type = LIGHTING_TAGS.Directional;
@@ -45,6 +47,13 @@ export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
   // renders, so it stays out of the scene graph and is updated by hand.
   placeSun(directional, fitSunShadow([7, 14, 6], DEFAULT_SHADOW_BOX));
   scene.add(directional);
+
+  // The lamps' fixed pool of point lights (#393), hidden until a lamp lights.
+  const pool = new THREE.Group();
+  pool.userData.type = LIGHTING_TAGS.LampPool;
+  pool.visible = false;
+  for (let i = 0; i < LAMP_POOL_SIZE; i++) pool.add(new THREE.PointLight(LAMP_COLOR, 0, 1, 2));
+  scene.add(pool);
 }
 
 /**
@@ -73,7 +82,6 @@ export function applyTimeOfDay(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
   hour: number,
-  lamps: ReadonlyArray<LampLight>,
   weather: Weather = 'clear',
   shadowBox: ShadowBox = DEFAULT_SHADOW_BOX
 ): void {
@@ -111,38 +119,59 @@ export function applyTimeOfDay(
       placeSun(light, fitSunShadow(profile.sun.position, shadowBox));
     }
   }
-
-  syncLampLights(THREE, scene, lamps, profile.lamps);
-}
-
-/**
- * One PointLight per lamp, kept alive at intensity 0 by day (#393): three
- * keys its shader programs on the number of point lights, so creating them
- * at dusk recompiled every material variant on the first night frame. The
- * count only changes when a lamp is placed or removed.
- */
-function syncLampLights(
-  THREE: ThreeModule,
-  scene: ThreeNS.Scene,
-  lamps: ReadonlyArray<LampLight>,
-  level: number
-): void {
-  const existing = scene.children.filter((obj) => obj.userData.type === LIGHTING_TAGS.Lamp) as ThreeNS.PointLight[];
-  existing.slice(lamps.length).forEach((obj) => removeAndDispose(scene, obj));
-  lamps.forEach((lamp, index) => {
-    let point = existing[index];
-    if (!point) {
-      point = new THREE.PointLight(LAMP_COLOR, 0, lamp.range, 2);
-      point.userData.type = LIGHTING_TAGS.Lamp;
-      scene.add(point);
-    }
-    point.position.set(lamp.x, lamp.y, lamp.z);
-    point.distance = lamp.range;
-    point.intensity = lamp.candela * level;
-  });
 }
 
 const LAMP_COLOR = 0xffd180;
+
+function lampPool(scene: ThreeNS.Scene): ThreeNS.Group | undefined {
+  return scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.LampPool) as ThreeNS.Group | undefined;
+}
+
+/**
+ * Point the lamp pool at the lamps `plan` picked (#393). The pool is drawn
+ * only while a lamp is lit, so by day the shaders carry no point lights at
+ * all; its size never changes, so placing or deleting a lamp never
+ * recompiles them. Point lights cast no shadows: the shadow map stays.
+ */
+export function applyLampPool(scene: ThreeNS.Scene, plan: LampPoolPlan): void {
+  const pool = lampPool(scene);
+  if (!pool) return;
+  pool.visible = plan.lit;
+  pool.children.forEach((child, index) => {
+    const light = child as ThreeNS.PointLight;
+    const slot = plan.slots[index];
+    if (!slot) return;
+    light.position.set(slot.x, slot.y, slot.z);
+    light.intensity = slot.intensity;
+    light.distance = slot.distance;
+  });
+}
+
+/**
+ * Compile the night (pool lit) shader variants ahead of dusk, so the first
+ * lamp-lit frame doesn't stall on shader compilation (#393). Each material
+ * keeps both variants, so switching between day and night afterwards only
+ * swaps programs. A no-op while the pool is already drawn.
+ */
+export function prewarmLampPool(renderer: ThreeNS.WebGLRenderer, scene: ThreeNS.Scene, camera: ThreeNS.Camera): void {
+  const pool = lampPool(scene);
+  if (!pool || pool.visible) return;
+  pool.visible = true;
+  try {
+    renderer.compile(scene, camera);
+  } finally {
+    pool.visible = false;
+  }
+}
+
+/** Hours before sunset in which the lamp pool's shaders are compiled. */
+const LAMP_PREWARM_HOURS = 3;
+
+/** Whether `hour` is in the stretch of afternoon that pre-warms the lamps' shaders. */
+export function isLampPrewarmHour(hour: number): boolean {
+  const time = ((hour % 24) + 24) % 24;
+  return time >= 18 - LAMP_PREWARM_HOURS && time <= 18;
+}
 
 function placeSun(light: ThreeNS.DirectionalLight, fit: SunShadowFit): void {
   light.position.set(fit.position[0], fit.position[1], fit.position[2]);
