@@ -393,6 +393,19 @@ function fittedFloorPlan(
   return canvas;
 }
 
+/** A 1×1 canvas of `color`, or null outside a browser. */
+function solidCanvas(color: string): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 1, 1);
+  return canvas;
+}
+
 function buildFloorPlanMaterial(
   THREE: ThreeModule,
   options: RoomBuilderOptions,
@@ -401,7 +414,14 @@ function buildFloorPlanMaterial(
   // Both textures start empty and receive their composite together once the
   // plan is decoded (synchronously on a warm cache). The map is sRGB like
   // every other albedo texture (#383); the displacement stays linear data.
+  // Until the plan decodes the map is the floor colour: an empty texture
+  // samples as black on this opaque material, a black flash on every load.
   const map = new THREE.Texture();
+  const placeholder = solidCanvas(options.floorColor);
+  if (placeholder) {
+    map.image = placeholder;
+    map.needsUpdate = true;
+  }
   map.colorSpace = THREE.SRGBColorSpace;
   map.anisotropy = getMaxAnisotropy();
   const displacement = options.floorPlan3DEffect ? new THREE.Texture() : null;
@@ -512,10 +532,10 @@ function buildWalls(
     const size = divisions * GRID_SIZE_METERS;
     const grid = new THREE.GridHelper(size, divisions);
     // Lines and triangles rasterise depth differently, so a grid coplanar
-    // with the floor z-fought through it; lift it clear and keep it out of
-    // the depth buffer (#371).
+    // with the floor z-fought through it; lift it clear (#371). It still
+    // writes depth: without that, ground meshes drawn after it painted over
+    // its lines outside the house.
     grid.position.y = SNAP_GRID_FLOOR_GAP;
-    grid.material.depthWrite = false;
     grid.userData.type = ROOM_OBJECT_TAGS.Wall;
     makeStatic(grid);
     scene.add(grid);

@@ -3,6 +3,7 @@ import { reloadOnceForChunkError } from '../lib/chunk-reload';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { addLights } from '../three/lighting';
+import { clearFloorPlanImageCache } from '../three/room-builder';
 import { setMaxAnisotropy } from '../three/texture-settings';
 import type { SceneEventHandlers } from '../three/drag-handlers';
 import type * as ThreeNS from 'three';
@@ -173,6 +174,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       // moon, furniture, shell, instanced outdoor meshes, sky background)
       // while the renderer still tracks their GL handles (#213).
       cleanup.push(() => disposeScene(scene));
+      // The fitted floor-plan composites are module-level and can be 64 MB
+      // apiece; nothing else drops them once the editor is gone.
+      cleanup.push(() => clearFloorPlanImageCache());
 
       // Image-based lighting from a neutral studio environment. This is what
       // makes MeshStandardMaterial respond with believable specular/diffuse
