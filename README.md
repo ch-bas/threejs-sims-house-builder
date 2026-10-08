@@ -540,10 +540,11 @@ components/
   time-of-day system and fade through twilight, so nights stay dark. The
   sun's shadow camera is fitted to a box around every shadow caster (house,
   roof, trees, the street). Lamps share a fixed pool of eight point
-  lights, given to the lamps on the drawn storeys nearest where the camera
-  looks; the pool is drawn only while a lamp is lit, so days carry no point
-  lights at all, and its shaders are compiled in the hours before dusk so
-  nightfall and lamp edits never recompile them. Procedural CanvasTextures get max anisotropy + sRGB tagging so
+  lights, given to the lamps on the drawn storeys nearest the viewer (the
+  orbit target, or the walker); the pool is drawn only while a lamp is lit,
+  so days carry no point lights at all, and its shaders are compiled in the
+  hours before dusk, so stepping through dusk and editing lamps don't
+  recompile them (a direct jump from day to night compiles once). Procedural CanvasTextures get max anisotropy + sRGB tagging so
   floors and walls don't shimmer at grazing angles in walkthrough mode.
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is

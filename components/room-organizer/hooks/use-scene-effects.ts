@@ -5,7 +5,7 @@ import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { furnitureCollisionKey, furnitureItemsKey, planFurniture } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
-import { collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
+import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
@@ -54,6 +54,9 @@ export function otherFloorGhostOpacity(
 function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
   fadeGroup(group, opacity);
 }
+
+/** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
+const LAMP_REASSIGN_DISTANCE = 1;
 
 export interface UseSceneEffectsParams {
   isReady: boolean;
@@ -591,24 +594,32 @@ export function useSceneEffects({
   }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, shadowBoxKey]);
 
   // Lamps (#393): a fixed pool of point lights given to the lamps nearest
-  // where the camera looks, re-assigned on an hour step, a lamp edit, and
-  // when a camera move ends — never per frame. Point lights cast no shadow,
-  // so neither the sky nor the shadow map is rebuilt here.
+  // where the viewer is — the orbit target, or the walker in walkthrough —
+  // re-assigned on an hour step, a lamp edit, and, at night with more lamps
+  // than lights, when that point has moved a metre: a cheap check every
+  // 400 ms catches orbit gestures, presets, floor switches and walking alike,
+  // never per frame. Point lights cast no shadow, so neither the sky nor the
+  // shadow map is rebuilt here.
   const lampLevel = computeSkyProfile(view.timeOfDay).lamps;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
     const scene = sceneRef.current;
-    const controls = controlsRef.current;
     if (!scene) return;
 
     const lamps = JSON.parse(lampsKey) as LampLight[];
-    const assign = () => {
-      const focus = controls?.target ?? { x: 0, y: 0, z: 0 };
+    const focusPoint = (): { x: number; y: number; z: number } => {
+      const camera = cameraRef.current;
+      const target = walkthroughActive ? camera?.position : controlsRef.current?.target;
+      return target ? { x: target.x, y: target.y, z: target.z } : { x: 0, y: 0, z: 0 };
+    };
+    let last = focusPoint();
+    const assign = (focus: { x: number; y: number; z: number }) => {
+      last = focus;
       applyLampPool(scene, planLampPool(lamps, focus, lampLevel));
       invalidate();
     };
-    assign();
+    assign(last);
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     // Before dusk, compile the lit-pool shaders so the lamps come on without
@@ -616,10 +627,14 @@ export function useSceneEffects({
     if (lampLevel === 0 && lamps.length > 0 && isLampPrewarmHour(view.timeOfDay) && renderer && camera) {
       prewarmLampPool(renderer, scene, camera);
     }
-    if (!controls || lampLevel === 0) return;
-    controls.addEventListener('end', assign);
-    return () => controls.removeEventListener('end', assign);
-  }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, lampLevel, view.timeOfDay]);
+    // With no more lamps than lights every lamp is lit wherever you look.
+    if (lampLevel === 0 || lamps.length <= LAMP_POOL_SIZE) return;
+    const timer = window.setInterval(() => {
+      const focus = focusPoint();
+      if (Math.hypot(focus.x - last.x, focus.y - last.y, focus.z - last.z) > LAMP_REASSIGN_DISTANCE) assign(focus);
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, lampLevel, view.timeOfDay, walkthroughActive]);
 
   // Outdoor
   useEffect(() => {
