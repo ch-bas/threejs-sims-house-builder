@@ -5,10 +5,12 @@ import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { furnitureCollisionKey, furnitureItemsKey, planFurniture } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
+import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
+import { shadowCasterBounds, type ShadowBox } from '../lib/sun-shadow';
 import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from '../lib/walkthrough-view';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones } from '../three/camera-vision';
@@ -24,7 +26,7 @@ import {
   renderInteriorWallPreview,
 } from '../three/interior-walls';
 import { clearItemLabels, renderItemLabels } from '../three/item-labels';
-import { applyTimeOfDay } from '../three/lighting';
+import { applyLampPool, applyTimeOfDay, computeSkyProfile, isLampPrewarmHour, prewarmLampPool } from '../three/lighting';
 import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { setOutdoorVisible } from '../three/outdoor';
@@ -52,6 +54,9 @@ export function otherFloorGhostOpacity(
 function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
   fadeGroup(group, opacity);
 }
+
+/** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
+const LAMP_REASSIGN_DISTANCE = 1;
 
 export interface UseSceneEffectsParams {
   isReady: boolean;
@@ -183,16 +188,12 @@ export function useSceneEffects({
   const itemsKey = useMemo(() => furnitureItemsKey(furniturePlan), [furniturePlan]);
   const collisionKey = useMemo(() => furnitureCollisionKey(furniturePlan), [furniturePlan]);
 
+  // Every night light on a rendered storey, bulb in world space (#215). The
+  // string is the lamp effect's key, so a non-lamp item edit doesn't touch the
+  // lights, while a floor switch or Show All Floors does.
   const lampsKey = useMemo(
-    () =>
-      JSON.stringify(
-        layout.floors.map((floor) =>
-          floor.items
-            .filter((item) => (item.type === 'lamp' || item.type === 'floor-lamp') && item.position)
-            .map((item) => [item.position!.x, item.position!.z, item.height])
-        )
-      ),
-    [layout.floors]
+    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex, showAllFloors: view.showAllFloors })),
+    [layout.floors, activeFloorIndex, view.showAllFloors]
   );
 
   // Wall preview during draw mode
@@ -565,7 +566,19 @@ export function useSceneEffects({
     view.showWiFiSignals, view.showCameraVision, view.showAllFloors,
   ]);
 
-  // Lighting
+  // Lighting. The sun's shadow camera is fitted to everything that casts a
+  // shadow (#282); the box is a string so the effect keys on its value.
+  const shadowBoxKey = JSON.stringify(
+    shadowCasterBounds({
+      width: layout.width,
+      depth: layout.height,
+      eavesY: buildingHeight(layout.floors),
+      storeys: layout.floors.length,
+      ...(layout.terrain ? { terrain: layout.terrain } : {}),
+      ...(layout.frontage ? { frontage: layout.frontage } : {}),
+      ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
+    })
+  );
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -573,28 +586,55 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    const lampPositions = layout.floors.flatMap((floor, index) =>
-      floor.items
-        .filter((item) => (item.type === 'lamp' || item.type === 'floor-lamp') && item.position)
-        .map((item) => ({
-          x: item.position!.x,
-          z: item.position!.z,
-          // The 0.9 bulb factor belongs to the lamp's own height only —
-          // applied after the floor offset it sank upper-floor glows 0.3 m
-          // per storey, lighting the floor below (#146).
-          height: item.height * 0.9 + floorElevation(layout.floors, index),
-        }))
-    );
-
     // The weather overcasts the same profile and tints the lot's ground (#189).
-    applyTimeOfDay(THREE, scene, view.timeOfDay, lampPositions, view.weather);
+    applyTimeOfDay(THREE, scene, view.timeOfDay, view.weather, JSON.parse(shadowBoxKey) as ShadowBox);
     // The sun's angle/position changed, so the (static) shadow map must be
     // recomputed or shadows would stay frozen at the previous time of day.
     requestShadowUpdate();
-    // layout.floors is read for lamp positions only; lampsKey covers exactly
-    // that, so a non-lamp item edit doesn't rebuild the sky and lights.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, lampsKey, storeyHeightsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.timeOfDay, view.weather, shadowBoxKey]);
+
+  // Lamps (#393): a fixed pool of point lights given to the lamps nearest
+  // where the viewer is — the orbit target, or the walker in walkthrough —
+  // re-assigned on an hour step, a lamp edit, and, at night with more lamps
+  // than lights, when that point has moved a metre: a cheap check every
+  // 400 ms catches orbit gestures, presets, floor switches and walking alike,
+  // never per frame. Point lights cast no shadow, so neither the sky nor the
+  // shadow map is rebuilt here.
+  const lampLevel = computeSkyProfile(view.timeOfDay).lamps;
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const lamps = JSON.parse(lampsKey) as LampLight[];
+    const focusPoint = (): { x: number; y: number; z: number } => {
+      const camera = cameraRef.current;
+      const target = walkthroughActive ? camera?.position : controlsRef.current?.target;
+      return target ? { x: target.x, y: target.y, z: target.z } : { x: 0, y: 0, z: 0 };
+    };
+    let last = focusPoint();
+    const assign = (focus: { x: number; y: number; z: number }) => {
+      last = focus;
+      applyLampPool(scene, planLampPool(lamps, focus, lampLevel));
+      invalidate();
+    };
+    assign(last);
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    // Before dusk, compile the lit-pool shaders so the lamps come on without
+    // a stall; repeated each hour step, it only compiles what is new.
+    if (lampLevel === 0 && lamps.length > 0 && isLampPrewarmHour(view.timeOfDay) && renderer && camera) {
+      prewarmLampPool(renderer, scene, camera);
+    }
+    // With no more lamps than lights every lamp is lit wherever you look.
+    if (lampLevel === 0 || lamps.length <= LAMP_POOL_SIZE) return;
+    const timer = window.setInterval(() => {
+      const focus = focusPoint();
+      if (Math.hypot(focus.x - last.x, focus.y - last.y, focus.z - last.z) > LAMP_REASSIGN_DISTANCE) assign(focus);
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, lampLevel, view.timeOfDay, walkthroughActive]);
 
   // Outdoor
   useEffect(() => {

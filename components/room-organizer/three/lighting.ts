@@ -1,4 +1,5 @@
-import { removeAndDispose } from './builder-utils';
+import { LAMP_POOL_SIZE, type LampPoolPlan } from '../lib/night-lights';
+import { fitSunShadow, type ShadowBox, type SunShadowFit, type Vec3 } from '../lib/sun-shadow';
 import { applyOutdoorWeather } from './outdoor';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -9,10 +10,13 @@ export const LIGHTING_TAGS = {
   Ambient: 'light:ambient',
   Directional: 'light:directional',
   Hemisphere: 'light:hemi',
-  Lamp: 'light:lamp',
+  LampPool: 'light:lamp-pool',
   Stars: 'sky:stars',
   Moon: 'sky:moon',
 } as const;
+
+/** Shadow casters before the first layout-driven fit: the lot of the default house. */
+const DEFAULT_SHADOW_BOX: ShadowBox = { min: [-24, 0, -24], max: [24, 12, 24] };
 
 /**
  * Base scene lights, tagged so `applyTimeOfDay` below can find and re-drive
@@ -21,7 +25,7 @@ export const LIGHTING_TAGS = {
 export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
   // Hemisphere fill gives the bright sky / warm ground bounce a suburban lot
   // reads with — without it everything in shadow goes flat-grey.
-  const hemi = new THREE.HemisphereLight(0xbfe5ff, 0xa07a48, 0.55);
+  const hemi = new THREE.HemisphereLight(0xbfe5ff, 0xa07a48, HEMI_NOON_INTENSITY);
   hemi.userData.type = LIGHTING_TAGS.Hemisphere;
   scene.add(hemi);
 
@@ -30,21 +34,26 @@ export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
   scene.add(ambient);
 
   const directional = new THREE.DirectionalLight(0xfff4d1, 1.05);
-  directional.position.set(7, 14, 6);
   directional.castShadow = true;
-  // Frustum large enough to cover the lot + the outdoor perimeter so trees
-  // and the room walls all cast contact shadows on the grass.
-  const shadowExtent = 24;
-  directional.shadow.camera.left = -shadowExtent;
-  directional.shadow.camera.right = shadowExtent;
-  directional.shadow.camera.top = shadowExtent;
-  directional.shadow.camera.bottom = -shadowExtent;
-  directional.shadow.camera.near = 1;
-  directional.shadow.camera.far = 60;
   directional.shadow.mapSize.set(2048, 2048);
   directional.shadow.bias = -0.0005;
+  // Offsets the lookup along the normal: with the fitted frustum and the PCF
+  // blur, sun-facing walls otherwise speckle with self-shadow acne (#379).
+  directional.shadow.normalBias = 0.03;
+  // PCFShadowMap blurs over `radius` shadow-map texels (#379).
+  directional.shadow.radius = 3;
   directional.userData.type = LIGHTING_TAGS.Directional;
+  // The target only feeds the light's direction and shadow camera; it never
+  // renders, so it stays out of the scene graph and is updated by hand.
+  placeSun(directional, fitSunShadow([7, 14, 6], DEFAULT_SHADOW_BOX));
   scene.add(directional);
+
+  // The lamps' fixed pool of point lights (#393), hidden until a lamp lights.
+  const pool = new THREE.Group();
+  pool.userData.type = LIGHTING_TAGS.LampPool;
+  pool.visible = false;
+  for (let i = 0; i < LAMP_POOL_SIZE; i++) pool.add(new THREE.PointLight(LAMP_COLOR, 0, 1, 2));
+  scene.add(pool);
 }
 
 /**
@@ -61,26 +70,20 @@ export const TIME_PRESETS = {
 
 export type TimePresetKey = keyof typeof TIME_PRESETS;
 
-export interface LampPosition {
-  x: number;
-  z: number;
-  height: number;
-}
-
 /**
  * Apply a continuous time-of-day to the scene's lighting. Sun rises in the
- * east at hour 6, peaks at hour 12, sets in the west at hour 18; nighttime
- * (18..6) dims the sky and triggers warm point lights at every placed lamp.
- * The weather overcasts the same profile (#189), so rain and snow keep the
- * sky, sun, and ambient consistent along the whole hour ramp; 'clear' is
- * the profile untouched.
+ * east at hour 6, peaks at hour 12, sets in the west at hour 18; the light
+ * fades through twilight after it and the lamps come up as it goes. The
+ * weather overcasts the same profile (#189), so rain and snow keep the sky,
+ * sun, and ambient consistent along the whole hour ramp; 'clear' is the
+ * profile untouched. `shadowBox` bounds the sun's shadow casters (#282).
  */
 export function applyTimeOfDay(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
   hour: number,
-  lampPositions: ReadonlyArray<LampPosition>,
-  weather: Weather = 'clear'
+  weather: Weather = 'clear',
+  shadowBox: ShadowBox = DEFAULT_SHADOW_BOX
 ): void {
   const time = ((hour % 24) + 24) % 24;
   const profile = computeSkyProfile(time, weather);
@@ -94,50 +97,109 @@ export function applyTimeOfDay(
   if (previousBackground && (previousBackground as ThreeNS.Texture).isTexture) {
     (previousBackground as ThreeNS.Texture).dispose();
   }
-  // Scale image-based lighting with the ambient profile so the environment
-  // map brightens days without washing out nights (0.18 night .. 0.65 noon).
-  scene.environmentIntensity = profile.ambient.intensity * 0.9;
+  scene.environmentIntensity = profile.environment;
 
   for (const obj of scene.children) {
     const tag = obj.userData.type as string | undefined;
     if (tag === LIGHTING_TAGS.Ambient) {
       const light = obj as ThreeNS.AmbientLight;
-      light.color = new THREE.Color(profile.ambient.color);
+      light.color.setHex(profile.ambient.color);
       light.intensity = profile.ambient.intensity;
+    } else if (tag === LIGHTING_TAGS.Hemisphere) {
+      // Driven with the ambient, or it lit every night with a constant
+      // sky-blue fill brighter than all the other lights together (#375).
+      const light = obj as ThreeNS.HemisphereLight;
+      light.color.setHex(profile.hemisphere.sky);
+      light.groundColor.setHex(profile.hemisphere.ground);
+      light.intensity = profile.hemisphere.intensity;
     } else if (tag === LIGHTING_TAGS.Directional) {
       const light = obj as ThreeNS.DirectionalLight;
-      light.color = new THREE.Color(profile.sun.color);
+      light.color.setHex(profile.sun.color);
       light.intensity = profile.sun.intensity;
-      light.position.set(profile.sun.position[0], profile.sun.position[1], profile.sun.position[2]);
-    }
-  }
-
-  // Replace any prior lamp point-lights with a fresh set for the current time.
-  scene.children
-    .filter((obj) => obj.userData.type === LIGHTING_TAGS.Lamp)
-    .forEach((obj) => removeAndDispose(scene, obj));
-
-  const nightFactor = nightIntensity(time);
-  if (nightFactor > 0 && lampPositions.length > 0) {
-    const color = 0xffd180;
-    const baseIntensity = 1.6;
-    const distance = 6;
-    for (const lamp of lampPositions) {
-      const point = new THREE.PointLight(color, baseIntensity * nightFactor, distance, 2);
-      point.position.set(lamp.x, lamp.height, lamp.z);
-      point.userData.type = LIGHTING_TAGS.Lamp;
-      scene.add(point);
+      placeSun(light, fitSunShadow(profile.sun.position, shadowBox));
     }
   }
 }
 
-interface SkyProfile {
+const LAMP_COLOR = 0xffd180;
+
+function lampPool(scene: ThreeNS.Scene): ThreeNS.Group | undefined {
+  return scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.LampPool) as ThreeNS.Group | undefined;
+}
+
+/**
+ * Point the lamp pool at the lamps `plan` picked (#393). The pool is drawn
+ * only while a lamp is lit, so by day the shaders carry no point lights at
+ * all; its size never changes, so placing or deleting a lamp never
+ * recompiles them. Point lights cast no shadows: the shadow map stays.
+ */
+export function applyLampPool(scene: ThreeNS.Scene, plan: LampPoolPlan): void {
+  const pool = lampPool(scene);
+  if (!pool) return;
+  pool.visible = plan.lit;
+  pool.children.forEach((child, index) => {
+    const light = child as ThreeNS.PointLight;
+    const slot = plan.slots[index];
+    if (!slot) return;
+    light.position.set(slot.x, slot.y, slot.z);
+    light.intensity = slot.intensity;
+    light.distance = slot.distance;
+  });
+}
+
+/**
+ * Compile the night (pool lit) shader variants ahead of dusk, so the first
+ * lamp-lit frame doesn't stall on shader compilation (#393). Each material
+ * keeps both variants, so switching between day and night afterwards only
+ * swaps programs. A no-op while the pool is already drawn.
+ */
+export function prewarmLampPool(renderer: ThreeNS.WebGLRenderer, scene: ThreeNS.Scene, camera: ThreeNS.Camera): void {
+  const pool = lampPool(scene);
+  if (!pool || pool.visible) return;
+  pool.visible = true;
+  try {
+    renderer.compile(scene, camera);
+  } finally {
+    pool.visible = false;
+  }
+}
+
+/** Hours before sunset in which the lamp pool's shaders are compiled. */
+const LAMP_PREWARM_HOURS = 3;
+
+/** Whether `hour` is in the stretch of afternoon that pre-warms the lamps' shaders. */
+export function isLampPrewarmHour(hour: number): boolean {
+  const time = ((hour % 24) + 24) % 24;
+  return time >= 18 - LAMP_PREWARM_HOURS && time <= 18;
+}
+
+function placeSun(light: ThreeNS.DirectionalLight, fit: SunShadowFit): void {
+  light.position.set(fit.position[0], fit.position[1], fit.position[2]);
+  light.target.position.set(fit.target[0], fit.target[1], fit.target[2]);
+  light.target.updateMatrixWorld();
+  const camera = light.shadow.camera;
+  camera.left = fit.left;
+  camera.right = fit.right;
+  camera.top = fit.top;
+  camera.bottom = fit.bottom;
+  camera.near = fit.near;
+  camera.far = fit.far;
+  camera.updateProjectionMatrix();
+}
+
+export interface SkyProfile {
   ambient: { color: number; intensity: number };
-  sun: { color: number; intensity: number; position: readonly [number, number, number] };
+  hemisphere: { sky: number; ground: number; intensity: number };
+  /** `position` is a direction toward the sun; its length is meaningless. */
+  sun: { color: number; intensity: number; position: Vec3 };
+  /** `scene.environmentIntensity` for the neutral studio IBL. */
+  environment: number;
   /** Horizon colour (bottom of the sky gradient). */
   background: number;
   /** Zenith colour (top of the sky gradient). */
   backgroundTop: number;
+  /** 0..1 share of each lamp's full night intensity. */
+  lamps: number;
 }
 
 /**
@@ -165,7 +227,14 @@ export function computeSkyProfile(hour: number, weather: Weather = 'clear'): Sky
   if (weather === 'clear') return clear;
   const cast = OVERCAST[weather];
   return {
+    ...clear,
     ambient: { color: clear.ambient.color, intensity: clear.ambient.intensity * cast.ambient },
+    environment: clear.environment * cast.ambient,
+    hemisphere: {
+      sky: overcastHex(clear.hemisphere.sky, cast.grey, cast.lift),
+      ground: clear.hemisphere.ground,
+      intensity: clear.hemisphere.intensity * cast.ambient,
+    },
     sun: { ...clear.sun, intensity: clear.sun.intensity * cast.sun },
     background: overcastHex(clear.background, cast.grey, cast.lift),
     backgroundTop: overcastHex(clear.backgroundTop, cast.grey, cast.lift),
@@ -182,33 +251,50 @@ function overcastHex(hex: number, grey: number, lift: number): number {
   return (channel(r) << 16) | (channel(g) << 8) | channel(b);
 }
 
+/** Hours past sunset (and before sunrise) over which the light fades to full night (#215). */
+const TWILIGHT_HOURS = 1.5;
+const DUSK_SUN = 0.2;
+const DUSK_AMBIENT = 0.35;
+const NOON_AMBIENT = 0.65;
+const NIGHT_AMBIENT = 0.14;
+const HEMI_NOON_INTENSITY = 0.55;
+const NIGHT_ENVIRONMENT_SHARE = 0.3;
+/** Moonlit blues the night ambient and sky fill settle on. */
+const NIGHT_AMBIENT_COLOR = 0x33447a;
+const NIGHT_HEMI_SKY = 0x3a4a80;
+const NIGHT_HEMI_GROUND = 0x241c14;
+
 function computeClearSkyProfile(hour: number): SkyProfile {
   const dayFraction = clamp01((hour - 6) / 12); // 0 at 06:00, 1 at 18:00
   const sunAboveHorizon = hour >= 6 && hour <= 18;
+  // Distance to the NEAREST sun event, 0 all day. Keyed on that rather than
+  // on `hour`, so midnight is the darkest point of the night (#145).
+  const hoursFromSun = sunAboveHorizon ? 0 : hour < 6 ? 6 - hour : hour - 18;
+  // 1 while the sun is up, easing to 0 over twilight: the lights fade with
+  // the sky instead of snapping at 06:00/18:00 (#215).
+  const daylight = smoothstep01(1 - hoursFromSun / TWILIGHT_HOURS);
+  // The slower sky glow: fades out over 18..22, lifts again 02..06.
+  const glow = clamp01(1 - hoursFromSun / 4);
 
   // Sun arcs across the sky from east (-x) to west (+x), peaking at y.
   const azimuth = (dayFraction - 0.5) * Math.PI; // -π/2..π/2
   const elevation = sunAboveHorizon ? Math.sin(dayFraction * Math.PI) : 0;
-  const sunDistance = 10;
-  const position: [number, number, number] = [
-    Math.sin(azimuth) * sunDistance,
-    elevation * sunDistance + 1,
-    Math.cos(azimuth) * sunDistance * 0.5,
-  ];
+  const position: Vec3 = [Math.sin(azimuth) * 10, elevation * 10 + 1, Math.cos(azimuth) * 5];
 
-  // Warmth: high at sunrise/sunset, low at noon (white) and night (cool blue).
-  const warmth = sunAboveHorizon
-    ? Math.pow(1 - Math.abs(dayFraction - 0.5) * 2, 2) // peaks at 06 and 18
-    : 0;
+  // Warmth: high at sunrise/sunset, low at noon (white); the afterglow keeps it.
+  const warmth = sunAboveHorizon ? Math.pow(1 - Math.abs(dayFraction - 0.5) * 2, 2) : 1;
   const noonness = sunAboveHorizon ? Math.sin(dayFraction * Math.PI) : 0;
 
   const sunColor = mixHex(0xffffff, 0xff8a50, warmth * 0.7);
-  const sunIntensity = sunAboveHorizon ? 0.2 + noonness * 0.7 : 0;
+  const sunIntensity = sunAboveHorizon ? DUSK_SUN + noonness * 0.7 : DUSK_SUN * daylight;
 
-  const nightAmbient = mixHex(0x6a7fb7, 0x12172e, 1 - clamp01(elevation * 3));
   const dayAmbient = mixHex(0xffd29a, 0xffffff, noonness);
-  const ambientColor = sunAboveHorizon ? dayAmbient : nightAmbient;
-  const ambientIntensity = sunAboveHorizon ? 0.35 + noonness * 0.3 : 0.18;
+  // Dusk blue deepening to moonlit navy as the glow goes.
+  const nightAmbient = mixHex(NIGHT_AMBIENT_COLOR, 0x6a7fb7, glow);
+  const ambientColor = sunAboveHorizon ? dayAmbient : mixHex(nightAmbient, 0xffd29a, daylight);
+  const ambientIntensity = sunAboveHorizon
+    ? DUSK_AMBIENT + noonness * (NOON_AMBIENT - DUSK_AMBIENT)
+    : NIGHT_AMBIENT + (DUSK_AMBIENT - NIGHT_AMBIENT) * daylight;
 
   // Horizon (bottom) and zenith (top) pairs per phase. The zenith is always
   // deeper/more saturated than the horizon, which is what makes a sky read
@@ -219,29 +305,36 @@ function computeClearSkyProfile(hour: number): SkyProfile {
   const zenithNight = 0x0a0e22;
   const zenithDay = 0x5d9fe2;
   const zenithDusk = 0x8478c0;
-  let background = horizonNight;
-  let backgroundTop = zenithNight;
+  let background: number;
+  let backgroundTop: number;
+  let hemiSky: number;
   if (sunAboveHorizon) {
     background = mixHex(horizonDusk, horizonDay, noonness);
     backgroundTop = mixHex(zenithDusk, zenithDay, noonness);
+    hemiSky = mixHex(zenithDusk, 0xbfe5ff, noonness);
   } else {
-    // Twilight glow keyed on the distance to the NEAREST sun event: fades
-    // out over 18..22, holds full night 22..02, lifts 02..06, and meets the
-    // day branch's full-dusk colour exactly at 06:00/18:00 so there's no
-    // snap at the horizon. The old expression used `hour` — time since
-    // midnight, not distance to dawn — which made midnight the brightest
-    // point of the night and skipped the post-dusk fade entirely (#145).
-    const hoursFromSun = hour < 6 ? 6 - hour : hour - 18;
-    const glow = clamp01(1 - hoursFromSun / 4);
+    // Meets the day branch's full-dusk colours exactly at 06:00/18:00, so
+    // there's no snap at the horizon (#145).
     background = mixHex(horizonNight, horizonDusk, glow);
     backgroundTop = mixHex(zenithNight, zenithDusk, glow);
+    hemiSky = mixHex(NIGHT_HEMI_SKY, zenithDusk, glow);
   }
 
   return {
     ambient: { color: ambientColor, intensity: ambientIntensity },
+    hemisphere: {
+      sky: hemiSky,
+      ground: mixHex(NIGHT_HEMI_GROUND, 0xa07a48, daylight),
+      intensity: (HEMI_NOON_INTENSITY * ambientIntensity) / NOON_AMBIENT,
+    },
     sun: { color: sunColor, intensity: sunIntensity, position },
+    // The studio environment is white and bright: it follows the ambient by
+    // day (0.585 at noon) and drops further through twilight, or it keeps
+    // the night lot lit grey-green (#375).
+    environment: ambientIntensity * 0.9 * (NIGHT_ENVIRONMENT_SHARE + (1 - NIGHT_ENVIRONMENT_SHARE) * daylight),
     background,
     backgroundTop,
+    lamps: sunAboveHorizon ? 0 : 1 - daylight,
   };
 }
 
@@ -482,10 +575,9 @@ function hexToCss(hex: number): string {
   return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
-function nightIntensity(hour: number): number {
-  if (hour >= 6 && hour <= 18) return 0;
-  if (hour < 6) return clamp01((6 - hour) / 6);
-  return clamp01((hour - 18) / 6);
+function smoothstep01(value: number): number {
+  const t = clamp01(value);
+  return t * t * (3 - 2 * t);
 }
 
 function clamp01(value: number): number {

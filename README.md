@@ -365,6 +365,8 @@ components/
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
+    │   ├── sun-shadow.ts                Shadow-caster box + sun shadow-camera fit (#282)
+    │   ├── night-lights.ts              Which items light the night, bulb heights, candela; the lamp pool (#215, #393)
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
@@ -531,10 +533,18 @@ components/
   synchronously before reading the canvas, so `preserveDrawingBuffer`
   stays off and the renderer keeps its buffer optimisations. Scene rebuilds live in `useSceneEffects`.
 - **Filmic rendering pipeline.** ACES tone mapping, explicit sRGB output,
-  device-pixel-ratio-aware rendering (capped at 2×), PCF soft shadows, and
+  device-pixel-ratio-aware rendering (capped at 2×), PCF shadows softened
+  by the sun's `shadow.radius`, and
   image-based lighting from a PMREM-filtered `RoomEnvironment`. The
-  environment intensity is driven by the time-of-day system so nights stay
-  dark, and procedural CanvasTextures get max anisotropy + sRGB tagging so
+  environment, hemisphere, and ambient intensities are driven by the
+  time-of-day system and fade through twilight, so nights stay dark. The
+  sun's shadow camera is fitted to a box around every shadow caster (house,
+  roof, trees, the street). Lamps share a fixed pool of eight point
+  lights, given to the lamps on the drawn storeys nearest the viewer (the
+  orbit target, or the walker); the pool is drawn only while a lamp is lit,
+  so days carry no point lights at all, and its shaders are compiled in the
+  hours before dusk, so stepping through dusk and editing lamps don't
+  recompile them (a direct jump from day to night compiles once). Procedural CanvasTextures get max anisotropy + sRGB tagging so
   floors and walls don't shimmer at grazing angles in walkthrough mode.
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is
