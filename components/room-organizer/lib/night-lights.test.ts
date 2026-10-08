@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
-import { collectLampLights, isNightLit, LAMP_POOL_SIZE, nearestLamps, pendantBulbY, planLampPool, type LampLight } from './night-lights';
+import { pendantBulbY } from './mount-band';
+import { collectLampLights, isNightLit, LAMP_POOL_SIZE, nearestLamps, planLampPool, type LampLight } from './night-lights';
 import type { FloorLayout, FurnitureItem } from './types';
 
 function item(type: string, height: number, x = 1, z = 2): FurnitureItem {

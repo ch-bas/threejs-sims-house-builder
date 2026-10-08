@@ -1,6 +1,6 @@
-import { mountBand } from './mount-band';
+import { mountBand, pendantBulbY } from './mount-band';
 import { floorElevation, storeyHeight } from './storeys';
-import type { FloorLayout, FurnitureItem } from './types';
+import type { FloorLayout } from './types';
 
 /**
  * Catalog items that light their surroundings at night (#215), and how.
@@ -84,14 +84,6 @@ export function collectLampLights(floors: readonly FloorLayout[], rendered: Rend
   });
 }
 
-/**
- * A pendant's bulb height above its storey floor. It must equal where
- * buildPendantLight (three/builders/builders-lighting.ts) draws the bulb, in
- * the storey `storeyHeight` tall, so the light sits in the shade.
- */
-export function pendantBulbY(item: Pick<FurnitureItem, 'height'>, _storeyHeight: number): number {
-  return item.height * 0.35;
-}
 
 export interface LampPoolSlot {
   x: number;
