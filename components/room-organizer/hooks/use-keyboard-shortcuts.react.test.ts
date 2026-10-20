@@ -200,3 +200,49 @@ describe('useKeyboardShortcuts — walkthrough gate (#339)', () => {
     expect(calls()).toEqual(['undo', 'redo']);
   });
 });
+
+describe('useKeyboardShortcuts — focused form controls (#415)', () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  function pressOn(el: HTMLElement, key: string, init: KeyboardEventInit = {}): void {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, bubbles: true, ...init }));
+  }
+
+  function focused(tag: 'select' | 'input'): HTMLElement {
+    const el = document.createElement(tag);
+    document.body.appendChild(el);
+    el.focus();
+    return el;
+  }
+
+  it('a select left focused after a pick still passes undo and redo through', () => {
+    const { calls } = setup(false);
+    const select = focused('select');
+    pressOn(select, 'z', { ctrlKey: true });
+    pressOn(select, 'Z', { metaKey: true, shiftKey: true });
+    pressOn(select, 'y', { ctrlKey: true });
+    expect(calls()).toEqual(['undo', 'redo']);
+  });
+
+  it.each([
+    ['ArrowDown', {}],
+    ['ArrowLeft', {}],
+    ['r', {}],
+    ['2', {}],
+    ['Delete', {}],
+    ['d', { ctrlKey: true }],
+  ] as const)('a focused select keeps %s for itself', (key, init) => {
+    const { calls } = setup(false);
+    pressOn(focused('select'), key, init);
+    expect(calls()).toEqual([]);
+  });
+
+  it('a text input keeps Ctrl+Z for its own text undo', () => {
+    const { calls } = setup(false);
+    pressOn(focused('input'), 'z', { ctrlKey: true });
+    expect(calls()).toEqual([]);
+  });
+});
