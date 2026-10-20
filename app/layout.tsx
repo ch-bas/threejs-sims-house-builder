@@ -33,9 +33,9 @@ export const viewport = {
 //      (see app/page.tsx). While webpack still has a chunk <script> in flight
 //      (it tags them `data-webpack` and removes them on load or error) the
 //      download is progressing, so the watchdog waits instead of restarting a
-//      nearly finished download on a slow link (#413); a hung chunk ends in
-//      webpack's own 120 s timeout error, which the chunk-error recovery
-//      handles. The sessionStorage guard makes the reload one-shot either way.
+//      nearly finished download on a slow link (#413), up to 60 s after
+//      which it reloads anyway, so a hung chunk doesn't sit out webpack's own
+//      120 s timeout. The sessionStorage guard makes the reload one-shot.
 const CHUNK_RECOVERY_SCRIPT = `(function(){
   var K='pc-chunk-reload';
   function reloadOnce(){
@@ -53,9 +53,10 @@ const CHUNK_RECOVERY_SCRIPT = `(function(){
     var r=e&&e.reason, m=r?(r.name+' '+r.message):String(r||'');
     if(/ChunkLoadError|Loading chunk|dynamically imported module/i.test(m)) reloadOnce();
   });
+  var t0=Date.now();
   function watchdog(){
     if(window.__pcReady) return;
-    if(document.querySelector('script[data-webpack]')) { setTimeout(watchdog, 5000); return; }
+    if(Date.now()-t0<60000&&document.querySelector('script[data-webpack]')) { setTimeout(watchdog, 5000); return; }
     reloadOnce();
   }
   setTimeout(watchdog, 20000);
