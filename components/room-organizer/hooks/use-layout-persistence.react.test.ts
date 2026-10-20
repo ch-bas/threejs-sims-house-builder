@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STORAGE_KEY } from '../lib/constants';
@@ -283,5 +284,40 @@ describe('useLayoutPersistence — an unreadable save that cannot be copied (#33
     expect(tab.result.current.saveError).toBeNull();
     expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual(['{unreadable house']);
     expect(loadLayout()?.width).toBe(10);
+  });
+});
+
+describe('useLayoutPersistence — no render per edit while saving (#480)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('consecutive layout changes while already saving schedule no extra setSaving render', () => {
+    // The layout is state of the component running the hook, as in the editor
+    // (a store subscription there). That update leaves stale lanes on the
+    // fiber, which defeats React's eager bailout for a same-value setSaving.
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      const [layout, setLayout] = useState(() => makeLayout({ name: 'N' }));
+      return { setLayout, ...useLayoutPersistence({ layout, onHydrate: () => {}, debounceMs: 60_000 }) };
+    });
+    // The first edit turns `saving` on: its own render plus the setSaving one.
+    act(() => result.current.setLayout(makeLayout({ name: 'NN' })));
+    expect(result.current.saving).toBe(true);
+    // Each further keystroke is one render only. An unconditional
+    // setSaving(true) scheduled another per edit, and while typing fast those
+    // piled up into "Maximum update depth exceeded".
+    for (let length = 3; length <= 12; length++) {
+      const before = renders;
+      act(() => result.current.setLayout(makeLayout({ name: 'N'.repeat(length) })));
+      expect(renders - before).toBe(1);
+    }
+    expect(result.current.saving).toBe(true);
   });
 });

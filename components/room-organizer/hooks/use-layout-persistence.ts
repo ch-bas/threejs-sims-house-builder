@@ -62,6 +62,12 @@ export function useLayoutPersistence({
   const pendingRef = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  // Read by the autosave effect: re-setting `saving` while it is already true
+  // still schedules a render (React's eager bailout rarely applies there), and
+  // one per keystroke kept a render pending after every typed character until
+  // fast typing hit "Maximum update depth exceeded" (#480).
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
   const [saveError, setSaveError] = useState<SaveFailureReason | null>(null);
   // The exact JSON this tab last wrote: its own echo must not count as
   // another tab's change (#334).
@@ -230,7 +236,7 @@ export function useLayoutPersistence({
       hydrationBaseRef.current = null;
       return;
     }
-    setSaving(true);
+    if (!savingRef.current) setSaving(true);
     pendingRef.current = true;
     const handle = window.setTimeout(() => {
       // Retried on every edit, so freeing space lets saving resume.
