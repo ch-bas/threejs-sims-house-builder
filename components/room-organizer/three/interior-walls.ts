@@ -243,7 +243,13 @@ function computeSegmentOpenings(
   return openings;
 }
 
-/** Preview the wall the user is currently dragging — a translucent ghost. */
+const PREVIEW_TAG = `${INTERIOR_WALL_TAG}-preview`;
+
+/**
+ * Preview the wall the user is currently dragging — a translucent ghost.
+ * Runs per pointer move, so one unit box is created per draft and only
+ * re-posed and scaled after that; clearPreview disposes it (#409).
+ */
 export function renderInteriorWallPreview(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
@@ -252,23 +258,27 @@ export function renderInteriorWallPreview(
   yOffset = 0,
   wallHeight = DEFAULT_WALL_HEIGHT
 ): void {
-  clearPreview(scene);
+  let mesh = scene.children.find((obj) => obj.userData.type === PREVIEW_TAG);
+  if (!mesh) {
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x42a5f5,
+      transparent: true,
+      opacity: 0.5,
+    });
+    mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+    mesh.userData.type = PREVIEW_TAG;
+    scene.add(mesh);
+  }
   const length = Math.hypot(end.x - start.x, end.z - start.z);
-  if (length < 0.05) return;
-  const material = new THREE.MeshStandardMaterial({
-    color: 0x42a5f5,
-    transparent: true,
-    opacity: 0.5,
-  });
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, wallHeight, WALL_THICKNESS), material);
+  mesh.visible = length >= 0.05;
+  if (!mesh.visible) return;
+  mesh.scale.set(length, wallHeight, WALL_THICKNESS);
   mesh.position.set((start.x + end.x) / 2, yOffset + wallHeight / 2, (start.z + end.z) / 2);
   mesh.rotation.y = -Math.atan2(end.z - start.z, end.x - start.x);
-  mesh.userData.type = `${INTERIOR_WALL_TAG}-preview`;
-  scene.add(mesh);
 }
 
 export function clearPreview(scene: ThreeNS.Scene): void {
   scene.children
-    .filter((obj) => obj.userData.type === `${INTERIOR_WALL_TAG}-preview`)
+    .filter((obj) => obj.userData.type === PREVIEW_TAG)
     .forEach((obj) => removeAndDispose(scene, obj));
 }

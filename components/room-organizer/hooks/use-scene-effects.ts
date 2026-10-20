@@ -6,6 +6,7 @@ import { furnitureCollisionKey, furnitureItemsKey, planFurniture } from '../lib/
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
 import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
+import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
@@ -30,7 +31,7 @@ import { applyLampPool, applyTimeOfDay, computeSkyProfile, isLampPrewarmHour, pr
 import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { setOutdoorVisible } from '../three/outdoor';
-import { buildRoof, removeRoof } from '../three/roof';
+import { buildRoof, removeRoof, setRoofOnStorey } from '../three/roof';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
@@ -54,6 +55,9 @@ export function otherFloorGhostOpacity(
 function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
   fadeGroup(group, opacity);
 }
+
+/** scene.userData: the roof inputs the built roof was made from (#283). */
+const ROOF_BUILD_KEY = 'roofBuildKey';
 
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
 const LAMP_REASSIGN_DISTANCE = 1;
@@ -187,6 +191,10 @@ export function useSceneEffects({
   );
   const itemsKey = useMemo(() => furnitureItemsKey(furniturePlan), [furniturePlan]);
   const collisionKey = useMemo(() => furnitureCollisionKey(furniturePlan), [furniturePlan]);
+  // What the overlays read, so a sofa's colour or a chair nudge doesn't
+  // rebuild every ring, cone and label sprite (#409).
+  const overlaysKey = useMemo(() => signalOverlaysKey(furniturePlan), [furniturePlan]);
+  const labelsKey = useMemo(() => itemLabelsKey(activeFloor.items), [activeFloor.items]);
 
   // Every night light on a rendered storey, bulb in world space (#215). The
   // string is the lamp effect's key, so a non-lamp item edit doesn't touch the
@@ -558,12 +566,13 @@ export function useSceneEffects({
         addVisionCones(THREE, scene, items, floorY, index, storeyHeight(layout.floors[index]));
       }
     }
-    // Item-content key, not `layout.floors` identity (#214).
+    // Keyed on what the overlays read, not `layout.floors` identity (#214)
+    // nor every item edit (#409); the plan already follows the active floor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
-    itemsKey, storeyHeightsKey, activeFloorIndex,
-    view.showWiFiSignals, view.showCameraVision, view.showAllFloors,
+    overlaysKey, storeyHeightsKey,
+    view.showWiFiSignals, view.showCameraVision,
   ]);
 
   // Lighting. The sun's shadow camera is fitted to everything that casts a
@@ -850,9 +859,15 @@ export function useSceneEffects({
       return;
     }
     renderItemLabels(THREE, scene, activeFloor.items, activeFloorY);
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, activeFloor.items, activeFloorY]);
+    // activeFloor.items is read through labelsKey only (#409).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, labelsKey, activeFloorY]);
 
-  // Roof
+  // Roof (#283). Which storey is active only shows or hides it: the roof is
+  // built while it is on screen and kept, hidden, below the top storey, so a
+  // floor switch no longer rebuilds the roof and every dormer. A roof edit
+  // made down there rebuilds it on the way back up, not while hidden.
+  const roofOnStorey = view.showAllFloors || activeFloorIndex === layout.floors.length - 1;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -860,41 +875,36 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    const topFloorIndex = layout.floors.length - 1;
-    const showRoof =
-      layout.roof &&
-      layout.roof.style !== 'none' &&
-      (view.showAllFloors || activeFloorIndex === topFloorIndex);
-
-    if (!showRoof || !layout.roof) {
+    if (!layout.roof || layout.roof.style === 'none') {
       removeRoof(scene);
+      delete scene.userData[ROOF_BUILD_KEY];
       // The roof is a shadow caster; the static shadow map must be refreshed
       // whether the roof was just built or removed.
       requestShadowUpdate();
       return;
     }
 
-    buildRoof(THREE, {
-      scene,
-      width: layout.width,
-      depth: layout.height,
-      baseY: buildingHeight(layout.floors),
-      spec: layout.roof,
-    });
+    const baseY = buildingHeight(layout.floors);
+    const buildKey = JSON.stringify([layout.roof, layout.width, layout.height, baseY]);
+    if (roofOnStorey && scene.userData[ROOF_BUILD_KEY] !== buildKey) {
+      buildRoof(THREE, { scene, width: layout.width, depth: layout.height, baseY, spec: layout.roof });
+      scene.userData[ROOF_BUILD_KEY] = buildKey;
+      requestShadowUpdate();
+    }
+    setRoofOnStorey(scene, roofOnStorey);
     // buildRoof adds meshes visible; only applyWallDisplay hides the roof in
     // cutaway/walls-down mode, and it otherwise runs on orbit — so a roof
     // rebuilt while the walls are open would pop in until the camera moves (#119).
     const camera = cameraRef.current;
-    if (camera) {
-      applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
+    if (camera && applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height)) {
+      requestShadowUpdate();
     }
-    requestShadowUpdate();
     // layout.floors is read for the eaves height only (floor count + storey
     // heights); keying on its identity would rebuild the roof on every item edit.
     // wallDisplay is read for the initial visibility only: the cutaway effect
     // re-applies it on change, so a display flip needn't rebuild the roof.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, layout.floors.length, storeyHeightsKey, activeFloorIndex, view.showAllFloors]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, layout.floors.length, storeyHeightsKey, roofOnStorey]);
 
   // 2D top-down view. The backing store is sized to the container's
   // clientWidth/clientHeight × devicePixelRatio (via a ResizeObserver) so the

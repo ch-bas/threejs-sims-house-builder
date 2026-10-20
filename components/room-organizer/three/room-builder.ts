@@ -4,6 +4,7 @@ import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
+import { ROOF_OFF_STOREY_KEY } from './roof';
 import { getMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { buildWallMaterial } from './wall-patterns';
@@ -75,8 +76,8 @@ export function applyWallDisplay(
     const tag = obj.userData.type as string | undefined;
     if (tag === 'roof') {
       // Roof only shows in "up" mode — cutaway and down both want the
-      // interior visible from above.
-      setVisible(obj, mode === 'up');
+      // interior visible from above — and only over the top storey.
+      setVisible(obj, mode === 'up' && obj.userData[ROOF_OFF_STOREY_KEY] !== true);
       continue;
     }
     if (tag === 'interior-wall') {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
-import { renderInteriorWalls } from './interior-walls';
+import { clearPreview, renderInteriorWallPreview, renderInteriorWalls } from './interior-walls';
 
 /** The partition itself — the tallest mesh tagged with the wall id (baseboards share the tag). */
 function wallMesh(scene: THREE.Scene): THREE.Mesh {
@@ -83,5 +83,37 @@ describe('renderInteriorWalls per-wall heights (#275)', () => {
         .map((mesh) => heightOf(mesh).max)
     );
     expect(backTop).toBeCloseTo(2.4);
+  });
+});
+
+describe('renderInteriorWallPreview (#409)', () => {
+  const previews = (scene: THREE.Scene) => scene.children.filter((obj) => obj.userData.type === 'interior-wall-preview') as THREE.Mesh[];
+
+  it('re-poses one mesh per draft instead of building one per pointer move', () => {
+    const scene = new THREE.Scene();
+    renderInteriorWallPreview(THREE, scene, { x: 0, z: 0 }, { x: 2, z: 0 }, 0, 2.6);
+    const [mesh] = previews(scene);
+    const { geometry, material } = mesh!;
+    renderInteriorWallPreview(THREE, scene, { x: 0, z: 0 }, { x: 0, z: 3 }, 3, 2.6);
+    expect(previews(scene)).toEqual([mesh]);
+    expect(mesh!.geometry).toBe(geometry);
+    expect(mesh!.material).toBe(material);
+    const box = new THREE.Box3().setFromObject(mesh!);
+    expect(box.max.z - box.min.z).toBeCloseTo(3);
+    expect(box.min.y).toBeCloseTo(3);
+    expect(box.max.y).toBeCloseTo(5.6);
+  });
+
+  it('hides a too-short draft and disposes the mesh on clear', () => {
+    const scene = new THREE.Scene();
+    renderInteriorWallPreview(THREE, scene, { x: 0, z: 0 }, { x: 2, z: 0 });
+    const [mesh] = previews(scene);
+    renderInteriorWallPreview(THREE, scene, { x: 0, z: 0 }, { x: 0.01, z: 0 });
+    expect(mesh!.visible).toBe(false);
+    let disposed = false;
+    mesh!.geometry.addEventListener('dispose', () => { disposed = true; });
+    clearPreview(scene);
+    expect(previews(scene)).toEqual([]);
+    expect(disposed).toBe(true);
   });
 });
