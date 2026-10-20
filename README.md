@@ -360,6 +360,7 @@ components/
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture + interior walls
+    │   ├── walk-input.ts                Walkthrough frame-time cap and which keydowns walk (no Ctrl/Cmd/Alt chords)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359)
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
@@ -402,7 +403,7 @@ components/
     │   │   ├── builders-people.ts       Person (rigged, else procedural), pet
     │   │   ├── human-figure.ts          Procedural jointed figure + walk pose
     │   │   └── builders-structure.ts    Door, window, stairs
-    │   ├── people-model.ts              people.glb loader, cloning, clip names
+    │   ├── people-model.ts              people.glb loader, cloning (shared geometry), box picking, clip names
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
@@ -422,7 +423,7 @@ components/
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
-    │   └── outdoor.ts                   Garden / path / bush scenery
+    │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── canvas-2d/stairs-symbol.ts       Stair treads + climb arrow, stairwell voids on the floor above
     ├── plotcraft/icon.tsx                Lucide-react icon wrapper for UI panels
@@ -561,7 +562,18 @@ components/
   (grass tufts, shrubs, flowers, road dashes, stepping stones) renders
   through `InstancedMesh` — hundreds of elements collapse to a handful of
   draw calls — and static meshes bake their matrix once (`matrixAutoUpdate`
-  off).
+  off). The 14 perimeter trees are baked into world space and merged into
+  one mesh per kind, part and shade (13 meshes, not ~134), which keeps each
+  tree's seeded leaf jitter that instancing would lose (#407).
+- **Rigged people are cheap to rebuild and to hover.** Every clone draws the
+  cached people.glb geometry (`markSharedGeometry`, a WeakSet that
+  `disposeObject` skips; not userData, which GLB export would write) with
+  its own skeleton and materials, so a furniture rebuild doesn't re-upload
+  7.8k skinned vertices per person; the editor's unmount frees it with
+  `releasePeopleGeometry`. A placed person is picked by its item box
+  instead of CPU-skinned triangles (#284).
+  Idle walkers repaint every frame for their breathing but recompute the
+  shadow map only while moving, plus the 0.35 s settle after a stop (#400).
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged

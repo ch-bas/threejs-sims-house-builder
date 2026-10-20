@@ -15,7 +15,7 @@ type ThreeModule = typeof import('three');
 
 const NPC_TAG = 'npc';
 
-interface NpcState {
+export interface NpcState {
   group: ThreeNS.Group;
   position: { x: number; z: number };
   target: { x: number; z: number };
@@ -24,13 +24,18 @@ interface NpcState {
   phase: number;
   /** Seconds left standing at the current waypoint before walking on. */
   pause: number;
+  /**
+   * Rigged figure only: seconds the shadow keeps following the pose after a
+   * stop, so it settles from the stride into the standing pose (#400).
+   */
+  shadowSettle: number;
   /** Procedural figure only. */
   rig: HumanFigureRig | null;
   /** Rigged figure only: the mixer and its walk / standing clips. */
   anim: NpcAnimation | null;
 }
 
-interface NpcAnimation {
+export interface NpcAnimation {
   mixer: ThreeNS.AnimationMixer;
   walk: ThreeNS.AnimationAction;
   stand: ThreeNS.AnimationAction[];
@@ -38,6 +43,14 @@ interface NpcAnimation {
 }
 
 const FADE_SECONDS = 0.35;
+
+/** What `stepNpcs` found changed this frame. */
+export const NPC_STILL = 0;
+/** A pose changed: repaint. */
+export const NPC_REPAINT = 1;
+/** A caster moved: repaint and recompute the shadow map. */
+export const NPC_SHADOW = 2;
+type NpcChange = typeof NPC_STILL | typeof NPC_REPAINT | typeof NPC_SHADOW;
 
 export interface UseNpcsOptions {
   enabled: boolean;
@@ -98,14 +111,12 @@ export function useNpcs(options: UseNpcsOptions): void {
       const now = performance.now();
       const delta = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
-      // Only request a repaint (and a shadow-map recompute) when an NPC
-      // actually moved this frame. When every NPC is idling at its target the
-      // render loop stays parked instead of pinning the GPU at refresh rate.
-      const moved = stepNpcs(stateRef.current, delta, halfW, halfD, floorY);
-      if (moved) {
-        requestShadowUpdate?.();
-        invalidate?.();
-      }
+      // Repaint only when a pose changed, and recompute the 2048² shadow map
+      // only when a walker moved: a rigged figure idles (breathes) every
+      // frame, and re-rendering every caster for that pinned the GPU (#400).
+      const change = stepNpcs(stateRef.current, delta, halfW, halfD, floorY);
+      if (change === NPC_SHADOW) requestShadowUpdate?.();
+      if (change !== NPC_STILL) invalidate?.();
     };
     rafId = requestAnimationFrame(tick);
 
@@ -193,6 +204,7 @@ function createNpc(
     speed,
     phase: Math.random() * Math.PI * 2,
     pause: 0,
+    shadowSettle: 0,
     rig,
     anim,
   };
@@ -206,28 +218,32 @@ function crossFadeTo(anim: NpcAnimation, next: ThreeNS.AnimationAction): void {
 }
 
 /**
- * Advances every NPC one frame. Returns true when anything visibly changed
- * this frame, so the caller can skip the repaint / shadow recompute while
- * procedural walkers all stand still at their waypoints.
+ * Advances every NPC one frame and reports the biggest change: a walker that
+ * moved needs the shadow map recomputed, a rigged one idling needs only a
+ * repaint, and procedural walkers standing still need nothing.
  */
-function stepNpcs(
+export function stepNpcs(
   npcs: NpcState[],
   delta: number,
   halfW: number,
   halfD: number,
   floorY: number
-): boolean {
-  let moved = false;
+): NpcChange {
+  let change: NpcChange = NPC_STILL;
   for (const npc of npcs) {
     // A rigged figure breathes and shifts its weight even while standing, so
     // it needs frames whenever it exists; the procedural one only when moving.
     if (npc.anim) {
       npc.anim.mixer.update(delta);
-      moved = true;
+      if (change === NPC_STILL) change = NPC_REPAINT;
     }
 
     if (npc.pause > 0) {
       npc.pause -= delta;
+      if (npc.shadowSettle > 0) {
+        npc.shadowSettle -= delta;
+        change = NPC_SHADOW;
+      }
       if (npc.pause <= 0 && npc.anim) crossFadeTo(npc.anim, npc.anim.walk);
       continue;
     }
@@ -243,15 +259,16 @@ function stepNpcs(
       if (npc.anim) {
         const stand = npc.anim.stand[Math.floor(Math.random() * npc.anim.stand.length)] ?? npc.anim.stand[0]!;
         crossFadeTo(npc.anim, stand);
+        npc.shadowSettle = FADE_SECONDS;
       } else if (npc.rig) {
         poseWalk(npc.rig, 0, 0);
         npc.group.position.y = floorY;
-        moved = true;
       }
+      change = NPC_SHADOW;
       continue;
     }
 
-    moved = true;
+    change = NPC_SHADOW;
 
     const step = npc.speed * delta;
     const nx = npc.position.x + (dx / distance) * step;
@@ -271,7 +288,7 @@ function stepNpcs(
       npc.group.position.y = floorY + Math.abs(Math.cos(npc.phase)) * 0.025;
     }
   }
-  return moved;
+  return change;
 }
 
 function rand(min: number, max: number): number {

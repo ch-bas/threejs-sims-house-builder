@@ -3,6 +3,7 @@ import { reloadOnceForChunkError } from '../lib/chunk-reload';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { addLights } from '../three/lighting';
+import { releasePeopleGeometry } from '../three/people-model';
 import { clearFloorPlanImageCache } from '../three/room-builder';
 import { setMaxAnisotropy } from '../three/texture-settings';
 import type { SceneEventHandlers } from '../three/drag-handlers';
@@ -172,6 +173,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
       rendererRef.current = renderer;
       cleanup.push(() => renderer.dispose());
+      // Runs after the scene is freed: placed people and walkers share the
+      // cached people.glb geometry, which no disposeObject call frees (#284).
+      cleanup.push(() => releasePeopleGeometry());
       // Cleanups run last-in-first-out, so this frees the whole graph (stars,
       // moon, furniture, shell, instanced outdoor meshes, sky background)
       // while the renderer still tracks their GL handles (#213).
