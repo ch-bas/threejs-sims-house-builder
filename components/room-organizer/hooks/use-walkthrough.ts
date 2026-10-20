@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildWalkColliders, resolveWalkerStep } from '../lib/walk-collision';
+import { startsWalking, walkFrameSeconds } from '../lib/walk-input';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type { WalkCollider, WalkCollisionOptions, WalkerPosition } from '../lib/walk-collision';
 import type * as ThreeNS from 'three';
@@ -34,19 +35,6 @@ export interface UseWalkthroughOptions {
    */
   onExit?: () => void;
 }
-
-const MOVEMENT_KEYS = new Set([
-  'KeyW',
-  'KeyA',
-  'KeyS',
-  'KeyD',
-  'ArrowUp',
-  'ArrowDown',
-  'ArrowLeft',
-  'ArrowRight',
-  'ShiftLeft',
-  'ShiftRight',
-]);
 
 // Keep the walker a little inside the exterior walls so the camera never clips
 // through them or steps off the floor plate. Furniture and interior walls are
@@ -154,7 +142,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     let rafId = 0;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (MOVEMENT_KEYS.has(event.code)) pressed.add(event.code);
+      if (startsWalking(event)) pressed.add(event.code);
     };
     const onKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
     // Escape exit: the browser reserves the first Escape to release pointer
@@ -251,7 +239,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       const step = () => {
         rafId = requestAnimationFrame(step);
         const now = performance.now();
-        const delta = Math.min(0.05, (now - lastTime) / 1000);
+        const delta = walkFrameSeconds(now - lastTime);
         lastTime = now;
 
         if (!controls?.isLocked) return;
