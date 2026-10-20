@@ -235,24 +235,32 @@ export function useItemDrag({
 
   const handleDragCancel = useCallback(
     (id: string, options?: DragCancelOptions) => {
-      // No dispatch, no lock, no settle. After a rebuild (cross-tab adopt,
-      // library load) the scene already shows authoritative state —
+      // No dispatch, no lock, no settle. After a state change under the drag
+      // (cross-tab adopt, library load) the state is authoritative —
       // committing `latest` would overwrite it with in-flight positions.
       const session = dragSessionRef.current;
       dragSessionRef.current = null;
-      if (!session || options?.restore !== true) return;
-      // A pointercancel (OS gesture, palm rejection) undoes the drag: the
-      // fast path moved the groups directly, so move them back (#292).
+      if (!session) return;
+      const restore = options?.restore === true;
       for (const [memberId, origin] of session.origins) {
         const group = findFurnitureGroup(memberId);
         if (!group) continue;
-        group.position.x = origin.x;
-        group.position.z = origin.z;
+        // A pointercancel (OS gesture, palm rejection) undoes the drag: the
+        // fast path moved the groups directly, so move them back (#292).
+        // Otherwise the state changed under the drag; the furniture effect
+        // keeps unchanged groups (#404), so put them where the state has
+        // them rather than trusting the effect to have run after the last move.
+        const stored = restore ? origin : activeFloor.items.find((entry) => entry.id === memberId)?.position;
+        if (stored) {
+          group.position.x = stored.x;
+          group.position.z = stored.z;
+        }
+        // A kept group would otherwise wear the red drag tint for good.
         if (memberId === id) setDragCollisionTint(group, false);
       }
       invalidateBoxRef.current();
     },
-    [findFurnitureGroup, setDragCollisionTint]
+    [activeFloor.items, findFurnitureGroup, setDragCollisionTint]
   );
 
   const isDragActive = useCallback(() => dragSessionRef.current !== null, []);

@@ -335,7 +335,7 @@ components/
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
-    │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214)
+    │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214); per-item build keys + diff (#404)
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements
@@ -595,6 +595,15 @@ components/
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged
   group, and each drag gesture lands as one undo entry.
+- **Per-item furniture diff.** The furniture effect keeps one group per
+  item and storey and compares each item's build key (everything its
+  builder reads, plus the collision tint and the ghost fade, which are baked
+  into the materials). A move, turn, mirror or lock re-places the existing
+  group; only an item whose build key changed is disposed and rebuilt. A
+  rotate or nudge creates no GL objects, so selection outlines that still
+  match are kept too, which keeps their line shader alive. Because a kept
+  group survives a state change, a 3D drag aborts when the furniture
+  revision moves under it, not only when its group is detached.
 - **OBB collision.** Item overlap uses a separating-axis test on rotated
   footprints, with the old bounding-circle check kept as a broad phase — no
   more false positives on long thin items placed diagonally. The pair test

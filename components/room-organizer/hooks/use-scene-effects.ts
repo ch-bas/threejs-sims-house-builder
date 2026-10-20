@@ -1,8 +1,15 @@
-import { useEffect, useMemo, type RefObject, type MutableRefObject } from 'react';
+import { useEffect, useMemo, useRef, type RefObject, type MutableRefObject } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
-import { furnitureCollisionKey, furnitureItemsKey, planFurniture } from '../lib/furniture-scene';
+import {
+  diffFurniture,
+  furnitureBuildKey,
+  furnitureCollisionKey,
+  furnitureItemsKey,
+  furnitureMeshKey,
+  planFurniture,
+} from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
 import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
@@ -35,7 +42,7 @@ import { buildRoof, removeRoof, setRoofOnStorey } from '../three/roof';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
-import type { FloorLayout, RoomLayout, ViewSettings } from '../lib/types';
+import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 /**
@@ -58,6 +65,18 @@ function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
 
 /** scene.userData: the roof inputs the built roof was made from (#283). */
 const ROOF_BUILD_KEY = 'roofBuildKey';
+
+/** One furniture group the furniture effect is about to place (#404). */
+interface PlannedFurniture {
+  item: FurnitureItem;
+  /** `item` fitted to its storey, as the builder sees it. */
+  fitted: FurnitureItem;
+  collision: boolean;
+  floorIndex: number;
+  floorY: number;
+  storeyH: number;
+  isActive: boolean;
+}
 
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
 const LAMP_REASSIGN_DISTANCE = 1;
@@ -113,6 +132,9 @@ export function useSceneEffects({
   measurementPoints,
 }: UseSceneEffectsParams): void {
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
+  // The furniture groups in the scene by furnitureMeshKey, with the build
+  // key each was built from (#404).
+  const furnitureMeshesRef = useRef(new Map<string, { group: ThreeNS.Group; buildKey: string }>());
 
   // Storey heights stack every floor's Y, the wall heights, and the roof
   // base (#202). The structural effects are keyed on narrow signatures, not
@@ -414,47 +436,94 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    removeTagged(scene, ROOM_OBJECT_TAGS.Furniture);
+    // Per-item diff (#404): a group is rebuilt only when what it is built from
+    // changed; a move, turn, mirror or lock re-places the existing group. A
+    // group no longer in this scene (the scene was rebuilt) is forgotten, and
+    // furniture this map doesn't know is dropped.
+    const meshes = furnitureMeshesRef.current;
+    for (const [key, entry] of meshes) if (entry.group.parent !== scene) meshes.delete(key);
+    const tracked = new Set<ThreeNS.Object3D>([...meshes.values()].map((entry) => entry.group));
+    let changed = false;
+    for (const obj of [...scene.children]) {
+      if (obj.userData.type === ROOM_OBJECT_TAGS.Furniture && !tracked.has(obj)) {
+        removeAndDispose(scene, obj);
+        changed = true;
+      }
+    }
 
+    const planned = new Map<string, PlannedFurniture>();
+    const nextBuildKeys = new Map<string, string>();
     for (const { index, items, collisions } of furniturePlan) {
       const floor = layout.floors[index];
       const isActive = index === activeFloorIndex;
       const floorY = floorElevation(layout.floors, index);
-
+      const storeyH = storeyHeight(floor);
       items.forEach((item, i) => {
-        if (!item.position) return;
-
         const collision = collisions[i] === true;
         // Stairs climb to the floor above and openings are fitted into the
         // storey, so the mesh matches the hole cut for it (#202, #277).
-        const group = createFurnitureModel(THREE, itemForStorey(item, floor), collision, storeyHeight(floor));
-        // Covers builder parts that bypass the shared material() helper (#167).
-        if (collision) applyCollisionTint(group);
-        group.position.set(item.position.x, floorY, item.position.z);
-        group.rotation.y = item.rotation ?? 0;
-        if (item.mirrored) group.scale.x = -1;
-        group.userData.type = ROOM_OBJECT_TAGS.Furniture;
-        group.userData.id = item.id;
-        group.userData.floorIndex = index;
-        group.userData.locked = item.locked === true || !isActive;
-        // Inactive-floor groups are excluded from pointer raycasts entirely
-        // (see drag-handlers' furnitureList, #122).
-        group.userData.ghostFloor = !isActive;
-
-        if (ghostOtherFloors && !isActive) {
-          ghostifyGroup(group);
-        }
-
-        scene.add(group);
+        const fitted = itemForStorey(item, floor);
+        const key = furnitureMeshKey(index, item.id);
+        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive });
+        nextBuildKeys.set(
+          key,
+          furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady })
+        );
       });
     }
 
-    // The furniture set just changed — bump the revision so the drag/hover
-    // raycast pre-filter cache rebuilds its list, and recompute the static
-    // shadow map now that shadow casters were added/removed/moved.
+    const diff = diffFurniture(new Map([...meshes].map(([key, entry]) => [key, entry.buildKey])), nextBuildKeys);
+    for (const key of diff.removed) {
+      const entry = meshes.get(key);
+      if (entry) removeAndDispose(scene, entry.group);
+      meshes.delete(key);
+      changed = true;
+    }
+    for (const key of diff.built) {
+      const spec = planned.get(key);
+      const buildKey = nextBuildKeys.get(key);
+      if (!spec || buildKey === undefined) continue;
+      const stale = meshes.get(key);
+      if (stale) removeAndDispose(scene, stale.group);
+      const group = createFurnitureModel(THREE, spec.fitted, spec.collision, spec.storeyH);
+      // Covers builder parts that bypass the shared material() helper (#167).
+      if (spec.collision) applyCollisionTint(group);
+      if (ghostOtherFloors && !spec.isActive) ghostifyGroup(group);
+      group.userData.type = ROOM_OBJECT_TAGS.Furniture;
+      group.userData.id = spec.item.id;
+      scene.add(group);
+      meshes.set(key, { group, buildKey });
+      changed = true;
+    }
+    for (const [key, spec] of planned) {
+      const group = meshes.get(key)?.group;
+      const position = spec.item.position;
+      if (!group || !position) continue;
+      const rotation = spec.item.rotation ?? 0;
+      const scaleX = spec.item.mirrored ? -1 : 1;
+      if (
+        group.position.x !== position.x || group.position.y !== spec.floorY || group.position.z !== position.z ||
+        group.rotation.y !== rotation || group.scale.x !== scaleX
+      ) {
+        group.position.set(position.x, spec.floorY, position.z);
+        group.rotation.y = rotation;
+        group.scale.x = scaleX;
+        changed = true;
+      }
+      group.userData.floorIndex = spec.floorIndex;
+      group.userData.locked = spec.item.locked === true || !spec.isActive;
+      // Inactive-floor groups are excluded from pointer raycasts entirely
+      // (see drag-handlers' furnitureList, #122).
+      group.userData.ghostFloor = !spec.isActive;
+    }
+
+    // Bump the revision so the drag/hover raycast pre-filter cache re-reads
+    // the set and its ghostFloor flags, and a gesture begun before this
+    // change aborts (drag-handlers). Recompute the static shadow map only
+    // when a shadow caster was added, removed or moved.
     scene.userData[FURNITURE_REVISION_KEY] =
       ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
-    requestShadowUpdate();
+    if (changed) requestShadowUpdate();
     // Keyed on the plan's signatures, not `layout.floors` identity: wall
     // paint, floor patterns and interior walls give the floors a new
     // identity without touching an item, and rebuilt every mesh plus the
@@ -472,7 +541,7 @@ export function useSceneEffects({
 
   // Selection / highlight outlines. Kept out of the furniture effect above so
   // a selection click only swaps the outline LineSegments instead of
-  // destroying and rebuilding every furniture mesh on the floor.
+  // touching the furniture meshes.
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -480,45 +549,47 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    for (const group of scene.children) {
-      if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
-      for (const child of [...group.children]) {
-        if (child.userData.type === 'selection-outline') {
-          group.remove(child);
-          disposeObject(child);
-        }
-      }
-    }
-
     const outlineIds = new Set<string>([...extraSelectedIds, ...highlightedIds]);
     if (selectedItemId) outlineIds.add(selectedItemId);
-    if (outlineIds.size === 0) return;
-
     const activePlan = furniturePlan.find((floor) => floor.index === activeFloorIndex);
-    if (!activePlan) return;
-    const planIndexById = new Map(activePlan.items.map((item, i) => [item.id, i]));
+    const planIndexById = new Map(activePlan?.items.map((item, i) => [item.id, i]) ?? []);
+
     for (const group of scene.children) {
       if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
-      if (group.userData.floorIndex !== activeFloorIndex) continue;
+      const current = group.children.find((child) => child.userData.type === 'selection-outline');
       const id = group.userData.id as string;
-      if (!outlineIds.has(id)) continue;
-      const planIndex = planIndexById.get(id);
-      const item = planIndex === undefined ? undefined : activePlan.items[planIndex];
-      if (planIndex === undefined || !item) continue;
+      const planIndex = group.userData.floorIndex === activeFloorIndex && outlineIds.has(id) ? planIndexById.get(id) : undefined;
+      const item = planIndex === undefined ? undefined : activePlan?.items[planIndex];
 
-      const isSelected = selectedItemId === id || extraSelectedIds.has(id);
-      const collision = activePlan.collisions[planIndex] === true;
-      const accent = isSelected
-        ? selectedItemId === id
-          ? collision
-            ? 0xff6666
-            : 0x00ff00
-          : 0x42a5f5
-        : 0xfacc15;
-      // Around the built mesh, not floor-to-height: a painting hangs at 0.8 m
-      // and a window starts at its sill (#376).
-      const band = mountBand(itemForStorey(item, activeFloor), storeyHeight(activeFloor));
-      const geometry = new THREE.BoxGeometry(item.width, band.top - band.bottom, item.depth);
+      let wanted: { accent: number; width: number; depth: number; band: { bottom: number; top: number }; signature: string } | null = null;
+      if (item && planIndex !== undefined && activePlan) {
+        const isSelected = selectedItemId === id || extraSelectedIds.has(id);
+        const collision = activePlan.collisions[planIndex] === true;
+        const accent = isSelected
+          ? selectedItemId === id
+            ? collision
+              ? 0xff6666
+              : 0x00ff00
+            : 0x42a5f5
+          : 0xfacc15;
+        // Around the built mesh, not floor-to-height: a painting hangs at 0.8 m
+        // and a window starts at its sill (#376).
+        const band = mountBand(itemForStorey(item, activeFloor), storeyHeight(activeFloor));
+        wanted = { accent, width: item.width, depth: item.depth, band, signature: `${accent}|${item.width}|${item.depth}|${band.bottom}|${band.top}` };
+      }
+
+      // An outline that already matches stays: the group carries it through a
+      // move or turn, and disposing its material would release the line shader
+      // program, recompiled on the next frame (#404).
+      if (current && current.userData.signature === wanted?.signature) continue;
+      if (current) {
+        group.remove(current);
+        disposeObject(current);
+      }
+      if (!wanted) continue;
+
+      const { accent, width, depth, band } = wanted;
+      const geometry = new THREE.BoxGeometry(width, band.top - band.bottom, depth);
       const edges = new THREE.EdgesGeometry(geometry);
       geometry.dispose();
       const outline = new THREE.LineSegments(
@@ -527,13 +598,14 @@ export function useSceneEffects({
       );
       outline.position.y = (band.bottom + band.top) / 2;
       outline.userData.type = 'selection-outline';
+      outline.userData.signature = wanted.signature;
       // Decoration, not a pointer target: the furniture raycast is recursive
       // and a line's pick threshold would give the item a hit halo (#333).
       outline.raycast = () => {};
       group.add(outline);
     }
-    // The furniture effect above destroys the outline children whenever it
-    // rebuilds the groups, so this effect also carries every one of its keys
+    // The furniture effect above destroys the outline children of every group
+    // it rebuilds, so this effect also carries every one of its keys
     // that it doesn't read itself — otherwise a selected item loses its
     // outline after a Show-All-Floors or wall-display toggle, or once the
     // rigged person model loads (#335). It reads the same plan, so it is

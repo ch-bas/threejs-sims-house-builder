@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, type SceneEventHandlers } from './drag-handlers';
+import { FURNITURE_REVISION_KEY, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, type SceneEventHandlers } from './drag-handlers';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const SIZE = 200;
@@ -59,7 +59,7 @@ function setup(selected: string[]) {
     raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit);
     return hit;
   };
-  return { canvas, handlers, groups, controls, detach, worldAt };
+  return { canvas, scene, handlers, groups, controls, detach, worldAt };
 }
 
 describe('drag-handlers selection on press (#291)', () => {
@@ -163,5 +163,55 @@ describe('drag-handlers cancel, grab offset and touch threshold (#292)', () => {
     t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
     t.canvas.dispatchEvent(pointer('pointermove', 106, 100));
     expect(t.handlers.onItemDragStart).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('drag-handlers under a furniture update (#245, #404)', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  it('aborts without committing when the furniture effect ran mid-drag, even though the group was kept', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    expect(t.handlers.onItemDragStart).toHaveBeenCalledWith('a');
+    const group = t.groups.get('a')!;
+    const x = group.position.x;
+
+    // The effect kept the group (still parented) but re-placed it from state.
+    t.scene.userData[FURNITURE_REVISION_KEY] = ((t.scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
+    t.canvas.dispatchEvent(pointer('pointermove', 150, 100));
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: false });
+    expect(group.position.x).toBe(x);
+    t.canvas.dispatchEvent(pointer('pointerup', 150, 100));
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+  });
+});
+
+describe('drag-handlers release after a furniture update (#404)', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  it('a release after the furniture effect ran aborts instead of committing', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    t.scene.userData[FURNITURE_REVISION_KEY] = ((t.scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
+    t.canvas.dispatchEvent(pointer('pointerup', 130, 100));
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: false });
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('a plain click after the furniture effect ran still selects', () => {
+    const t = setup(['a', 'b']);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.scene.userData[FURNITURE_REVISION_KEY] = ((t.scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
+    t.canvas.dispatchEvent(pointer('pointerup', 100, 100));
+    expect(t.handlers.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    expect(t.handlers.onItemDragCancel).not.toHaveBeenCalled();
   });
 });
