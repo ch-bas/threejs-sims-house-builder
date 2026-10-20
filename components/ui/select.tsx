@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 // A styled native <select> (#415). It replaced a Radix Select that shipped
-// ~38 KB gz (popper, floating-ui, scroll lock, lucide) for a handful of short
+// ~29 KB gz (popper, floating-ui, scroll lock, lucide) for a handful of short
 // option lists; the native control brings keyboard, type-ahead, screen-reader
 // and touch-picker behaviour for free.
 
@@ -14,17 +14,20 @@ export interface SelectProps
   placeholder?: string;
 }
 
+/**
+ * `className` sizes and places the control (width, flex, height, text size):
+ * it lands on the wrapper, which the <select> fills and inherits its type
+ * from, so the chevron stays inside however the control is sized. Every other
+ * prop (id, aria-*, disabled, …) goes to the <select>.
+ */
 const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, value, onValueChange, placeholder, children, ...props }, ref) => (
-    <div className="relative">
+    <div className={cn('relative h-10 text-sm', className)}>
       <select
         ref={ref}
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
-        className={cn(
-          'flex h-10 w-full appearance-none items-center rounded-md border border-input bg-background py-2 pl-3 pr-8 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
-          className
-        )}
+        className="flex h-full w-full appearance-none items-center rounded-md border border-input bg-background py-2 pl-3 pr-8 text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         {...props}
       >
         {placeholder !== undefined && (

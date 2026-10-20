@@ -47,6 +47,25 @@ describe('Select (#415)', () => {
     expect(onValueChange).toHaveBeenCalledTimes(2);
   });
 
+  it('sizing classes land on the box that also holds the chevron, which the select fills', () => {
+    render(
+      <Select value="a" onValueChange={() => undefined} className="w-24 flex-1 text-xs" aria-label="Narrow">
+        <option value="a">A</option>
+      </Select>
+    );
+    const select = screen.getByRole('combobox', { name: 'Narrow' });
+    const box = select.parentElement;
+    expect(box?.className).toContain('w-24');
+    expect(box?.className).toContain('flex-1');
+    // tailwind-merge: the caller's text size replaces the default one.
+    expect(box?.className).toContain('text-xs');
+    expect(box?.className).not.toContain('text-sm');
+    expect(select.className).toContain('w-full');
+    expect(select.className).toContain('h-full');
+    expect(select.className).not.toContain('w-24');
+    expect(box?.querySelector(':scope > svg')).not.toBeNull();
+  });
+
   it('associates with a <label> through id', () => {
     render(
       <>
