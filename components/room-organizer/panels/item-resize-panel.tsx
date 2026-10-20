@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { isWallMounted } from '../lib/opening-snap';
@@ -372,15 +372,10 @@ function SofaShapeSelect({ value, onChange }: SofaShapeSelectProps): JSX.Element
       <Label htmlFor={id} className="text-xs">
         Sofa Shape
       </Label>
-      <Select value={value} onValueChange={(next) => onChange(next as SofaShape)}>
-        <SelectTrigger id={id} className="w-full text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="standard">Standard Sofa</SelectItem>
-          <SelectItem value="L-shape">L-Shape Sofa</SelectItem>
-          <SelectItem value="U-shape">U-Shape Sofa</SelectItem>
-        </SelectContent>
+      <Select id={id} value={value} onValueChange={(next) => onChange(next as SofaShape)} className="w-full text-xs">
+        <option value="standard">Standard Sofa</option>
+        <option value="L-shape">L-Shape Sofa</option>
+        <option value="U-shape">U-Shape Sofa</option>
       </Select>
     </div>
   );

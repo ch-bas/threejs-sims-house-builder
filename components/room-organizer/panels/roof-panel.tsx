@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
 import {
@@ -49,17 +49,17 @@ export function RoofPanel(): JSX.Element {
         )}
         <div>
           <Label className="text-xs">Style</Label>
-          <Select value={style} onValueChange={(value) => actions.setRoofStyle(value as RoofStyle)}>
-            <SelectTrigger className="text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROOF_STYLES.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {ROOF_LABELS[option]}
-                </SelectItem>
-              ))}
-            </SelectContent>
+          <Select
+            value={style}
+            onValueChange={(value) => actions.setRoofStyle(value as RoofStyle)}
+            className="text-xs"
+            aria-label="Roof style"
+          >
+            {ROOF_STYLES.map((option) => (
+              <option key={option} value={option}>
+                {ROOF_LABELS[option]}
+              </option>
+            ))}
           </Select>
         </div>
         {style !== 'none' && (
@@ -139,42 +139,39 @@ function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number
           Remove
         </Button>
       </div>
-      <Select value={dormer.side} onValueChange={(value) => actions.updateDormer(dormer.id, { side: value as WallId })}>
-        <SelectTrigger className="text-xs" aria-label="Slope">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {sides.map((side) => (
-            <SelectItem key={side} value={side}>
-              {SIDE_LABELS[side]}
-            </SelectItem>
-          ))}
-          {!onSlope && (
-            <SelectItem value={dormer.side} disabled>
-              {SIDE_LABELS[dormer.side]} (no slope)
-            </SelectItem>
-          )}
-        </SelectContent>
+      <Select
+        value={dormer.side}
+        onValueChange={(value) => actions.updateDormer(dormer.id, { side: value as WallId })}
+        className="text-xs"
+        aria-label="Slope"
+      >
+        {sides.map((side) => (
+          <option key={side} value={side}>
+            {SIDE_LABELS[side]}
+          </option>
+        ))}
+        {!onSlope && (
+          <option value={dormer.side} disabled>
+            {SIDE_LABELS[dormer.side]} (no slope)
+          </option>
+        )}
       </Select>
       <Select
         value={preset ?? 'custom'}
         onValueChange={(value) => actions.updateDormer(dormer.id, dormerPresetFields(value as DormerPreset))}
+        className="text-xs"
+        aria-label="Face"
       >
-        <SelectTrigger className="text-xs" aria-label="Face">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {PRESETS.map((option) => (
-            <SelectItem key={option} value={option}>
-              {DORMER_PRESET_LABELS[option]}
-            </SelectItem>
-          ))}
-          {preset === null && (
-            <SelectItem value="custom" disabled>
-              Custom openings
-            </SelectItem>
-          )}
-        </SelectContent>
+        {PRESETS.map((option) => (
+          <option key={option} value={option}>
+            {DORMER_PRESET_LABELS[option]}
+          </option>
+        ))}
+        {preset === null && (
+          <option value="custom" disabled>
+            Custom openings
+          </option>
+        )}
       </Select>
       <div className="grid grid-cols-2 gap-2">
         <div>

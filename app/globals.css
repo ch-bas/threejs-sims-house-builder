@@ -59,6 +59,15 @@
   --secondary-foreground: 210 20% 90%;
 }
 
+/* Native selects (#415): the dropdown list follows the panel's dark theme. */
+.pc-glass--dark select {
+  color-scheme: dark;
+}
+.pc-glass--dark select option {
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+}
+
 /* Cards inside dark glass panels: inherit dark theme */
 .pc-glass--dark .rounded-lg.border.bg-card {
   background: hsl(215 25% 14%) !important;

@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { FLOOR_PATTERN_LABELS } from '../three/floor-patterns';
 import { WALL_PATTERN_LABELS } from '../three/wall-patterns';
@@ -35,17 +35,14 @@ export function WallsPanel(): JSX.Element {
           <Select
             value={activeFloor.floorPattern ?? 'solid'}
             onValueChange={(value) => actions.setFloorPattern(value as FloorPattern)}
+            className="text-xs"
+            aria-label="Floor pattern"
           >
-            <SelectTrigger className="text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FLOOR_PATTERNS.map((pattern) => (
-                <SelectItem key={pattern} value={pattern}>
-                  {FLOOR_PATTERN_LABELS[pattern]}
-                </SelectItem>
-              ))}
-            </SelectContent>
+            {FLOOR_PATTERNS.map((pattern) => (
+              <option key={pattern} value={pattern}>
+                {FLOOR_PATTERN_LABELS[pattern]}
+              </option>
+            ))}
           </Select>
         </div>
         <div>
@@ -53,17 +50,14 @@ export function WallsPanel(): JSX.Element {
           <Select
             value={activeFloor.wallPattern ?? 'solid'}
             onValueChange={(value) => actions.setWallPattern(value as WallPattern)}
+            className="text-xs"
+            aria-label="Wall pattern"
           >
-            <SelectTrigger className="text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {WALL_PATTERNS.map((pattern) => (
-                <SelectItem key={pattern} value={pattern}>
-                  {WALL_PATTERN_LABELS[pattern]}
-                </SelectItem>
-              ))}
-            </SelectContent>
+            {WALL_PATTERNS.map((pattern) => (
+              <option key={pattern} value={pattern}>
+                {WALL_PATTERN_LABELS[pattern]}
+              </option>
+            ))}
           </Select>
         </div>
 
