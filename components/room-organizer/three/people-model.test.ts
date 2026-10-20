@@ -55,12 +55,12 @@ describe('people.glb', () => {
 });
 
 describe('clonePerson', () => {
-  it('copies geometry and materials so disposing a person leaves the cache intact', async () => {
+  it('shares the cached geometry but owns its skeleton and materials; disposing a person leaves the cache intact (#284)', async () => {
     const people = await loadAsset();
     const [source] = skinnedMeshes(people.scene);
     const person = clonePerson(THREE, people, { body: 0x123456, joints: 0x222222, opacity: 0.7 });
     const [copy] = skinnedMeshes(person);
-    expect(copy!.geometry).not.toBe(source!.geometry);
+    expect(copy!.geometry).toBe(source!.geometry);
     expect(copy!.material).not.toBe(source!.material);
     expect(copy!.skeleton).not.toBe(source!.skeleton);
 
@@ -68,8 +68,21 @@ describe('clonePerson', () => {
     source!.geometry.addEventListener('dispose', () => {
       disposed = true;
     });
+    let skeletonFreed = false;
+    const skeleton = copy!.skeleton;
+    const disposeSkeleton = skeleton.dispose.bind(skeleton);
+    skeleton.dispose = () => {
+      skeletonFreed = true;
+      disposeSkeleton();
+    };
+    let materialFreed = false;
+    (copy!.material as THREE.Material).addEventListener('dispose', () => {
+      materialFreed = true;
+    });
     disposeObject(person);
     expect(disposed).toBe(false);
+    expect(skeletonFreed).toBe(true);
+    expect(materialFreed).toBe(true);
   });
 
   it('paints the body and joint materials and honours collision opacity', async () => {
@@ -100,5 +113,42 @@ describe('buildPerson', () => {
     const box = new THREE.Box3().setFromObject(group, true);
     expect(box.max.y - box.min.y).toBeGreaterThan(1.35);
     expect(box.max.y - box.min.y).toBeLessThan(1.6);
+  });
+});
+
+describe('picking a rigged person (#284)', () => {
+  const ctx = (item: FurnitureItem) => ({ THREE, item, hasCollision: false, baseColor: item.color, opacity: 1 });
+
+  const place = (group: THREE.Object3D, x: number, rotation = 0) => {
+    const root = new THREE.Group();
+    root.add(group);
+    group.position.set(x, 0, 0);
+    group.rotation.y = rotation;
+    root.updateMatrixWorld(true);
+    return root;
+  };
+  const rayAt = (x: number, y: number) => new THREE.Raycaster(new THREE.Vector3(x, y, 10), new THREE.Vector3(0, 0, -1));
+
+  it('hits the item box, reports the builder group, and never tests skinned triangles', async () => {
+    setPeopleModelForTests(await loadAsset());
+    const group = buildPerson(ctx(adult));
+    const root = place(group, 2);
+    for (const mesh of skinnedMeshes(group)) expect(mesh.raycast).not.toBe(THREE.SkinnedMesh.prototype.raycast);
+    const hits = rayAt(2, 1).intersectObjects(root.children, true);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.object).toBe(group);
+    expect(hits[0]!.distance).toBeCloseTo(10 - adult.depth / 2);
+    // Beside the box, above the head, and to the person's side: misses.
+    expect(rayAt(2 + adult.width, 1).intersectObjects(root.children, true)).toHaveLength(0);
+    expect(rayAt(2, adult.height + 0.05).intersectObjects(root.children, true)).toHaveLength(0);
+  });
+
+  it('follows the item rotation', async () => {
+    setPeopleModelForTests(await loadAsset());
+    const group = buildPerson(ctx(adult));
+    const root = place(group, 0, Math.PI / 2);
+    // Turned a quarter, the 0.5 m width runs along z and the 0.3 m depth along x.
+    expect(rayAt(0.2, 1).intersectObjects(root.children, true)).toHaveLength(0);
+    expect(rayAt(0.1, 1).intersectObjects(root.children, true)).toHaveLength(1);
   });
 });

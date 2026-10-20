@@ -16,6 +16,13 @@ export interface BuilderContext {
 export type FurnitureBuilder = (ctx: BuilderContext) => ThreeNS.Group;
 
 /**
+ * `geometry.userData` flag for a geometry several objects draw, such as the
+ * cached people model's (#284). `disposeObject` leaves it alone: freeing it
+ * would make every other user re-upload it.
+ */
+export const SHARED_GEOMETRY = 'sharedGeometry';
+
+/**
  * Free the GPU resources owned by an object and all its descendants.
  *
  * `scene.remove()` only detaches an object from the graph — geometries,
@@ -26,7 +33,7 @@ export type FurnitureBuilder = (ctx: BuilderContext) => ThreeNS.Group;
 export function disposeObject(obj: ThreeNS.Object3D): void {
   obj.traverse((node) => {
     const mesh = node as ThreeNS.Mesh;
-    if (mesh.geometry) mesh.geometry.dispose();
+    if (mesh.geometry && mesh.geometry.userData[SHARED_GEOMETRY] !== true) mesh.geometry.dispose();
     // Rigged people own a skeleton whose bone texture lives on the GPU.
     const skinned = node as ThreeNS.SkinnedMesh;
     if (skinned.isSkinnedMesh) skinned.skeleton.dispose();

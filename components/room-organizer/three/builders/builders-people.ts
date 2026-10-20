@@ -1,5 +1,5 @@
 import { type BuilderContext, cornerPositions, material, mesh } from '../builder-utils';
-import { PEOPLE_CLIPS, clonePerson, findClip, getPeopleModel } from '../people-model';
+import { PEOPLE_CLIPS, clonePerson, findClip, getPeopleModel, pickByBox } from '../people-model';
 import { FIGURE_HEIGHT, buildHumanFigure } from './human-figure';
 import type * as ThreeNS from 'three';
 
@@ -28,6 +28,9 @@ function buildRiggedPerson({ THREE, item, hasCollision, baseColor, opacity }: Bu
   person.scale.setScalar(item.height / people.height);
   const group = new THREE.Group();
   group.add(person);
+  const halfW = item.width / 2;
+  const halfD = item.depth / 2;
+  pickByBox(THREE, group, new THREE.Box3(new THREE.Vector3(-halfW, 0, -halfD), new THREE.Vector3(halfW, item.height, halfD)));
   return group;
 }
 

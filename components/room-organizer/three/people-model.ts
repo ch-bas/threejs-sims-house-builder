@@ -1,3 +1,4 @@
+import { SHARED_GEOMETRY } from './builder-utils';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -92,9 +93,10 @@ export function preparePeopleModel(
 }
 
 /**
- * An independent copy of the model: its own skeleton, geometry and
- * materials, so disposing one person (disposeObject disposes geometry)
- * can never break another or the cached source.
+ * A copy of the model with its own skeleton and materials, drawing the cached
+ * source geometry (#284): cloning 7.8k skinned vertices per person on every
+ * furniture rebuild re-uploaded them to the GPU each time. The source
+ * geometry is flagged shared, so disposing a person never frees it.
  */
 export function clonePerson(
   THREE: ThreeModule,
@@ -106,7 +108,7 @@ export function clonePerson(
   root.traverse((node) => {
     const mesh = node as ThreeNS.Mesh;
     if (!mesh.isMesh) return;
-    mesh.geometry = mesh.geometry.clone();
+    mesh.geometry.userData[SHARED_GEOMETRY] = true;
     const original = mesh.material as ThreeNS.MeshStandardMaterial;
     const isJoint = original.name === 'M_Joints';
     const material = new THREE.MeshStandardMaterial({
@@ -122,6 +124,30 @@ export function clonePerson(
     mesh.receiveShadow = true;
   });
   return root;
+}
+
+/**
+ * Pick a person by the box it stands in instead of its skinned triangles
+ * (#284): three skins every tested vertex on the CPU, ~13.7k triangles per
+ * hover move. The box is `box` in `frame`'s local space; the hit reports
+ * `frame` as the object, which ascends to the furniture root like any mesh.
+ */
+export function pickByBox(THREE: ThreeModule, frame: ThreeNS.Object3D, box: ThreeNS.Box3): void {
+  const inverse = new THREE.Matrix4();
+  const localRay = new THREE.Ray();
+  const point = new THREE.Vector3();
+  frame.raycast = (raycaster, intersects) => {
+    inverse.copy(frame.matrixWorld).invert();
+    localRay.copy(raycaster.ray).applyMatrix4(inverse);
+    if (!localRay.intersectBox(box, point)) return;
+    point.applyMatrix4(frame.matrixWorld);
+    const distance = raycaster.ray.origin.distanceTo(point);
+    if (distance < raycaster.near || distance > raycaster.far) return;
+    intersects.push({ distance, point: point.clone(), object: frame });
+  };
+  frame.traverse((node) => {
+    if (node !== frame && (node as ThreeNS.Mesh).isMesh) node.raycast = () => {};
+  });
 }
 
 export function findClip(source: PeopleModel, name: string): ThreeNS.AnimationClip | null {
