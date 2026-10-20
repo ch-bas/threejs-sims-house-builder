@@ -62,12 +62,13 @@ export function useLayoutPersistence({
   const pendingRef = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  // Read by the autosave effect: re-setting `saving` while it is already true
-  // still schedules a render (React's eager bailout rarely applies there), and
-  // one per keystroke kept a render pending after every typed character until
-  // fast typing hit "Maximum update depth exceeded" (#480).
+  // What `saving` was last set to, so the autosave effect sets it only when
+  // it flips: re-setting it while already true still schedules a render, and
+  // one per keystroke left a render pending after every typed character until
+  // fast typing hit "Maximum update depth exceeded" (#480). Written beside each
+  // setSaving, never during render: a keystroke render can run before a
+  // queued setSaving(false) is applied, and would read a stale true.
   const savingRef = useRef(saving);
-  savingRef.current = saving;
   const [saveError, setSaveError] = useState<SaveFailureReason | null>(null);
   // The exact JSON this tab last wrote: its own echo must not count as
   // another tab's change (#334).
@@ -236,7 +237,10 @@ export function useLayoutPersistence({
       hydrationBaseRef.current = null;
       return;
     }
-    if (!savingRef.current) setSaving(true);
+    if (!savingRef.current) {
+      savingRef.current = true;
+      setSaving(true);
+    }
     pendingRef.current = true;
     const handle = window.setTimeout(() => {
       // Retried on every edit, so freeing space lets saving resume.
@@ -255,6 +259,7 @@ export function useLayoutPersistence({
         // would show "Saved" for a layout that never reached localStorage.
         pendingRef.current = false;
         setLastSavedAt(Date.now());
+        savingRef.current = false;
         setSaving(false);
         setSaveError(null);
         // Restore point (#231): piggyback on the successful autosave. The
