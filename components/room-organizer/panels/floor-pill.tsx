@@ -1,6 +1,6 @@
 'use client';
 
-import { useRoomEditor } from '../contexts';
+import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { MAX_FLOORS } from '../lib/constants';
 import { Icon } from '../plotcraft/icon';
 
@@ -10,7 +10,9 @@ import { Icon } from '../plotcraft/icon';
  * still live in the sidebar's FloorSwitcher.
  */
 export function FloorPill(): JSX.Element {
-  const { layout, activeFloorIndex, actions, view, toggle } = useRoomEditor();
+  const { layout, activeFloorIndex, actions } = useRoomEditor();
+  const view = useViewSettings('showAllFloors');
+  const { toggle } = useEditorViewActions();
   const floors = layout.floors;
   const canAdd = floors.length < MAX_FLOORS;
   // Top floor first — matches real-world expectations and FloorSwitcher.

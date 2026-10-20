@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useRoomEditor } from '../contexts';
+import { useEditorView, useEditorViewActions, useViewSettings } from '../contexts';
 import { TIME_PRESETS, type TimePresetKey } from '../three/lighting';
 import type { Weather } from '../lib/types';
 
@@ -22,7 +22,9 @@ const WEATHERS: ReadonlyArray<{ key: Weather; label: string; icon: string }> = [
 ];
 
 export function TimeOfDayPanel(): JSX.Element {
-  const { view, setView, autoCycleLighting, setAutoCycleLighting } = useRoomEditor();
+  const view = useViewSettings('timeOfDay', 'view2D', 'weather');
+  const { setView, setAutoCycleLighting } = useEditorViewActions();
+  const autoCycleLighting = useEditorView((state) => state.autoCycleLighting);
   const timeOfDay = view.timeOfDay;
   const disabled = view.view2D;
 

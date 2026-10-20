@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useRoomEditor } from '../contexts';
+import { useEditorView, useEditorViewActions, useRoomEditor } from '../contexts';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
@@ -24,24 +24,16 @@ const COUNTS_BY_CATEGORY: ReadonlyMap<FurnitureCategory, number> = (() => {
 })();
 
 export interface FurnitureCatalogPanelProps {
-  query?: string;
-  onQueryChange?(query: string): void;
   onAdd(item: CatalogItem): void;
 }
 
-export function FurnitureCatalogPanel({
-  onAdd,
-  query: controlledQuery,
-  onQueryChange,
-}: FurnitureCatalogPanelProps): JSX.Element {
+export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JSX.Element {
   const { activeFloorIndex } = useRoomEditor();
   const [filter, setFilter] = useState<FilterKey>('all');
-  const [internalQuery, setInternalQuery] = useState('');
-  const query = controlledQuery ?? internalQuery;
-  const setQuery = (next: string) => {
-    if (onQueryChange) onQueryChange(next);
-    else setInternalQuery(next);
-  };
+  // The search lives in the editor view store, shared with the 3D highlight;
+  // subscribing here keeps a keystroke from re-rendering the drawer (#148).
+  const query = useEditorView((state) => state.catalogQuery);
+  const { setCatalogQuery: setQuery } = useEditorViewActions();
 
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();

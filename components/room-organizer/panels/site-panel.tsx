@@ -4,7 +4,7 @@ import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { useRoomEditor } from '../contexts';
+import { useRoomEditor, useViewSettings } from '../contexts';
 import { MAX_TERRAIN_Y, MIN_TERRAIN_Y, NEIGHBOUR_FLAGS } from '../lib/site';
 import { storeyHeight } from '../lib/storeys';
 import {
@@ -30,7 +30,8 @@ const NEIGHBOUR_LABELS: Record<NeighbourFlag, string> = {
  * runs along the north (front) side.
  */
 export function SitePanel(): JSX.Element {
-  const { layout, actions, view } = useRoomEditor();
+  const { layout, actions } = useRoomEditor();
+  const view = useViewSettings('view2D');
   const frontId = useId();
   const backId = useId();
   const entranceWidthId = useId();

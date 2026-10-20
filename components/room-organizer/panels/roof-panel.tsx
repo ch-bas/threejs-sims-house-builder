@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { useRoomEditor } from '../contexts';
+import { useRoomEditor, useViewSettings } from '../contexts';
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
 import {
   DORMER_PRESET_LABELS,
@@ -28,7 +28,8 @@ import type { DormerSpec, RoofStyle, WallId } from '../lib/types';
 const ROOF_STYLES: ReadonlyArray<RoofStyle> = ['none', 'flat', 'gable', 'hipped'];
 
 export function RoofPanel(): JSX.Element {
-  const { layout, actions, view } = useRoomEditor();
+  const { layout, actions } = useRoomEditor();
+  const view = useViewSettings('view2D');
   const style = layout.roof?.style ?? 'none';
   // Show what the roof actually renders in when it has no colour of its own.
   const color = layout.roof?.color ?? ROOF_STYLE_DEFAULT_COLORS[style];

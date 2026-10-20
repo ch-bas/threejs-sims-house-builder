@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, type RefObject } from 'react';
-import { useRoomEditor } from '../contexts';
-import { toggleViewOption, type ViewOptionKey } from '../lib/view-options';
+import { useEditorViewActions, useViewSettings } from '../contexts';
+import { toggleViewOption, VIEW_OPTION_KEYS, type ViewOptionKey } from '../lib/view-options';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
 interface ViewOption {
@@ -45,7 +45,8 @@ export interface ViewOptionsMenuProps {
  * canvas, so the first distance point can be the click that dismisses it.
  */
 export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps): JSX.Element {
-  const { view, setView } = useRoomEditor();
+  const view = useViewSettings(...VIEW_OPTION_KEYS);
+  const { setView } = useEditorViewActions();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

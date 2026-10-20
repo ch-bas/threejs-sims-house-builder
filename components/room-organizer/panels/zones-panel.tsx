@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useRoomEditor } from '../contexts';
+import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_ZONES, zoneStats } from '../lib/zones';
 import type { RoomZone } from '../lib/types';
@@ -25,7 +25,9 @@ export interface ZonesPanelProps {
  * parks the 3D floor-click modes it would otherwise sit beside.
  */
 export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
-  const { activeFloor, actions, view, setView } = useRoomEditor();
+  const { activeFloor, actions } = useRoomEditor();
+  const view = useViewSettings('drawZoneMode');
+  const { setView } = useEditorViewActions();
   const zones = activeFloor.zones ?? [];
   const drawing = view.drawZoneMode;
 

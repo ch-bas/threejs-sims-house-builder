@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useRoomEditor } from '../contexts';
+import { useEditorView, useRoomEditor, useViewSettings } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
@@ -75,8 +75,9 @@ export function SidebarDrawer({
   placeCatalogItem,
   removeItem,
 }: SidebarDrawerProps): JSX.Element {
-  const { layout, activeFloor, activeFloorIndex, actions, view, isReady, playCue, catalogQuery, setCatalogQuery, gameMode } =
-    useRoomEditor();
+  const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue } = useRoomEditor();
+  const view = useViewSettings('drawWallMode', 'drawZoneMode', 'measurementMode', 'view2D', 'walkthroughMode');
+  const gameMode = useEditorView((state) => state.gameMode);
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   const drawerRef = useRef<HTMLElement>(null);
@@ -235,8 +236,6 @@ export function SidebarDrawer({
           {sidebarTab === 'buy' && (
             <>
               <FurnitureCatalogPanel
-                query={catalogQuery}
-                onQueryChange={setCatalogQuery}
                 onAdd={(catalogItem) => {
                   const id = placeCatalogItem(catalogItem);
                   if (!id) return;
