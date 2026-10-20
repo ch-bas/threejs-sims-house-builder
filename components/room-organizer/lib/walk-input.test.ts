@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WALK_MAX_FRAME_SECONDS, startsWalking, walkFrameSeconds } from './walk-input';
+import { WALK_MAX_FRAME_SECONDS, releasesHeldKeys, startsWalking, walkFrameSeconds } from './walk-input';
 
 const key = (code: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => ({
   code,
@@ -40,5 +40,34 @@ describe('startsWalking (#421)', () => {
     expect(startsWalking(key('KeyS', { metaKey: true }))).toBe(false);
     expect(startsWalking(key('KeyW', { altKey: true }))).toBe(false);
     expect(startsWalking(key('ShiftLeft', { ctrlKey: true }))).toBe(false);
+  });
+});
+
+describe('releasesHeldKeys (#421)', () => {
+  it('drops held keys on either Cmd edge', () => {
+    expect(releasesHeldKeys({ key: 'Meta' })).toBe(true);
+    expect(releasesHeldKeys({ key: 'Control' })).toBe(false);
+    expect(releasesHeldKeys({ key: 'w' })).toBe(false);
+  });
+
+  it('hold W, tap Cmd+Z, let W go under Cmd, release Cmd: W is no longer held', () => {
+    // The walkthrough hook's keydown / keyup rules, replayed on the events
+    // macOS delivers: no keyup for W, which was released while Cmd was down.
+    const pressed = new Set<string>();
+    const down = (code: string, key: string, metaKey = false) => {
+      const event = { code, key, metaKey, ctrlKey: false, altKey: false };
+      if (releasesHeldKeys(event)) pressed.clear();
+      else if (startsWalking(event)) pressed.add(code);
+    };
+    const up = (code: string, key: string) => {
+      if (releasesHeldKeys({ key })) pressed.clear();
+      else pressed.delete(code);
+    };
+    down('KeyW', 'w');
+    down('MetaLeft', 'Meta', true);
+    down('KeyZ', 'z', true);
+    up('KeyZ', 'z');
+    up('MetaLeft', 'Meta');
+    expect(pressed.has('KeyW')).toBe(false);
   });
 });

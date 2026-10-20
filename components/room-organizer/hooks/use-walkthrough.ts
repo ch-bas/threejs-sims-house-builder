@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildWalkColliders, resolveWalkerStep } from '../lib/walk-collision';
-import { startsWalking, walkFrameSeconds } from '../lib/walk-input';
+import { releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type { WalkCollider, WalkCollisionOptions, WalkerPosition } from '../lib/walk-collision';
 import type * as ThreeNS from 'three';
@@ -142,9 +142,13 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     let rafId = 0;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (startsWalking(event)) pressed.add(event.code);
+      if (releasesHeldKeys(event)) pressed.clear();
+      else if (startsWalking(event)) pressed.add(event.code);
     };
-    const onKeyUp = (event: KeyboardEvent) => pressed.delete(event.code);
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (releasesHeldKeys(event)) pressed.clear();
+      else pressed.delete(event.code);
+    };
     // Escape exit: the browser reserves the first Escape to release pointer
     // lock, so we only act on an Escape received while already unlocked — that
     // second press leaves walkthrough mode entirely (see #67).

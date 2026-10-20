@@ -38,10 +38,19 @@ interface KeyChord {
 
 /**
  * Whether a keydown starts walking. A Ctrl/Cmd/Alt chord is a shortcut, not a
- * step: Ctrl+D duplicates, and macOS never sends the keyup of a key pressed
- * while Cmd is held, so the walker would march on. Shift stays: it sprints.
+ * step: Ctrl+D duplicates. Shift stays: it sprints.
  */
 export function startsWalking(event: KeyChord): boolean {
   if (event.ctrlKey || event.metaKey || event.altKey) return false;
   return WALK_MOVEMENT_KEYS.has(event.code);
+}
+
+/**
+ * Whether a keydown or keyup must drop every held key. macOS never sends the
+ * keyup of any key released while Cmd is down, so W held before a Cmd+Z and
+ * let go during it would march the walker on. Dropping on both Cmd edges
+ * costs only a re-press of a key still held.
+ */
+export function releasesHeldKeys(event: { key: string }): boolean {
+  return event.key === 'Meta';
 }
