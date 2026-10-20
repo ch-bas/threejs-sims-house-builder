@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.17.0] - 2026-10-20
+
+The **Performance & engine** milestone, first wave: edits rebuild only what changed, the scenery draws in far fewer calls, and the app loads faster with nothing fetched from outside.
+
+### Changed
+- **Editing furniture is much lighter:** moving, rotating, mirroring or locking an item moves its existing model instead of rebuilding every item on the floor. On a 150-item floor a rotate shows in about half the time ([#404](https://github.com/ch-bas/threejs-sims-house-builder/issues/404))
+- Switching floors keeps the roof built instead of rebuilding it and every dormer; changing an item's colour or position no longer redraws every label, Wi-Fi ring and camera cone ([#283](https://github.com/ch-bas/threejs-sims-house-builder/issues/283), [#409](https://github.com/ch-bas/threejs-sims-house-builder/issues/409), [#398](https://github.com/ch-bas/threejs-sims-house-builder/issues/398))
+- The trees around the lot draw in 13 pieces instead of 134, and placed people share one copy of the model: hovering over a person is instant, and furniture edits near them no longer re-upload it ([#407](https://github.com/ch-bas/threejs-sims-house-builder/issues/407), [#284](https://github.com/ch-bas/threejs-sims-house-builder/issues/284))
+- Walkers standing still no longer redraw the shadows every frame ([#400](https://github.com/ch-bas/threejs-sims-house-builder/issues/400))
+- The time-of-day cycle and typing in the catalog search no longer re-render the whole editor ([#148](https://github.com/ch-bas/threejs-sims-house-builder/issues/148), [#3](https://github.com/ch-bas/threejs-sims-house-builder/issues/3))
+- **Faster loading:** the 3D engine downloads alongside the editor instead of after it, the fonts are served with the app (no request to Google Fonts), and the drop-down menus are native controls, about 29 KB lighter ([#413](https://github.com/ch-bas/threejs-sims-house-builder/issues/413), [#417](https://github.com/ch-bas/threejs-sims-house-builder/issues/417), [#415](https://github.com/ch-bas/threejs-sims-house-builder/issues/415))
+
+### Fixed
+- Typing a long house name quickly could crash the editor with "Maximum update depth exceeded" ([#480](https://github.com/ch-bas/threejs-sims-house-builder/issues/480))
+- When Google Fonts was blocked, the page reloaded itself once and took several seconds to appear ([#417](https://github.com/ch-bas/threejs-sims-house-builder/issues/417))
+- On a slow connection, a nearly finished load could restart itself ([#413](https://github.com/ch-bas/threejs-sims-house-builder/issues/413))
+- Walkthrough keeps the same walking speed down to 10 frames per second, and Ctrl/Cmd/Alt shortcuts no longer walk you forward or leave a key stuck ([#421](https://github.com/ch-bas/threejs-sims-house-builder/issues/421))
+- A drag interrupted by another tab or by the people model loading no longer leaves the item tinted red or saves a stale position ([#404](https://github.com/ch-bas/threejs-sims-house-builder/issues/404))
+
 ## [1.16.0] - 2026-10-08
 
 The **Rendering & lighting polish** milestone: real nights, a walkthrough you can stand inside, and furniture that looks like what it is.
