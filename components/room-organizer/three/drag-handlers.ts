@@ -129,12 +129,14 @@ export function attachDragHandlers({
 
   // Raycast pre-filter cache. `scene.children.filter(...)` allocated a fresh
   // array on every pointermove (hover) and every pointerdown. The furniture set
-  // only changes on a rebuild, which bumps scene.userData[FURNITURE_REVISION_KEY];
-  // rebuild the cached list lazily when that revision moves.
+  // only changes when the furniture effect runs, which bumps
+  // scene.userData[FURNITURE_REVISION_KEY]; rebuild the cached list lazily
+  // when that revision moves.
+  const furnitureRevision = (): number => (scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0;
   let furnitureCache: ThreeNS.Object3D[] = [];
   let furnitureCacheRevision = Number.NaN;
   const furnitureList = (): ThreeNS.Object3D[] => {
-    const revision = (scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0;
+    const revision = furnitureRevision();
     if (revision !== furnitureCacheRevision) {
       // Ghosted furniture on inactive floors (show-all-floors mode) is
       // scenery, not a pointer target: clicking it silently dropped the
@@ -163,6 +165,10 @@ export function attachDragHandlers({
   // The press kept a multi-selection (#291); a release without a drag
   // narrows it to the pressed item.
   let selectOnRelease = false;
+  // The furniture revision when the press armed the drag. The furniture
+  // effect keeps unchanged groups across a state change (#404), so a
+  // surviving parent no longer proves the state under the drag is unchanged.
+  let dragRevision = 0;
 
   const setPointerFromEvent = (event: { clientX: number; clientY: number }): void => {
     const rect = canvas.getBoundingClientRect();
@@ -257,6 +263,7 @@ export function attachDragHandlers({
     // begins once the pointer travels past the threshold (see onPointerMove).
     dragTarget = target;
     dragStarted = false;
+    dragRevision = furnitureRevision();
     activePointerId = event.pointerId;
     downClientX = event.clientX;
     downClientY = event.clientY;
@@ -321,13 +328,13 @@ export function attachDragHandlers({
       beginDragSession(event);
     }
 
-    // The furniture set can be rebuilt under a live drag despite the keyboard
+    // The furniture set can change under a live drag despite the keyboard
     // gate (#245): a cross-tab adopt, library load, or any other state-driven
-    // rebuild disposes the captured group and detaches it from the scene.
-    // Dragging it then paints nothing, while the release would still commit
-    // the stale in-flight positions over the fresh state. A detached group
-    // has no parent — abort the gesture; state is already authoritative.
-    if (dragTarget.parent === null) {
+    // update. A rebuild disposes the captured group and detaches it; a kept
+    // group is re-placed at its stored position (#404). Either way the
+    // release would commit stale in-flight positions over the fresh state —
+    // abort the gesture; state is already authoritative.
+    if (dragTarget.parent === null || furnitureRevision() !== dragRevision) {
       abortGesture(false);
       return;
     }
