@@ -335,6 +335,7 @@ components/
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
     │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214)
+    │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
@@ -533,6 +534,13 @@ components/
   cleanup and cancels the RAF. PNG capture renders a fresh frame
   synchronously before reading the canvas, so `preserveDrawingBuffer`
   stays off and the renderer keeps its buffer optimisations. Scene rebuilds live in `useSceneEffects`.
+- **Show or hide before you rebuild.** The roof is built while it is on
+  screen and kept, hidden, below the top storey (`setRoofOnStorey`, which
+  `applyWallDisplay` honours), so a floor switch flips visibility instead of
+  rebuilding every dormer; a roof edit made down there rebuilds it on the way
+  back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
+  not on every item edit, and the wall-draw preview re-poses one unit box per
+  pointer move (#283, #409).
 - **Filmic rendering pipeline.** ACES tone mapping, explicit sRGB output,
   device-pixel-ratio-aware rendering (capped at 2×), PCF shadows softened
   by the sun's `shadow.radius`, and

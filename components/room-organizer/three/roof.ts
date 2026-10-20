@@ -103,6 +103,20 @@ export function roofPeakHeight(style: RoofStyle, width: number, depth: number, p
   }
 }
 
+/**
+ * userData flag on the roof's top-level objects while the active storey is
+ * below the top one: the roof stays built and only hides, so a floor switch
+ * flips visibility instead of rebuilding the roof and every dormer (#283).
+ * applyWallDisplay honours it in every wall-display mode.
+ */
+export const ROOF_OFF_STOREY_KEY = 'roofOffStorey';
+
+export function setRoofOnStorey(scene: ThreeNS.Scene, onStorey: boolean): void {
+  for (const obj of scene.children) {
+    if (obj.userData.type === ROOF_TAG) obj.userData[ROOF_OFF_STOREY_KEY] = !onStorey;
+  }
+}
+
 export function removeRoof(scene: ThreeNS.Scene): void {
   scene.children
     .filter((obj) => obj.userData.type === ROOF_TAG)

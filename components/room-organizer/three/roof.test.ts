@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { buildRoof, roofSurfaceUvs } from './roof';
+import { ROOF_OFF_STOREY_KEY, buildRoof, roofSurfaceUvs, setRoofOnStorey } from './roof';
 import type { RoofStyle } from '../lib/types';
 
 function roofMeshes(style: RoofStyle, width: number, depth: number): THREE.Mesh[] {
@@ -72,5 +72,23 @@ describe('buildRoof surface UVs (#211)', () => {
       return max - min;
     };
     expect(vSpan(16, 12) / vSpan(8, 6)).toBeLessThanOrEqual(2 + 1e-6);
+  });
+});
+
+describe('setRoofOnStorey (#283)', () => {
+  it('flags every top-level roof object and nothing else', () => {
+    const scene = new THREE.Scene();
+    buildRoof(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'gable', dormers: [{ id: 'd', side: 'north', width: 1.6, window: true }] } });
+    const other = new THREE.Object3D();
+    other.userData.type = 'wall';
+    scene.add(other);
+    const roofs = scene.children.filter((obj) => obj.userData.type === 'roof');
+    expect(roofs.length).toBeGreaterThan(1);
+
+    setRoofOnStorey(scene, false);
+    expect(roofs.every((obj) => obj.userData[ROOF_OFF_STOREY_KEY] === true)).toBe(true);
+    expect(other.userData[ROOF_OFF_STOREY_KEY]).toBeUndefined();
+    setRoofOnStorey(scene, true);
+    expect(roofs.every((obj) => obj.userData[ROOF_OFF_STOREY_KEY] === false)).toBe(true);
   });
 });

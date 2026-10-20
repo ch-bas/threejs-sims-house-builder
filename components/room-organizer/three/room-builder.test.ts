@@ -35,6 +35,13 @@ describe('applyWallDisplay', () => {
     expect(children.map((c) => c.visible)).toEqual([false, false, true, false, false]);
   });
 
+  it('keeps a roof flagged off-storey hidden even with every wall up (#283)', () => {
+    const offStorey: FakeObject = { visible: true, userData: { type: 'roof', roofOffStorey: true } };
+    const children = [wall('north'), roof(), offStorey];
+    applyWallDisplay(makeScene(children), 0, 10, 'up', 8, 8);
+    expect(children.map((c) => c.visible)).toEqual([true, true, false]);
+  });
+
   it('cutaway hides only the walls between the camera and the room', () => {
     const children = [wall('north'), wall('south'), wall('east'), wall('west'), roof()];
     // Camera south of the room: the south wall faces it and is cut away.
