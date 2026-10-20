@@ -386,6 +386,12 @@ export function attachDragHandlers({
 
   const endGesture = (event: PointerEvent): void => {
     if (event.pointerId !== activePointerId && activePointerId !== null) return;
+    // The furniture effect ran between the last move and the release: the
+    // same stale-commit hazard as in onPointerMove, so abort, don't commit.
+    if (dragStarted && dragTarget && (dragTarget.parent === null || furnitureRevision() !== dragRevision)) {
+      abortGesture(false);
+      return;
+    }
     const started = dragStarted;
     const target = dragTarget;
     if (activePointerId !== null) {
