@@ -380,12 +380,11 @@ function getBirchBarkTexture(THREE: ThreeModule): ThreeNS.CanvasTexture | null {
 /** Displace each icosahedron vertex slightly so the surface reads as a
  * lumpy leaf cluster rather than a smooth sphere. Flat-shaded so the
  * faceted look says "many leaves" at orbit distance. */
-function buildLeafBlob(
+function buildLeafBlobGeometry(
   THREE: ThreeModule,
   radius: number,
-  color: number,
   seed: number
-): ThreeNS.Mesh {
+): ThreeNS.BufferGeometry {
   const geom = new THREE.IcosahedronGeometry(radius, 1);
   const positions = geom.attributes.position;
   if (positions) {
@@ -406,12 +405,7 @@ function buildLeafBlob(
     positions.needsUpdate = true;
   }
   geom.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.95,
-    flatShading: true,
-  });
-  return new THREE.Mesh(geom, mat);
+  return geom;
 }
 
 function scatterPerimeter(
@@ -430,7 +424,7 @@ function scatterPerimeter(
   const bushGeom = new THREE.SphereGeometry(0.45, 10, 10);
 
   // Trees: ring around three sides of the lot (skip the road side).
-  const treePositions: Array<readonly [number, number]> = [];
+  const forest: Forest = { parts: new Map(), bases: [] };
   const treeCount = 14;
   for (let i = 0; i < treeCount; i += 1) {
     const t = i / treeCount;
@@ -451,10 +445,10 @@ function scatterPerimeter(
     // A neighbour's house stands on that side (#202), or the street row does (#310).
     if ((side === 1 && hasNeighbourOn(neighbours, 'east')) || (side === 2 && hasNeighbourOn(neighbours, 'west'))) continue;
     if (onStreet(z)) continue;
-    treePositions.push([x, z]);
-    addTree(THREE, scene, x, groundAt(z), z, TREE_KINDS[i % TREE_KINDS.length]!, rng);
+    addTree(THREE, forest, x, groundAt(z), z, TREE_KINDS[i % TREE_KINDS.length]!, rng);
     void t;
   }
+  addForest(THREE, scene, forest);
 
   // Small ornamental shrubs hugging the lot edges — identical sphere geometry
   // and material, so collapse them into one InstancedMesh (1 draw call). RNG is
@@ -535,9 +529,55 @@ function scatterPerimeter(
   }
 }
 
+/**
+ * The perimeter trees, merged (#407): one mesh per (kind, part, shade) holding
+ * every tree's copy of that part baked into world space, instead of ~10 meshes
+ * and ~8 materials per tree. Baking rather than instancing keeps each tree's
+ * own seeded leaf jitter, scale and spin.
+ */
+interface ForestPart {
+  material: ThreeNS.MeshStandardMaterial;
+  castShadow: boolean;
+  receiveShadow: boolean;
+  geometries: ThreeNS.BufferGeometry[];
+}
+
+interface Forest {
+  parts: Map<string, ForestPart>;
+  /** Where each tree stands (its base), in planting order. */
+  bases: Array<{ x: number; y: number; z: number }>;
+}
+
+/** Marks the group holding the merged perimeter trees. */
+const TREES_ROLE = 'trees';
+
+function forestPart(
+  forest: Forest,
+  key: string,
+  castShadow: boolean,
+  receiveShadow: boolean,
+  makeMaterial: () => ThreeNS.MeshStandardMaterial
+): ForestPart {
+  let part = forest.parts.get(key);
+  if (!part) {
+    part = { material: makeMaterial(), castShadow, receiveShadow, geometries: [] };
+    forest.parts.set(key, part);
+  }
+  return part;
+}
+
+function trunkMaterial(THREE: ThreeModule, kind: TreeKind): ThreeNS.MeshStandardMaterial {
+  const bark = kind.id === 'birch' ? getBirchBarkTexture(THREE) : null;
+  if (!bark) return new THREE.MeshStandardMaterial({ color: kind.trunkColor, roughness: 0.95 });
+  const trunkBark = bark.clone();
+  trunkBark.needsUpdate = true;
+  trunkBark.repeat.set(1, Math.max(1, kind.trunkHeight / 2));
+  return new THREE.MeshStandardMaterial({ map: trunkBark, roughness: 0.85 });
+}
+
 function addTree(
   THREE: ThreeModule,
-  scene: ThreeNS.Scene,
+  forest: Forest,
   x: number,
   y: number,
   z: number,
@@ -547,58 +587,37 @@ function addTree(
   const scale = 0.85 + rng() * 0.5;
   const group = new THREE.Group();
   const seed = rng() * 1000;
+  // Placeholder nodes carry each part's local transform until it's baked.
+  const pieces: Array<{ node: ThreeNS.Object3D; geometry: ThreeNS.BufferGeometry; part: ForestPart }> = [];
+  const piece = (geometry: ThreeNS.BufferGeometry, part: ForestPart): ThreeNS.Object3D => {
+    const node = new THREE.Object3D();
+    group.add(node);
+    pieces.push({ node, geometry, part });
+    return node;
+  };
 
   // ----- Trunk -----
-  let trunkMat: ThreeNS.MeshStandardMaterial;
-  if (kind.id === 'birch') {
-    const bark = getBirchBarkTexture(THREE);
-    if (bark) {
-      const trunkBark = bark.clone();
-      trunkBark.needsUpdate = true;
-      trunkBark.repeat.set(1, Math.max(1, kind.trunkHeight / 2));
-      trunkMat = new THREE.MeshStandardMaterial({
-        map: trunkBark,
-        roughness: 0.85,
-      });
-    } else {
-      trunkMat = new THREE.MeshStandardMaterial({
-        color: kind.trunkColor,
-        roughness: 0.95,
-      });
-    }
-  } else {
-    trunkMat = new THREE.MeshStandardMaterial({
-      color: kind.trunkColor,
-      roughness: 0.95,
-    });
-  }
-  const trunk = new THREE.Mesh(
+  const trunk = piece(
     new THREE.CylinderGeometry(
       kind.trunkRadius * 0.75, // narrower at top
       kind.trunkRadius * 1.2,  // flare at the base
       kind.trunkHeight,
       12
     ),
-    trunkMat
+    forestPart(forest, `${kind.id}:trunk`, true, true, () => trunkMaterial(THREE, kind))
   );
   trunk.position.y = kind.trunkHeight / 2;
-  trunk.castShadow = true;
-  trunk.receiveShadow = true;
-  group.add(trunk);
 
   // A subtle root flare ring at the very bottom for the leafy species.
   if (kind.id !== 'pine') {
-    const flareMat = new THREE.MeshStandardMaterial({
-      color: kind.id === 'birch' ? 0xc8c2b6 : 0x4d3520,
-      roughness: 1,
-    });
-    const flare = new THREE.Mesh(
+    const flare = piece(
       new THREE.CylinderGeometry(kind.trunkRadius * 1.4, kind.trunkRadius * 1.7, 0.12, 10),
-      flareMat
+      forestPart(forest, `${kind.id}:flare`, false, true, () => new THREE.MeshStandardMaterial({
+        color: kind.id === 'birch' ? 0xc8c2b6 : 0x4d3520,
+        roughness: 1,
+      }))
     );
     flare.position.y = 0.05;
-    flare.receiveShadow = true;
-    group.add(flare);
   }
 
   // ----- Crown -----
@@ -614,35 +633,35 @@ function addTree(
       { y: 3.0, r: kind.crownRadius * 0.35, h: 0.8, dark: true  },
     ];
     for (const t of tiers) {
-      const mat = new THREE.MeshStandardMaterial({
-        color: t.dark ? kind.leafColor : kind.leafColorAlt,
-        roughness: 0.95,
-        flatShading: true,
-      });
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 14), mat);
+      const cone = piece(
+        new THREE.ConeGeometry(t.r, t.h, 14),
+        forestPart(forest, `${kind.id}:needles:${t.dark ? 'dark' : 'light'}`, true, false, () => new THREE.MeshStandardMaterial({
+          color: t.dark ? kind.leafColor : kind.leafColorAlt,
+          roughness: 0.95,
+          flatShading: true,
+        }))
+      );
       cone.position.y = kind.trunkHeight + t.y + t.h / 2;
       cone.rotation.y = rng() * Math.PI * 2;
-      cone.castShadow = true;
-      group.add(cone);
     }
   } else {
     // Visible branches poking out from the top of the trunk before the
     // foliage takes over.
-    const branchMat = new THREE.MeshStandardMaterial({
+    const branchPart = forestPart(forest, `${kind.id}:branch`, true, false, () => new THREE.MeshStandardMaterial({
       color: kind.trunkColor,
       roughness: 0.9,
-    });
+    }));
     for (let b = 0; b < 3; b += 1) {
       const angle = (b / 3) * Math.PI * 2 + rng() * 0.5;
       const branchLen = kind.crownRadius * (0.5 + rng() * 0.3);
-      const branch = new THREE.Mesh(
+      const branch = piece(
         new THREE.CylinderGeometry(
           kind.trunkRadius * 0.35,
           kind.trunkRadius * 0.5,
           branchLen,
           6
         ),
-        branchMat
+        branchPart
       );
       branch.rotation.z = Math.PI / 2 - 0.6;
       branch.rotation.y = angle;
@@ -651,8 +670,6 @@ function addTree(
         kind.trunkHeight - 0.1,
         Math.sin(angle) * branchLen * 0.45
       );
-      branch.castShadow = true;
-      group.add(branch);
     }
 
     // Cluster of 6 lumpy leaf blobs in alternating shades. Each blob is an
@@ -669,25 +686,102 @@ function addTree(
     ];
     blobs.forEach(([bx, by, bz, br, ci], i) => {
       const color = ci === 1 ? kind.leafColorAlt : kind.leafColor;
-      const blob = buildLeafBlob(THREE, kind.crownRadius * br, color, seed + i);
+      const blob = piece(
+        buildLeafBlobGeometry(THREE, kind.crownRadius * br, seed + i),
+        forestPart(forest, `${kind.id}:leaves:${ci}`, true, true, () => new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.95,
+          flatShading: true,
+        }))
+      );
       blob.position.set(
         bx * kind.crownRadius,
         kind.trunkHeight + kind.crownRadius * (0.5 + by),
         bz * kind.crownRadius
       );
-      blob.castShadow = true;
-      blob.receiveShadow = true;
-      group.add(blob);
     });
   }
 
   group.position.set(x, y, z);
   group.rotation.y = rng() * Math.PI * 2;
   group.scale.setScalar(scale);
+  group.updateMatrixWorld(true);
+  for (const { node, geometry, part } of pieces) {
+    geometry.applyMatrix4(node.matrixWorld);
+    part.geometries.push(geometry);
+  }
+  forest.bases.push({ x, y, z });
+}
+
+/** Turn the collected parts into one static mesh each, under one group. */
+function addForest(THREE: ThreeModule, scene: ThreeNS.Scene, forest: Forest): void {
+  if (forest.parts.size === 0) return;
+  const group = new THREE.Group();
+  for (const part of forest.parts.values()) {
+    const merged = new THREE.Mesh(mergeStaticGeometries(THREE, part.geometries), part.material);
+    merged.castShadow = part.castShadow;
+    merged.receiveShadow = part.receiveShadow;
+    group.add(merged);
+  }
   group.userData.type = OUTDOOR_TAG;
+  group.userData.role = TREES_ROLE;
+  group.userData.treeBases = forest.bases;
   // Trees never move — bake the group's and every child's matrix once.
   freezeMatrixDeep(group);
   scene.add(group);
+}
+
+/**
+ * Concatenate geometries that are already in world space into one, and
+ * dispose the inputs. The trees feed it parts from one three generator, so
+ * the attribute names match and all are indexed or none is; a mix is
+ * normalised to non-indexed. Exported for tests.
+ */
+export function mergeStaticGeometries(
+  THREE: ThreeModule,
+  input: readonly ThreeNS.BufferGeometry[]
+): ThreeNS.BufferGeometry {
+  const indexed = input.every((g) => g.index !== null);
+  const sources = indexed ? input : input.map((g) => (g.index ? g.toNonIndexed() : g));
+  const merged = new THREE.BufferGeometry();
+  const first = sources[0];
+  if (!first) return merged;
+  const names = Object.keys(first.attributes).filter((name) => sources.every((g) => g.hasAttribute(name)));
+  let vertexCount = 0;
+  let indexCount = 0;
+  for (const g of sources) {
+    vertexCount += g.getAttribute('position').count;
+    indexCount += g.index?.count ?? 0;
+  }
+  for (const name of names) {
+    const itemSize = first.getAttribute(name).itemSize;
+    const array = new Float32Array(vertexCount * itemSize);
+    let offset = 0;
+    for (const g of sources) {
+      const attr = g.getAttribute(name);
+      for (let i = 0; i < attr.count; i += 1) {
+        for (let c = 0; c < itemSize; c += 1) array[offset + i * itemSize + c] = attr.getComponent(i, c);
+      }
+      offset += attr.count * itemSize;
+    }
+    merged.setAttribute(name, new THREE.BufferAttribute(array, itemSize));
+  }
+  if (indexed) {
+    const index = vertexCount > 65535 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
+    let at = 0;
+    let base = 0;
+    for (const g of sources) {
+      const source = g.index;
+      if (!source) continue;
+      for (let i = 0; i < source.count; i += 1) index[at + i] = source.getX(i) + base;
+      at += source.count;
+      base += g.getAttribute('position').count;
+    }
+    merged.setIndex(new THREE.BufferAttribute(index, 1));
+  }
+  merged.computeBoundingSphere();
+  for (const g of new Set([...input, ...sources])) g.dispose();
+  return merged;
 }
 
 /**
