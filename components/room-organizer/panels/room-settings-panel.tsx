@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { MAX_NAME_LENGTH } from '../lib/schema';
@@ -147,17 +147,14 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
                     Fit Mode
                   </Label>
                   <Select
+                    id={fitModeId}
                     value={layout.floorPlanFitMode ?? 'stretch'}
                     onValueChange={(value) => actions.setFloorPlanFitMode(value as FloorPlanFitMode)}
+                    className="w-full text-xs"
                   >
-                    <SelectTrigger id={fitModeId} className="w-full text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="stretch">Stretch (Fill Room)</SelectItem>
-                      <SelectItem value="cover">Cover (No Gaps)</SelectItem>
-                      <SelectItem value="contain">Contain (Show All)</SelectItem>
-                    </SelectContent>
+                    <option value="stretch">Stretch (Fill Room)</option>
+                    <option value="cover">Cover (No Gaps)</option>
+                    <option value="contain">Contain (Show All)</option>
                   </Select>
                   <p className="text-xs text-muted-foreground mt-1">
                     {FIT_MODE_HINTS[layout.floorPlanFitMode ?? 'stretch']}

@@ -3,7 +3,7 @@
    Mirrors .claude/skills/plotcraft-design/colors_and_type.css.
    =========================================================== */
 
-@import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Nunito:wght@500;600;700;800&display=swap");
+/* Sora and Nunito come from next/font in app/layout.tsx (#417). */
 
 :root {
   /* ---------- WORLD COLORS ---------- */
@@ -80,8 +80,8 @@
   --pc-t-big: 320ms;
 
   /* ---------- TYPE ---------- */
-  --pc-font-display: "Sora", system-ui, sans-serif;
-  --pc-font-body:    "Nunito", system-ui, sans-serif;
+  --pc-font-display: var(--pc-font-sora, "Sora"), system-ui, sans-serif;
+  --pc-font-body:    var(--pc-font-nunito, "Nunito"), system-ui, sans-serif;
   --pc-tr-caps: 0.06em;
   --pc-tr-mode: 0.10em;
 }

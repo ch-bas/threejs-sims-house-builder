@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select } from '@/components/ui/select';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
 
 // A Record, not a list, so a template added to ROOM_TEMPLATES without a label
@@ -41,20 +41,20 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
       </CardHeader>
       <CardContent>
         {/* Controlled with an always-empty value so choosing the SAME template
-            twice still fires onValueChange (Radix suppresses same-value
-            changes on an uncontrolled select) — re-applying a template after
-            edits was a silent no-op (#122). */}
-        <Select value="" onValueChange={(key) => load(key as RoomTemplateKey)}>
-          <SelectTrigger>
-            <SelectValue placeholder="Load a template..." />
-          </SelectTrigger>
-          <SelectContent>
-            {TEMPLATE_OPTIONS.map((option) => (
-              <SelectItem key={option.key} value={option.key}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
+            twice still fires onValueChange (a select only reports a change
+            away from its current value) — re-applying a template after edits
+            was a silent no-op (#122). */}
+        <Select
+          value=""
+          onValueChange={(key) => load(key as RoomTemplateKey)}
+          placeholder="Load a template..."
+          aria-label="Load a template"
+        >
+          {TEMPLATE_OPTIONS.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
         </Select>
         {status && (
           <p role="status" className="mt-2 text-xs text-muted-foreground">

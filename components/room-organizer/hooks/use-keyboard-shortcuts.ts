@@ -88,7 +88,7 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsOptions): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) return;
+      if (ownsKey(event)) return;
 
       // Held until the drop; view-only keys (snap, measurements, time) still work.
       if (isDragActive?.() && interruptsDrag(event)) {
@@ -267,6 +267,20 @@ export function useKeyboardShortcuts({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, isDragActive, handlers]);
+}
+
+/**
+ * Whether the focused control keeps this key for itself. Text fields keep
+ * everything (their own text undo included). A native <select> keeps keys
+ * that drive it (arrows, letters for type-ahead, Space/Enter) but has no
+ * undo of its own, and picking an option leaves it focused, so Ctrl/Cmd+Z
+ * and Ctrl/Cmd+Y still reach the editor (#415).
+ */
+function ownsKey(event: KeyboardEvent): boolean {
+  if (!isTypingTarget(event.target)) return false;
+  if (!(event.target instanceof HTMLSelectElement)) return true;
+  const key = event.key.toLowerCase();
+  return !((event.ctrlKey || event.metaKey) && (key === 'z' || key === 'y'));
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
