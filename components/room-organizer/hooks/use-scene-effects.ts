@@ -561,7 +561,7 @@ export function useSceneEffects({
       const planIndex = group.userData.floorIndex === activeFloorIndex && outlineIds.has(id) ? planIndexById.get(id) : undefined;
       const item = planIndex === undefined ? undefined : activePlan?.items[planIndex];
 
-      let wanted: { accent: number; band: { bottom: number; top: number }; signature: string } | null = null;
+      let wanted: { accent: number; width: number; depth: number; band: { bottom: number; top: number }; signature: string } | null = null;
       if (item && planIndex !== undefined && activePlan) {
         const isSelected = selectedItemId === id || extraSelectedIds.has(id);
         const collision = activePlan.collisions[planIndex] === true;
@@ -575,7 +575,7 @@ export function useSceneEffects({
         // Around the built mesh, not floor-to-height: a painting hangs at 0.8 m
         // and a window starts at its sill (#376).
         const band = mountBand(itemForStorey(item, activeFloor), storeyHeight(activeFloor));
-        wanted = { accent, band, signature: `${accent}|${item.width}|${item.depth}|${band.bottom}|${band.top}` };
+        wanted = { accent, width: item.width, depth: item.depth, band, signature: `${accent}|${item.width}|${item.depth}|${band.bottom}|${band.top}` };
       }
 
       // An outline that already matches stays: the group carries it through a
@@ -586,10 +586,10 @@ export function useSceneEffects({
         group.remove(current);
         disposeObject(current);
       }
-      if (!wanted || !item) continue;
+      if (!wanted) continue;
 
-      const { accent, band } = wanted;
-      const geometry = new THREE.BoxGeometry(item.width, band.top - band.bottom, item.depth);
+      const { accent, width, depth, band } = wanted;
+      const geometry = new THREE.BoxGeometry(width, band.top - band.bottom, depth);
       const edges = new THREE.EdgesGeometry(geometry);
       geometry.dispose();
       const outline = new THREE.LineSegments(
