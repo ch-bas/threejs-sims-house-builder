@@ -1,4 +1,4 @@
-import { SHARED_GEOMETRY } from './builder-utils';
+import { markSharedGeometry } from './builder-utils';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('three');
@@ -108,7 +108,7 @@ export function clonePerson(
   root.traverse((node) => {
     const mesh = node as ThreeNS.Mesh;
     if (!mesh.isMesh) return;
-    mesh.geometry.userData[SHARED_GEOMETRY] = true;
+    markSharedGeometry(mesh.geometry);
     const original = mesh.material as ThreeNS.MeshStandardMaterial;
     const isJoint = original.name === 'M_Joints';
     const material = new THREE.MeshStandardMaterial({
@@ -147,6 +147,18 @@ export function pickByBox(THREE: ThreeModule, frame: ThreeNS.Object3D, box: Thre
   };
   frame.traverse((node) => {
     if (node !== frame && (node as ThreeNS.Mesh).isMesh) node.raycast = () => {};
+  });
+}
+
+/**
+ * Free the cached model's GPU buffers when the editor's renderer goes away
+ * (#284): people share them, so no person's disposal ever does. The model
+ * stays cached; the next renderer uploads it again on first draw.
+ */
+export function releasePeopleGeometry(): void {
+  model?.scene.traverse((node) => {
+    const mesh = node as ThreeNS.Mesh;
+    if (mesh.isMesh) mesh.geometry.dispose();
   });
 }
 

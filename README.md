@@ -566,10 +566,12 @@ components/
   one mesh per kind, part and shade (13 meshes, not ~134), which keeps each
   tree's seeded leaf jitter that instancing would lose (#407).
 - **Rigged people are cheap to rebuild and to hover.** Every clone draws the
-  cached people.glb geometry (flagged `sharedGeometry`, which
-  `disposeObject` skips) with its own skeleton and materials, so a furniture
-  rebuild doesn't re-upload 7.8k skinned vertices per person; a placed
-  person is picked by its item box instead of CPU-skinned triangles (#284).
+  cached people.glb geometry (`markSharedGeometry`, a WeakSet that
+  `disposeObject` skips; not userData, which GLB export would write) with
+  its own skeleton and materials, so a furniture rebuild doesn't re-upload
+  7.8k skinned vertices per person; the editor's unmount frees it with
+  `releasePeopleGeometry`. A placed person is picked by its item box
+  instead of CPU-skinned triangles (#284).
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
 - **Drag fast-path.** While dragging, meshes are moved directly and the

@@ -16,11 +16,20 @@ export interface BuilderContext {
 export type FurnitureBuilder = (ctx: BuilderContext) => ThreeNS.Group;
 
 /**
- * `geometry.userData` flag for a geometry several objects draw, such as the
- * cached people model's (#284). `disposeObject` leaves it alone: freeing it
- * would make every other user re-upload it.
+ * Geometries several objects draw, such as the cached people model's (#284).
+ * `disposeObject` leaves them alone: freeing one would make every other user
+ * re-upload it. A WeakSet, not a userData flag: GLTFExporter writes userData
+ * into the file's extras.
  */
-export const SHARED_GEOMETRY = 'sharedGeometry';
+const sharedGeometries = new WeakSet<ThreeNS.BufferGeometry>();
+
+export function markSharedGeometry(geometry: ThreeNS.BufferGeometry): void {
+  sharedGeometries.add(geometry);
+}
+
+export function isSharedGeometry(geometry: ThreeNS.BufferGeometry): boolean {
+  return sharedGeometries.has(geometry);
+}
 
 /**
  * Free the GPU resources owned by an object and all its descendants.
@@ -33,7 +42,7 @@ export const SHARED_GEOMETRY = 'sharedGeometry';
 export function disposeObject(obj: ThreeNS.Object3D): void {
   obj.traverse((node) => {
     const mesh = node as ThreeNS.Mesh;
-    if (mesh.geometry && mesh.geometry.userData[SHARED_GEOMETRY] !== true) mesh.geometry.dispose();
+    if (mesh.geometry && !isSharedGeometry(mesh.geometry)) mesh.geometry.dispose();
     // Rigged people own a skeleton whose bone texture lives on the GPU.
     const skinned = node as ThreeNS.SkinnedMesh;
     if (skinned.isSkinnedMesh) skinned.skeleton.dispose();

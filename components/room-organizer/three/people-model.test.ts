@@ -12,6 +12,7 @@ import {
   clonePerson,
   findClip,
   preparePeopleModel,
+  releasePeopleGeometry,
   setPeopleModelForTests,
 } from './people-model';
 import type { FurnitureItem } from '../lib/types';
@@ -150,5 +151,31 @@ describe('picking a rigged person (#284)', () => {
     // Turned a quarter, the 0.5 m width runs along z and the 0.3 m depth along x.
     expect(rayAt(0.2, 1).intersectObjects(root.children, true)).toHaveLength(0);
     expect(rayAt(0.1, 1).intersectObjects(root.children, true)).toHaveLength(1);
+  });
+});
+
+describe('the shared people geometry (#284)', () => {
+  it('is not marked in userData, so GLB extras stay clean', async () => {
+    const people = await loadAsset();
+    const person = clonePerson(THREE, people, { body: 0x123456, joints: 0x222222 });
+    for (const mesh of skinnedMeshes(person)) expect(mesh.geometry.userData).toEqual({});
+  });
+
+  it('releasePeopleGeometry frees the cached buffers once the renderer goes, and keeps the model cached', async () => {
+    const people = await loadAsset();
+    setPeopleModelForTests(people);
+    const freed: THREE.BufferGeometry[] = [];
+    for (const mesh of skinnedMeshes(people.scene)) {
+      mesh.geometry.addEventListener('dispose', () => freed.push(mesh.geometry));
+    }
+    releasePeopleGeometry();
+    expect(freed).toHaveLength(skinnedMeshes(people.scene).length);
+    // Still cached: the next renderer uploads it again on first draw.
+    expect(skinnedMeshes(buildPerson({ THREE, item: adult, hasCollision: false, baseColor: adult.color, opacity: 1 })).length).toBeGreaterThan(0);
+  });
+
+  it('releasePeopleGeometry is a no-op before the model has loaded', () => {
+    setPeopleModelForTests(null);
+    expect(() => releasePeopleGeometry()).not.toThrow();
   });
 });
