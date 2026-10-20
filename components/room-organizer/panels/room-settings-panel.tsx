@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { useRoomEditor } from '../contexts';
+import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { MAX_STOREY_HEIGHT, MIN_STOREY_HEIGHT, storeyHeight } from '../lib/storeys';
@@ -26,7 +26,9 @@ export interface RoomSettingsPanelProps {
 }
 
 export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps): JSX.Element {
-  const { layout, activeFloor, actions, view, setView } = useRoomEditor();
+  const { layout, activeFloor, actions } = useRoomEditor();
+  const view = useViewSettings('floorPlan3DEffect');
+  const { setView } = useEditorViewActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameId = useId();
   const widthId = useId();

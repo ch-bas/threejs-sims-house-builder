@@ -1,8 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useStore } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
+import { EditorViewProvider, useEditorView } from './contexts/editor-view-context';
 import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
 import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
+import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
 import { useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
@@ -20,7 +24,7 @@ import { layoutStore } from './hooks/use-layout-store';
 import { useNpcs } from './hooks/use-npcs';
 import { usePeopleModel } from './hooks/use-people-model';
 import { useRecentColors } from './hooks/use-recent-colors';
-import { useSceneEffects, measurementDistance } from './hooks/use-scene-effects';
+import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
 import { useWeather } from './hooks/use-weather';
@@ -54,7 +58,6 @@ import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import type { HoverInfo } from './hooks/use-three-scene';
-import type { GameMode } from './lib/types';
 import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
@@ -135,7 +138,13 @@ export function RoomOrganizer(): JSX.Element {
     dismiss: dismissAchievements,
   } = useAchievements(layout);
   const { recent: recentColors, pushColor } = useRecentColors();
-  const [view, setView] = useState<ViewSettings>(INITIAL_VIEW_SETTINGS);
+  // View and game state live in a per-editor store (#3). The orchestrator
+  // reads every view field but the time of day, so an auto-cycle tick
+  // re-renders only what shows the hour, not this whole tree (#148).
+  const [viewStore] = useState(() => createEditorViewStore(INITIAL_VIEW_SETTINGS));
+  const { setView, toggle, setGameMode } = viewStore.getState().actions;
+  const view = useStore(viewStore, useShallow(viewExceptTime));
+  const autoCycleLighting = useStore(viewStore, (state) => state.autoCycleLighting);
 
   // First-person walkthrough only runs in the 3D view; the 2D top-down renderer
   // has no PointerLockControls. This single signal gates walkthrough-aware
@@ -152,10 +161,7 @@ export function RoomOrganizer(): JSX.Element {
   const [selectedWall, setSelectedWall] = useState<{ id: string; kind: 'exterior' | 'interior' } | null>(null);
   const [extraSelectedIds, setExtraSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [hover, setHover] = useState<HoverInfo | null>(null);
-  const [autoCycleLighting, setAutoCycleLighting] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [catalogQuery, setCatalogQuery] = useState('');
-  const [gameMode, setGameMode] = useState<GameMode>('build');
   const [measurementPoints, setMeasurementPoints] = useState<ReadonlyArray<{ x: number; z: number }>>([]);
   const [wallDraft, setWallDraft] = useState<{ x: number; z: number } | null>(null);
   const [pointerWorld, setPointerWorld] = useState<{ x: number; z: number } | null>(null);
@@ -170,18 +176,6 @@ export function RoomOrganizer(): JSX.Element {
       roomDepth: layout.height,
     });
   }, [view.drawWallMode, pointerWorld, activeFloor.interiorWalls, wallDraft, layout.width, layout.height]);
-
-  const highlightedIds = useMemo(() => {
-    const normalised = catalogQuery.trim().toLowerCase();
-    if (!normalised) return new Set<string>();
-    const matches = new Set<string>();
-    for (const item of activeFloor.items) {
-      if (item.name.toLowerCase().includes(normalised) || item.type.toLowerCase().includes(normalised)) {
-        matches.add(item.id);
-      }
-    }
-    return matches;
-  }, [catalogQuery, activeFloor.items]);
 
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const collidingIds = useMemo(() => {
@@ -769,7 +763,7 @@ export function RoomOrganizer(): JSX.Element {
     onExit: useCallback(() => {
       setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
       setGameMode((mode) => (mode === 'live' ? 'build' : mode));
-    }, []),
+    }, [setView, setGameMode]),
   });
 
   // people.glb is fetched only once a person is placed or the walkers are on.
@@ -779,7 +773,9 @@ export function RoomOrganizer(): JSX.Element {
   );
   const peopleModelReady = usePeopleModel(threeModuleRef, isReady, layoutHasPeople || view.showNpcs);
 
-  useSceneEffects({
+  // Called from a child so that a time-of-day tick or a search keystroke,
+  // which the scene effects read, re-renders that child alone (#148).
+  const sceneEffectsProps: SceneEffectsProps = {
     isReady,
     peopleModelReady,
     invalidate,
@@ -793,15 +789,13 @@ export function RoomOrganizer(): JSX.Element {
     layout,
     activeFloor,
     activeFloorIndex,
-    view,
     selectedItemId,
     extraSelectedIds,
-    highlightedIds,
     selectedWall,
     wallDraft,
     wallSnapResult,
     measurementPoints,
-  });
+  };
 
   useNpcs({
     enabled: isReady && view.showNpcs && !view.view2D,
@@ -859,7 +853,7 @@ export function RoomOrganizer(): JSX.Element {
       setView((v) => ({ ...v, timeOfDay: (v.timeOfDay + 0.25) % 24 }));
     }, 250);
     return () => window.clearInterval(intervalId);
-  }, [autoCycleLighting]);
+  }, [autoCycleLighting, setView]);
 
   // Achievement unlocks ping the success chime.
   useEffect(() => {
@@ -870,10 +864,6 @@ export function RoomOrganizer(): JSX.Element {
   useEffect(() => {
     if (!view.measurementMode) setMeasurementPoints([]);
   }, [view.measurementMode]);
-
-  const toggle = useCallback(<K extends keyof ViewSettings>(key: K) => {
-    setView((previous) => ({ ...previous, [key]: !previous[key] }));
-  }, []);
 
   // Furniture clipboard (#153): copy normalizes the selection around its
   // centroid; paste rebuilds it on the ACTIVE floor (cross-floor paste is the
@@ -1014,6 +1004,7 @@ export function RoomOrganizer(): JSX.Element {
       layout.width,
       layout.height,
       unlockedSelectedIds,
+      setView,
       toggle,
       history.undo,
       history.redo,
@@ -1044,31 +1035,19 @@ export function RoomOrganizer(): JSX.Element {
       activeFloor,
       activeFloorIndex,
       actions,
-      view,
-      setView,
-      toggle,
       collidingIds,
-      highlightedIds,
-      catalogQuery,
-      setCatalogQuery,
       recentColors,
       pushColor,
       playCue,
       history,
       isReady,
       error,
-      gameMode,
-      setGameMode,
-      autoCycleLighting,
-      setAutoCycleLighting,
     }),
     [
       layout, activeFloor, activeFloorIndex, actions,
-      view, setView, toggle,
-      collidingIds, highlightedIds, catalogQuery, setCatalogQuery,
+      collidingIds,
       recentColors, pushColor, playCue,
       history, isReady, error,
-      gameMode, setGameMode, autoCycleLighting, setAutoCycleLighting,
     ]
   );
 
@@ -1086,6 +1065,8 @@ export function RoomOrganizer(): JSX.Element {
   );
 
   return (
+    <EditorViewProvider store={viewStore}>
+    <SceneEffects {...sceneEffectsProps} />
     <RoomEditorProvider value={roomEditorValue}>
     <SelectionProvider value={selectionValue}>
     <div
@@ -1291,7 +1272,22 @@ export function RoomOrganizer(): JSX.Element {
     </div>
     </SelectionProvider>
     </RoomEditorProvider>
+    </EditorViewProvider>
   );
+}
+
+type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds'>;
+
+// Renders nothing: it owns the scene effects, subscribed to the whole view
+// (time of day included) and to the catalog search's highlighted items.
+function SceneEffects(props: SceneEffectsProps): null {
+  const view = useEditorView((state) => state.view);
+  // A string key, so a keystroke that matches the same items keeps the set's
+  // identity and leaves the furniture effect alone.
+  const highlightKey = useEditorView((state) => catalogHighlightKey(state.catalogQuery, props.activeFloor.items));
+  const highlightedIds = useMemo(() => highlightIdsFromKey(highlightKey), [highlightKey]);
+  useSceneEffects({ ...props, view, highlightedIds });
+  return null;
 }
 
 export default RoomOrganizer;

@@ -324,7 +324,8 @@ components/
     ├── room-organizer.tsx               Orchestrator (~850 lines)
     ├── index.ts                         Barrel export
     ├── contexts/                        React Context (eliminates prop drilling)
-    │   ├── room-editor-context.tsx      Layout, actions, view, history, game state
+    │   ├── room-editor-context.tsx      Layout, actions, history, collisions, engine state
+    │   ├── editor-view-context.tsx      Carries the editor view store; useViewSettings / useEditorView selectors
     │   ├── selection-context.tsx        Selected item(s), multi-select, selectOnly()
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
@@ -431,6 +432,7 @@ components/
     ├── hooks/
     │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)
     │   ├── use-layout-store.ts          Zustand store (reuses the reducer) + selectors
+    │   ├── editor-view-store.ts         Per-editor Zustand store: view settings, catalog search, game mode, time auto-cycle
     │   ├── use-layout-state.ts          Adapter over the store (activeFloor, actions)
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
@@ -604,6 +606,16 @@ components/
   distribute state to panels — ~90 drilled props eliminated. Props are
   reserved for one-off callbacks with side effects (scene-ref closures,
   selection clearing).
+- **Fast-changing state in stores with selectors.** The layout lives in
+  `layoutStore`; view settings, the catalog search, the game mode and the
+  time auto-cycle live in a per-editor view store whose context carries only
+  the store, so it never re-renders anyone by itself. Components select the
+  fields they show (`useViewSettings('view2D')`), never the whole `view`:
+  the time of day changes four times a second while auto-cycling. The
+  orchestrator reads every view field but the hour, and the scene effects
+  run in a `SceneEffects` child that also reads the hour and the search, so
+  a tick or a keystroke re-renders that child and the panels showing it, not
+  the tree (#148, #3).
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure

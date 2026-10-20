@@ -1,27 +1,21 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { createRef, useState } from 'react';
+import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RoomEditorProvider, type RoomEditorContextValue } from '../contexts/room-editor-context';
+import { EditorViewProvider } from '../contexts/editor-view-context';
+import { createEditorViewStore } from '../hooks/editor-view-store';
 import { makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { VIEW_OPTION_KEYS } from '../lib/view-options';
 import { ViewOptionsMenu } from './view-options';
-import type { ViewSettings } from '../lib/types';
 
 function setup(onClose = vi.fn()) {
-  const views: ViewSettings[] = [];
-  function Harness(): JSX.Element {
-    const [view, setView] = useState(makeViewSettings());
-    views.push(view);
-    const value = { view, setView } as unknown as RoomEditorContextValue;
-    return (
-      <RoomEditorProvider value={value}>
-        <ViewOptionsMenu id="menu" anchorRef={createRef<HTMLElement>()} onClose={onClose} />
-      </RoomEditorProvider>
-    );
-  }
-  render(<Harness />);
-  return { latest: () => views[views.length - 1]!, onClose };
+  const store = createEditorViewStore(makeViewSettings());
+  render(
+    <EditorViewProvider store={store}>
+      <ViewOptionsMenu id="menu" anchorRef={createRef<HTMLElement>()} onClose={onClose} />
+    </EditorViewProvider>
+  );
+  return { latest: () => store.getState().view, onClose };
 }
 
 describe('ViewOptionsMenu (#341)', () => {

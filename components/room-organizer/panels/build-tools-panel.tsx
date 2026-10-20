@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRoomEditor } from '../contexts';
+import { useEditorView } from '../contexts';
 import { categoriesForMode, type BuildToolKey } from '../lib/modes';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
@@ -37,7 +37,7 @@ export interface BuildToolsPanelProps {
 }
 
 export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
-  const { gameMode } = useRoomEditor();
+  const gameMode = useEditorView((state) => state.gameMode);
   const [collapsed, setCollapsed] = useState(false);
   // DESIGN lists the structure tools, FURNISH the furniture ones — the mode
   // pill is the way to the other half, not a longer grid (#151).

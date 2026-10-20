@@ -1,10 +1,10 @@
 'use client';
 
-import { createContext, useContext, useMemo, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { UseHistoryResult } from '../hooks/use-history';
 import type { LayoutActions } from '../hooks/use-layout-state';
 import type { SoundCue } from '../lib/sounds';
-import type { FloorLayout, GameMode, RoomLayout, ViewSettings } from '../lib/types';
+import type { FloorLayout, RoomLayout } from '../lib/types';
 
 export interface RoomEditorContextValue {
   // Layout state
@@ -13,18 +13,13 @@ export interface RoomEditorContextValue {
   readonly activeFloorIndex: number;
   readonly actions: LayoutActions;
 
-  // View settings
-  readonly view: ViewSettings;
-  readonly setView: Dispatch<SetStateAction<ViewSettings>>;
-  toggle<K extends keyof ViewSettings>(key: K): void;
+  // View settings, catalog search and game mode live in the editor view
+  // store (`useViewSettings`, `useEditorView`): they change at typing and
+  // time-tick rates, and in this context every change re-rendered every
+  // consumer (#148).
 
   // Computed
   readonly collidingIds: ReadonlySet<string>;
-  readonly highlightedIds: ReadonlySet<string>;
-
-  // Catalog search (shared between sidebar and 3D highlighting)
-  readonly catalogQuery: string;
-  setCatalogQuery: Dispatch<SetStateAction<string>>;
 
   // Utilities
   readonly recentColors: readonly string[];
@@ -37,12 +32,6 @@ export interface RoomEditorContextValue {
   // Engine state
   readonly isReady: boolean;
   readonly error: string | null;
-
-  // Game / lighting
-  readonly gameMode: GameMode;
-  setGameMode: Dispatch<SetStateAction<GameMode>>;
-  readonly autoCycleLighting: boolean;
-  setAutoCycleLighting: Dispatch<SetStateAction<boolean>>;
 }
 
 const RoomEditorContext = createContext<RoomEditorContextValue | null>(null);
@@ -67,23 +56,13 @@ export function RoomEditorProvider({ value, children }: RoomEditorProviderProps)
     value.activeFloor,
     value.activeFloorIndex,
     value.actions,
-    value.view,
-    value.setView,
     value.collidingIds,
-    value.highlightedIds,
-    value.catalogQuery,
-    value.setCatalogQuery,
     value.recentColors,
     value.pushColor,
     value.playCue,
     value.history,
     value.isReady,
     value.error,
-    value.gameMode,
-    value.setGameMode,
-    value.autoCycleLighting,
-    value.setAutoCycleLighting,
-    value.toggle,
   ]);
   return <RoomEditorContext.Provider value={memoised}>{children}</RoomEditorContext.Provider>;
 }

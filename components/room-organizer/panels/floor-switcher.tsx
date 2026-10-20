@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useRoomEditor } from '../contexts';
+import { useEditorViewActions, useViewSettings } from '../contexts';
 import { useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { MAX_FLOORS } from '../lib/constants';
 import { MAX_NAME_LENGTH } from '../lib/schema';
@@ -21,7 +21,8 @@ export function FloorSwitcher(): JSX.Element {
   const floors = useLayoutStore((s) => s.layout.floors);
   const activeFloorIndex = useActiveFloorIndex();
   const actions = useLayoutActions();
-  const { view, toggle } = useRoomEditor();
+  const view = useViewSettings('showAllFloors');
+  const { toggle } = useEditorViewActions();
   const [renaming, setRenaming] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
 

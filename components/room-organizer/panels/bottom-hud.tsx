@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type MutableRefObject } from 'react';
-import { useRoomEditor } from '../contexts';
+import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useSelection } from '../contexts';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
@@ -30,7 +30,10 @@ export interface BottomHudProps {
 }
 
 export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem }: BottomHudProps): JSX.Element {
-  const { layout, activeFloor, actions, view, toggle, setView, isReady, error, gameMode, setGameMode, playCue } = useRoomEditor();
+  const { layout, activeFloor, actions, isReady, error, playCue } = useRoomEditor();
+  const view = useViewSettings('drawWallMode', 'view2D', 'walkthroughMode');
+  const { toggle, setView, setGameMode } = useEditorViewActions();
+  const gameMode = useEditorView((state) => state.gameMode);
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
   // Each mode shows its own half of the tools (#151): a pick from the other

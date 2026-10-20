@@ -1,7 +1,7 @@
 'use client';
 
 import { forwardRef, useCallback, useId, useRef, useState } from 'react';
-import { useRoomEditor } from '../contexts';
+import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
@@ -30,7 +30,11 @@ const MODES: ReadonlyArray<{
 ];
 
 export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Element {
-  const { layout, gameMode, autoCycleLighting, setAutoCycleLighting, history, view, toggle } = useRoomEditor();
+  const { layout, history } = useRoomEditor();
+  const view = useViewSettings('showCameraVision', 'showMinimap', 'showNpcs', 'snapToGrid', 'soundsEnabled', 'view2D');
+  const { setAutoCycleLighting, toggle } = useEditorViewActions();
+  const gameMode = useEditorView((state) => state.gameMode);
+  const autoCycleLighting = useEditorView((state) => state.autoCycleLighting);
   const totalCost = layout.floors.reduce(
     (sum, floor) =>
       sum + floor.items.reduce((acc, item) => acc + (item.id === ENTRANCE_DOOR_ID ? 0 : item.price ?? 0), 0),

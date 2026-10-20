@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type MutableRefObject } from 'react';
-import { useRoomEditor } from '../contexts';
+import { useViewSettings } from '../contexts';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -20,7 +20,7 @@ export interface TouchModeToggleProps {
 }
 
 export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggleProps): JSX.Element {
-  const { view } = useRoomEditor();
+  const view = useViewSettings('showMinimap', 'view2D');
   const [mode, setMode] = useState<TouchMode>('orbit');
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 

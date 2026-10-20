@@ -1,6 +1,6 @@
 'use client';
 
-import { useRoomEditor } from '../contexts';
+import { useEditorViewActions, useViewSettings } from '../contexts';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { ViewSettings } from '../lib/types';
 
@@ -25,7 +25,8 @@ const MODES: readonly Mode[] = [
  * top-right corner of the lot.
  */
 export function WallDisplayPill(): JSX.Element {
-  const { view, setView } = useRoomEditor();
+  const view = useViewSettings('wallDisplay');
+  const { setView } = useEditorViewActions();
 
   return (
     <div
