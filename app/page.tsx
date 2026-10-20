@@ -6,9 +6,22 @@ import {
   reloadOnceForChunkError,
 } from '@/components/room-organizer/lib/chunk-reload';
 
+// Start the 3D engine download together with the editor chunk instead of
+// after it (#413). use-three-scene imports the same modules; webpack shares
+// the in-flight chunk requests, so this only removes the editor → engine hop.
+// Failures are left to that hook, which reports them and owns chunk recovery.
+function prefetchEngine(): void {
+  Promise.all([
+    import('three'),
+    import('three/examples/jsm/controls/OrbitControls.js'),
+    import('three/examples/jsm/environments/RoomEnvironment.js'),
+  ]).catch(() => undefined);
+}
+
 const RoomOrganizer = dynamic(
-  () =>
-    import('@/components/room-organizer')
+  () => {
+    prefetchEngine();
+    return import('@/components/room-organizer')
       .then((module) => {
         // Editor chunk loaded — signal the head watchdog and clear the guard.
         clearChunkReloadGuard();
@@ -28,7 +41,8 @@ const RoomOrganizer = dynamic(
           };
         }
         throw err; // persistent failure → error boundary (offers a reset)
-      }),
+      });
+  },
   {
     ssr: false,
     loading: () => (

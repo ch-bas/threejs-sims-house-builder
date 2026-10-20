@@ -427,7 +427,7 @@ components/
     │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── canvas-2d/stairs-symbol.ts       Stair treads + climb arrow, stairwell voids on the floor above
-    ├── plotcraft/icon.tsx                Lucide-react icon wrapper for UI panels
+    ├── plotcraft/icon.tsx                PlotCraft SVG icon set for UI panels (no icon library)
     ├── hooks/
     │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)
     │   ├── use-layout-store.ts          Zustand store (reuses the reducer) + selectors
@@ -555,6 +555,13 @@ components/
   hours before dusk, so stepping through dusk and editing lamps don't
   recompile them (a direct jump from day to night compiles once). Procedural CanvasTextures get max anisotropy + sRGB tagging so
   floors and walls don't shimmer at grazing angles in walkthrough mode.
+- **Loading.** Nothing is fetched from a third party at runtime: Sora and
+  Nunito come from `next/font` (downloaded at build time, served from
+  `_next/static/media` with preload links). The page starts the Three.js
+  chunks together with the editor chunk rather than after it, so first load
+  is two hops, not three. The UI's dropdowns are native `<select>`s
+  (`components/ui/select.tsx`), with no popper or icon library in the
+  editor bundle.
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is
   threaded through the scene-effect, walkthrough, NPC, and camera-preset
