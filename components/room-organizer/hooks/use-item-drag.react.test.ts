@@ -120,3 +120,56 @@ describe('useItemDrag — pointercancel restores the group drag (#292)', () => {
     expect(actions.setLocked).not.toHaveBeenCalled();
   });
 });
+
+describe('useItemDrag — an aborted drag leaves no tint on a kept group (#404)', () => {
+  afterEach(cleanup);
+
+  it('clears the drag collision tint and re-places the groups from state', () => {
+    const actions = {
+      moveItem: vi.fn(),
+      bulkSetPositions: vi.fn(),
+      setLocked: vi.fn(),
+      updateItem: vi.fn(),
+    } as unknown as LayoutActions;
+    const a = makeItem({ id: 'a', width: 1, depth: 1, position: { x: 0, z: 0 } });
+    const c = makeItem({ id: 'c', width: 1, depth: 1, position: { x: 3, z: 0 } });
+    const scene = new THREE.Scene();
+    const material = new THREE.MeshStandardMaterial({ emissive: 0x123456 });
+    for (const item of [a, c]) {
+      const group = new THREE.Group();
+      group.userData = { type: 'furniture', id: item.id, floorIndex: 0 };
+      group.position.set(item.position!.x, 0, item.position!.z);
+      if (item.id === 'a') group.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material));
+      scene.add(group);
+    }
+    const group = (id: string) => scene.children.find((obj) => obj.userData.id === id)!;
+    const params = (floor: ReturnType<typeof makeFloor>) => ({
+      activeFloor: floor,
+      activeFloorIndex: 0,
+      roomWidth: 10,
+      roomDepth: 10,
+      keepOut: [],
+      frontGap: null,
+      actions,
+      allSelectedIds: new Set(['a']),
+    });
+    const { result, rerender } = renderHook((props: ReturnType<typeof params>) => useItemDrag(props), {
+      initialProps: params(makeFloor({ items: [a, c] })),
+    });
+    result.current.sceneBoxRef.current = { current: scene };
+
+    result.current.handleDragStart('a');
+    group('a').position.set(3, 0, 0);
+    result.current.handleDrag('a', 3, 0);
+    expect(material.emissive.getHex()).toBe(0x7f1d1d);
+
+    // Another tab's version is adopted mid-drag: 'a' now sits at (-2, 1).
+    rerender(params(makeFloor({ items: [{ ...a, position: { x: -2, z: 1 } }, c] })));
+    result.current.handleDragCancel('a', { restore: false });
+    expect(material.emissive.getHex()).toBe(0x123456);
+    expect(material.userData.dragTint).toBeUndefined();
+    expect(group('a').position.x).toBe(-2);
+    expect(group('a').position.z).toBe(1);
+    expect(actions.bulkSetPositions).not.toHaveBeenCalled();
+  });
+});
