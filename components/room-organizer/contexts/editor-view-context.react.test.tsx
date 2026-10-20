@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createEditorViewStore } from '../hooks/editor-view-store';
+import { useStore } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
+import { createEditorViewStore, viewExceptTime } from '../hooks/editor-view-store';
 import { makeViewSettings } from '../lib/__testfixtures__/fixtures';
-import { EditorViewProvider, useEditorView, useViewExceptTime, useViewSettings } from './editor-view-context';
+import { EditorViewProvider, useEditorView, useViewSettings } from './editor-view-context';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -13,9 +15,10 @@ import { EditorViewProvider, useEditorView, useViewExceptTime, useViewSettings }
 function setup() {
   const store = createEditorViewStore(makeViewSettings());
   const renders = { orchestrator: 0, wallPill: 0, clock: 0, search: 0 };
+  // Subscribes like RoomOrganizer, which owns the store.
   function Orchestrator(): null {
     renders.orchestrator += 1;
-    useViewExceptTime();
+    useStore(store, useShallow(viewExceptTime));
     return null;
   }
   function WallPill(): null {

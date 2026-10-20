@@ -270,37 +270,6 @@ export function RoomOrganizer(): JSX.Element {
     // the deleted floor's selection onto its replacement (#117).
   }, [activeFloorIndex, activeFloor.id]);
 
-  // Slide the camera target to mid-height of the active storey — on a floor
-  // switch, and when a storey height below or on it changes (#202), without
-  // the selection reset above.
-  const cameraTargetY = activeFloorY + activeStoreyHeight / 2;
-  useEffect(() => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
-    const newTargetY = cameraTargetY;
-    const dy = newTargetY - controls.target.y;
-    if (Math.abs(dy) < 0.01) return;
-    // Keep the orbit target on the new storey even mid-walkthrough, so the
-    // orbit camera aims right after an exit — but never touch the camera or
-    // run controls.update() while walkthrough owns it: update() has no
-    // `enabled` guard, so it re-aims the first-person camera at the orbit
-    // target and clamps it back into the polar cone (#114/#216). Walkthrough
-    // owns its own eye height.
-    controls.target.y = newTargetY;
-    if (!walkthroughActive) {
-      camera.position.y += dy;
-      controls.update();
-    }
-    // Defer painting to the next frame via invalidate(): a synchronous
-    // renderer.render here ran BEFORE the scene effects rebuilt the new
-    // floor, flashing the old floor's contents from the new camera (#216).
-    invalidate();
-    // The scene refs/invalidate are declared below (useThreeScene) so they
-    // can't appear in this dep array without a TDZ error; they're stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraTargetY, walkthroughActive]);
-
   // Ghost-selection guard: whenever the floor's items change (undo/redo,
   // import, clear floor, deletes from any path), drop selected ids that no
   // longer exist; a vanished primary promotes the first surviving extra (#117).
@@ -1286,8 +1255,42 @@ function SceneEffects(props: SceneEffectsProps): null {
   // identity and leaves the furniture effect alone.
   const highlightKey = useEditorView((state) => catalogHighlightKey(state.catalogQuery, props.activeFloor.items));
   const highlightedIds = useMemo(() => highlightIdsFromKey(highlightKey), [highlightKey]);
+  useCameraTargetOnStorey(props, view.walkthroughMode && !view.view2D);
   useSceneEffects({ ...props, view, highlightedIds });
   return null;
+}
+
+// Slide the camera target to mid-height of the active storey — on a floor
+// switch, and when a storey height below or on it changes (#202). Declared
+// ahead of the scene effects, so the lamp pool is assigned around the new
+// storey's target, not the old one (#393).
+function useCameraTargetOnStorey(
+  { layout, activeFloor, activeFloorIndex, cameraRef, controlsRef, invalidate }: SceneEffectsProps,
+  walkthroughActive: boolean
+): void {
+  const cameraTargetY = floorElevation(layout.floors, activeFloorIndex) + storeyHeight(activeFloor) / 2;
+  useEffect(() => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    const dy = cameraTargetY - controls.target.y;
+    if (Math.abs(dy) < 0.01) return;
+    // Keep the orbit target on the new storey even mid-walkthrough, so the
+    // orbit camera aims right after an exit — but never touch the camera or
+    // run controls.update() while walkthrough owns it: update() has no
+    // `enabled` guard, so it re-aims the first-person camera at the orbit
+    // target and clamps it back into the polar cone (#114/#216). Walkthrough
+    // owns its own eye height.
+    controls.target.y = cameraTargetY;
+    if (!walkthroughActive) {
+      camera.position.y += dy;
+      controls.update();
+    }
+    // Defer painting to the next frame via invalidate(): a synchronous
+    // renderer.render here ran BEFORE the scene effects rebuilt the new
+    // floor, flashing the old floor's contents from the new camera (#216).
+    invalidate();
+  }, [cameraTargetY, walkthroughActive, cameraRef, controlsRef, invalidate]);
 }
 
 export default RoomOrganizer;

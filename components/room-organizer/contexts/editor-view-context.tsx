@@ -3,7 +3,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { viewExceptTime, type EditorViewActions, type EditorViewState, type EditorViewStore } from '../hooks/editor-view-store';
+import type { EditorViewActions, EditorViewState, EditorViewStore } from '../hooks/editor-view-store';
 import type { ViewSettings } from '../lib/types';
 
 // The context carries the store itself, whose identity never changes, so the
@@ -43,9 +43,4 @@ export function useViewSettings<K extends keyof ViewSettings>(...keys: readonly 
       return picked;
     })
   );
-}
-
-/** Every view setting but the time of day: what the orchestrator reads. */
-export function useViewExceptTime(): Omit<ViewSettings, 'timeOfDay'> {
-  return useEditorView(useShallow(viewExceptTime));
 }

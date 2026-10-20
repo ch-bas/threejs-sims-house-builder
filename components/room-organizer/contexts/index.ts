@@ -3,7 +3,6 @@ export {
   useEditorView,
   useEditorViewActions,
   useEditorViewStore,
-  useViewExceptTime,
   useViewSettings,
 } from './editor-view-context';
 export { RoomEditorProvider, useRoomEditor, type RoomEditorContextValue } from './room-editor-context';
