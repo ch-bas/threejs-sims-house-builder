@@ -144,11 +144,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         antialias: true,
         failIfMajorPerformanceCaveat: false,
         powerPreference: 'high-performance',
-        // Reversed-Z (r183+): near-uniform depth precision across the range,
-        // eliminating grazing-angle z-fighting (thin walls, baseboards, rugs).
-        // Requires EXT_clip_control — three silently falls back to a normal
-        // depth buffer when the extension is missing, so this is opt-in-safe (#187).
-        reversedDepthBuffer: true,
+        // No `reversedDepthBuffer`: r186's PCF lookup keeps the normal-depth
+        // bias sign and far-plane test, so with it on the sun-facing walls
+        // speckle with acne and the ground past the shadow camera's far plane
+        // reads as shadowed (#187). Coplanar meshes keep their gaps instead.
       });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       // updateStyle = false everywhere: three would otherwise pin the canvas's
