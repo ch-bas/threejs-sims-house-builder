@@ -112,17 +112,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   invalidateRef.current = invalidate;
   onExitRef.current = onExit;
 
-  // Re-seat the camera's height when the active floor (eyeHeight) changes while
-  // walking, preserving x/z. Deliberately separate from the init effect so a
-  // floor switch never re-inits and drops pointer lock (see #67).
-  useEffect(() => {
-    if (!enabled) return;
-    const camera = cameraRef.current;
-    if (!camera) return;
-    camera.position.y = eyeHeight;
-    invalidateRef.current?.();
-  }, [enabled, eyeHeight, cameraRef]);
-
   useEffect(() => {
     if (!enabled) return undefined;
 
@@ -138,7 +127,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     const pressed = new Set<string>();
     let cancelled = false;
     let controls: PointerLockControlsType | null = null;
-    let savedCameraPosition: ThreeNS.Vector3 | null = null;
+    // The orbit pose to come back to, saved before anything moves the
+    // camera: the eye-height effect below runs in the same commit, and the
+    // controls import is async.
+    const savedCameraPosition = camera.position.clone();
     let rafId = 0;
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -180,7 +172,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       if (cancelled) return;
 
       controls = new controlsModule.PointerLockControls(camera, canvas);
-      savedCameraPosition = camera.position.clone();
       camera.position.set(0, eyeHeightRef.current, 3);
       camera.lookAt(0, eyeHeightRef.current, 0);
       clampToFootprint();
@@ -222,10 +213,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       // with no mousemove handler attached (#114). No-op when already unlocked.
       cleanup.push(() => controls?.unlock());
       cleanup.push(() => controls?.disconnect());
-      cleanup.push(() => {
-        if (savedCameraPosition) camera.position.copy(savedCameraPosition);
-        invalidateRef.current?.();
-      });
       // Paint the eye-level starting pose. The main RAF tick no longer calls
       // OrbitControls.update() in this mode (#114), so nothing else marks the
       // first walkthrough frame dirty.
@@ -302,9 +289,24 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           /* swallow */
         }
       }
+      // Restored even when the exit beats the controls import.
+      camera.position.copy(savedCameraPosition);
+      invalidateRef.current?.();
       if (orbit) orbit.enabled = true;
     };
   }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef]);
+
+  // Re-seat the camera's height when the active floor (eyeHeight) changes while
+  // walking, preserving x/z. Deliberately separate from the init effect so a
+  // floor switch never re-inits and drops pointer lock (see #67). Declared
+  // after it, so the init effect saves the orbit pose before this moves it.
+  useEffect(() => {
+    if (!enabled) return;
+    const camera = cameraRef.current;
+    if (!camera) return;
+    camera.position.y = eyeHeight;
+    invalidateRef.current?.();
+  }, [enabled, eyeHeight, cameraRef]);
 
   return { lockRefused };
 }

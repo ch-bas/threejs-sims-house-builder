@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/chunk-reload';
+import { qualityProfile } from '../lib/render-quality';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { addLights } from '../three/lighting';
@@ -159,7 +160,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // speckle with acne and the ground past the shadow camera's far plane
         // reads as shadowed (#187). Coplanar meshes keep their gaps instead.
       });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(pixelRatio());
       // updateStyle = false everywhere: three would otherwise pin the canvas's
       // inline width/height to pixels, and a 0×0 write while hidden in 2D
       // kept it collapsed for the rest of the session (#363).
@@ -283,7 +284,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         if (width === 0 || height === 0) return;
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setPixelRatio(pixelRatio());
         renderer.setSize(width, height, false);
         dirtyRef.current = true;
       };
@@ -369,6 +370,19 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 function aspectOf(canvas: HTMLCanvasElement): number {
   const { clientWidth, clientHeight } = canvas;
   return clientWidth > 0 && clientHeight > 0 ? clientWidth / clientHeight : 1;
+}
+
+/**
+ * Device pixel ratio capped per device class: 2 on desktops and tablets,
+ * lower on phones (lib/render-quality.ts). Read on every resize, since
+ * zoom and monitor moves change it.
+ */
+function pixelRatio(): number {
+  return qualityProfile({
+    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+    screenShortSide: Math.min(window.screen.width, window.screen.height),
+    devicePixelRatio: window.devicePixelRatio,
+  }).pixelRatio;
 }
 
 function supportsWebGL(): boolean {
