@@ -547,16 +547,32 @@ components/
   covers much of the canvas, so on load and on FIT the camera fits the
   house inside the largest rectangle no `[data-scene-occluder]` panel
   covers (plus the item sheet while `<html data-sheet-open>` is set),
-  computed in `lib/scene-insets.ts`. The orbit target stays the house
-  centre; `camera.setViewOffset` shifts the projection so that centre sits
-  in the middle of the free rectangle, and three keeps the shift
-  proportional across resizes. Resizes, rotations and HUD changes re-frame
-  only while the camera still sits at the last framed pose, never under a
-  finger, and the walkthrough drops the shift while it runs. Desktop-sized
-  windows keep the classic poses untouched. Phones (coarse pointer, screen
-  short side ≤ 500 px) also cap the pixel ratio at 1.5 instead of 2: in
-  software-GL emulation of a 3× phone an orbit frame took 57 ms at 2 and
-  37 ms at 1.5. The shadow map stays 2048²: 1024² measured no faster.
+  computed in `lib/scene-insets.ts`. A container tagged
+  `data-scene-occluder="children"` counts its visible children instead of
+  its own box. The framed box is the footprint up to the eaves, plus the
+  roof's rise and eave overhang whenever the roof shows (walls up, on the
+  top storey or with every storey shown). If the free rectangle would
+  frame the house under 35% of the canvas's short side, the whole canvas
+  is used instead. The orbit target stays the house centre;
+  `camera.setViewOffset` shifts the projection so that centre sits in the
+  middle of the free rectangle. Resizes, rotations, HUD changes and a
+  change in the framed shape re-frame only while the camera still sits at
+  the last framed pose; a moved camera keeps its pose and a resize only
+  re-centres the shift on the new free rectangle. Nothing re-frames while
+  any pointer is down (tracked by id, released on blur and lost capture).
+  A window that stops being compact drops the shift at once, and the
+  walkthrough drops it while it runs. Desktop-sized windows keep the
+  classic poses untouched. Phones (coarse pointer, screen short side
+  ≤ 500 px) also cap the pixel ratio at 1.5 instead of 2: in software-GL
+  emulation of a 3× phone an orbit frame took 57 ms at 2 and 37 ms at 1.5.
+  A PNG export on a phone therefore comes out at the canvas's backing size
+  (585×996 on a 390×664 phone). The shadow map stays 2048²: 1024²
+  measured no faster.
+- **A press on an item never moves the camera.** The drag handlers take
+  `pointerdown` in the capture phase, ahead of OrbitControls, and switch
+  the controls off as soon as a drag is armed; a tap hands them back. On
+  touch, the moves under the drag threshold used to orbit, and the damping
+  glide kept turning the camera through the drag.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere
