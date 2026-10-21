@@ -34,11 +34,12 @@ describe('app/error.tsx — chunk-failure recovery (#143)', () => {
   it('reloads once for a chunk error when the guard is unspent', () => {
     renderBoundary(chunkError());
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(window.sessionStorage.getItem('pc-chunk-reload')).toBe('1');
+    // The guard holds when the reload happened (#499).
+    expect(Date.now() - Number(window.sessionStorage.getItem('pc-chunk-reload'))).toBeLessThan(5_000);
   });
 
   it('does NOT reload again once the guard is spent — shows the safe retry UI instead', () => {
-    window.sessionStorage.setItem('pc-chunk-reload', '1');
+    window.sessionStorage.setItem('pc-chunk-reload', String(Date.now() - 1_000));
     renderBoundary(chunkError());
     expect(reload).not.toHaveBeenCalled();
     expect(screen.getByText(/couldn’t load the app/i)).toBeDefined();

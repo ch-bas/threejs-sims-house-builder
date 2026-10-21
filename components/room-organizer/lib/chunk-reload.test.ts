@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isChunkLoadError } from './chunk-reload';
+import { CHUNK_RELOAD_WINDOW_MS, chunkReloadAllowed, isChunkLoadError } from './chunk-reload';
 
 describe('isChunkLoadError', () => {
   it('matches webpack ChunkLoadError by name', () => {
@@ -26,5 +26,28 @@ describe('isChunkLoadError', () => {
     expect(isChunkLoadError(new TypeError('x is not a function'))).toBe(false);
     expect(isChunkLoadError('some string')).toBe(false);
     expect(isChunkLoadError(null)).toBe(false);
+  });
+});
+
+describe('chunkReloadAllowed (#499)', () => {
+  const now = 1_800_000_000_000;
+
+  it('allows the first automatic reload', () => {
+    expect(chunkReloadAllowed(null, now)).toBe(true);
+  });
+
+  it('refuses another inside the window, however the app fared since', () => {
+    expect(chunkReloadAllowed(String(now - 1_000), now)).toBe(false);
+    expect(chunkReloadAllowed(String(now - CHUNK_RELOAD_WINDOW_MS + 1), now)).toBe(false);
+  });
+
+  it('allows one again once the window has passed', () => {
+    expect(chunkReloadAllowed(String(now - CHUNK_RELOAD_WINDOW_MS), now)).toBe(true);
+  });
+
+  it('a legacy "1", a garbled value or a future stamp never pins the guard shut', () => {
+    expect(chunkReloadAllowed('1', now)).toBe(true);
+    expect(chunkReloadAllowed('garbage', now)).toBe(true);
+    expect(chunkReloadAllowed(String(now + 60_000), now)).toBe(true);
   });
 });

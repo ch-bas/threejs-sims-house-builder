@@ -1,10 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import {
-  clearChunkReloadGuard,
-  reloadOnceForChunkError,
-} from '@/components/room-organizer/lib/chunk-reload';
+import { reloadOnceForChunkError } from '@/components/room-organizer/lib/chunk-reload';
 
 // Start the 3D engine download together with the editor chunk instead of
 // after it (#413). use-three-scene imports the same modules; webpack shares
@@ -22,14 +19,10 @@ const RoomOrganizer = dynamic(
   () => {
     prefetchEngine();
     return import('@/components/room-organizer')
-      .then((module) => {
-        // Editor chunk loaded — signal the head watchdog and clear the guard.
-        clearChunkReloadGuard();
-        if (typeof window !== 'undefined') {
-          (window as unknown as { __pcReady?: boolean }).__pcReady = true;
-        }
-        return module.RoomOrganizer;
-      })
+      // No guard clearing or ready signal here: the engine chunk is still to
+      // come, and clearing on the editor chunk alone looped forever when the
+      // engine one kept failing (#499). use-three-scene signals ready.
+      .then((module) => module.RoomOrganizer)
       .catch((err) => {
         // A returning visitor after a redeploy can load cached HTML whose
         // hashed editor chunk now 404s; next/dynamic would otherwise show the
