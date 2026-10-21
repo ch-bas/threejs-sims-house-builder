@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -155,7 +155,10 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   // every replacement takes — have no `storage` event (#367).
   useEffect(() => subscribeSnapshots(() => setSnapshots(listSnapshots())), []);
 
-  useEffect(() => {
+  // A layout effect: while the drawer is closed its contexts are held (#3), so
+  // a rename made then reaches this field only on open, and it must land
+  // before that first paint.
+  useLayoutEffect(() => {
     setName(currentLayout.name);
   }, [currentLayout.name]);
 
