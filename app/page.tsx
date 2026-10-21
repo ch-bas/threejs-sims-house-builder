@@ -9,7 +9,7 @@ import { reloadOnceForChunkError } from '@/components/room-organizer/lib/chunk-r
 // Failures are left to that hook, which reports them and owns chunk recovery.
 function prefetchEngine(): void {
   Promise.all([
-    import('three'),
+    import('@/components/room-organizer/three/three-runtime'),
     import('three/examples/jsm/controls/OrbitControls.js'),
     import('three/examples/jsm/environments/RoomEnvironment.js'),
   ]).catch(() => undefined);

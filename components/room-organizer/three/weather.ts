@@ -2,7 +2,7 @@ import { removeAndDispose } from './builder-utils';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 export const WEATHER_TAG = 'weather';
 

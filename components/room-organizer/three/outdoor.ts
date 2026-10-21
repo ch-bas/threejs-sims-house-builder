@@ -4,7 +4,7 @@ import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './
 import type { Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 const OUTDOOR_TAG = 'outdoor';
 /** Marks the grass plane so the weather tint can find it among the scenery. */

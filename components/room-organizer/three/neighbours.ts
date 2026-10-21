@@ -5,7 +5,7 @@ import { buildRoof, roofPeakHeight } from './roof';
 import { buildWallMaterial } from './wall-patterns';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 /**
  * The street of neighbours (#202, #310): every house in the row is built

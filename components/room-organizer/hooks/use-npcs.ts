@@ -11,7 +11,7 @@ import {
 } from '../three/people-model';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('../three/three-runtime');
 
 const NPC_TAG = 'npc';
 

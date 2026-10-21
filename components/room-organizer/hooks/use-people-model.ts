@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getPeopleModel, loadPeopleModel } from '../three/people-model';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('../three/three-runtime');
 
 /**
  * Fetches people.glb the first time it's needed — a person placed in the

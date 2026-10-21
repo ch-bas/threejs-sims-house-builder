@@ -63,7 +63,7 @@ import type { HoverInfo } from './hooks/use-three-scene';
 import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
-  THREE: typeof import('three'),
+  THREE: typeof import('./three/three-runtime'),
   camera: import('three').PerspectiveCamera,
   controls: import('three/examples/jsm/controls/OrbitControls.js').OrbitControls,
   direction: 'left' | 'right' | 'up' | 'down'

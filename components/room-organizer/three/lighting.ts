@@ -4,7 +4,7 @@ import { applyOutdoorWeather } from './outdoor';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 export const LIGHTING_TAGS = {
   Ambient: 'light:ambient',

@@ -10,7 +10,7 @@ import type { SceneEventHandlers } from '../three/drag-handlers';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('../three/three-runtime');
 
 export type { HoverInfo, SelectionMode } from '../three/drag-handlers';
 
@@ -85,7 +85,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     void (async () => {
       try {
         const [three, controls, environments] = await Promise.all([
-          import('three'),
+          import('../three/three-runtime'),
           import('three/examples/jsm/controls/OrbitControls.js'),
           import('three/examples/jsm/environments/RoomEnvironment.js'),
         ]);

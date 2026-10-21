@@ -156,7 +156,7 @@ const GLB_EXPORT_TAGS: ReadonlySet<string> = new Set([
  * clones borrow by reference. Transforms are preserved by clone().
  */
 function collectExportGroup(
-  THREE: typeof import('three'),
+  THREE: typeof import('../three/three-runtime'),
   scene: import('three').Object3D,
   cloneSkinned: (source: import('three').Object3D) => import('three').Object3D
 ): import('three').Group {
@@ -179,7 +179,7 @@ function collectExportGroup(
 }
 
 export async function downloadSceneAsGlb(scene: import('three').Object3D, baseName: string): Promise<void> {
-  const THREE = await import('three');
+  const THREE = await import('../three/three-runtime');
   const [{ GLTFExporter }, SkeletonUtils] = await Promise.all([
     import('three/examples/jsm/exporters/GLTFExporter.js'),
     import('three/examples/jsm/utils/SkeletonUtils.js'),

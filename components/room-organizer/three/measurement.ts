@@ -2,7 +2,7 @@ import { removeAndDispose } from './builder-utils';
 import type { Vec2 } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 const MEASUREMENT_TAG = 'measurement';
 

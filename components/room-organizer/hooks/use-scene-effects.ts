@@ -89,7 +89,7 @@ export interface UseSceneEffectsParams {
   invalidate: () => void;
   /** Recompute the static shadow map — call after a shadow caster/sun change. */
   requestShadowUpdate: () => void;
-  threeModuleRef: MutableRefObject<typeof import('three') | null>;
+  threeModuleRef: MutableRefObject<typeof import('../three/three-runtime') | null>;
   sceneRef: MutableRefObject<ThreeNS.Scene | null>;
   rendererRef: MutableRefObject<ThreeNS.WebGLRenderer | null>;
   cameraRef: MutableRefObject<ThreeNS.PerspectiveCamera | null>;
