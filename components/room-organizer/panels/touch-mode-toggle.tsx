@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState, type MutableRefObject, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { useViewSettings } from '../contexts';
+import { useTopBarSlot } from '../hooks/use-edge-var';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -23,6 +24,10 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
   const view = useViewSettings('showMinimap', 'view2D');
   const [mode, setMode] = useState<TouchMode>('orbit');
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const shown = isTouchDevice && !view.view2D;
+  // Short screens place the buttons in the top bar's free strip (globals.css).
+  useTopBarSlot(rootRef, shown);
 
   useEffect(() => {
     const isTouch =
@@ -64,7 +69,7 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
 
   // The buttons drive the 3D camera, which is hidden in the 2D top-down view —
   // same reasoning as the camera pad (#220).
-  if (!isTouchDevice || view.view2D) return <></>;
+  if (!shown) return <></>;
 
   return (
     // Anchored under the top-right pills instead of at 50%, where it landed on
@@ -73,6 +78,7 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
     // zIndex stays below the HUD (25) and the item bottom sheet (36): wherever
     // the viewport is too small to keep them apart, the panels win the tap.
     <div
+      ref={rootRef}
       // Taps between the buttons reach the scene; the buttons take their own.
       className="pointer-events-none pc-touch-controls"
       data-scene-occluder=""
