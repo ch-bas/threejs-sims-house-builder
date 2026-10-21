@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useLayout } from '../hooks/use-layout-store';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
+import { HEADER_HIDDEN_QUERY } from '../lib/overlay-queue';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+import { OverlayStackPortal } from './overlay-stack';
 import type { SaveFailureReason } from '../lib/persistence';
 
 export interface HeaderStatsProps {
@@ -52,7 +55,47 @@ export function HeaderStats({
       {remoteChange && (
         <RemoteChangeNotice onAdopt={onAdoptRemote} onDismiss={onDismissRemote} />
       )}
+      {(saveError !== null || remoteChange) && (
+        <StackedSaveAlerts
+          saveError={saveError}
+          remoteChange={remoteChange}
+          onAdoptRemote={onAdoptRemote}
+          onDismissRemote={onDismissRemote}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Where the stats box is hidden (tablets, phones, short screens), a failed
+ * save and the cross-tab notice still have to reach the user: a save that
+ * silently stops is data loss (#385). They move to the overlay stack under
+ * the top pills, above any toast; the copies in the hidden box stay out of
+ * sight and out of the accessibility tree.
+ */
+function StackedSaveAlerts({
+  saveError,
+  remoteChange,
+  onAdoptRemote,
+  onDismissRemote,
+}: {
+  saveError: SaveFailureReason | null;
+  remoteChange: boolean;
+  onAdoptRemote?: (() => void) | undefined;
+  onDismissRemote?: (() => void) | undefined;
+}): JSX.Element | null {
+  const headerHidden = useMediaQuery(HEADER_HIDDEN_QUERY);
+  if (!headerHidden) return null;
+  return (
+    <OverlayStackPortal slot="alert">
+      {saveError !== null && (
+        <div className="pc-glass pc-glass--dark pc-save-alert" style={{ borderRadius: 16 }}>
+          <SaveIndicator lastSavedAt={null} saving={false} saveError={saveError} />
+        </div>
+      )}
+      {remoteChange && <RemoteChangeNotice onAdopt={onAdoptRemote} onDismiss={onDismissRemote} />}
+    </OverlayStackPortal>
   );
 }
 
@@ -82,6 +125,8 @@ function RemoteChangeNotice({
   return (
     <div
       role="status"
+      // Coarse pointers get 44px tap areas on its buttons (globals.css).
+      className="pc-remote-notice"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -154,6 +199,9 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
   else if (saving) label = 'Saving…';
   else if (lastSavedAt) label = `Saved ${formatRelative(Date.now() - lastSavedAt)}`;
 
+  // Touch screens can't show the `title` tooltip: the advice opens in place.
+  const [adviceOpen, setAdviceOpen] = useState(false);
+
   const iconColor = saveError
     ? 'var(--pc-danger, #f87171)'
     : saving
@@ -164,6 +212,7 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
     <div
       role={failure ? 'alert' : undefined}
       title={failure?.detail}
+      className="pc-save-indicator"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -185,7 +234,19 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
       >
         <Icon name="save" size={14} />
       </span>
-      <span>{label}</span>
+      <span className="pc-save-label">{label}</span>
+      {failure && (
+        // Shown on coarse pointers only (globals.css, "Overlays").
+        <button
+          type="button"
+          className="pc-save-advice-toggle"
+          aria-expanded={adviceOpen}
+          onClick={() => setAdviceOpen((open) => !open)}
+        >
+          {adviceOpen ? 'Hide' : 'What to do'}
+        </button>
+      )}
+      {failure && adviceOpen && <p className="pc-save-advice">{failure.detail}</p>}
     </div>
   );
 }

@@ -16,10 +16,14 @@ export function Minimap({ layout, floor, selectedItemId }: MinimapProps): JSX.El
   return (
     // Offset below the top-right pill stack (FloorPill + WallDisplayPill, at
     // top:16) so the minimap no longer overlaps them or the measurement /
-    // wall-draw chips that share the same corner.
+    // wall-draw chips that share the same corner. While an item is selected
+    // it steps left of the item popover, which shares that corner and used
+    // to cover it completely (#390); small screens size and place it in
+    // app/globals.css ("Overlays", #308).
     <div
-      className="absolute right-4 rounded-lg border bg-background/90 backdrop-blur-sm p-2 shadow"
+      className="pc-minimap absolute right-4 rounded-lg border bg-background/90 backdrop-blur-sm p-2 shadow"
       style={{ top: 128, zIndex: 20 }}
+      data-beside-popover={selectedItemId !== null ? '' : undefined}
     >
       <p className="text-[10px] text-muted-foreground mb-1">{floor.name}</p>
       {/* Eager: always on screen. The tracing image is painted here and

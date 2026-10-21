@@ -379,6 +379,7 @@ components/
     │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341)
     │   ├── editor-notices.ts            notify() status messages + zone-name requests (#374)
+    │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode, shared by the 2D plan and the 3D floor canvas (#191)
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
@@ -457,6 +458,8 @@ components/
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session + roving tile focus
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
+    │   ├── use-media-query.ts           Live CSS media-query match (false during prerender)
+    │   ├── use-pausable-timeout.ts      Countdown that pauses and resumes with the time left (toasts)
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
@@ -466,7 +469,7 @@ components/
         ├── catalog-strip.tsx            Bottom-centre drag-source tile row
         ├── mode-panel.tsx               Bottom-right EXPLORE / DESIGN / FURNISH + stats
         ├── view-options.tsx             View menu: distance tool, labels, heatmap, outdoor, snapping
-        ├── item-context-popover.tsx     Floating per-item editor on selection
+        ├── item-context-popover.tsx     Floating per-item editor on selection; a bottom sheet on small screens
         ├── color-swatch-picker.tsx      Shared swatch + recent-colours picker
         ├── slider-row.tsx               Shared label + range + readout row
         ├── floor-switcher.tsx
@@ -499,7 +502,8 @@ components/
         ├── minimap.tsx
         ├── plan-thumb.tsx
         ├── achievements-panel.tsx
-        ├── achievement-toast.tsx
+        ├── achievement-toast.tsx        Unlock toasts: stacked on desktop, one at a time on small screens
+        ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── zone-name-chip.tsx           Inline name field for a zone just drawn on the plan
@@ -666,6 +670,28 @@ components/
   up in one render when the drawer opens. The save status (`saving`,
   `lastSavedAt`, `saveError`) lives in a small store that only the header
   subscribes to, so the autosave's flips re-render the header alone (#3).
+- **Small-screen overlays.** Below 769 px wide or 501 px tall
+  (`COMPACT_OVERLAY_QUERY`) the item popover is a bottom sheet: collapsed to
+  its header and action row, so the selected item stays in view, with a
+  handle that expands it. While it is open `<html data-sheet-open>` is set
+  (`collapsed` / `expanded`), which the phone HUD and the camera framing
+  read. Toasts share a single slot there: a status notice first, then
+  queued achievements one at a time. Wherever the header stats are hidden
+  (`HEADER_HIDDEN_QUERY`) the save-failed and changed-in-another-tab
+  notices move out of them into the overlay stack, so a failing autosave
+  is never silent (#385). The stack is placed under whatever chrome sits
+  above its column (pills, touch row, minimap, tool chips), measured on DOM
+  changes rather than at a fixed offset, so it follows HUD layout changes.
+  It never overlaps the open sheet: short of room it puts the notices on
+  one line, then holds the toasts back, then rises over the chrome to sit
+  on the sheet; the save-failed label stays in view throughout. Toast
+  timers pause while a toast is off screen and resume with the time left
+  (`usePausableTimeout`); the queue never drops the toast on screen, and
+  achievements already shown are not replayed after a rotation across the
+  breakpoint. On touch screens the save-failed notice opens its advice in
+  place, and the notice buttons get 44px tap areas.
+  On desktop the minimap steps left of the open popover instead of hiding
+  under it (#390).
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure
