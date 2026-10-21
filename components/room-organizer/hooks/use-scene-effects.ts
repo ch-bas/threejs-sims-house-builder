@@ -985,6 +985,8 @@ export function useSceneEffects({
   // render is crisp on retina; a resize re-paints. The floor-plan repaint
   // handler lets an async image decode trigger a full repaint in the correct
   // layer order.
+  // The latest plan paint, for the occluder observer below.
+  const paint2DRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;
@@ -1021,12 +1023,11 @@ export function useSceneEffects({
     };
 
     const removeRepaintHandler = addFloorPlanRepaintHandler(paint);
+    paint2DRef.current = paint;
     paint();
 
     const observer = new ResizeObserver(paint);
     observer.observe(canvas);
-    // The dock folding, the tray opening or a panel mounting moves the free area.
-    const stopObservingOccluders = observeSceneOccluders(paint);
 
     // The ResizeObserver watches the content box, which doesn't change when
     // only devicePixelRatio does (window dragged between 1× and 2× monitors),
@@ -1048,10 +1049,18 @@ export function useSceneEffects({
     return () => {
       dprQuery?.removeEventListener('change', onDprChange);
       observer.disconnect();
-      stopObservingOccluders();
       removeRepaintHandler();
+      if (paint2DRef.current === paint) paint2DRef.current = null;
     };
   }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds]);
+
+  // The dock folding, the tray opening or a panel mounting moves the plan's
+  // free area: repaint. Keyed on the view alone, so a layout edit doesn't
+  // tear the observers down and set them up again.
+  useEffect(() => {
+    if (!view.view2D) return undefined;
+    return observeSceneOccluders(() => paint2DRef.current?.());
+  }, [view.view2D]);
 }
 
 export { measurementDistance } from '../three/measurement';

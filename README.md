@@ -557,7 +557,9 @@ components/
   rectangle (under 64 px on a side) falls back to the whole canvas; a
   small but real band, such as the strip a landscape phone leaves above an
   unfolded Paint panel, frames the house small rather than under the
-  panels. The orbit target stays the house centre;
+  panels. The one other fallback is a safety net for a mis-measured
+  occluder: a footprint framed under 48 px on its long side, when the whole
+  canvas would frame it at least twice as large. The orbit target stays the house centre;
   `camera.setViewOffset` shifts the projection so that centre sits in the
   middle of the free rectangle. Resizes, rotations, HUD changes and a
   change in the framed shape re-frame only while the camera still sits at
@@ -582,20 +584,25 @@ components/
   goes back, nothing is committed) and hands both fingers to OrbitControls:
   the first press, which the controls never saw, is replayed to them from
   where that finger is now. A later finger of a gesture the camera already
-  owns (`isPrimary === false`) never selects or arms a drag.
+  owns (`isPrimary === false`) never selects or arms a drag. The 2D plan
+  has no pinch, but a second finger there cancels the drag the same way.
 - **A drag over the HUD holds the item.** In 3D and 2D a captured drag keeps
   getting moves over the panels; `pointerOnCanvas` (inside the canvas box
   and `elementFromPoint` is the canvas) gates them, so the item holds its
-  last place on the floor and a release over a panel commits that place.
+  last place on the floor, and a release over a panel or off the canvas
+  cancels the drag: the item goes back, with no commit and no undo entry.
   It used to land behind the panel, or far off the lot near the horizon.
 - **The 2D plan fits beside the HUD on compact screens.**
   `get2DViewTransform` takes optional occluder insets (`planInsets`, the
-  same `[data-scene-occluder]` free rectangle the 3D framing uses, without
-  the item sheet so the plan doesn't rescale on every select) and fits the
+  same `[data-scene-occluder]` free rectangle the 3D framing uses) and fits the
   plan in that area, with the margin shrunk to at most 12% of its short
   side. The paint effect and the pointer handlers pass the same insets, so
-  `canvasToWorld` stays the plan's only inverse. Desktop-sized windows, the
-  minimap, the blueprint and the thumbnails pass none and are unchanged.
+  `canvasToWorld` stays the plan's only inverse. The insets freeze while
+  the phone item sheet is open: the first press on an item opens it and
+  hides the catalog and the build tools, and re-fitting to what is left
+  would rescale the plan under the finger. The sheet itself is never an
+  inset either. Desktop-sized windows, the minimap, the blueprint and the
+  thumbnails pass none and are unchanged.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere

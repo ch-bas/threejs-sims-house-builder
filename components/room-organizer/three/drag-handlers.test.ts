@@ -401,7 +401,7 @@ describe('drag-handlers release over the HUD (#511)', () => {
     expect(pointerOnCanvas(t.canvas, -5, 100)).toBe(false);
   });
 
-  it('holds the item while the pointer is over a panel and commits its last floor point on release', () => {
+  it('holds the item while the pointer is over a panel, and a release there undoes the drag', () => {
     const t = setup([]);
     detach = t.detach;
     hudOverRightHalf(t.canvas);
@@ -417,9 +417,20 @@ describe('drag-handlers release over the HUD (#511)', () => {
     expect(t.handlers.onItemDrag).toHaveBeenCalledTimes(1);
     expect(t.handlers.onItemDrag).toHaveBeenLastCalledWith('a', held.x, held.z);
     t.canvas.dispatchEvent(pointer('pointerup', 170, 100));
-    // The session commits the last position it was given: the held one.
-    expect(t.handlers.onItemDragEnd).toHaveBeenCalledWith('a');
-    expect(t.handlers.onItemDragCancel).not.toHaveBeenCalled();
+    // Nothing is committed: the session is discarded and the group goes back.
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('a release off the canvas undoes the drag too', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    t.canvas.dispatchEvent(pointer('pointerup', 130, 260));
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
   });
 
   it('follows the pointer again once it is back on the canvas', () => {
@@ -431,7 +442,10 @@ describe('drag-handlers release over the HUD (#511)', () => {
     t.canvas.dispatchEvent(pointer('pointermove', 170, 100));
     t.canvas.dispatchEvent(pointer('pointermove', 90, 120));
     expect(t.handlers.onItemDrag).toHaveBeenCalledTimes(2);
+    // Released back on the scene: an ordinary commit.
     t.canvas.dispatchEvent(pointer('pointerup', 90, 120));
+    expect(t.handlers.onItemDragEnd).toHaveBeenCalledWith('a');
+    expect(t.handlers.onItemDragCancel).not.toHaveBeenCalled();
   });
 });
 

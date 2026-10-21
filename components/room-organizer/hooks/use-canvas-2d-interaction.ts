@@ -292,7 +292,11 @@ export function useCanvas2DInteraction(
       if (zoneGesture) {
         const zone = zoneGesture;
         zoneGesture = null;
-        if (zone.started) releaseCapture(zone.pointerId);
+        if (zone.started) {
+          releaseCapture(zone.pointerId);
+          // Clear the dashed draft: no state change will.
+          if (restore) schedulePaint();
+        }
       }
       if (!session?.started) return;
       releaseCapture(session.pointerId);
@@ -301,7 +305,16 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerDown = (event: PointerEvent): void => {
-      if (event.button !== 0 || gesture !== null || zoneGesture !== null) return;
+      // A second finger while one is on the plan is a two-finger gesture,
+      // not a drag: drop the drag (the item goes back) or the zone draft,
+      // as the 3D canvas does.
+      const held = gesture ?? zoneGesture;
+      if (held) {
+        if (event.pointerId !== held.pointerId) abortGesture(true);
+        return;
+      }
+      // A later finger of a multi-touch gesture never selects or drags.
+      if (event.button !== 0 || event.isPrimary === false) return;
       const p = paramsRef.current;
       insets = planInsets(canvas);
       const world = worldAt(event);
@@ -385,8 +398,8 @@ export function useCanvas2DInteraction(
         abortGesture();
         return;
       }
-      // Over the HUD the item holds its last place on the plan, and a release
-      // there commits that place, not a point under the panel (#511).
+      // Over the HUD the item holds its last place on the plan; a release
+      // there undoes the drag (endGesture, #511).
       if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
       const world = worldAt(event);
       if (!world) return;
@@ -424,6 +437,12 @@ export function useCanvas2DInteraction(
       }
       const session = gesture;
       if (!session || event.pointerId !== session.pointerId) return;
+      // Released over the HUD or off the plan: the drop has no place on the
+      // floor, so the drag is undone, not committed (#511).
+      if (session.started && !pointerOnCanvas(canvas, event.clientX, event.clientY)) {
+        abortGesture(true);
+        return;
+      }
       gesture = null;
       if (rafId !== null) {
         cancelAnimationFrame(rafId);

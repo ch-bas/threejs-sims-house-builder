@@ -256,16 +256,29 @@ export function frameBox(input: FrameInput): Frame {
 }
 
 /**
- * `frameBox` in the visible region, falling back to the whole canvas only
- * when the region is a sliver (`isSliver`). The house's framed size is not
- * a reason to fall back: a small but real band (a landscape phone with a
- * wall panel unfolded, a tablet's strip between the top pills and the dock)
- * frames it small, which beats framing it under the panels.
+ * The safety net for a mis-measured occluder (a transparent container much
+ * bigger than what it paints): a framed footprint whose long side comes out
+ * under this many CSS pixels is a thumbnail, not a framing.
+ */
+export const MIN_FOOTPRINT_PX = 48;
+/** ...but only when the whole canvas would frame it at least this much larger. */
+const FALLBACK_GAIN = 2;
+
+/**
+ * `frameBox` in the visible region, falling back to the whole canvas when
+ * the region is a sliver (`isSliver`), or when the footprint framed in it
+ * would be a thumbnail (`MIN_FOOTPRINT_PX`) that the whole canvas would
+ * frame far larger. A small but real band (a landscape phone with a wall
+ * panel unfolded, a tablet's strip between the top pills and the dock)
+ * frames the house small, which beats framing it under the panels.
  */
 export function frameInRegion(input: FrameInput): Frame & { fellBack: boolean } {
-  if (!isSliver(input.region)) return { ...frameBox(input), fellBack: false };
   const whole = { left: 0, top: 0, right: input.canvasWidth, bottom: input.canvasHeight };
-  return { ...frameBox({ ...input, region: whole }), fellBack: true };
+  if (isSliver(input.region)) return { ...frameBox({ ...input, region: whole }), fellBack: true };
+  const framed = frameBox(input);
+  if (framed.floorExtent >= MIN_FOOTPRINT_PX) return { ...framed, fellBack: false };
+  const wide = frameBox({ ...input, region: whole });
+  return wide.floorExtent >= framed.floorExtent * FALLBACK_GAIN ? { ...wide, fellBack: true } : { ...framed, fellBack: false };
 }
 
 export interface HouseShape {

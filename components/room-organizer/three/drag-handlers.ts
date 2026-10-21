@@ -94,7 +94,8 @@ export function dragThresholdPx(pointerType: string): number {
  * Whether a client point is on the canvas itself: inside its box and not
  * over a HUD panel drawn on top of it. A captured drag keeps receiving moves
  * over the HUD; mapping those onto the floor dropped the item behind the
- * panel, or far off the lot near the horizon (#511). Shared with the 2D plan.
+ * panel, or far off the lot near the horizon (#511). Moves there hold the
+ * item and a release there cancels the drag. Shared with the 2D plan.
  */
 export function pointerOnCanvas(canvas: HTMLCanvasElement, clientX: number, clientY: number): boolean {
   const rect = canvas.getBoundingClientRect();
@@ -380,8 +381,8 @@ export function attachDragHandlers({
       return;
     }
 
-    // Over the HUD (or off the canvas) the item holds its last place, and a
-    // release there commits that place (#511).
+    // Over the HUD (or off the canvas) the item holds its last place; a
+    // release there undoes the drag (endGesture, #511).
     if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
@@ -500,6 +501,12 @@ export function attachDragHandlers({
     // same stale-commit hazard as in onPointerMove, so abort, don't commit.
     if (dragStarted && dragTarget && (dragTarget.parent === null || furnitureRevision() !== dragRevision)) {
       abortGesture(false);
+      return;
+    }
+    // Released over the HUD or off the canvas: the drop has no place on the
+    // floor, so the drag is undone, not committed (#511).
+    if (dragStarted && dragTarget && !pointerOnCanvas(canvas, event.clientX, event.clientY)) {
+      abortGesture(true);
       return;
     }
     const started = dragStarted;

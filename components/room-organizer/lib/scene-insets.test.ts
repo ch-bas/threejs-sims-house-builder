@@ -1,6 +1,6 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { MIN_REGION_PX, frameBox, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
+import { MIN_FOOTPRINT_PX, MIN_REGION_PX, frameBox, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
 import type { FrameInput, Rect } from './scene-insets';
 
 const rect = (left: number, top: number, right: number, bottom: number): Rect => ({ left, top, right, bottom });
@@ -249,7 +249,37 @@ describe('frameInRegion', () => {
     expect(framed.fellBack).toBe(false);
   });
 
-  it('falls back to the whole canvas only for a sliver', () => {
+  it('frames the measured bands well above the thumbnail floor', () => {
+    const house = houseFrameBox({ width: 8, depth: 8, height: 3, roof: { peak: 2.5, overhang: 0.35 } });
+    const cases: FrameInput[] = [
+      { canvasWidth: 1024, canvasHeight: 768, region: rect(0, 132, 970, 477), fovDeg: 75, ...house, direction: [0.6, 0.7, 0.6] },
+      { canvasWidth: 750, canvasHeight: 342, region: rect(0, 62, 750, 168), fovDeg: 75, ...house, direction: [0.6, 0.7, 0.6] },
+      { canvasWidth: 342, canvasHeight: 750, region: rect(100, 62, 342, 263), fovDeg: 75, ...house, direction: [0.6, 0.7, 0.6] },
+    ];
+    for (const input of cases) {
+      const framed = frameInRegion(input);
+      expect(framed.fellBack).toBe(false);
+      expect(framed.floorExtent).toBeGreaterThan(MIN_FOOTPRINT_PX);
+    }
+  });
+
+  it('falls back when a mis-measured occluder leaves a thumbnail the whole canvas frames far larger', () => {
+    // A tall tower in a 70 px square: its footprint comes out a few pixels wide.
+    const tower: FrameInput = { ...base, region: rect(300, 100, 370, 170), boxMin: [-2, 0, -2], boxMax: [2, 30, 2] };
+    expect(frameBox(tower).floorExtent).toBeLessThan(MIN_FOOTPRINT_PX);
+    const framed = frameInRegion(tower);
+    expect(framed.fellBack).toBe(true);
+    expect(framed).toMatchObject(frameBox({ ...tower, region: rect(0, 0, 750, 342) }));
+  });
+
+  it('keeps a thumbnail when the whole canvas would not frame it much larger', () => {
+    // Already a thumbnail on the whole canvas: the band is no worse.
+    const needle: FrameInput = { ...base, region: rect(0, 0, 750, 300), boxMin: [-0.5, 0, -0.5], boxMax: [0.5, 200, 0.5] };
+    expect(frameBox(needle).floorExtent).toBeLessThan(MIN_FOOTPRINT_PX);
+    expect(frameInRegion(needle).fellBack).toBe(false);
+  });
+
+  it('falls back to the whole canvas for a sliver', () => {
     const framed = frameInRegion({ ...base, region: rect(150, 60, 750, 60 + MIN_REGION_PX - 1) });
     expect(framed.fellBack).toBe(true);
     expect(framed).toMatchObject(frameBox({ ...base, region: rect(0, 0, 750, 342) }));

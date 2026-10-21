@@ -60,20 +60,33 @@ export function measureRegion(canvas: HTMLCanvasElement, withSheet = true): { wi
   };
 }
 
+/** The last insets measured with the item sheet closed, per plan canvas and size. */
+const settledInsets = new WeakMap<HTMLCanvasElement, { size: string; insets: Insets | undefined }>();
+
 /**
  * The 2D plan's occluder insets: the canvas edges the HUD covers, on a
  * compact viewport only. Desktop-sized windows get `undefined` and keep the
- * plan's classic whole-canvas fit, pixel for pixel. The item sheet is left
- * out: the plan would rescale under the finger on every select and deselect.
+ * plan's classic whole-canvas fit, pixel for pixel.
+ *
+ * Frozen while the phone item sheet is open: opening it (the first press on
+ * an item) hides the catalog and the build tools, and re-fitting the plan
+ * to the panels that are left would rescale it under the finger, mid-drag.
+ * The sheet itself is never an inset, for the same reason. A canvas resize
+ * (a rotation) measures afresh.
  */
 export function planInsets(canvas: HTMLCanvasElement): Insets | undefined {
   if (!isCompactViewport(window.innerWidth, window.innerHeight)) return undefined;
   if (canvas.clientWidth === 0 || canvas.clientHeight === 0) return undefined;
+  const size = `${canvas.clientWidth}x${canvas.clientHeight}`;
+  const settled = settledInsets.get(canvas);
+  if (settled && settled.size === size && document.documentElement.hasAttribute('data-sheet-open')) return settled.insets;
   const bounds = canvas.getBoundingClientRect();
   const free = visibleRegion(bounds, sceneOccluderRects(false));
-  const insets = insetsFromRegion(bounds, free);
+  const measured = insetsFromRegion(bounds, free);
   // Nothing covers the canvas: the classic whole-canvas fit.
-  return insets.top || insets.right || insets.bottom || insets.left ? insets : undefined;
+  const insets = measured.top || measured.right || measured.bottom || measured.left ? measured : undefined;
+  settledInsets.set(canvas, { size, insets });
+  return insets;
 }
 
 /**
@@ -110,7 +123,16 @@ export function observeSceneOccluders(onChange: () => void): () => void {
     if (!initial) onChange();
   };
   sync(true);
-  const mountObserver = new MutationObserver(() => sync(false));
+  // Only mutations that can touch a panel: a re-tag, or an added or removed
+  // subtree that is or holds one. Most DOM churn (labels, counters) is neither.
+  const touchesOccluder = (node: Node): boolean =>
+    node instanceof Element && (node.matches(OCCLUDER_SELECTOR) || node.querySelector(OCCLUDER_SELECTOR) !== null);
+  const mountObserver = new MutationObserver((records) => {
+    const relevant = records.some(
+      (r) => r.type === 'attributes' || [...r.addedNodes].some(touchesOccluder) || [...r.removedNodes].some(touchesOccluder)
+    );
+    if (relevant) sync(false);
+  });
   mountObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-scene-occluder'] });
   return () => {
     resizeObserver.disconnect();

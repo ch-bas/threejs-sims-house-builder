@@ -143,7 +143,7 @@ describe('useCanvas2DInteraction beside the HUD', () => {
     delete (document as { elementFromPoint?: unknown }).elementFromPoint;
   });
 
-  it('holds the item while the pointer is over a HUD panel and commits the last plan point (#511)', () => {
+  it('holds the item while the pointer is over a HUD panel, and a release there undoes the drag (#511)', () => {
     const { params, fire } = setup([]);
     const hud = document.createElement('div');
     const canvas = params.canvasRef.current!;
@@ -157,7 +157,45 @@ describe('useCanvas2DInteraction beside the HUD', () => {
     expect(params.onItemDrag).toHaveBeenCalledTimes(1);
     expect(params.onItemDrag).toHaveBeenLastCalledWith('a', 1, 0);
     fire('pointerup', 3, 0);
+    expect(params.onItemDragEnd).not.toHaveBeenCalled();
+    expect(params.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+  });
+
+  it('a release back on the plan commits as usual', () => {
+    const { params, fire } = setup([]);
+    const canvas = params.canvasRef.current!;
+    (document as { elementFromPoint?: unknown }).elementFromPoint = () => canvas;
+    fire('pointerdown', 0, 0);
+    fire('pointermove', 1, 0);
+    fire('pointerup', 1, 0);
     expect(params.onItemDragEnd).toHaveBeenCalledWith('a');
+    expect(params.onItemDragCancel).not.toHaveBeenCalled();
+  });
+
+  it('a second finger cancels the drag and restores the item', () => {
+    const { params, fire } = setup([]);
+    const canvas = params.canvasRef.current!;
+    fire('pointerdown', 0, 0, 'touch');
+    fire('pointermove', 1, 0, 'touch');
+    expect(params.onItemDragStart).toHaveBeenCalledWith('a');
+    const second = new PointerEvent('pointerdown', { clientX: 10, clientY: 10, pointerId: 2, pointerType: 'touch', isPrimary: false, button: 0, bubbles: true });
+    canvas.dispatchEvent(second);
+    expect(params.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+    // The first finger keeps moving and lifts: nothing more happens.
+    fire('pointermove', 2, 0, 'touch');
+    fire('pointerup', 2, 0, 'touch');
+    expect(params.onItemDrag).toHaveBeenCalledTimes(1);
+    expect(params.onItemDragEnd).not.toHaveBeenCalled();
+  });
+
+  it('a later finger of a multi-touch gesture never selects', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    const t = get2DViewTransform(W, H, params.layout);
+    const later = new PointerEvent('pointerdown', { clientX: t.offsetX + (params.layout.width / 2) * t.scale, clientY: t.offsetY + (params.layout.height / 2) * t.scale, pointerId: 3, pointerType: 'touch', isPrimary: false, button: 0, bubbles: true });
+    canvas.dispatchEvent(later);
+    expect(params.onItemSelect).not.toHaveBeenCalled();
+    expect(params.onDeselect).not.toHaveBeenCalled();
   });
 
   it('maps the pointer through the same inset transform the plan is painted with', () => {
