@@ -261,6 +261,11 @@ export function attachDragHandlers({
 
     // Arm a potential drag, but don't open the session yet: the drag only
     // begins once the pointer travels past the threshold (see onPointerMove).
+    // The camera stays still from the press on: this listener runs before
+    // OrbitControls' (capture phase), so with the controls off it never
+    // takes the press, and the moves under the threshold can't orbit or
+    // leave a damping glide running through the drag.
+    controls.enabled = false;
     dragTarget = target;
     dragStarted = false;
     dragRevision = furnitureRevision();
@@ -368,6 +373,11 @@ export function attachDragHandlers({
   // as OrbitControls does.
   const doc = canvas.ownerDocument;
   let heldPointerId: number | null = null;
+  // An armed press that never became a drag gives the camera back, unless
+  // walkthrough took it meanwhile (it re-enables orbit on exit).
+  const handBackControls = (): void => {
+    if (!handlersRef.current.walkthroughActive) controls.enabled = true;
+  };
   const releaseHeldControls = (): void => {
     if (heldPointerId === null) return;
     heldPointerId = null;
@@ -434,6 +444,7 @@ export function attachDragHandlers({
     // click: no session was opened, so there is nothing to end (see #65).
     // A press that kept a multi-selection selects the item now (#291).
     if (!started) {
+      handBackControls();
       if (narrow) handlersRef.current.onItemSelect(target.userData.id as string, 'replace');
       return;
     }
@@ -465,10 +476,14 @@ export function attachDragHandlers({
     // still-armed (not yet started) drag is abandoned here.
     if (dragTarget && !dragStarted) {
       resetDragState();
+      handBackControls();
     }
   };
 
-  canvas.addEventListener('pointerdown', onPointerDown);
+  // Capture phase: at the canvas itself, capture listeners run before
+  // OrbitControls' (bubble) pointerdown, so a press on an item can switch
+  // the controls off before they see it.
+  canvas.addEventListener('pointerdown', onPointerDown, true);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
@@ -476,7 +491,7 @@ export function attachDragHandlers({
 
   return () => {
     releaseHeldControls();
-    canvas.removeEventListener('pointerdown', onPointerDown);
+    canvas.removeEventListener('pointerdown', onPointerDown, true);
     canvas.removeEventListener('pointermove', onPointerMove);
     canvas.removeEventListener('pointerup', onPointerUp);
     canvas.removeEventListener('pointercancel', onPointerCancel);

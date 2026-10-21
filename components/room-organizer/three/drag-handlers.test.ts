@@ -316,3 +316,64 @@ describe('drag-handlers keep the camera still after an abort mid-press', () => {
     document.dispatchEvent(pointer('pointerup', 120, 10));
   });
 });
+
+describe('drag-handlers keep OrbitControls off a press on an item', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  it('the moves under the drag threshold and the drag itself never orbit, even with damping', () => {
+    const t = setup([], { realControls: true });
+    detach = t.detach;
+    const controls = t.controls as RealOrbitControls;
+    controls.enableDamping = true;
+    controls.update();
+    const start = t.camera.position.clone();
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100, { pointerType: 'touch' }));
+    expect(controls.enabled).toBe(false);
+    // Under the touch threshold: on its own this used to orbit, and the
+    // damping glide then kept turning the camera through the drag.
+    t.canvas.dispatchEvent(pointer('pointermove', 104, 102, { pointerType: 'touch' }));
+    t.canvas.dispatchEvent(pointer('pointermove', 107, 104, { pointerType: 'touch' }));
+    expect(t.handlers.onItemDragStart).not.toHaveBeenCalled();
+    for (let x = 115; x <= 175; x += 15) t.canvas.dispatchEvent(pointer('pointermove', x, 110, { pointerType: 'touch' }));
+    expect(t.handlers.onItemDragStart).toHaveBeenCalledWith('a');
+    for (let i = 0; i < 30; i++) controls.update();
+    expect(t.camera.position.distanceTo(start)).toBeLessThan(1e-9);
+    t.canvas.dispatchEvent(pointer('pointerup', 175, 110, { pointerType: 'touch' }));
+    expect(controls.enabled).toBe(true);
+    for (let i = 0; i < 30; i++) controls.update();
+    expect(t.camera.position.distanceTo(start)).toBeLessThan(1e-9);
+  });
+
+  it('a tap on an item hands the camera back on release', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    expect(t.controls.enabled).toBe(false);
+    t.canvas.dispatchEvent(pointer('pointerup', 100, 100));
+    expect(t.handlers.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('an armed press that leaves the canvas hands the camera back', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointerleave', 100, 100));
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('a press on empty floor still orbits', () => {
+    const t = setup([], { realControls: true });
+    detach = t.detach;
+    const controls = t.controls as RealOrbitControls;
+    controls.update();
+    const start = t.camera.position.clone();
+    t.canvas.dispatchEvent(pointer('pointerdown', 10, 10));
+    expect(controls.enabled).toBe(true);
+    for (let x = 20; x <= 120; x += 20) t.canvas.dispatchEvent(pointer('pointermove', x, 10));
+    controls.update();
+    expect(t.camera.position.distanceTo(start)).toBeGreaterThan(0.1);
+    document.dispatchEvent(pointer('pointerup', 120, 10));
+  });
+});
