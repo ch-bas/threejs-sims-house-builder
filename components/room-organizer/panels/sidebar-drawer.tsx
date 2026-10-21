@@ -3,6 +3,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { useEvent } from '../hooks/use-event';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { notify } from '../lib/editor-notices';
@@ -208,6 +209,13 @@ const DrawerBody = memo(function DrawerBody({
   const view = useViewSettings('view2D', 'walkthroughMode');
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
+  // Stable, so the open drawer's catalog tiles skip layout edits too (#3).
+  const addFromCatalog = useEvent((catalogItem: CatalogItem) => {
+    const id = placeCatalogItem(catalogItem);
+    if (!id) return;
+    selectOnly(id);
+    playCue('place');
+  });
 
   const handleFloorPlanUpload = async (file: File) => {
     try {
@@ -256,14 +264,7 @@ const DrawerBody = memo(function DrawerBody({
 
       {sidebarTab === 'buy' && (
         <>
-          <FurnitureCatalogPanel
-            onAdd={(catalogItem) => {
-              const id = placeCatalogItem(catalogItem);
-              if (!id) return;
-              selectOnly(id);
-              playCue('place');
-            }}
-          />
+          <MemoFurnitureCatalogPanel onAdd={addFromCatalog} />
 
           <SetsPanel
             onAddSet={(set) => {
@@ -358,3 +359,5 @@ const DrawerBody = memo(function DrawerBody({
     </>
   );
 });
+
+const MemoFurnitureCatalogPanel = memo(FurnitureCatalogPanel);

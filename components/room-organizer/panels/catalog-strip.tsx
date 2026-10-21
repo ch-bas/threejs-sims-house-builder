@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRoomEditor } from '../contexts';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
+import { useActiveFloorIndex } from '../hooks/use-layout-store';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
@@ -18,7 +18,7 @@ export interface CatalogStripProps {
 }
 
 export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Element {
-  const { activeFloorIndex } = useRoomEditor();
+  const activeFloorIndex = useActiveFloorIndex();
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
 

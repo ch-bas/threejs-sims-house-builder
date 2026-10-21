@@ -52,6 +52,14 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
       toggle('drawWallMode');
     }
   });
+  const addFromStrip = useEvent((catalogItem: CatalogItem) => {
+    const id = placeCatalogItem(catalogItem);
+    // '' = placement declined (budget confirm) or refused — nothing
+    // was added, so no chime and no selection wipe (#146).
+    if (!id) return;
+    selectOnly(id);
+    playCue('place');
+  });
 
   if (!isReady || error) return <></>;
 
@@ -145,19 +153,12 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
       )}
 
       {gameMode !== 'live' ? (
-        <CatalogStrip
+        <MemoCatalogStrip
           // The strip follows the mode's tool, so DESIGN browses structure
           // and FURNISH furniture; the wall tool browses the openings that
           // go on walls rather than the whole catalog (#151).
           category={catalogCategoryForTool(buildTool)}
-          onAdd={(catalogItem) => {
-            const id = placeCatalogItem(catalogItem);
-            // '' = placement declined (budget confirm) or refused — nothing
-            // was added, so no chime and no selection wipe (#146).
-            if (!id) return;
-            selectOnly(id);
-            playCue('place');
-          }}
+          onAdd={addFromStrip}
         />
       ) : (
         <div />
@@ -211,3 +212,4 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
 
 const MemoBuildToolsPanel = memo(BuildToolsPanel);
 const MemoCameraPad = memo(CameraPad);
+const MemoCatalogStrip = memo(CatalogStrip);
