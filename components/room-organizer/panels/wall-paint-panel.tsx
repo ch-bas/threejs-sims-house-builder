@@ -211,6 +211,7 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
     >
       {/* Title + Surface toggle */}
       <div
+        className="pc-paint-head"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -349,7 +350,7 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
   return (
     <div
       role="tablist"
-      className="pc-glass--inset"
+      className="pc-glass--inset pc-paint-tabs"
       style={{
         display: 'inline-flex',
         gap: 3,
@@ -395,7 +396,7 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
     <div
       role="radiogroup"
       aria-label="Apply paint to"
-      className="pc-glass--inset"
+      className="pc-glass--inset pc-paint-row"
       style={{
         display: 'flex',
         gap: 3,
@@ -448,7 +449,7 @@ function WallVisibilityToggle({ hiddenWalls, onToggle }: WallVisibilityTogglePro
     <div
       role="group"
       aria-label="Wall visibility"
-      className="pc-glass--inset"
+      className="pc-glass--inset pc-paint-row"
       style={{
         display: 'flex',
         gap: 3,
@@ -495,6 +496,7 @@ function GroupTabs({ groups, active, onChange }: GroupTabsProps): JSX.Element {
   return (
     <div
       role="tablist"
+      className="pc-paint-row"
       style={{
         display: 'flex',
         gap: 3,
@@ -551,7 +553,7 @@ function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element 
 function PatternGrid({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <div
-      className="pc-glass--inset"
+      className="pc-glass--inset pc-paint-patterns"
       style={{
         borderRadius: 10,
         padding: 4,
@@ -706,7 +708,7 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
   const normalized = (value ?? '').toLowerCase();
   return (
     <div
-      className="pc-glass--inset"
+      className="pc-glass--inset pc-paint-swatches"
       style={{
         borderRadius: 10,
         padding: 4,
