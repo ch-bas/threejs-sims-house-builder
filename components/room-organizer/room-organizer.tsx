@@ -11,6 +11,7 @@ import { useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
+import { useEvent } from './hooks/use-event';
 import { useFloorKeepOut } from './hooks/use-floor-keep-out';
 import { useHistory } from './hooks/use-history';
 import { useImportExport } from './hooks/use-import-export';
@@ -18,7 +19,7 @@ import { useItemDrag } from './hooks/use-item-drag';
 import { useItemPlacement } from './hooks/use-item-placement';
 import { useKeyboardPlacement } from './hooks/use-keyboard-placement';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
-import { useLayoutPersistence } from './hooks/use-layout-persistence';
+import { useLayoutPersistence, useSaveStatus, type SaveStatus, type SaveStatusStore } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
 import { layoutStore } from './hooks/use-layout-store';
 import { useNpcs } from './hooks/use-npcs';
@@ -47,7 +48,7 @@ import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
 import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FloorPill } from './panels/floor-pill';
-import { HeaderStats } from './panels/header-stats';
+import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
 import { PlacementHint } from './panels/placement-hint';
@@ -589,7 +590,7 @@ export function RoomOrganizer(): JSX.Element {
     [actions, commitHistoryNow, allSelectedIds]
   );
 
-  const { lastSavedAt, saving: isSaving, saveError, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
+  const { saveStatus, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
     layout,
     onHydrate: useCallback(
       (saved: RoomLayout) => {
@@ -999,6 +1000,35 @@ export function RoomOrganizer(): JSX.Element {
 
 
 
+  // Stable identities for the memoised drawer and HUD (#3): these handlers
+  // close over the layout, so they change on every edit.
+  const collapseSidebar = useCallback(() => setSidebarCollapsed(true), []);
+  const stableApplyPreset = useEvent(applyPreset);
+  const stableFitToRoom = useEvent(fitToRoom);
+  const stableScreenshot = useEvent(handleScreenshot);
+  const stableImport = useEvent(handleImport);
+  const stableExportGlb = useEvent(handleExportGlb);
+  const stableShareLink = useEvent(handleShareLink);
+  const stablePlaceFromCatalog = useEvent(placeFromCatalog);
+  const stableRemoveItem = useEvent(removeItem);
+  const orbitByPad = useEvent((direction: 'left' | 'right' | 'up' | 'down') => {
+    const THREE = threeModuleRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!THREE || !camera || !controls) return;
+    orbitCamera(THREE, camera, controls, direction);
+    // controls.update() above consumes the move, so the RAF loop won't
+    // see it; mark the frame dirty explicitly (#337).
+    invalidate();
+  });
+  const zoomByPad = useEvent((direction: '+' | '-') => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    zoomCamera(camera, controls, direction);
+    invalidate();
+  });
+
   const roomEditorValue = useMemo<RoomEditorContextValue>(
     () => ({
       layout,
@@ -1132,10 +1162,8 @@ export function RoomOrganizer(): JSX.Element {
           className="pc-glass pc-glass--dark"
           style={{ padding: '8px 12px', pointerEvents: 'auto' }}
         >
-          <HeaderStats
-            lastSavedAt={lastSavedAt}
-            saving={isSaving}
-            saveError={saveError}
+          <SaveStatusHeaderStats
+            saveStatus={saveStatus}
             remoteChange={remoteLayout !== null}
             onAdoptRemote={adoptRemoteLayout}
             onDismissRemote={clearRemoteLayout}
@@ -1187,26 +1215,11 @@ export function RoomOrganizer(): JSX.Element {
       <BottomHud
         selectedWall={selectedWall}
         onSelectedWallChange={setSelectedWall}
-        onOrbit={(direction) => {
-          const THREE = threeModuleRef.current;
-          const camera = cameraRef.current;
-          const controls = controlsRef.current;
-          if (!THREE || !camera || !controls) return;
-          orbitCamera(THREE, camera, controls, direction);
-          // controls.update() above consumes the move, so the RAF loop won't
-          // see it; mark the frame dirty explicitly (#337).
-          invalidate();
-        }}
-        onZoom={(direction) => {
-          const camera = cameraRef.current;
-          const controls = controlsRef.current;
-          if (!camera || !controls) return;
-          zoomCamera(camera, controls, direction);
-          invalidate();
-        }}
-        onFit={fitToRoom}
+        onOrbit={orbitByPad}
+        onZoom={zoomByPad}
+        onFit={stableFitToRoom}
         controlsRef={controlsRef}
-        placeCatalogItem={placeFromCatalog}
+        placeCatalogItem={stablePlaceFromCatalog}
       />
 
       {/* Touch mode toggle — visible on mobile only */}
@@ -1230,22 +1243,31 @@ export function RoomOrganizer(): JSX.Element {
 
       <SidebarDrawer
         collapsed={sidebarCollapsed}
-        onCollapse={() => setSidebarCollapsed(true)}
+        onCollapse={collapseSidebar}
         unlockedAchievements={unlockedAchievements}
-        onApplyPreset={applyPreset}
-        onFitToRoom={fitToRoom}
-        onScreenshot={handleScreenshot}
-        onImport={handleImport}
-        onExportGlb={handleExportGlb}
-        onShareLink={handleShareLink}
-        placeCatalogItem={placeFromCatalog}
-        removeItem={removeItem}
+        onApplyPreset={stableApplyPreset}
+        onFitToRoom={stableFitToRoom}
+        onScreenshot={stableScreenshot}
+        onImport={stableImport}
+        onExportGlb={stableExportGlb}
+        onShareLink={stableShareLink}
+        placeCatalogItem={stablePlaceFromCatalog}
+        removeItem={stableRemoveItem}
       />
     </div>
     </SelectionProvider>
     </RoomEditorProvider>
     </EditorViewProvider>
   );
+}
+
+// The save status's only subscriber, so a flip re-renders the header, not
+// the editor (#3).
+function SaveStatusHeaderStats({
+  saveStatus,
+  ...props
+}: { saveStatus: SaveStatusStore } & Omit<HeaderStatsProps, keyof SaveStatus>): JSX.Element {
+  return <HeaderStats {...props} {...useSaveStatus(saveStatus)} />;
 }
 
 type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds'>;

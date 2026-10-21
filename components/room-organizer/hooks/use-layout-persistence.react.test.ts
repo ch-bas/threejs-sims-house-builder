@@ -224,13 +224,13 @@ describe('useLayoutPersistence — save failure reason (#472)', () => {
     act(() => {
       vi.advanceTimersByTime(10);
     });
-    expect(tab.result.current.saveError).toBe(reason);
+    expect(tab.result.current.saveStatus.getState().saveError).toBe(reason);
     spy.mockRestore();
     tab.rerender({ layout: makeLayout({ width: 9 }) });
     act(() => {
       vi.advanceTimersByTime(10);
     });
-    expect(tab.result.current.saveError).toBeNull();
+    expect(tab.result.current.saveStatus.getState().saveError).toBeNull();
   });
 });
 
@@ -258,11 +258,11 @@ describe('useLayoutPersistence — an unreadable save that cannot be copied (#33
     const tab = renderHook(({ layout }) => useLayoutPersistence({ layout, onHydrate: () => {}, debounceMs: 10 }), {
       initialProps: { layout: makeLayout() },
     });
-    expect(tab.result.current.saveError).toBe('quota');
+    expect(tab.result.current.saveStatus.getState().saveError).toBe('quota');
     act(() => {
       vi.advanceTimersByTime(10);
     });
-    expect(tab.result.current.saveError).toBe('quota');
+    expect(tab.result.current.saveStatus.getState().saveError).toBe('quota');
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('{unreadable house');
 
     tab.rerender({ layout: makeLayout({ width: 9 }) });
@@ -281,7 +281,7 @@ describe('useLayoutPersistence — an unreadable save that cannot be copied (#33
     act(() => {
       vi.advanceTimersByTime(10);
     });
-    expect(tab.result.current.saveError).toBeNull();
+    expect(tab.result.current.saveStatus.getState().saveError).toBeNull();
     expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual(['{unreadable house']);
     expect(loadLayout()?.width).toBe(10);
   });
@@ -307,9 +307,9 @@ describe('useLayoutPersistence — no render per edit while saving (#480)', () =
       const [layout, setLayout] = useState(() => makeLayout({ name: 'N' }));
       return { setLayout, ...useLayoutPersistence({ layout, onHydrate: () => {}, debounceMs: 60_000 }) };
     });
-    // The first edit turns `saving` on: its own render plus the setSaving one.
+    // The first edit turns `saving` on.
     act(() => result.current.setLayout(makeLayout({ name: 'NN' })));
-    expect(result.current.saving).toBe(true);
+    expect(result.current.saveStatus.getState().saving).toBe(true);
     // Each further keystroke is one render only. An unconditional
     // setSaving(true) scheduled another per edit, and while typing fast those
     // piled up into "Maximum update depth exceeded".
@@ -318,6 +318,24 @@ describe('useLayoutPersistence — no render per edit while saving (#480)', () =
       act(() => result.current.setLayout(makeLayout({ name: 'N'.repeat(length) })));
       expect(renders - before).toBe(1);
     }
-    expect(result.current.saving).toBe(true);
+    expect(result.current.saveStatus.getState().saving).toBe(true);
+  });
+
+  it('a save-status flip never re-renders the component running the hook (#3)', () => {
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      const [layout, setLayout] = useState(() => makeLayout({ name: 'S' }));
+      return { setLayout, ...useLayoutPersistence({ layout, onHydrate: () => {}, debounceMs: 10 }) };
+    });
+    act(() => result.current.setLayout(makeLayout({ name: 'SS' })));
+    const before = renders;
+    expect(result.current.saveStatus.getState().saving).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(10);
+    });
+    expect(result.current.saveStatus.getState()).toMatchObject({ saving: false, saveError: null });
+    expect(result.current.saveStatus.getState().lastSavedAt).not.toBeNull();
+    expect(renders).toBe(before);
   });
 });

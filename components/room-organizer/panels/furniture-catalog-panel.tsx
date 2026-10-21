@@ -3,8 +3,9 @@
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { useEditorView, useEditorViewActions, useRoomEditor } from '../contexts';
+import { useEditorView, useEditorViewActions } from '../contexts';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
+import { useActiveFloorIndex } from '../hooks/use-layout-store';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
@@ -28,7 +29,7 @@ export interface FurnitureCatalogPanelProps {
 }
 
 export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JSX.Element {
-  const { activeFloorIndex } = useRoomEditor();
+  const activeFloorIndex = useActiveFloorIndex();
   const [filter, setFilter] = useState<FilterKey>('all');
   // The search lives in the editor view store, shared with the 3D highlight;
   // subscribing here keeps a keystroke from re-rendering the drawer (#148).

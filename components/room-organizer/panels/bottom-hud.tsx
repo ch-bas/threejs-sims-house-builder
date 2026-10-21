@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, type MutableRefObject } from 'react';
+import { memo, useState, type MutableRefObject } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useSelection } from '../contexts';
+import { useEvent } from '../hooks/use-event';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
@@ -29,7 +30,10 @@ export interface BottomHudProps {
   placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
 }
 
-export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem }: BottomHudProps): JSX.Element {
+// Memoised with stable props from the orchestrator (#3); it still follows the
+// layout through its context, so the children that only take callbacks are
+// memoised too.
+export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem }: BottomHudProps): JSX.Element {
   const { layout, activeFloor, actions, isReady, error, playCue } = useRoomEditor();
   const view = useViewSettings('drawWallMode', 'view2D', 'walkthroughMode');
   const { toggle, setView, setGameMode } = useEditorViewActions();
@@ -40,6 +44,22 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
   // half falls back to this mode's first tool. Derived, not synced, so the
   // pick survives a round trip through the other mode.
   const buildTool = resolveToolForMode(gameMode, buildToolCategory);
+  const selectBuildTool = useEvent((tool: BuildToolCategory) => {
+    setBuildToolCategory(tool);
+    if (tool === 'walls') {
+      if (!view.drawWallMode) toggle('drawWallMode');
+    } else if (view.drawWallMode) {
+      toggle('drawWallMode');
+    }
+  });
+  const addFromStrip = useEvent((catalogItem: CatalogItem) => {
+    const id = placeCatalogItem(catalogItem);
+    // '' = placement declined (budget confirm) or refused — nothing
+    // was added, so no chime and no selection wipe (#146).
+    if (!id) return;
+    selectOnly(id);
+    playCue('place');
+  });
 
   if (!isReady || error) return <></>;
 
@@ -111,23 +131,16 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
               />
             </>
           )}
-          <BuildToolsPanel
+          <MemoBuildToolsPanel
             active={buildTool}
             drawWallMode={view.drawWallMode}
-            onSelect={(tool) => {
-              setBuildToolCategory(tool);
-              if (tool === 'walls') {
-                if (!view.drawWallMode) toggle('drawWallMode');
-              } else if (view.drawWallMode) {
-                toggle('drawWallMode');
-              }
-            }}
+            onSelect={selectBuildTool}
           />
           {/* The pad drives the (hidden) 3D camera, so it's inert in the 2D
               top-down view — hide it there, like CameraPresetsPanel disables
               on view2D (#220). */}
           {!view.view2D && (
-            <CameraPad
+            <MemoCameraPad
               onOrbit={onOrbit}
               onZoom={onZoom}
               onFit={onFit}
@@ -140,19 +153,12 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
       )}
 
       {gameMode !== 'live' ? (
-        <CatalogStrip
+        <MemoCatalogStrip
           // The strip follows the mode's tool, so DESIGN browses structure
           // and FURNISH furniture; the wall tool browses the openings that
           // go on walls rather than the whole catalog (#151).
           category={catalogCategoryForTool(buildTool)}
-          onAdd={(catalogItem) => {
-            const id = placeCatalogItem(catalogItem);
-            // '' = placement declined (budget confirm) or refused — nothing
-            // was added, so no chime and no selection wipe (#146).
-            if (!id) return;
-            selectOnly(id);
-            playCue('place');
-          }}
+          onAdd={addFromStrip}
         />
       ) : (
         <div />
@@ -202,4 +208,8 @@ export function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom,
       />
     </div>
   );
-}
+});
+
+const MemoBuildToolsPanel = memo(BuildToolsPanel);
+const MemoCameraPad = memo(CameraPad);
+const MemoCatalogStrip = memo(CatalogStrip);

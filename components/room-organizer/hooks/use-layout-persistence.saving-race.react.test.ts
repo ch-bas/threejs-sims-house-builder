@@ -43,11 +43,11 @@ it('saving stays on for an edit made in the same task as the previous save', asy
   });
   await sleep(DEBOUNCE + 50);
   flushSync(() => result.current.setLayout(makeLayout({ name: 'AB' })));
-  await waitFor(() => expect(result.current.saving).toBe(true));
+  await waitFor(() => expect(result.current.saveStatus.getState().saving).toBe(true));
 
   afterSave = () => flushSync(() => result.current.setLayout(makeLayout({ name: 'ABC' })));
   // The first save lands; sample before the second one's debounce runs out.
   await sleep(DEBOUNCE + 30);
   const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}') as { name?: string };
-  expect({ storedName: stored.name, saving: result.current.saving }).toEqual({ storedName: 'AB', saving: true });
+  expect({ storedName: stored.name, saving: result.current.saveStatus.getState().saving }).toEqual({ storedName: 'AB', saving: true });
 });
