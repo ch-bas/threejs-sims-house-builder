@@ -459,6 +459,7 @@ components/
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-media-query.ts           Live CSS media-query match (false during prerender)
+    │   ├── use-pausable-timeout.ts      Countdown that pauses and resumes with the time left (toasts)
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
@@ -681,6 +682,14 @@ components/
   is never silent (#385). The stack is placed under whatever chrome sits
   above its column (pills, touch row, minimap, tool chips), measured on DOM
   changes rather than at a fixed offset, so it follows HUD layout changes.
+  It never overlaps the open sheet: short of room it puts the notices on
+  one line, then holds the toasts back, then rises over the chrome to sit
+  on the sheet; the save-failed label stays in view throughout. Toast
+  timers pause while a toast is off screen and resume with the time left
+  (`usePausableTimeout`); the queue never drops the toast on screen, and
+  achievements already shown are not replayed after a rotation across the
+  breakpoint. On touch screens the save-failed notice opens its advice in
+  place, and the notice buttons get 44px tap areas.
   On desktop the minimap steps left of the open popover instead of hiding
   under it (#390).
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,

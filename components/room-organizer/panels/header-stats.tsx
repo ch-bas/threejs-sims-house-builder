@@ -125,6 +125,8 @@ function RemoteChangeNotice({
   return (
     <div
       role="status"
+      // Coarse pointers get 44px tap areas on its buttons (globals.css).
+      className="pc-remote-notice"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -197,6 +199,9 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
   else if (saving) label = 'Saving…';
   else if (lastSavedAt) label = `Saved ${formatRelative(Date.now() - lastSavedAt)}`;
 
+  // Touch screens can't show the `title` tooltip: the advice opens in place.
+  const [adviceOpen, setAdviceOpen] = useState(false);
+
   const iconColor = saveError
     ? 'var(--pc-danger, #f87171)'
     : saving
@@ -207,6 +212,7 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
     <div
       role={failure ? 'alert' : undefined}
       title={failure?.detail}
+      className="pc-save-indicator"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -228,7 +234,19 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
       >
         <Icon name="save" size={14} />
       </span>
-      <span>{label}</span>
+      <span className="pc-save-label">{label}</span>
+      {failure && (
+        // Shown on coarse pointers only (globals.css, "Overlays").
+        <button
+          type="button"
+          className="pc-save-advice-toggle"
+          aria-expanded={adviceOpen}
+          onClick={() => setAdviceOpen((open) => !open)}
+        >
+          {adviceOpen ? 'Hide' : 'What to do'}
+        </button>
+      )}
+      {failure && adviceOpen && <p className="pc-save-advice">{failure.detail}</p>}
     </div>
   );
 }

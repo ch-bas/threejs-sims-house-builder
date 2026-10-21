@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  advanceQueue,
   createFlagStore,
+  enqueueKeepingHead,
   enqueueNewestFirst,
+  fitAboveFloor,
   overlayStackTop,
   queueHead,
   STACK_GAP,
+  stackFloor,
 } from './overlay-queue';
 
 describe('enqueueNewestFirst', () => {
@@ -29,12 +31,16 @@ describe('queueHead', () => {
   });
 });
 
-describe('advanceQueue', () => {
-  it('steps through the queue and reports when it drains', () => {
-    expect(advanceQueue(0, 3)).toBe(1);
-    expect(advanceQueue(1, 3)).toBe(2);
-    expect(advanceQueue(2, 3)).toBeNull();
-    expect(advanceQueue(0, 1)).toBeNull();
+describe('enqueueKeepingHead', () => {
+  it('queues like enqueueNewestFirst while there is room', () => {
+    expect(enqueueKeepingHead([], 'a', 3)).toEqual(['a']);
+    expect(enqueueKeepingHead(['b', 'a'], 'c', 3)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('never drops the head (on screen); the oldest waiting entry goes', () => {
+    // newest-first: 'a' is the head, 'b' the oldest waiting
+    expect(enqueueKeepingHead(['c', 'b', 'a'], 'd', 3)).toEqual(['d', 'c', 'a']);
+    expect(enqueueKeepingHead(['b', 'a'], 'c', 1)).toEqual(['a']);
   });
 });
 
@@ -65,6 +71,30 @@ describe('overlayStackTop', () => {
 
   it('skips empty (hidden) rects', () => {
     expect(overlayStackTop([rect(0, 0, 0, 0), rect(120, 10, 120, 90)], column, 664, 8)).toBe(8);
+  });
+});
+
+describe('stackFloor', () => {
+  const column = { left: 100, right: 300 };
+  it('is the sheet top when the sheet is under the column', () => {
+    expect(stackFloor({ left: 0, right: 390, top: 382, bottom: 664 }, column, 664)).toBe(382);
+  });
+  it('is the viewport bottom with no sheet, or a sheet beside the column', () => {
+    expect(stackFloor(null, column, 664)).toBe(664);
+    expect(stackFloor({ left: 444, right: 844, top: 120, bottom: 390 }, column, 390)).toBe(390);
+  });
+});
+
+describe('fitAboveFloor', () => {
+  it('keeps the preferred top when the stack clears the floor', () => {
+    expect(fitAboveFloor(180, 50, 382, 8)).toEqual({ top: 180, fits: true });
+  });
+  it('rises to sit on the floor when it would overlap it', () => {
+    // SE, sheet expanded: sheet top 240, a 68px stack
+    expect(fitAboveFloor(180, 68, 240, 8)).toEqual({ top: 240 - STACK_GAP - 68, fits: false });
+  });
+  it('never rises above the minimum top', () => {
+    expect(fitAboveFloor(100, 300, 200, 8)).toEqual({ top: 8, fits: false });
   });
 });
 

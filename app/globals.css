@@ -649,3 +649,85 @@ button {
     border-radius: 16px 0 0 0 !important;
   }
 }
+
+/* Clearing the open item sheet (panels/overlay-stack.tsx sets
+   data-squeeze): 1 puts the notices on one line, 2 also holds the toasts
+   back (their timers pause). The save-failed label always stays. */
+.pc-overlay-stack:not([data-squeeze='0']) .pc-overlay-stack__alert > * {
+  flex-wrap: nowrap;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pc-overlay-stack:not([data-squeeze='0']) .pc-save-indicator {
+  display: flex !important;
+  max-width: 100%;
+}
+.pc-overlay-stack:not([data-squeeze='0']) .pc-save-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pc-overlay-stack:not([data-squeeze='0']) .pc-save-advice,
+.pc-overlay-stack:not([data-squeeze='0']) .pc-save-advice-toggle {
+  display: none !important;
+}
+.pc-overlay-stack[data-squeeze='2'] .pc-overlay-stack__toast {
+  display: none;
+}
+
+/* A failed save explains itself in its `title`, which touch screens never
+   show: there the advice opens in place. */
+.pc-save-advice-toggle {
+  display: none;
+}
+.pc-save-advice {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  max-width: 34em;
+  white-space: normal;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--pc-paper);
+}
+
+@media (pointer: coarse) {
+  .pc-save-indicator {
+    flex-wrap: wrap;
+  }
+  .pc-save-advice-toggle {
+    display: inline-flex;
+    position: relative;
+    border: 0;
+    border-radius: 999px;
+    padding: 2px 8px;
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--pc-paper);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  /* 44px tap areas without changing how the small pill buttons look; the
+     wider gaps keep neighbouring areas from overlapping. */
+  .pc-remote-notice {
+    gap: 12px !important;
+  }
+  .pc-overlay-stack,
+  .pc-overlay-stack__alert {
+    gap: 16px;
+  }
+  .pc-remote-notice button {
+    position: relative;
+  }
+  .pc-remote-notice button::after,
+  .pc-save-advice-toggle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}

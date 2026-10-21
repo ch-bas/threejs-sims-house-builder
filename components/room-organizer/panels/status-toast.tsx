@@ -1,15 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { usePausableTimeout } from '../hooks/use-pausable-timeout';
 import { noticeDuration, subscribeNotices, type Notice, type NoticeTone } from '../lib/editor-notices';
 import {
   COMPACT_OVERLAY_QUERY,
+  enqueueKeepingHead,
   enqueueNewestFirst,
   HEADER_HIDDEN_QUERY,
   MAX_QUEUED_NOTICES,
   queueHead,
   statusToastInSlot,
+  toastsHeldBack,
 } from '../lib/overlay-queue';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { OverlayStackPortal } from './overlay-stack';
@@ -45,14 +48,21 @@ export function StatusToastHost(): JSX.Element | null {
   useEffect(
     () =>
       subscribeNotices((notice) => {
-        const limit = compactRef.current ? MAX_QUEUED_NOTICES : MAX_VISIBLE;
-        setNotices((current) => enqueueNewestFirst(current, notice, limit));
+        // A single slot never drops the notice on screen (the oldest).
+        setNotices((current) =>
+          compactRef.current
+            ? enqueueKeepingHead(current, notice, MAX_QUEUED_NOTICES)
+            : enqueueNewestFirst(current, notice, MAX_VISIBLE)
+        );
       }),
     []
   );
 
-  // Achievements wait while a notice holds the single slot.
-  const holdsSlot = compact && notices.length > 0;
+  // Achievements wait while a timed notice holds the single slot. A notice
+  // that stays until dismissed (a link to copy by hand) is more like an alert:
+  // achievements show under it rather than queue behind it indefinitely.
+  const head = queueHead(notices);
+  const holdsSlot = compact && head !== undefined && noticeDuration(head) !== null;
   useEffect(() => {
     statusToastInSlot.set(holdsSlot);
     return () => statusToastInSlot.set(false);
@@ -61,7 +71,6 @@ export function StatusToastHost(): JSX.Element | null {
   if (notices.length === 0) return null;
 
   if (stacked) {
-    const head = queueHead(notices);
     const shown = compact ? (head ? [head] : []) : notices.slice(0, MAX_VISIBLE);
     return (
       <OverlayStackPortal slot="toast">
@@ -107,11 +116,10 @@ function StatusToast({
   const tone = TONES[notice.tone];
   const duration = noticeDuration(notice);
 
-  useEffect(() => {
-    if (duration === null) return undefined;
-    const timer = window.setTimeout(() => onDismiss(notice.id), duration);
-    return () => window.clearTimeout(timer);
-  }, [duration, notice.id, onDismiss]);
+  // Paused while the overlay stack holds toasts back to clear the item
+  // sheet, so a notice never expires unseen.
+  const heldBack = useSyncExternalStore(toastsHeldBack.subscribe, toastsHeldBack.get, () => false);
+  usePausableTimeout(notice.id, !heldBack, duration, () => onDismiss(notice.id));
 
   return (
     <div

@@ -2,7 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { overlayStackTop } from '../lib/overlay-queue';
+import {
+  fitAboveFloor,
+  MAX_SQUEEZE,
+  overlayStackTop,
+  stackFloor,
+  toastsHeldBack,
+  type StackSqueeze,
+} from '../lib/overlay-queue';
 
 /**
  * One column under the top pills that the small-screen overlays share: the
@@ -25,17 +32,41 @@ const TOP_CHROME =
 /** `top` when nothing is in the way; `--pc-overlay-top` overrides it. */
 const DEFAULT_TOP = 148;
 
+/**
+ * Under the chrome, and never over the open item sheet: when the band
+ * between them is too short the stack gives ground step by step (notices on
+ * one line, then toasts held back with their timers paused), and as a last
+ * resort rises over the chrome to sit on the sheet. The save notices stay
+ * visible throughout.
+ */
 function placeStack(el: HTMLDivElement): void {
   if (!el.firstElementChild) return;
-  const own = el.getBoundingClientRect();
   const chrome: DOMRect[] = [];
   for (const node of document.querySelectorAll(TOP_CHROME)) {
     if (!el.contains(node)) chrome.push(node.getBoundingClientRect());
   }
+  const sheetNode =
+    document.documentElement.dataset.sheetOpen !== undefined ? document.querySelector('.pc-item-popover') : null;
+  const sheet = sheetNode?.getBoundingClientRect() ?? null;
   const minTop = parseFloat(getComputedStyle(el).getPropertyValue('--pc-overlay-top')) || DEFAULT_TOP;
-  const top = `${overlayStackTop(chrome, own, window.innerHeight, minTop)}px`;
+  const viewportHeight = window.innerHeight;
+
+  let squeeze: StackSqueeze = 0;
+  let top = minTop;
+  for (;;) {
+    // `data-squeeze` is outside the observer's filter: no feedback loop.
+    el.dataset.squeeze = String(squeeze);
+    const own = el.getBoundingClientRect();
+    const preferred = overlayStackTop(chrome, own, viewportHeight, minTop);
+    const placement = fitAboveFloor(preferred, own.height, stackFloor(sheet, own, viewportHeight), minTop);
+    top = placement.top;
+    if (placement.fits || squeeze === MAX_SQUEEZE) break;
+    squeeze = squeeze === 0 ? 1 : 2;
+  }
+  toastsHeldBack.set(squeeze === MAX_SQUEEZE);
+  const topPx = `${top}px`;
   // Guarded: this write is itself a mutation the observer sees.
-  if (el.style.top !== top) el.style.top = top;
+  if (el.style.top !== topPx) el.style.top = topPx;
 }
 
 function startPlacing(el: HTMLDivElement): () => void {
@@ -47,14 +78,15 @@ function startPlacing(el: HTMLDivElement): () => void {
       placeStack(el);
     });
   };
-  // DOM changes only (toggles, chips, HUD reflow, the stack's own content):
-  // the scene's drag fast-path and camera moves never touch the DOM.
+  // DOM changes only (toggles, chips, HUD reflow, the sheet opening or
+  // expanding, the stack's own content): the scene's drag fast-path and
+  // camera moves never touch the DOM.
   const observer = new MutationObserver(schedule);
-  observer.observe(document.body, {
+  observer.observe(document.documentElement, {
     subtree: true,
     childList: true,
     attributes: true,
-    attributeFilter: ['class', 'style', 'hidden', 'data-minimap'],
+    attributeFilter: ['class', 'style', 'hidden', 'data-minimap', 'data-sheet', 'data-sheet-open'],
   });
   window.addEventListener('resize', schedule);
   schedule();
@@ -81,6 +113,7 @@ function releaseStack(): void {
   if (users === 0 && stack) {
     stopPlacing?.();
     stopPlacing = null;
+    toastsHeldBack.set(false);
     stack.remove();
     stack = null;
   }

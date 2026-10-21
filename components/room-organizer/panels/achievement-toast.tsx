@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useReducer, useState, useSyncExternalStore } from 'react';
 import { useEvent } from '../hooks/use-event';
 import { useMediaQuery } from '../hooks/use-media-query';
-import { advanceQueue, COMPACT_OVERLAY_QUERY, statusToastInSlot } from '../lib/overlay-queue';
+import { usePausableTimeout } from '../hooks/use-pausable-timeout';
+import { COMPACT_OVERLAY_QUERY, statusToastInSlot, toastsHeldBack } from '../lib/overlay-queue';
 import { Icon } from '../plotcraft/icon';
 import { OverlayStackPortal } from './overlay-stack';
 import type { Achievement } from '../lib/achievements';
@@ -17,30 +18,55 @@ export interface AchievementToastProps {
   onDismiss(): void;
 }
 
+interface HostProps extends AchievementToastProps {
+  /** Achievements already on screen, by id (see AchievementToast). */
+  seen: Set<string>;
+}
+
 export function AchievementToast(props: AchievementToastProps): JSX.Element | null {
   const compact = useMediaQuery(COMPACT_OVERLAY_QUERY);
-  return compact ? <CompactAchievementToast {...props} /> : <StackedAchievementToasts {...props} />;
+  // Rotating across the compact breakpoint swaps hosts; this record outlives
+  // them, so neither replays what the other already showed. Cleared with the
+  // queue.
+  const [seen] = useState(() => new Set<string>());
+  const empty = props.pending.length === 0;
+  useEffect(() => {
+    if (empty) seen.clear();
+  }, [empty, seen]);
+  return compact ? (
+    <CompactAchievementToast {...props} seen={seen} />
+  ) : (
+    <StackedAchievementToasts {...props} seen={seen} />
+  );
 }
 
 /** Desktop and tablet: every pending achievement, stacked bottom-right. */
-function StackedAchievementToasts({
-  pending,
-  onDismiss,
-}: AchievementToastProps): JSX.Element | null {
+function StackedAchievementToasts({ pending, onDismiss, seen }: HostProps): JSX.Element | null {
+  // Shown on a compact screen before a rotation: not again.
+  const [shownBefore] = useState(() => new Set(seen));
+  const visible = pending.filter((achievement) => !shownBefore.has(achievement.id));
+  useEffect(() => {
+    for (const achievement of visible) seen.add(achievement.id);
+  });
+  const nothingNew = visible.length === 0;
   useEffect(() => {
     if (pending.length === 0) return undefined;
+    if (nothingNew) {
+      onDismiss();
+      return undefined;
+    }
     const timer = window.setTimeout(onDismiss, AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [pending, onDismiss]);
+  }, [pending, onDismiss, nothingNew]);
 
-  if (pending.length === 0) return null;
+  if (nothingNew) return null;
 
   return (
     <div
       className="fixed bottom-6 right-6 z-50 pointer-events-none"
       style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
     >
-      {pending.map((achievement) => (
+      {visible.map((achievement) => (
         <AchievementCard key={achievement.id} achievement={achievement} onDismiss={onDismiss} />
       ))}
     </div>
@@ -49,52 +75,42 @@ function StackedAchievementToasts({
 
 /**
  * Phones and short screens: one achievement at a time in the shared toast
- * slot under the top pills, the rest queued. It waits while a status notice
- * holds the slot, and its timer only runs while it is on screen.
+ * slot under the top pills, the rest queued. It steps aside while a status
+ * notice holds the slot, and its timer pauses whenever it is off screen
+ * (that, or the stack holding toasts back to clear the item sheet), then
+ * resumes with the time it had left.
  */
-function CompactAchievementToast({
-  pending,
-  onDismiss,
-}: AchievementToastProps): JSX.Element | null {
-  const [shown, setShown] = useState(0);
-  const statusBusy = useSyncExternalStore(
-    statusToastInSlot.subscribe,
-    statusToastInSlot.get,
-    () => false
-  );
-  // A cleared queue starts over at its first entry.
-  if (pending.length === 0 && shown !== 0) setShown(0);
-  const current = statusBusy ? undefined : pending[shown];
+function CompactAchievementToast({ pending, onDismiss, seen }: HostProps): JSX.Element | null {
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  const statusBusy = useSyncExternalStore(statusToastInSlot.subscribe, statusToastInSlot.get, () => false);
+  const heldBack = useSyncExternalStore(toastsHeldBack.subscribe, toastsHeldBack.get, () => false);
+  const waiting = pending.filter((achievement) => !seen.has(achievement.id));
+  const current = waiting[0];
 
-  const advance = useEvent(() => {
-    const next = advanceQueue(shown, pending.length);
-    if (next === null) {
-      setShown(0);
-      onDismiss();
-    } else {
-      setShown(next);
-    }
+  const finish = useEvent(() => {
+    if (!current) return;
+    seen.add(current.id);
+    if (waiting.length <= 1) onDismiss();
+    else rerender();
   });
+  usePausableTimeout(current?.id ?? null, !statusBusy && !heldBack, COMPACT_DISMISS_MS, finish);
 
-  // Keyed on the entry on screen: the queue growing behind it must not
-  // restart its timer.
-  const currentId = current?.id;
+  // Everything pending was shown before a rotation: clear the queue.
+  const drained = pending.length > 0 && !current;
   useEffect(() => {
-    if (currentId === undefined) return undefined;
-    const timer = window.setTimeout(advance, COMPACT_DISMISS_MS);
-    return () => window.clearTimeout(timer);
-  }, [currentId, shown, advance]);
+    if (drained) onDismiss();
+  }, [drained, onDismiss]);
 
-  if (!current) return null;
+  if (!current || statusBusy) return null;
 
   return (
     <OverlayStackPortal slot="toast">
       <AchievementCard
         key={current.id}
         achievement={current}
-        onDismiss={advance}
+        onDismiss={finish}
         compact
-        queued={pending.length - shown - 1}
+        queued={waiting.length - 1}
       />
     </OverlayStackPortal>
   );

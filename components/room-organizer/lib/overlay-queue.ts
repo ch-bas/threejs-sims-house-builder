@@ -30,18 +30,21 @@ export function enqueueNewestFirst<T>(list: readonly T[], item: T, limit: number
   return [item, ...list].slice(0, Math.max(0, limit));
 }
 
+/**
+ * Single-slot variant of `enqueueNewestFirst`: the head (the oldest entry,
+ * on screen) is never dropped; past `limit` the oldest *waiting* entry goes.
+ */
+export function enqueueKeepingHead<T>(list: readonly T[], item: T, limit: number): readonly T[] {
+  const next = [item, ...list];
+  const head = list[list.length - 1];
+  if (head === undefined || next.length <= limit) return next;
+  // Keep the newest waiting entries and the head; the ones between go.
+  return [...next.slice(0, Math.max(0, limit - 1)), head];
+}
+
 /** The notice a single-slot host shows: the oldest, so they play in order. */
 export function queueHead<T>(newestFirst: readonly T[]): T | undefined {
   return newestFirst[newestFirst.length - 1];
-}
-
-/**
- * Index of the next queued entry after the one at `shown`, or null once the
- * queue is drained (the caller then clears it).
- */
-export function advanceQueue(shown: number, length: number): number | null {
-  const next = shown + 1;
-  return next < length ? next : null;
 }
 
 export interface BandRect {
@@ -80,6 +83,42 @@ export function overlayStackTop(
   return Math.round(Math.min(top, Math.max(minTop, viewportHeight * maxFraction)));
 }
 
+/**
+ * The lowest the stack may reach: the top of the open item sheet when the
+ * sheet is under the stack's column, else the bottom of the viewport.
+ */
+export function stackFloor(
+  sheet: BandRect | null,
+  column: { left: number; right: number },
+  viewportHeight: number
+): number {
+  if (!sheet || sheet.bottom <= sheet.top) return viewportHeight;
+  if (sheet.right <= column.left || sheet.left >= column.right) return viewportHeight;
+  return Math.min(viewportHeight, sheet.top);
+}
+
+/**
+ * How much the stack gives up to stay clear of the open sheet: 0 nothing,
+ * 1 the notices drop to one line, 2 the toasts wait as well.
+ */
+export type StackSqueeze = 0 | 1 | 2;
+export const MAX_SQUEEZE: StackSqueeze = 2;
+
+/**
+ * Places a stack of `height` under the chrome (`preferredTop`) and above
+ * `floor`. When it doesn't fit there it is raised to sit on the floor —
+ * over the chrome, never over the sheet — but not above `minTop`.
+ */
+export function fitAboveFloor(
+  preferredTop: number,
+  height: number,
+  floor: number,
+  minTop: number
+): { top: number; fits: boolean } {
+  if (preferredTop + height + STACK_GAP <= floor) return { top: preferredTop, fits: true };
+  return { top: Math.round(Math.max(minTop, floor - STACK_GAP - height)), fits: false };
+}
+
 type Listener = () => void;
 
 /** A boolean with subscribers, shaped for `useSyncExternalStore`. */
@@ -113,3 +152,9 @@ export function createFlagStore(initial = false): FlagStore {
  * for it, so on a phone the two hosts never show a toast each.
  */
 export const statusToastInSlot = createFlagStore();
+
+/**
+ * Set while the stack holds its toasts back to clear the open sheet
+ * (squeeze 2). Toast timers pause meanwhile, so nothing expires unseen.
+ */
+export const toastsHeldBack = createFlagStore();
