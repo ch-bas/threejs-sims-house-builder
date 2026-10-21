@@ -806,7 +806,12 @@ export function RoomOrganizer(): JSX.Element {
     controlsRef,
     invalidate,
     roomSize: Math.max(layout.width, layout.height),
+    roomWidth: layout.width,
+    roomDepth: layout.height,
     buildingHeight: buildingHeight(layout.floors),
+    canvasRef,
+    active: isReady && !view.view2D,
+    walkthroughActive,
   });
 
   const { handleScreenshot, handleExportGlb, handleShareLink, handleImport } = useImportExport({

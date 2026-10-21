@@ -349,6 +349,8 @@ components/
     │   ├── achievements.ts              15 predicate-based achievements
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
+    │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
+    │   ├── render-quality.ts            Pixel-ratio cap per device class (phones 1.5, else 2)
     │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
     │   ├── library.ts                   Named-layout library I/O
     │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
@@ -457,7 +459,7 @@ components/
     │   ├── use-walkthrough.ts           PointerLock + WASD movement
     │   ├── use-npcs.ts                  Animated wandering pedestrians
     │   ├── use-weather.ts               Self-invalidating rain / snow loop
-    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus
+    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
     │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Diffed unlock detection
@@ -541,6 +543,20 @@ components/
   to the name only for points saved before ids existed. Entries are looked
   up by a stable entry `id` written once, never by `savedAt`, which may be
   clamped.
+- **Framing beside the HUD on small screens.** Below 1101×701 the HUD
+  covers much of the canvas, so on load and on FIT the camera fits the
+  house inside the largest rectangle no `[data-scene-occluder]` panel
+  covers (plus the item sheet while `<html data-sheet-open>` is set),
+  computed in `lib/scene-insets.ts`. The orbit target stays the house
+  centre; `camera.setViewOffset` shifts the projection so that centre sits
+  in the middle of the free rectangle, and three keeps the shift
+  proportional across resizes. Resizes, rotations and HUD changes re-frame
+  only while the camera still sits at the last framed pose, never under a
+  finger, and the walkthrough drops the shift while it runs. Desktop-sized
+  windows keep the classic poses untouched. Phones (coarse pointer, screen
+  short side ≤ 500 px) also cap the pixel ratio at 1.5 instead of 2: in
+  software-GL emulation of a 3× phone an orbit frame took 57 ms at 2 and
+  37 ms at 1.5. The shadow map stays 2048²: 1024² measured no faster.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere
