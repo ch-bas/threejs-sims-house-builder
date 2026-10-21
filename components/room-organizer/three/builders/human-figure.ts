@@ -1,6 +1,6 @@
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('../three-runtime');
 
 /** Reference height the figure is modelled at; callers scale the group. */
 export const FIGURE_HEIGHT = 1.75;

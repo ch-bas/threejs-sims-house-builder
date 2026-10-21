@@ -3,7 +3,7 @@ import { DisposableLruCache } from './texture-lru';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 const LABEL_TAG = 'item-label';
 

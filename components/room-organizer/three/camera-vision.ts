@@ -3,7 +3,7 @@ import { FLOOR_HEIGHT_METERS, type FurnitureItem } from '../lib/types';
 import { ROOM_OBJECT_TAGS } from './room-builder';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 /**
  * Height (metres) at which the security camera body — and the apex of its

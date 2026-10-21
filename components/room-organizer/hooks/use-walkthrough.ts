@@ -7,7 +7,7 @@ import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { PointerLockControls as PointerLockControlsType } from 'three/examples/jsm/controls/PointerLockControls.js';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('../three/three-runtime');
 
 const NO_ITEMS: readonly FurnitureItem[] = [];
 const NO_WALLS: readonly InteriorWall[] = [];

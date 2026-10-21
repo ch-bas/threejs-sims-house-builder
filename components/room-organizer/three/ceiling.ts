@@ -3,7 +3,7 @@ import { buildFloorGeometryWithOpenings, floorHoleOutlines } from './room-builde
 import type { FloorOpening } from './wall-openings';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 export const CEILING_TAG = 'walkthrough-ceiling';
 

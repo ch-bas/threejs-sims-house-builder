@@ -7,7 +7,7 @@ import { getMaxAnisotropy } from './texture-settings';
 import type { RoofSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 export const ROOF_TAG = 'roof';
 

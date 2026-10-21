@@ -2,7 +2,7 @@ import { entranceSteps, type EntranceGeometry } from '../lib/street';
 import { FOUNDATION_OVERHANG } from './room-builder';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 /**
  * The recessed porch (#204): the two reveals (side walls of the recess), the

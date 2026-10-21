@@ -11,7 +11,7 @@ import { buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, WallId, WallPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 /**
  * Freeze an object's transform: the room shell (walls, floor, baseboards,

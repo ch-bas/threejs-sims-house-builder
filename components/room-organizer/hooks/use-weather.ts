@@ -4,7 +4,7 @@ import { buildWeatherMesh, createWeatherField, removeWeather, stepWeatherField, 
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('../three/three-runtime');
 
 export interface UseWeatherOptions {
   weather: Weather;

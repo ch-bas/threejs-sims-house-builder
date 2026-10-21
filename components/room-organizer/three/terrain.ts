@@ -2,7 +2,7 @@ import { groundHeightAt } from '../lib/site';
 import type { TerrainSpec } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 const EARTH_COLOR = 0x7a5b3e;
 /** Keeps the excavation faces just proud of the wall planes (no z-fighting). */

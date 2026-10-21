@@ -391,6 +391,7 @@ components/
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory (~110 lines)
     │   ├── builder-utils.ts             Shared types + mesh()/material() helpers, dispose helpers (disposeScene on unmount, #213)
+    │   ├── three-runtime.ts             The named three.js symbols the app uses; the engine's only runtime import (#411)
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── drag-handlers.ts             Canvas mouse events: select/drag/hover/wall-pick
     │   ├── builders/                    Per-category builder functions
@@ -566,7 +567,8 @@ components/
   Nunito come from `next/font` (downloaded at build time, served from
   `_next/static/media` with preload links). The page starts the Three.js
   chunks together with the editor chunk rather than after it, so first load
-  is two hops, not three. The UI's dropdowns are native `<select>`s
+  is two hops, not three; `prefetchEngine` imports exactly the modules
+  `use-three-scene` does, so the two share one request per chunk. The UI's dropdowns are native `<select>`s
   (`components/ui/select.tsx`), with no popper or icon library in the
   editor bundle. A chunk that 404s or hangs (stale HTML after a deploy)
   gets one automatic reload per ten minutes from a sessionStorage stamp
@@ -580,6 +582,17 @@ components/
   rendered). It updates from the scene's `onAfterRender`, so it has no loop
   of its own and an idle editor's frame count stands still; without the
   flag nothing is installed.
+- **Three.js is imported by name.** Nothing imports the `'three'` namespace
+  at runtime: the engine loads `three/three-runtime.ts`, which re-exports
+  only the symbols the app uses, and every builder takes that module as its
+  `THREE` parameter (`typeof import('…/three-runtime')`). webpack then drops
+  the rest of three.js (audio, VR, most loaders and geometries), which cut
+  the three.js chunks by about 109 KB raw / 28 KB gz (#411). To use a new
+  symbol, add it to the sorted list in `three-runtime.ts`; typecheck reports
+  a missing one. Type-only references (`import type * as ThreeNS`,
+  `import('three').Foo`) stay on `'three'`, since they cost nothing. The
+  addons (OrbitControls, GLTFLoader, GLTFExporter, …) import their own
+  symbols by name, so they keep only what they use.
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is
   threaded through the scene-effect, walkthrough, NPC, and camera-preset

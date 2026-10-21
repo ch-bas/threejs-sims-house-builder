@@ -288,7 +288,7 @@ function selectCameraHead(model: CctvModel | undefined, params: HeadParams): Thr
 }
 
 interface HeadParams {
-  THREE: typeof import('three');
+  THREE: typeof import('../three-runtime');
   mountY: number;
   wallZ: number;
   bodyMat: ThreeNS.Material;

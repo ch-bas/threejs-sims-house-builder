@@ -2,7 +2,7 @@ import { ROOM_OBJECT_TAGS } from './room-builder';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 const WIFI_RING_COLORS = [0x00ff00, 0xffff00, 0xff6600] as const;
 const CCTV_RING_COLORS = [0x0088ff, 0x00ddff, 0x8800ff] as const;

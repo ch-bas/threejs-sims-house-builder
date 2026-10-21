@@ -6,7 +6,7 @@ import { removeAndDispose } from './builder-utils';
 import { classifyOpeningOwners, mergeHoleRects, type OpeningOwner } from './wall-openings';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 const INTERIOR_WALL_TAG = 'interior-wall';
 const WALL_THICKNESS = 0.16;

@@ -1,7 +1,7 @@
 import { markSharedGeometry } from './builder-utils';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 /**
  * Rigged, animated people from Quaternius' Universal Animation Library

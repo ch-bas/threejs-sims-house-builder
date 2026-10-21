@@ -1,7 +1,7 @@
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-export type ThreeModule = typeof import('three');
+export type ThreeModule = typeof import('./three-runtime');
 
 export interface BuilderContext {
   THREE: ThreeModule;

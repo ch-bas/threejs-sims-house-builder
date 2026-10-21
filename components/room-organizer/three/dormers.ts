@@ -2,7 +2,7 @@ import { dormerFrame, dormerOpeningRects, julietRailSpan, type DormerFrame, type
 import type { DormerSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('./three-runtime');
 
 /**
  * Dormer meshes (#203). Each dormer is one group, tagged like the roof so

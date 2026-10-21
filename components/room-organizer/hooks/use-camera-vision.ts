@@ -3,7 +3,7 @@ import { stepVisionCones } from '../three/camera-vision';
 import { ROOM_OBJECT_TAGS } from '../three/room-builder';
 import type * as ThreeNS from 'three';
 
-type ThreeModule = typeof import('three');
+type ThreeModule = typeof import('../three/three-runtime');
 
 export interface UseCameraVisionOptions {
   enabled: boolean;
