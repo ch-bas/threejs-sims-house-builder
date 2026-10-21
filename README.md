@@ -716,7 +716,8 @@ components/
   wider transparent container. While the phone item sheet is open
   (`html[data-sheet-open]`, under the sheet's own query) the catalog and
   build tools step aside and the mode bar rides above the sheet
-  (`--pc-sheet-height`), so Undo and Redo stay in reach. Measured edges
+  (`--pc-sheet-height`), so Undo and Redo stay in reach; in landscape,
+  where the sheet takes the right half, Undo and Redo move to the left. Measured edges
   place the rest: top-centre chips under `--pc-top-pills-bottom` (#308),
   the touch buttons above `--pc-dock-top` (wrapping into a second column
   when the dock grows), the View menu below `--pc-mode-top`. The wall

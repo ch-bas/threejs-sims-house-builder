@@ -13,12 +13,6 @@ export const SHORT_DOCK_QUERY = '(max-width: 1100px) and (max-height: 500px)';
 /** Either compact dock: the catalog becomes one scrolling row of tiles. */
 export const COMPACT_DOCK_QUERY = `${PHONE_DOCK_QUERY}, ${SHORT_DOCK_QUERY}`;
 
-/**
- * Where the item editor is a bottom sheet (set by the item popover): the
- * dock's catalog and build tools step aside while it is open.
- */
-export const SHEET_QUERY = '(max-width: 768px), (max-height: 500px)';
-
 /** Touch-first devices get touch wording (#429). */
 export const COARSE_POINTER_QUERY = '(pointer: coarse)';
 

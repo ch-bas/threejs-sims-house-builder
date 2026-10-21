@@ -544,7 +544,8 @@
   }
 }
 
-/* The phone item sheet (data-sheet-open; the popover's own query) needs the
+/* The phone item sheet (data-sheet-open; the popover's own query,
+   COMPACT_OVERLAY_QUERY in lib/overlay-queue.ts) needs the
    room: the catalog and the build tools step aside while it is open, and
    the mode bar rides above it so Undo and Redo stay in reach. */
 @media (max-width: 768px), (max-height: 500px) {
@@ -708,6 +709,21 @@
   /* The chip row only as wide as its chips: the scene shows beside it. */
   .pc-hud-left > .pc-build-tools {
     flex: 0 1 auto;
+  }
+  /* The landscape sheet takes the right half: the mode bar moves to the
+     left, into the catalog's place, so Undo and Redo stay in reach. */
+  html[data-sheet-open] .pc-mode-panel {
+    grid-area: catalog;
+    justify-self: start;
+    grid-template-columns: auto;
+    grid-template-areas: 'primary';
+  }
+  /* Half a landscape screen holds Undo and Redo, not the whole bar. */
+  html[data-sheet-open] .pc-mode-panel > div:first-child,
+  html[data-sheet-open] .pc-mode-panel .pc-mode-pill,
+  html[data-sheet-open] .pc-mode-panel .pc-mode-actions-more,
+  html[data-sheet-open] .pc-mode-panel .pc-mode-more {
+    display: none !important;
   }
   /* No height for both: the ⋯ tray folds the wall panels away. */
   .pc-bottom-hud:has(.pc-mode-panel[data-more-open]) .pc-hud-left > .pc-glass:not(.pc-build-tools) {
