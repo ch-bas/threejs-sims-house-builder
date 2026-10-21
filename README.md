@@ -367,6 +367,7 @@ components/
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── hud-layout.ts                Phone-dock and sheet media queries, catalog page size, scroll cue, touch welcome tips
+    │   ├── top-bar-slot.ts              The top bar's free strip between the lot badge and the pills, for the touch row
     │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement
     │   ├── custom-sets.ts               User-saved furniture sets: localStorage I/O + parser (#302)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
@@ -471,7 +472,7 @@ components/
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
     │   ├── use-pausable-timeout.ts      Countdown that pauses and resumes with the time left (toasts)
     │   ├── use-scroll-cue.ts            data-scrollable / data-more-before / -after on a HUD scroller (#426)
-    │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308)
+    │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308); places the touch row in the top bar
     │   ├── use-sheet-inset.ts           --pc-sheet-height while the phone item sheet is open (mode bar rides above it)
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
@@ -752,9 +753,18 @@ components/
   where the sheet takes the right half, Undo and Redo move to the left. Measured edges
   place the rest: top-centre chips under `--pc-top-pills-bottom` (#308),
   the touch buttons above `--pc-dock-top` (wrapping into a second column
-  when the dock grows), the View menu below `--pc-mode-top`. The wall
-  tool's panels fold to their headers, one unfolds at a time and scrolls
-  on its own, so the Walls chip that ends the tool never scrolls away.
+  when the dock grows; it is re-measured when the sheet lifts the dock),
+  the View menu below `--pc-mode-top`. On short screens the touch buttons
+  ride in the top bar's measured free strip instead (`useTopBarSlot`:
+  `--pc-top-slot-start` / `-end`, between the lot badge and the pills,
+  whatever the house name or floor count), and drop below the pills
+  (`--pc-top-slot-top`) when the strip is too narrow for the row, so they
+  never cover a floor button. The wall tool's panels fold to their
+  headers, one unfolds at a time and scrolls on its own, so the Walls chip
+  that ends the tool never scrolls away; a wall tap always unfolds Paint,
+  and closing the panels forgets the fold. In landscape an unfolded panel
+  folds the catalog row away and takes the dock's left side from the top
+  bar down to the mode bar, with the folded panel and the chips beside it.
   Desktop (≥1101 × ≥701) is untouched where nothing overflows.
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,

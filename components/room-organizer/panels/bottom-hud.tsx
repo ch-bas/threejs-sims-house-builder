@@ -50,6 +50,15 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   // wall opens Paint, since that is what the tap asks for. Off the dock
   // both always show in full.
   const [unfolded, setUnfolded] = useState<'paint' | 'stamp' | 'none' | null>(null);
+  // Every wall tap opens Paint, even after a manual fold; closing the
+  // panels forgets the fold, so they open folded again next time. Adjusted
+  // while rendering rather than in an effect, so Paint never flashes folded.
+  const [foldedFor, setFoldedFor] = useState({ selectedWall, showPaint });
+  if (foldedFor.selectedWall !== selectedWall || foldedFor.showPaint !== showPaint) {
+    setFoldedFor({ selectedWall, showPaint });
+    if (!showPaint) setUnfolded(null);
+    else if (selectedWall !== null && selectedWall !== foldedFor.selectedWall) setUnfolded('paint');
+  }
   const paintUnfolded = unfolded === 'paint' || (unfolded === null && !view.drawWallMode);
   const stampUnfolded = unfolded === 'stamp';
   const toggleFold = useEvent((panel: 'paint' | 'stamp') => {
@@ -59,8 +68,10 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   const layoutKey = `${isReady}:${gameMode}:${showPaint}:${view.drawWallMode}:${view.view2D}`;
   // An overflowing column says so (#426).
   useScrollCue(leftColumnRef, layoutKey);
-  // The dock's top edge, for the touch buttons that must stay above it.
-  useEdgeVar(hudRef, '--pc-dock-top', 'top', layoutKey);
+  // The dock's top edge, for the touch buttons that must stay above it. The
+  // phone item sheet lifts the dock without resizing it: `data-sheet-open`
+  // and the `--pc-sheet-height` it rides on (a style change on <html>).
+  useEdgeVar(hudRef, '--pc-dock-top', 'top', { layoutKey, rootAttributes: SHEET_ATTRIBUTES });
   // The mode bar rides above the phone item sheet.
   useSheetInset();
   // Each mode shows its own half of the tools (#151): a pick from the other
@@ -237,6 +248,8 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
     </div>
   );
 });
+
+const SHEET_ATTRIBUTES = ['data-sheet-open', 'style'] as const;
 
 const MemoBuildToolsPanel = memo(BuildToolsPanel);
 const MemoCameraPad = memo(CameraPad);
