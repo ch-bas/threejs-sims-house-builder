@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.19.0] - 2026-10-22
+
+**Phones and tablets, rebuilt.** On a phone the controls used to cover most of the screen. Now the house fills 60–80% of it.
+
+### Changed
+- **A slim dock instead of stacked panels.** On phones the tools sit in a bar along the bottom edge:
+  - one row of tool chips;
+  - a catalog row that scrolls sideways, with each item's name and price on the tile;
+  - a mode bar with Undo, Redo, Explore / Design / Furnish and a **⋯** tray for everything else, including a 2D / 3D switch.
+
+  Every control is at least 40 px, and the layout respects the iPhone notch and home bar ([#395](https://github.com/ch-bas/threejs-sims-house-builder/issues/395), [#423](https://github.com/ch-bas/threejs-sims-house-builder/issues/423), [#426](https://github.com/ch-bas/threejs-sims-house-builder/issues/426))
+- **The house is framed where you can see it.** On load and when you tap Fit, the camera fits the whole house, roof included, into the space the controls leave free. It re-frames when you rotate the phone, unless you have moved the camera yourself. The 2D plan fits above the dock too.
+- **The item editor is a bottom sheet on phones**, so the item you're editing stays visible above it. Swipe it up for sizes and colours. Undo stays reachable while it's open.
+- **Notifications show one at a time** at the top and never cover the sheet ([#419](https://github.com/ch-bas/threejs-sims-house-builder/issues/419))
+- **Landscape phones work:**
+  - the welcome dialog can be closed;
+  - nothing runs off screen;
+  - the wall Paint and Room Stamp panels open as a side column, so the house stays in view ([#307](https://github.com/ch-bas/threejs-sims-house-builder/issues/307))
+- Touch screens get touch tips in the welcome dialog, labelled camera buttons (Orbit, Pan, In, Out, Fit), and "Tap" instead of "Click" in hints ([#429](https://github.com/ch-bas/threejs-sims-house-builder/issues/429), [#423](https://github.com/ch-bas/threejs-sims-house-builder/issues/423))
+- Phones render at a slightly lower resolution for smoother orbiting.
+
+### Fixed
+- **"Save failed" and "Changed in another tab" were hidden on every screen up to 1100 px wide**, so a tablet or phone could stop saving without telling you. They now show everywhere, with the advice readable on touch screens ([#385](https://github.com/ch-bas/threejs-sims-house-builder/issues/385))
+- The minimap was hidden behind the item editor; it now moves aside, and it's compact on phones ([#390](https://github.com/ch-bas/threejs-sims-house-builder/issues/390), [#308](https://github.com/ch-bas/threejs-sims-house-builder/issues/308))
+- Pinching with a finger on furniture zooms instead of dragging the furniture.
+- A drag released over the controls is cancelled, and the item goes back where it was. Before, it landed far outside the house ([#511](https://github.com/ch-bas/threejs-sims-house-builder/issues/511))
+- The camera no longer drifts while you drag an item by touch.
+- Leaving the walkthrough puts the camera back where it was.
+- On desktop, a wall-tool column that's too tall keeps the build tools pinned in view.
+
 ## [1.18.0] - 2026-10-21
 
 The **Performance & engine** milestone, second wave: a lighter engine download, an editor that redraws only what changed, and loading that fails cleanly instead of looping.
