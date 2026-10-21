@@ -1,6 +1,7 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
+import { hasCollisions, itemInBounds } from './geometry';
 import { MAX_LAYOUT_JSON_BYTES, MAX_NAME_LENGTH } from './schema';
 import {
   MAX_SHARE_HASH_LENGTH,
@@ -10,6 +11,7 @@ import {
   isShareHashWithinBudget,
   isShareUrlReasonablySized,
   readShareHash,
+  roundLayoutForShare,
 } from './share';
 import type { RoomLayout } from './types';
 
@@ -105,7 +107,7 @@ describe('encodeShareUrl / decodeShareUrl roundtrip', () => {
     expect(url.length).toBeLessThan(12_000);
     expect(isShareUrlReasonablySized(url)).toBe(true);
     const decoded = await decodeShareUrl(hashOf(url));
-    expect(decoded).toEqual(layout);
+    expect(decoded).toEqual(roundLayoutForShare(layout));
   });
 });
 
@@ -221,8 +223,80 @@ describe('untrusted share hashes (#332)', () => {
   it('reads a normal link as before', async () => {
     const layout = makeLargeLayout();
     const { url } = await encodeShareUrl(layout, ORIGIN);
-    expect(await readShareHash(hashOf(url))).toEqual({ ok: true, layout });
+    expect(await readShareHash(hashOf(url))).toEqual({ ok: true, layout: roundLayoutForShare(layout) });
     expect(await readShareHash(`${PREFIX}2.@@@`)).toEqual({ ok: false, reason: 'unreadable' });
     expect(await readShareHash('#other')).toEqual({ ok: false, reason: 'unreadable' });
+  });
+});
+
+describe('share encode rounds positions and rotations (#192)', () => {
+  /** Free-drag floats: every coordinate carries the full 17 digits. */
+  function makeDraggedLayout(): RoomLayout {
+    const items = Array.from({ length: 60 }, (_, i) =>
+      makeItem({
+        id: `d${i}`,
+        width: 0.9,
+        depth: 0.6,
+        position: { x: -3.5 + (i % 8) + Math.sin(i) * 0.123456789, z: -3.5 + Math.floor(i / 8) + Math.cos(i) * 0.0987654321 },
+        rotation: i % 3 === 0 ? Math.PI / 2 : i % 3 === 1 ? 0.26179938779914946 : -Math.PI,
+      })
+    );
+    return makeLayout({ width: 8, height: 8, floors: [makeFloor({ items })] });
+  }
+
+  it('rounds positions to millimetres and off-axis rotations to 3 decimals, within half a unit', async () => {
+    const layout = makeDraggedLayout();
+    const { url } = await encodeShareUrl(layout, ORIGIN);
+    const decoded = await decodeShareUrl(hashOf(url));
+    const before = layout.floors[0]!.items;
+    const after = decoded!.floors[0]!.items;
+    expect(after).toHaveLength(before.length);
+    after.forEach((item, i) => {
+      const source = before[i]!;
+      expect(Math.abs(item.position!.x - source.position!.x)).toBeLessThanOrEqual(0.0005);
+      expect(Math.abs(item.position!.z - source.position!.z)).toBeLessThanOrEqual(0.0005);
+      expect(Math.abs(item.rotation! - source.rotation!)).toBeLessThanOrEqual(0.0005);
+      expect(item.position!.x * 1000).toBeCloseTo(Math.round(item.position!.x * 1000), 9);
+    });
+    expect(after[1]!.rotation).toBe(0.262);
+  });
+
+  it('keeps exact quarter turns exact', async () => {
+    const layout = makeDraggedLayout();
+    const decoded = await decodeShareUrl(hashOf((await encodeShareUrl(layout, ORIGIN)).url));
+    expect(decoded!.floors[0]!.items[0]!.rotation).toBe(Math.PI / 2);
+    expect(decoded!.floors[0]!.items[2]!.rotation).toBe(-Math.PI);
+  });
+
+  it('never touches the layout it encodes', async () => {
+    const layout = makeDraggedLayout();
+    const snapshot = structuredClone(layout);
+    await encodeShareUrl(layout, ORIGIN);
+    expect(layout).toEqual(snapshot);
+  });
+
+  it('a rounded link decodes to itself: encoding again changes nothing', async () => {
+    const layout = makeDraggedLayout();
+    const first = await decodeShareUrl(hashOf((await encodeShareUrl(layout, ORIGIN)).url));
+    const second = await decodeShareUrl(hashOf((await encodeShareUrl(first!, ORIGIN)).url));
+    expect(second).toEqual(first);
+  });
+
+  it('abutting rotated items stay clear of each other and of the walls', async () => {
+    // Free-dragged anchor, a neighbour snapped flush to it, both quarter-turned
+    // and the anchor flush against the east wall.
+    const anchorX = 4 - 0.3;
+    const z = 1.234567890123;
+    const items = [
+      makeItem({ id: 'a', width: 1.2, depth: 0.6, position: { x: anchorX, z }, rotation: Math.PI / 2 }),
+      makeItem({ id: 'b', width: 1.2, depth: 0.6, position: { x: anchorX - 0.6, z }, rotation: -Math.PI / 2 }),
+      makeItem({ id: 'c', width: 0.8, depth: 0.5, position: { x: -1.123456789, z: 0.2 }, rotation: 0 }),
+      makeItem({ id: 'd', width: 0.8, depth: 0.5, position: { x: -1.123456789 + 0.8, z: 0.2 }, rotation: 0 }),
+    ];
+    const layout = makeLayout({ width: 8, height: 8, floors: [makeFloor({ items })] });
+    const decoded = await decodeShareUrl(hashOf((await encodeShareUrl(layout, ORIGIN)).url));
+    const status = (list: readonly (typeof items)[number][]) =>
+      list.map((item) => [hasCollisions(item, list, 8, 8), itemInBounds(item, 8, 8)]);
+    expect(status(decoded!.floors[0]!.items)).toEqual(status(items));
   });
 });

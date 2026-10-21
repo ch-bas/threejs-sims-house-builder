@@ -45,6 +45,7 @@ import { entrancePlanOutline } from './lib/street';
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
+import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FloorPill } from './panels/floor-pill';
 import { HeaderStats } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
@@ -1103,6 +1104,8 @@ export function RoomOrganizer(): JSX.Element {
           playCue('place');
         }}
       />
+
+      <DevDiagnostics isReady={isReady} rendererRef={rendererRef} sceneRef={sceneRef} />
 
       <LotBadge
         sidebarCollapsed={sidebarCollapsed}

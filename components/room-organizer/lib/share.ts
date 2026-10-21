@@ -1,5 +1,5 @@
 import { MAX_LAYOUT_JSON_BYTES, parseStoredLayout } from './schema';
-import type { RoomLayout } from './types';
+import type { FurnitureItem, RoomLayout } from './types';
 
 const HASH_PREFIX = '#layout=';
 /**
@@ -36,13 +36,49 @@ export async function encodeShareUrl(
   origin: string
 ): Promise<EncodeShareUrlResult> {
   const stripped = layout.floorPlanImage !== undefined;
-  const shareable: RoomLayout = { ...layout };
+  const shareable: RoomLayout = roundLayoutForShare(layout);
   delete shareable.floorPlanImage;
 
   const json = JSON.stringify(shareable);
   const compressed = await deflateRaw(new TextEncoder().encode(json));
   const encoded = `${V2_PREFIX}${bytesToBase64Url(compressed)}`;
   return { url: `${origin}${HASH_PREFIX}${encoded}`, strippedFloorPlan: stripped };
+}
+
+const QUARTER_TURN = Math.PI / 2;
+
+/** Millimetres for positions; 3 decimals of a radian (0.06°) for rotations. */
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * Exact quarter turns pass through unrounded: 1.571 instead of π/2 gives a
+ * rotated item a 0.02 % sliver of extra footprint, enough for two abutting
+ * rotated items to collide after the link opens.
+ */
+function roundRotation(rotation: number): number {
+  const turns = rotation / QUARTER_TURN;
+  return Math.abs(turns - Math.round(turns)) < 1e-9 ? rotation : round3(rotation);
+}
+
+function roundItem(item: FurnitureItem): FurnitureItem {
+  if (!item.position && item.rotation === undefined) return item;
+  return {
+    ...item,
+    ...(item.position ? { position: { x: round3(item.position.x), z: round3(item.position.z) } } : {}),
+    ...(item.rotation !== undefined ? { rotation: roundRotation(item.rotation) } : {}),
+  };
+}
+
+/**
+ * The layout with item positions rounded to millimetres and rotations to 3
+ * decimals (#192). Free drags leave ~17 significant digits per coordinate,
+ * which is most of a share payload. Encode-time only: the layout passed in
+ * is not touched.
+ */
+export function roundLayoutForShare(layout: RoomLayout): RoomLayout {
+  return { ...layout, floors: layout.floors.map((floor) => ({ ...floor, items: floor.items.map(roundItem) })) };
 }
 
 /**
