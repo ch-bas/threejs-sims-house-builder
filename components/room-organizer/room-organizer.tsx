@@ -11,6 +11,7 @@ import { useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
+import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
 import { useFloorKeepOut } from './hooks/use-floor-keep-out';
 import { useHistory } from './hooks/use-history';
@@ -130,6 +131,9 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
 export function RoomOrganizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvas2DRef = useRef<HTMLCanvasElement>(null);
+  // Top-centre chips sit below the top-right pills however they wrap (#308).
+  const topRightRef = useRef<HTMLDivElement>(null);
+  useEdgeVar(topRightRef, '--pc-top-pills-bottom', 'bottom');
 
   const { layout, activeFloor, activeFloorIndex, actions } = useLayoutState();
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
@@ -1173,7 +1177,9 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Top-right: floor pill + wall display */}
       <div
+        ref={topRightRef}
         className="pc-top-right"
+        data-scene-occluder=""
         style={{
           position: 'absolute',
           top: 16,

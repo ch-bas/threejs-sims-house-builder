@@ -23,7 +23,7 @@ export function FloorPill(): JSX.Element {
 
   return (
     <div
-      className="pointer-events-auto pc-glass pc-glass--dark"
+      className="pointer-events-auto pc-glass pc-glass--dark pc-floor-pill"
       style={{
         padding: 6,
         display: 'flex',
@@ -32,7 +32,7 @@ export function FloorPill(): JSX.Element {
       }}
     >
       <div
-        className="pc-hud-header"
+        className="pc-hud-header pc-pill-label"
         style={{
           fontSize: 9,
           paddingLeft: 6,

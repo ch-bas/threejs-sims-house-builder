@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ROOM_SHAPES, type RoomShapeId } from '../lib/room-shapes';
 import { Icon } from '../plotcraft/icon';
+import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
 
 export interface RoomShapesPanelProps {
   /** Maximum drawable dimensions, derived from the lot's footprint. */
@@ -15,6 +16,8 @@ export interface RoomShapesPanelProps {
     centerX: number;
     centerZ: number;
   }): void;
+  /** Folded or not in the phone dock; the HUD unfolds one wall panel at a time. */
+  fold?: PanelFold;
 }
 
 /**
@@ -23,25 +26,35 @@ export interface RoomShapesPanelProps {
  * outline of interior walls onto the active floor. Shows only when the
  * walls build-tool is active.
  */
-export function RoomShapesPanel({ maxWidth, maxDepth, onStamp }: RoomShapesPanelProps): JSX.Element {
+export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }: RoomShapesPanelProps): JSX.Element {
   const [shape, setShape] = useState<RoomShapeId>('rectangle');
   const [width, setWidth] = useState(4);
   const [depth, setDepth] = useState(3);
+  const fold = useDockFold(panelFold);
 
   const clampedW = clamp(width, 1.5, Math.max(1.5, maxWidth - 0.5));
   const clampedD = clamp(depth, 1.5, Math.max(1.5, maxDepth - 0.5));
 
   return (
     <div
-      className="pointer-events-auto pc-glass"
+      className={`pointer-events-auto pc-glass pc-room-stamp${fold.open ? '' : ' pc-dock-folded'}`}
+      data-scene-occluder=""
       style={{ width: 232, padding: '10px 12px' }}
     >
+      {fold.docked ? (
+        <div style={{ marginBottom: fold.open ? 6 : 0, paddingLeft: 2 }}>
+          <DockFoldButton label="Room Stamp" open={fold.open} onToggle={fold.toggle} />
+        </div>
+      ) : (
       <div
         className="pc-hud-header"
         style={{ fontSize: 11, marginBottom: 6, paddingLeft: 2 }}
       >
         Room Stamp
       </div>
+      )}
+      {fold.open && (
+      <>
 
       {/* Shape grid */}
       <div
@@ -136,6 +149,8 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp }: RoomShapesPanel
           Stamp Room
         </button>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -1,9 +1,12 @@
 'use client';
 
-import { memo, useState, type MutableRefObject } from 'react';
+import { memo, useRef, useState, type MutableRefObject } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useSelection } from '../contexts';
+import { useEdgeVar } from '../hooks/use-edge-var';
 import { useEvent } from '../hooks/use-event';
+import { useScrollCue } from '../hooks/use-scroll-cue';
+import { useSheetInset } from '../hooks/use-sheet-inset';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
@@ -40,6 +43,26 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   const gameMode = useEditorView((state) => state.gameMode);
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
+  const hudRef = useRef<HTMLDivElement>(null);
+  const leftColumnRef = useRef<HTMLDivElement>(null);
+  const showPaint = view.drawWallMode || selectedWall !== null;
+  // On a phone the wall panels open folded, one at a time (#395); a tapped
+  // wall opens Paint, since that is what the tap asks for. Off the dock
+  // both always show in full.
+  const [unfolded, setUnfolded] = useState<'paint' | 'stamp' | 'none' | null>(null);
+  const paintUnfolded = unfolded === 'paint' || (unfolded === null && !view.drawWallMode);
+  const stampUnfolded = unfolded === 'stamp';
+  const toggleFold = useEvent((panel: 'paint' | 'stamp') => {
+    const open = panel === 'paint' ? paintUnfolded : stampUnfolded;
+    setUnfolded(open ? 'none' : panel);
+  });
+  const layoutKey = `${isReady}:${gameMode}:${showPaint}:${view.drawWallMode}:${view.view2D}`;
+  // An overflowing column says so (#426).
+  useScrollCue(leftColumnRef, layoutKey);
+  // The dock's top edge, for the touch buttons that must stay above it.
+  useEdgeVar(hudRef, '--pc-dock-top', 'top', layoutKey);
+  // The mode bar rides above the phone item sheet.
+  useSheetInset();
   // Each mode shows its own half of the tools (#151): a pick from the other
   // half falls back to this mode's first tool. Derived, not synced, so the
   // pick survives a round trip through the other mode.
@@ -65,6 +88,7 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
 
   return (
     <div
+      ref={hudRef}
       className="pointer-events-none pc-bottom-hud"
       style={{
         position: 'absolute',
@@ -81,8 +105,10 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
     >
       {gameMode !== 'live' ? (
         <div
+          ref={leftColumnRef}
           // max-height lives in globals.css: the room above this column
-          // differs per breakpoint (#299).
+          // differs per breakpoint (#299). Not an occluder itself: it is
+          // wider than its panels, which are tagged one by one.
           className="pc-hud-left"
           style={{
             display: 'flex',
@@ -96,10 +122,11 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           }}
         >
           {/* Paint panel opens with the wall tool OR when any wall is clicked in 3D. */}
-          {(view.drawWallMode || selectedWall !== null) && (
+          {showPaint && (
             <WallPaintPanel
               selectedWall={selectedWall}
               onSelectedWallChange={onSelectedWallChange}
+              fold={{ open: paintUnfolded, onToggle: () => toggleFold('paint') }}
             />
           )}
           {view.drawWallMode && (
@@ -107,6 +134,7 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
               <RoomShapesPanel
                 maxWidth={layout.width}
                 maxDepth={layout.height}
+                fold={{ open: stampUnfolded, onToggle: () => toggleFold('stamp') }}
                 onStamp={({ shape, width, depth, centerX, centerZ }) => {
                   // Random suffix so two stamps in the same millisecond can't
                   // produce colliding wall ids.

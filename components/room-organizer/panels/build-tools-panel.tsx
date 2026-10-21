@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useEditorView } from '../contexts';
+import { useScrollCue } from '../hooks/use-scroll-cue';
 import { categoriesForMode, type BuildToolKey } from '../lib/modes';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
@@ -42,9 +43,13 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
   // DESIGN lists the structure tools, FURNISH the furniture ones — the mode
   // pill is the way to the other half, not a longer grid (#151).
   const tools = categoriesForMode(gameMode);
+  // In the phone dock the chips scroll sideways; the edges fade while they do.
+  const gridRef = useRef<HTMLDivElement>(null);
+  useScrollCue(gridRef, `${gameMode}:${collapsed}`, 'x');
   return (
     <div
       className="pointer-events-auto pc-glass pc-build-tools"
+      data-scene-occluder=""
       style={{ width: 232, padding: 'var(--pc-s-3)' }}
     >
       {/* Header doubles as the show/hide toggle. */}
@@ -92,6 +97,7 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
       {/* Desktop: 3-col grid */}
       {!collapsed && (
       <div
+        ref={gridRef}
         className="pc-build-tools-grid"
         style={{
           background: 'rgba(0, 0, 0, 0.20)',

@@ -1,22 +1,24 @@
+'use client';
+
 import { useCallback, useSyncExternalStore } from 'react';
 
 /**
- * Whether a CSS media query matches, kept live across resizes and rotations.
- * False during the static prerender and the first client render, so markup
- * that depends on it must be invisible until then (toasts, the open sheet).
+ * Whether a CSS media query matches, kept in step with the viewport. False
+ * on the server and during hydration, so the static export's markup matches.
  */
 export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
     (onChange: () => void) => {
+      if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
       const list = window.matchMedia(query);
       list.addEventListener('change', onChange);
       return () => list.removeEventListener('change', onChange);
     },
     [query]
   );
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(query).matches,
-    () => false
+  const getSnapshot = useCallback(
+    () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(query).matches,
+    [query]
   );
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }

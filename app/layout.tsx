@@ -1,6 +1,6 @@
 import { Nunito, Sora } from 'next/font/google';
 import { CHUNK_RELOAD_KEY, CHUNK_RELOAD_WINDOW_MS } from '@/components/room-organizer/lib/chunk-reload';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 // Fetched at build time and served from _next/static/media with preload
@@ -17,9 +17,12 @@ export const metadata: Metadata = {
 // No maximumScale / userScalable: page zoom must stay available for the
 // panels (WCAG 1.4.4). Both canvases set `touch-action: none`, so a pinch
 // on them still drives the camera, not the page (#167).
-export const viewport = {
+// viewportFit 'cover' lets the page reach under a notch, so the phone HUD's
+// env(safe-area-inset-*) padding is what keeps it clear.
+export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
 };
 
 // Stale-chunk recovery for the GitHub Pages static export. index.html is cached
