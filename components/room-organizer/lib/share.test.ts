@@ -1,7 +1,9 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { hasCollisions, itemInBounds } from './geometry';
+import { FURNITURE_CATALOG } from './constants';
+import { planFurniture } from './furniture-scene';
+import { hasCollisions, itemInBounds, snapToNeighbors, snapToWall } from './geometry';
 import { MAX_LAYOUT_JSON_BYTES, MAX_NAME_LENGTH } from './schema';
 import {
   MAX_SHARE_HASH_LENGTH,
@@ -13,7 +15,7 @@ import {
   readShareHash,
   roundLayoutForShare,
 } from './share';
-import type { RoomLayout } from './types';
+import type { FurnitureItem, RoomLayout } from './types';
 
 // share.ts relies on btoa/atob and CompressionStream/DecompressionStream —
 // all global in Node >= 18, so no shims are needed in the node environment.
@@ -298,5 +300,100 @@ describe('share encode rounds positions and rotations (#192)', () => {
     const status = (list: readonly (typeof items)[number][]) =>
       list.map((item) => [hasCollisions(item, list, 8, 8), itemInBounds(item, 8, 8)]);
     expect(status(decoded!.floors[0]!.items)).toEqual(status(items));
+  });
+});
+
+describe('share rounding never changes what the editor computes (#192)', () => {
+  /** Per item, in floor order: in bounds, and the editor's collision tint (furniture-scene). */
+  function statuses(layout: RoomLayout): string[] {
+    return planFurniture(layout, true, 0).map((floor) =>
+      floor.items.map((item, i) => `${itemInBounds(item, layout.width, layout.height) ? 'in' : 'out'}/${floor.collisions[i] ? 'hit' : 'clear'}`).join(' ')
+    );
+  }
+  const ROTATIONS = [0, Math.PI / 12, Math.PI / 6, Math.PI / 4, Math.PI / 3, (5 * Math.PI) / 12, Math.PI / 2, Math.PI, -Math.PI / 2];
+  const ROOMS = [[8, 6], [7.5, 5.5], [10, 8], [6.3, 4.7], [12, 9]] as const;
+  const indoorCatalog = FURNITURE_CATALOG.filter((entry) => entry.category !== 'outdoor');
+
+  it('a wall-flush item keeps its state: sweep over catalog × room sizes × rotations × corners', () => {
+    let flush = 0;
+    let changed = 0;
+    let rounded = 0;
+    for (const [w, d] of ROOMS) {
+      for (const entry of indoorCatalog) {
+        for (const rotation of ROTATIONS) {
+          for (const [sx, sz] of [[1, 1], [-1, -1], [1, -1]] as const) {
+            const base = makeItem({ id: 'x', type: entry.type, width: entry.width, depth: entry.depth, height: entry.height, rotation });
+            const position = snapToWall({ position: { x: sx * (w / 2 - 0.1), z: sz * (d / 2 - 0.1) }, item: base, roomWidth: w, roomDepth: d });
+            const item = { ...base, position };
+            if (!itemInBounds(item, w, d)) continue;
+            flush++;
+            const layout = makeLayout({ width: w, height: d, floors: [makeFloor({ items: [item] })] });
+            const shared = roundLayoutForShare(layout);
+            if (statuses(shared)[0] !== statuses(layout)[0]) changed++;
+            if (shared.floors[0]!.items[0] !== item) rounded++;
+          }
+        }
+      }
+    }
+    expect(flush).toBeGreaterThan(2000);
+    expect(changed).toBe(0);
+    // Most items still shrink; only the ones the nearest millimetre would push out stay exact.
+    expect(rounded).toBeGreaterThan(flush / 3);
+  });
+
+  it('abutting pairs at any turn keep their state', () => {
+    let changed = 0;
+    for (const rotation of ROTATIONS) {
+      for (const entry of indoorCatalog.slice(0, 30)) {
+        const a = makeItem({ id: 'a', type: entry.type, width: entry.width, depth: entry.depth, height: entry.height, rotation, position: { x: -0.123456789, z: 0.987654321 } });
+        // b shares a's +width edge exactly, along the rotated axis.
+        const b = { ...a, id: 'b', position: { x: a.position!.x + Math.cos(rotation) * entry.width, z: a.position!.z - Math.sin(rotation) * entry.width } };
+        // c snapped flush to a the way the editor's neighbour snap does it.
+        const cBase = { ...a, id: 'c', rotation: 0 };
+        const c = { ...cBase, position: snapToNeighbors({ position: { x: a.position!.x, z: a.position!.z + entry.depth + 0.05 }, movingItem: cBase, otherItems: [a] }) };
+        const layout = makeLayout({ width: 12, height: 12, floors: [makeFloor({ items: [a, b, c] })] });
+        if (statuses(roundLayoutForShare(layout))[0] !== statuses(layout)[0]) changed++;
+      }
+    }
+    expect(changed).toBe(0);
+  });
+
+  it('a 15°-turned chair flush to the east wall stays clear through a share link', async () => {
+    const base = makeItem({ id: 'chair', width: 0.5, depth: 0.5, rotation: Math.PI / 12 });
+    const item = { ...base, position: snapToWall({ position: { x: 3.8, z: 0 }, item: base, roomWidth: 8, roomDepth: 6 }) };
+    expect(hasCollisions(item, [item], 8, 6)).toBe(false);
+    const layout = makeLayout({ width: 8, height: 6, floors: [makeFloor({ items: [item] })] });
+    const decoded = (await decodeShareUrl(hashOf((await encodeShareUrl(layout, ORIGIN)).url)))!.floors[0]!.items[0]!;
+    expect(hasCollisions(decoded, [decoded], 8, 6)).toBe(false);
+  });
+
+  it('an unturned toilet flush to the east wall of a 6.3 m room stays clear', async () => {
+    const base = makeItem({ id: 't', width: 0.4, depth: 0.7, rotation: 0 });
+    const item = { ...base, position: snapToWall({ position: { x: 3.0, z: 0 }, item: base, roomWidth: 6.3, roomDepth: 4.7 }) };
+    expect(hasCollisions(item, [item], 6.3, 4.7)).toBe(false);
+    const layout = makeLayout({ width: 6.3, height: 4.7, floors: [makeFloor({ items: [item] })] });
+    const decoded = (await decodeShareUrl(hashOf((await encodeShareUrl(layout, ORIGIN)).url)))!.floors[0]!.items[0]!;
+    expect(hasCollisions(decoded, [decoded], 6.3, 4.7)).toBe(false);
+  });
+
+  it('a dense free-dragged storey keeps every item\'s state', () => {
+    let seed = 42;
+    const rnd = (): number => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const items: FurnitureItem[] = [];
+    for (let i = 0; i < 90; i++) {
+      const entry = indoorCatalog[i % indoorCatalog.length]!;
+      const moving = makeItem({ id: `n${i}`, type: entry.type, width: entry.width, depth: entry.depth, height: entry.height, rotation: ROTATIONS[i % ROTATIONS.length]! });
+      const free = { x: (rnd() - 0.5) * 9, z: (rnd() - 0.5) * 9 };
+      const near = snapToNeighbors({ position: free, movingItem: moving, otherItems: items });
+      items.push({ ...moving, position: snapToWall({ position: near, item: moving, roomWidth: 10, roomDepth: 10 }) });
+    }
+    const layout = makeLayout({ width: 10, height: 10, floors: [makeFloor({ items })] });
+    expect(statuses(roundLayoutForShare(layout))).toEqual(statuses(layout));
+  });
+
+  it('stairs stay exact: they cut the keep-out of the storey above', () => {
+    const stairs = makeItem({ id: 's', type: 'stairs', width: 1, depth: 3, position: { x: 1.23456789, z: -0.98765432 }, rotation: 0.3 });
+    const layout = makeLayout({ floors: [makeFloor({ items: [stairs] }), makeFloor({ id: 'u' })] });
+    expect(roundLayoutForShare(layout).floors[0]!.items[0]).toBe(stairs);
   });
 });

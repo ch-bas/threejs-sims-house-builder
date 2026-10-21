@@ -1,4 +1,7 @@
+import { floorKeepOut } from './floor-keep-out';
+import { hasCollisions, itemInBounds, type CollisionContext } from './geometry';
 import { MAX_LAYOUT_JSON_BYTES, parseStoredLayout } from './schema';
+import { storeyHeight } from './storeys';
 import type { FurnitureItem, RoomLayout } from './types';
 
 const HASH_PREFIX = '#layout=';
@@ -63,7 +66,9 @@ function roundRotation(rotation: number): number {
 }
 
 function roundItem(item: FurnitureItem): FurnitureItem {
-  if (!item.position && item.rotation === undefined) return item;
+  // Stairs cut the storey above's keep-out (#372); they stay exact so no
+  // other floor's collision state can move.
+  if (item.type === 'stairs' || (!item.position && item.rotation === undefined)) return item;
   return {
     ...item,
     ...(item.position ? { position: { x: round3(item.position.x), z: round3(item.position.z) } } : {}),
@@ -71,14 +76,62 @@ function roundItem(item: FurnitureItem): FurnitureItem {
   };
 }
 
+/** Restore passes before a floor falls back to its exact items; each pass is O(n²). */
+const MAX_ROUNDING_PASSES = 4;
+
+/**
+ * One storey's items rounded, except where rounding would change what the
+ * editor computes. A wall-flush item sits at an irrational or float-noisy
+ * `roomWidth / 2 − halfWidth`, and the nearest millimetre can be 0.5 mm
+ * outside; abutting items can overlap by as much. Every item whose bounds
+ * or collision state differs from the exact layout's gets its exact
+ * position and rotation back, as do the items whose pairing with it
+ * changed, until nothing differs.
+ */
+function roundFloorItems(layout: RoomLayout, floorIndex: number): FurnitureItem[] {
+  const floor = layout.floors[floorIndex]!;
+  const exact = floor.items;
+  const { width, height } = layout;
+  // The editor's own context (furniture-scene); stairs aren't rounded, so
+  // the keep-out is the same for both layouts.
+  const context: CollisionContext = {
+    keepOut: floorKeepOut(layout, floorIndex),
+    interiorWalls: floor.interiorWalls,
+    storeyHeight: storeyHeight(floor),
+  };
+  const status = (item: FurnitureItem, items: readonly FurnitureItem[]): number =>
+    item.position
+      ? (itemInBounds(item, width, height) ? 1 : 0) + (hasCollisions(item, items, width, height, context) ? 2 : 0)
+      : 0;
+  const pairCollides = (a: FurnitureItem, b: FurnitureItem): boolean =>
+    hasCollisions(a, [a, b], width, height, context);
+
+  const expected = exact.map((item) => status(item, exact));
+  const items = exact.map(roundItem);
+  for (let pass = 0; pass < MAX_ROUNDING_PASSES; pass++) {
+    const changed = items.flatMap((item, i) => (status(item, items) === expected[i] ? [] : [i]));
+    if (changed.length === 0) return items;
+    for (const i of changed) {
+      for (let j = 0; j < items.length; j++) {
+        if (j !== i && items[j] !== exact[j] && pairCollides(exact[i]!, items[j]!) !== pairCollides(exact[i]!, exact[j]!)) {
+          items[j] = exact[j]!;
+        }
+      }
+      items[i] = exact[i]!;
+    }
+  }
+  return items.every((item, i) => status(item, items) === expected[i]) ? items : [...exact];
+}
+
 /**
  * The layout with item positions rounded to millimetres and rotations to 3
  * decimals (#192). Free drags leave ~17 significant digits per coordinate,
- * which is most of a share payload. Encode-time only: the layout passed in
- * is not touched.
+ * which is most of a share payload. Rounding never changes an item's bounds
+ * or collision state (see roundFloorItems). Encode-time only: the layout
+ * passed in is not touched.
  */
 export function roundLayoutForShare(layout: RoomLayout): RoomLayout {
-  return { ...layout, floors: layout.floors.map((floor) => ({ ...floor, items: floor.items.map(roundItem) })) };
+  return { ...layout, floors: layout.floors.map((floor, index) => ({ ...floor, items: roundFloorItems(layout, index) })) };
 }
 
 /**
