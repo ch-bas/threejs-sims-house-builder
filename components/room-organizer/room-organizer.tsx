@@ -8,6 +8,7 @@ import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room
 import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
 import { useAchievements } from './hooks/use-achievements';
+import { useBottomEdgeVar } from './hooks/use-bottom-edge-var';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
@@ -130,6 +131,9 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
 export function RoomOrganizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvas2DRef = useRef<HTMLCanvasElement>(null);
+  // Top-centre chips sit below the top-right pills however they wrap (#308).
+  const topRightRef = useRef<HTMLDivElement>(null);
+  useBottomEdgeVar(topRightRef, '--pc-top-pills-bottom');
 
   const { layout, activeFloor, activeFloorIndex, actions } = useLayoutState();
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
@@ -1173,7 +1177,9 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Top-right: floor pill + wall display */}
       <div
+        ref={topRightRef}
         className="pc-top-right"
+        data-scene-occluder=""
         style={{
           position: 'absolute',
           top: 16,

@@ -41,6 +41,9 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
     0
   );
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  // Docked on a phone, the action row folds behind ⋯ except Undo and Redo
+  // (#395). The toggle is hidden at every other size.
+  const [moreOpen, setMoreOpen] = useState(false);
   const viewButtonRef = useRef<HTMLButtonElement>(null);
   const viewMenuId = useId();
   const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
@@ -48,6 +51,8 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   return (
     <div
       className="pointer-events-auto pc-glass pc-mode-panel"
+      data-scene-occluder=""
+      data-more-open={moreOpen ? '' : undefined}
       style={{
         position: 'relative',
         width: 248,
@@ -134,6 +139,9 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           gap: 4,
         }}
       >
+        {/* The two groups are `display: contents` — one grid, as before —
+            except in the phone dock, which lays them out apart. */}
+        <div className="pc-mode-actions-primary" style={{ display: 'contents' }}>
         <ActionButton
           label="Undo"
           icon="undo"
@@ -147,6 +155,8 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           disabled={!history.canRedo}
           onClick={history.redo}
         />
+        </div>
+        <div className="pc-mode-actions-more" style={{ display: 'contents' }}>
         {/* Lighting only exists in 3D — disable in the 2D top-down view like
             TimeOfDayPanel's twin button (#220). */}
         <ActionButton
@@ -201,7 +211,22 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           controls={viewMenuId}
           onClick={() => setViewMenuOpen((open) => !open)}
         />
+        </div>
       </div>
+      <button
+        type="button"
+        className={`pc-tile pc-mode-more${moreOpen ? ' pc-tile--active' : ''}`}
+        aria-expanded={moreOpen}
+        aria-label={moreOpen ? 'Fewer controls' : 'More controls'}
+        title={moreOpen ? 'Fewer controls' : 'More controls'}
+        onClick={() => setMoreOpen((open) => !open)}
+      >
+        <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor" aria-hidden="true">
+          <circle cx="6" cy="12" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="18" cy="12" r="1.6" />
+        </svg>
+      </button>
       {viewMenuOpen && (
         <ViewOptionsMenu id={viewMenuId} anchorRef={viewButtonRef} onClose={closeViewMenu} />
       )}

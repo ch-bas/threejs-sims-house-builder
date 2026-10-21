@@ -2,26 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { useMediaQuery } from '../hooks/use-media-query';
+import { COARSE_POINTER_QUERY, welcomeTips } from '../lib/hud-layout';
 import { Icon } from '../plotcraft/icon';
 
 const STORAGE_KEY = 'standalone-room-organizer-welcome-dismissed';
 
-interface Tip {
-  title: string;
-  body: string;
-}
-
-const TIPS: readonly Tip[] = [
-  { title: 'Drag from catalog', body: 'Drop any catalog item onto the lot to place it exactly where you let go.' },
-  { title: 'Move in 3D', body: 'Click and drag furniture, or select and nudge with the arrow keys — hold Shift for 1 m steps.' },
-  { title: 'Grid snap', body: 'Press G to snap items you drag to a 0.5 m grid. Doors and windows snap to walls on their own.' },
-  { title: 'Themes & sets', body: 'One-click templates rebuild the room. Library saves named layouts.' },
-  { title: 'Walkthrough', body: 'Switch to EXPLORE to wander your home with WASD + Shift to sprint.' },
-  { title: 'Multi-select', body: 'Ctrl/⌘-click to add items to a selection. Delete removes them all.' },
-];
-
 export function WelcomeBanner(): JSX.Element | null {
   const [visible, setVisible] = useState(false);
+  const tips = welcomeTips(useMediaQuery(COARSE_POINTER_QUERY));
   const dialogRef = useRef<HTMLDivElement>(null);
   const primaryButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -75,6 +64,11 @@ export function WelcomeBanner(): JSX.Element | null {
         style={{
           width: 'min(520px, 100%)',
           padding: '22px 24px',
+          // A landscape phone is shorter than the tips (#307): the list
+          // scrolls and the button stays in view.
+          maxHeight: 'calc(100dvh - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
         onClick={(event) => event.stopPropagation()}
       >
@@ -128,14 +122,18 @@ export function WelcomeBanner(): JSX.Element | null {
         <ul
           style={{
             listStyle: 'none',
-            padding: 0,
-            margin: '0 0 18px',
+            // Room for the bullets' glow inside the scroller, which would
+            // clip it; the negative margin keeps the text where it was.
+            padding: '14px 16px',
+            margin: '-14px -16px 4px',
             display: 'flex',
             flexDirection: 'column',
             gap: 8,
+            minHeight: 0,
+            overflowY: 'auto',
           }}
         >
-          {TIPS.map((tip) => (
+          {tips.map((tip) => (
             <li
               key={tip.title}
               style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}
@@ -177,6 +175,7 @@ export function WelcomeBanner(): JSX.Element | null {
           onClick={dismiss}
           className="pc-tile pc-tile--active"
           style={{
+            flexShrink: 0,
             width: '100%',
             padding: '10px 14px',
             borderRadius: 12,

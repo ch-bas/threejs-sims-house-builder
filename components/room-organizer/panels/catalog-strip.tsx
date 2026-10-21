@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { useActiveFloorIndex } from '../hooks/use-layout-store';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
+import { catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, FurnitureCategory } from '../lib/types';
@@ -21,23 +23,30 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
   const activeFloorIndex = useActiveFloorIndex();
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
+  // Docked on a phone (#395): one row of every item, scrolled sideways,
+  // instead of a two-row page with a pager.
+  const compact = useMediaQuery(COMPACT_DOCK_QUERY);
+  // A tooltip never shows on touch, so tiles name their item there (#423).
+  const showNames = useMediaQuery(COARSE_POINTER_QUERY) || compact;
 
   const items =
     category === 'all'
       ? FURNITURE_CATALOG
       : FURNITURE_CATALOG.filter((item) => item.category === category);
-  const pages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const pageSize = catalogPageSize(items.length, compact, PAGE_SIZE);
+  const pages = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(page, pages - 1);
-  const visible = items.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+  const visible = items.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
   // Keyboard placement (#168): one tile in the Tab order, arrows rove the grid.
-  const { gridRef, tileProps } = useRovingTiles(visible.length, COLUMNS);
+  const { gridRef, tileProps } = useRovingTiles(visible.length, compact ? visible.length : COLUMNS);
 
   // Cameras get a dedicated, type-grouped menu rather than the paged grid.
   if (category === 'security') {
     return (
       <div
         className="pointer-events-auto pc-glass pc-catalog-strip"
+        data-scene-occluder=""
         style={{ width: 540, maxWidth: '100%', padding: '10px 14px 12px' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: collapsed ? 0 : 8 }}>
@@ -65,6 +74,38 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
     );
   }
 
+  if (compact) {
+    return (
+      <div className="pointer-events-auto pc-glass pc-catalog-strip pc-catalog-strip--docked" data-scene-occluder="">
+        <div
+          ref={gridRef}
+          role="group"
+          aria-label="Catalog"
+          className="pc-catalog-row"
+          style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}
+        >
+          {visible.map((item, index) => {
+            const blockedReason = catalogTileBlockedReason(item, activeFloorIndex);
+            const add = () => {
+              if (!blockedReason) onAdd(item);
+            };
+            return (
+              <CatalogTile
+                key={catalogKey(item)}
+                item={item}
+                blockedReason={blockedReason}
+                onAdd={add}
+                roving={tileProps(index, add)}
+                showName
+                docked
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   const categoryMeta = CATEGORIES.find((entry) => entry.key === category);
   const categoryLabel =
     category === 'all' ? 'All' : (categoryMeta?.label ?? String(category));
@@ -72,6 +113,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
   return (
     <div
       className="pointer-events-auto pc-glass pc-catalog-strip"
+        data-scene-occluder=""
       style={{ width: 540, maxWidth: '100%', padding: '10px 14px 12px' }}
     >
       <div
@@ -172,6 +214,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   blockedReason={blockedReason}
                   onAdd={add}
                   roving={tileProps(index, add)}
+                  showName={showNames}
                 />
               );
             })}
@@ -273,9 +316,13 @@ interface CatalogTileProps {
   blockedReason: string | null;
   onAdd(): void;
   roving: RovingTileProps;
+  /** Name the item under its icon: on touch, where the tooltip never shows (#423). */
+  showName?: boolean;
+  /** A tile on the docked phone row: fixed width so the row scrolls. */
+  docked?: boolean;
 }
 
-function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: CatalogTileProps): JSX.Element {
   const icon = iconForItem(item.type, item.category);
   const blocked = blockedReason !== null;
   return (
@@ -298,6 +345,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): 
       className="pc-tile"
       style={{
         height: 56,
+        ...(docked ? { width: 76, flexShrink: 0 } : {}),
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -308,7 +356,24 @@ function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): 
         opacity: blocked ? 0.35 : 1,
       }}
     >
-      <Icon name={icon} size={20} />
+      <Icon name={icon} size={showName ? 18 : 20} />
+      {showName && (
+        <span
+          style={{
+            fontFamily: 'var(--pc-font-display)',
+            fontWeight: 600,
+            fontSize: 9,
+            color: 'var(--pc-paper)',
+            lineHeight: 1.1,
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {item.name}
+        </span>
+      )}
       <span
         style={{
           fontFamily: 'var(--pc-font-display)',

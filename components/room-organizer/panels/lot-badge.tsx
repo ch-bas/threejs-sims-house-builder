@@ -18,6 +18,7 @@ export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): 
   return (
     <div
       className="pc-lot-badge"
+      data-scene-occluder=""
       style={{
         position: 'absolute',
         top: 16,
@@ -29,7 +30,7 @@ export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): 
       }}
     >
       <div
-        className="pc-glass pc-glass--dark"
+        className="pc-glass pc-glass--dark pc-lot-badge__name"
         style={{
           padding: '8px 14px 8px 10px',
           display: 'flex',
@@ -85,6 +86,7 @@ export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): 
         type="button"
         onClick={onToggleSidebar}
         title={sidebarCollapsed ? 'Open panels' : 'Close panels'}
+        aria-label={sidebarCollapsed ? 'Open panels' : 'Close panels'}
         className={`pc-glass pc-glass--dark pc-tile${
           sidebarCollapsed ? '' : ' pc-tile--active'
         }`}

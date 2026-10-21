@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useState, type MutableRefObject, type ReactNode } from 'react';
 import { useViewSettings } from '../contexts';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -84,42 +84,59 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
       <TouchButton
         icon="rotate"
         label="Orbit Rotation"
+        caption="Orbit"
         active={mode === 'orbit'}
         onClick={() => setMode('orbit')}
       />
       <TouchButton
         icon="target"
         label="Center"
+        caption="Center"
         active={mode === 'pan'}
         onClick={() => setMode('pan')}
       />
+      {/* Distinct captions and glyphs: both used to read ZOOM (#423). */}
       <TouchButton
         icon="magnify"
         label="Zoom In"
+        caption="In"
         onClick={() => handleZoom('+')}
       />
       <TouchButton
-        icon="magnify"
+        glyph={ZOOM_OUT_GLYPH}
         label="Zoom Out"
+        caption="Out"
         onClick={() => handleZoom('-')}
-        flipIcon
       />
       <TouchButton
         icon="home"
         label="Fit"
+        caption="Fit"
         onClick={onFit}
       />
     </div>
   );
 }
 
-function TouchButton({ icon, label, active, onClick, flipIcon }: {
-  icon: PlotcraftIconName;
+// The kit's magnifier carries a plus; zoom out is the same lens with a minus.
+const ZOOM_OUT_GLYPH = (
+  <>
+    <circle cx="11" cy="11" r="6" />
+    <path d="M20 20l-4.3 -4.3" />
+    <path d="M9 11h4" />
+  </>
+);
+
+function TouchButton({ icon, glyph, label, caption, active, onClick }: {
+  /** A kit icon, or `glyph` for paths the kit lacks. */
+  icon?: PlotcraftIconName;
+  glyph?: ReactNode;
   label: string;
+  caption: string;
   active?: boolean;
   onClick(): void;
-  flipIcon?: boolean;
 }): JSX.Element {
+  const color = active ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)';
   return (
     <button
       type="button"
@@ -142,14 +159,24 @@ function TouchButton({ icon, label, active, onClick, flipIcon }: {
       title={label}
       aria-label={label}
     >
-      <Icon
-        name={icon}
-        size={16}
-        style={{
-          transform: flipIcon ? 'rotate(180deg)' : undefined,
-          color: active ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)',
-        }}
-      />
+      {icon ? (
+        <Icon name={icon} size={16} style={{ color }} />
+      ) : (
+        <svg
+          viewBox="0 0 24 24"
+          width={16}
+          height={16}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          style={{ color }}
+        >
+          {glyph}
+        </svg>
+      )}
       <span
         style={{
           fontFamily: 'var(--pc-font-display)',
@@ -157,11 +184,11 @@ function TouchButton({ icon, label, active, onClick, flipIcon }: {
           fontSize: 8,
           letterSpacing: '0.04em',
           textTransform: 'uppercase',
-          color: active ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)',
+          color,
           lineHeight: 1,
         }}
       >
-        {label.split(' ')[0]}
+        {caption}
       </span>
     </button>
   );

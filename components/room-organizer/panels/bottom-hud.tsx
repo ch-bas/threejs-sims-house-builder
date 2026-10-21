@@ -1,9 +1,10 @@
 'use client';
 
-import { memo, useState, type MutableRefObject } from 'react';
+import { memo, useRef, useState, type MutableRefObject } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useSelection } from '../contexts';
 import { useEvent } from '../hooks/use-event';
+import { useScrollCue } from '../hooks/use-scroll-cue';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
@@ -40,6 +41,12 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   const gameMode = useEditorView((state) => state.gameMode);
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
+  const leftColumnRef = useRef<HTMLDivElement>(null);
+  const showPaint = view.drawWallMode || selectedWall !== null;
+  // The wall panels fill the column; the camera pad would only sink under
+  // the fold, so it steps aside while they are open (#426).
+  const showCameraPad = !view.view2D && !showPaint;
+  useScrollCue(leftColumnRef, `${isReady}:${gameMode}:${showPaint}:${view.drawWallMode}:${showCameraPad}`);
   // Each mode shows its own half of the tools (#151): a pick from the other
   // half falls back to this mode's first tool. Derived, not synced, so the
   // pick survives a round trip through the other mode.
@@ -81,9 +88,12 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
     >
       {gameMode !== 'live' ? (
         <div
+          ref={leftColumnRef}
           // max-height lives in globals.css: the room above this column
-          // differs per breakpoint (#299).
+          // differs per breakpoint (#299). Scene framing treats each HUD
+          // panel group as an occluder.
           className="pc-hud-left"
+          data-scene-occluder=""
           style={{
             display: 'flex',
             flexDirection: 'column',
@@ -96,10 +106,11 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           }}
         >
           {/* Paint panel opens with the wall tool OR when any wall is clicked in 3D. */}
-          {(view.drawWallMode || selectedWall !== null) && (
+          {showPaint && (
             <WallPaintPanel
               selectedWall={selectedWall}
               onSelectedWallChange={onSelectedWallChange}
+              unfolded={!view.drawWallMode}
             />
           )}
           {view.drawWallMode && (
@@ -139,7 +150,7 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           {/* The pad drives the (hidden) 3D camera, so it's inert in the 2D
               top-down view — hide it there, like CameraPresetsPanel disables
               on view2D (#220). */}
-          {!view.view2D && (
+          {showCameraPad && (
             <MemoCameraPad
               onOrbit={onOrbit}
               onZoom={onZoom}
