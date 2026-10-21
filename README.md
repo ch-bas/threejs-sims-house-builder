@@ -346,7 +346,9 @@ components/
     │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
     │   ├── restore-point.ts             Forced restore point before a whole-layout replacement; "untouched" = equal to INITIAL_LAYOUT
     │   ├── initial-layout.ts            INITIAL_LAYOUT / INITIAL_GROUND_FLOOR, the house every session starts from
-    │   ├── share.ts                     Share-URL encode/decode (base64url)
+    │   ├── share.ts                     Share-URL encode/decode (base64url); positions rounded to mm on encode
+    │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
+    │   ├── dev-diagnostics.ts           `?debug` flag + allocation-free renderer.info counters
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
@@ -498,6 +500,7 @@ components/
         ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── zone-name-chip.tsx           Inline name field for a zone just drawn on the plan
+        ├── dev-diagnostics.tsx          `?debug` overlay: draw calls, triangles, geometries, textures, programs, frames
         ├── chip-controls.tsx            Chip buttons + inline name field (no native prompts)
         └── viewport.tsx
 ```
@@ -563,7 +566,18 @@ components/
   chunks together with the editor chunk rather than after it, so first load
   is two hops, not three. The UI's dropdowns are native `<select>`s
   (`components/ui/select.tsx`), with no popper or icon library in the
-  editor bundle.
+  editor bundle. A chunk that 404s or hangs (stale HTML after a deploy)
+  gets one automatic reload per ten minutes from a sessionStorage stamp
+  that the head script and `lib/chunk-reload.ts` share; a success never
+  re-arms it, so a chunk that keeps failing ends on "Couldn't load the
+  app" with a Retry button instead of reloading forever (#499). The head
+  watchdog's ready signal comes from the engine import, not the editor
+  chunk.
+- **Diagnostics.** `?debug` on the URL shows the renderer's counters
+  (draw calls, triangles, live geometries, textures, programs, frames
+  rendered). It updates from the scene's `onAfterRender`, so it has no loop
+  of its own and an idle editor's frame count stands still; without the
+  flag nothing is installed.
 - **Render-on-demand.** The animation loop only renders when OrbitControls
   report movement or something marks the scene dirty (`invalidate()` is
   threaded through the scene-effect, walkthrough, NPC, and camera-preset
@@ -594,7 +608,9 @@ components/
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged
-  group, and each drag gesture lands as one undo entry.
+  group, and each drag gesture lands as one undo entry. A drag aborted
+  under a held button (the furniture changed mid-drag) keeps OrbitControls
+  off until that pointer lifts, so the rest of the gesture doesn't orbit.
 - **Per-item furniture diff.** The furniture effect keeps one group per
   item and storey and compares each item's build key (everything its
   builder reads, plus the collision tint and the ghost fade, which are baked

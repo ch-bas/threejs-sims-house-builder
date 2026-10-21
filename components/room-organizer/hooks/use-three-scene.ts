@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { reloadOnceForChunkError } from '../lib/chunk-reload';
+import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/chunk-reload';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { addLights } from '../three/lighting';
@@ -75,6 +75,11 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
   // Load Three.js + OrbitControls once.
   const [isModuleLoaded, setModuleLoaded] = useState(false);
+  // A chunk that still fails after the one automatic reload is a broken
+  // deploy: rethrown from render so the route error screen ("Couldn't load
+  // the app", with Retry) replaces the editor (#499).
+  const [engineChunkError, setEngineChunkError] = useState<Error | null>(null);
+  if (engineChunkError) throw engineChunkError;
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -88,6 +93,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         threeModuleRef.current = three;
         orbitCtorRef.current = controls.OrbitControls;
         roomEnvCtorRef.current = environments.RoomEnvironment;
+        markAppReady();
         setModuleLoaded(true);
       } catch (err) {
         if (cancelled) return;
@@ -95,6 +101,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // once to fetch fresh assets instead of stranding the user on the
         // "Failed to load 3D engine" message.
         if (reloadOnceForChunkError(err)) return;
+        if (isChunkLoadError(err) && err instanceof Error) {
+          setEngineChunkError(err);
+          return;
+        }
         setError(messageOf(err, 'Failed to load 3D engine.'));
       }
     })();

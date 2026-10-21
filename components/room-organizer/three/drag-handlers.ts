@@ -335,7 +335,7 @@ export function attachDragHandlers({
     // release would commit stale in-flight positions over the fresh state —
     // abort the gesture; state is already authoritative.
     if (dragTarget.parent === null || furnitureRevision() !== dragRevision) {
-      abortGesture(false);
+      abortGesture(false, event.pointerId);
       return;
     }
 
@@ -361,10 +361,30 @@ export function attachDragHandlers({
     handlersRef.current.onItemDrag(itemId, snapped.x, snapped.z);
   };
 
+  // A drag aborted while its button is still down (`heldPointerId`) keeps
+  // OrbitControls off until that pointer lifts: the controls saw the same
+  // press and would turn the rest of the gesture into an orbit. The release
+  // may land off the canvas once capture is gone, so listen on the document,
+  // as OrbitControls does.
+  const doc = canvas.ownerDocument;
+  let heldPointerId: number | null = null;
+  const releaseHeldControls = (): void => {
+    if (heldPointerId === null) return;
+    heldPointerId = null;
+    doc.removeEventListener('pointerup', onHeldPointerEnd);
+    doc.removeEventListener('pointercancel', onHeldPointerEnd);
+    // Walkthrough took the camera meanwhile; it re-enables orbit on exit.
+    if (!handlersRef.current.walkthroughActive) controls.enabled = true;
+  };
+  function onHeldPointerEnd(event: PointerEvent): void {
+    if (event.pointerId === heldPointerId) releaseHeldControls();
+  }
+
   // Like endGesture, but for a gesture that died under us: no commit — the
   // React side is told to throw its session away instead. `restore` moves
   // the dragged groups back (a pointercancel); a rebuilt set needs nothing.
-  const abortGesture = (restore: boolean): void => {
+  // `heldPointer` is the pointer still pressed, when there is one.
+  const abortGesture = (restore: boolean, heldPointer: number | null = null): void => {
     const target = dragTarget;
     const started = dragStarted;
     if (activePointerId !== null) {
@@ -375,7 +395,13 @@ export function attachDragHandlers({
       }
     }
     resetDragState();
-    controls.enabled = true;
+    if (started && heldPointer !== null) {
+      heldPointerId = heldPointer;
+      doc.addEventListener('pointerup', onHeldPointerEnd);
+      doc.addEventListener('pointercancel', onHeldPointerEnd);
+    } else {
+      controls.enabled = true;
+    }
     if (!target || !started) return;
     handlersRef.current.onItemDragCancel?.(target.userData.id as string, { restore });
     if (restore) {
@@ -449,6 +475,7 @@ export function attachDragHandlers({
   canvas.addEventListener('pointerleave', onPointerLeave);
 
   return () => {
+    releaseHeldControls();
     canvas.removeEventListener('pointerdown', onPointerDown);
     canvas.removeEventListener('pointermove', onPointerMove);
     canvas.removeEventListener('pointerup', onPointerUp);

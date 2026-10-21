@@ -1,4 +1,5 @@
 import { Nunito, Sora } from 'next/font/google';
+import { CHUNK_RELOAD_KEY, CHUNK_RELOAD_WINDOW_MS } from '@/components/room-organizer/lib/chunk-reload';
 import type { Metadata } from 'next';
 import './globals.css';
 
@@ -29,17 +30,23 @@ export const viewport = {
 //   1. A capture-phase resource-error / unhandledrejection listener (fast path).
 //   2. A watchdog: if the editor hasn't signalled ready within 20 s (the stuck
 //      "Loading the lot…" state), reload once. This catches failures the error
-//      events miss. `window.__pcReady` is set once the editor module loads
-//      (see app/page.tsx). While webpack still has a chunk <script> in flight
-//      (it tags them `data-webpack` and removes them on load or error) the
-//      download is progressing, so the watchdog waits instead of restarting a
-//      nearly finished download on a slow link (#413), up to 60 s after
+//      events miss. `window.__pcReady` is set once the 3D engine has loaded
+//      (markAppReady, from use-three-scene). While webpack still has a chunk
+//      <script> in flight (it tags them `data-webpack` and removes them on
+//      load or error) the download is progressing, so the watchdog waits
+//      instead of restarting a nearly finished download on a slow link
+//      (#413), up to 60 s after
 //      which it reloads anyway, so a hung chunk doesn't sit out webpack's own
-//      120 s timeout. The sessionStorage guard makes the reload one-shot.
+//      120 s timeout. The sessionStorage guard, shared with lib/chunk-reload,
+//      allows one automatic reload per window (#499).
 const CHUNK_RECOVERY_SCRIPT = `(function(){
-  var K='pc-chunk-reload';
+  var K=${JSON.stringify(CHUNK_RELOAD_KEY)}, W=${CHUNK_RELOAD_WINDOW_MS};
   function reloadOnce(){
-    try{ if(sessionStorage.getItem(K)==='1') return; sessionStorage.setItem(K,'1'); }catch(e){}
+    try{
+      var now=Date.now(), since=now-Number(sessionStorage.getItem(K));
+      if(sessionStorage.getItem(K)!==null&&since>=0&&since<W) return;
+      sessionStorage.setItem(K,String(now));
+    }catch(e){}
     location.reload();
   }
   window.addEventListener('error',function(e){
