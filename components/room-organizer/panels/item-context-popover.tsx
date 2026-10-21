@@ -1,11 +1,13 @@
 'use client';
 
-import { useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { isWallMounted } from '../lib/opening-snap';
+import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import { SliderRow } from './slider-row';
@@ -45,8 +47,27 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // can't trigger an action by accident. Escape is left to the global
   // shortcut (deselect), which also cancels an in-progress wall draft first.
   useDialogFocus(item !== null, dialogRef);
+  // On a phone or a short screen the popover is a bottom sheet (globals.css,
+  // "Overlays"): collapsed to the header and the action row so the selected
+  // item stays in view above it, expanded on demand, and collapsed again for
+  // each new selection.
+  const sheet = useMediaQuery(COMPACT_OVERLAY_QUERY);
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const expanded = item !== null && expandedFor === item.id;
+  const sheetOpen = sheet && item !== null;
+  // The phone HUD hides the catalog and build tools while the sheet is up,
+  // and the camera framing treats the sheet as an occluder.
+  useEffect(() => {
+    if (!sheetOpen) return undefined;
+    const root = document.documentElement;
+    root.dataset.sheetOpen = expanded ? 'expanded' : 'collapsed';
+    return () => {
+      delete root.dataset.sheetOpen;
+    };
+  }, [sheetOpen, expanded]);
   if (!item) return <></>;
   const { onClose } = props;
+  const setExpanded = (next: boolean) => setExpandedFor(next ? item.id : null);
   return (
     <div
       ref={dialogRef}
@@ -54,6 +75,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
       className="pc-glass pc-glass--dark pc-item-popover"
       role="dialog"
       aria-label={`Edit ${item.name}`}
+      data-sheet={expanded ? 'expanded' : 'collapsed'}
       style={{
         position: 'absolute',
         top: 130,
@@ -66,6 +88,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         zIndex: 36,
       }}
     >
+      <SheetHandle expanded={expanded} onExpandedChange={setExpanded} />
       <header
         style={{
           display: 'flex',
@@ -153,7 +176,10 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         </button>
       </header>
 
-      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
+      <div
+        className="pc-item-popover__body"
+        style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}
+      >
         {props.hasCollision && (
           <div
             className="pc-body"
@@ -170,64 +196,69 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           </div>
         )}
 
-        {item.type === 'security-camera' && (
-          <CameraModelCard
-            modelId={item.cctvModelId ?? ''}
-            fov={item.visionFov ?? 70}
-            range={item.visionRange ?? 7}
-            onPickModel={(modelId) => {
-              const model = getCctvModel(modelId);
-              if (model) {
-                actions.updateItem(item.id, {
-                  cctvModelId: model.id,
-                  visionFov: model.fov,
-                  visionRange: model.range,
-                });
-              } else {
-                actions.updateItem(item.id, { cctvModelId: '' });
-              }
-            }}
-            onSetFov={(value) => actions.updateItem(item.id, { visionFov: value, cctvModelId: '' })}
-            onSetRange={(value) => actions.updateItem(item.id, { visionRange: value, cctvModelId: '' })}
-          />
-        )}
+        {/* A collapsed sheet shows only the warning and the action row; the
+            `pc-sheet-more` wrappers are `display: contents` everywhere else. */}
+        <div className="pc-sheet-more">
+          {item.type === 'security-camera' && (
+            <CameraModelCard
+              modelId={item.cctvModelId ?? ''}
+              fov={item.visionFov ?? 70}
+              range={item.visionRange ?? 7}
+              onPickModel={(modelId) => {
+                const model = getCctvModel(modelId);
+                if (model) {
+                  actions.updateItem(item.id, {
+                    cctvModelId: model.id,
+                    visionFov: model.fov,
+                    visionRange: model.range,
+                  });
+                } else {
+                  actions.updateItem(item.id, { cctvModelId: '' });
+                }
+              }}
+              onSetFov={(value) => actions.updateItem(item.id, { visionFov: value, cctvModelId: '' })}
+              onSetRange={(value) => actions.updateItem(item.id, { visionRange: value, cctvModelId: '' })}
+            />
+          )}
 
-        {item.type === 'security-camera' && (
-          <button
-            type="button"
-            onClick={() => props.onToggleCameraBracket(item.id)}
-            aria-pressed={item.cameraBracket === true}
-            disabled={item.locked}
-            title={item.locked ? 'Locked — unlock to change the mount' : undefined}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 8,
-              padding: '8px 10px',
-              borderRadius: 8,
-              cursor: item.locked ? 'not-allowed' : 'pointer',
-              opacity: item.locked ? 0.5 : 1,
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: item.cameraBracket ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
-              color: 'inherit',
-              textAlign: 'left',
-              font: 'inherit',
-            }}
-          >
-            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 12, fontWeight: 600 }}>Stand-off bracket</span>
-              <span style={{ fontSize: 10.5, opacity: 0.7 }}>
-                {item.cameraBracket
-                  ? 'On its arm — pan left/right freely'
-                  : 'Flush mount — Rotate flips in/out only'}
+          {item.type === 'security-camera' && (
+            <button
+              type="button"
+              onClick={() => props.onToggleCameraBracket(item.id)}
+              aria-pressed={item.cameraBracket === true}
+              disabled={item.locked}
+              title={item.locked ? 'Locked — unlock to change the mount' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '8px 10px',
+                borderRadius: 8,
+                cursor: item.locked ? 'not-allowed' : 'pointer',
+                opacity: item.locked ? 0.5 : 1,
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: item.cameraBracket ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
+                color: 'inherit',
+                textAlign: 'left',
+                font: 'inherit',
+              }}
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>Stand-off bracket</span>
+                <span style={{ fontSize: 10.5, opacity: 0.7 }}>
+                  {item.cameraBracket
+                    ? 'On its arm — pan left/right freely'
+                    : 'Flush mount — Rotate flips in/out only'}
+                </span>
               </span>
-            </span>
-            <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.9 }}>
-              {item.cameraBracket ? 'ON' : 'OFF'}
-            </span>
-          </button>
-        )}
+              <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.9 }}>
+                {item.cameraBracket ? 'ON' : 'OFF'}
+              </span>
+            </button>
+          )}
+
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
           <ActionTile
@@ -265,80 +296,128 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {DIMENSIONS.map((dimension) => (
-            <SliderRow
-              key={dimension.key}
-              label={dimension.label}
-              min={dimension.min}
-              max={dimension.max}
-              step={0.1}
-              value={item[dimension.key]}
-              format={(v) => `${v.toFixed(2)} m`}
-              onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
-              labelWidth={14}
-              uppercaseLabel={false}
-              disabled={item.locked}
-              title={item.locked ? 'Locked — unlock to resize' : undefined}
+        <div className="pc-sheet-more">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {DIMENSIONS.map((dimension) => (
+              <SliderRow
+                key={dimension.key}
+                label={dimension.label}
+                min={dimension.min}
+                max={dimension.max}
+                step={0.1}
+                value={item[dimension.key]}
+                format={(v) => `${v.toFixed(2)} m`}
+                onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
+                labelWidth={14}
+                uppercaseLabel={false}
+                disabled={item.locked}
+                title={item.locked ? 'Locked — unlock to resize' : undefined}
+              />
+            ))}
+          </div>
+
+          {item.type === 'sofa' && (
+            <SofaShapeSegmented
+              value={item.sofaShape ?? 'standard'}
+              onChange={(shape) => actions.setSofaShape(item.id, shape)}
             />
-          ))}
+          )}
+
+          {(item.isWiFiAccessPoint || item.isCCTV) && (
+            <SliderRow
+              label={item.isWiFiAccessPoint ? 'Signal' : 'Coverage'}
+              value={item.signalRange ?? (item.isWiFiAccessPoint ? 10 : 8)}
+              min={2}
+              max={item.isWiFiAccessPoint ? 20 : 15}
+              step={0.5}
+              format={(v) => `${v.toFixed(1)} m`}
+              onChange={(value) => actions.setSignalRange(item.id, value)}
+            />
+          )}
+
+          <ColorSwatchPicker
+            variant="glass"
+            value={item.color}
+            swatches={COLOR_SWATCHES.slice(0, 8)}
+            recent={recentColors.slice(0, 6)}
+            onChange={(color) => actions.setColor(item.id, color)}
+            onCommit={(color) => pushColor(color)}
+          />
+
+          <button
+            type="button"
+            onClick={() => props.onRemove(item.id)}
+            className="pc-tile"
+            style={{
+              width: '100%',
+              height: 34,
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              color: 'var(--pc-demolish)',
+              borderColor: 'rgba(228,82,72,0.5)',
+              background: 'rgba(228,82,72,0.10)',
+              fontFamily: 'var(--pc-font-display)',
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: 'var(--pc-tr-caps)',
+              textTransform: 'uppercase',
+            }}
+          >
+            <Icon name="demolish" size={16} />
+            Demolish
+          </button>
         </div>
-
-        {item.type === 'sofa' && (
-          <SofaShapeSegmented
-            value={item.sofaShape ?? 'standard'}
-            onChange={(shape) => actions.setSofaShape(item.id, shape)}
-          />
-        )}
-
-        {(item.isWiFiAccessPoint || item.isCCTV) && (
-          <SliderRow
-            label={item.isWiFiAccessPoint ? 'Signal' : 'Coverage'}
-            value={item.signalRange ?? (item.isWiFiAccessPoint ? 10 : 8)}
-            min={2}
-            max={item.isWiFiAccessPoint ? 20 : 15}
-            step={0.5}
-            format={(v) => `${v.toFixed(1)} m`}
-            onChange={(value) => actions.setSignalRange(item.id, value)}
-          />
-        )}
-
-        <ColorSwatchPicker
-          variant="glass"
-          value={item.color}
-          swatches={COLOR_SWATCHES.slice(0, 8)}
-          recent={recentColors.slice(0, 6)}
-          onChange={(color) => actions.setColor(item.id, color)}
-          onCommit={(color) => pushColor(color)}
-        />
-
-        <button
-          type="button"
-          onClick={() => props.onRemove(item.id)}
-          className="pc-tile"
-          style={{
-            width: '100%',
-            height: 34,
-            borderRadius: 10,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            color: 'var(--pc-demolish)',
-            borderColor: 'rgba(228,82,72,0.5)',
-            background: 'rgba(228,82,72,0.10)',
-            fontFamily: 'var(--pc-font-display)',
-            fontWeight: 700,
-            fontSize: 12,
-            letterSpacing: 'var(--pc-tr-caps)',
-            textTransform: 'uppercase',
-          }}
-        >
-          <Icon name="demolish" size={16} />
-          Demolish
-        </button>
       </div>
     </div>
+  );
+}
+
+/** Vertical travel on the handle that counts as a swipe rather than a tap. */
+const SWIPE_PX = 16;
+
+/**
+ * The bottom sheet's grab handle (phones and short screens; hidden by CSS
+ * elsewhere). A tap toggles; a swipe up expands, a swipe down collapses.
+ */
+function SheetHandle({
+  expanded,
+  onExpandedChange,
+}: {
+  expanded: boolean;
+  onExpandedChange(next: boolean): void;
+}): JSX.Element {
+  const swipe = useRef<{ y: number; handled: boolean } | null>(null);
+  const label = expanded ? 'Show fewer options' : 'Show all options';
+  return (
+    <button
+      type="button"
+      className="pc-sheet-handle"
+      aria-expanded={expanded}
+      aria-label={label}
+      title={label}
+      onPointerDown={(event) => {
+        swipe.current = { y: event.clientY, handled: false };
+      }}
+      onPointerUp={(event) => {
+        const start = swipe.current;
+        if (!start) return;
+        const dy = event.clientY - start.y;
+        if (Math.abs(dy) < SWIPE_PX) return;
+        start.handled = true;
+        onExpandedChange(dy < 0);
+      }}
+      onClick={() => {
+        const start = swipe.current;
+        swipe.current = null;
+        if (start?.handled) return;
+        onExpandedChange(!expanded);
+      }}
+    >
+      <span aria-hidden className="pc-sheet-handle__bar" />
+    </button>
   );
 }
 

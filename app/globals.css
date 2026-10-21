@@ -460,3 +460,192 @@ button {
     font-size: 16px !important;
   }
 }
+
+/* ================================================================
+   Overlays (mobile sprint)
+   The item editor, the toasts, the save notices and the minimap on
+   small screens. "Compact" below means (max-width: 768px) or
+   (max-height: 500px), COMPACT_OVERLAY_QUERY in lib/overlay-queue.ts;
+   the header-stats query (max-width: 1100px) or (max-height: 500px)
+   is HEADER_HIDDEN_QUERY there. Keep the three in step.
+   ================================================================ */
+
+/* Bottom-sheet pieces of the item popover: inert on large screens. */
+.pc-sheet-handle {
+  display: none;
+}
+.pc-sheet-more {
+  display: contents;
+}
+
+/* The minimap shares the top-right corner with the item popover (296px
+   wide at right: 16px); step left of it while an item is selected (#390). */
+.pc-minimap[data-beside-popover] {
+  right: 320px;
+}
+
+/* One column for the save failed / changed-in-another-tab notices (#385)
+   and the toasts, used where the header stats are hidden
+   (panels/overlay-stack.tsx). Its `top` is set from the chrome above it;
+   --pc-overlay-top is the floor for that. */
+.pc-overlay-stack {
+  position: fixed;
+  top: var(--pc-overlay-top, 148px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  pointer-events: none;
+}
+.pc-overlay-stack:empty {
+  display: none;
+}
+.pc-overlay-stack__alert,
+.pc-overlay-stack__toast {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+.pc-overlay-stack__alert {
+  order: 0;
+}
+.pc-overlay-stack__toast {
+  order: 1;
+}
+.pc-overlay-stack__alert > *,
+.pc-overlay-stack__toast > * {
+  pointer-events: auto;
+  max-width: 100%;
+}
+/* Notices that must not be missed get an opaque base over the scene. */
+.pc-overlay-stack__alert > * {
+  background-color: rgba(28, 36, 44, 0.88) !important;
+  backdrop-filter: blur(8px);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px), (max-height: 500px) {
+  /* :where() keeps this at zero specificity, so a :root rule in the HUD
+     blocks can change it without depending on source order. */
+  :where(:root) {
+    --pc-overlay-top: 8px;
+  }
+
+  /* Item popover: a bottom sheet. Collapsed it is the handle, the header
+     and the action row, so the selected item stays in view above it; the
+     handle expands it to the full editor, below the overlay stack. */
+  .pc-item-popover {
+    top: auto !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: min(60vh, calc(100vh - 240px)) !important;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden !important;
+    border-radius: 16px 16px 0 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  }
+  .pc-item-popover > header {
+    padding: 0 12px 8px !important;
+    flex-shrink: 0;
+  }
+  .pc-item-popover__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none !important;
+    padding: 8px 12px 10px !important;
+    gap: 10px !important;
+    overscroll-behavior: contain;
+  }
+  .pc-item-popover[data-sheet='collapsed'] .pc-sheet-more {
+    display: none;
+  }
+  .pc-sheet-handle {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .pc-sheet-handle__bar {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--pc-paper-soft);
+    opacity: 0.7;
+  }
+  .pc-sheet-handle:focus-visible .pc-sheet-handle__bar {
+    background: var(--pc-cyan-glow);
+    opacity: 1;
+  }
+}
+
+/* Phones: a smaller minimap in its corner under the pills, so it clears
+   the catalog (#308); it stays put while an item is selected, the sheet
+   being at the bottom, and makes way for the expanded sheet. */
+@media (max-width: 768px) {
+  .pc-minimap,
+  .pc-minimap[data-beside-popover] {
+    right: 8px !important;
+    padding: 6px !important;
+  }
+  .pc-minimap canvas {
+    width: 132px !important;
+    height: 96px !important;
+  }
+  .pc-minimap p {
+    margin-bottom: 2px !important;
+  }
+  html[data-sheet-open='expanded'] .pc-minimap {
+    display: none;
+  }
+}
+
+/* Landscape phones and short windows: the corners belong to the title
+   badge, the pills and the HUD columns, so the minimap shrinks into the
+   top centre, and the item sheet keeps to the right so the scene stays
+   visible beside it. */
+@media (max-height: 500px) {
+  .pc-minimap,
+  .pc-minimap[data-beside-popover] {
+    top: 64px !important;
+    right: auto !important;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px !important;
+  }
+  .pc-minimap canvas {
+    width: 100px !important;
+    height: 72px !important;
+  }
+  .pc-minimap p {
+    display: none;
+  }
+  /* Room for the collapsed sheet (~135px) whatever the height. */
+  .pc-item-popover {
+    max-height: max(140px, calc(100vh - 120px)) !important;
+  }
+}
+@media (max-height: 500px) and (min-width: 560px) {
+  .pc-item-popover {
+    left: auto !important;
+    width: min(400px, 100%) !important;
+    border-radius: 16px 0 0 0 !important;
+  }
+}

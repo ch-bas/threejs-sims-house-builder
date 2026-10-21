@@ -1,8 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { noticeDuration, subscribeNotices, type Notice, type NoticeTone } from '../lib/editor-notices';
+import {
+  COMPACT_OVERLAY_QUERY,
+  enqueueNewestFirst,
+  HEADER_HIDDEN_QUERY,
+  MAX_QUEUED_NOTICES,
+  queueHead,
+  statusToastInSlot,
+} from '../lib/overlay-queue';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+import { OverlayStackPortal } from './overlay-stack';
 
 /** The newest few stay visible; older ones drop off the end. */
 const MAX_VISIBLE = 3;
@@ -20,6 +30,13 @@ const TONES: Record<NoticeTone, { color: string; icon: PlotcraftIconName }> = {
  */
 export function StatusToastHost(): JSX.Element | null {
   const [notices, setNotices] = useState<readonly Notice[]>([]);
+  // Phones and short screens: one notice at a time in the shared slot under
+  // the top pills, the rest queued. Wherever the header stats are hidden the
+  // notices join the overlay stack, under the save-failed notice (#385).
+  const compact = useMediaQuery(COMPACT_OVERLAY_QUERY);
+  const stacked = useMediaQuery(HEADER_HIDDEN_QUERY);
+  const compactRef = useRef(compact);
+  compactRef.current = compact;
 
   const dismiss = useCallback((id: number) => {
     setNotices((current) => current.filter((notice) => notice.id !== id));
@@ -28,12 +45,32 @@ export function StatusToastHost(): JSX.Element | null {
   useEffect(
     () =>
       subscribeNotices((notice) => {
-        setNotices((current) => [notice, ...current].slice(0, MAX_VISIBLE));
+        const limit = compactRef.current ? MAX_QUEUED_NOTICES : MAX_VISIBLE;
+        setNotices((current) => enqueueNewestFirst(current, notice, limit));
       }),
     []
   );
 
+  // Achievements wait while a notice holds the single slot.
+  const holdsSlot = compact && notices.length > 0;
+  useEffect(() => {
+    statusToastInSlot.set(holdsSlot);
+    return () => statusToastInSlot.set(false);
+  }, [holdsSlot]);
+
   if (notices.length === 0) return null;
+
+  if (stacked) {
+    const head = queueHead(notices);
+    const shown = compact ? (head ? [head] : []) : notices.slice(0, MAX_VISIBLE);
+    return (
+      <OverlayStackPortal slot="toast">
+        {shown.map((notice) => (
+          <StatusToast key={notice.id} notice={notice} onDismiss={dismiss} />
+        ))}
+      </OverlayStackPortal>
+    );
+  }
 
   return (
     <div
