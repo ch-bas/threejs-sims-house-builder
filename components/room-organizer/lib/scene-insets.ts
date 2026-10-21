@@ -141,6 +141,11 @@ export interface Frame {
   /** The box's projected size on screen, in CSS pixels. */
   extentWidth: number;
   extentHeight: number;
+  /**
+   * The larger projected side of the box's floor face, in CSS pixels: the
+   * footprint, which always shows, while the walls above may be cut away.
+   */
+  floorExtent: number;
 }
 
 const DEFAULT_MARGIN = 0.08;
@@ -202,23 +207,33 @@ export function frameBox(input: FrameInput): Frame {
   // Projected size: each corner's offset from the projection centre, in px.
   const xs: number[] = [];
   const ys: number[] = [];
+  const floorXs: number[] = [];
+  const floorYs: number[] = [];
   for (const x of [boxMin[0], boxMax[0]]) {
     for (const y of [boxMin[1], boxMax[1]]) {
       for (const z of [boxMin[2], boxMax[2]]) {
         const q: Vec3 = [x - target[0], y - target[1], z - target[2]];
         const depth = distance - dot(q, back);
-        xs.push(dot(q, right) / depth / tanPerPx);
-        ys.push(dot(q, up) / depth / tanPerPx);
+        const px = dot(q, right) / depth / tanPerPx;
+        const py = dot(q, up) / depth / tanPerPx;
+        xs.push(px);
+        ys.push(py);
+        if (y === boxMin[1]) {
+          floorXs.push(px);
+          floorYs.push(py);
+        }
       }
     }
   }
+  const span = (values: number[]) => Math.max(...values) - Math.min(...values);
 
   return {
     position: [target[0] + back[0] * distance, target[1] + back[1] * distance, target[2] + back[2] * distance],
     target,
     ...regionViewOffset(w, h, region),
-    extentWidth: Math.max(...xs) - Math.min(...xs),
-    extentHeight: Math.max(...ys) - Math.min(...ys),
+    extentWidth: span(xs),
+    extentHeight: span(ys),
+    floorExtent: Math.max(span(floorXs), span(floorYs)),
   };
 }
 
@@ -232,12 +247,14 @@ export const MIN_HOUSE_SHARE = 0.35;
 
 /**
  * `frameBox` in the visible region, falling back to the whole canvas when
- * the house would come out smaller than `MIN_HOUSE_SHARE` of the short side.
+ * the house's footprint would come out smaller than `MIN_HOUSE_SHARE` of the
+ * short side. The footprint, not the whole box: with the walls cut away the
+ * box's top is empty air, and the house on screen is about its floor's size.
  */
 export function frameInRegion(input: FrameInput): Frame & { fellBack: boolean } {
   const framed = frameBox(input);
   const shortSide = Math.min(input.canvasWidth, input.canvasHeight);
-  if (Math.max(framed.extentWidth, framed.extentHeight) >= shortSide * MIN_HOUSE_SHARE) {
+  if (framed.floorExtent >= shortSide * MIN_HOUSE_SHARE) {
     return { ...framed, fellBack: false };
   }
   const whole = { left: 0, top: 0, right: input.canvasWidth, bottom: input.canvasHeight };

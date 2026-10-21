@@ -149,6 +149,31 @@ describe('frameBox extent', () => {
     const bounds = projectedBounds(input);
     expect(frame.extentWidth).toBeCloseTo(bounds.right - bounds.left, 3);
     expect(frame.extentHeight).toBeCloseTo(bounds.bottom - bounds.top, 3);
+    // The floor face is part of the box, so never larger than it.
+    expect(frame.floorExtent).toBeLessThanOrEqual(Math.max(frame.extentWidth, frame.extentHeight) + 1e-9);
+    expect(frame.floorExtent).toBeGreaterThan(0);
+  });
+
+  it('measures the floor face alone, which matters for a tall box', () => {
+    const tall = frameBox({
+      canvasWidth: 390,
+      canvasHeight: 664,
+      region: rect(0, 0, 390, 664),
+      fovDeg: 75,
+      boxMin: [-4, 0, -4],
+      boxMax: [4, 12, 4],
+      direction: [0, 1, 1],
+    });
+    const floor = projectedBounds({
+      canvasWidth: 390,
+      canvasHeight: 664,
+      region: rect(0, 0, 390, 664),
+      fovDeg: 75,
+      boxMin: [-4, 0, -4],
+      boxMax: [4, 12, 4],
+      direction: [0, 1, 1],
+    });
+    expect(tall.floorExtent).toBeLessThan(Math.max(floor.right - floor.left, floor.bottom - floor.top));
   });
 });
 
@@ -174,7 +199,7 @@ describe('frameInRegion', () => {
   it('keeps the region when the house comes out a usable size', () => {
     const framed = frameInRegion(base);
     expect(framed.fellBack).toBe(false);
-    expect(Math.max(framed.extentWidth, framed.extentHeight)).toBeGreaterThanOrEqual(342 * MIN_HOUSE_SHARE);
+    expect(framed.floorExtent).toBeGreaterThanOrEqual(342 * MIN_HOUSE_SHARE);
   });
 
   it('falls back to the whole canvas when the region would frame a thumbnail', () => {
