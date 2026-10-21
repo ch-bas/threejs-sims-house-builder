@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.18.0] - 2026-10-21
+
+The **Performance & engine** milestone, second wave: a lighter engine download, an editor that redraws only what changed, and loading that fails cleanly instead of looping.
+
+### Changed
+- **Smaller download:** the 3D engine now ships only the parts of Three.js the app uses, about 28 KB lighter gzipped ([#411](https://github.com/ch-bas/threejs-sims-house-builder/issues/411))
+- **Edits stay light with the side panel around:** moving, nudging or recolouring an item no longer redraws the side panel, the bottom bar or the catalog. A drag end now costs about a fifth of the work it did, and the "Saved" indicator updates on its own ([#3](https://github.com/ch-bas/threejs-sims-house-builder/issues/3))
+- **Shorter share links:** positions are rounded to the millimetre, so links for freely placed houses are 17–46% shorter and a 300-item house fits again. Rounding never moves an item into a wall or another item ([#192](https://github.com/ch-bas/threejs-sims-house-builder/issues/192))
+- Add `?debug` to the address to see live renderer counters (draw calls, triangles, textures, programs) ([#192](https://github.com/ch-bas/threejs-sims-house-builder/issues/192))
+
+### Fixed
+- Sun shadows: no more speckles on sunlit walls, and no false shadow on the ground beyond the road ([#187](https://github.com/ch-bas/threejs-sims-house-builder/issues/187))
+- If part of the app keeps failing to load (for example right after an update), the page now stops on "Couldn't load the app" with a Reload button, instead of reloading over and over ([#499](https://github.com/ch-bas/threejs-sims-house-builder/issues/499))
+- A drag interrupted mid-press no longer turns the rest of the gesture into a camera spin
+
 ## [1.17.0] - 2026-10-20
 
 The **Performance & engine** milestone, first wave: edits rebuild only what changed, the scenery draws in far fewer calls, and the app loads faster with nothing fetched from outside.
