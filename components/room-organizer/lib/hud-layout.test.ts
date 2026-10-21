@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogPageSize, COMPACT_DOCK_QUERY, hasContentBelow, welcomeTips } from './hud-layout';
+import { catalogPageSize, COMPACT_DOCK_QUERY, scrollCue, welcomeTips } from './hud-layout';
 
 describe('catalogPageSize', () => {
   it('keeps the paged grid on desktop', () => {
@@ -11,15 +11,15 @@ describe('catalogPageSize', () => {
   });
 });
 
-describe('hasContentBelow', () => {
-  it('is true while the column hides content under its bottom edge', () => {
-    expect(hasContentBelow(0, 600, 800)).toBe(true);
-    expect(hasContentBelow(150, 600, 800)).toBe(true);
+describe('scrollCue', () => {
+  it('reports content hidden past either edge', () => {
+    expect(scrollCue(0, 600, 800)).toEqual({ scrollable: true, before: false, after: true });
+    expect(scrollCue(150, 600, 800)).toEqual({ scrollable: true, before: true, after: true });
+    expect(scrollCue(200, 600, 800)).toEqual({ scrollable: true, before: true, after: false });
   });
-  it('is false at the end and when everything fits, sub-pixel slack included', () => {
-    expect(hasContentBelow(200, 600, 800)).toBe(false);
-    expect(hasContentBelow(0, 600, 600)).toBe(false);
-    expect(hasContentBelow(199.5, 600, 800)).toBe(false);
+  it('is quiet when everything fits, sub-pixel slack included', () => {
+    expect(scrollCue(0, 600, 600)).toEqual({ scrollable: false, before: false, after: false });
+    expect(scrollCue(0.5, 600, 600.5)).toEqual({ scrollable: false, before: false, after: false });
   });
 });
 

@@ -1,9 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { COMPACT_DOCK_QUERY } from '../lib/hud-layout';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+
+/** Fold state owned by the HUD, so only one wall panel unfolds at a time. */
+export interface PanelFold {
+  open: boolean;
+  onToggle(): void;
+}
 
 export interface DockFold {
   /** The HUD is docked (phone): the panel folds to its header. */
@@ -18,10 +23,9 @@ export interface DockFold {
  * on stays in view (#395); a tap on the header unfolds one. Off the dock
  * they are always open and show no toggle.
  */
-export function useDockFold(initiallyUnfolded = false): DockFold {
+export function useDockFold(fold: PanelFold | undefined): DockFold {
   const docked = useMediaQuery(COMPACT_DOCK_QUERY);
-  const [unfolded, setUnfolded] = useState(initiallyUnfolded);
-  return { docked, open: !docked || unfolded, toggle: () => setUnfolded((current) => !current) };
+  return { docked, open: !docked || (fold?.open ?? true), toggle: () => fold?.onToggle() };
 }
 
 export interface DockFoldButtonProps {
@@ -44,7 +48,7 @@ export function DockFoldButton({ label, icon, open, onToggle }: DockFoldButtonPr
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        minHeight: 28,
+        minHeight: 40,
         background: 'none',
         border: 'none',
         cursor: 'pointer',

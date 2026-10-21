@@ -105,9 +105,13 @@
 .pc-item-popover ~ .pc-touch-controls[data-minimap] {
   right: 322px;
 }
-/* The phone dock's ⋯ toggle (mode panel) exists only in the dock. */
+/* The phone dock's ⋯ toggle and 2D/3D switch (mode panel) exist only in
+   the dock. */
 .pc-mode-more {
   display: none;
+}
+.pc-mode-dock-only {
+  display: none !important;
 }
 /* A column taller than its room scrolls (#426): it takes the wheel over its
    gaps too, not just over a panel. */
@@ -121,7 +125,7 @@
   bottom: 0;
   z-index: 1;
 }
-.pc-hud-left[data-more-below] .pc-build-tools {
+.pc-hud-left[data-more-after] .pc-build-tools {
   box-shadow: 0 -12px 18px -10px rgba(0, 0, 0, 0.45), var(--pc-shadow-glass);
 }
 /* Not enough height for the column above the mode panel: lay it flat. */
@@ -229,29 +233,30 @@
    docks as a slim bar on the bottom edge: the build-tool chips, one
    scrolling row of catalog tiles, and a one-row mode bar whose secondary
    actions fold behind ⋯. The top pills shrink to one row. The queries
-   match lib/hud-layout.ts.
+   match lib/hud-layout.ts. Every control is at least 40px and every
+   label at least 10px; the safe-area insets keep it clear of a notch.
    ================================================================ */
 @media (max-width: 768px), (max-width: 1100px) and (max-height: 500px) {
   /* Top-left: the sidebar toggle alone; the drawer shows the house name. */
   .pc-lot-badge {
-    top: 8px !important;
-    left: 8px !important;
+    top: calc(8px + env(safe-area-inset-top, 0px)) !important;
+    left: calc(8px + env(safe-area-inset-left, 0px)) !important;
     gap: 4px !important;
   }
   .pc-lot-badge__name {
     display: none !important;
   }
   .pc-lot-badge > button {
-    padding: 11px !important;
+    padding: 13px !important;
   }
 
   /* Top-right: floor and wall pills side by side, wrapping only when a
      tall building's floor buttons need it. The box hugs the pills and lets
      taps through around them. */
   .pc-top-right {
-    top: 8px !important;
-    right: 8px !important;
-    max-width: calc(100vw - 72px);
+    top: calc(8px + env(safe-area-inset-top, 0px)) !important;
+    right: calc(8px + env(safe-area-inset-right, 0px)) !important;
+    max-width: calc(100vw - 72px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
     flex-direction: row !important;
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -264,42 +269,91 @@
   }
   .pc-floor-pill,
   .pc-wall-pill {
-    padding: 4px !important;
+    padding: 3px !important;
     gap: 4px !important;
   }
-  .pc-wall-pill .pc-tile {
-    padding: 4px 7px !important;
+  .pc-floor-pill > div,
+  .pc-wall-pill > div {
+    padding: 2px !important;
   }
-  @media (max-width: 359px) {
+  .pc-floor-pill .pc-tile,
+  .pc-wall-pill .pc-tile {
+    min-width: 40px !important;
+    height: 40px !important;
+    font-size: 11px !important;
+  }
+  .pc-floor-pill .pc-tile {
+    width: 40px !important;
+  }
+  /* "All" (show every floor) is a word, not a digit. */
+  .pc-floor-pill > button.pc-tile:last-child:not([aria-label]) {
+    width: auto !important;
+    padding: 0 10px !important;
+  }
+  .pc-wall-pill .pc-tile {
+    padding: 4px 8px !important;
+  }
+  @media (max-width: 400px) {
     .pc-wall-pill .pc-tile svg {
       display: none;
     }
   }
+  @media (max-width: 359px) {
+    .pc-top-right {
+      max-width: calc(100vw - 64px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    }
+    .pc-floor-pill,
+    .pc-wall-pill {
+      gap: 2px !important;
+    }
+    .pc-wall-pill .pc-tile {
+      padding: 4px 5px !important;
+      font-size: 10px !important;
+    }
+  }
 
-  /* Top-centre chips (selection, distance, wall drawing, zone name) and
-     status toasts sit under the pills, wherever they end (#308). */
+  /* Top-centre chips (selection, distance, wall drawing, zone name) sit
+     under the pills, wherever they end (#308). */
   .pc-top-chip {
     top: calc(var(--pc-top-pills-bottom, 56px) + 8px) !important;
     max-width: calc(100vw - 16px);
   }
 
-  /* Left column: the wall tool's panels (folded to their headers until
-     tapped, #395) share rows above the chip row. */
+  /* Left column: no scroller here. The wall tool's panels (folded to
+     their headers until tapped, one at a time, #395) share rows above the
+     chip row and scroll on their own, so the chips — and the Walls chip
+     that ends the tool — never scroll away. */
   .pc-hud-left {
     flex-direction: row !important;
     flex-wrap: wrap !important;
     align-items: flex-start !important;
     gap: 4px !important;
     padding-right: 0 !important;
+    max-height: none;
+    overflow: visible !important;
   }
   .pc-hud-left > .pc-glass {
     width: auto !important;
     max-width: 100% !important;
     flex: 1 1 100%;
   }
+  .pc-hud-left .pc-build-tools {
+    position: static;
+    box-shadow: var(--pc-shadow-glass);
+  }
   .pc-hud-left > .pc-dock-folded {
     flex: 1 1 140px;
-    padding: 4px 10px !important;
+    padding: 2px 10px !important;
+  }
+  .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded) {
+    max-height: 38vh;
+    max-height: 38dvh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .pc-hud-left > .pc-wall-paint[data-more-after] {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 36px), transparent);
   }
 
   /* Build tools: one row of labelled chips; the label says which category
@@ -308,39 +362,64 @@
     padding: 4px !important;
   }
   .pc-build-tools-grid {
-    padding: 3px !important;
+    padding: 0 !important;
+    background: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    gap: 4px !important;
   }
   .pc-build-tools-grid .pc-tile {
-    width: 60px !important;
-    min-width: 60px !important;
-    height: 40px !important;
+    width: 72px !important;
+    min-width: 72px !important;
+    height: 42px !important;
     padding: 3px 2px !important;
     gap: 2px !important;
   }
   .pc-build-tools-label {
     display: block !important;
+    font-size: 10px !important;
+    letter-spacing: 0.02em !important;
+  }
+
+  /* Sideways scrollers fade at an edge with more beyond it. */
+  .pc-build-tools-grid,
+  .pc-catalog-row {
+    --pc-fade-start: 0px;
+    --pc-fade-end: 0px;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--pc-fade-start), #000 calc(100% - var(--pc-fade-end)), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 var(--pc-fade-start), #000 calc(100% - var(--pc-fade-end)), transparent);
+  }
+  .pc-build-tools-grid[data-more-before],
+  .pc-catalog-row[data-more-before] {
+    --pc-fade-start: 32px;
+  }
+  .pc-build-tools-grid[data-more-after],
+  .pc-catalog-row[data-more-after] {
+    --pc-fade-end: 32px;
   }
 
   /* Catalog: one scrolling row of named tiles. */
   .pc-bottom-hud .pc-catalog-strip {
     width: 100% !important;
     max-width: 100% !important;
-    padding: 5px !important;
+    padding: 4px !important;
   }
   .pc-catalog-row::-webkit-scrollbar {
     display: none;
   }
 
   /* Mode bar: Undo, Redo, the mode pill and ⋯ in one row. ⋯ opens the
-     furniture value and the other actions above it. */
+     furniture value and the other actions above it. It stacks over the
+     chip row, so the View menu it opens is never painted under them. */
   .pc-mode-panel {
     width: 100% !important;
-    padding: 5px !important;
+    padding: 4px !important;
     display: grid !important;
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: 'primary pill more';
     align-items: center !important;
     gap: 4px !important;
+    z-index: 3;
   }
   .pc-mode-panel[data-more-open] {
     grid-template-areas:
@@ -363,21 +442,26 @@
   .pc-mode-panel > div:first-child .pc-hud-header {
     display: inline !important;
     margin-left: 6px !important;
-    font-size: 9px !important;
+    font-size: 10px !important;
   }
   .pc-mode-pill {
     grid-area: pill;
     gap: 2px !important;
-    padding: 3px !important;
+    padding: 2px !important;
   }
   .pc-mode-pill__cell {
     min-width: 0;
-    height: 36px;
+    height: 44px;
     padding: 3px 2px !important;
   }
   .pc-mode-pill__cell .pc-mode-label {
-    font-size: 9px !important;
-    letter-spacing: 0.06em;
+    font-size: 10px !important;
+    letter-spacing: 0.04em;
+  }
+  @media (max-width: 359px) {
+    .pc-mode-pill__cell .pc-mode-label {
+      letter-spacing: 0;
+    }
   }
   .pc-mode-actions {
     display: contents !important;
@@ -393,18 +477,20 @@
   .pc-mode-panel[data-more-open] .pc-mode-actions-more {
     grid-area: tray;
     display: grid !important;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
     gap: 4px;
   }
   .pc-mode-actions .pc-tile,
   .pc-mode-more {
     width: 42px !important;
-    min-width: 42px !important;
-    height: 42px !important;
+    min-width: 40px !important;
+    height: 44px !important;
   }
   .pc-mode-actions-more .pc-tile {
     width: 100% !important;
-    min-width: 0 !important;
+  }
+  .pc-mode-panel[data-more-open] .pc-mode-dock-only {
+    display: flex !important;
   }
   .pc-mode-more {
     grid-area: more;
@@ -413,29 +499,43 @@
     justify-content: center;
     border-radius: 10px;
   }
-
-  /* The phone item sheet (data-sheet-open) needs the room: the catalog
-     and the build tools step aside while it is open; the mode bar stays. */
-  html[data-sheet-open] .pc-bottom-hud .pc-catalog-strip,
-  html[data-sheet-open] .pc-bottom-hud .pc-hud-left {
-    display: none !important;
+  /* The View menu opens upward from the mode bar: capped to the room
+     above it, it scrolls rather than running off the top. */
+  .pc-view-menu {
+    max-height: calc(var(--pc-mode-top, 100dvh) - var(--pc-top-pills-bottom, 60px) - 16px);
+    overflow-y: auto;
   }
 
-  /* Touch camera buttons: a slim column down the left edge, under the
-     sidebar toggle, clear of the minimap and the item sheet on the right. */
+  /* Touch camera buttons: down the left edge under the sidebar toggle,
+     clear of the minimap and the item sheet on the right. They never run
+     under the dock: when it grows (⋯ tray, an unfolded wall panel, a short
+     screen) the column wraps into a second one beside it. */
   .pc-touch-controls,
   .pc-touch-controls[data-minimap],
   .pc-item-popover ~ .pc-touch-controls,
   .pc-bottom-hud:has(.pc-wall-paint) ~ .pc-touch-controls {
-    top: 62px;
-    left: 8px;
+    top: calc(64px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
     right: auto;
-    flex-direction: column;
-    gap: 6px;
+    display: grid !important;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(auto-fit, 44px);
+    gap: 4px;
+    max-height: calc(var(--pc-dock-top, 100dvh) - 72px - env(safe-area-inset-top, 0px));
   }
   .pc-touch-controls .pc-tile {
-    width: 40px !important;
-    height: 40px !important;
+    width: 44px !important;
+    height: 44px !important;
+  }
+  /* An unfolded wall panel is for painting or stamping, not drawing: its
+     drawing hint steps aside for the touch buttons squeezed under the pills. */
+  .pc-world:has(.pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) .pc-wall-hint {
+    display: none !important;
+  }
+  /* Squeezed to one row by a tall dock, they can meet the tool chip under
+     the pills: the buttons win the tap. */
+  .pc-touch-controls {
+    z-index: 32 !important;
   }
 
   /* Constrain glass panels */
@@ -444,30 +544,35 @@
   }
 }
 
+/* The phone item sheet (data-sheet-open; the popover's own query) needs the
+   room: the catalog and the build tools step aside while it is open, and
+   the mode bar rides above it so Undo and Redo stay in reach. */
+@media (max-width: 768px), (max-height: 500px) {
+  html[data-sheet-open] .pc-bottom-hud .pc-catalog-strip,
+  html[data-sheet-open] .pc-bottom-hud .pc-hud-left {
+    display: none !important;
+  }
+  html[data-sheet-open] .pc-bottom-hud {
+    bottom: var(--pc-sheet-height, 133px) !important;
+  }
+}
+
 /* ================================================================
    Phones in portrait (≤768px): the dock stacks — chips, catalog row,
    mode bar — and hugs the bottom edge, so its box is only what it shows
-   (scene framing reads it as an occluder).
+   (scene framing reads its panels as occluders).
    ================================================================ */
 @media (max-width: 768px) {
   .pc-bottom-hud {
     flex-direction: column !important;
     justify-content: flex-end !important;
     align-items: stretch !important;
-    padding: 0 6px calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 0 calc(6px + env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) calc(6px + env(safe-area-inset-left, 0px)) !important;
     gap: 4px !important;
   }
-  /* Left column: the wall panels scroll above the chip row, which stays
-     pinned (sticky, from the ≤1100 rules) at the column's bottom. */
   .pc-hud-left {
     flex: 0 1 auto;
     min-height: 0;
-    max-height: 44vh;
-  }
-  /* Only the wall panels need the scroller; without them it would clip
-     the chip row's glass shadow to a hard rectangle. */
-  .pc-hud-left:not(:has(.pc-wall-paint)) {
-    overflow: visible !important;
   }
   .pc-bottom-hud .pc-catalog-strip,
   .pc-mode-panel {
@@ -583,23 +688,30 @@
       'tools tools'
       'catalog mode';
     align-items: end !important;
-    padding: 0 6px calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 0 calc(6px + env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) calc(6px + env(safe-area-inset-left, 0px)) !important;
     gap: 4px 6px !important;
   }
   .pc-hud-left {
     grid-area: tools;
     min-height: 0;
     max-width: 100%;
-    /* Clear of the top bar and the tool chip under it. */
-    max-height: calc(100vh - 190px);
   }
-  /* Unfolded wall panels side by side. */
+  /* Unfolded wall panels side by side, each scrolling within the room
+     between the top bar (and the tool chip under it) and the dock. */
   .pc-hud-left > .pc-glass:not(.pc-build-tools) {
     flex: 1 1 260px;
+  }
+  .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded) {
+    max-height: calc(100vh - 250px);
+    max-height: calc(100dvh - 250px);
   }
   /* The chip row only as wide as its chips: the scene shows beside it. */
   .pc-hud-left > .pc-build-tools {
     flex: 0 1 auto;
+  }
+  /* No height for both: the ⋯ tray folds the wall panels away. */
+  .pc-bottom-hud:has(.pc-mode-panel[data-more-open]) .pc-hud-left > .pc-glass:not(.pc-build-tools) {
+    display: none !important;
   }
   .pc-bottom-hud .pc-catalog-strip {
     grid-area: catalog;
@@ -608,13 +720,13 @@
   .pc-mode-panel {
     grid-area: mode;
     width: auto !important;
-    max-width: 360px;
+    max-width: 380px;
   }
   /* Undo the ≤500px icon strip: the dock keeps its labelled chips. */
   .pc-build-tools-grid .pc-tile {
-    width: 60px !important;
-    min-width: 60px !important;
-    height: 40px !important;
+    width: 72px !important;
+    min-width: 72px !important;
+    height: 42px !important;
     padding: 3px 2px !important;
   }
   .pc-build-tools-label {
@@ -625,11 +737,31 @@
   .pc-touch-controls[data-minimap],
   .pc-item-popover ~ .pc-touch-controls,
   .pc-bottom-hud:has(.pc-wall-paint) ~ .pc-touch-controls {
-    top: 8px;
-    left: 60px;
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    left: calc(60px + env(safe-area-inset-left, 0px));
     right: auto;
+    display: flex !important;
     flex-direction: row;
     gap: 4px;
+    max-height: none;
+  }
+}
+
+/* Short desktop-width windows with touch (≥1101px wide, ≤500px tall): the
+   pills go side by side so the stack clears the mode panel, and the touch
+   buttons sit in the top bar after the title badge rather than under the
+   pills. Desktop at ≥701px tall never gets here. */
+@media (min-width: 1101px) and (max-height: 500px) {
+  .pc-top-right {
+    flex-direction: row !important;
+    align-items: flex-start !important;
+  }
+  .pc-touch-controls,
+  .pc-touch-controls[data-minimap],
+  .pc-item-popover ~ .pc-touch-controls {
+    top: 16px;
+    left: 404px;
+    right: auto;
   }
 }
 

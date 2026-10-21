@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
+import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { Icon, iconForItem } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
 import { Minimap } from './minimap';
@@ -370,6 +372,8 @@ function StatusChip({
 }
 
 function ViewportOverlays(props: ViewportProps): JSX.Element {
+  // A finger taps and there is no Escape key on a phone.
+  const touch = useMediaQuery(COARSE_POINTER_QUERY);
   return (
     <>
       {!props.view2D && props.showMinimap && (
@@ -419,9 +423,13 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
             <StatusChip intent="info">
               <Icon name="ruler" size={14} />
               {props.measurementPointsPlaced === 0
-                ? 'Click a floor point to measure from · Esc to stop'
+                ? touch
+                  ? 'Tap a floor point to measure from'
+                  : 'Click a floor point to measure from · Esc to stop'
                 : props.measurementPointsPlaced === 1
-                ? 'Click a second point…'
+                ? touch
+                  ? 'Tap a second point…'
+                  : 'Click a second point…'
                 : `Distance: ${(props.measurementDistance ?? 0).toFixed(2)} m`}
             </StatusChip>
           </div>
@@ -431,7 +439,7 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
         <div
           // Top-centre like the other tool chips: the top-right corner is the
           // floor and wall pills, which covered it (#473).
-          className="pc-top-chip absolute left-1/2 pc-glass pc-glass--dark"
+          className="pc-top-chip pc-wall-hint absolute left-1/2 pc-glass pc-glass--dark"
           style={{
             top: 104,
             transform: 'translateX(-50%)',
@@ -457,7 +465,7 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
                 }}
               >
                 <Icon name="brick" size={14} />
-                Click to extend · Esc to stop
+                {touch ? 'Tap to extend · tap Walls to stop' : 'Click to extend · Esc to stop'}
               </div>
               {props.wallDrawStatus.currentLength !== undefined &&
                 props.wallDrawStatus.currentLength !== null && (
@@ -525,7 +533,7 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
               }}
             >
               <Icon name="brick" size={14} />
-              Click to place the first wall point
+              {touch ? 'Tap to place the first wall point' : 'Click to place the first wall point'}
             </div>
           )}
         </div>

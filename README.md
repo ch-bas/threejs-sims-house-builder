@@ -219,9 +219,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Responsive HUD**: explicit desktop, tablet and phone layouts. On a
   phone the HUD docks as a slim bottom bar — labelled build-tool chips, one
   scrolling row of named catalog tiles, and a one-row mode bar with Undo,
-  Redo and a ⋯ tray for the other actions — under a single row of top
-  pills, with touch camera buttons (Orbit, Center, In, Out, Fit) down the
-  left edge.
+  Redo and a ⋯ tray for the other actions and the 2D/3D switch — under a
+  single row of top pills, with touch camera buttons (Orbit, Pan, In, Out,
+  Fit) down the left edge. Controls are at least 40 px and labels at least
+  10 px; the safe-area insets keep it clear of a notch.
 - **Walkthrough HUD** with a centre reticle + WASD/Sprint/Esc help banner.
 - **Multi-select badge** floating at the top of the viewport when more
   than one item is selected.
@@ -363,7 +364,7 @@ components/
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
-    │   ├── hud-layout.ts                Phone-dock media queries, catalog page size, scroll cue, touch welcome tips
+    │   ├── hud-layout.ts                Phone-dock and sheet media queries, catalog page size, scroll cue, touch welcome tips
     │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement
     │   ├── custom-sets.ts               User-saved furniture sets: localStorage I/O + parser (#302)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
@@ -467,8 +468,9 @@ components/
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
     │   ├── use-pausable-timeout.ts      Countdown that pauses and resumes with the time left (toasts)
-    │   ├── use-scroll-cue.ts            data-scrollable / data-more-below on a scrolling HUD column (#426)
-    │   ├── use-bottom-edge-var.ts       Publishes an element's bottom edge as a CSS variable (top pills, #308)
+    │   ├── use-scroll-cue.ts            data-scrollable / data-more-before / -after on a HUD scroller (#426)
+    │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308)
+    │   ├── use-sheet-inset.ts           --pc-sheet-height while the phone item sheet is open (mode bar rides above it)
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
@@ -710,10 +712,17 @@ components/
   The mode panel's action buttons sit in two `display: contents` groups, so
   desktop keeps one grid while the dock lays out Undo/Redo and the ⋯ tray
   apart. The dock's panels, the top-right pills and the lot badge carry
-  `data-scene-occluder` for camera framing; while the phone item sheet is
-  open (`html[data-sheet-open]`) the catalog and build tools step aside.
-  Top-centre chips sit under `--pc-top-pills-bottom`, the measured bottom
-  of the top-right pills (#308). Desktop (≥1101 × ≥701) is untouched.
+  `data-scene-occluder` for camera framing — the painted panels, never a
+  wider transparent container. While the phone item sheet is open
+  (`html[data-sheet-open]`, under the sheet's own query) the catalog and
+  build tools step aside and the mode bar rides above the sheet
+  (`--pc-sheet-height`), so Undo and Redo stay in reach. Measured edges
+  place the rest: top-centre chips under `--pc-top-pills-bottom` (#308),
+  the touch buttons above `--pc-dock-top` (wrapping into a second column
+  when the dock grows), the View menu below `--pc-mode-top`. The wall
+  tool's panels fold to their headers, one unfolds at a time and scrolls
+  on its own, so the Walls chip that ends the tool never scrolls away.
+  Desktop (≥1101 × ≥701) is untouched where nothing overflows.
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure
@@ -741,7 +750,7 @@ components/
 - Walkthrough requires a click on the canvas to engage pointer lock.
 - The UI is responsive down to phone sizes — the HUD docks at the bottom,
   the item editor becomes a bottom sheet, the sidebar goes full-screen —
-  but walkthrough needs a keyboard, and the 2D plan has no touch toggle.
+  but walkthrough needs a keyboard.
 - No "rooms from enclosed walls" detection — interior walls are just
   drawn segments, not space-bounding entities.
 

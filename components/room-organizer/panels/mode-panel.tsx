@@ -2,6 +2,7 @@
 
 import { forwardRef, useCallback, useId, useRef, useState } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
+import { useEdgeVar } from '../hooks/use-edge-var';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
@@ -44,12 +45,17 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   // Docked on a phone, the action row folds behind ⋯ except Undo and Redo
   // (#395). The toggle is hidden at every other size.
   const [moreOpen, setMoreOpen] = useState(false);
+  // The View menu opens upward from here; in the dock it is capped to the
+  // room above this panel.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEdgeVar(panelRef, '--pc-mode-top', 'top');
   const viewButtonRef = useRef<HTMLButtonElement>(null);
   const viewMenuId = useId();
   const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
 
   return (
     <div
+      ref={panelRef}
       className="pointer-events-auto pc-glass pc-mode-panel"
       data-scene-occluder=""
       data-more-open={moreOpen ? '' : undefined}
@@ -157,6 +163,15 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
         />
         </div>
         <div className="pc-mode-actions-more" style={{ display: 'contents' }}>
+        {/* Touch has no 2 key: the dock's tray carries the 2D/3D switch.
+            Hidden elsewhere, where the key and the menus cover it. */}
+        <ActionButton
+          className="pc-mode-dock-only"
+          label={view.view2D ? 'Show 3D view' : 'Show 2D plan'}
+          icon={view.view2D ? 'box' : 'floor'}
+          active={view.view2D}
+          onClick={() => toggle('view2D')}
+        />
         {/* Lighting only exists in 3D — disable in the 2D top-down view like
             TimeOfDayPanel's twin button (#220). */}
         <ActionButton
@@ -242,6 +257,8 @@ interface ActionButtonProps {
   disabled?: boolean;
   /** Flip the glyph horizontally — Redo reuses the Undo arrow. */
   mirrorIcon?: boolean;
+  /** Extra class, e.g. a button that exists only in the phone dock. */
+  className?: string;
   /** For a button that opens a menu: whether it is open, and the menu's id. */
   expanded?: boolean;
   controls?: string;
@@ -249,7 +266,7 @@ interface ActionButtonProps {
 }
 
 const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton(
-  { icon, label, active, accent, disabled, mirrorIcon, expanded, controls, onClick },
+  { icon, label, active, accent, disabled, mirrorIcon, expanded, controls, onClick, className },
   ref
 ) {
   return (
@@ -262,7 +279,7 @@ const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(function A
       disabled={disabled}
       title={label}
       aria-label={label}
-      className={`pc-tile${active ? ' pc-tile--active' : ''}`}
+      className={`pc-tile${active ? ' pc-tile--active' : ''}${className ? ` ${className}` : ''}`}
       style={{
         width: '100%',
         minWidth: 36,

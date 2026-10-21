@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
+import { useScrollCue } from '../hooks/use-scroll-cue';
 import { Icon } from '../plotcraft/icon';
-import { DockFoldButton, useDockFold } from './dock-fold';
+import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
 import type {
   FloorPattern,
   WallId,
@@ -136,8 +137,8 @@ export interface WallPaintPanelProps {
   /** Optional pre-selected wall (from 3D click) — pre-targets the Apply-to chip. */
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
   onSelectedWallChange(wall: { id: string; kind: 'exterior' | 'interior' } | null): void;
-  /** Open unfolded on a phone: a tapped wall asks for paint, the wall tool for the floor. */
-  unfolded?: boolean;
+  /** Folded or not in the phone dock; the HUD unfolds one wall panel at a time. */
+  fold?: PanelFold;
 }
 
 /**
@@ -148,7 +149,10 @@ export interface WallPaintPanelProps {
  */
 export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
   const { activeFloor: floor, actions } = useRoomEditor();
-  const fold = useDockFold(props.unfolded);
+  const fold = useDockFold(props.fold);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Unfolded in the dock the panel scrolls on its own: say so.
+  useScrollCue(rootRef, `${fold.open}`);
 
   const applyWallColor = (target: WallId | 'all', color: string) => {
     // A selected INTERIOR wall gets painted itself — previously an interior
@@ -200,7 +204,9 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
 
   return (
     <div
+      ref={rootRef}
       className={`pointer-events-auto pc-glass pc-wall-paint${fold.open ? '' : ' pc-dock-folded'}`}
+      data-scene-occluder=""
       style={{ width: 280, padding: '10px 12px' }}
     >
       {/* Title + Surface toggle */}

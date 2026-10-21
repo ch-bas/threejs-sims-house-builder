@@ -13,6 +13,12 @@ export const SHORT_DOCK_QUERY = '(max-width: 1100px) and (max-height: 500px)';
 /** Either compact dock: the catalog becomes one scrolling row of tiles. */
 export const COMPACT_DOCK_QUERY = `${PHONE_DOCK_QUERY}, ${SHORT_DOCK_QUERY}`;
 
+/**
+ * Where the item editor is a bottom sheet (set by the item popover): the
+ * dock's catalog and build tools step aside while it is open.
+ */
+export const SHEET_QUERY = '(max-width: 768px), (max-height: 500px)';
+
 /** Touch-first devices get touch wording (#429). */
 export const COARSE_POINTER_QUERY = '(pointer: coarse)';
 
@@ -21,12 +27,26 @@ export function catalogPageSize(itemCount: number, compact: boolean, desktopPage
   return compact ? Math.max(1, itemCount) : desktopPageSize;
 }
 
+export interface ScrollCue {
+  /** The content overflows the scroller. */
+  scrollable: boolean;
+  /** Some of it is hidden past the start (top / left) edge. */
+  before: boolean;
+  /** Some of it is hidden past the end (bottom / right) edge. */
+  after: boolean;
+}
+
 /**
- * Whether a scrolling column has content hidden below its bottom edge — the
- * cue that it scrolls (#426). A pixel of slack absorbs sub-pixel layout.
+ * Where a scroller hides content — the cue that it scrolls (#426). Takes
+ * one axis: (scrollTop, clientHeight, scrollHeight) or the Left/Width trio.
+ * A pixel of slack absorbs sub-pixel layout.
  */
-export function hasContentBelow(scrollTop: number, clientHeight: number, scrollHeight: number): boolean {
-  return scrollTop + clientHeight < scrollHeight - 1;
+export function scrollCue(offset: number, client: number, content: number): ScrollCue {
+  return {
+    scrollable: content > client + 1,
+    before: offset > 1,
+    after: offset + client < content - 1,
+  };
 }
 
 export interface WelcomeTip {
@@ -48,8 +68,8 @@ const POINTER_TIPS: readonly WelcomeTip[] = [
 const TOUCH_TIPS: readonly WelcomeTip[] = [
   { title: 'Tap to add', body: 'Tap a catalog tile to drop the item on the lot.' },
   { title: 'Drag to move', body: 'Drag an item with one finger to move it. Tap it to rotate, copy or delete it.' },
-  { title: 'Look around', body: 'One finger orbits, pinch zooms, two fingers pan. Center makes one finger pan; Fit frames the house.' },
-  { title: 'Grid snap', body: 'The grid button (under ⋯ on a phone) snaps items to 0.5 m. Doors and windows snap to walls on their own.' },
+  { title: 'Look around', body: 'One finger orbits, pinch zooms, two fingers pan. Pan makes one finger pan; Fit frames the house.' },
+  { title: 'Grid snap', body: 'The grid button (under ⋯ on a phone, beside the 2D plan switch) snaps items to 0.5 m. Doors and windows snap to walls on their own.' },
   { title: 'Themes & sets', body: 'Open the panels button for one-click templates, and the Library to save named layouts.' },
 ];
 

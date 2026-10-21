@@ -73,7 +73,9 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
     // zIndex stays below the HUD (25) and the item bottom sheet (36): wherever
     // the viewport is too small to keep them apart, the panels win the tap.
     <div
-      className="pointer-events-auto pc-touch-controls"
+      // Taps between the buttons reach the scene; the buttons take their own.
+      className="pointer-events-none pc-touch-controls"
+      data-scene-occluder=""
       data-minimap={view.showMinimap ? '' : undefined}
       style={{
         position: 'absolute',
@@ -90,8 +92,8 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
       />
       <TouchButton
         icon="target"
-        label="Center"
-        caption="Center"
+        label="Pan mode"
+        caption="Pan"
         active={mode === 'pan'}
         onClick={() => setMode('pan')}
       />
@@ -141,7 +143,7 @@ function TouchButton({ icon, glyph, label, caption, active, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className={`pc-tile${active ? ' pc-tile--active' : ''}`}
+      className={`pointer-events-auto pc-tile${active ? ' pc-tile--active' : ''}`}
       style={{
         width: 44,
         height: 44,
@@ -181,8 +183,8 @@ function TouchButton({ icon, glyph, label, caption, active, onClick }: {
         style={{
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 600,
-          fontSize: 8,
-          letterSpacing: '0.04em',
+          fontSize: 10,
+          letterSpacing: '0.02em',
           textTransform: 'uppercase',
           color,
           lineHeight: 1,

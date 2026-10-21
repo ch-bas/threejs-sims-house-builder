@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { useActiveFloorIndex } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { useScrollCue } from '../hooks/use-scroll-cue';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
@@ -40,6 +41,8 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
 
   // Keyboard placement (#168): one tile in the Tab order, arrows rove the grid.
   const { gridRef, tileProps } = useRovingTiles(visible.length, compact ? visible.length : COLUMNS);
+  // The docked row scrolls sideways; its edges fade while it does.
+  useScrollCue(gridRef, `${compact}:${category}`, 'x');
 
   // Cameras get a dedicated, type-grouped menu rather than the paged grid.
   if (category === 'security') {
@@ -345,7 +348,8 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: C
       className="pc-tile"
       style={{
         height: 56,
-        ...(docked ? { width: 76, flexShrink: 0 } : {}),
+        // Docked: wide and tall enough for a two-line name.
+        ...(docked ? { width: 80, height: 64, flexShrink: 0 } : {}),
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -362,13 +366,14 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: C
           style={{
             fontFamily: 'var(--pc-font-display)',
             fontWeight: 600,
-            fontSize: 9,
+            fontSize: 10,
             color: 'var(--pc-paper)',
             lineHeight: 1.1,
             maxWidth: '100%',
             overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            ...(docked
+              ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', textAlign: 'center' }
+              : { textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
           }}
         >
           {item.name}
@@ -378,7 +383,8 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: C
         style={{
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 700,
-          fontSize: 9,
+          // 10px where the names show (touch); the desktop grid keeps 9.
+          fontSize: showName ? 10 : 9,
           letterSpacing: '0.03em',
           color: 'var(--pc-money)',
           fontVariantNumeric: 'tabular-nums',

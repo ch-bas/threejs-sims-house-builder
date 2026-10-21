@@ -8,10 +8,10 @@ import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room
 import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
 import { useAchievements } from './hooks/use-achievements';
-import { useBottomEdgeVar } from './hooks/use-bottom-edge-var';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
+import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
 import { useFloorKeepOut } from './hooks/use-floor-keep-out';
 import { useHistory } from './hooks/use-history';
@@ -133,7 +133,7 @@ export function RoomOrganizer(): JSX.Element {
   const canvas2DRef = useRef<HTMLCanvasElement>(null);
   // Top-centre chips sit below the top-right pills however they wrap (#308).
   const topRightRef = useRef<HTMLDivElement>(null);
-  useBottomEdgeVar(topRightRef, '--pc-top-pills-bottom');
+  useEdgeVar(topRightRef, '--pc-top-pills-bottom', 'bottom');
 
   const { layout, activeFloor, activeFloorIndex, actions } = useLayoutState();
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
