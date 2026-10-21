@@ -461,6 +461,7 @@ components/
     │   ├── use-npcs.ts                  Animated wandering pedestrians
     │   ├── use-weather.ts               Self-invalidating rain / snow loop
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
+    │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets
     │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Diffed unlock detection
@@ -552,9 +553,11 @@ components/
   `data-scene-occluder="children"` counts its visible children instead of
   its own box. The framed box is the footprint up to the eaves, plus the
   roof's rise and eave overhang whenever the roof shows (walls up, on the
-  top storey or with every storey shown). If the free rectangle would
-  frame the house under 35% of the canvas's short side, the whole canvas
-  is used instead. The orbit target stays the house centre;
+  top storey or with every storey shown). Only a sliver of a free
+  rectangle (under 64 px on a side) falls back to the whole canvas; a
+  small but real band, such as the strip a landscape phone leaves above an
+  unfolded Paint panel, frames the house small rather than under the
+  panels. The orbit target stays the house centre;
   `camera.setViewOffset` shifts the projection so that centre sits in the
   middle of the free rectangle. Resizes, rotations, HUD changes and a
   change in the framed shape re-frame only while the camera still sits at
@@ -574,6 +577,25 @@ components/
   the controls off as soon as a drag is armed; a tap hands them back. On
   touch, the moves under the drag threshold used to orbit, and the damping
   glide kept turning the camera through the drag.
+- **A pinch that starts on furniture zooms.** A second finger while the
+  first one has armed or started an item drag cancels the drag (the item
+  goes back, nothing is committed) and hands both fingers to OrbitControls:
+  the first press, which the controls never saw, is replayed to them from
+  where that finger is now. A later finger of a gesture the camera already
+  owns (`isPrimary === false`) never selects or arms a drag.
+- **A drag over the HUD holds the item.** In 3D and 2D a captured drag keeps
+  getting moves over the panels; `pointerOnCanvas` (inside the canvas box
+  and `elementFromPoint` is the canvas) gates them, so the item holds its
+  last place on the floor and a release over a panel commits that place.
+  It used to land behind the panel, or far off the lot near the horizon.
+- **The 2D plan fits beside the HUD on compact screens.**
+  `get2DViewTransform` takes optional occluder insets (`planInsets`, the
+  same `[data-scene-occluder]` free rectangle the 3D framing uses, without
+  the item sheet so the plan doesn't rescale on every select) and fits the
+  plan in that area, with the margin shrunk to at most 12% of its short
+  side. The paint effect and the pointer handlers pass the same insets, so
+  `canvasToWorld` stays the plan's only inverse. Desktop-sized windows, the
+  minimap, the blueprint and the thumbnails pass none and are unchanged.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere

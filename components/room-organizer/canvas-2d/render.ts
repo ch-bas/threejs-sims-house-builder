@@ -5,6 +5,7 @@ import { planDrawOrder } from '../lib/plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import type { Insets } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
@@ -30,9 +31,16 @@ export interface Render2DOptions {
    * the margin consumes the whole canvas (#118).
    */
   padding?: number;
+  /**
+   * Canvas edges covered by the HUD (`get2DViewTransform`). Only the
+   * full-screen plan on a compact viewport passes them; undefined is none.
+   */
+  insets?: Insets | undefined;
 }
 
 const PADDING = 60;
+/** The plan margin inside the HUD's free area, at most this share of its short side. */
+const INSET_PADDING_SHARE = 0.12;
 // Matches the 0.16 m thickness modelled in three/interior-walls.ts.
 const INTERIOR_WALL_THICKNESS_M = 0.16;
 
@@ -47,13 +55,35 @@ export interface View2DTransform {
  * The exact fit-and-centre transform `render2DTopDown` paints with, exposed so
  * pointer handling and drop placement can invert it (#166, #219). The renderer
  * itself calls this, so the two can never diverge.
+ *
+ * `insets` are the canvas edges the HUD covers (a phone's dock and top
+ * pills): the plan is fitted and centred in what they leave free, with the
+ * margin shrunk to at most `INSET_PADDING_SHARE` of that area's short side
+ * so a short landscape band still shows a usable plan. Without insets (the
+ * desktop view, the minimap, the blueprint) the fit is the whole canvas,
+ * unchanged.
  */
 export function get2DViewTransform(
   canvasClientWidth: number,
   canvasClientHeight: number,
   layout: Pick<RoomLayout, 'width' | 'height'>,
-  padding: number = PADDING
+  padding: number = PADDING,
+  insets?: Insets
 ): View2DTransform {
+  if (insets) {
+    const width = canvasClientWidth - insets.left - insets.right;
+    const height = canvasClientHeight - insets.top - insets.bottom;
+    const pad = Math.min(padding, INSET_PADDING_SHARE * Math.min(width, height));
+    const scale = Math.min((width - pad * 2) / layout.width, (height - pad * 2) / layout.height);
+    // HUD panels that leave no room to speak of: fit the whole canvas instead.
+    if (scale > 0) {
+      return {
+        scale,
+        offsetX: insets.left + (width - layout.width * scale) / 2,
+        offsetY: insets.top + (height - layout.height * scale) / 2,
+      };
+    }
+  }
   const scale = Math.min(
     (canvasClientWidth - padding * 2) / layout.width,
     (canvasClientHeight - padding * 2) / layout.height
@@ -123,7 +153,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, viewWidth, viewHeight);
 
-  const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING);
+  const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);

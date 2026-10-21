@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls as RealOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FURNITURE_REVISION_KEY, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, type SceneEventHandlers } from './drag-handlers';
+import { FURNITURE_REVISION_KEY, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas, type SceneEventHandlers } from './drag-handlers';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const SIZE = 200;
@@ -375,5 +375,135 @@ describe('drag-handlers keep OrbitControls off a press on an item', () => {
     controls.update();
     expect(t.camera.position.distanceTo(start)).toBeGreaterThan(0.1);
     document.dispatchEvent(pointer('pointerup', 120, 10));
+  });
+});
+
+describe('drag-handlers release over the HUD (#511)', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => {
+    detach?.();
+    delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+  });
+
+  /** A HUD panel over the canvas's right half (x ≥ 150). */
+  const hudOverRightHalf = (canvas: HTMLCanvasElement): void => {
+    const hud = document.createElement('div');
+    (document as { elementFromPoint?: unknown }).elementFromPoint = (x: number) => (x >= 150 ? hud : canvas);
+  };
+
+  it('pointerOnCanvas is false over a panel and off the canvas', () => {
+    const t = setup([]);
+    detach = t.detach;
+    hudOverRightHalf(t.canvas);
+    expect(pointerOnCanvas(t.canvas, 100, 100)).toBe(true);
+    expect(pointerOnCanvas(t.canvas, 170, 100)).toBe(false);
+    expect(pointerOnCanvas(t.canvas, 100, 260)).toBe(false);
+    expect(pointerOnCanvas(t.canvas, -5, 100)).toBe(false);
+  });
+
+  it('holds the item while the pointer is over a panel and commits its last floor point on release', () => {
+    const t = setup([]);
+    detach = t.detach;
+    hudOverRightHalf(t.canvas);
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    const group = t.groups.get('a')!;
+    const held = group.position.clone();
+    expect(held.x).toBeGreaterThan(0.1);
+    // Onto the panel, then below the canvas: the item stays put.
+    t.canvas.dispatchEvent(pointer('pointermove', 170, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 120, 400));
+    expect(group.position.distanceTo(held)).toBe(0);
+    expect(t.handlers.onItemDrag).toHaveBeenCalledTimes(1);
+    expect(t.handlers.onItemDrag).toHaveBeenLastCalledWith('a', held.x, held.z);
+    t.canvas.dispatchEvent(pointer('pointerup', 170, 100));
+    // The session commits the last position it was given: the held one.
+    expect(t.handlers.onItemDragEnd).toHaveBeenCalledWith('a');
+    expect(t.handlers.onItemDragCancel).not.toHaveBeenCalled();
+  });
+
+  it('follows the pointer again once it is back on the canvas', () => {
+    const t = setup([]);
+    detach = t.detach;
+    hudOverRightHalf(t.canvas);
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 170, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 90, 120));
+    expect(t.handlers.onItemDrag).toHaveBeenCalledTimes(2);
+    t.canvas.dispatchEvent(pointer('pointerup', 90, 120));
+  });
+});
+
+/** A touch pointer event with its own id (the helper above is always pointer 1). */
+function touch(type: string, clientX: number, clientY: number, pointerId: number): PointerEvent {
+  return new PointerEvent(type, {
+    clientX,
+    clientY,
+    pointerId,
+    pointerType: 'touch',
+    isPrimary: pointerId === 1,
+    button: 0,
+    buttons: type === 'pointerup' ? 0 : 1,
+    bubbles: true,
+  });
+}
+
+describe('drag-handlers hand a pinch that starts on an item to the camera', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  const pinchOut = (t: ReturnType<typeof setup>, a: [number, number], b: [number, number]): void => {
+    for (let i = 1; i <= 6; i++) {
+      t.canvas.dispatchEvent(touch('pointermove', a[0] - i * 6, a[1] - i * 6, 1));
+      t.canvas.dispatchEvent(touch('pointermove', b[0] + i * 6, b[1] + i * 6, 2));
+    }
+  };
+
+  for (const started of [false, true]) {
+    it(`${started ? 'a live' : 'an armed'} drag is cancelled and the two fingers zoom`, () => {
+      const t = setup([], { realControls: true });
+      detach = t.detach;
+      const controls = t.controls as RealOrbitControls;
+      controls.update();
+      const start = t.camera.position.clone();
+      const group = t.groups.get('a')!;
+      t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+      expect(controls.enabled).toBe(false);
+      if (started) {
+        t.canvas.dispatchEvent(touch('pointermove', 120, 100, 1));
+        expect(t.handlers.onItemDragStart).toHaveBeenCalledWith('a');
+        expect(group.position.x).not.toBe(0);
+      }
+      t.canvas.dispatchEvent(touch('pointerdown', 140, 140, 2));
+      expect(controls.enabled).toBe(true);
+      if (started) {
+        expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+      } else {
+        expect(t.handlers.onItemDragCancel).not.toHaveBeenCalled();
+      }
+      pinchOut(t, started ? [120, 100] : [100, 100], [140, 140]);
+      controls.update();
+      // Spreading the fingers dollied the camera in, towards the target.
+      expect(t.camera.position.length()).toBeLessThan(start.length() - 0.1);
+      // The drag never moved the item again and nothing was committed.
+      t.canvas.dispatchEvent(touch('pointerup', 80, 80, 1));
+      t.canvas.dispatchEvent(touch('pointerup', 180, 180, 2));
+      expect(t.handlers.onItemDrag).toHaveBeenCalledTimes(started ? 1 : 0);
+      expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+      expect(controls.enabled).toBe(true);
+    });
+  }
+
+  it('a second finger landing on an item during a pinch neither selects nor arms a drag', () => {
+    const t = setup([], { realControls: true });
+    detach = t.detach;
+    const controls = t.controls as RealOrbitControls;
+    t.canvas.dispatchEvent(touch('pointerdown', 10, 10, 1));
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 2));
+    expect(t.handlers.onItemSelect).not.toHaveBeenCalled();
+    expect(controls.enabled).toBe(true);
+    t.canvas.dispatchEvent(touch('pointerup', 10, 10, 1));
+    t.canvas.dispatchEvent(touch('pointerup', 100, 100, 2));
   });
 });

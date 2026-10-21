@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from '../lib/__testfixtures__/fixtures';
-import { computeFloorPlanPlacement, computeHeatmapCells, HEATMAP_COLS, HEATMAP_ROWS } from './render';
+import { canvasToWorld, computeFloorPlanPlacement, computeHeatmapCells, get2DViewTransform, HEATMAP_COLS, HEATMAP_ROWS } from './render';
 
 // A 10×10 m room with the default 20×20 grid gives 0.5 m cells, so grid
 // coordinates are easy to reason about: cell (col, row) spans
@@ -116,5 +116,42 @@ describe('computeFloorPlanPlacement (#218)', () => {
       const paintedAspect = (dest.w * roomAspect) / dest.h;
       expect(paintedAspect).toBeCloseTo(1600 / 900, 10);
     }
+  });
+});
+
+describe('get2DViewTransform insets', () => {
+  const room = { width: 8, height: 8 };
+
+  it('is the classic whole-canvas fit without insets', () => {
+    expect(get2DViewTransform(1440, 900, room)).toEqual({ scale: (900 - 120) / 8, offsetX: (1440 - 780) / 2, offsetY: 60 });
+    expect(get2DViewTransform(1440, 900, room, 60, undefined)).toEqual(get2DViewTransform(1440, 900, room));
+  });
+
+  it('fits and centres the plan in the area the HUD leaves free', () => {
+    // iPhone 13: top pills to 62, dock from 466.
+    const insets = { top: 62, right: 0, bottom: 664 - 466, left: 0 };
+    const t = get2DViewTransform(390, 664, room, 60, insets);
+    const top = t.offsetY;
+    const bottom = t.offsetY + 8 * t.scale;
+    expect(top).toBeGreaterThanOrEqual(62);
+    expect(bottom).toBeLessThanOrEqual(466);
+    expect((top + bottom) / 2).toBeCloseTo((62 + 466) / 2, 9);
+    expect(t.offsetX + 4 * t.scale).toBeCloseTo(195, 9);
+    // canvasToWorld inverts it: the free area's centre is the room centre.
+    const centre = canvasToWorld(195, (62 + 466) / 2, t, room);
+    expect(centre.x).toBeCloseTo(0, 9);
+    expect(centre.z).toBeCloseTo(0, 9);
+  });
+
+  it('shrinks the margin in a short band so the plan stays usable', () => {
+    // iPhone 13 landscape: a 200 px band. A 60 px margin would leave 80 px.
+    const t = get2DViewTransform(750, 342, room, 60, { top: 62, right: 0, bottom: 80, left: 0 });
+    expect(8 * t.scale).toBeGreaterThan(140);
+    expect(t.offsetY).toBeGreaterThanOrEqual(62);
+    expect(t.offsetY + 8 * t.scale).toBeLessThanOrEqual(262);
+  });
+
+  it('falls back to the whole canvas when the insets leave no room', () => {
+    expect(get2DViewTransform(390, 664, room, 60, { top: 400, right: 0, bottom: 400, left: 0 })).toEqual(get2DViewTransform(390, 664, room));
   });
 });

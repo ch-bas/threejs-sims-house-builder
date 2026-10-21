@@ -42,6 +42,7 @@ import { buildRoof, removeRoof, setRoofOnStorey } from '../three/roof';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
+import { observeSceneOccluders, planInsets } from './scene-occluders';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -1013,6 +1014,9 @@ export function useSceneEffects({
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
         hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
+        // On a phone the plan fits above the dock and below the top pills;
+        // the pointer handlers read the same insets (use-canvas-2d-interaction).
+        insets: planInsets(canvas),
       });
     };
 
@@ -1021,6 +1025,8 @@ export function useSceneEffects({
 
     const observer = new ResizeObserver(paint);
     observer.observe(canvas);
+    // The dock folding, the tray opening or a panel mounting moves the free area.
+    const stopObservingOccluders = observeSceneOccluders(paint);
 
     // The ResizeObserver watches the content box, which doesn't change when
     // only devicePixelRatio does (window dragged between 1× and 2× monitors),
@@ -1042,6 +1048,7 @@ export function useSceneEffects({
     return () => {
       dprQuery?.removeEventListener('change', onDprChange);
       observer.disconnect();
+      stopObservingOccluders();
       removeRepaintHandler();
     };
   }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds]);

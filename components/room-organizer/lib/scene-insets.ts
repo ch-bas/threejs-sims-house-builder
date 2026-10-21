@@ -28,17 +28,37 @@ export interface Rect {
 export const DESKTOP_MIN_WIDTH = 1101;
 export const DESKTOP_MIN_HEIGHT = 701;
 
+/** How far each edge of a canvas is covered, in CSS pixels. */
+export interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** The insets that leave `region` free inside `bounds` (both in the same space). */
+export function insetsFromRegion(bounds: Rect, region: Rect): Insets {
+  return {
+    top: Math.max(0, region.top - bounds.top),
+    right: Math.max(0, bounds.right - region.right),
+    bottom: Math.max(0, bounds.bottom - region.bottom),
+    left: Math.max(0, region.left - bounds.left),
+  };
+}
+
 export function isCompactViewport(width: number, height: number): boolean {
   return width < DESKTOP_MIN_WIDTH || height < DESKTOP_MIN_HEIGHT;
 }
 
 /**
- * The visible region falls back to the whole canvas when the largest free
- * rectangle is smaller than this share of it in either dimension: a sliver
- * frames the house uselessly small, so we'd rather let a panel cover part
- * of it.
+ * The visible region falls back to the whole canvas only when the largest
+ * free rectangle is a sliver, narrower or shorter than this in CSS pixels:
+ * the gap between two panels, or a mis-measured occluder. Anything larger
+ * is a real band, and the house is framed in it even when that frames it
+ * small (an unfolded wall panel in landscape leaves about 100 px): framing
+ * for the whole canvas would put it under the panels instead.
  */
-const MIN_REGION_FRACTION = 0.3;
+export const MIN_REGION_PX = 64;
 
 function rectWidth(r: Rect): number {
   return r.right - r.left;
@@ -98,14 +118,12 @@ export function visibleRegion(bounds: Rect, occluders: readonly Rect[]): Rect {
     }
   }
 
-  if (
-    !best ||
-    rectWidth(best) < rectWidth(bounds) * MIN_REGION_FRACTION ||
-    rectHeight(best) < rectHeight(bounds) * MIN_REGION_FRACTION
-  ) {
-    return bounds;
-  }
-  return best;
+  return best && !isSliver(best) ? best : bounds;
+}
+
+/** Too thin in either dimension to frame anything in. */
+export function isSliver(region: Rect): boolean {
+  return rectWidth(region) < MIN_REGION_PX || rectHeight(region) < MIN_REGION_PX;
 }
 
 function uniqueSorted(values: number[]): number[] {
@@ -238,25 +256,14 @@ export function frameBox(input: FrameInput): Frame {
 }
 
 /**
- * Below this share of the canvas's short side the framed house is too small
- * to work with: a mis-measured occluder (a transparent container much bigger
- * than what it paints) can leave a sliver of "free" canvas, and fitting the
- * house into it frames a thumbnail.
- */
-export const MIN_HOUSE_SHARE = 0.35;
-
-/**
- * `frameBox` in the visible region, falling back to the whole canvas when
- * the house's footprint would come out smaller than `MIN_HOUSE_SHARE` of the
- * short side. The footprint, not the whole box: with the walls cut away the
- * box's top is empty air, and the house on screen is about its floor's size.
+ * `frameBox` in the visible region, falling back to the whole canvas only
+ * when the region is a sliver (`isSliver`). The house's framed size is not
+ * a reason to fall back: a small but real band (a landscape phone with a
+ * wall panel unfolded, a tablet's strip between the top pills and the dock)
+ * frames it small, which beats framing it under the panels.
  */
 export function frameInRegion(input: FrameInput): Frame & { fellBack: boolean } {
-  const framed = frameBox(input);
-  const shortSide = Math.min(input.canvasWidth, input.canvasHeight);
-  if (framed.floorExtent >= shortSide * MIN_HOUSE_SHARE) {
-    return { ...framed, fellBack: false };
-  }
+  if (!isSliver(input.region)) return { ...frameBox(input), fellBack: false };
   const whole = { left: 0, top: 0, right: input.canvasWidth, bottom: input.canvasHeight };
   return { ...frameBox({ ...input, region: whole }), fellBack: true };
 }
