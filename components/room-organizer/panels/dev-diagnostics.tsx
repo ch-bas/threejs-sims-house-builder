@@ -9,6 +9,8 @@ import {
 } from '../lib/dev-diagnostics';
 import type * as ThreeNS from 'three';
 
+const WRITE_INTERVAL_MS = 200;
+
 interface DevDiagnosticsProps {
   isReady: boolean;
   rendererRef: React.MutableRefObject<ThreeNS.WebGLRenderer | null>;
@@ -20,7 +22,9 @@ interface DevDiagnosticsProps {
  * triangles of the last frame, live geometries, textures and programs, and
  * the frame count, which stands still while the scene idles. It updates from
  * the scene's onAfterRender, so it has no loop of its own and costs nothing
- * between renders; without the flag nothing is installed at all. Draw calls
+ * between renders; a frame only copies six numbers, and the text is
+ * rewritten at most five times a second. Without the flag nothing is
+ * installed at all. Draw calls
  * include the shadow pass on the frames that redraw shadows.
  */
 export function DevDiagnostics({ isReady, rendererRef, sceneRef }: DevDiagnosticsProps): JSX.Element | null {
@@ -33,13 +37,24 @@ export function DevDiagnostics({ isReady, rendererRef, sceneRef }: DevDiagnostic
     const renderer = rendererRef.current;
     if (!scene || !renderer) return undefined;
     const stats = emptyRendererStats();
-    const previous = scene.onAfterRender;
-    scene.onAfterRender = function onAfterRender(...args) {
-      previous.apply(this, args);
+    // Frames only copy counters; the text is written at most every
+    // WRITE_INTERVAL_MS, by a trailing timer so the last frame of a burst
+    // is the one shown.
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const write = (): void => {
+      pending = null;
       const node = textRef.current;
-      if (node && readRendererStats(renderer.info, stats)) node.textContent = formatRendererStats(stats);
+      if (!node) return;
+      const text = formatRendererStats(stats);
+      if (node.textContent !== text) node.textContent = text;
+    };
+    const previous = scene.onAfterRender;
+    scene.onAfterRender = function onAfterRender(rendererArg, sceneArg, camera, geometry, material, group) {
+      previous.call(this, rendererArg, sceneArg, camera, geometry, material, group);
+      if (readRendererStats(renderer.info, stats) && pending === null) pending = setTimeout(write, WRITE_INTERVAL_MS);
     };
     return () => {
+      if (pending !== null) clearTimeout(pending);
       scene.onAfterRender = previous;
     };
   }, [enabled, isReady, rendererRef, sceneRef]);
