@@ -130,3 +130,90 @@ describe('useCanvas2DInteraction gestures (#291, #292)', () => {
     expect(params.onItemDragStart).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('useCanvas2DInteraction beside the HUD', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+  });
+
+  it('holds the item while the pointer is over a HUD panel, and a release there undoes the drag (#511)', () => {
+    const { params, fire } = setup([]);
+    const hud = document.createElement('div');
+    const canvas = params.canvasRef.current!;
+    // A panel over the plan right of x = 2 m.
+    const { offsetX, scale } = get2DViewTransform(W, H, params.layout);
+    const edge = offsetX + (2 + params.layout.width / 2) * scale;
+    (document as { elementFromPoint?: unknown }).elementFromPoint = (x: number) => (x >= edge ? hud : canvas);
+    fire('pointerdown', 0, 0);
+    fire('pointermove', 1, 0);
+    fire('pointermove', 3, 0);
+    expect(params.onItemDrag).toHaveBeenCalledTimes(1);
+    expect(params.onItemDrag).toHaveBeenLastCalledWith('a', 1, 0);
+    fire('pointerup', 3, 0);
+    expect(params.onItemDragEnd).not.toHaveBeenCalled();
+    expect(params.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+  });
+
+  it('a release back on the plan commits as usual', () => {
+    const { params, fire } = setup([]);
+    const canvas = params.canvasRef.current!;
+    (document as { elementFromPoint?: unknown }).elementFromPoint = () => canvas;
+    fire('pointerdown', 0, 0);
+    fire('pointermove', 1, 0);
+    fire('pointerup', 1, 0);
+    expect(params.onItemDragEnd).toHaveBeenCalledWith('a');
+    expect(params.onItemDragCancel).not.toHaveBeenCalled();
+  });
+
+  it('a second finger cancels the drag and restores the item', () => {
+    const { params, fire } = setup([]);
+    const canvas = params.canvasRef.current!;
+    fire('pointerdown', 0, 0, 'touch');
+    fire('pointermove', 1, 0, 'touch');
+    expect(params.onItemDragStart).toHaveBeenCalledWith('a');
+    const second = new PointerEvent('pointerdown', { clientX: 10, clientY: 10, pointerId: 2, pointerType: 'touch', isPrimary: false, button: 0, bubbles: true });
+    canvas.dispatchEvent(second);
+    expect(params.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+    // The first finger keeps moving and lifts: nothing more happens.
+    fire('pointermove', 2, 0, 'touch');
+    fire('pointerup', 2, 0, 'touch');
+    expect(params.onItemDrag).toHaveBeenCalledTimes(1);
+    expect(params.onItemDragEnd).not.toHaveBeenCalled();
+  });
+
+  it('a later finger of a multi-touch gesture never selects', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    const t = get2DViewTransform(W, H, params.layout);
+    const later = new PointerEvent('pointerdown', { clientX: t.offsetX + (params.layout.width / 2) * t.scale, clientY: t.offsetY + (params.layout.height / 2) * t.scale, pointerId: 3, pointerType: 'touch', isPrimary: false, button: 0, bubbles: true });
+    canvas.dispatchEvent(later);
+    expect(params.onItemSelect).not.toHaveBeenCalled();
+    expect(params.onDeselect).not.toHaveBeenCalled();
+  });
+
+  it('maps the pointer through the same inset transform the plan is painted with', () => {
+    // jsdom's 1024×768 window is a compact viewport; a dock covers the
+    // canvas's bottom 200 px.
+    const dock = document.createElement('div');
+    dock.setAttribute('data-scene-occluder', '');
+    dock.getBoundingClientRect = () => ({ left: 0, top: H - 200, width: W, height: 200, right: W, bottom: H, x: 0, y: H - 200, toJSON: () => ({}) });
+    document.body.appendChild(dock);
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    const inset = get2DViewTransform(W, H, params.layout, undefined, { top: 0, right: 0, bottom: 200, left: 0 });
+    // Item 'a' sits at the room centre, now the centre of the free 800×400.
+    const cx = inset.offsetX + (params.layout.width / 2) * inset.scale;
+    const cy = inset.offsetY + (params.layout.height / 2) * inset.scale;
+    expect(cy).toBeCloseTo(200, 6);
+    canvas.dispatchEvent(pointer('pointerdown', cx, cy));
+    expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    canvas.dispatchEvent(pointer('pointerup', cx, cy));
+  });
+});

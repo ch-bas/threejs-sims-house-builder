@@ -42,6 +42,7 @@ import { buildRoof, removeRoof, setRoofOnStorey } from '../three/roof';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
+import { observeSceneOccluders, planInsets } from './scene-occluders';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -984,6 +985,8 @@ export function useSceneEffects({
   // render is crisp on retina; a resize re-paints. The floor-plan repaint
   // handler lets an async image decode trigger a full repaint in the correct
   // layer order.
+  // The latest plan paint, for the occluder observer below.
+  const paint2DRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;
@@ -1013,10 +1016,14 @@ export function useSceneEffects({
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
         hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
+        // On a phone the plan fits above the dock and below the top pills;
+        // the pointer handlers read the same insets (use-canvas-2d-interaction).
+        insets: planInsets(canvas),
       });
     };
 
     const removeRepaintHandler = addFloorPlanRepaintHandler(paint);
+    paint2DRef.current = paint;
     paint();
 
     const observer = new ResizeObserver(paint);
@@ -1043,8 +1050,17 @@ export function useSceneEffects({
       dprQuery?.removeEventListener('change', onDprChange);
       observer.disconnect();
       removeRepaintHandler();
+      if (paint2DRef.current === paint) paint2DRef.current = null;
     };
   }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds]);
+
+  // The dock folding, the tray opening or a panel mounting moves the plan's
+  // free area: repaint. Keyed on the view alone, so a layout edit doesn't
+  // tear the observers down and set them up again.
+  useEffect(() => {
+    if (!view.view2D) return undefined;
+    return observeSceneOccluders(() => paint2DRef.current?.());
+  }, [view.view2D]);
 }
 
 export { measurementDistance } from '../three/measurement';

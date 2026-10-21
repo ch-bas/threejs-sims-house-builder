@@ -1,6 +1,6 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { MIN_HOUSE_SHARE, frameBox, frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset, visibleRegion } from './scene-insets';
+import { MIN_FOOTPRINT_PX, MIN_REGION_PX, frameBox, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
 import type { FrameInput, Rect } from './scene-insets';
 
 const rect = (left: number, top: number, right: number, bottom: number): Rect => ({ left, top, right, bottom });
@@ -38,7 +38,37 @@ describe('visibleRegion', () => {
   });
 
   it('falls back to the whole canvas when only a sliver is free', () => {
-    expect(visibleRegion(screen, [rect(0, 60, 390, 664)])).toEqual(screen);
+    expect(visibleRegion(screen, [rect(0, 40, 390, 664)])).toEqual(screen);
+    expect(visibleRegion(screen, [rect(50, 0, 390, 664)])).toEqual(screen);
+  });
+
+  it('keeps a small but real band', () => {
+    // The old 30%-of-the-canvas rule threw this 390x64 band away.
+    expect(visibleRegion(screen, [rect(0, 64, 390, 664)])).toEqual(rect(0, 0, 390, 64));
+  });
+
+  it('keeps the band above an unfolded Paint panel on a landscape phone', () => {
+    // iPhone 13 landscape, walls up, a wall's Paint panel unfolded (measured).
+    const occluders = [
+      rect(8, 8, 52, 52), rect(430, 8, 742, 62), rect(60, 8, 296, 52),
+      rect(6, 168, 571, 260), rect(575, 168, 744, 232), rect(6, 264, 418, 338), rect(424, 278, 744, 338),
+    ];
+    expect(visibleRegion(rect(0, 0, 750, 342), occluders)).toEqual(rect(0, 62, 750, 168));
+  });
+
+  it('keeps the band beside the touch column on a portrait phone with Paint unfolded', () => {
+    // The same phone rotated to 342x750: 242x201 free, under 30% of the height.
+    const occluders = [
+      rect(8, 8, 52, 52), rect(82, 8, 334, 62), rect(8, 64, 100, 252),
+      rect(6, 263, 336, 548), rect(6, 552, 336, 604), rect(6, 608, 336, 682), rect(6, 686, 332, 746),
+    ];
+    expect(visibleRegion(rect(0, 0, 342, 750), occluders)).toEqual(rect(100, 62, 342, 263));
+  });
+
+  it('isSliver is under MIN_REGION_PX on either side', () => {
+    expect(isSliver(rect(0, 0, 500, MIN_REGION_PX - 1))).toBe(true);
+    expect(isSliver(rect(0, 0, MIN_REGION_PX - 1, 500))).toBe(true);
+    expect(isSliver(rect(0, 0, MIN_REGION_PX, MIN_REGION_PX))).toBe(false);
   });
 
   it('never overlaps an occluder', () => {
@@ -196,15 +226,61 @@ describe('frameInRegion', () => {
     direction: [0, 1, 1],
   };
 
-  it('keeps the region when the house comes out a usable size', () => {
-    const framed = frameInRegion(base);
+  it('keeps a real band even when the house comes out small in it', () => {
+    // iPad Mini landscape, walls up: the 970x345 strip between the top
+    // pills and the dock. The house framed in it is small next to the
+    // canvas's short side, and the old 35% floor sent it under the panels.
+    const ipad: FrameInput = {
+      canvasWidth: 1024,
+      canvasHeight: 768,
+      region: rect(0, 132, 970, 477),
+      fovDeg: 75,
+      ...houseFrameBox({ width: 8, depth: 8, height: 3, roof: { peak: 2.5, overhang: 0.35 } }),
+      direction: [0.6, 0.7, 0.6],
+    };
+    const framed = frameInRegion(ipad);
     expect(framed.fellBack).toBe(false);
-    expect(framed.floorExtent).toBeGreaterThanOrEqual(342 * MIN_HOUSE_SHARE);
+    expect(framed).toMatchObject(frameBox(ipad));
+    expect(framed.floorExtent).toBeLessThan(768 * 0.35);
   });
 
-  it('falls back to the whole canvas when the region would frame a thumbnail', () => {
-    // A mis-measured HUD container left a 97×77 px gap in landscape.
-    const framed = frameInRegion({ ...base, region: rect(150, 60, 247, 137) });
+  it('keeps a 106 px landscape band above an unfolded panel', () => {
+    const framed = frameInRegion({ ...base, region: rect(0, 62, 750, 168) });
+    expect(framed.fellBack).toBe(false);
+  });
+
+  it('frames the measured bands well above the thumbnail floor', () => {
+    const house = houseFrameBox({ width: 8, depth: 8, height: 3, roof: { peak: 2.5, overhang: 0.35 } });
+    const cases: FrameInput[] = [
+      { canvasWidth: 1024, canvasHeight: 768, region: rect(0, 132, 970, 477), fovDeg: 75, ...house, direction: [0.6, 0.7, 0.6] },
+      { canvasWidth: 750, canvasHeight: 342, region: rect(0, 62, 750, 168), fovDeg: 75, ...house, direction: [0.6, 0.7, 0.6] },
+      { canvasWidth: 342, canvasHeight: 750, region: rect(100, 62, 342, 263), fovDeg: 75, ...house, direction: [0.6, 0.7, 0.6] },
+    ];
+    for (const input of cases) {
+      const framed = frameInRegion(input);
+      expect(framed.fellBack).toBe(false);
+      expect(framed.floorExtent).toBeGreaterThan(MIN_FOOTPRINT_PX);
+    }
+  });
+
+  it('falls back when a mis-measured occluder leaves a thumbnail the whole canvas frames far larger', () => {
+    // A tall tower in a 70 px square: its footprint comes out a few pixels wide.
+    const tower: FrameInput = { ...base, region: rect(300, 100, 370, 170), boxMin: [-2, 0, -2], boxMax: [2, 30, 2] };
+    expect(frameBox(tower).floorExtent).toBeLessThan(MIN_FOOTPRINT_PX);
+    const framed = frameInRegion(tower);
+    expect(framed.fellBack).toBe(true);
+    expect(framed).toMatchObject(frameBox({ ...tower, region: rect(0, 0, 750, 342) }));
+  });
+
+  it('keeps a thumbnail when the whole canvas would not frame it much larger', () => {
+    // Already a thumbnail on the whole canvas: the band is no worse.
+    const needle: FrameInput = { ...base, region: rect(0, 0, 750, 300), boxMin: [-0.5, 0, -0.5], boxMax: [0.5, 200, 0.5] };
+    expect(frameBox(needle).floorExtent).toBeLessThan(MIN_FOOTPRINT_PX);
+    expect(frameInRegion(needle).fellBack).toBe(false);
+  });
+
+  it('falls back to the whole canvas for a sliver', () => {
+    const framed = frameInRegion({ ...base, region: rect(150, 60, 750, 60 + MIN_REGION_PX - 1) });
     expect(framed.fellBack).toBe(true);
     expect(framed).toMatchObject(frameBox({ ...base, region: rect(0, 0, 750, 342) }));
   });

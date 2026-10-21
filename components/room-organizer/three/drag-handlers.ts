@@ -91,6 +91,22 @@ export function dragThresholdPx(pointerType: string): number {
 }
 
 /**
+ * Whether a client point is on the canvas itself: inside its box and not
+ * over a HUD panel drawn on top of it. A captured drag keeps receiving moves
+ * over the HUD; mapping those onto the floor dropped the item behind the
+ * panel, or far off the lot near the horizon (#511). Moves there hold the
+ * item and a release there cancels the drag. Shared with the 2D plan.
+ */
+export function pointerOnCanvas(canvas: HTMLCanvasElement, clientX: number, clientY: number): boolean {
+  const rect = canvas.getBoundingClientRect();
+  if (clientX < rect.left || clientX >= rect.right || clientY < rect.top || clientY >= rect.bottom) return false;
+  const doc = canvas.ownerDocument;
+  // Pass-through overlays (pointer-events: none) don't count: hit testing skips them.
+  const hit = typeof doc.elementFromPoint === 'function' ? doc.elementFromPoint(clientX, clientY) : null;
+  return hit === null || hit === canvas;
+}
+
+/**
  * Whether a press on `id` should keep the current selection instead of
  * selecting on pointerdown (#291): a plain press on a member of a
  * multi-selection. The narrowing click happens on release instead.
@@ -169,6 +185,12 @@ export function attachDragHandlers({
   // effect keeps unchanged groups across a state change (#404), so a
   // surviving parent no longer proves the state under the drag is unchanged.
   let dragRevision = 0;
+  // The pressed pointer's latest position, for replaying it to the controls
+  // when a second finger turns the gesture into a pinch.
+  let lastClientX = 0;
+  let lastClientY = 0;
+  // True while that replayed press is being dispatched.
+  let replaying = false;
 
   const setPointerFromEvent = (event: { clientX: number; clientY: number }): void => {
     const rect = canvas.getBoundingClientRect();
@@ -202,9 +224,18 @@ export function attachDragHandlers({
     // In walkthrough mode the canvas click only engages pointer lock — it must
     // not select furniture, open a popover or start a drag (see #67).
     if (handlersRef.current.walkthroughActive) return;
-    // Only track a single primary pointer at a time. A second finger arriving
-    // mid-gesture is ignored here so it can drive OrbitControls' pinch.
-    if (activePointerId !== null) return;
+    // The synthetic press below, replaying the first finger to the controls.
+    if (replaying) return;
+    // A second finger while the first one is on an item is a pinch, not a
+    // drag: hand both fingers to the camera.
+    if (activePointerId !== null) {
+      if (event.pointerId !== activePointerId) handOverToPinch(event);
+      return;
+    }
+    // A later finger of a multi-touch gesture the camera already owns (a
+    // pinch that started on the floor) never selects or arms a drag: that
+    // would switch the controls off under the pinch.
+    if (event.isPrimary === false) return;
 
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
@@ -272,6 +303,8 @@ export function attachDragHandlers({
     activePointerId = event.pointerId;
     downClientX = event.clientX;
     downClientY = event.clientY;
+    lastClientX = event.clientX;
+    lastClientY = event.clientY;
     dragThreshold = dragThresholdPx(event.pointerType);
     selectOnRelease = keepSelection;
     grabOffsetX = 0;
@@ -306,6 +339,10 @@ export function attachDragHandlers({
   };
 
   const onPointerMove = (event: PointerEvent): void => {
+    if (event.pointerId === activePointerId) {
+      lastClientX = event.clientX;
+      lastClientY = event.clientY;
+    }
     if (!dragTarget) {
       // Hover + tooltip is a mouse/pen affordance only. Skipping it for touch
       // avoids per-frame React re-renders while a finger drags.
@@ -344,6 +381,9 @@ export function attachDragHandlers({
       return;
     }
 
+    // Over the HUD (or off the canvas) the item holds its last place; a
+    // release there undoes the drag (endGesture, #511).
+    if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
@@ -420,12 +460,53 @@ export function attachDragHandlers({
     }
   };
 
+  /**
+   * A second pointer went down while the first armed or drove an item drag:
+   * a pinch that happened to start on furniture. Cancel the drag (the item
+   * goes back, nothing is committed) and give the camera both pointers. The
+   * controls never saw the first press (the press switched them off), so it
+   * is replayed to them from where that finger is now; the second press then
+   * reaches them as usual, after this capture-phase listener, and they start
+   * a two-finger dolly/pan. A mouse has one pointer, so it never gets here.
+   */
+  const handOverToPinch = (second: PointerEvent): void => {
+    const firstId = activePointerId;
+    if (firstId === null) return;
+    abortGesture(true);
+    if (handlersRef.current.walkthroughActive) return;
+    controls.enabled = true;
+    replaying = true;
+    try {
+      canvas.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          pointerId: firstId,
+          pointerType: second.pointerType,
+          isPrimary: true,
+          clientX: lastClientX,
+          clientY: lastClientY,
+          button: 0,
+          buttons: 1,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    } finally {
+      replaying = false;
+    }
+  };
+
   const endGesture = (event: PointerEvent): void => {
     if (event.pointerId !== activePointerId && activePointerId !== null) return;
     // The furniture effect ran between the last move and the release: the
     // same stale-commit hazard as in onPointerMove, so abort, don't commit.
     if (dragStarted && dragTarget && (dragTarget.parent === null || furnitureRevision() !== dragRevision)) {
       abortGesture(false);
+      return;
+    }
+    // Released over the HUD or off the canvas: the drop has no place on the
+    // floor, so the drag is undone, not committed (#511).
+    if (dragStarted && dragTarget && !pointerOnCanvas(canvas, event.clientX, event.clientY)) {
+      abortGesture(true);
       return;
     }
     const started = dragStarted;

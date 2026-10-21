@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset, visibleRegion } from '../lib/scene-insets';
-import type { HouseShape, Rect, Vec3 } from '../lib/scene-insets';
+import { frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset } from '../lib/scene-insets';
+import { OCCLUDER_SELECTOR, SHEET_SELECTOR, measureRegion } from './scene-occluders';
+import type { HouseShape, Vec3 } from '../lib/scene-insets';
 import type { CameraPreset } from '../lib/types';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -42,15 +43,6 @@ export interface UseCameraPresetsOptions {
   walkthroughActive?: boolean;
 }
 
-/** HUD panels that permanently cover the canvas (tagged by the HUD). */
-const OCCLUDER_SELECTOR = '[data-scene-occluder]';
-/**
- * `data-scene-occluder="children"` marks a layout container whose own box
- * is mostly transparent: its visible children are the occluders.
- */
-const OCCLUDER_CHILDREN = 'children';
-/** The phone item sheet: an occluder while `<html data-sheet-open>` is set. */
-const SHEET_SELECTOR = '.pc-item-popover';
 /** Settle time before re-framing after a resize or a HUD change. */
 const REFRAME_DELAY_MS = 150;
 /** Load direction: the classic (0, 8, 8) start pose, 45° down from the front. */
@@ -370,48 +362,6 @@ export function useCameraPresets({
   }, [walkthroughActive, cameraRef, invalidate]);
 
   return { applyPreset, focusOn, fitToRoom };
-}
-
-/** The canvas size and its free region, in canvas-local CSS pixels. */
-function measureRegion(canvas: HTMLCanvasElement): { width: number; height: number; region: Rect } {
-  const bounds = canvas.getBoundingClientRect();
-  const free = visibleRegion(bounds, sceneOccluderRects());
-  return {
-    width: Math.max(1, Math.round(bounds.width)),
-    height: Math.max(1, Math.round(bounds.height)),
-    region: {
-      left: free.left - bounds.left,
-      top: free.top - bounds.top,
-      right: free.right - bounds.left,
-      bottom: free.bottom - bounds.top,
-    },
-  };
-}
-
-/**
- * Rects of the HUD panels covering the scene, plus the item sheet while
- * open. A container tagged `data-scene-occluder="children"` contributes its
- * visible children instead of its own, mostly transparent, box.
- */
-function sceneOccluderRects(): Rect[] {
-  const selector = document.documentElement.hasAttribute('data-sheet-open')
-    ? `${OCCLUDER_SELECTOR}, ${SHEET_SELECTOR}`
-    : OCCLUDER_SELECTOR;
-  const rects: Rect[] = [];
-  const add = (el: Element) => {
-    const r = el.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) rects.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
-  };
-  for (const el of document.querySelectorAll(selector)) {
-    if (el.getAttribute('data-scene-occluder') === OCCLUDER_CHILDREN) {
-      for (const child of el.children) {
-        if (getComputedStyle(child).visibility !== 'hidden') add(child);
-      }
-    } else {
-      add(el);
-    }
-  }
-  return rects;
 }
 
 function cameraAtPose(
