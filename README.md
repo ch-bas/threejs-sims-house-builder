@@ -792,8 +792,11 @@ components/
   headers, one unfolds at a time and scrolls on its own, so the Walls chip
   that ends the tool never scrolls away; a wall tap always unfolds Paint,
   and closing the panels forgets the fold. In landscape an unfolded panel
-  folds the catalog row away and takes the dock's left side from the top
-  bar down to the mode bar, with the folded panel and the chips beside it.
+  folds the catalog row away and becomes a narrow left column
+  (`min(300px, 42vw)`) from under the top bar to the bottom edge, beside
+  the mode bar, with the folded panel and the chips stacked under it; its
+  controls wrap to the column at 40 px or more, it scrolls on its own, and
+  the rest of the screen stays scene, so the framing puts the house there.
   Desktop (≥1101 × ≥701) is untouched where nothing overflows.
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,

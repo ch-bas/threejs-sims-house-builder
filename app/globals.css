@@ -710,32 +710,72 @@
   .pc-hud-left > .pc-glass:not(.pc-build-tools) {
     flex: 1 1 260px;
   }
-  /* An unfolded wall panel needs the height (it was a header and one row
-     in the room left over): the catalog row folds away beneath it, and
-     the panel takes the dock's left side from the top bar down to the mode
-     bar's top, with the folded panel and the chips stacked beside it.
-     Not while the ⋯ tray has folded the wall panels away. */
-  .pc-bottom-hud:has(> .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)):not(:has(.pc-mode-panel[data-more-open])) {
+  /* An unfolded wall panel is a narrow column down the left edge, from
+     under the top bar to the bottom, beside the mode bar: the catalog row
+     folds away, the folded panel and the chips stack under it, and the
+     rest of the screen stays scene, where FIT frames the house (it was a
+     panel across most of the width with a strip of scene left over). Not
+     while the ⋯ tray has folded the wall panels away, nor under the item
+     sheet, which hides the column anyway. */
+  html:not([data-sheet-open]) .pc-bottom-hud:has(> .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)):not(:has(.pc-mode-panel[data-more-open])) {
+    grid-template-columns: min(300px, 42vw) minmax(0, 1fr);
     grid-template-areas:
-      'tools tools'
-      '. mode';
+      'tools .'
+      'tools mode';
   }
   .pc-bottom-hud:has(> .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)):not(:has(.pc-mode-panel[data-more-open])) .pc-catalog-strip {
     display: none !important;
   }
-  .pc-bottom-hud:not(:has(.pc-mode-panel[data-more-open])) .pc-hud-left:has(> .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end !important;
+  html:not([data-sheet-open]) .pc-bottom-hud:has(> .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)):not(:has(.pc-mode-panel[data-more-open])) .pc-mode-panel {
+    justify-self: end;
   }
-  .pc-hud-left > .pc-dock-folded,
-  .pc-hud-left > .pc-build-tools {
-    grid-column: 2;
+  .pc-bottom-hud:not(:has(.pc-mode-panel[data-more-open])) .pc-hud-left:has(> .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) {
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    max-height: calc(100vh - max(var(--pc-top-pills-bottom, 62px), var(--pc-top-slot-bottom, 0px)) - 12px - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - max(var(--pc-top-pills-bottom, 62px), var(--pc-top-slot-bottom, 0px)) - 12px - env(safe-area-inset-bottom, 0px));
+  }
+  .pc-hud-left:has(> .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) > .pc-dock-folded {
+    flex: 0 0 auto;
+  }
+  .pc-hud-left:has(> .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) > .pc-build-tools {
+    flex: 0 0 auto;
+    align-self: flex-start;
   }
   .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded) {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-    max-height: calc(var(--pc-mode-top, 100dvh) - max(var(--pc-top-pills-bottom, 62px), var(--pc-top-slot-bottom, 0px)) - 12px);
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+  /* Its controls wrap to the column and are finger-sized. */
+  .pc-hud-left .pc-paint-head {
+    flex-wrap: wrap;
+  }
+  .pc-hud-left .pc-paint-tabs .pc-tile,
+  .pc-hud-left .pc-paint-row > .pc-tile,
+  .pc-hud-left .pc-stamp-go {
+    height: 40px !important;
+  }
+  .pc-hud-left .pc-paint-row {
+    flex-wrap: wrap;
+  }
+  .pc-hud-left .pc-paint-row > .pc-tile {
+    min-width: 40px;
+    padding: 0 6px !important;
+  }
+  .pc-hud-left .pc-paint-patterns {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+  .pc-hud-left .pc-paint-patterns > .pc-tile,
+  .pc-hud-left .pc-stamp-shapes > .pc-tile {
+    height: 44px !important;
+  }
+  .pc-hud-left .pc-paint-swatches {
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)) !important;
+  }
+  .pc-hud-left .pc-paint-swatches > * {
+    height: 40px !important;
   }
   /* The chip row only as wide as its chips: the scene shows beside it. */
   .pc-hud-left > .pc-build-tools {

@@ -58,6 +58,7 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }
 
       {/* Shape grid */}
       <div
+        className="pc-stamp-shapes"
         style={{
           background: 'rgba(0, 0, 0, 0.20)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -129,7 +130,7 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }
               centerZ: 0,
             })
           }
-          className="pc-tile pc-tile--active"
+          className="pc-tile pc-tile--active pc-stamp-go"
           style={{
             marginTop: 4,
             padding: '6px 10px',
