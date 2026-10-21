@@ -138,9 +138,20 @@ export interface Frame {
    */
   offsetX: number;
   offsetY: number;
+  /** The box's projected size on screen, in CSS pixels. */
+  extentWidth: number;
+  extentHeight: number;
 }
 
 const DEFAULT_MARGIN = 0.08;
+
+/** The view-offset `x`/`y` that puts the projection centre in the middle of `region`. */
+export function regionViewOffset(canvasWidth: number, canvasHeight: number, region: Rect): { offsetX: number; offsetY: number } {
+  return {
+    offsetX: canvasWidth / 2 - (region.left + region.right) / 2,
+    offsetY: canvasHeight / 2 - (region.top + region.bottom) / 2,
+  };
+}
 
 /**
  * The camera pose that fits the whole box inside the visible region, looking
@@ -188,12 +199,71 @@ export function frameBox(input: FrameInput): Frame {
     }
   }
 
+  // Projected size: each corner's offset from the projection centre, in px.
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const x of [boxMin[0], boxMax[0]]) {
+    for (const y of [boxMin[1], boxMax[1]]) {
+      for (const z of [boxMin[2], boxMax[2]]) {
+        const q: Vec3 = [x - target[0], y - target[1], z - target[2]];
+        const depth = distance - dot(q, back);
+        xs.push(dot(q, right) / depth / tanPerPx);
+        ys.push(dot(q, up) / depth / tanPerPx);
+      }
+    }
+  }
+
   return {
     position: [target[0] + back[0] * distance, target[1] + back[1] * distance, target[2] + back[2] * distance],
     target,
-    offsetX: w / 2 - (region.left + region.right) / 2,
-    offsetY: h / 2 - (region.top + region.bottom) / 2,
+    ...regionViewOffset(w, h, region),
+    extentWidth: Math.max(...xs) - Math.min(...xs),
+    extentHeight: Math.max(...ys) - Math.min(...ys),
   };
+}
+
+/**
+ * Below this share of the canvas's short side the framed house is too small
+ * to work with: a mis-measured occluder (a transparent container much bigger
+ * than what it paints) can leave a sliver of "free" canvas, and fitting the
+ * house into it frames a thumbnail.
+ */
+export const MIN_HOUSE_SHARE = 0.35;
+
+/**
+ * `frameBox` in the visible region, falling back to the whole canvas when
+ * the house would come out smaller than `MIN_HOUSE_SHARE` of the short side.
+ */
+export function frameInRegion(input: FrameInput): Frame & { fellBack: boolean } {
+  const framed = frameBox(input);
+  const shortSide = Math.min(input.canvasWidth, input.canvasHeight);
+  if (Math.max(framed.extentWidth, framed.extentHeight) >= shortSide * MIN_HOUSE_SHARE) {
+    return { ...framed, fellBack: false };
+  }
+  const whole = { left: 0, top: 0, right: input.canvasWidth, bottom: input.canvasHeight };
+  return { ...frameBox({ ...input, region: whole }), fellBack: true };
+}
+
+export interface HouseShape {
+  /** Footprint, metres. */
+  width: number;
+  depth: number;
+  /** Eaves height: the top of the highest storey. */
+  height: number;
+  /**
+   * The roof while it is on screen: its rise above the eaves and how far
+   * its eaves overhang the walls. Null when the roof is hidden.
+   */
+  roof: { peak: number; overhang: number } | null;
+}
+
+/** The box to frame: the footprint up to the eaves, plus the roof when it shows. */
+export function houseFrameBox(house: HouseShape): { boxMin: Vec3; boxMax: Vec3 } {
+  const overhang = house.roof ? Math.max(0, house.roof.overhang) : 0;
+  const halfW = Math.max(1, house.width) / 2 + overhang;
+  const halfD = Math.max(1, house.depth) / 2 + overhang;
+  const top = Math.max(0, house.height) + (house.roof ? Math.max(0, house.roof.peak) : 0);
+  return { boxMin: [-halfW, 0, -halfD], boxMax: [halfW, top, halfD] };
 }
 
 function dot(a: Vec3, b: Vec3): number {

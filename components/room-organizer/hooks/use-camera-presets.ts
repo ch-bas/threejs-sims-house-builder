@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { frameBox, isCompactViewport, visibleRegion } from '../lib/scene-insets';
-import type { Rect, Vec3 } from '../lib/scene-insets';
+import { frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset, visibleRegion } from '../lib/scene-insets';
+import type { HouseShape, Rect, Vec3 } from '../lib/scene-insets';
 import type { CameraPreset } from '../lib/types';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -26,6 +26,12 @@ export interface UseCameraPresetsOptions {
   roomDepth?: number;
   /** Total stacked building height in metres (floors × 3). */
   buildingHeight?: number;
+  /**
+   * The roof while it is on screen (walls up, on the top storey or with
+   * every storey shown): its rise above the eaves and its eave overhang.
+   * Compact framing keeps it in view; null or absent when hidden.
+   */
+  roof?: HouseShape['roof'];
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate?: () => void;
   /** The 3D canvas; framing measures the HUD against it. */
@@ -38,6 +44,11 @@ export interface UseCameraPresetsOptions {
 
 /** HUD panels that permanently cover the canvas (tagged by the HUD). */
 const OCCLUDER_SELECTOR = '[data-scene-occluder]';
+/**
+ * `data-scene-occluder="children"` marks a layout container whose own box
+ * is mostly transparent: its visible children are the occluders.
+ */
+const OCCLUDER_CHILDREN = 'children';
 /** The phone item sheet: an occluder while `<html data-sheet-open>` is set. */
 const SHEET_SELECTOR = '.pc-item-popover';
 /** Settle time before re-framing after a resize or a HUD change. */
@@ -63,6 +74,7 @@ export function useCameraPresets({
   roomWidth = roomSize,
   roomDepth = roomSize,
   buildingHeight = 3,
+  roof = null,
   invalidate,
   canvasRef,
   active = false,
@@ -134,24 +146,13 @@ export function useCameraPresets({
       let position: Vec3;
       let target: Vec3;
       if (isCompactViewport(window.innerWidth, window.innerHeight) && canvas && canvas.clientWidth > 0 && canvas.clientHeight > 0) {
-        const bounds = canvas.getBoundingClientRect();
-        const region = visibleRegion(bounds, sceneOccluderRects());
-        const width = Math.max(1, Math.round(bounds.width));
-        const height = Math.max(1, Math.round(bounds.height));
-        const halfW = Math.max(1, roomWidth) / 2;
-        const halfD = Math.max(1, roomDepth) / 2;
-        const fitted = frameBox({
+        const { width, height, region } = measureRegion(canvas);
+        const fitted = frameInRegion({
           canvasWidth: width,
           canvasHeight: height,
-          region: {
-            left: region.left - bounds.left,
-            top: region.top - bounds.top,
-            right: region.right - bounds.left,
-            bottom: region.bottom - bounds.top,
-          },
+          region,
           fovDeg: camera.fov,
-          boxMin: [-halfW, 0, -halfD],
-          boxMax: [halfW, buildingHeight, halfD],
+          ...houseFrameBox({ width: roomWidth, depth: roomDepth, height: buildingHeight, roof }),
           direction: mode === 'load' ? LOAD_DIRECTION : FIT_DIRECTION,
         });
         position = fitted.position;
@@ -192,7 +193,7 @@ export function useCameraPresets({
       invalidate?.();
       return true;
     },
-    [cameraRef, controlsRef, canvasRef, roomSize, roomWidth, roomDepth, buildingHeight, walkthroughActive, invalidate]
+    [cameraRef, controlsRef, canvasRef, roomSize, roomWidth, roomDepth, buildingHeight, roof, walkthroughActive, invalidate]
   );
 
   const fitToRoom = useCallback(() => {
@@ -206,8 +207,11 @@ export function useCameraPresets({
   // Frame the house once on load, then re-frame after a resize, an
   // orientation change or a HUD change (panels mounting or resizing, the
   // item sheet opening), but only while the camera still sits where the last
-  // frame put it. Desktop-sized windows skip all of it.
+  // frame put it. A camera the user moved keeps its pose; a resize only
+  // re-centres the projection shift on the new free region. Desktop-sized
+  // windows drop the shift and keep the classic poses.
   const loadFramedRef = useRef(false);
+  const requestReframeRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!active || walkthroughActive) return undefined;
     const canvas = canvasRef?.current;
@@ -216,40 +220,94 @@ export function useCameraPresets({
     const compact = () => isCompactViewport(window.innerWidth, window.innerHeight);
     if (!loadFramedRef.current) loadFramedRef.current = frameRef.current('load') || !compact();
 
+    // Never move the camera under a finger: an item drag's ray plane would
+    // jump, and a pinch would fight the re-frame. Pointers are tracked by id
+    // so lifting one finger of a pinch doesn't count as all fingers up; work
+    // that arrives meanwhile waits for the last one to lift.
+    const pointers = new Set<number>();
     let timer = 0;
-    let pointerDown = false;
-    const schedule = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(reframe, REFRAME_DELAY_MS);
+    let pending = false;
+    // The canvas may have changed while this effect was off (2D, walkthrough).
+    let resized = true;
+    const clearShift = (camera: ThreeNS.PerspectiveCamera) => {
+      if (!camera.view?.enabled) return;
+      camera.clearViewOffset();
+      invalidate?.();
     };
     const reframe = () => {
-      // Never move the camera under a finger: an item drag's ray plane would jump.
-      if (pointerDown) {
-        schedule();
+      timer = 0;
+      if (pointers.size > 0) {
+        pending = true;
         return;
       }
+      const wasResized = resized;
+      resized = false;
+      const camera = cameraRef.current;
+      if (!camera) return;
       if (!loadFramedRef.current) {
         loadFramedRef.current = frameRef.current('load');
         return;
       }
       const framed = framedRef.current;
-      if (framed && cameraAtPose(cameraRef.current, controlsRef.current, framed)) frameRef.current(framed.mode);
+      if (framed && cameraAtPose(camera, controlsRef.current, framed)) {
+        frameRef.current(framed.mode);
+        return;
+      }
+      if (!compact()) {
+        clearShift(camera);
+      } else if (wasResized) {
+        // The user's pose stays; only the shift follows the new free region.
+        const { width, height, region } = measureRegion(canvas);
+        const { offsetX, offsetY } = regionViewOffset(width, height, region);
+        camera.setViewOffset(width, height, offsetX, offsetY, width, height);
+        invalidate?.();
+      }
     };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(reframe, REFRAME_DELAY_MS);
+    };
+    requestReframeRef.current = schedule;
+    schedule();
 
-    const onPointerDown = () => {
-      pointerDown = true;
+    const onResize = () => {
+      resized = true;
+      // A desktop-sized window never shows a shifted projection, not even
+      // for the settle delay.
+      const camera = cameraRef.current;
+      if (camera && !compact()) clearShift(camera);
+      schedule();
     };
-    const onPointerUp = () => {
-      pointerDown = false;
+    const onPointerDown = (event: PointerEvent) => {
+      pointers.add(event.pointerId);
+    };
+    const release = () => {
+      if (pointers.size > 0 || !pending) return;
+      pending = false;
+      schedule();
+    };
+    const onPointerEnd = (event: PointerEvent) => {
+      pointers.delete(event.pointerId);
+      release();
+    };
+    // A pointerup lost to another window must not hold re-framing off forever.
+    const onBlur = () => {
+      pointers.clear();
+      release();
     };
     window.addEventListener('pointerdown', onPointerDown, true);
-    window.addEventListener('pointerup', onPointerUp, true);
-    window.addEventListener('pointercancel', onPointerUp, true);
-    window.addEventListener('resize', schedule);
+    window.addEventListener('pointerup', onPointerEnd, true);
+    window.addEventListener('pointercancel', onPointerEnd, true);
+    window.addEventListener('lostpointercapture', onPointerEnd, true);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('resize', onResize);
 
     // The canvas and every occluder: panels resize on a mode switch or when
     // the sheet expands.
-    const resizeObserver = new ResizeObserver(schedule);
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries.some((entry) => entry.target === canvas)) resized = true;
+      schedule();
+    });
     resizeObserver.observe(canvas);
     let observed: Element[] = [];
     const syncOccluders = () => {
@@ -262,8 +320,8 @@ export function useCameraPresets({
       schedule();
     };
     syncOccluders();
-    // Panels mounting, unmounting or being tagged. The callback only compares element
-    // lists; measuring waits for the timer.
+    // Panels mounting, unmounting or being tagged. The callback only
+    // compares element lists; measuring waits for the timer.
     const mountObserver = new MutationObserver(syncOccluders);
     mountObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-scene-occluder'] });
     const sheetObserver = new MutationObserver(schedule);
@@ -271,15 +329,31 @@ export function useCameraPresets({
 
     return () => {
       window.clearTimeout(timer);
+      requestReframeRef.current = null;
       window.removeEventListener('pointerdown', onPointerDown, true);
-      window.removeEventListener('pointerup', onPointerUp, true);
-      window.removeEventListener('pointercancel', onPointerUp, true);
-      window.removeEventListener('resize', schedule);
+      window.removeEventListener('pointerup', onPointerEnd, true);
+      window.removeEventListener('pointercancel', onPointerEnd, true);
+      window.removeEventListener('lostpointercapture', onPointerEnd, true);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('resize', onResize);
       resizeObserver.disconnect();
       mountObserver.disconnect();
       sheetObserver.disconnect();
     };
-  }, [active, walkthroughActive, canvasRef, cameraRef, controlsRef]);
+  }, [active, walkthroughActive, canvasRef, cameraRef, controlsRef, invalidate]);
+
+  // The house's framed size changed (walls up showing the roof, a storey
+  // added, the footprint resized): re-frame an untouched camera.
+  const roofPeak = roof?.peak ?? 0;
+  const roofOverhang = roof?.overhang ?? 0;
+  const firstShapeRef = useRef(true);
+  useEffect(() => {
+    if (firstShapeRef.current) {
+      firstShapeRef.current = false;
+      return;
+    }
+    requestReframeRef.current?.();
+  }, [roomWidth, roomDepth, buildingHeight, roofPeak, roofOverhang]);
 
   // First-person view looks straight ahead: drop the projection shift while
   // the walkthrough runs and put it back after.
@@ -298,15 +372,44 @@ export function useCameraPresets({
   return { applyPreset, focusOn, fitToRoom };
 }
 
-/** Rects of the HUD panels covering the scene, plus the item sheet while open. */
+/** The canvas size and its free region, in canvas-local CSS pixels. */
+function measureRegion(canvas: HTMLCanvasElement): { width: number; height: number; region: Rect } {
+  const bounds = canvas.getBoundingClientRect();
+  const free = visibleRegion(bounds, sceneOccluderRects());
+  return {
+    width: Math.max(1, Math.round(bounds.width)),
+    height: Math.max(1, Math.round(bounds.height)),
+    region: {
+      left: free.left - bounds.left,
+      top: free.top - bounds.top,
+      right: free.right - bounds.left,
+      bottom: free.bottom - bounds.top,
+    },
+  };
+}
+
+/**
+ * Rects of the HUD panels covering the scene, plus the item sheet while
+ * open. A container tagged `data-scene-occluder="children"` contributes its
+ * visible children instead of its own, mostly transparent, box.
+ */
 function sceneOccluderRects(): Rect[] {
   const selector = document.documentElement.hasAttribute('data-sheet-open')
     ? `${OCCLUDER_SELECTOR}, ${SHEET_SELECTOR}`
     : OCCLUDER_SELECTOR;
   const rects: Rect[] = [];
-  for (const el of document.querySelectorAll(selector)) {
+  const add = (el: Element) => {
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) rects.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+  };
+  for (const el of document.querySelectorAll(selector)) {
+    if (el.getAttribute('data-scene-occluder') === OCCLUDER_CHILDREN) {
+      for (const child of el.children) {
+        if (getComputedStyle(child).visibility !== 'hidden') add(child);
+      }
+    } else {
+      add(el);
+    }
   }
   return rects;
 }

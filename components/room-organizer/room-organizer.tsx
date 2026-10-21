@@ -35,6 +35,7 @@ import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
+import { ROOF_EAVE_OVERHANG } from './lib/dormers';
 import { notify } from './lib/editor-notices';
 import { hasCollisions, totalCost } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
@@ -44,6 +45,7 @@ import { snapshotBeforeReplace } from './lib/restore-point';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
 import { entrancePlanOutline } from './lib/street';
+import { sceneWallDisplay } from './lib/walkthrough-view';
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
@@ -60,6 +62,7 @@ import { Viewport } from './panels/viewport';
 import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
+import { roofPeakHeight } from './three/roof';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 
@@ -801,6 +804,18 @@ export function RoomOrganizer(): JSX.Element {
     sceneRef,
   });
 
+  // The roof as camera framing sees it: on screen only with the walls up,
+  // on the top storey or with every storey shown (as the roof effect shows it).
+  const roofStyle = layout.roof?.style ?? 'none';
+  const roofShows =
+    roofStyle !== 'none' &&
+    sceneWallDisplay(view.wallDisplay, walkthroughActive) === 'up' &&
+    (view.showAllFloors || activeFloorIndex === layout.floors.length - 1);
+  const roofPeak = roofShows ? roofPeakHeight(roofStyle, layout.width, layout.height) : 0;
+  const framedRoof = useMemo(
+    () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),
+    [roofShows, roofPeak]
+  );
   const { applyPreset, focusOn, fitToRoom } = useCameraPresets({
     cameraRef,
     controlsRef,
@@ -809,6 +824,7 @@ export function RoomOrganizer(): JSX.Element {
     roomWidth: layout.width,
     roomDepth: layout.height,
     buildingHeight: buildingHeight(layout.floors),
+    roof: framedRoof,
     canvasRef,
     active: isReady && !view.view2D,
     walkthroughActive,

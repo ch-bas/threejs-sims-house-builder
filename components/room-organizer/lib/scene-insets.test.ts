@@ -1,6 +1,6 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { frameBox, isCompactViewport, visibleRegion } from './scene-insets';
+import { MIN_HOUSE_SHARE, frameBox, frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset, visibleRegion } from './scene-insets';
 import type { FrameInput, Rect } from './scene-insets';
 
 const rect = (left: number, top: number, right: number, bottom: number): Rect => ({ left, top, right, bottom });
@@ -131,5 +131,91 @@ describe('frameBox', () => {
     const band = frameBox({ ...base, region: rect(0, 60, 390, 220) });
     const dist = (f: typeof wide) => Math.hypot(f.position[0] - f.target[0], f.position[1] - f.target[1], f.position[2] - f.target[2]);
     expect(dist(band)).toBeGreaterThan(dist(wide));
+  });
+});
+
+describe('frameBox extent', () => {
+  it('reports the projected size of the box, matching a real projection', () => {
+    const input: FrameInput = {
+      canvasWidth: 390,
+      canvasHeight: 664,
+      region: rect(0, 60, 390, 380),
+      fovDeg: 75,
+      boxMin: [-4, 0, -4],
+      boxMax: [4, 3, 4],
+      direction: [0.6, 0.7, 0.6],
+    };
+    const frame = frameBox(input);
+    const bounds = projectedBounds(input);
+    expect(frame.extentWidth).toBeCloseTo(bounds.right - bounds.left, 3);
+    expect(frame.extentHeight).toBeCloseTo(bounds.bottom - bounds.top, 3);
+  });
+});
+
+describe('regionViewOffset', () => {
+  it('moves the projection centre to the middle of the region', () => {
+    expect(regionViewOffset(390, 664, rect(0, 60, 390, 380))).toEqual({ offsetX: 0, offsetY: 332 - 220 });
+    expect(regionViewOffset(750, 342, rect(0, 0, 750, 342))).toEqual({ offsetX: 0, offsetY: 0 });
+    expect(regionViewOffset(750, 342, rect(150, 50, 750, 250))).toEqual({ offsetX: -75, offsetY: 21 });
+  });
+});
+
+describe('frameInRegion', () => {
+  const base: FrameInput = {
+    canvasWidth: 750,
+    canvasHeight: 342,
+    region: rect(0, 60, 750, 280),
+    fovDeg: 75,
+    boxMin: [-4, 0, -4],
+    boxMax: [4, 3, 4],
+    direction: [0, 1, 1],
+  };
+
+  it('keeps the region when the house comes out a usable size', () => {
+    const framed = frameInRegion(base);
+    expect(framed.fellBack).toBe(false);
+    expect(Math.max(framed.extentWidth, framed.extentHeight)).toBeGreaterThanOrEqual(342 * MIN_HOUSE_SHARE);
+  });
+
+  it('falls back to the whole canvas when the region would frame a thumbnail', () => {
+    // A mis-measured HUD container left a 97×77 px gap in landscape.
+    const framed = frameInRegion({ ...base, region: rect(150, 60, 247, 137) });
+    expect(framed.fellBack).toBe(true);
+    expect(framed).toMatchObject(frameBox({ ...base, region: rect(0, 0, 750, 342) }));
+  });
+});
+
+describe('houseFrameBox', () => {
+  it('is the footprint up to the eaves while the roof is hidden', () => {
+    expect(houseFrameBox({ width: 8, depth: 6, height: 3, roof: null })).toEqual({ boxMin: [-4, 0, -3], boxMax: [4, 3, 3] });
+  });
+
+  it('adds the roof rise and the eave overhang while the roof shows', () => {
+    expect(houseFrameBox({ width: 8, depth: 6, height: 6, roof: { peak: 2.5, overhang: 0.35 } })).toEqual({
+      boxMin: [-4.35, 0, -3.35],
+      boxMax: [4.35, 8.5, 3.35],
+    });
+  });
+
+  it('keeps a degenerate footprint at least a metre wide', () => {
+    expect(houseFrameBox({ width: 0, depth: 0, height: 0, roof: null })).toEqual({ boxMin: [-0.5, 0, -0.5], boxMax: [0.5, 0, 0.5] });
+  });
+
+  it('fits the eaves on an iPhone SE with the walls up', () => {
+    // 8 × 8 m, one storey, gable rising min(2.5, 8.7/2) = 2.5 m: framed in the
+    // whole SE canvas, every eave corner stays on screen.
+    const input: FrameInput = {
+      canvasWidth: 320,
+      canvasHeight: 568,
+      region: rect(0, 0, 320, 568),
+      fovDeg: 75,
+      ...houseFrameBox({ width: 8, depth: 8, height: 3, roof: { peak: 2.5, overhang: 0.35 } }),
+      direction: [0.6, 0.7, 0.6],
+    };
+    const bounds = projectedBounds(input);
+    expect(bounds.left).toBeGreaterThan(0);
+    expect(bounds.right).toBeLessThan(320);
+    expect(bounds.top).toBeGreaterThan(0);
+    expect(bounds.bottom).toBeLessThan(568);
   });
 });
