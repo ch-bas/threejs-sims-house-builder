@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createStore, useStore, type StoreApi } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { notify } from '../lib/editor-notices';
 import {
@@ -22,18 +24,34 @@ export interface UseLayoutPersistenceOptions {
   debounceMs?: number;
 }
 
-export interface UseLayoutPersistenceResult {
+export interface SaveStatus {
   /** Milliseconds-since-epoch of the last successful save, or null. */
-  lastSavedAt: number | null;
+  readonly lastSavedAt: number | null;
   /** True while the debounce window is pending — the next save is on the way. */
-  saving: boolean;
+  readonly saving: boolean;
   /**
    * Why the most recent save attempt failed — a full quota (typically an
    * oversized floor-plan image), storage blocked by the browser, or something
    * else (#472) — or null after a success. The HUD uses it to avoid falsely
    * showing "Saved" and to say what the user can do.
    */
-  saveError: SaveFailureReason | null;
+  readonly saveError: SaveFailureReason | null;
+}
+
+export type SaveStatusStore = StoreApi<SaveStatus>;
+
+function createSaveStatusStore(): SaveStatusStore {
+  return createStore<SaveStatus>()(() => ({ lastSavedAt: null, saving: false, saveError: null }));
+}
+
+/** The save status, re-rendering only the component that shows it. */
+export function useSaveStatus(store: SaveStatusStore): SaveStatus {
+  return useStore(store, useShallow((state: SaveStatus) => state));
+}
+
+export interface UseLayoutPersistenceResult {
+  /** Subscribe with `useSaveStatus`; read in tests with `getState()`. */
+  saveStatus: SaveStatusStore;
   /**
    * The layout another tab saved over ours, or null. Autosave stays
    * last-writer-wins between tabs (full merge is out of scope, #123), but the
@@ -60,16 +78,14 @@ export function useLayoutPersistence({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const pendingRef = useRef(false);
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
-  // What `saving` was last set to, so the autosave effect sets it only when
-  // it flips: re-setting it while already true still schedules a render, and
-  // one per keystroke left a render pending after every typed character until
-  // fast typing hit "Maximum update depth exceeded" (#480). Written beside each
-  // setSaving, never during render: a keystroke render can run before a
-  // queued setSaving(false) is applied, and would read a stale true.
-  const savingRef = useRef(saving);
-  const [saveError, setSaveError] = useState<SaveFailureReason | null>(null);
+  // The save status lives in a store of its own, read by the HUD's leaf
+  // subscriber: as hook state, every flip re-rendered the whole editor (#3).
+  const [saveStatus] = useState(createSaveStatusStore);
+  // What `saving` was last set to, so the autosave effect writes it only when
+  // it flips: as state, re-setting it while already true scheduled a render
+  // per keystroke until fast typing hit "Maximum update depth exceeded"
+  // (#480). Written beside each `saving` write, never during render.
+  const savingRef = useRef(false);
   // The exact JSON this tab last wrote: its own echo must not count as
   // another tab's change (#334).
   const lastSavedJsonRef = useRef<string | null>(null);
@@ -137,7 +153,7 @@ export function useLayoutPersistence({
       }
       if (outcome === 'kept' || outcome === 'nothing') return;
       mainSaveHeldRef.current = true;
-      setSaveError(outcome);
+      saveStatus.setState({ saveError: outcome });
     };
 
     const hydrateFromLocalSave = (): void => {
@@ -227,7 +243,7 @@ export function useLayoutPersistence({
     }
 
     hydrateFromLocalSave();
-  }, [onHydrate]);
+  }, [onHydrate, saveStatus]);
 
   useEffect(() => {
     if (hydrationBaseRef.current) {
@@ -239,7 +255,7 @@ export function useLayoutPersistence({
     }
     if (!savingRef.current) {
       savingRef.current = true;
-      setSaving(true);
+      saveStatus.setState({ saving: true });
     }
     pendingRef.current = true;
     const handle = window.setTimeout(() => {
@@ -247,7 +263,7 @@ export function useLayoutPersistence({
       if (mainSaveHeldRef.current) {
         const outcome = keepStoredLayout();
         if (outcome !== 'kept' && outcome !== 'nothing') {
-          setSaveError(outcome);
+          saveStatus.setState({ saveError: outcome });
           return;
         }
         mainSaveHeldRef.current = false;
@@ -258,10 +274,8 @@ export function useLayoutPersistence({
         // Only mark the edit persisted on a real success — otherwise the HUD
         // would show "Saved" for a layout that never reached localStorage.
         pendingRef.current = false;
-        setLastSavedAt(Date.now());
         savingRef.current = false;
-        setSaving(false);
-        setSaveError(null);
+        saveStatus.setState({ lastSavedAt: Date.now(), saving: false, saveError: null });
         // Restore point (#231): piggyback on the successful autosave. The
         // ring gates its own cadence and swallows quota failures, so this
         // can never break the save that just happened. A blank lot isn't
@@ -272,11 +286,11 @@ export function useLayoutPersistence({
         // Keep `saving`/pending truthy and flag the error so the HUD reports
         // the failure instead of a false "Saved". A later successful edit
         // clears the flag.
-        setSaveError(result.reason);
+        saveStatus.setState({ saveError: result.reason });
       }
     }, debounceMs);
     return () => window.clearTimeout(handle);
-  }, [layout, debounceMs]);
+  }, [layout, debounceMs, saveStatus]);
 
   // Flush a still-debouncing save when the editor unmounts or the page goes
   // away — without this, edits made in the last debounceMs are silently lost
@@ -298,5 +312,5 @@ export function useLayoutPersistence({
     };
   }, []);
 
-  return { lastSavedAt, saving, saveError, remoteLayout, clearRemoteLayout };
+  return { saveStatus, remoteLayout, clearRemoteLayout };
 }

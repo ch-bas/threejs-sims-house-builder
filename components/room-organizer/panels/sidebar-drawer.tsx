@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useEditorView, useRoomEditor, useViewSettings } from '../contexts';
-import { useSelection } from '../contexts';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
@@ -62,24 +61,15 @@ export interface SidebarDrawerProps {
   removeItem(id: string): void;
 }
 
-export function SidebarDrawer({
+// Memoised, and its panels read the editor through HeldEditorContexts, so a
+// closed drawer skips layout edits altogether (#3). Pass stable callbacks.
+export const SidebarDrawer = memo(function SidebarDrawer({
   collapsed,
   onCollapse,
-  unlockedAchievements,
-  onApplyPreset,
-  onFitToRoom,
-  onScreenshot,
-  onImport,
-  onExportGlb,
-  onShareLink,
-  placeCatalogItem,
-  removeItem,
+  ...bodyProps
 }: SidebarDrawerProps): JSX.Element {
-  const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue } = useRoomEditor();
-  const view = useViewSettings('drawWallMode', 'drawZoneMode', 'measurementMode', 'view2D', 'walkthroughMode');
+  const view = useViewSettings('drawWallMode', 'drawZoneMode', 'measurementMode');
   const gameMode = useEditorView((state) => state.gameMode);
-  const keepOut = useFloorKeepOut(layout, activeFloorIndex);
-  const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   const drawerRef = useRef<HTMLElement>(null);
   // While a draw mode is on the canvas is the workbench, so the drawer stops
   // being modal: no backdrop — the backdrop button sat over the plan and
@@ -119,15 +109,6 @@ export function SidebarDrawer({
     setSidebarTabRaw(gameMode);
     safeSetItem(SIDEBAR_TAB_KEY, gameMode);
   }, [gameMode]);
-
-  const handleFloorPlanUpload = async (file: File) => {
-    try {
-      const dataUrl = await readImageAsDataUrl(file);
-      actions.setFloorPlan(dataUrl);
-    } catch (uploadError) {
-      notify(uploadError instanceof Error ? uploadError.message : 'Failed to upload image.', 'error');
-    }
-  };
 
   return (
     <div style={{ display: collapsed ? 'none' : 'block' }}>
@@ -199,143 +180,181 @@ export function SidebarDrawer({
             gap: 10,
           }}
         >
-          {allSelectedIds.size >= 2 && (
-            <AlignPanel
-              selectionCount={allSelectedIds.size}
-              onAlign={(edge: AlignEdge) => {
-                const updates = alignSelection(activeFloor.items, allSelectedIds, edge);
-                if (updates.size > 0) actions.bulkSetPositions(updates);
-              }}
-              onDistribute={(axis: DistributeAxis) => {
-                const updates = distributeSelection(activeFloor.items, allSelectedIds, axis);
-                if (updates.size > 0) actions.bulkSetPositions(updates);
-              }}
-            />
-          )}
-
-          {sidebarTab === 'build' && (
-            <>
-              <FloorSwitcher />
-
-              <RoomSettingsPanel
-                onFloorPlanUpload={handleFloorPlanUpload}
-              />
-
-              <WallsPanel />
-
-              {/* Drawing happens on the plan the drawer covers, so switching
-                  the mode on folds the drawer away (#323). */}
-              <ZonesPanel onDrawStart={onCollapse} />
-
-              <RoofPanel />
-
-              <SitePanel />
-            </>
-          )}
-
-          {sidebarTab === 'buy' && (
-            <>
-              <FurnitureCatalogPanel
-                onAdd={(catalogItem) => {
-                  const id = placeCatalogItem(catalogItem);
-                  if (!id) return;
-                  selectOnly(id);
-                  playCue('place');
-                }}
-              />
-
-              <SetsPanel
-                onAddSet={(set) => {
-                  // Scale/refuse the set to the current room so pieces don't
-                  // land through the walls in small rooms (#73). An empty
-                  // result means the set can't fit here.
-                  const items = buildFurnitureSet(set, {
-                    roomWidth: layout.width,
-                    roomDepth: layout.height,
-                    interiorWalls: activeFloor.interiorWalls ?? [],
-                    frontGap: entrancePlanOutline(layout, activeFloorIndex),
-                  });
-                  if (items.length === 0) return;
-                  actions.addItems(items);
-                  const last = items[items.length - 1];
-                  if (last) selectOnly(last.id);
-                }}
-              />
-
-              <PlacedItemsPanel
-                onRotate={(id) => {
-                  actions.rotateItem(id);
-                  playCue('rotate');
-                }}
-                onRemove={removeItem}
-              />
-            </>
-          )}
-
-          {sidebarTab === 'style' && (
-            <>
-              <ThemesPanel onApply={(themeKey) => actions.applyLayout(applyTheme(layout, themeKey))} />
-
-              <TimeOfDayPanel />
-
-              {selectedItem && (
-                <ItemResizePanel
-                  hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
-                  onDuplicate={(id) => {
-                    const newId = actions.duplicateItem(id);
-                    selectOnly(newId);
-                  }}
-                />
-              )}
-            </>
-          )}
-
-          {sidebarTab === 'manage' && (
-            <>
-              <CameraPresetsPanel
-                disabled={!isReady || view.view2D || view.walkthroughMode}
-                onApply={onApplyPreset}
-                onFit={onFitToRoom}
-                onScreenshot={onScreenshot}
-              />
-
-              <ActionsPanel
-                onImport={onImport}
-                onExportGlb={onExportGlb}
-                onShareLink={onShareLink}
-              />
-
-              <TemplatesPanel
-                onLoadTemplate={(template) => {
-                  if (!confirmReplace(layout, `the ${template.name} template`)) return false;
-                  snapshotBeforeReplace(layout);
-                  actions.applyLayout({
-                    ...template,
-                    floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
-                  });
-                  selectOnly(null);
-                  return true;
-                }}
-              />
-
-              <LibraryPanel
-                currentLayout={layout}
-                onLoad={(loaded) => {
-                  // No history.clear(): like a template load, this must stay
-                  // one Ctrl+Z away from the design it replaced (#222).
-                  snapshotBeforeReplace(layout);
-                  actions.applyLayout(loaded);
-                  selectOnly(null);
-                }}
-              />
-
-              <StatisticsPanel />
-              <AchievementsPanel unlocked={unlockedAchievements} />
-              <ShortcutsPanel />
-            </>
-          )}
+          <HeldEditorContexts hold={collapsed}>
+            <DrawerBody sidebarTab={sidebarTab} onCollapse={onCollapse} {...bodyProps} />
+          </HeldEditorContexts>
         </div>
       </aside>
     </div>
   );
-}
+});
+
+type DrawerBodyProps = Omit<SidebarDrawerProps, 'collapsed'> & { sidebarTab: SidebarTab };
+
+const DrawerBody = memo(function DrawerBody({
+  sidebarTab,
+  onCollapse,
+  unlockedAchievements,
+  onApplyPreset,
+  onFitToRoom,
+  onScreenshot,
+  onImport,
+  onExportGlb,
+  onShareLink,
+  placeCatalogItem,
+  removeItem,
+}: DrawerBodyProps): JSX.Element {
+  const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue } = useRoomEditor();
+  const view = useViewSettings('view2D', 'walkthroughMode');
+  const keepOut = useFloorKeepOut(layout, activeFloorIndex);
+  const { selectedItem, selectOnly, allSelectedIds } = useSelection();
+
+  const handleFloorPlanUpload = async (file: File) => {
+    try {
+      const dataUrl = await readImageAsDataUrl(file);
+      actions.setFloorPlan(dataUrl);
+    } catch (uploadError) {
+      notify(uploadError instanceof Error ? uploadError.message : 'Failed to upload image.', 'error');
+    }
+  };
+
+  return (
+    <>
+      {allSelectedIds.size >= 2 && (
+        <AlignPanel
+          selectionCount={allSelectedIds.size}
+          onAlign={(edge: AlignEdge) => {
+            const updates = alignSelection(activeFloor.items, allSelectedIds, edge);
+            if (updates.size > 0) actions.bulkSetPositions(updates);
+          }}
+          onDistribute={(axis: DistributeAxis) => {
+            const updates = distributeSelection(activeFloor.items, allSelectedIds, axis);
+            if (updates.size > 0) actions.bulkSetPositions(updates);
+          }}
+        />
+      )}
+
+      {sidebarTab === 'build' && (
+        <>
+          <FloorSwitcher />
+
+          <RoomSettingsPanel
+            onFloorPlanUpload={handleFloorPlanUpload}
+          />
+
+          <WallsPanel />
+
+          {/* Drawing happens on the plan the drawer covers, so switching
+              the mode on folds the drawer away (#323). */}
+          <ZonesPanel onDrawStart={onCollapse} />
+
+          <RoofPanel />
+
+          <SitePanel />
+        </>
+      )}
+
+      {sidebarTab === 'buy' && (
+        <>
+          <FurnitureCatalogPanel
+            onAdd={(catalogItem) => {
+              const id = placeCatalogItem(catalogItem);
+              if (!id) return;
+              selectOnly(id);
+              playCue('place');
+            }}
+          />
+
+          <SetsPanel
+            onAddSet={(set) => {
+              // Scale/refuse the set to the current room so pieces don't
+              // land through the walls in small rooms (#73). An empty
+              // result means the set can't fit here.
+              const items = buildFurnitureSet(set, {
+                roomWidth: layout.width,
+                roomDepth: layout.height,
+                interiorWalls: activeFloor.interiorWalls ?? [],
+                frontGap: entrancePlanOutline(layout, activeFloorIndex),
+              });
+              if (items.length === 0) return;
+              actions.addItems(items);
+              const last = items[items.length - 1];
+              if (last) selectOnly(last.id);
+            }}
+          />
+
+          <PlacedItemsPanel
+            onRotate={(id) => {
+              actions.rotateItem(id);
+              playCue('rotate');
+            }}
+            onRemove={removeItem}
+          />
+        </>
+      )}
+
+      {sidebarTab === 'style' && (
+        <>
+          <ThemesPanel onApply={(themeKey) => actions.applyLayout(applyTheme(layout, themeKey))} />
+
+          <TimeOfDayPanel />
+
+          {selectedItem && (
+            <ItemResizePanel
+              hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
+              onDuplicate={(id) => {
+                const newId = actions.duplicateItem(id);
+                selectOnly(newId);
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {sidebarTab === 'manage' && (
+        <>
+          <CameraPresetsPanel
+            disabled={!isReady || view.view2D || view.walkthroughMode}
+            onApply={onApplyPreset}
+            onFit={onFitToRoom}
+            onScreenshot={onScreenshot}
+          />
+
+          <ActionsPanel
+            onImport={onImport}
+            onExportGlb={onExportGlb}
+            onShareLink={onShareLink}
+          />
+
+          <TemplatesPanel
+            onLoadTemplate={(template) => {
+              if (!confirmReplace(layout, `the ${template.name} template`)) return false;
+              snapshotBeforeReplace(layout);
+              actions.applyLayout({
+                ...template,
+                floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
+              });
+              selectOnly(null);
+              return true;
+            }}
+          />
+
+          <LibraryPanel
+            currentLayout={layout}
+            onLoad={(loaded) => {
+              // No history.clear(): like a template load, this must stay
+              // one Ctrl+Z away from the design it replaced (#222).
+              snapshotBeforeReplace(layout);
+              actions.applyLayout(loaded);
+              selectOnly(null);
+            }}
+          />
+
+          <StatisticsPanel />
+          <AchievementsPanel unlocked={unlockedAchievements} />
+          <ShortcutsPanel />
+        </>
+      )}
+    </>
+  );
+});

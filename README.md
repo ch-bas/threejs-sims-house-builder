@@ -326,6 +326,7 @@ components/
     ├── contexts/                        React Context (eliminates prop drilling)
     │   ├── room-editor-context.tsx      Layout, actions, history, collisions, engine state
     │   ├── editor-view-context.tsx      Carries the editor view store; useViewSettings / useEditorView selectors
+    │   ├── held-editor-contexts.tsx     Re-provides editor + selection frozen while hidden (the closed drawer)
     │   ├── selection-context.tsx        Selected item(s), multi-select, selectOnly()
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
@@ -454,7 +455,8 @@ components/
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session + roving tile focus
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
-    │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice
+    │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
+    │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
         ├── sidebar-drawer.tsx           Full sidebar with 4-tab panel layout
@@ -641,6 +643,16 @@ components/
   run in a `SceneEffects` child that also reads the hour and the search, so
   a tick or a keystroke re-renders that child and the panels showing it, not
   the tree (#148, #3).
+- **Memo boundaries around the drawer and the HUD.** The orchestrator
+  re-renders on every layout edit, so `SidebarDrawer` and `BottomHud` are
+  memoised and receive stable callbacks: handlers that close over the layout
+  go through `useEvent`, which keeps one identity and calls the latest
+  closure. The closed drawer's panels read the editor and selection through
+  `HeldEditorContexts`, which freezes both while the drawer is hidden, so a
+  drag, a nudge or a colour change skips the ~70 catalog tiles and catches
+  up in one render when the drawer opens. The save status (`saving`,
+  `lastSavedAt`, `saveError`) lives in a small store that only the header
+  subscribes to, so the autosave's flips re-render the header alone (#3).
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure
