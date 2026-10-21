@@ -258,6 +258,18 @@ describe('drag-handlers keep the camera still after an abort mid-press', () => {
     expect(t.controls.enabled).toBe(true);
   });
 
+  it('leaves the controls off when walkthrough started during the hold', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    bumpRevision(t.scene);
+    t.canvas.dispatchEvent(pointer('pointermove', 150, 100));
+    t.handlers.walkthroughActive = true;
+    document.dispatchEvent(pointer('pointerup', 150, 100));
+    expect(t.controls.enabled).toBe(false);
+  });
+
   it('a pointercancel after the abort also hands the camera back', () => {
     const t = setup([]);
     detach = t.detach;

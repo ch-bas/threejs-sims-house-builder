@@ -373,7 +373,8 @@ export function attachDragHandlers({
     heldPointerId = null;
     doc.removeEventListener('pointerup', onHeldPointerEnd);
     doc.removeEventListener('pointercancel', onHeldPointerEnd);
-    controls.enabled = true;
+    // Walkthrough took the camera meanwhile; it re-enables orbit on exit.
+    if (!handlersRef.current.walkthroughActive) controls.enabled = true;
   };
   function onHeldPointerEnd(event: PointerEvent): void {
     if (event.pointerId === heldPointerId) releaseHeldControls();
