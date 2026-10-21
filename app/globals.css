@@ -662,6 +662,7 @@ button {
 }
 .pc-overlay-stack:not([data-squeeze='0']) .pc-save-indicator {
   display: flex !important;
+  flex-wrap: nowrap;
   max-width: 100%;
 }
 .pc-overlay-stack:not([data-squeeze='0']) .pc-save-label {
