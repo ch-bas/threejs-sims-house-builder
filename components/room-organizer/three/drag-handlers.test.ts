@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import * as THREE from 'three';
+import { OrbitControls as RealOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FURNITURE_REVISION_KEY, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, type SceneEventHandlers } from './drag-handlers';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -14,11 +15,19 @@ function pointer(type: string, clientX: number, clientY: number, init: { pointer
 }
 
 /** A top-down camera over two 1 m boxes: 'a' at the origin, 'b' at x = 2. */
-function setup(selected: string[]) {
+function setup(selected: string[], { realControls = false }: { realControls?: boolean } = {}) {
   const canvas = document.createElement('canvas');
+  document.body.appendChild(canvas);
+  // jsdom has no pointer capture; OrbitControls calls it on every press.
+  canvas.setPointerCapture = () => undefined;
+  canvas.releasePointerCapture = () => undefined;
+  // OrbitControls scales rotation by the element's height (0 in jsdom).
+  Object.defineProperty(canvas, 'clientWidth', { value: SIZE });
+  Object.defineProperty(canvas, 'clientHeight', { value: SIZE });
   canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: SIZE, height: SIZE, right: SIZE, bottom: SIZE, x: 0, y: 0, toJSON: () => ({}) });
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
-  camera.position.set(0, 10, 0);
+  // OrbitControls can't orbit a camera that looks straight down its up axis.
+  camera.position.set(0, 10, realControls ? 0.5 : 0);
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld();
   const scene = new THREE.Scene();
@@ -41,8 +50,12 @@ function setup(selected: string[]) {
     onItemDragCancel: vi.fn(),
     snapPosition: (_id, x, z) => ({ x, z }),
   };
-  const controls = { enabled: true } as unknown as OrbitControls;
-  const detach = attachDragHandlers({
+  // Registered before the drag handlers, as in use-three-scene, so its own
+  // pointerdown sees the press first.
+  const controls = realControls
+    ? new RealOrbitControls(camera, canvas)
+    : ({ enabled: true } as unknown as OrbitControls);
+  const detachHandlers = attachDragHandlers({
     THREE,
     canvas,
     camera,
@@ -51,6 +64,11 @@ function setup(selected: string[]) {
     markDirty: vi.fn(),
     handlersRef: { current: handlers },
   });
+  const detach = (): void => {
+    detachHandlers();
+    if (controls instanceof RealOrbitControls) controls.dispose();
+    canvas.remove();
+  };
   // World floor point under a client position, for checking the grab offset.
   const raycaster = new THREE.Raycaster();
   const worldAt = (clientX: number, clientY: number): THREE.Vector3 => {
@@ -59,7 +77,7 @@ function setup(selected: string[]) {
     raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit);
     return hit;
   };
-  return { canvas, scene, handlers, groups, controls, detach, worldAt };
+  return { canvas, camera, scene, handlers, groups, controls, detach, worldAt };
 }
 
 describe('drag-handlers selection on press (#291)', () => {
@@ -213,5 +231,76 @@ describe('drag-handlers release after a furniture update (#404)', () => {
     t.canvas.dispatchEvent(pointer('pointerup', 100, 100));
     expect(t.handlers.onItemSelect).toHaveBeenCalledWith('a', 'replace');
     expect(t.handlers.onItemDragCancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('drag-handlers keep the camera still after an abort mid-press', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  const bumpRevision = (scene: THREE.Scene): void => {
+    scene.userData[FURNITURE_REVISION_KEY] = ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
+  };
+
+  it('controls stay disabled until the held button is released', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    bumpRevision(t.scene);
+    t.canvas.dispatchEvent(pointer('pointermove', 150, 100));
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: false });
+    expect(t.controls.enabled).toBe(false);
+    t.canvas.dispatchEvent(pointer('pointermove', 170, 100));
+    expect(t.controls.enabled).toBe(false);
+    // Released off the canvas: the document still hears it.
+    document.dispatchEvent(pointer('pointerup', 300, 100));
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('a pointercancel after the abort also hands the camera back', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    bumpRevision(t.scene);
+    t.canvas.dispatchEvent(pointer('pointermove', 150, 100));
+    t.canvas.dispatchEvent(pointer('pointercancel', 150, 100));
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('detaching mid-hold leaves the controls usable', () => {
+    const t = setup([]);
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    bumpRevision(t.scene);
+    t.canvas.dispatchEvent(pointer('pointermove', 150, 100));
+    t.detach();
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('the rest of an aborted drag does not orbit a real OrbitControls camera', () => {
+    const t = setup([], { realControls: true });
+    detach = t.detach;
+    const controls = t.controls as RealOrbitControls;
+    controls.update();
+    const start = t.camera.position.clone();
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    expect(t.handlers.onItemDragStart).toHaveBeenCalledWith('a');
+    bumpRevision(t.scene);
+    t.canvas.dispatchEvent(pointer('pointermove', 150, 100));
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalled();
+    for (let x = 160; x <= 260; x += 20) t.canvas.dispatchEvent(pointer('pointermove', x, 140));
+    controls.update();
+    expect(t.camera.position.distanceTo(start)).toBeLessThan(1e-9);
+    document.dispatchEvent(pointer('pointerup', 260, 140));
+
+    // The next plain press on empty floor orbits as usual.
+    t.canvas.dispatchEvent(pointer('pointerdown', 10, 10));
+    for (let x = 20; x <= 120; x += 20) t.canvas.dispatchEvent(pointer('pointermove', x, 10));
+    controls.update();
+    expect(t.camera.position.distanceTo(start)).toBeGreaterThan(0.1);
+    document.dispatchEvent(pointer('pointerup', 120, 10));
   });
 });
