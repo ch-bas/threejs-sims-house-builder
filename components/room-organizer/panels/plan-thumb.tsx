@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
-import { planViewBounds } from '../lib/plan-view-fit';
+import { planViewFit } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { planFloorIndex } from '../lib/street';
 import type { FloorLayout, RoomLayout } from '../lib/types';
@@ -111,6 +111,7 @@ export function PlanThumb({
     const shown = floor ?? building.floors[0];
     if (!shown) return undefined;
     const keepOut = floorKeepOut(building, planFloorIndex(building.floors, shown));
+    const fit = fitContent ? planViewFit(building, shown) : null;
 
     const paint = () => {
       // Size the backing store to CSS size × devicePixelRatio (the CSS size is
@@ -133,7 +134,9 @@ export function PlanThumb({
         hasCollision: (item) =>
           hasCollisions(item, shown.items, building.width, building.height, { keepOut, interiorWalls: shown.interiorWalls, storeyHeight: storeyHeight(shown) }),
         padding,
-        ...(fitContent ? { fitBounds: planViewBounds(building, shown) } : {}),
+        // A thumbnail: no zone names below 25 px/m, bare off-plan arrows (#433).
+        thumbnail: true,
+        ...(fit ? { fitBounds: fit.bounds, offPlan: fit.offPlan } : {}),
       });
     };
     paint();

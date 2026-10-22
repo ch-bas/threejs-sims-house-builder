@@ -2,7 +2,7 @@ import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '.
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { planDrawOrder } from '../lib/plan-order';
-import { boundsSize, PLAN_PADDING_PX, regionFitScale, type PlanBounds } from '../lib/plan-view-fit';
+import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
@@ -45,6 +45,17 @@ export interface Render2DOptions {
    * Undefined fits the room alone, as the library thumbnails do.
    */
   fitBounds?: PlanBounds | undefined;
+  /**
+   * Items too far out to fit (`planViewFit`): drawn as markers on the edge
+   * of `fitBounds`, pointing towards them, so they stay findable (#381).
+   */
+  offPlan?: readonly OffPlanItem[] | undefined;
+  /**
+   * A small plan (the minimap, a thumbnail): zone names are left off below
+   * `ZONE_LABEL_MIN_SCALE` and off-plan markers are bare arrows (#433). The
+   * full-size plan only drops a name wider than its zone.
+   */
+  thumbnail?: boolean;
 }
 
 const PADDING = PLAN_PADDING_PX;
@@ -179,7 +190,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
-  drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements);
+  drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true);
 
   if (options.showHeatmap) {
     drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale, viewWidth, viewHeight);
@@ -197,9 +208,65 @@ export function render2DTopDown(options: Render2DOptions): void {
     drawRoomDimensions(ctx, layout, offsetX, offsetY, scale);
   }
 
+  if (options.offPlan && options.offPlan.length > 0) {
+    const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
+    drawOffPlanMarkers(ctx, offPlanMarkers({ scale, offsetX, offsetY }, layout, fit, options.offPlan), options.thumbnail === true);
+  }
+
   if (options.zoneDraft) {
     drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale);
   }
+}
+
+/**
+ * Off-plan markers (#381): a disc with the item's icon and its distance
+ * outside the walls, and an arrowhead pointing towards it. On a thumbnail,
+ * just the arrowhead.
+ */
+function drawOffPlanMarkers(
+  ctx: CanvasRenderingContext2D,
+  markers: ReturnType<typeof offPlanMarkers>,
+  thumbnail: boolean
+): void {
+  ctx.save();
+  for (const marker of markers) {
+    const radius = thumbnail ? 3 : 10;
+    ctx.save();
+    ctx.translate(marker.x, marker.y);
+    ctx.rotate(marker.angle);
+    ctx.fillStyle = '#1d4ed8';
+    ctx.beginPath();
+    ctx.moveTo(radius + (thumbnail ? 5 : 8), 0);
+    ctx.lineTo(radius - 1, thumbnail ? -3.5 : -6);
+    ctx.lineTo(radius - 1, thumbnail ? 3.5 : 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(marker.x, marker.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = thumbnail ? '#1d4ed8' : 'rgba(255, 255, 255, 0.95)';
+    ctx.fill();
+    if (!thumbnail) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#1d4ed8';
+      ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '11px Arial';
+      ctx.fillStyle = '#111';
+      ctx.fillText(marker.item.icon, marker.x, marker.y + 1);
+      ctx.font = 'bold 10px Arial';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      const label = `${Math.round(marker.distance)} m`;
+      const below = marker.y + radius + 9;
+      ctx.strokeText(label, marker.x, below);
+      ctx.fillStyle = '#1d4ed8';
+      ctx.fillText(label, marker.x, below);
+    }
+  }
+  ctx.restore();
 }
 
 /** Fill / outline alpha of a zone's tint, on top of the floor colour or tracing image. */
@@ -208,9 +275,11 @@ export const ZONE_STROKE_ALPHA = 0.7;
 /** A zone painted smaller than this (px, either edge) is too small for a label. */
 const ZONE_MIN_LABEL_EDGE_PX = 36;
 /**
- * Below this plan scale (px per metre) zone names are left off (#433): the
- * labels are a fixed 12 px, so on the minimap or a thumbnail one name
- * covered most of the map and hid the furniture under it.
+ * Below this plan scale (px per metre) a thumbnail's zone names are left off
+ * (#433): the labels are a fixed 12 px, so on the minimap one name covered
+ * most of the map and hid the furniture under it. The full-size plan keeps
+ * them at any scale (a 10 m house on a phone is ~22 px/m), dropping only a
+ * name wider than its zone.
  */
 export const ZONE_LABEL_MIN_SCALE = 25;
 
@@ -273,10 +342,11 @@ function drawZoneLabels(
   offsetX: number,
   offsetY: number,
   scale: number,
-  showArea: boolean
+  showArea: boolean,
+  thumbnail: boolean
 ): void {
   const zones = floor.zones ?? [];
-  if (zones.length === 0 || scale < ZONE_LABEL_MIN_SCALE) return;
+  if (zones.length === 0 || (thumbnail && scale < ZONE_LABEL_MIN_SCALE)) return;
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

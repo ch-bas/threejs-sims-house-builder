@@ -31,7 +31,8 @@ export function ZoneNameChip(): JSX.Element | null {
   if (!zoneId || !zone) {
     if (!view.drawZoneMode || !view.view2D) return null;
     return (
-      <div className="pc-top-chip" style={CHIP_SLOT} role="status">
+      // A plan occluder: the plan fits clear of the chip (scene-occluders).
+      <div className="pc-top-chip" style={CHIP_SLOT} role="status" data-plan-occluder="">
         <div className="pc-glass pc-glass--dark" style={{ ...CHIP_BODY, color: 'var(--pc-sky)' }}>
           <Icon name="tag" size={14} />
           {touch ? 'Drag on the plan to add a zone' : 'Drag a rectangle to add a zone · Esc to stop'}
@@ -44,7 +45,7 @@ export function ZoneNameChip(): JSX.Element | null {
   }
 
   return (
-    <div className="pc-top-chip" style={CHIP_SLOT}>
+    <div className="pc-top-chip" style={CHIP_SLOT} data-plan-occluder="">
       <div className="pc-glass pc-glass--dark" style={{ ...CHIP_BODY, color: 'var(--pc-cyan-glow)' }}>
         <Icon name="tag" size={14} />
         Name this zone

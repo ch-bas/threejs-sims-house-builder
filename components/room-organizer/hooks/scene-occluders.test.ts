@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PLAN_INSET_PADDING_PX, PLAN_PADDING_PX } from '../lib/plan-view-fit';
+import { get2DViewTransform } from '../canvas-2d/render';
+import { PLAN_INSET_PADDING_PX, PLAN_PADDING_PX, PLAN_PANEL_GAP_PX } from '../lib/plan-view-fit';
 import { observeSceneOccluders, PLAN_GESTURE_ATTR, planFit, planInsets } from './scene-occluders';
 
 const W = 750;
@@ -96,24 +97,32 @@ describe('planInsets on a desktop window (#381)', () => {
     expect(planFit(desktopCanvas(), square)).toEqual({ insets: undefined, padding: PLAN_PADDING_PX });
   });
 
-  it('fits above the catalog strip once it covers the plan, with the slimmer padding', () => {
+  /** Where the room's content lands for a fit (canvas px). */
+  const contentRect = (fit: { insets: ReturnType<typeof planInsets>; padding: number }) => {
+    const t = get2DViewTransform(DW, DH, square, fit.padding, fit.insets);
+    return { left: t.offsetX, top: t.offsetY, right: t.offsetX + 8 * t.scale, bottom: t.offsetY + 8 * t.scale, size: 8 * t.scale };
+  };
+
+  it('fits the content above the catalog strip once it covers the plan, its margin under the strip', () => {
     panel({ current: rectOf(444, 673, 984, 884) });
     const fit = planFit(desktopCanvas(), square);
     expect(fit.padding).toBe(PLAN_INSET_PADDING_PX);
-    expect(fit.insets).toBeDefined();
-    expect(DH - fit.insets!.bottom).toBeLessThanOrEqual(673);
+    const room = contentRect(fit);
+    expect(room.bottom).toBeLessThanOrEqual(673 - PLAN_PANEL_GAP_PX + 1e-6);
+    expect(room.top).toBeGreaterThanOrEqual(PLAN_INSET_PADDING_PX - 1e-6);
+    // Only the canvas edge costs a margin: 673 - 16 - 4.
+    expect(room.size).toBeCloseTo(653, 6);
   });
 
-  it('counts the header stats, which only the plan treats as a panel', () => {
-    const stats = document.createElement('div');
-    stats.setAttribute('data-plan-occluder', '');
-    stats.getBoundingClientRect = () => rectOf(413, 16, 1122, 93);
-    document.body.appendChild(stats);
+  it('keeps the content clear of the zone chip, which only the plan treats as a panel', () => {
+    const chip = document.createElement('div');
+    chip.setAttribute('data-plan-occluder', '');
+    chip.getBoundingClientRect = () => rectOf(560, 104, 880, 140);
+    document.body.appendChild(chip);
     panel({ current: rectOf(444, 673, 984, 884) });
-    const insets = planInsets(desktopCanvas(), square)!;
-    // The free region either starts below the stats or lies beside them.
-    const free = { left: insets.left, top: insets.top, right: DW - insets.right, bottom: DH - insets.bottom };
-    expect(free.top >= 93 || free.right <= 413 || free.left >= 1122).toBe(true);
+    const room = contentRect(planFit(desktopCanvas(), square));
+    const clear = room.top >= 140 || room.right <= 560 || room.left >= 880 || room.bottom <= 104;
+    expect(clear).toBe(true);
   });
 
   it('stays frozen while a plan gesture is armed', () => {

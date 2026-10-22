@@ -14,8 +14,9 @@
  */
 
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
+import { distanceOutsideWalls } from './plan-export/print';
 import { insetsFromRegion, isSliver, type Insets, type Rect } from './scene-insets';
-import type { FloorLayout, RoomLayout } from './types';
+import type { FloorLayout, FurnitureItem, RoomLayout } from './types';
 
 export type { PlanBounds } from './plan-export/plan-geometry';
 
@@ -24,11 +25,13 @@ export const PLAN_PADDING_PX = 60;
 
 /**
  * The desktop plan's margin inside a HUD-free region: room for the room
- * dimensions drawn beside the walls. The panels around the region already
- * frame it, and the full 60 px cost a short desktop band a fifth of its
- * plan.
+ * dimensions drawn beside the walls. Along a side that meets a HUD panel
+ * the margin sits under the panel (`desktopPlanInsets`), so only the
+ * canvas edges cost the plan any size.
  */
-export const PLAN_INSET_PADDING_PX = 24;
+export const PLAN_INSET_PADDING_PX = 16;
+/** The gap (CSS px) kept between the plan's content and a HUD panel beside it. */
+export const PLAN_PANEL_GAP_PX = 4;
 
 /** The plan margin inside a HUD-free region, at most this share of its short side. */
 export const INSET_PADDING_SHARE = 0.12;
@@ -41,11 +44,28 @@ export const INSET_PADDING_SHARE = 0.12;
 export const PLAN_FIT_TOLERANCE_M = 0.05;
 
 /**
- * What the on-screen plan fits: the room unioned with every placed item's
- * footprint (`planContentBounds`, the sheet the vector exports use), with
- * overhangs under `PLAN_FIT_TOLERANCE_M` snapped back to the walls.
+ * The house is drawn at least this share of its room-only size, as on the
+ * blueprint (`lib/blueprint.ts`, #377): the outdoor items may widen the fit
+ * up to 1 / share of the room on each axis, which bounds the shrink for any
+ * canvas shape. Past that the furthest are left off the fit and shown as
+ * edge markers instead, so one tree 40 m out can't shrink the house to a
+ * smudge.
  */
-export function planViewBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
+export const PLAN_MIN_ROOM_SHARE = 0.5;
+
+/** An item too far outside the walls to fit, with its distance out (m). */
+export interface OffPlanItem {
+  item: FurnitureItem & { position: NonNullable<FurnitureItem['position']> };
+  distance: number;
+}
+
+/** What the plan fits, and the items left out of it, furthest first. */
+export interface PlanViewFit {
+  bounds: PlanBounds;
+  offPlan: OffPlanItem[];
+}
+
+function snappedContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
   const content = planContentBounds(layout, floor);
   const halfW = layout.width / 2;
   const halfD = layout.height / 2;
@@ -56,6 +76,97 @@ export function planViewBounds(layout: RoomLayout, floor: FloorLayout): PlanBoun
     maxX: Math.max(halfW, snap(content.maxX, halfW)),
     maxZ: Math.max(halfD, snap(content.maxZ, halfD)),
   };
+}
+
+/**
+ * What the on-screen plan and the minimap fit: the room unioned with every
+ * placed item's footprint (`planContentBounds`, the sheet the vector exports
+ * use), overhangs under `PLAN_FIT_TOLERANCE_M` snapped back to the walls.
+ * Items outside the walls (`distanceOutsideWalls`, the print route's rule)
+ * are left out, furthest first, until the fit is within 1 /
+ * `PLAN_MIN_ROOM_SHARE` of the room on each axis; they come back as
+ * `offPlan`, which the plan draws as edge markers.
+ */
+export function planViewFit(layout: RoomLayout, floor: FloorLayout): PlanViewFit {
+  const maxWidth = layout.width / PLAN_MIN_ROOM_SHARE;
+  const maxHeight = layout.height / PLAN_MIN_ROOM_SHARE;
+  const fits = (b: PlanBounds) => b.maxX - b.minX <= maxWidth + 1e-9 && b.maxZ - b.minZ <= maxHeight + 1e-9;
+  let bounds = snappedContentBounds(layout, floor);
+  if (fits(bounds)) return { bounds, offPlan: [] };
+  const outside = floor.items
+    .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
+    .filter((entry): entry is OffPlanItem => entry.distance > 0)
+    .sort((a, b) => b.distance - a.distance);
+  let dropped = 0;
+  while (dropped < outside.length && !fits(bounds)) {
+    const gone = new Set<FurnitureItem>(outside.slice(0, ++dropped).map(({ item }) => item));
+    bounds = snappedContentBounds(layout, { ...floor, items: floor.items.filter((item) => !gone.has(item)) });
+  }
+  return { bounds, offPlan: outside.slice(0, dropped) };
+}
+
+/** `planViewFit`'s bounds. */
+export function planViewBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
+  return planViewFit(layout, floor).bounds;
+}
+
+/** An off-plan item's marker on the plan, in canvas CSS px. */
+export interface OffPlanMarker {
+  item: OffPlanItem['item'];
+  distance: number;
+  /** Marker centre, just inside the fitted content's edge. */
+  x: number;
+  y: number;
+  /** Direction from the room centre towards the item (radians, canvas axes). */
+  angle: number;
+}
+
+/** How far inside the fitted content's edge a marker's centre sits (px). */
+export const OFF_PLAN_MARKER_INSET_PX = 14;
+/** Hit radius of a marker (px). */
+export const OFF_PLAN_MARKER_HIT_PX = 13;
+
+/**
+ * Where each off-plan item's marker goes: on the ray from the room centre
+ * towards the item, where it leaves the fitted content, pulled
+ * `OFF_PLAN_MARKER_INSET_PX` back inside so it is always on screen.
+ * `transform` is the plan's (`get2DViewTransform`), `bounds` what it fits.
+ */
+export function offPlanMarkers(
+  transform: { scale: number; offsetX: number; offsetY: number },
+  layout: Pick<RoomLayout, 'width' | 'height'>,
+  bounds: PlanBounds,
+  offPlan: readonly OffPlanItem[]
+): OffPlanMarker[] {
+  const { scale, offsetX, offsetY } = transform;
+  const px = (x: number) => offsetX + (x + layout.width / 2) * scale;
+  const py = (z: number) => offsetY + (z + layout.height / 2) * scale;
+  const left = px(bounds.minX);
+  const right = px(bounds.maxX);
+  const top = py(bounds.minZ);
+  const bottom = py(bounds.maxZ);
+  const cx = px(0);
+  const cy = py(0);
+  return offPlan.map(({ item, distance }) => {
+    const dx = px(item.position.x) - cx;
+    const dy = py(item.position.z) - cy;
+    const length = Math.hypot(dx, dy) || 1;
+    const ux = dx / length;
+    const uy = dy / length;
+    const tx = ux > 0 ? (right - cx) / ux : ux < 0 ? (left - cx) / ux : Infinity;
+    const ty = uy > 0 ? (bottom - cy) / uy : uy < 0 ? (top - cy) / uy : Infinity;
+    const reach = Math.max(0, Math.min(tx, ty) - OFF_PLAN_MARKER_INSET_PX);
+    return { item, distance, x: cx + ux * reach, y: cy + uy * reach, angle: Math.atan2(uy, ux) };
+  });
+}
+
+/** The marker under a canvas point, if any (the last drawn wins). */
+export function hitOffPlanMarker(markers: readonly OffPlanMarker[], x: number, y: number): OffPlanMarker | null {
+  for (let i = markers.length - 1; i >= 0; i--) {
+    const marker = markers[i]!;
+    if (Math.hypot(marker.x - x, marker.y - y) <= OFF_PLAN_MARKER_HIT_PX) return marker;
+  }
+  return null;
 }
 
 /** The plan's fit extent in metres. */
@@ -84,17 +195,39 @@ function overlaps(a: Rect, b: Rect): boolean {
 }
 
 /**
+ * A region up to this share smaller than the biggest may win when it is
+ * markedly more central (`PLAN_REGION_CENTRE_GAIN`, #381 review): a side
+ * column a hair bigger than the middle put the house in a corner with most
+ * of the screen empty.
+ */
+export const PLAN_REGION_SCALE_SLACK = 0.1;
+/**
+ * How much nearer the canvas centre (a share of the canvas width) a smaller
+ * region's centre must be to win: a corner versus the middle, not two
+ * near-central bands, where the size matters more.
+ */
+export const PLAN_REGION_CENTRE_GAIN = 0.15;
+
+/**
  * The free rectangle of `bounds` (no occluder over it) that draws `content`
  * the biggest, by `regionFitScale`. Unlike `visibleRegion`'s largest area,
  * this suits the plan's own shape: a square house on a wide desktop fits
  * better in a tall column between the corner panels than in the wide band
- * above them. Ties go to the larger area. Null when no candidate is usable.
+ * above them. A candidate within `PLAN_REGION_SCALE_SLACK` of the best scale
+ * whose centre is `PLAN_REGION_CENTRE_GAIN` nearer the canvas centre wins
+ * over a side column. Null when no candidate is usable.
+ *
+ * `grow` (px) widens each candidate on its right and bottom sides where they
+ * meet a panel rather than the canvas edge, before it is scored and
+ * returned: the plan's margin may sit under a panel, its content may not.
+ * The top and left margins hold the room's dimensions and stay clear.
  */
 export function bestPlanRegion(
   bounds: Rect,
   occluders: readonly Rect[],
   content: { width: number; height: number },
-  padding: number
+  padding: number,
+  grow = 0
 ): Rect | null {
   const blocks = occluders
     .map((o) => ({
@@ -107,31 +240,49 @@ export function bestPlanRegion(
   const unique = (values: number[]) => [...new Set(values)].sort((a, b) => a - b);
   const xs = unique([bounds.left, bounds.right, ...blocks.flatMap((b) => [b.left, b.right])]);
   const ys = unique([bounds.top, bounds.bottom, ...blocks.flatMap((b) => [b.top, b.bottom])]);
-  let best: Rect | null = null;
-  let bestScale = 0;
-  let bestArea = 0;
+  const candidates: Array<{ rect: Rect; scale: number; area: number }> = [];
   for (let i = 0; i < xs.length; i++) {
     for (let j = i + 1; j < xs.length; j++) {
       for (let k = 0; k < ys.length; k++) {
         for (let m = k + 1; m < ys.length; m++) {
-          const candidate = { left: xs[i]!, top: ys[k]!, right: xs[j]!, bottom: ys[m]! };
+          const free = { left: xs[i]!, top: ys[k]!, right: xs[j]!, bottom: ys[m]! };
           // Every taller band from the same top is blocked too.
-          if (blocks.some((b) => overlaps(candidate, b))) break;
-          if (isSliver(candidate)) continue;
-          const width = candidate.right - candidate.left;
-          const height = candidate.bottom - candidate.top;
+          if (blocks.some((b) => overlaps(free, b))) break;
+          if (isSliver(free)) continue;
+          // Not above or left: the room's dimensions are drawn there.
+          const rect = {
+            left: free.left,
+            top: free.top,
+            right: free.right < bounds.right ? Math.min(bounds.right, free.right + grow) : free.right,
+            bottom: free.bottom < bounds.bottom ? Math.min(bounds.bottom, free.bottom + grow) : free.bottom,
+          };
+          const width = rect.right - rect.left;
+          const height = rect.bottom - rect.top;
           const scale = regionFitScale(width, height, content, padding);
-          const area = width * height;
-          if (scale > bestScale || (scale === bestScale && area > bestArea)) {
-            best = candidate;
-            bestScale = scale;
-            bestArea = area;
-          }
+          if (scale > 0) candidates.push({ rect, scale, area: width * height });
         }
       }
     }
   }
-  return best;
+  if (candidates.length === 0) return null;
+  const bestScale = Math.max(...candidates.map((c) => c.scale));
+  const cx = (bounds.left + bounds.right) / 2;
+  const cy = (bounds.top + bounds.bottom) / 2;
+  const offCentre = (r: Rect) => Math.hypot((r.left + r.right) / 2 - cx, (r.top + r.bottom) / 2 - cy);
+  // The biggest plan (the larger area on a tie, then the more central)...
+  const better = (a: (typeof candidates)[number], b: (typeof candidates)[number]) =>
+    a.scale !== b.scale ? a.scale > b.scale : a.area !== b.area ? a.area > b.area : offCentre(a.rect) < offCentre(b.rect);
+  let biggest = candidates[0]!;
+  for (const candidate of candidates) if (better(candidate, biggest)) biggest = candidate;
+  // ...unless a region nearly as big is markedly more central: the biggest
+  // of those wins.
+  const needed = offCentre(biggest.rect) - PLAN_REGION_CENTRE_GAIN * (bounds.right - bounds.left);
+  let central: (typeof candidates)[number] | null = null;
+  for (const candidate of candidates) {
+    if (candidate.scale < bestScale * (1 - PLAN_REGION_SCALE_SLACK) || offCentre(candidate.rect) > needed) continue;
+    if (!central || better(candidate, central)) central = candidate;
+  }
+  return (central ?? biggest).rect;
 }
 
 /**
@@ -171,6 +322,8 @@ export function desktopPlanInsets(
     bottom: canvas.top + classic.bottom,
   };
   if (!occluders.some((o) => overlaps(o, onScreen))) return undefined;
-  const region = bestPlanRegion(canvas, occluders, content, PLAN_INSET_PADDING_PX);
+  // Along a side that meets a panel, not the canvas edge, the margin slides
+  // under the panel and only a small gap stays: the plan keeps its size.
+  const region = bestPlanRegion(canvas, occluders, content, PLAN_INSET_PADDING_PX, PLAN_INSET_PADDING_PX - PLAN_PANEL_GAP_PX);
   return region ? insetsFromRegion(canvas, region) : undefined;
 }

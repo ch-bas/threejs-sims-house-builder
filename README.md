@@ -397,7 +397,7 @@ components/
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
-    │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items) and where beside the desktop HUD (#381)
+    │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages + zone-name requests (#374)
     │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
@@ -632,18 +632,28 @@ components/
   anywhere: a long unbroken name would otherwise widen the table past the
   page and the browser would shrink the whole sheet off its scale.
 - **The plan fits the whole lot, clear of the desktop HUD (#381).** The
-  on-screen plan and the minimap fit `planViewBounds` (`lib/plan-view-fit.ts`):
+  on-screen plan and the minimap fit `planViewFit` (`lib/plan-view-fit.ts`):
   the room plus every placed item's footprint, the sheet the vector exports
   use, with overhangs under 5 cm snapped back to the walls. A tree a few
   metres from the house is on the plan and can be clicked; an indoor-only
-  plan fits exactly as before. `get2DViewTransform` still maps the room's
-  corner, so only its offsets move. On a desktop window the plan keeps the
-  classic whole-canvas fit, pixel for pixel, until a HUD panel would cover
-  it; then it fits the free rectangle (`[data-scene-occluder]` panels plus
-  the header stats, tagged `data-plan-occluder` because the 3D framing never
-  needed to clear them) that draws it biggest for its shape, with a 24 px
-  margin instead of 60, so nothing on the plan sits under the catalog strip
-  or the mode panel. The fit is measured once per press and frozen while the
+  plan fits exactly as before. Like the blueprint, the house stays at least
+  half its room-only size: the outdoor items may widen the fit to twice the
+  room on each axis, and past that the furthest (`distanceOutsideWalls`) are
+  left out and drawn as edge markers, an icon, the distance and an arrow
+  towards the item. A press on a marker selects the item, whose popover's
+  Centre brings it back; Placed Items lists it too. `get2DViewTransform`
+  still maps the room's corner, so only its offsets move. On a desktop
+  window the plan keeps the classic whole-canvas fit, pixel for pixel, until
+  a HUD panel would cover it; then it fits the free rectangle
+  (`[data-scene-occluder]` panels plus the header stats and the zone tool's
+  chip, tagged `data-plan-occluder` because the 3D framing never needed to
+  clear them) that draws it biggest for its shape. Its 16 px margin sits
+  under a panel on the right and bottom (a 4 px gap stays), and only the top
+  and left keep it, for the room dimensions; a region up to 10% smaller wins
+  when it is markedly more central, so a side column can't park the house in
+  a corner. Nothing on the plan sits under the catalog strip, the mode panel
+  or the header stats, which costs a desktop plan about a quarter to a third
+  of its old size on 768–900 px tall windows. The fit is measured once per press and frozen while the
   gesture lasts (`<html data-plan-gesture>`), so dragging an item past the
   walls never rescales the plan under the pointer; the committed drop
   refits it. A panel that moves without resizing (the left column when the
@@ -661,8 +671,10 @@ components/
   applies `withViewInvariants` on every change, so leaving the plan by any
   route ends the draw mode, a chip on the plan says it is on (with Done for
   touch), and Escape leaves it like the wall and distance tools (#439).
-  Zone names are left off below 25 px per metre and when wider than their
-  zone, which drops them from the minimap (#433).
+  Zone names are left off when wider than their zone, and on the minimap
+  and thumbnails (`thumbnail`) also below 25 px per metre (#433). A lost
+  window or pointer capture mid-drag undoes the drag and clears the
+  gesture flag.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere

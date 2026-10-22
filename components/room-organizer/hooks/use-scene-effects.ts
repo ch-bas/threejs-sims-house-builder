@@ -14,7 +14,7 @@ import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
 import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
-import { boundsSize, planViewBounds } from '../lib/plan-view-fit';
+import { boundsSize, planViewFit } from '../lib/plan-view-fit';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
@@ -995,7 +995,7 @@ export function useSceneEffects({
     if (!canvas) return undefined;
 
     const keepOut = floorKeepOut(entranceBuilding, activeFloorIndex);
-    const fitBounds = planViewBounds(layout, activeFloor);
+    const { bounds: fitBounds, offPlan } = planViewFit(layout, activeFloor);
     const paint = () => {
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
@@ -1023,6 +1023,7 @@ export function useSceneEffects({
         // the canvas the HUD leaves free (#381); the pointer handlers read
         // the same bounds and insets (use-canvas-2d-interaction).
         fitBounds,
+        offPlan,
         insets,
         padding,
       });

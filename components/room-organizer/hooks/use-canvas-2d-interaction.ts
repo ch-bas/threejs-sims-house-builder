@@ -5,7 +5,7 @@ import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
-import { boundsSize, PLAN_PADDING_PX, planViewBounds, type PlanBounds } from '../lib/plan-view-fit';
+import { boundsSize, hitOffPlanMarker, offPlanMarkers, PLAN_PADDING_PX, planViewFit, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { planFloorIndex } from '../lib/street';
 import { defaultZoneName, nextZoneColor, zoneFromCorners } from '../lib/zones';
@@ -66,6 +66,8 @@ export function hitTest2DItems(
 /** What a plan paint fits, and where (`get2DViewTransform`'s bounds, insets and padding). */
 interface PlanFit {
   bounds: PlanBounds | undefined;
+  /** Items left out of `bounds`, drawn as edge markers (`planViewFit`). */
+  offPlan: readonly OffPlanItem[];
   insets: Insets | undefined;
   padding: number;
 }
@@ -144,8 +146,8 @@ export function useCanvas2DInteraction(
 
   /** The fit the plan is painted with now, from committed state (use-scene-effects). */
   const measureFit = useCallback((canvas: HTMLCanvasElement): PlanFit => {
-    const bounds = planViewBounds(paramsRef.current.layout, paramsRef.current.activeFloor);
-    return { bounds, ...planFit(canvas, boundsSize(bounds)) };
+    const { bounds, offPlan } = planViewFit(paramsRef.current.layout, paramsRef.current.activeFloor);
+    return { bounds, offPlan, ...planFit(canvas, boundsSize(bounds)) };
   }, []);
 
   const clientToWorld2D = useCallback(
@@ -205,7 +207,7 @@ export function useCanvas2DInteraction(
     // repaints with the transform the plan was painted with, so dragging an
     // item past the walls doesn't rescale the plan under the pointer; the
     // committed drop refits it (#381).
-    let fit: PlanFit = { bounds: undefined, insets: undefined, padding: PLAN_PADDING_PX };
+    let fit: PlanFit = { bounds: undefined, offPlan: [], insets: undefined, padding: PLAN_PADDING_PX };
     const worldAt = (event: PointerEvent) => toWorld(event.clientX, event.clientY, fit);
 
     const paintGhost = (): void => {
@@ -233,6 +235,7 @@ export function useCanvas2DInteraction(
         showHeatmap: view.showHeatmap,
         zoneDraft: draft,
         fitBounds: fit.bounds,
+        offPlan: fit.offPlan,
         insets: fit.insets,
         padding: fit.padding,
         hasCollision: (item) =>
@@ -351,6 +354,21 @@ export function useCanvas2DInteraction(
           latest: world,
         };
         return;
+      }
+      // An off-plan marker selects the far item it points to (#381): its
+      // sheet or popover carries Centre to bring it back. No drag.
+      if (fit.bounds && fit.offPlan.length > 0) {
+        const transform = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, p.layout, fit.padding, fit.insets, fit.bounds);
+        const rect = canvas.getBoundingClientRect();
+        const marker = hitOffPlanMarker(
+          offPlanMarkers(transform, p.layout, fit.bounds, fit.offPlan),
+          event.clientX - rect.left,
+          event.clientY - rect.top
+        );
+        if (marker) {
+          p.onItemSelect(marker.item.id, 'replace');
+          return;
+        }
       }
       const hit = hitTest2DItems(p.activeFloor.items, world.x, world.z, hitSlopWorld(fit));
       if (!hit) {
@@ -514,11 +532,26 @@ export function useCanvas2DInteraction(
     const onCancel = synced(onPointerCancel);
     const onLeave = synced(onPointerLeave);
 
+    // A pointerup the page never sees (the window lost focus mid-drag, the
+    // capture was taken away) must not leave the gesture armed: page-wide
+    // text selection would stay off and the fit frozen. Undo the drag.
+    const onLost = (): void => {
+      if (gesture === null && zoneGesture === null) return;
+      abortGesture(true);
+      syncGestureFlag();
+    };
+    const onLostCapture = (event: PointerEvent): void => {
+      const held = gesture ?? zoneGesture;
+      if (held && held.pointerId === event.pointerId) onLost();
+    };
+
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
     canvas.addEventListener('pointercancel', onCancel);
     canvas.addEventListener('pointerleave', onLeave);
+    canvas.addEventListener('lostpointercapture', onLostCapture);
+    window.addEventListener('blur', onLost);
 
     return () => {
       canvas.removeEventListener('pointerdown', onDown);
@@ -526,6 +559,8 @@ export function useCanvas2DInteraction(
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onCancel);
       canvas.removeEventListener('pointerleave', onLeave);
+      canvas.removeEventListener('lostpointercapture', onLostCapture);
+      window.removeEventListener('blur', onLost);
       // Disabled (view switch) or unmounted mid-drag: discard the session so
       // nothing stale is committed on a later pointerup.
       abortGesture();

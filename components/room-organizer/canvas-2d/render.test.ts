@@ -210,7 +210,7 @@ describe('zone labels (#433)', () => {
   }
 
   const zone = (name: string, x: number, z: number, w: number, d: number) => ({ id: name, name, color: '#3b82f6', x, z, w, d });
-  const render = (width: number, height: number, padding: number, zones: ReturnType<typeof zone>[]): string[] => {
+  const render = (width: number, height: number, padding: number, zones: ReturnType<typeof zone>[], thumbnail = width < 400): string[] => {
     const { canvas, texts } = recordingCanvas(width, height);
     const floor = makeFloor({ zones });
     render2DTopDown({
@@ -222,6 +222,7 @@ describe('zone labels (#433)', () => {
       showWiFiSignals: false,
       hasCollision: () => false,
       padding,
+      thumbnail,
     });
     return texts;
   };
@@ -237,7 +238,47 @@ describe('zone labels (#433)', () => {
     expect(texts).not.toContain('Kitchen');
   });
 
+  it('keeps the names on a small-scale main plan, where they fit their zones (a 10 m house on a phone)', () => {
+    // A 160 px canvas without margin draws the 8 m room at 20 px/m, under the thumbnail cutoff.
+    const texts = render(160, 600, 0, [zone('Living Room', -4, -4, 8, 4)], false);
+    expect(texts).toContain('Living Room');
+    expect(render(160, 600, 0, [zone('Living Room', -4, -4, 8, 4)], true)).not.toContain('Living Room');
+  });
+
   it('leaves off a name wider than its zone', () => {
     expect(render(1440, 900, 60, [zone('A very long zone name indeed', -4, -4, 1, 3)])).not.toContain('A very long zone name indeed');
+  });
+});
+
+describe('off-plan markers (#381)', () => {
+  it('draws a far item as a marker with its distance, not at its position', () => {
+    const texts: string[] = [];
+    const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+      get(target, key) {
+        if (key === 'fillText') return (text: string) => texts.push(text);
+        if (key === 'measureText') return (text: string) => ({ width: text.length * 7 });
+        if (key in target) return target[key];
+        return () => undefined;
+      },
+      set(target, key, value) {
+        target[key] = value;
+        return true;
+      },
+    });
+    const canvas = { width: 1440, height: 900, clientWidth: 1440, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const far = makeItem({ id: 'far', icon: 'T', position: { x: 40, z: 2 } });
+    const floor = makeFloor({ items: [far] });
+    render2DTopDown({
+      canvas,
+      layout: makeLayout({ floors: [floor] }),
+      floor,
+      selectedItemId: null,
+      showMeasurements: false,
+      showWiFiSignals: false,
+      hasCollision: () => false,
+      fitBounds: { minX: -4, minZ: -4, maxX: 4, maxZ: 4 },
+      offPlan: [{ item: far as typeof far & { position: { x: number; z: number } }, distance: 36 }],
+    });
+    expect(texts).toContain('36 m');
   });
 });

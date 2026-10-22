@@ -5,10 +5,15 @@ import {
   boundsSize,
   classicPlanRect,
   desktopPlanInsets,
+  hitOffPlanMarker,
+  OFF_PLAN_MARKER_INSET_PX,
+  offPlanMarkers,
   PLAN_FIT_TOLERANCE_M,
   PLAN_INSET_PADDING_PX,
   PLAN_PADDING_PX,
+  PLAN_PANEL_GAP_PX,
   planViewBounds,
+  planViewFit,
   regionFitScale,
 } from './plan-view-fit';
 import type { Rect } from './scene-insets';
@@ -91,8 +96,65 @@ describe('desktopPlanInsets', () => {
     const strip: Rect = { left: 444, top: 673, right: 984, bottom: 884 };
     const insets = desktopPlanInsets(canvas, [strip], { width: 8, height: 8 })!;
     expect(insets).toBeDefined();
-    // The region the insets leave free clears the strip.
-    const free = { left: insets.left, top: insets.top, right: 1440 - insets.right, bottom: 900 - insets.bottom };
-    expect(free.bottom <= strip.top || free.right <= strip.left || free.left >= strip.right).toBe(true);
+    // The free area reaches under the strip by the margin less the gap, no more.
+    const bottom = 900 - insets.bottom;
+    expect(bottom).toBeCloseTo(strip.top + PLAN_INSET_PADDING_PX - PLAN_PANEL_GAP_PX, 6);
+  });
+});
+
+describe('planViewFit: far items (#381 review)', () => {
+  it('leaves a far tree out of the fit, keeps a near one, and lists the far one', () => {
+    const near = makeItem({ id: 'near', width: 1.4, depth: 1.4, position: { x: 7.5, z: 2 } });
+    const far = makeItem({ id: 'far', width: 1.4, depth: 1.4, position: { x: 40, z: 2 } });
+    const { layout, floor } = room([near, far]);
+    const fit = planViewFit(layout, floor);
+    expect(fit.bounds.maxX).toBeCloseTo(8.2);
+    expect(fit.offPlan.map(({ item }) => item.id)).toEqual(['far']);
+    expect(fit.offPlan[0]!.distance).toBeCloseTo(36);
+  });
+
+  it('keeps the house at least half its room-only size on any canvas', () => {
+    const items = [
+      makeItem({ id: 'a', position: { x: 9, z: 0 } }),
+      makeItem({ id: 'b', position: { x: -9, z: 0 } }),
+      makeItem({ id: 'c', position: { x: 0, z: 30 } }),
+    ];
+    const { layout, floor } = room(items);
+    const { bounds, offPlan } = planViewFit(layout, floor);
+    expect(bounds.maxX - bounds.minX).toBeLessThanOrEqual(8 / 0.5);
+    expect(bounds.maxZ - bounds.minZ).toBeLessThanOrEqual(6 / 0.5);
+    // The furthest goes first; the two at 5 m out still overflow 16 m together.
+    expect(offPlan.map(({ item }) => item.id)[0]).toBe('c');
+  });
+
+  it('places a marker just inside the content edge, towards the item, and hits it', () => {
+    const far = makeItem({ id: 'far', position: { x: 40, z: 0 } }) as ReturnType<typeof makeItem> & { position: { x: number; z: number } };
+    const bounds = { minX: -4, minZ: -4, maxX: 4, maxZ: 4 };
+    const t = { scale: 50, offsetX: 100, offsetY: 100 };
+    const [marker] = offPlanMarkers(t, { width: 8, height: 8 }, bounds, [{ item: far, distance: 36 }]);
+    // The right edge is at 100 + 8 * 50 = 500; the centre row at 300.
+    expect(marker!.x).toBeCloseTo(500 - OFF_PLAN_MARKER_INSET_PX);
+    expect(marker!.y).toBeCloseTo(300);
+    expect(marker!.angle).toBeCloseTo(0);
+    expect(hitOffPlanMarker([marker!], marker!.x + 5, marker!.y)).toBe(marker);
+    expect(hitOffPlanMarker([marker!], marker!.x + 30, marker!.y)).toBeNull();
+  });
+});
+
+describe('bestPlanRegion: the middle wins a near tie (#381 review)', () => {
+  it('picks the central band over a side column a hair bigger', () => {
+    // 1280 x 720: a left column 0..364 wide and tall, beside a central band
+    // 272..989 above a strip at 493.
+    const canvas: Rect = { left: 0, top: 0, right: 1280, bottom: 720 };
+    const hud: Rect[] = [
+      { left: 16, top: 16, right: 272, bottom: 70 },
+      { left: 989, top: 16, right: 1264, bottom: 132 },
+      { left: 364, top: 493, right: 904, bottom: 704 },
+      { left: 1016, top: 454, right: 1264, bottom: 704 },
+      { left: 16, top: 580, right: 248, bottom: 704 },
+    ];
+    const region = bestPlanRegion(canvas, hud, { width: 4, height: 8 }, PLAN_INSET_PADDING_PX)!;
+    const centre = (region.left + region.right) / 2;
+    expect(Math.abs(centre - 640)).toBeLessThan(200);
   });
 });
