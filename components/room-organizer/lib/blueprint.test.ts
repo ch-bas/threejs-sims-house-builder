@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { floorArea, openBlueprintPrintWindow } from './blueprint';
+import { blueprintCanvasSize, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
 
 // jsdom has no 2D canvas: the render is a no-op (null context) and toDataURL
 // is stubbed. What matters here is the popup / decode / write sequencing.
@@ -85,5 +85,71 @@ describe('floorArea (#285)', () => {
     // A recess that doesn't fit the house is fitted first, like the 3D build.
     const shallow = makeLayout({ height: 2, floors: [ground], entrance: { width: 1.4, depth: 3 } });
     expect(floorArea(shallow, 0)).toBeCloseTo(16 - 1.4 * 1);
+  });
+});
+
+describe('blueprintCanvasSize (#377)', () => {
+  it('fits the room-only plan into the old 1200 × 900 box', () => {
+    // 8 m square: 780 px of plan + 2 × 60 px padding, the same plan size as before.
+    expect(blueprintCanvasSize({ minX: -4, minZ: -4, maxX: 4, maxZ: 4 })).toEqual({ width: 900, height: 900 });
+  });
+
+  it('grows with content past the walls so outdoor items stay on the sheet', () => {
+    // An oak at x = 7.5 (footprint to 8.2): 12.2 m wide content fills the width.
+    expect(blueprintCanvasSize({ minX: -4, minZ: -4, maxX: 8.2, maxZ: 4 })).toEqual({ width: 1200, height: 828 });
+  });
+});
+
+describe('openBlueprintPrintWindow content fit (#377)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('sizes the canvas from the plan content, outdoor items included', async () => {
+    const sizes: Array<[number, number]> = [];
+    vi.spyOn(window, 'open').mockReturnValue({ document: { write: () => undefined, close: () => undefined } } as unknown as Window);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(function (this: HTMLCanvasElement) {
+      sizes.push([this.width, this.height]);
+      return 'data:image/png;base64,STUB';
+    });
+    const tree = makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 7.5, z: 3 } });
+    const floor = makeFloor({ items: [makeItem(), tree] });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
+    expect(sizes).toEqual([[1200, 828]]);
+  });
+});
+
+describe('blueprintPlan (#377)', () => {
+  const oak = makeItem({ id: 'oak', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 7.5, z: 3 } });
+  const pine = (x: number) => makeItem({ id: 'pine', type: 'pine-tree', name: 'Pine Tree', width: 1.1, depth: 1.1, position: { x, z: 0 } });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('draws outdoor items that leave the house readable', () => {
+    const floor = makeFloor({ items: [makeItem(), oak, pine(14)] });
+    const plan = blueprintPlan(makeLayout({ floors: [floor] }), floor);
+    expect(plan.floor).toBe(floor);
+    expect(plan.omitted).toEqual([]);
+  });
+
+  it('leaves off only the far items that would shrink the house past half its size', () => {
+    for (const x of [24, 40]) {
+      const floor = makeFloor({ items: [makeItem(), oak, pine(x)] });
+      const plan = blueprintPlan(makeLayout({ floors: [floor] }), floor);
+      expect(plan.floor.items.map((item) => item.id)).toEqual(['item-1', 'oak']);
+      expect(plan.omitted.map(({ item, distance }) => [item.id, distance])).toEqual([['pine', x - 4]]);
+    }
+  });
+
+  it('lists the left-off items on the sheet', async () => {
+    let html = '';
+    vi.spyOn(window, 'open').mockReturnValue({ document: { write: (m: string) => (html += m), close: () => undefined } } as unknown as Window);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,STUB');
+    const floor = makeFloor({ items: [makeItem(), pine(40)] });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
+    expect(html).toContain('Off the plan (too far out to draw)');
+    expect(html).toContain('Pine Tree: 36.0 m outside the walls');
   });
 });

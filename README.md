@@ -266,9 +266,12 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **PNG screenshot** of the current viewport.
 - **GLB / glTF export** of the live Three.js scene — opens in any viewer.
 - **Plan export**: scalable SVG, CAD-ready layered DXF, and a
-  print-to-scale PDF with title block (1:20–1:1000, portrait or landscape,
-  picked to fit A4). The sheet follows the content, so garden items outside
-  the walls are on the plan too.
+  print-to-scale PDF with title block. Its options choose the paper (A4,
+  A3, Letter), the orientation and the scale (1:20–1:1000, or the largest
+  that fits), whether items outside the walls are drawn, and whether every
+  floor prints, one per page at one shared scale. The sheet follows the
+  content, so garden items outside the walls are on the plan too, in the
+  raster blueprint as well.
 - **Version history**: automatic restore points every few minutes of
   editing, on page close, and before anything replaces the whole house
   (share link, template, saved layout, import). Restorable — and
@@ -360,7 +363,7 @@ components/
     │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
     │   ├── dev-diagnostics.ts           `?debug` flag + allocation-free renderer.info counters
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
-    │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML
+    │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML, canvas fitted to the plan content (#377)
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
@@ -399,7 +402,7 @@ components/
     │       ├── svg.ts                   Vector SVG plan emitter (pure)
     │       ├── dxf.ts                   DXF R12 plan emitter (pure)
     │       ├── download.ts              Blob download + filename slugs (DOM)
-    │       └── print.ts                 Print-to-scale SVG popup → Save-as-PDF (DOM)
+    │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory (~110 lines)
     │   ├── builder-utils.ts             Shared types + mesh()/material() helpers, dispose helpers (disposeScene on unmount, #213)
@@ -513,6 +516,7 @@ components/
         ├── wall-display-pill.tsx
         ├── wall-paint-panel.tsx
         ├── actions-panel.tsx
+        ├── print-options.tsx            Print / PDF button and its folding options (paper, orientation, scale, outdoor, every floor)
         ├── shortcuts-panel.tsx
         ├── welcome-banner.tsx
         ├── minimap.tsx
@@ -603,6 +607,24 @@ components/
   would rescale the plan under the finger. The sheet itself is never an
   inset either. Desktop-sized windows, the minimap, the blueprint and the
   thumbnails pass none and are unchanged.
+- **Print sheets fit the content, and the person picks the page.** The
+  raster blueprint sizes its canvas from `planContentBounds` and paints
+  through `render2DTopDown`'s `fitBounds`, which `get2DBoundsTransform`
+  turns into the usual room-corner transform, so a tree past the walls is
+  drawn rather than cut off by the canvas edge (#377). Outdoor items may
+  shrink the house to half its room-only size; past that the furthest are
+  left off one at a time and listed under "Off the plan" with their
+  distance, so one far tree can't turn the house into a thumbnail. The print-to-scale
+  route keeps one SVG px at 0.25 mm of paper at every scale and picks the
+  finest standard scale whose sheet fits the chosen paper's printable area;
+  a fixed scale or orientation is honoured, and a sheet that overflows is
+  shrunk in both directions and labelled not to scale (#435). Leaving
+  outdoor items off drops the items whose centre is outside the walls
+  (wall-mounted ones stay), so a far tree can't force 1:500. Printing every
+  floor picks one scale for the union of the floors' content and puts each
+  storey on its own page (#405). The title block is a fixed-layout table whose cells wrap
+  anywhere: a long unbroken name would otherwise widen the table past the
+  page and the browser would shrink the whole sheet off its scale.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere
