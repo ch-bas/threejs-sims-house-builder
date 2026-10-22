@@ -165,16 +165,15 @@ export function printScaleLabel(scale: PrintScale): string {
 }
 
 /**
- * True for an item the sheet keeps when outdoor items are left off: its
- * centre is inside the walls (with a little tolerance), or it is mounted on
- * one — doors, windows and cameras sit on the wall line.
+ * How far an item's centre sits outside the walls, in metres: 0 for an item
+ * the sheet always keeps — centre inside the walls (with a little
+ * tolerance), mounted on one (doors, windows and cameras sit on the wall
+ * line), or not placed at all.
  */
-function isIndoors(layout: Pick<RoomLayout, 'width' | 'height'>, item: FloorLayout['items'][number]): boolean {
-  if (!item.position || isWallMounted(item.type)) return true;
-  return (
-    Math.abs(item.position.x) <= layout.width / 2 + INDOOR_TOLERANCE_M &&
-    Math.abs(item.position.z) <= layout.height / 2 + INDOOR_TOLERANCE_M
-  );
+export function distanceOutsideWalls(layout: Pick<RoomLayout, 'width' | 'height'>, item: FloorLayout['items'][number]): number {
+  if (!item.position || isWallMounted(item.type)) return 0;
+  const beyond = Math.max(Math.abs(item.position.x) - layout.width / 2, Math.abs(item.position.z) - layout.height / 2);
+  return beyond > INDOOR_TOLERANCE_M ? beyond : 0;
 }
 
 /**
@@ -184,7 +183,7 @@ function isIndoors(layout: Pick<RoomLayout, 'width' | 'height'>, item: FloorLayo
  */
 export function printedFloor(layout: RoomLayout, floor: FloorLayout, includeOutdoor: boolean): FloorLayout {
   if (includeOutdoor) return floor;
-  const items = floor.items.filter((item) => isIndoors(layout, item));
+  const items = floor.items.filter((item) => distanceOutsideWalls(layout, item) === 0);
   return items.length === floor.items.length ? floor : { ...floor, items };
 }
 
@@ -234,10 +233,12 @@ export function buildPrintDocument(
 
   const sheets = floors.map(({ source, printed }, index) => {
     const sheet = planSheetSize(layout, printed, { pxPerMetre });
-    const omitted = source.items.length - printed.items.length;
+    // Placed items only: an unplaced one is on neither the plan nor the tally.
+    const drawn = printed.items.filter((item) => item.position).length;
+    const omitted = source.items.filter((item) => item.position).length - drawn;
     return {
       floorName: floors.length > 1 ? `${source.name} (${index + 1} of ${floors.length})` : source.name,
-      itemsLabel: `${printed.items.length} item${printed.items.length === 1 ? '' : 's'}${omitted > 0 ? ` (${omitted} outside the walls left off)` : ''}`,
+      itemsLabel: `${drawn} item${drawn === 1 ? '' : 's'}${omitted > 0 ? ` (${omitted} outside the walls left off)` : ''}`,
       sheetWidthCss: `${(sheet.widthPx * PRINT_MM_PER_PX * shrink).toFixed(1)}mm`,
       svg: layoutToSvg(layout, printed, { pxPerMetre }),
     };
@@ -296,6 +297,7 @@ function renderPrintHtml(input: PrintHtmlInput): string {
       (sheet) => `<section class="sheet">
       <div class="plan" style="width: ${sheet.sheetWidthCss};">${sheet.svg}</div>
       <table class="titleblock">
+        <colgroup><col class="k" /><col /><col class="k" /><col /></colgroup>
         <tr>
           <td class="k">Project</td><td>${escapeHtml(input.layoutName)}</td>
           <td class="k">Floor</td><td>${escapeHtml(sheet.floorName)}</td>
@@ -324,8 +326,12 @@ function renderPrintHtml(input: PrintHtmlInput): string {
       .sheet { break-inside: avoid; }
       .sheet + .sheet { break-before: page; }
       .plan svg { display: block; width: 100%; height: auto; }
-      table.titleblock { margin-top: 6mm; border-collapse: collapse; font-size: 9pt; width: 100%; }
-      table.titleblock td { border: 0.3mm solid #444; padding: 1.5mm 3mm; }
+      /* Fixed layout and anywhere-wrapping: a long unbroken name must wrap
+         inside its cell, or the table outgrows the page and the browser
+         shrinks the whole sheet off its declared scale. */
+      table.titleblock { margin-top: 6mm; border-collapse: collapse; font-size: 9pt; width: 100%; table-layout: fixed; }
+      table.titleblock col.k { width: 16%; }
+      table.titleblock td { border: 0.3mm solid #444; padding: 1.5mm 3mm; overflow-wrap: anywhere; word-break: break-word; }
       table.titleblock td.k { color: #666; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; }
       @media screen { .sheet + .sheet { margin-top: 16mm; } }
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }

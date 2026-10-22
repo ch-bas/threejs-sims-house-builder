@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { blueprintCanvasSize, floorArea, openBlueprintPrintWindow } from './blueprint';
+import { blueprintCanvasSize, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
 
 // jsdom has no 2D canvas: the render is a no-op (null context) and toDataURL
 // is stubbed. What matters here is the popup / decode / write sequencing.
@@ -116,5 +116,40 @@ describe('openBlueprintPrintWindow content fit (#377)', () => {
     const floor = makeFloor({ items: [makeItem(), tree] });
     await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
     expect(sizes).toEqual([[1200, 828]]);
+  });
+});
+
+describe('blueprintPlan (#377)', () => {
+  const oak = makeItem({ id: 'oak', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 7.5, z: 3 } });
+  const pine = (x: number) => makeItem({ id: 'pine', type: 'pine-tree', name: 'Pine Tree', width: 1.1, depth: 1.1, position: { x, z: 0 } });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('draws outdoor items that leave the house readable', () => {
+    const floor = makeFloor({ items: [makeItem(), oak, pine(14)] });
+    const plan = blueprintPlan(makeLayout({ floors: [floor] }), floor);
+    expect(plan.floor).toBe(floor);
+    expect(plan.omitted).toEqual([]);
+  });
+
+  it('leaves off only the far items that would shrink the house past half its size', () => {
+    for (const x of [24, 40]) {
+      const floor = makeFloor({ items: [makeItem(), oak, pine(x)] });
+      const plan = blueprintPlan(makeLayout({ floors: [floor] }), floor);
+      expect(plan.floor.items.map((item) => item.id)).toEqual(['item-1', 'oak']);
+      expect(plan.omitted.map(({ item, distance }) => [item.id, distance])).toEqual([['pine', x - 4]]);
+    }
+  });
+
+  it('lists the left-off items on the sheet', async () => {
+    let html = '';
+    vi.spyOn(window, 'open').mockReturnValue({ document: { write: (m: string) => (html += m), close: () => undefined } } as unknown as Window);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,STUB');
+    const floor = makeFloor({ items: [makeItem(), pine(40)] });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
+    expect(html).toContain('Off the plan (too far out to draw)');
+    expect(html).toContain('Pine Tree: 36.0 m outside the walls');
   });
 });

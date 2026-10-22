@@ -611,7 +611,10 @@ components/
   raster blueprint sizes its canvas from `planContentBounds` and paints
   through `render2DTopDown`'s `fitBounds`, which `get2DBoundsTransform`
   turns into the usual room-corner transform, so a tree past the walls is
-  drawn rather than cut off by the canvas edge (#377). The print-to-scale
+  drawn rather than cut off by the canvas edge (#377). Outdoor items may
+  shrink the house to half its room-only size; past that the furthest are
+  left off one at a time and listed under "Off the plan" with their
+  distance, so one far tree can't turn the house into a thumbnail. The print-to-scale
   route keeps one SVG px at 0.25 mm of paper at every scale and picks the
   finest standard scale whose sheet fits the chosen paper's printable area;
   a fixed scale or orientation is honoured, and a sheet that overflows is
@@ -619,7 +622,9 @@ components/
   outdoor items off drops the items whose centre is outside the walls
   (wall-mounted ones stay), so a far tree can't force 1:500. Printing every
   floor picks one scale for the union of the floors' content and puts each
-  storey on its own page (#405).
+  storey on its own page (#405). The title block is a fixed-layout table whose cells wrap
+  anywhere: a long unbroken name would otherwise widen the table past the
+  page and the browser would shrink the whole sheet off its scale.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
+import { makeFloor, makeItem, makeLayout, makeUnplacedItem } from '../__testfixtures__/fixtures';
 import {
   buildPrintDocument,
+  distanceOutsideWalls,
   openPlanPrintWindow,
   pickPrintScale,
   printableArea,
@@ -107,6 +108,18 @@ describe('printedFloor (#435)', () => {
   });
 });
 
+describe('distanceOutsideWalls', () => {
+  it('measures how far a centre is past the walls, 0 for kept items', () => {
+    const layout = makeLayout();
+    expect(distanceOutsideWalls(layout, makeItem())).toBe(0);
+    expect(distanceOutsideWalls(layout, tree())).toBeCloseTo(2.7, 9);
+    expect(distanceOutsideWalls(layout, tree({ position: { x: 40, z: -5 } }))).toBeCloseTo(36, 9);
+    expect(distanceOutsideWalls(layout, makeItem({ position: { x: 4.04, z: 0 } }))).toBe(0);
+    expect(distanceOutsideWalls(layout, makeItem({ type: 'window', position: { x: 4.5, z: 0 } }))).toBe(0);
+    expect(distanceOutsideWalls(layout, makeUnplacedItem())).toBe(0);
+  });
+});
+
 describe('buildPrintDocument', () => {
   function build(width: number, height: number, items = [makeItem()], options = {}): string {
     const floor = makeFloor({ items });
@@ -168,6 +181,24 @@ describe('buildPrintDocument', () => {
     expect(without).toContain('1:75 (A4 portrait)');
     expect(without).not.toContain('Pine Tree');
     expect(without).toContain('1 item (1 outside the walls left off)');
+  });
+
+  it('counts only placed items in the left-off tally', () => {
+    const far = tree({ id: 'pine', position: { x: 24, z: 0 } });
+    const html = build(8, 8, [makeItem(), makeUnplacedItem({ id: 'stored' }), far], { includeOutdoor: false });
+    expect(html).toContain('1 item (1 outside the walls left off)');
+  });
+
+  it('keeps the scale with a 200-character name the title block cannot break at spaces', () => {
+    const floor = makeFloor({ items: [makeItem()] });
+    const html = buildPrintDocument(makeLayout({ name: 'X'.repeat(200), floors: [floor] }), floor, {}, 'd');
+    // The cells wrap anywhere inside a fixed-layout table, so the table can't
+    // outgrow the page and make the browser shrink the sheet off its scale.
+    expect(html).toContain('table-layout: fixed;');
+    expect(html).toContain('overflow-wrap: anywhere;');
+    expect(html).toContain('<colgroup>');
+    expect(html).toContain('1:75 (A4 portrait)');
+    expect(html).toContain('<div class="plan" style="width: 136.7mm;">');
   });
 
   it('prints every floor on its own page at one shared scale (#405)', () => {

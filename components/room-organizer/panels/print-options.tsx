@@ -29,7 +29,7 @@ export function PrintPlanControl(): JSX.Element {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState<PrintOptions>(DEFAULT_PRINT_OPTIONS);
   const id = useId();
-  const formId = 'print-options';
+  const formId = `${id}-form`;
   const multiStorey = layout.floors.length > 1;
   // A single-storey house has nothing else to print; don't carry a stale
   // "every floor" from before a floor was removed.
@@ -131,8 +131,9 @@ export function PrintPlanControl(): JSX.Element {
               </Label>
             </div>
           )}
+          {/* amber-400 on the drawer's dark card is 9.6:1 (WCAG AA needs 4.5:1). */}
           {scale && (
-            <p className={`text-xs ${scale.fits ? 'text-muted-foreground' : 'text-amber-600'}`} aria-live="polite">
+            <p className={`text-xs ${scale.fits ? 'text-muted-foreground' : 'text-amber-400'}`} aria-live="polite">
               {printScaleLabel(scale)}
             </p>
           )}
