@@ -341,16 +341,20 @@ function renderPrintHtml(input: PrintHtmlInput): string {
       table.titleblock col.k { width: 16%; }
       table.titleblock td { border: 0.3mm solid #444; padding: 1.5mm 3mm; overflow-wrap: anywhere; word-break: break-word; }
       table.titleblock td.k { color: #666; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; }
-      table.schedule { margin-top: 4mm; border-collapse: collapse; font-size: 8pt; width: 100%; table-layout: fixed; }
-      table.schedule caption { text-align: left; font-weight: 600; font-size: 9pt; padding-bottom: 1.5mm; }
-      table.schedule th, table.schedule td { border-bottom: 0.2mm solid #bbb; padding: 1mm 2mm; text-align: left; overflow-wrap: anywhere; }
-      table.schedule th { border-bottom: 0.3mm solid #444; color: #666; font-weight: 600; }
-      table.schedule .n { text-align: right; font-variant-numeric: tabular-nums; }
-      table.schedule col.size { width: 26%; }
-      table.schedule col.qty { width: 10%; }
-      table.schedule col.price { width: 18%; }
-      table.schedule tfoot td { border-bottom: 0; border-top: 0.3mm solid #444; font-weight: 600; }
-      table.schedule tr { break-inside: avoid; }
+      .schedule { margin-top: 4mm; }
+      .schedule-start { break-inside: avoid; }
+      .schedule-title { margin: 0 0 1.5mm; font-weight: 600; font-size: 9pt; break-after: avoid; }
+      table.schedule-rows { border-collapse: collapse; font-size: 8pt; width: 100%; table-layout: fixed; }
+      table.schedule-rows th, table.schedule-rows td { border-bottom: 0.2mm solid #bbb; padding: 1mm 2mm; text-align: left; overflow-wrap: anywhere; }
+      table.schedule-rows th { border-bottom: 0.3mm solid #444; color: #666; font-weight: 600; }
+      /* Printed once, at the top: Chrome repeats a table-header-group on every page. */
+      table.schedule-rows thead { display: table-row-group; }
+      table.schedule-rows .n { text-align: right; font-variant-numeric: tabular-nums; }
+      table.schedule-rows col.size { width: 26%; }
+      table.schedule-rows col.qty { width: 10%; }
+      table.schedule-rows col.price { width: 18%; }
+      table.schedule-rows tr.total td { border-bottom: 0; border-top: 0.3mm solid #444; font-weight: 600; }
+      table.schedule-rows tr { break-inside: avoid; }
       @media screen { .sheet + .sheet { margin-top: 16mm; } }
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     </style>
@@ -361,31 +365,47 @@ function renderPrintHtml(input: PrintHtmlInput): string {
 </html>`;
 }
 
+/** Rows kept on the page of the schedule's title and column headings. */
+const SCHEDULE_LEAD_ROWS = 3;
+
 /**
- * The floor's item schedule as an HTML table (#424): name, W × D × H, count
- * and price per line, and a total. It may run onto a following page.
+ * The floor's item schedule as HTML tables (#424): name, W × D × H, count
+ * and price per line, and a total as the last row. A long schedule runs on
+ * to the next page; the title, the headings and the first rows stay
+ * together in one unbreakable block, so the headings never strand at the
+ * foot of a page, and nothing repeats on the next one.
  */
 function renderScheduleTable(rows: readonly ScheduleRow[]): string {
   if (rows.length === 0) return '';
   const price = (value: number): string => `${CURRENCY_SYMBOL}${Math.round(value).toLocaleString('en-US')}`;
   const metres = (value: number): string => String(Math.round(value * 100) / 100);
-  const body = rows
-    .map(
+  const count = rows.reduce((sum, row) => sum + row.count, 0);
+  const total = rows.reduce((sum, row) => sum + row.totalPrice, 0);
+  const lines = [
+    ...rows.map(
       (row) =>
         `<tr><td>${escapeHtml(row.name)}</td><td>${metres(row.width)} × ${metres(row.depth)} × ${metres(row.height)}</td>` +
         `<td class="n">${row.count}</td><td class="n">${row.totalPrice > 0 ? price(row.totalPrice) : '—'}</td></tr>`
-    )
-    .join('');
-  const count = rows.reduce((sum, row) => sum + row.count, 0);
-  const total = rows.reduce((sum, row) => sum + row.totalPrice, 0);
+    ),
+    `<tr class="total"><td>Total</td><td></td><td class="n">${count}</td><td class="n">${price(total)}</td></tr>`,
+  ];
+  // The total belongs to the rows above it: a schedule of a few lines is one block.
+  const lead = lines.length <= SCHEDULE_LEAD_ROWS + 1 ? lines.length : SCHEDULE_LEAD_ROWS;
+  const cols = '<colgroup><col /><col class="size" /><col class="qty" /><col class="price" /></colgroup>';
+  const rest = lines.slice(lead);
   return `
-      <table class="schedule">
-        <caption>Item schedule</caption>
-        <colgroup><col /><col class="size" /><col class="qty" /><col class="price" /></colgroup>
-        <thead><tr><th>Item</th><th>W × D × H (m)</th><th class="n">Qty</th><th class="n">Price</th></tr></thead>
-        <tbody>${body}</tbody>
-        <tfoot><tr><td>Total</td><td></td><td class="n">${count}</td><td class="n">${price(total)}</td></tr></tfoot>
-      </table>`;
+      <div class="schedule">
+        <div class="schedule-start">
+          <p class="schedule-title">Item schedule</p>
+          <table class="schedule-rows">${cols}
+            <thead><tr><th>Item</th><th>W × D × H (m)</th><th class="n">Qty</th><th class="n">Price</th></tr></thead>
+            <tbody>${lines.slice(0, lead).join('')}</tbody>
+          </table>
+        </div>${
+          rest.length > 0 ? `
+        <table class="schedule-rows">${cols}<tbody>${rest.join('')}</tbody></table>` : ''
+        }
+      </div>`;
 }
 
 // Duplicated from lib/blueprint.ts (private there).

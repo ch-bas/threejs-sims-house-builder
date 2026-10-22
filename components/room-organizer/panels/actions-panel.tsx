@@ -11,7 +11,7 @@ import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from 
 import { totalCost } from '../lib/geometry';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
-import { downloadTextFile, exportFileName, planExportFileName } from '../lib/plan-export/download';
+import { buildingExportFileName, downloadTextFile, planExportFileName } from '../lib/plan-export/download';
 import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
 import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from '../lib/street';
@@ -258,7 +258,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 <Button
                   onClick={() =>
                     downloadTextFile(
-                      exportFileName(layout.name, 'svg', 'all-floors'),
+                      buildingExportFileName(layout, 'svg'),
                       'image/svg+xml',
                       buildingToSvg(layout, { schedule: true })
                     )
@@ -273,7 +273,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 <Button
                   onClick={() =>
                     downloadTextFile(
-                      exportFileName(layout.name, 'dxf', 'all-floors'),
+                      buildingExportFileName(layout, 'dxf'),
                       'application/dxf',
                       buildingToDxf(layout)
                     )

@@ -803,7 +803,7 @@ components/
   black. Once that placeholder is drawn, three.js has given the texture
   immutable 1×1 storage, and a larger image can't be written into it.
   A decode that lands after the floor was built therefore swaps in a new
-  texture on its own `Source` and disposes the placeholder one (#521).
+  texture on its own `TextureSource` and disposes the placeholder one (#521).
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged

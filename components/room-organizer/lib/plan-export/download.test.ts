@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeLayout } from '../__testfixtures__/fixtures';
-import { exportFileName, planExportFileName, slugify } from './download';
+import { buildingExportFileName, exportFileName, planExportFileName, slugify } from './download';
 
 describe('slugify', () => {
   it('lowercases and dashes non-alphanumerics', () => {
@@ -27,6 +27,21 @@ describe('planExportFileName', () => {
 
   it('falls back per piece', () => {
     expect(planExportFileName(makeLayout({ name: '' }), makeFloor({ name: '' }), 'svg')).toBe('layout-floor.svg');
+  });
+});
+
+describe('buildingExportFileName (#405)', () => {
+  it('names the whole building apart from every floor', () => {
+    const layout = makeLayout({ floors: [makeFloor(), makeFloor({ id: 'up', name: 'Upstairs' })] });
+    expect(buildingExportFileName(layout, 'svg')).toBe('my-home-all-floors.svg');
+  });
+
+  it('never collides with a floor named like it', () => {
+    const floors = [makeFloor({ name: 'All floors' }), makeFloor({ id: 'b', name: 'all-floors 2' })];
+    const layout = makeLayout({ floors });
+    const name = buildingExportFileName(layout, 'dxf');
+    expect(name).toBe('my-home-all-floors-3.dxf');
+    for (const floor of floors) expect(planExportFileName(layout, floor, 'dxf')).not.toBe(name);
   });
 });
 

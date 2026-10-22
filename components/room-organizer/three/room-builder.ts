@@ -477,7 +477,7 @@ function buildFloorPlanMaterial(
       // Swap in a fresh texture, then dispose the placeholder one.
       const previous = material.map ?? map;
       const fresh = previous.clone();
-      fresh.source = new THREE.Source(fitted);
+      fresh.source = new THREE.TextureSource(fitted);
       fresh.needsUpdate = true;
       previous.removeEventListener('dispose', onDispose);
       fresh.addEventListener('dispose', onDispose);
