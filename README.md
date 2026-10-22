@@ -792,6 +792,12 @@ components/
   one-entry cache that only fills while the ground floor is on screen, so
   the export decodes it first (`prepareExportBuilding`). A decode that lands
   after its floor was disposed no longer paints into the dead textures.
+- **The floor plan arrives in a fresh texture.** Until the plan decodes,
+  the 3D floor shows a 1×1 canvas in the floor colour, so it never flashes
+  black. Once that placeholder is drawn, three.js has given the texture
+  immutable 1×1 storage, and a larger image can't be written into it.
+  A decode that lands after the floor was built therefore swaps in a new
+  texture on its own `Source` and disposes the placeholder one (#521).
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged

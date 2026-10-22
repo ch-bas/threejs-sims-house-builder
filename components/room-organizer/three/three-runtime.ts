@@ -61,6 +61,7 @@ export {
   Scene,
   Shape,
   ShapeGeometry,
+  Source,
   SphereGeometry,
   Spherical,
   Sprite,

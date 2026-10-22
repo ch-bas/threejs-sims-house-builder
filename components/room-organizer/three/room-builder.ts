@@ -459,32 +459,52 @@ function buildFloorPlanMaterial(
   }
 
   // A decode that lands after the floor was rebuilt or exported away must
-  // not paint into its disposed textures.
+  // not paint into its disposed textures. Whoever disposes the floor
+  // disposes the material's current map, so the flag follows the map.
   let disposed = false;
-  map.addEventListener('dispose', () => {
+  const onDispose = () => {
     disposed = true;
-  });
-  let decoding = false;
+  };
+  map.addEventListener('dispose', onDispose);
+  let material: ThreeNS.MeshStandardMaterial | null = null;
   withFloorPlanImage(THREE, imageUrl, (image) => {
     if (disposed) return;
-    map.image = fittedFloorPlan(image, 'map', options);
-    map.needsUpdate = true;
+    const fitted = fittedFloorPlan(image, 'map', options);
+    if (material && placeholder) {
+      // The decode landed after the floor was built, so the placeholder may
+      // already be on the GPU: three allocates immutable storage at the
+      // placeholder's 1×1 size, and the plan can't be written into it (#521).
+      // Swap in a fresh texture, then dispose the placeholder one.
+      const previous = material.map ?? map;
+      const fresh = previous.clone();
+      fresh.source = new THREE.Source(fitted);
+      fresh.needsUpdate = true;
+      previous.removeEventListener('dispose', onDispose);
+      fresh.addEventListener('dispose', onDispose);
+      material.map = fresh;
+      previous.dispose();
+    } else {
+      // Not drawn yet: the placeholder never reached the GPU.
+      map.image = fitted;
+      map.needsUpdate = true;
+    }
     if (displacement) {
+      // Never uploaded before this: an imageless texture stays at version 0.
       displacement.image = fittedFloorPlan(image, 'displacement', options);
       displacement.needsUpdate = true;
     }
-    if (decoding) options.onTextureLoaded?.();
+    if (material) options.onTextureLoaded?.();
   });
-  decoding = true;
 
   // Opaque: the plan opacity is already baked into the map over the floor
   // colour, so the 3D floor shows the same colours as the 2D plan.
-  return new THREE.MeshStandardMaterial({
+  material = new THREE.MeshStandardMaterial({
     map,
     roughness: 0.8,
     metalness: 0.2,
     ...(displacement ? { displacementMap: displacement, displacementScale: 0.3 } : {}),
   });
+  return material;
 }
 
 function buildWalls(
