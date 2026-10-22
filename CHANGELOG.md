@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.20.0] - 2026-10-23
+
+The **2D plan & export** milestone: a 2D plan that shows the whole lot, prints you can choose, CAD files that open in CAD, and exports of the whole building.
+
+### Added
+- **Print options:** paper (A4, A3, Letter), orientation, a fixed scale or the largest that fits, leaving out far outdoor items, every floor one per page (lined up page to page), and an optional item schedule ([#435](https://github.com/ch-bas/threejs-sims-house-builder/issues/435), [#405](https://github.com/ch-bas/threejs-sims-house-builder/issues/405), [#424](https://github.com/ch-bas/threejs-sims-house-builder/issues/424))
+- **Whole-building exports:** "SVG · all floors" and "DXF · all floors" for houses with more than one floor ([#405](https://github.com/ch-bas/threejs-sims-house-builder/issues/405))
+- **Richer plans:** SVG and DXF now carry a north arrow, room and wall dimensions, Wi-Fi and camera coverage, and the SVG an item schedule ([#420](https://github.com/ch-bas/threejs-sims-house-builder/issues/420), [#424](https://github.com/ch-bas/threejs-sims-house-builder/issues/424))
+- **Schedule CSV:** items grouped per floor with quantities and totals; the inventory CSV adds position, rotation, mirrored, locked and zone, and opens cleanly in Excel ([#430](https://github.com/ch-bas/threejs-sims-house-builder/issues/430))
+- A status chip while drawing zones in 2D; Escape or leaving 2D ends it ([#439](https://github.com/ch-bas/threejs-sims-house-builder/issues/439))
+
+### Changed
+- **The 2D plan shows the whole lot,** outdoor items included, beside the HUD instead of under it, so nothing is hidden or unclickable. Items very far out appear as markers at the edge with their distance; click one to select it ([#381](https://github.com/ch-bas/threejs-sims-house-builder/issues/381))
+- **The GLB export is the whole building:** every storey, the roof and every wall, with named parts, whatever the view shows ([#373](https://github.com/ch-bas/threejs-sims-house-builder/issues/373))
+- Every download uses one naming rule, keeps names in any alphabet (e.g. `дом-мечты.glb`) and strips anything unsafe ([#427](https://github.com/ch-bas/threejs-sims-house-builder/issues/427))
+- The 3D-only controls are disabled in 2D instead of doing nothing ([#444](https://github.com/ch-bas/threejs-sims-house-builder/issues/444))
+
+### Fixed
+- **The floor-plan image often didn't appear in 3D** after uploading, undoing or replacing it ([#521](https://github.com/ch-bas/threejs-sims-house-builder/issues/521))
+- **DXF files now open in CAD software:** valid AutoCAD 2000 structure, checked with three independent readers ([#397](https://github.com/ch-bas/threejs-sims-house-builder/issues/397))
+- Mirrored doors swing on the correct side in SVG and DXF ([#386](https://github.com/ch-bas/threejs-sims-house-builder/issues/386))
+- The blueprint draws outdoor items, and lists items too far out to draw instead of shrinking the house ([#377](https://github.com/ch-bas/threejs-sims-house-builder/issues/377))
+- Plan labels stay upright, wall cameras no longer widen the sheet, and cameras without a set range show their default cone in 2D ([#401](https://github.com/ch-bas/threejs-sims-house-builder/issues/401))
+- Dragging on the 2D plan no longer selects text across the page ([#442](https://github.com/ch-bas/threejs-sims-house-builder/issues/442))
+- Zone names on the minimap no longer render at full size ([#433](https://github.com/ch-bas/threejs-sims-house-builder/issues/433))
+- Screenshot PNG works in 2D, and blueprint Print works on an empty floor ([#391](https://github.com/ch-bas/threejs-sims-house-builder/issues/391), [#437](https://github.com/ch-bas/threejs-sims-house-builder/issues/437))
+- A long house name no longer silently changes the print scale
+
 ## [1.19.0] - 2026-10-22
 
 **Phones and tablets, rebuilt.** On a phone the controls used to cover most of the screen. Now the house fills 60–80% of it.
