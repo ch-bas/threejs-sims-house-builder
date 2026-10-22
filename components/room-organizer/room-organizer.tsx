@@ -953,6 +953,11 @@ export function RoomOrganizer(): JSX.Element {
           toggle('measurementMode');
           return;
         }
+        // And for zone drawing, whose drawer button is folded away (#439).
+        if (view.drawZoneMode) {
+          toggle('drawZoneMode');
+          return;
+        }
         setSelectedItemId(null);
         setExtraSelectedIds(new Set());
       },
@@ -1012,6 +1017,7 @@ export function RoomOrganizer(): JSX.Element {
       wallDraft,
       view.drawWallMode,
       view.measurementMode,
+      view.drawZoneMode,
     ]
   );
 
@@ -1184,8 +1190,10 @@ export function RoomOrganizer(): JSX.Element {
           pointerEvents: 'none',
         }}
       >
+        {/* Covers the 2D plan's top edge on a desktop window (#381). */}
         <div
           className="pc-glass pc-glass--dark"
+          data-plan-occluder=""
           style={{ padding: '8px 12px', pointerEvents: 'auto' }}
         >
           <SaveStatusHeaderStats

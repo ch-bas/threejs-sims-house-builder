@@ -25,7 +25,9 @@ const MODES: readonly Mode[] = [
  * top-right corner of the lot.
  */
 export function WallDisplayPill(): JSX.Element {
-  const view = useViewSettings('wallDisplay');
+  const view = useViewSettings('wallDisplay', 'view2D');
+  // The plan draws no walls up or down: off in 2D, like the time controls (#220, #444).
+  const off = view.view2D;
   const { setView } = useEditorViewActions();
 
   return (
@@ -76,7 +78,8 @@ export function WallDisplayPill(): JSX.Element {
               role="radio"
               aria-checked={isActive}
               onClick={() => setView((v) => ({ ...v, wallDisplay: entry.key }))}
-              title={entry.hint}
+              disabled={off}
+              title={off ? `${entry.hint} — switch back to 3D view` : entry.hint}
               className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
               style={{
                 padding: '4px 8px',
@@ -90,6 +93,7 @@ export function WallDisplayPill(): JSX.Element {
                 fontSize: 10,
                 letterSpacing: 'var(--pc-tr-caps)',
                 textTransform: 'uppercase',
+                ...(off ? DISABLED_TILE : {}),
               }}
             >
               <Icon name={entry.icon} size={12} />
@@ -101,3 +105,6 @@ export function WallDisplayPill(): JSX.Element {
     </div>
   );
 }
+
+/** A pill tile that does nothing in the current view, dimmed as ModePanel dims its buttons. */
+export const DISABLED_TILE = { opacity: 0.35, cursor: 'not-allowed' } as const;

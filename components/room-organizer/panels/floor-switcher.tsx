@@ -9,6 +9,7 @@ import { MAX_FLOORS } from '../lib/constants';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { buildingHeight, storeyHeight } from '../lib/storeys';
 import { Icon } from '../plotcraft/icon';
+import { DISABLED_TILE } from './wall-display-pill';
 
 /** "3 m", "2.5 m" — the storey figures the plan and the shell are built from. */
 function formatMetres(value: number): string {
@@ -21,7 +22,7 @@ export function FloorSwitcher(): JSX.Element {
   const floors = useLayoutStore((s) => s.layout.floors);
   const activeFloorIndex = useActiveFloorIndex();
   const actions = useLayoutActions();
-  const view = useViewSettings('showAllFloors');
+  const view = useViewSettings('showAllFloors', 'view2D');
   const { toggle } = useEditorViewActions();
   const [renaming, setRenaming] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
@@ -52,8 +53,10 @@ export function FloorSwitcher(): JSX.Element {
           <button
             type="button"
             onClick={() => toggle('showAllFloors')}
+            // The plan shows one floor: off in 2D (#444).
+            disabled={view.view2D}
             className={`pc-tile${view.showAllFloors ? ' pc-tile--active' : ''}`}
-            title="Show all floors at once (other floors render translucent, or solid with all walls up)"
+            title={`Show all floors at once (other floors render translucent, or solid with all walls up)${view.view2D ? ' — switch back to 3D view' : ''}`}
             style={{
               height: 26,
               padding: '0 10px',
@@ -63,6 +66,7 @@ export function FloorSwitcher(): JSX.Element {
               fontSize: 10,
               letterSpacing: 'var(--pc-tr-caps)',
               textTransform: 'uppercase',
+              ...(view.view2D ? DISABLED_TILE : {}),
             }}
           >
             All

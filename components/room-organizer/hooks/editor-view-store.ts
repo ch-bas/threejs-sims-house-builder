@@ -8,6 +8,7 @@
 // singleton: view state is per mount and is never persisted, unlike the layout.
 
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { withViewInvariants } from '../lib/view-options';
 import type { FurnitureItem, GameMode, ViewSettings } from '../lib/types';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -48,9 +49,13 @@ export function createEditorViewStore(initialView: ViewSettings): EditorViewStor
         return Object.is(value, state[key]) ? state : { ...state, [key]: value };
       });
     };
+    // Every view change keeps the cross-field invariants (zone drawing is
+    // 2D only, #439).
+    const setView = (next: SetStateAction<ViewSettings>): void =>
+      setField('view', (view) => withViewInvariants(resolve(next, view)));
     const actions: EditorViewActions = {
-      setView: (next) => setField('view', next),
-      toggle: (key) => setField('view', (view) => ({ ...view, [key]: !view[key] })),
+      setView,
+      toggle: (key) => setView((view) => ({ ...view, [key]: !view[key] })),
       setCatalogQuery: (next) => setField('catalogQuery', next),
       setGameMode: (next) => setField('gameMode', next),
       setAutoCycleLighting: (next) => setField('autoCycleLighting', next),

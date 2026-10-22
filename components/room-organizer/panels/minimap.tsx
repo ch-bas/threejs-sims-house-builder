@@ -37,6 +37,7 @@ export function Minimap({ layout, floor, selectedItemId }: MinimapProps): JSX.El
         height={MINIMAP_HEIGHT}
         showFloorPlan
         eager
+        fitContent
         className="rounded"
       />
     </div>

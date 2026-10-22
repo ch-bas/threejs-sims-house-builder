@@ -396,7 +396,8 @@ components/
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
-    │   ├── view-options.ts              View-menu switches and the view each one needs (#341)
+    │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
+    │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages + zone-name requests (#374)
     │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
@@ -470,7 +471,7 @@ components/
     │   ├── use-npcs.ts                  Animated wandering pedestrians
     │   ├── use-weather.ts               Self-invalidating rain / snow loop
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
-    │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets
+    │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
     │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Diffed unlock detection
@@ -532,7 +533,7 @@ components/
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
-        ├── zone-name-chip.tsx           Inline name field for a zone just drawn on the plan
+        ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), then the inline name field
         ├── dev-diagnostics.tsx          `?debug` overlay: draw calls, triangles, geometries, textures, programs, frames
         ├── chip-controls.tsx            Chip buttons + inline name field (no native prompts)
         └── viewport.tsx
@@ -611,12 +612,11 @@ components/
   the phone item sheet is open: the first press on an item opens it and
   hides the catalog and the build tools, and re-fitting to what is left
   would rescale the plan under the finger. The sheet itself is never an
-  inset either. Desktop-sized windows, the minimap, the blueprint and the
-  thumbnails pass none and are unchanged.
+  inset either. The minimap, the blueprint and the thumbnails pass none.
 - **Print sheets fit the content, and the person picks the page.** The
   raster blueprint sizes its canvas from `planContentBounds` and paints
-  through `render2DTopDown`'s `fitBounds`, which `get2DBoundsTransform`
-  turns into the usual room-corner transform, so a tree past the walls is
+  through `render2DTopDown`'s `fitBounds`, the same bounds fit the on-screen
+  plan uses (`get2DViewTransform`; `get2DBoundsTransform` is a thin wrapper), so a tree past the walls is
   drawn rather than cut off by the canvas edge (#377). Outdoor items may
   shrink the house to half its room-only size; past that the furthest are
   left off one at a time and listed under "Off the plan" with their
@@ -631,6 +631,53 @@ components/
   storey on its own page (#405). The title block is a fixed-layout table whose cells wrap
   anywhere: a long unbroken name would otherwise widen the table past the
   page and the browser would shrink the whole sheet off its scale.
+- **The plan fits the whole lot, clear of the desktop HUD (#381).** The
+  on-screen plan and the minimap fit `planViewFit` (`lib/plan-view-fit.ts`):
+  the room plus every placed item's footprint, the sheet the vector exports
+  use, with overhangs under 5 cm snapped back to the walls. A tree a few
+  metres from the house is on the plan and can be clicked; an indoor-only
+  plan fits exactly as before. Like the blueprint, the house stays at least
+  half its room-only size: the outdoor items may widen the fit to twice the
+  room on each axis, and on an axis that overflows the items sticking out
+  furthest along it (`distanceOutsideWalls` decides what is outside) are
+  left out and drawn as edge markers, an icon, the distance and an arrow
+  towards the item. Markers on the same bearing fan apart along the edge,
+  so each one can be pressed; a press selects the item, whose popover's
+  Centre brings it back; Placed Items lists it too. `get2DViewTransform`
+  still maps the room's corner, so only its offsets move. On a desktop
+  window the plan keeps the classic whole-canvas fit, pixel for pixel, until
+  a HUD panel would cover it; then it fits the free rectangle
+  (`[data-scene-occluder]` panels plus the header stats, tagged
+  `data-plan-occluder` because the 3D framing never needed to clear them;
+  not the zone tool's chip, which only grazes the band above the plan) that
+  draws it biggest for its shape. Its 20 px margin sits
+  under a panel on the right and bottom (a 4 px gap stays), and only the top
+  and left keep it, for the room dimensions; a region up to 10% smaller wins
+  when it is markedly more central, so a side column can't park the house in
+  a corner. Nothing on the plan sits under the catalog strip, the mode panel
+  or the header stats, which costs a desktop plan about a quarter to a third
+  of its old size on 768–900 px tall windows. The fit is measured once per press and frozen while the
+  gesture lasts (`<html data-plan-gesture>`), so dragging an item past the
+  walls never rescales the plan under the pointer; the committed drop
+  refits it. A panel that moves without resizing (the left column when the
+  drawer folds) fires no ResizeObserver, so the observer also re-measures
+  after any CSS transition or animation ends, and on the frame after a
+  relevant DOM mutation. The library thumbnails still fit the room alone.
+- **A plan drag never selects page text (#442).** While a press on the
+  plan is armed (an item or a zone), `<html data-plan-gesture>` turns
+  `user-select` off page-wide (`app/globals.css`, "2D plan"), so dragging
+  across the HUD no longer highlights its labels.
+- **3D-only controls say so in 2D (#444).** The wall display pill, both
+  floor "All" toggles, and the minimap, walkers and camera-cone buttons are
+  disabled on the plan with a "— switch back to 3D view" title, like the
+  time controls (#220). Zone drawing is the reverse: the editor's view store
+  applies `withViewInvariants` on every change, so leaving the plan by any
+  route ends the draw mode, a chip on the plan says it is on (with Done for
+  touch), and Escape leaves it like the wall and distance tools (#439).
+  Zone names are left off when wider than their zone, and on the minimap
+  and thumbnails (`thumbnail`) also below 25 px per metre (#433). A lost
+  window or pointer capture mid-drag undoes the drag and clears the
+  gesture flag.
 - **Schema migrations** are non-destructive. `parseStoredLayout` accepts
   both the current multi-floor shape and the legacy single-floor shape,
   upgrading the latter into a one-floor building. Used everywhere

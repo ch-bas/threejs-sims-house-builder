@@ -35,3 +35,15 @@ export function toggleViewOption(view: ViewSettings, key: ViewOptionKey): ViewSe
   }
   return { ...view, [key]: on };
 }
+
+/**
+ * View invariants every change keeps, applied by the editor's view store:
+ * zone drawing works on the 2D plan only, so leaving the plan (the `2` key,
+ * the dock's 3D button, walkthrough) also leaves the draw mode, instead of
+ * arming the next press on the plan when the user comes back (#439).
+ * Returns `view` itself when nothing changes.
+ */
+export function withViewInvariants(view: ViewSettings): ViewSettings {
+  if (view.drawZoneMode && !view.view2D) return { ...view, drawZoneMode: false };
+  return view;
+}
