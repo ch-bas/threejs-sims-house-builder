@@ -9,8 +9,8 @@
  * lib/geometry.ts as render.ts itself does.
  */
 
-import { GRID_SIZE_METERS } from '../constants';
-import { isOpening } from '../opening-snap';
+import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from '../constants';
+import { isOpening, isWallMounted } from '../opening-snap';
 import { computeFloorOpenings, floorOpeningOutline, stairPlanSymbol, stairTreadLines } from '../stairs';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../types';
 
@@ -176,9 +176,11 @@ export interface PlanBounds {
  * the rotated footprint corners of every placed item on the floor. Outdoor
  * items (trees, fences, pools) sit outside the walls, so the sheet must
  * follow them — the fixed room + margin sheet clipped them and let them
- * overprint the scale bar (#287). Openings are left out: they are drawn as
- * wall marks whose swing opens into the room, and their footprint straddles
- * the wall line by half its depth, which would pad every sheet by 5 cm.
+ * overprint the scale bar (#287). Wall-mounted items are left out: openings
+ * are drawn as wall marks whose swing opens into the room, and their
+ * footprint straddles the wall line by half its depth, which would pad every
+ * sheet by 5 cm; a camera sits in the wall the same way, and one at 135° in a
+ * corner poked past it and shifted the room off the sheet layout (#401).
  */
 export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
   const bounds: PlanBounds = {
@@ -188,6 +190,7 @@ export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanB
     maxZ: layout.height / 2,
   };
   for (const item of splitPlanItems(floor.items).furniture) {
+    if (isWallMounted(item.type)) continue;
     for (const corner of itemWorldCorners(item)) {
       if (corner.x < bounds.minX) bounds.minX = corner.x;
       if (corner.x > bounds.maxX) bounds.maxX = corner.x;
@@ -199,17 +202,203 @@ export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanB
 }
 
 /**
+ * The union of every floor's `planContentBounds` (#405): one frame every
+ * storey's sheet can share, so a whole-building export or an all-floors print
+ * draws each floor at the same place and size and the sheets line up.
+ */
+export function buildingContentBounds(layout: RoomLayout): PlanBounds {
+  const bounds: PlanBounds = {
+    minX: -layout.width / 2,
+    minZ: -layout.height / 2,
+    maxX: layout.width / 2,
+    maxZ: layout.height / 2,
+  };
+  for (const floor of layout.floors) {
+    const floorBounds = planContentBounds(layout, floor);
+    bounds.minX = Math.min(bounds.minX, floorBounds.minX);
+    bounds.minZ = Math.min(bounds.minZ, floorBounds.minZ);
+    bounds.maxX = Math.max(bounds.maxX, floorBounds.maxX);
+    bounds.maxZ = Math.max(bounds.maxZ, floorBounds.maxZ);
+  }
+  return bounds;
+}
+
+/** `bounds` grown by `marginM` on every side. */
+export function growBounds(bounds: PlanBounds, marginM: number): PlanBounds {
+  return {
+    minX: bounds.minX - marginM,
+    minZ: bounds.minZ - marginM,
+    maxX: bounds.maxX + marginM,
+    maxZ: bounds.maxZ + marginM,
+  };
+}
+
+/**
  * The sheet a plan is drawn on: `planContentBounds` grown by `marginM` on
  * every side for the title, room dimensions and scale bar. With no item
  * outside the walls this is exactly the old room + margin sheet, so
  * indoor-only exports are unchanged (#287).
  */
 export function planBounds(layout: RoomLayout, floor: FloorLayout, marginM: number): PlanBounds {
-  const content = planContentBounds(layout, floor);
+  return growBounds(planContentBounds(layout, floor), marginM);
+}
+
+/** A coverage disc set: three concentric rings at ⅓, ⅔ and the full range. */
+export interface CoverageRings {
+  kind: 'wifi' | 'cctv';
+  center: PlanPoint;
+  /** Inner to outer, in metres. */
+  radii: [number, number, number];
+}
+
+/**
+ * The Wi-Fi and CCTV signal rings the 2D view draws with `showWiFiSignals`
+ * and the blueprint always draws (#134): three rings at a third, two thirds
+ * and the whole of `signalRange` around each access point or CCTV unit — the
+ * same predicate as canvas-2d/render.ts `drawSignalRings` (#420).
+ */
+export function coverageRings(items: readonly FurnitureItem[]): CoverageRings[] {
+  const rings: CoverageRings[] = [];
+  for (const kind of ['wifi', 'cctv'] as const) {
+    for (const item of items) {
+      if (!item.position || !item.signalRange) continue;
+      if (!(kind === 'wifi' ? item.isWiFiAccessPoint : item.isCCTV)) continue;
+      const range = item.signalRange;
+      rings.push({ kind, center: { ...item.position }, radii: [range / 3, (range * 2) / 3, range] });
+    }
+  }
+  return rings;
+}
+
+/**
+ * A camera's field-of-view wedge in plan space: the sector of radius
+ * `radius` about `apex` swept from `startAngle` to `endAngle` (radians,
+ * measured in the x-right / z-down plan plane, so increasing angles turn
+ * clockwise on the sheet). `full` marks a 360° camera, drawn as a disc.
+ */
+export interface VisionWedge {
+  apex: PlanPoint;
+  radius: number;
+  startAngle: number;
+  endAngle: number;
+  full: boolean;
+}
+
+/**
+ * Every security camera's vision cone, as the 2D view draws it (#134): the
+ * camera faces its local +Z, world direction (sin r, cos r). Range and FOV
+ * fall back to the 3D cone's defaults when the item does not carry them
+ * (#401), so an imported camera has the same wedge in every view.
+ */
+export function visionWedges(items: readonly FurnitureItem[]): VisionWedge[] {
+  const wedges: VisionWedge[] = [];
+  for (const item of items) {
+    if (!item.position || !item.hasVisionCone) continue;
+    const radius = item.visionRange ?? DEFAULT_VISION_RANGE_M;
+    const fovDeg = item.visionFov ?? DEFAULT_VISION_FOV_DEG;
+    const rotation = item.rotation ?? 0;
+    const centerAngle = Math.atan2(Math.cos(rotation), Math.sin(rotation));
+    const half = (Math.min(fovDeg, 360) * Math.PI) / 360;
+    wedges.push({
+      apex: { ...item.position },
+      radius,
+      startAngle: centerAngle - half,
+      endAngle: centerAngle + half,
+      full: fovDeg >= 360,
+    });
+  }
+  return wedges;
+}
+
+/** The point `radius` metres from `center` at plan angle `angle` (x right, z down). */
+export function polarPoint(center: PlanPoint, radius: number, angle: number): PlanPoint {
+  return { x: center.x + Math.cos(angle) * radius, z: center.z + Math.sin(angle) * radius };
+}
+
+/** A dimension string's measured run, in world metres, with its label. */
+export interface PlanDimension {
+  from: PlanPoint;
+  to: PlanPoint;
+  lengthM: number;
+  label: string;
+}
+
+/** Interior walls shorter than this carry no dimension string — the label would not fit. */
+export const MIN_DIMENSIONED_WALL_M = 0.3;
+
+/** "4.00 m": two decimals, the precision the wall tools snap to. */
+export function formatDimension(metres: number): string {
+  const value = Math.round(metres * 100) / 100;
+  return `${(Object.is(value, -0) ? 0 : value).toFixed(2)} m`;
+}
+
+/**
+ * The room's overall dimensions (#424): the south edge's width and the west
+ * edge's depth, measured along the footprint. Exporters offset them out into
+ * the margin band beyond the plan content.
+ */
+export function roomDimensions(layout: Pick<RoomLayout, 'width' | 'height'>): { width: PlanDimension; depth: PlanDimension } {
+  const hw = layout.width / 2;
+  const hd = layout.height / 2;
   return {
-    minX: content.minX - marginM,
-    minZ: content.minZ - marginM,
-    maxX: content.maxX + marginM,
-    maxZ: content.maxZ + marginM,
+    width: { from: { x: -hw, z: hd }, to: { x: hw, z: hd }, lengthM: layout.width, label: formatDimension(layout.width) },
+    depth: { from: { x: -hw, z: -hd }, to: { x: -hw, z: hd }, lengthM: layout.height, label: formatDimension(layout.height) },
   };
 }
+
+/** One dimension per interior wall at least `MIN_DIMENSIONED_WALL_M` long (#424). */
+export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls'>): PlanDimension[] {
+  const dims: PlanDimension[] = [];
+  for (const wall of floor.interiorWalls ?? []) {
+    const lengthM = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
+    if (lengthM < MIN_DIMENSIONED_WALL_M) continue;
+    dims.push({ from: { x: wall.x1, z: wall.z1 }, to: { x: wall.x2, z: wall.z2 }, lengthM, label: formatDimension(lengthM) });
+  }
+  return dims;
+}
+
+/** One line of the item schedule: identical placed items counted together. */
+export interface ScheduleRow {
+  name: string;
+  type: string;
+  width: number;
+  depth: number;
+  height: number;
+  count: number;
+  /** Price of one item (0 when it has none). */
+  unitPrice: number;
+  /** `unitPrice × count`. */
+  totalPrice: number;
+}
+
+/**
+ * The floor's item schedule (#424): every placed item, grouped by name,
+ * type, size and price, sorted by name — a parts list for the builder or the
+ * furniture shop. Unplaced (tray) items are not on the plan, so not listed.
+ */
+export function itemSchedule(items: readonly FurnitureItem[]): ScheduleRow[] {
+  const rows = new Map<string, ScheduleRow>();
+  for (const item of items) {
+    if (!item.position) continue;
+    const unitPrice = item.price ?? 0;
+    const key = JSON.stringify([item.name, item.type, item.width, item.depth, item.height, unitPrice]);
+    const row = rows.get(key);
+    if (row) {
+      row.count += 1;
+      row.totalPrice += unitPrice;
+    } else {
+      rows.set(key, {
+        name: item.name,
+        type: item.type,
+        width: item.width,
+        depth: item.depth,
+        height: item.height,
+        count: 1,
+        unitPrice,
+        totalPrice: unitPrice,
+      });
+    }
+  }
+  return [...rows.values()].sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type));
+}
+

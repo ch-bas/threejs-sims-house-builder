@@ -1,3 +1,4 @@
+import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M } from '../lib/constants';
 import { fitOpeningToStorey } from '../lib/storeys';
 import { FLOOR_HEIGHT_METERS, type FurnitureItem } from '../lib/types';
 import { ROOM_OBJECT_TAGS } from './room-builder';
@@ -102,8 +103,8 @@ export function addVisionCones(
 
   for (const item of items) {
     if (!item.position || !item.hasVisionCone) continue;
-    const range = item.visionRange ?? 7;
-    const fov = ((item.visionFov ?? 70) * Math.PI) / 180;
+    const range = item.visionRange ?? DEFAULT_VISION_RANGE_M;
+    const fov = ((item.visionFov ?? DEFAULT_VISION_FOV_DEG) * Math.PI) / 180;
     // The light volume's apex follows the body, fitted to the storey like
     // the camera mesh is (#277).
     const apexY = cameraMountHeight(fitOpeningToStorey(item, storeyHeight));

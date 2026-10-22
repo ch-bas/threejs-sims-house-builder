@@ -9,6 +9,14 @@ export const CURRENCY_SYMBOL = '$';
 
 export const MAX_FLOORS = 4;
 
+/**
+ * Camera vision-cone fallbacks for an item that carries `hasVisionCone` but no
+ * explicit range or field of view (the schema allows both to be absent). The
+ * 3D cone, the 2D plan and the vector exports must agree on them (#401).
+ */
+export const DEFAULT_VISION_RANGE_M = 7;
+export const DEFAULT_VISION_FOV_DEG = 70;
+
 /** The roof every new layout starts with. */
 export const DEFAULT_ROOF: Required<Pick<RoofSpec, 'style' | 'color'>> = { style: 'gable', color: '#5d3a23' };
 
