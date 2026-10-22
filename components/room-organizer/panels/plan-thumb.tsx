@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
+import { planViewBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { planFloorIndex } from '../lib/street';
 import type { FloorLayout, RoomLayout } from '../lib/types';
@@ -43,6 +44,12 @@ export interface PlanThumbProps {
    * consumers such as the minimap.
    */
   eager?: boolean;
+  /**
+   * Fit the room and every item outside it, as the 2D view does (#381),
+   * instead of the room alone. The minimap turns this on; a library or
+   * History thumbnail keeps the house filling its frame.
+   */
+  fitContent?: boolean;
   className?: string;
   style?: CSSProperties;
   /** Accessible name; thumbnails are decorative when omitted. */
@@ -64,6 +71,7 @@ export function PlanThumb({
   selectedItemId = null,
   showFloorPlan = false,
   eager = false,
+  fitContent = false,
   className,
   style,
   label,
@@ -125,13 +133,14 @@ export function PlanThumb({
         hasCollision: (item) =>
           hasCollisions(item, shown.items, building.width, building.height, { keepOut, interiorWalls: shown.interiorWalls, storeyHeight: storeyHeight(shown) }),
         padding,
+        ...(fitContent ? { fitBounds: planViewBounds(building, shown) } : {}),
       });
     };
     paint();
     // Repaint when an async floor-plan decode lands — the minimap renders in
     // 3D view where the 2D view's handler isn't registered (#118).
     return showFloorPlan ? addFloorPlanRepaintHandler(paint) : undefined;
-  }, [visible, layout, floor, width, height, padding, selectedItemId, showFloorPlan]);
+  }, [visible, layout, floor, width, height, padding, selectedItemId, showFloorPlan, fitContent]);
 
   return (
     // CSS size is pinned here; the paint effect sizes the backing store to

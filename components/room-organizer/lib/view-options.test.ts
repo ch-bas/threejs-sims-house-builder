@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeViewSettings as makeView } from './__testfixtures__/fixtures';
-import { toggleViewOption, VIEW_OPTION_KEYS } from './view-options';
+import { toggleViewOption, VIEW_OPTION_KEYS, withViewInvariants } from './view-options';
 
 describe('toggleViewOption (#341)', () => {
   it('flips each key both ways', () => {
@@ -33,5 +33,18 @@ describe('toggleViewOption (#341)', () => {
       const before = makeView({ view2D: true, drawWallMode: true });
       expect(toggleViewOption(before, key)).toEqual({ ...before, [key]: !before[key] });
     }
+  });
+});
+
+describe('withViewInvariants (#439)', () => {
+  it('leaving the 2D plan leaves zone drawing too', () => {
+    expect(withViewInvariants(makeView({ view2D: false, drawZoneMode: true })).drawZoneMode).toBe(false);
+  });
+
+  it('returns the same object when nothing changes', () => {
+    const drawing = makeView({ view2D: true, drawZoneMode: true });
+    expect(withViewInvariants(drawing)).toBe(drawing);
+    const plain = makeView();
+    expect(withViewInvariants(plain)).toBe(plain);
   });
 });

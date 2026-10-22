@@ -2,10 +2,10 @@ import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '.
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { planDrawOrder } from '../lib/plan-order';
+import { boundsSize, PLAN_PADDING_PX, regionFitScale, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
-import type { PlanBounds } from '../lib/plan-export/plan-geometry';
 import type { Insets } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
@@ -38,16 +38,16 @@ export interface Render2DOptions {
    */
   insets?: Insets | undefined;
   /**
-   * Fit this world rectangle (metres, room-centred) instead of the room: the
-   * blueprint passes the plan content so outdoor items past the walls are
-   * drawn, not clipped by the canvas edge (#377). See `get2DBoundsTransform`.
+   * Fit this world rectangle (metres, room-centred) instead of the room
+   * (`get2DViewTransform`'s `bounds`). The on-screen plan and the minimap
+   * pass `planViewBounds` (#381), the blueprint its content bounds (#377), so
+   * items past the walls are drawn rather than clipped by the canvas edge.
+   * Undefined fits the room alone, as the library thumbnails do.
    */
   fitBounds?: PlanBounds | undefined;
 }
 
-const PADDING = 60;
-/** The plan margin inside the HUD's free area, at most this share of its short side. */
-const INSET_PADDING_SHARE = 0.12;
+const PADDING = PLAN_PADDING_PX;
 // Matches the 0.16 m thickness modelled in three/interior-walls.ts.
 const INTERIOR_WALL_THICKNESS_M = 0.16;
 
@@ -63,41 +63,49 @@ export interface View2DTransform {
  * pointer handling and drop placement can invert it (#166, #219). The renderer
  * itself calls this, so the two can never diverge.
  *
+ * `bounds` is what is fitted (world metres, room-centred): the room, or the
+ * room and the items outside it (`planViewBounds`, #381). The transform
+ * still maps the room's corner, so every draw call keeps its form; only the
+ * offsets move when the bounds reach past the walls.
+ *
  * `insets` are the canvas edges the HUD covers (a phone's dock and top
- * pills): the plan is fitted and centred in what they leave free, with the
- * margin shrunk to at most `INSET_PADDING_SHARE` of that area's short side
- * so a short landscape band still shows a usable plan. Without insets (the
- * desktop view, the minimap, the blueprint) the fit is the whole canvas,
- * unchanged.
+ * pills, or the desktop panels over the plan): the plan is fitted and
+ * centred in what they leave free, with the margin shrunk to at most
+ * `INSET_PADDING_SHARE` of that area's short side so a short landscape band
+ * still shows a usable plan. Without insets (the minimap, the blueprint) the
+ * fit is the whole canvas, unchanged.
  */
 export function get2DViewTransform(
   canvasClientWidth: number,
   canvasClientHeight: number,
   layout: Pick<RoomLayout, 'width' | 'height'>,
   padding: number = PADDING,
-  insets?: Insets
+  insets?: Insets,
+  bounds?: PlanBounds
 ): View2DTransform {
+  const fit = bounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
+  const content = boundsSize(fit);
+  // The canvas position of the room's corner, given where the fitted
+  // content's corner lands.
+  const place = (scale: number, left: number, top: number): View2DTransform => ({
+    scale,
+    offsetX: left + (-layout.width / 2 - fit.minX) * scale,
+    offsetY: top + (-layout.height / 2 - fit.minZ) * scale,
+  });
   if (insets) {
     const width = canvasClientWidth - insets.left - insets.right;
     const height = canvasClientHeight - insets.top - insets.bottom;
-    const pad = Math.min(padding, INSET_PADDING_SHARE * Math.min(width, height));
-    const scale = Math.min((width - pad * 2) / layout.width, (height - pad * 2) / layout.height);
+    const scale = regionFitScale(width, height, content, padding);
     // HUD panels that leave no room to speak of: fit the whole canvas instead.
     if (scale > 0) {
-      return {
-        scale,
-        offsetX: insets.left + (width - layout.width * scale) / 2,
-        offsetY: insets.top + (height - layout.height * scale) / 2,
-      };
+      return place(scale, insets.left + (width - content.width * scale) / 2, insets.top + (height - content.height * scale) / 2);
     }
   }
   const scale = Math.min(
-    (canvasClientWidth - padding * 2) / layout.width,
-    (canvasClientHeight - padding * 2) / layout.height
+    (canvasClientWidth - padding * 2) / content.width,
+    (canvasClientHeight - padding * 2) / content.height
   );
-  const offsetX = (canvasClientWidth - layout.width * scale) / 2;
-  const offsetY = (canvasClientHeight - layout.height * scale) / 2;
-  return { scale, offsetX, offsetY };
+  return place(scale, (canvasClientWidth - content.width * scale) / 2, (canvasClientHeight - content.height * scale) / 2);
 }
 
 /** Inverse of the renderer's mapping: canvas CSS px → world x/z (room-centred). */
@@ -160,9 +168,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, viewWidth, viewHeight);
 
-  const { scale, offsetX, offsetY } = options.fitBounds
-    ? get2DBoundsTransform(viewWidth, viewHeight, layout, options.fitBounds, options.padding ?? PADDING)
-    : get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets);
+  const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
@@ -199,8 +205,14 @@ export function render2DTopDown(options: Render2DOptions): void {
 /** Fill / outline alpha of a zone's tint, on top of the floor colour or tracing image. */
 export const ZONE_FILL_ALPHA = 0.18;
 export const ZONE_STROKE_ALPHA = 0.7;
-/** A zone painted smaller than this (px, either edge) is too small for a label — the minimap. */
+/** A zone painted smaller than this (px, either edge) is too small for a label. */
 const ZONE_MIN_LABEL_EDGE_PX = 36;
+/**
+ * Below this plan scale (px per metre) zone names are left off (#433): the
+ * labels are a fixed 12 px, so on the minimap or a thumbnail one name
+ * covered most of the map and hid the furniture under it.
+ */
+export const ZONE_LABEL_MIN_SCALE = 25;
 
 /**
  * `#rgb` / `#rrggbb` → `rgba(...)` at the given alpha. Anything else (a
@@ -264,7 +276,7 @@ function drawZoneLabels(
   showArea: boolean
 ): void {
   const zones = floor.zones ?? [];
-  if (zones.length === 0) return;
+  if (zones.length === 0 || scale < ZONE_LABEL_MIN_SCALE) return;
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -281,6 +293,8 @@ function drawZoneLabels(
     const cx = x + w / 2;
     const area = showArea ? `${zoneArea(zone).toFixed(1)} m²` : null;
     ctx.font = 'bold 12px Arial';
+    // A name wider than its zone would spill over the neighbouring rooms.
+    if (ctx.measureText(zone.name).width > w - 4) continue;
     ctx.strokeText(zone.name, cx, y + 11);
     ctx.fillText(zone.name, cx, y + 11);
     if (area) {
@@ -900,12 +914,6 @@ export function get2DBoundsTransform(
   bounds: PlanBounds,
   padding: number = PADDING
 ): View2DTransform {
-  const boundsWidth = bounds.maxX - bounds.minX;
-  const boundsHeight = bounds.maxZ - bounds.minZ;
-  const scale = Math.min((canvasWidth - padding * 2) / boundsWidth, (canvasHeight - padding * 2) / boundsHeight);
-  return {
-    scale,
-    offsetX: (canvasWidth - boundsWidth * scale) / 2 + (-layout.width / 2 - bounds.minX) * scale,
-    offsetY: (canvasHeight - boundsHeight * scale) / 2 + (-layout.height / 2 - bounds.minZ) * scale,
-  };
+  // One fit, one inverse: the same maths as the on-screen plan (#381).
+  return get2DViewTransform(canvasWidth, canvasHeight, layout, padding, undefined, bounds);
 }

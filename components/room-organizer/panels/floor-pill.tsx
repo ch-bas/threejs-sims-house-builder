@@ -3,6 +3,7 @@
 import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { MAX_FLOORS } from '../lib/constants';
 import { Icon } from '../plotcraft/icon';
+import { DISABLED_TILE } from './wall-display-pill';
 
 /**
  * Compact floor selector that lives as a floating overlay near the top-right
@@ -11,7 +12,7 @@ import { Icon } from '../plotcraft/icon';
  */
 export function FloorPill(): JSX.Element {
   const { layout, activeFloorIndex, actions } = useRoomEditor();
-  const view = useViewSettings('showAllFloors');
+  const view = useViewSettings('showAllFloors', 'view2D');
   const { toggle } = useEditorViewActions();
   const floors = layout.floors;
   const canAdd = floors.length < MAX_FLOORS;
@@ -114,7 +115,9 @@ export function FloorPill(): JSX.Element {
         <button
           type="button"
           onClick={() => toggle('showAllFloors')}
-          title="Show all floors at once (lower floors render translucent)"
+          // The plan shows one floor: off in 2D (#444).
+          disabled={view.view2D}
+          title={`Show all floors at once (lower floors render translucent)${view.view2D ? ' — switch back to 3D view' : ''}`}
           aria-pressed={view.showAllFloors}
           className={`pc-tile${view.showAllFloors ? ' pc-tile--active' : ''}`}
           style={{
@@ -129,6 +132,7 @@ export function FloorPill(): JSX.Element {
             fontSize: 9,
             letterSpacing: 'var(--pc-tr-caps)',
             textTransform: 'uppercase',
+            ...(view.view2D ? DISABLED_TILE : {}),
           }}
         >
           All

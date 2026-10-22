@@ -105,7 +105,8 @@ export function Viewport(props: ViewportProps): JSX.Element {
          */}
         <canvas
           ref={props.canvas2DRef}
-          className={props.view2D ? '' : 'hidden'}
+          // pc-plan-canvas: no text selection from a plan drag (#442).
+          className={props.view2D ? 'pc-plan-canvas' : 'pc-plan-canvas hidden'}
           style={{
             width: '100%',
             height: '100%',

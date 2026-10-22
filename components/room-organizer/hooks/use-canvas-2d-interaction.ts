@@ -5,11 +5,12 @@ import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
+import { boundsSize, PLAN_PADDING_PX, planViewBounds, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { planFloorIndex } from '../lib/street';
 import { defaultZoneName, nextZoneColor, zoneFromCorners } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
-import { planInsets } from './scene-occluders';
+import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
 import type { DragCancelOptions } from './use-item-drag';
 import type { Insets } from '../lib/scene-insets';
@@ -60,6 +61,13 @@ export function hitTest2DItems(
     }
   }
   return null;
+}
+
+/** What a plan paint fits, and where (`get2DViewTransform`'s bounds, insets and padding). */
+interface PlanFit {
+  bounds: PlanBounds | undefined;
+  insets: Insets | undefined;
+  padding: number;
 }
 
 export interface UseCanvas2DInteractionParams {
@@ -120,32 +128,39 @@ export function useCanvas2DInteraction(
   const layoutActions = useLayoutActions();
 
   /**
-   * Client coords → world x/z through the renderer's own transform. `insets`
-   * are the HUD-covered edges the plan was painted with (`planInsets`).
+   * Client coords → world x/z through the renderer's own transform. `fit`
+   * is what the plan was painted to fit and `insets` the HUD-covered edges
+   * it was painted with (`planViewBounds`, `planInsets`, #381).
    */
-  const toWorld = useCallback((clientX: number, clientY: number, insets: Insets | undefined) => {
+  const toWorld = useCallback((clientX: number, clientY: number, fit: PlanFit) => {
     const canvas = paramsRef.current.canvasRef.current;
     if (!canvas) return null;
     const { layout } = paramsRef.current;
-    const transform = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, layout, undefined, insets);
+    const transform = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, layout, fit.padding, fit.insets, fit.bounds);
     if (!Number.isFinite(transform.scale) || transform.scale <= 0) return null;
     const rect = canvas.getBoundingClientRect();
     return canvasToWorld(clientX - rect.left, clientY - rect.top, transform, layout);
   }, []);
 
+  /** The fit the plan is painted with now, from committed state (use-scene-effects). */
+  const measureFit = useCallback((canvas: HTMLCanvasElement): PlanFit => {
+    const bounds = planViewBounds(paramsRef.current.layout, paramsRef.current.activeFloor);
+    return { bounds, ...planFit(canvas, boundsSize(bounds)) };
+  }, []);
+
   const clientToWorld2D = useCallback(
     (clientX: number, clientY: number) => {
       const canvas = paramsRef.current.canvasRef.current;
-      return canvas ? toWorld(clientX, clientY, planInsets(canvas)) : null;
+      return canvas ? toWorld(clientX, clientY, measureFit(canvas)) : null;
     },
-    [toWorld]
+    [toWorld, measureFit]
   );
 
   /** HIT_SLOP_PX in world metres at the plan's current scale (#286). */
-  const hitSlopWorld = useCallback((insets: Insets | undefined): number => {
+  const hitSlopWorld = useCallback((fit: PlanFit): number => {
     const canvas = paramsRef.current.canvasRef.current;
     if (!canvas) return 0;
-    const { scale } = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, paramsRef.current.layout, undefined, insets);
+    const { scale } = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, paramsRef.current.layout, fit.padding, fit.insets, fit.bounds);
     return Number.isFinite(scale) && scale > 0 ? HIT_SLOP_PX / scale : 0;
   }, []);
 
@@ -186,10 +201,12 @@ export function useCanvas2DInteraction(
       latest: { x: number; z: number };
     }
     let zoneGesture: ZoneGesture | null = null;
-    // The HUD-covered edges, measured at each press: the gesture maps the
-    // pointer and repaints with the transform the plan was painted with.
-    let insets: Insets | undefined;
-    const worldAt = (event: PointerEvent) => toWorld(event.clientX, event.clientY, insets);
+    // The fit, measured at each press: the gesture maps the pointer and
+    // repaints with the transform the plan was painted with, so dragging an
+    // item past the walls doesn't rescale the plan under the pointer; the
+    // committed drop refits it (#381).
+    let fit: PlanFit = { bounds: undefined, insets: undefined, padding: PLAN_PADDING_PX };
+    const worldAt = (event: PointerEvent) => toWorld(event.clientX, event.clientY, fit);
 
     const paintGhost = (): void => {
       rafId = null;
@@ -215,7 +232,9 @@ export function useCanvas2DInteraction(
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
         zoneDraft: draft,
-        insets,
+        fitBounds: fit.bounds,
+        insets: fit.insets,
+        padding: fit.padding,
         hasCollision: (item) =>
           hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
       });
@@ -316,7 +335,7 @@ export function useCanvas2DInteraction(
       // A later finger of a multi-touch gesture never selects or drags.
       if (event.button !== 0 || event.isPrimary === false) return;
       const p = paramsRef.current;
-      insets = planInsets(canvas);
+      fit = measureFit(canvas);
       const world = worldAt(event);
       if (!world) return;
       // Zone-draw mode (#155) claims the press: the rectangle starts here
@@ -333,7 +352,7 @@ export function useCanvas2DInteraction(
         };
         return;
       }
-      const hit = hitTest2DItems(p.activeFloor.items, world.x, world.z, hitSlopWorld(insets));
+      const hit = hitTest2DItems(p.activeFloor.items, world.x, world.z, hitSlopWorld(fit));
       if (!hit) {
         p.onDeselect();
         return;
@@ -478,23 +497,41 @@ export function useCanvas2DInteraction(
       if (zoneGesture && !zoneGesture.started) zoneGesture = null;
     };
 
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
-    canvas.addEventListener('pointerup', endGesture);
-    canvas.addEventListener('pointercancel', onPointerCancel);
-    canvas.addEventListener('pointerleave', onPointerLeave);
+    // The gesture flag (no text selection, frozen insets; PLAN_GESTURE_ATTR)
+    // follows the gesture state after every event.
+    const root = document.documentElement;
+    const syncGestureFlag = (): void => {
+      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null);
+    };
+    const synced = (handler: (event: PointerEvent) => void) => (event: PointerEvent): void => {
+      handler(event);
+      syncGestureFlag();
+    };
+    const onDown = synced(onPointerDown);
+    // A no-op toggle while nothing changes; catches the orphan abort.
+    const onMove = synced(onPointerMove);
+    const onUp = synced(endGesture);
+    const onCancel = synced(onPointerCancel);
+    const onLeave = synced(onPointerLeave);
+
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onCancel);
+    canvas.addEventListener('pointerleave', onLeave);
 
     return () => {
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
-      canvas.removeEventListener('pointerup', endGesture);
-      canvas.removeEventListener('pointercancel', onPointerCancel);
-      canvas.removeEventListener('pointerleave', onPointerLeave);
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onCancel);
+      canvas.removeEventListener('pointerleave', onLeave);
       // Disabled (view switch) or unmounted mid-drag: discard the session so
       // nothing stale is committed on a later pointerup.
       abortGesture();
+      syncGestureFlag();
     };
-  }, [params.enabled, params.canvasRef, toWorld, hitSlopWorld, layoutActions]);
+  }, [params.enabled, params.canvasRef, toWorld, measureFit, hitSlopWorld, layoutActions]);
 
   return { clientToWorld2D };
 }

@@ -14,6 +14,7 @@ import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
 import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
+import { boundsSize, planViewBounds } from '../lib/plan-view-fit';
 import { hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
@@ -42,7 +43,7 @@ import { buildRoof, removeRoof, setRoofOnStorey } from '../three/roof';
 import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
-import { observeSceneOccluders, planInsets } from './scene-occluders';
+import { observeSceneOccluders, planFit } from './scene-occluders';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -994,6 +995,7 @@ export function useSceneEffects({
     if (!canvas) return undefined;
 
     const keepOut = floorKeepOut(entranceBuilding, activeFloorIndex);
+    const fitBounds = planViewBounds(layout, activeFloor);
     const paint = () => {
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
@@ -1006,6 +1008,7 @@ export function useSceneEffects({
       if (canvas.width !== backingWidth) canvas.width = backingWidth;
       if (canvas.height !== backingHeight) canvas.height = backingHeight;
 
+      const { insets, padding } = planFit(canvas, boundsSize(fitBounds));
       render2DTopDown({
         canvas,
         layout,
@@ -1016,9 +1019,12 @@ export function useSceneEffects({
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
         hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
-        // On a phone the plan fits above the dock and below the top pills;
-        // the pointer handlers read the same insets (use-canvas-2d-interaction).
-        insets: planInsets(canvas),
+        // The plan fits the room and the items outside it, in the part of
+        // the canvas the HUD leaves free (#381); the pointer handlers read
+        // the same bounds and insets (use-canvas-2d-interaction).
+        fitBounds,
+        insets,
+        padding,
       });
     };
 

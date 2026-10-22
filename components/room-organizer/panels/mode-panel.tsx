@@ -35,6 +35,8 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   const view = useViewSettings('showCameraVision', 'showMinimap', 'showNpcs', 'snapToGrid', 'soundsEnabled', 'view2D');
   const { setAutoCycleLighting, toggle } = useEditorViewActions();
   const gameMode = useEditorView((state) => state.gameMode);
+  /** A 3D-only control's label, which says so while the plan is shown. */
+  const in3D = (label: string): string => (view.view2D ? `${label} — switch back to 3D view` : label);
   const autoCycleLighting = useEditorView((state) => state.autoCycleLighting);
   const totalCost = layout.floors.reduce(
     (sum, floor) =>
@@ -187,10 +189,12 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           accent
           onClick={onSurprise}
         />
+        {/* The minimap, the walkers and the camera cones are 3D-only too (#444). */}
         <ActionButton
-          label={view.showMinimap ? 'Hide minimap' : 'Show minimap'}
+          label={in3D(view.showMinimap ? 'Hide minimap' : 'Show minimap')}
           icon="minimap"
           active={view.showMinimap}
+          disabled={view.view2D}
           onClick={() => toggle('showMinimap')}
         />
         <ActionButton
@@ -206,15 +210,17 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           onClick={() => toggle('soundsEnabled')}
         />
         <ActionButton
-          label={view.showCameraVision ? 'Hide camera cones' : 'Show camera cones'}
+          label={in3D(view.showCameraVision ? 'Hide camera cones' : 'Show camera cones')}
           icon="vision"
           active={view.showCameraVision}
+          disabled={view.view2D}
           onClick={() => toggle('showCameraVision')}
         />
         <ActionButton
-          label={view.showNpcs ? 'Hide walkers' : 'Show walkers'}
+          label={in3D(view.showNpcs ? 'Hide walkers' : 'Show walkers')}
           icon="person"
           active={view.showNpcs}
+          disabled={view.view2D}
           onClick={() => toggle('showNpcs')}
         />
         <ActionButton

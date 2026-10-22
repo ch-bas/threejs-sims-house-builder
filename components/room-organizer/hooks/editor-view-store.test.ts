@@ -72,3 +72,21 @@ describe('catalogHighlightKey', () => {
     expect(catalogHighlightKey('sofa', items)).not.toBe(catalogHighlightKey('sofas', items));
   });
 });
+
+describe('editor view store invariants (#439)', () => {
+  it('switching back to 3D, by any action, disarms zone drawing', () => {
+    const store = createEditorViewStore(makeViewSettings({ view2D: true, drawZoneMode: true }));
+    store.getState().actions.toggle('view2D');
+    expect(store.getState().view).toMatchObject({ view2D: false, drawZoneMode: false });
+
+    const walk = createEditorViewStore(makeViewSettings({ view2D: true, drawZoneMode: true }));
+    walk.getState().actions.setView((view) => ({ ...view, view2D: false, walkthroughMode: true }));
+    expect(walk.getState().view.drawZoneMode).toBe(false);
+  });
+
+  it('zone drawing on the plan survives other view changes', () => {
+    const store = createEditorViewStore(makeViewSettings({ view2D: true, drawZoneMode: true }));
+    store.getState().actions.toggle('showMeasurements');
+    expect(store.getState().view.drawZoneMode).toBe(true);
+  });
+});

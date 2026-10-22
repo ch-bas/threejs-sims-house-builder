@@ -1153,3 +1153,15 @@ button {
     transform: translate(-50%, -50%);
   }
 }
+
+/* 2D plan (plan sprint) */
+/* A drag on the 2D plan (an item or a zone) must not run the browser's text
+   selection across the HUD labels it passes over (#442). The attribute is
+   set by use-canvas-2d-interaction while a press is armed. */
+.pc-plan-canvas,
+html[data-plan-gesture],
+html[data-plan-gesture] * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}

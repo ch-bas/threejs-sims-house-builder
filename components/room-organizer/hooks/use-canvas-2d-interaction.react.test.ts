@@ -3,6 +3,7 @@ import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get2DViewTransform } from '../canvas-2d/render';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
+import { PLAN_GESTURE_ATTR } from './scene-occluders';
 import { useCanvas2DInteraction, type UseCanvas2DInteractionParams } from './use-canvas-2d-interaction';
 
 const W = 800;
@@ -214,6 +215,96 @@ describe('useCanvas2DInteraction beside the HUD', () => {
     expect(cy).toBeCloseTo(200, 6);
     canvas.dispatchEvent(pointer('pointerdown', cx, cy));
     expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    canvas.dispatchEvent(pointer('pointerup', cx, cy));
+  });
+});
+
+describe('useCanvas2DInteraction text selection (#442)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    document.documentElement.removeAttribute(PLAN_GESTURE_ATTR);
+  });
+
+  it('flags the page for no text selection from an item press until the release', () => {
+    const { fire } = setup([]);
+    fire('pointerdown', 0, 0);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(true);
+    fire('pointermove', 1, 0);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(true);
+    fire('pointerup', 1, 0);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
+  });
+
+  it('flags a zone drag too, and a press on empty floor not at all', () => {
+    const { params, fire } = setup([]);
+    fire('pointerdown', -3, -3);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
+    fire('pointerup', -3, -3);
+    params.view = { ...params.view, drawZoneMode: true };
+    fire('pointerdown', -3, -3);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(true);
+    fire('pointercancel', -3, -3);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
+  });
+
+  it('clears the flag when the view unmounts mid-press', () => {
+    const { fire } = setup([]);
+    fire('pointerdown', 0, 0);
+    cleanup();
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
+  });
+});
+
+describe('useCanvas2DInteraction outdoor items (#381)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('selects a tree outside the walls through the content-fitted transform', () => {
+    const tree = makeItem({ id: 'tree', width: 1.4, depth: 1.4, position: { x: 7.5, z: 3 } });
+    const floor = makeFloor({ items: [tree] });
+    const layout = makeLayout({ floors: [floor] });
+    const canvas = document.createElement('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { value: W });
+    Object.defineProperty(canvas, 'clientHeight', { value: H });
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: W, height: H, right: W, bottom: H, x: 0, y: 0, toJSON: () => ({}) });
+    const onItemSelect = vi.fn();
+    const params: UseCanvas2DInteractionParams = {
+      enabled: true,
+      canvasRef: { current: canvas },
+      layout,
+      activeFloor: floor,
+      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, drawZoneMode: false },
+      selectedItemId: null,
+      extraSelectedIds: new Set(),
+      allSelectedIds: new Set(),
+      onItemSelect,
+      onDeselect: vi.fn(),
+      snapPosition: (_id, x, z) => ({ x, z }),
+      onItemDragStart: vi.fn(),
+      onItemDrag: vi.fn(),
+      onItemDragEnd: vi.fn(),
+      onItemDragCancel: vi.fn(),
+    };
+    renderHook(() => useCanvas2DInteraction(params));
+    // The room-only fit would put the tree past the canvas's right edge.
+    const roomOnly = get2DViewTransform(W, H, layout);
+    expect(roomOnly.offsetX + (7.5 + 4) * roomOnly.scale).toBeGreaterThan(W);
+    const t = get2DViewTransform(W, H, layout, undefined, undefined, { minX: -4, minZ: -4, maxX: 8.2, maxZ: 4 });
+    const cx = t.offsetX + (7.5 + 4) * t.scale;
+    const cy = t.offsetY + (3 + 4) * t.scale;
+    canvas.dispatchEvent(pointer('pointerdown', cx, cy));
+    expect(onItemSelect).toHaveBeenCalledWith('tree', 'replace');
     canvas.dispatchEvent(pointer('pointerup', cx, cy));
   });
 });
