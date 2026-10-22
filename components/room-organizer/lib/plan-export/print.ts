@@ -8,10 +8,12 @@
  * The sheet is configurable (#435): paper size and orientation, a fixed or
  * automatic scale, whether items outside the walls are drawn, and whether
  * every storey is printed, one floor per page at one shared scale (#405).
+ * Opt-in, each page lists its floor's items under the title block (#424).
  */
 
+import { CURRENCY_SYMBOL } from '../constants';
 import { isWallMounted } from '../opening-snap';
-import { planFrameBounds, unionBounds } from './plan-geometry';
+import { itemSchedule, planFrameBounds, unionBounds, type ScheduleRow } from './plan-geometry';
 import { DEFAULT_SVG_MARGIN, layoutToSvg, planSheetSize } from './svg';
 import type { FloorLayout, RoomLayout } from '../types';
 
@@ -82,6 +84,8 @@ export interface PrintOptions {
   includeOutdoor: boolean;
   /** Every storey, one per page, all at the same scale. */
   allFloors: boolean;
+  /** The floor's item schedule under the title block (#424). */
+  schedule: boolean;
 }
 
 export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
@@ -90,6 +94,7 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   denominator: 'auto',
   includeOutdoor: true,
   allFloors: false,
+  schedule: false,
 };
 
 export type PrintScaleOptions = Partial<Pick<PrintOptions, 'paper' | 'orientation' | 'denominator'>>;
@@ -221,6 +226,7 @@ export function buildPrintDocument(
   date: string = new Date().toLocaleDateString()
 ): string {
   const { floors, frame, contentWidthM, contentHeightM, scale } = resolvePrint(layout, floor, options);
+  const withSchedule = options.schedule ?? DEFAULT_PRINT_OPTIONS.schedule;
   const pxPerMetre = printPxPerMetre(scale.denominator);
   // Outsized: shrink every page by the same factor (the label already says
   // it is not to scale) rather than run off the page.
@@ -239,6 +245,8 @@ export function buildPrintDocument(
       itemsLabel: `${drawn} item${drawn === 1 ? '' : 's'}${omitted > 0 ? ` (${omitted} outside the walls left off)` : ''}`,
       sheetWidthCss: `${(sheet.widthPx * PRINT_MM_PER_PX * shrink).toFixed(1)}mm`,
       svg: layoutToSvg(layout, printed, svgOptions),
+      // What is drawn is what is listed: items left off the plan are not.
+      schedule: withSchedule ? itemSchedule(printed.items) : [],
     };
   });
 
@@ -274,6 +282,8 @@ interface PrintSheet {
   /** CSS width of the plan block: the sheet in mm, shrunk when not to scale. */
   sheetWidthCss: string;
   svg: string;
+  /** Item schedule rows; empty prints no table. */
+  schedule: readonly ScheduleRow[];
 }
 
 interface PrintHtmlInput {
@@ -308,7 +318,7 @@ function renderPrintHtml(input: PrintHtmlInput): string {
           <td class="k">Date</td><td>${escapeHtml(input.date)}</td>
           <td class="k">Drawn by</td><td>Standalone Room Organizer</td>
         </tr>
-      </table>
+      </table>${renderScheduleTable(sheet.schedule)}
     </section>`
     )
     .join('\n    ');
@@ -331,6 +341,16 @@ function renderPrintHtml(input: PrintHtmlInput): string {
       table.titleblock col.k { width: 16%; }
       table.titleblock td { border: 0.3mm solid #444; padding: 1.5mm 3mm; overflow-wrap: anywhere; word-break: break-word; }
       table.titleblock td.k { color: #666; font-size: 7pt; text-transform: uppercase; letter-spacing: 0.05em; }
+      table.schedule { margin-top: 4mm; border-collapse: collapse; font-size: 8pt; width: 100%; table-layout: fixed; }
+      table.schedule caption { text-align: left; font-weight: 600; font-size: 9pt; padding-bottom: 1.5mm; }
+      table.schedule th, table.schedule td { border-bottom: 0.2mm solid #bbb; padding: 1mm 2mm; text-align: left; overflow-wrap: anywhere; }
+      table.schedule th { border-bottom: 0.3mm solid #444; color: #666; font-weight: 600; }
+      table.schedule .n { text-align: right; font-variant-numeric: tabular-nums; }
+      table.schedule col.size { width: 26%; }
+      table.schedule col.qty { width: 10%; }
+      table.schedule col.price { width: 18%; }
+      table.schedule tfoot td { border-bottom: 0; border-top: 0.3mm solid #444; font-weight: 600; }
+      table.schedule tr { break-inside: avoid; }
       @media screen { .sheet + .sheet { margin-top: 16mm; } }
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     </style>
@@ -339,6 +359,33 @@ function renderPrintHtml(input: PrintHtmlInput): string {
     ${pages}
   </body>
 </html>`;
+}
+
+/**
+ * The floor's item schedule as an HTML table (#424): name, W × D × H, count
+ * and price per line, and a total. It may run onto a following page.
+ */
+function renderScheduleTable(rows: readonly ScheduleRow[]): string {
+  if (rows.length === 0) return '';
+  const price = (value: number): string => `${CURRENCY_SYMBOL}${Math.round(value).toLocaleString('en-US')}`;
+  const metres = (value: number): string => String(Math.round(value * 100) / 100);
+  const body = rows
+    .map(
+      (row) =>
+        `<tr><td>${escapeHtml(row.name)}</td><td>${metres(row.width)} × ${metres(row.depth)} × ${metres(row.height)}</td>` +
+        `<td class="n">${row.count}</td><td class="n">${row.totalPrice > 0 ? price(row.totalPrice) : '—'}</td></tr>`
+    )
+    .join('');
+  const count = rows.reduce((sum, row) => sum + row.count, 0);
+  const total = rows.reduce((sum, row) => sum + row.totalPrice, 0);
+  return `
+      <table class="schedule">
+        <caption>Item schedule</caption>
+        <colgroup><col /><col class="size" /><col class="qty" /><col class="price" /></colgroup>
+        <thead><tr><th>Item</th><th>W × D × H (m)</th><th class="n">Qty</th><th class="n">Price</th></tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr><td>Total</td><td></td><td class="n">${count}</td><td class="n">${price(total)}</td></tr></tfoot>
+      </table>`;
 }
 
 // Duplicated from lib/blueprint.ts (private there).

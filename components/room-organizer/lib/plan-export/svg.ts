@@ -79,7 +79,10 @@ export interface SvgExportOptions {
   coverage?: boolean | 'full';
   /** Room and interior-wall dimension strings (default on, #424). */
   dimensions?: boolean;
-  /** An item schedule table under the plan; lengthens the sheet (default off, #424). */
+  /**
+   * An item schedule table under the plan; lengthens the sheet (default off,
+   * #424). A floor with no placed items gets no table.
+   */
   schedule?: boolean;
   /**
    * The rectangle to frame, in world metres, in place of the floor's own
@@ -252,7 +255,9 @@ function sheetLayout(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
   const bounds = growBounds(frame, margin / scale);
   const planWidthPx = (bounds.maxX - bounds.minX) * scale;
   const planHeightPx = (bounds.maxZ - bounds.minZ) * scale;
-  const schedule = options.schedule ? itemSchedule(floor.items) : null;
+  // A floor with nothing placed has nothing to list: no empty table.
+  const rows = options.schedule ? itemSchedule(floor.items) : [];
+  const schedule = rows.length > 0 ? rows : null;
   // Heading + one row per line + the total row, then half a margin of paper.
   const scheduleHeightPx = schedule ? SCHEDULE_HEAD_PX + SCHEDULE_ROW_PX * (schedule.length + 1) + margin / 2 : 0;
   return {

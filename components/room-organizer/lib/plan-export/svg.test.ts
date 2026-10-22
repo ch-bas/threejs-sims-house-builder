@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
+import { makeFloor, makeItem, makeLayout, makeUnplacedItem } from '../__testfixtures__/fixtures';
 import { buildingToSvg, layoutToSvg, planSheetSize } from './svg';
 
 function count(haystack: string, needle: string): number {
@@ -337,7 +337,23 @@ describe('layoutToSvg', () => {
     expect(svg).toContain('viewBox="0 0 520 698"');
     // A narrow room widens the sheet to fit the table; the plan stays put.
     const narrow = makeLayout({ width: 3, height: 3, floors: [priced] });
-    expect(planSheetSize(narrow, makeFloor(), { schedule: true }).widthPx).toBe(520);
+    expect(planSheetSize(narrow, priced, { schedule: true }).widthPx).toBe(520);
+  });
+
+  it('leaves the schedule off a floor with nothing placed (#424)', () => {
+    const { layout } = makeFixture();
+    const empty = makeFloor({ items: [makeUnplacedItem({ id: 'tray' })] });
+    expect(layoutToSvg(layout, empty, { schedule: true })).not.toContain('class="schedule"');
+    expect(planSheetSize(layout, empty, { schedule: true })).toEqual(planSheetSize(layout, empty));
+  });
+
+  it('gives each floor of a whole-building SVG its own schedule (#424, #405)', () => {
+    const { layout, floor } = makeFixture();
+    const building = { ...layout, floors: [floor, makeFloor({ id: 'up', name: 'Upper', items: [] })] };
+    const svg = buildingToSvg(building, { schedule: true });
+    expect(count(svg, 'class="floor-sheet"')).toBe(2);
+    // Only the furnished ground floor carries a table.
+    expect(count(svg, 'class="schedule"')).toBe(1);
   });
 
   it('never lets the title overprint the room size on a narrow sheet', () => {

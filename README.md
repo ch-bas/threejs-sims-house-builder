@@ -270,10 +270,14 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   dormers, every wall, named nodes — whatever the view shows. Opens in any
   viewer.
 - **Plan export**: scalable SVG and CAD-ready layered DXF (dimensions, a
-  north arrow and the Wi-Fi/CCTV coverage layer included), and a
-  print-to-scale PDF with title block. Its options choose the paper (A4,
+  north arrow and the Wi-Fi/CCTV coverage layer included; the SVG lists the
+  floor's items in a schedule under the plan). A house with more than one
+  floor also gets whole-building downloads: every floor stacked down one
+  SVG, or side by side in one DXF. The print-to-scale PDF has a title
+  block. Its options choose the paper (A4,
   A3, Letter), the orientation and the scale (1:20–1:1000, or the largest
-  that fits), whether items outside the walls are drawn, and whether every
+  that fits), whether items outside the walls are drawn, whether each page
+  lists its items, and whether every
   floor prints, one per page at one shared scale. The sheet follows the
   content, so garden items outside the walls are on the plan too, in the
   raster blueprint as well.
@@ -628,7 +632,9 @@ components/
   outdoor items off drops the items whose centre is outside the walls
   (wall-mounted ones stay), so a far tree can't force 1:500. Printing every
   floor picks one scale for the union of the floors' content and puts each
-  storey on its own page (#405). The title block is a fixed-layout table whose cells wrap
+  storey on its own page (#405). The opt-in item schedule is an HTML table
+  under the title block, not part of the SVG, so it never changes the
+  plan's scale and may run onto the next page (#424). The title block is a fixed-layout table whose cells wrap
   anywhere: a long unbroken name would otherwise widen the table past the
   page and the browser would shrink the whole sheet off its scale.
 - **The plan fits the whole lot, clear of the desktop HUD (#381).** The
@@ -917,7 +923,9 @@ components/
   through the SVG's `bounds` option (#405); `idPrefix` keeps ids unique
   when the print inlines several sheets in one page. Interior-wall
   dimensions take one world-space side, chosen clear of item footprints,
-  in both formats.
+  in both formats. The Export panel's SVG always carries the schedule (a
+  floor with nothing placed gets no table), and a multi-storey house adds
+  "all floors" SVG and DXF buttons for `buildingToSvg` / `buildingToDxf`.
   The SVG's sheet furniture (title, room size, dimensions, north arrow,
   scale bar) lives in the margin band, so it never changes the sheet
   size; the title block stacks and then ellipsizes on narrow sheets. A

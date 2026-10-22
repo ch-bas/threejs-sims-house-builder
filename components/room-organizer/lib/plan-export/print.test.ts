@@ -183,6 +183,32 @@ describe('buildPrintDocument', () => {
     expect(without).toContain('1 item (1 outside the walls left off)');
   });
 
+  it('lists the printed items under the title block only when asked (#424)', () => {
+    const items = [
+      makeItem({ id: 'a', name: 'Chair', price: 40 }),
+      makeItem({ id: 'b', name: 'Chair', price: 40, position: { x: 1, z: 1 } }),
+      makeItem({ id: 'c', name: 'Sofa <3', width: 2, depth: 0.9, height: 0.8, price: 1200.5, position: { x: -2, z: 0 } }),
+    ];
+    expect(build(8, 8, items)).not.toContain('class="schedule"');
+    const html = build(8, 8, items, { schedule: true });
+    expect(html).toContain('<caption>Item schedule</caption>');
+    expect(html).toContain('<td class="n">2</td><td class="n">$80</td>');
+    // Escaped, and sized in metres.
+    expect(html).toContain('<td>Sofa &lt;3</td><td>2 × 0.9 × 0.8</td>');
+    expect(html).toContain('<td>Total</td><td></td><td class="n">3</td><td class="n">$1,281</td>');
+    // The plan's scale is untouched by the table.
+    expect(html).toContain('1:75 (A4 portrait)');
+  });
+
+  it('leaves items off the schedule that are left off the plan (#424)', () => {
+    const far = tree({ id: 'pine', name: 'Pine Tree', position: { x: 24, z: 0 } });
+    const html = build(8, 8, [makeItem(), far], { includeOutdoor: false, schedule: true });
+    expect(html).toContain('<caption>Item schedule</caption>');
+    expect(html).not.toContain('Pine Tree');
+    // An empty floor prints no table at all.
+    expect(build(8, 8, [], { schedule: true })).not.toContain('class="schedule"');
+  });
+
   it('counts only placed items in the left-off tally', () => {
     const far = tree({ id: 'pine', position: { x: 24, z: 0 } });
     const html = build(8, 8, [makeItem(), makeUnplacedItem({ id: 'stored' }), far], { includeOutdoor: false });
