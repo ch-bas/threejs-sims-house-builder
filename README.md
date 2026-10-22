@@ -827,9 +827,18 @@ components/
   coverage rings and camera wedges (the 2D view's maths, with the 3D
   cone's range/FOV fallbacks, #420, #401), dimension runs, and the item
   schedule (#424). Wall-mounted items (openings, cameras) stay out of the
-  content bounds; `buildingContentBounds` unions every floor so a
-  whole-building SVG (`buildingToSvg`, floors stacked) or an all-floors
-  print lines its sheets up, through the SVG's `bounds` option (#405).
+  content bounds unless mounted outside the walls. Coverage frames the
+  sheet: `planFrameBounds` grows the content to take in the rings and
+  wedges, at most `COVERAGE_MARGIN_M` (5 m) past it (`coverage: 'full'`
+  for all of it); the SVG clips to that rectangle and the DXF trims its
+  circles, arcs and lines to it, so both show the same coverage and a
+  30 m lens can't blow up the DXF extents. `buildingFrameBounds` unions
+  every floor so a whole-building SVG (`buildingToSvg`, floors stacked),
+  the whole-building DXF and the every-floor print line their sheets up,
+  through the SVG's `bounds` option (#405); `idPrefix` keeps ids unique
+  when the print inlines several sheets in one page. Interior-wall
+  dimensions take one world-space side, chosen clear of item footprints,
+  in both formats.
   The SVG's sheet furniture (title, room size, dimensions, north arrow,
   scale bar) lives in the margin band, so it never changes the sheet
   size; the title block stacks and then ellipsizes on narrow sheets. A

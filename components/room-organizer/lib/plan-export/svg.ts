@@ -17,7 +17,7 @@ import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../street';
 import { zoneArea } from '../zones';
 import {
-  buildingContentBounds,
+  buildingFrameBounds,
   coverageRings,
   gridLinePositions,
   growBounds,
@@ -25,7 +25,8 @@ import {
   INTERIOR_WALL_THICKNESS_M,
   isWallHidden,
   itemSchedule,
-  planBounds,
+  planContentBounds,
+  planFrameBounds,
   polarPoint,
   roomDimensions,
   splitPlanItems,
@@ -33,6 +34,7 @@ import {
   stairTreadSegments,
   stairwellOutlines,
   visionWedges,
+  type CoverageMode,
   type PlacedItem,
   type PlanBounds,
   type PlanDimension,
@@ -68,19 +70,37 @@ export interface SvgExportOptions {
   /** Margin (px) around the plan content for the title, dimensions, and scale bar. */
   margin?: number;
   theme?: Partial<SvgPlanTheme>;
-  /** Wi-Fi/CCTV rings and camera wedges under the furniture (default on, #420). */
-  coverage?: boolean;
+  /**
+   * Wi-Fi/CCTV rings and camera wedges under the furniture (#420). On by
+   * default: the sheet grows to show coverage up to `COVERAGE_MARGIN_M`
+   * past the plan content and clips it there; `'full'` grows it to all of
+   * the coverage; `false` leaves the layer out.
+   */
+  coverage?: boolean | 'full';
   /** Room and interior-wall dimension strings (default on, #424). */
   dimensions?: boolean;
   /** An item schedule table under the plan; lengthens the sheet (default off, #424). */
   schedule?: boolean;
   /**
-   * The plan content to frame, in world metres, in place of the floor's own
-   * `planContentBounds` — e.g. `buildingContentBounds(layout)` so every
-   * floor's sheet has the same size and the rooms line up (#405). It should
-   * contain the floor's content; anything outside it is drawn in the margin.
+   * The rectangle to frame, in world metres, in place of the floor's own
+   * `planFrameBounds` — e.g. the union of every floor's frame
+   * (`buildingFrameBounds`) so every floor's sheet has the same size and the
+   * rooms line up (#405). Coverage is clipped to it; it should contain the
+   * floor's content, or what pokes out is drawn in the margin.
    */
   bounds?: PlanBounds;
+  /**
+   * Prefix for the element ids the sheet defines (the coverage clip path),
+   * so several sheets inlined in one HTML page don't share ids — a page
+   * resolves `url(#id)` to the first element with that id.
+   */
+  idPrefix?: string;
+}
+
+/** The plan-geometry coverage mode for these options. */
+export function svgCoverageMode(options: Pick<SvgExportOptions, 'coverage'>): CoverageMode {
+  if (options.coverage === false) return 'off';
+  return options.coverage === 'full' ? 'full' : 'capped';
 }
 
 /** The sheet `layoutToSvg` draws on, in SVG px and in world metres. */
@@ -165,7 +185,7 @@ export function planSheetSize(layout: RoomLayout, floor: FloorLayout, options: S
  * the floor name and, opt-in, the item schedule.
  */
 export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions = {}): string {
-  const sheet = renderSheet(layout, floor, options, '');
+  const sheet = renderSheet(layout, floor, options, options.idPrefix ?? '');
   return [
     svgOpen(sheet.widthPx, sheet.heightPx),
     `<title>${escapeXml(`${layout.name} — ${floor.name}`)}</title>`,
@@ -183,8 +203,9 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
  */
 export function buildingToSvg(layout: RoomLayout, options: SvgExportOptions = {}): string {
   const theme: SvgPlanTheme = { ...DEFAULT_THEME, ...options.theme };
-  const sheetOptions: SvgExportOptions = { ...options, bounds: options.bounds ?? buildingContentBounds(layout) };
-  const sheets = layout.floors.map((floor, index) => ({ floor, sheet: renderSheet(layout, floor, sheetOptions, `f${index}-`) }));
+  const sheetOptions: SvgExportOptions = { ...options, bounds: options.bounds ?? buildingFrameBounds(layout, svgCoverageMode(options)) };
+  const prefix = options.idPrefix ?? '';
+  const sheets = layout.floors.map((floor, index) => ({ floor, sheet: renderSheet(layout, floor, sheetOptions, `${prefix}f${index}-`) }));
   const widthPx = Math.max(0, ...sheets.map(({ sheet }) => sheet.widthPx));
   const heightPx = sheets.reduce((sum, { sheet }) => sum + sheet.heightPx, 0);
   const parts: string[] = [
@@ -227,7 +248,8 @@ interface SheetLayout {
 function sheetLayout(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions): SheetLayout {
   const scale = options.pxPerMetre ?? DEFAULT_SVG_PX_PER_METRE;
   const margin = options.margin ?? DEFAULT_SVG_MARGIN;
-  const bounds = options.bounds ? growBounds(options.bounds, margin / scale) : planBounds(layout, floor, margin / scale);
+  const frame = options.bounds ?? planFrameBounds(layout, floor, svgCoverageMode(options));
+  const bounds = growBounds(frame, margin / scale);
   const planWidthPx = (bounds.maxX - bounds.minX) * scale;
   const planHeightPx = (bounds.maxZ - bounds.minZ) * scale;
   const schedule = options.schedule ? itemSchedule(floor.items) : null;
@@ -273,14 +295,17 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
   // World (metres, origin at room centre) → room-coordinate px.
   const px = (x: number): string => fmt(margin + (x + layout.width / 2) * scale);
   const py = (z: number): string => fmt(margin + (z + layout.height / 2) * scale);
-  // The plan content (room + items) in world metres: the sheet less its margin band.
+  // The framed rectangle (content, grown for coverage): the sheet less its
+  // margin band. Coverage is clipped to it; the room dimensions hug the
+  // plan content itself.
   const marginM = margin / scale;
-  const content: PlanBounds = {
+  const frame: PlanBounds = {
     minX: bounds.minX + marginM,
     minZ: bounds.minZ + marginM,
     maxX: bounds.maxX - marginM,
     maxZ: bounds.maxZ - marginM,
   };
+  const content = planContentBounds(layout, floor);
 
   // Same bottom-to-top layer order as the on-screen plan (#286).
   const { openings, furniture } = splitPlanItems(planDrawOrder(floor.items));
@@ -295,7 +320,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     renderRoomOutline(layout, floor, margin, scale, theme),
     renderInteriorWalls(floor, px, py, scale, theme),
     renderStairwellHoles(layout, floor, px, py, theme),
-    options.coverage === false ? '' : renderCoverage(floor, px, py, scale, content, theme, idPrefix),
+    options.coverage === false ? '' : renderCoverage(floor, px, py, scale, frame, theme, idPrefix),
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
     ...furniture.map((item) => renderFurniture(item, px, py, scale, theme)),
     options.dimensions === false ? '' : renderDimensions(layout, floor, px, py, content, theme),
@@ -656,11 +681,11 @@ function renderDimensions(
     const y1 = Number(py(dim.to.z));
     const len = Math.hypot(x1 - x0, y1 - y0);
     if (len === 0) continue;
-    // Offset along the wall's normal on the sheet, clear of the 0.16 m wall.
-    const normal = { x: -(y1 - y0) / len, z: (x1 - x0) / len };
-    const nx = normal.x * WALL_DIMENSION_OFFSET_PX;
-    const ny = normal.z * WALL_DIMENSION_OFFSET_PX;
-    parts.push(dimensionLine(x0 + nx, y0 + ny, x1 + nx, y1 + ny, dim, normal, 'wall-dimension'));
+    // Offset to the side plan-geometry chose (shared with the DXF), clear of
+    // the 0.16 m wall. Sheet axes run like world axes (x right, z down).
+    const nx = dim.normal.x * WALL_DIMENSION_OFFSET_PX;
+    const ny = dim.normal.z * WALL_DIMENSION_OFFSET_PX;
+    parts.push(dimensionLine(x0 + nx, y0 + ny, x1 + nx, y1 + ny, dim, dim.normal, 'wall-dimension'));
   }
   parts.push(`</g>`);
   return parts.join('');

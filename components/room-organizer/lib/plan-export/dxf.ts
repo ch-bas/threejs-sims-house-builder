@@ -21,7 +21,9 @@
  *   hinged on the jamb the 3D door is (mirroring swaps it, #386).
  * - Labels are horizontal TEXT (rotating text helps nobody in CAD).
  * - COVERAGE carries Wi-Fi/CCTV rings as CIRCLEs and camera wedges as an
- *   ARC plus two LINEs (#420); DIMENSIONS carries LINE + TEXT dimension
+ *   ARC plus two LINEs (#420), trimmed to the frame the SVG clips to (the
+ *   plan content plus at most 5 m of coverage), so the two formats agree and
+ *   a 30 m lens can't swamp the drawing extents; DIMENSIONS carries LINE + TEXT dimension
  *   strings (true DIMENSION entities need anonymous blocks); the north arrow
  *   sits on LABELS (#424).
  * - `buildingToDxf` lays every floor out side by side, ground floor first,
@@ -31,19 +33,25 @@
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../street';
 import {
+  buildingFrameBounds,
+  clipArc,
+  clipSegment,
   coverageRings,
   interiorWallDimensions,
   itemWorldCorners,
   openingAxes,
   planContentBounds,
+  planFrameBounds,
   polarPoint,
   splitPlanItems,
   stairArrow,
   stairTreadSegments,
   stairwellOutlines,
   visionWedges,
+  type CoverageMode,
   type PlacedItem,
   type PlanBounds,
+  type PlanPoint,
 } from './plan-geometry';
 import type { FloorLayout, RoomLayout } from '../types';
 
@@ -73,8 +81,13 @@ const LAYER_COLOURS: Record<DxfLayer, number> = {
 };
 
 export interface DxfExportOptions {
-  /** Wi-Fi/CCTV rings and camera wedges on the COVERAGE layer (default on, #420). */
-  coverage?: boolean;
+  /**
+   * Wi-Fi/CCTV rings and camera wedges on the COVERAGE layer (#420). On by
+   * default, trimmed to the same frame as the SVG — up to
+   * `COVERAGE_MARGIN_M` past the plan content; `'full'` keeps all of it;
+   * `false` leaves the layer out.
+   */
+  coverage?: boolean | 'full';
   /** Room and interior-wall dimension strings on the DIMENSIONS layer (default on, #424). */
   dimensions?: boolean;
 }
@@ -450,24 +463,38 @@ export function layoutToDxf(layout: RoomLayout, floor: FloorLayout, options: Dxf
 
 /**
  * The whole building as one DXF (#405): every floor on the same layers at
- * 1:1, ground floor first, laid out left to right with a 3 m gap between
- * the floors' plan content, each under its own title.
+ * 1:1, ground floor first, laid out left to right at the building frame's
+ * width plus a 3 m gap, each under its own title.
  */
 export function buildingToDxf(layout: RoomLayout, options: DxfExportOptions = {}): string {
   const doc = new DxfDocument();
-  let previousRight: number | null = null;
-  for (const floor of layout.floors) {
-    const content = planContentBounds(layout, floor);
-    // Room corner at offsetX puts this floor's content FLOOR_GAP_M right of the previous one's.
-    const offsetX: number = previousRight === null ? 0 : previousRight + FLOOR_GAP_M - (content.minX + layout.width / 2);
-    emitFloor(doc, layout, floor, offsetX, options);
-    previousRight = content.maxX + layout.width / 2 + offsetX;
-  }
+  // Every floor shares the building's frame (as `buildingToSvg` does), laid
+  // out at a fixed pitch, so the rooms line up and no floor's coverage
+  // runs into its neighbour.
+  const frame = buildingFrameBounds(layout, dxfCoverageMode(options));
+  const pitch = frame.maxX - frame.minX + FLOOR_GAP_M;
+  layout.floors.forEach((floor, index) => emitFloor(doc, layout, floor, index * pitch, options, frame));
   return doc.finish();
 }
 
-/** Everything one floor draws, with the room's SW corner at CAD (offsetX, 0). */
-function emitFloor(doc: DxfDocument, layout: RoomLayout, floor: FloorLayout, offsetX: number, options: DxfExportOptions): void {
+/** The plan-geometry coverage mode for these options. */
+function dxfCoverageMode(options: DxfExportOptions): CoverageMode {
+  if (options.coverage === false) return 'off';
+  return options.coverage === 'full' ? 'full' : 'capped';
+}
+
+/**
+ * Everything one floor draws, with the room's SW corner at CAD (offsetX, 0);
+ * coverage is trimmed to `frame` (default: the floor's own frame).
+ */
+function emitFloor(
+  doc: DxfDocument,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  options: DxfExportOptions,
+  frame?: PlanBounds
+): void {
   // World (metres, origin at room centre, z down) → CAD (origin at the room's
   // SW corner in CAD terms, Y up).
   const cad = (x: number, z: number): CadPoint => [x + layout.width / 2 + offsetX, layout.height / 2 - z];
@@ -503,7 +530,7 @@ function emitFloor(doc: DxfDocument, layout: RoomLayout, floor: FloorLayout, off
     );
   }
 
-  if (options.coverage !== false) emitCoverage(doc, floor, cad);
+  if (options.coverage !== false) emitCoverage(doc, floor, frame ?? planFrameBounds(layout, floor, dxfCoverageMode(options)), cad);
 
   // Same bottom-to-top layer order as the on-screen plan (#286).
   const { openings, furniture } = splitPlanItems(planDrawOrder(floor.items));
@@ -587,21 +614,31 @@ function emitOpening(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: num
  * 360° camera). Plan angles turn clockwise and CAD's counter-clockwise, so a
  * plan sweep start → end is the CCW CAD arc −end → −start.
  */
-function emitCoverage(doc: DxfDocument, floor: FloorLayout, cad: (x: number, z: number) => CadPoint): void {
+function emitCoverage(doc: DxfDocument, floor: FloorLayout, frame: PlanBounds, cad: (x: number, z: number) => CadPoint): void {
+  // Trimmed to the same frame the SVG clips to (#420): what lies inside it
+  // as CIRCLE (when whole) or ARC pieces, and the wedge sides as LINEs.
+  const circleOrArcs = (center: PlanPoint, radius: number, start: number, sweep: number): void => {
+    const pieces = clipArc(center, radius, start, sweep, frame);
+    const whole = sweep >= 2 * Math.PI - 1e-9 && pieces.length === 1 && pieces[0]![1] - pieces[0]![0] >= sweep - 1e-9;
+    if (whole) {
+      doc.circle('COVERAGE', cad(center.x, center.z), radius);
+      return;
+    }
+    for (const [from, to] of pieces) doc.arc('COVERAGE', cad(center.x, center.z), radius, toDeg(-to), toDeg(-from));
+  };
   for (const { center, radii } of coverageRings(floor.items)) {
-    for (const radius of radii) doc.circle('COVERAGE', cad(center.x, center.z), radius);
+    for (const radius of radii) circleOrArcs(center, radius, 0, 2 * Math.PI);
   }
   for (const wedge of visionWedges(floor.items)) {
-    const apex = cad(wedge.apex.x, wedge.apex.z);
     if (wedge.full) {
-      doc.circle('COVERAGE', apex, wedge.radius);
+      circleOrArcs(wedge.apex, wedge.radius, 0, 2 * Math.PI);
       continue;
     }
-    const start = polarPoint(wedge.apex, wedge.radius, wedge.startAngle);
-    const end = polarPoint(wedge.apex, wedge.radius, wedge.endAngle);
-    doc.line('COVERAGE', apex, cad(start.x, start.z));
-    doc.line('COVERAGE', apex, cad(end.x, end.z));
-    doc.arc('COVERAGE', apex, wedge.radius, toDeg(-wedge.endAngle), toDeg(-wedge.startAngle));
+    for (const angle of [wedge.startAngle, wedge.endAngle]) {
+      const side = clipSegment(wedge.apex, polarPoint(wedge.apex, wedge.radius, angle), frame);
+      if (side) doc.line('COVERAGE', cad(side.from.x, side.from.z), cad(side.to.x, side.to.z));
+    }
+    circleOrArcs(wedge.apex, wedge.radius, wedge.startAngle, wedge.endAngle - wedge.startAngle);
   }
 }
 
@@ -626,30 +663,30 @@ function emitDimensions(
   const wy = contentBottom - DIMENSION_OFFSET_M;
   doc.line('DIMENSIONS', [x0, y0], [x0, wy - tick]);
   doc.line('DIMENSIONS', [x1, y0], [x1, wy - tick]);
-  dimension(doc, [x0, wy], [x1, wy], layout.width, -1);
+  dimension(doc, [x0, wy], [x1, wy], layout.width, [0, -1]);
 
   // Depth, up the left side.
   const dx = contentLeft - DIMENSION_OFFSET_M;
   doc.line('DIMENSIONS', [x0, y0], [dx - tick, y0]);
   doc.line('DIMENSIONS', [x0, y1], [dx - tick, y1]);
-  dimension(doc, [dx, y0], [dx, y1], layout.height, 1);
+  dimension(doc, [dx, y0], [dx, y1], layout.height, [-1, 0]);
 
   for (const dim of interiorWallDimensions(floor)) {
     const from = cad(dim.from.x, dim.from.z);
     const to = cad(dim.to.x, dim.to.z);
-    const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
-    // Left-hand normal in CAD space.
-    const nx = (-(to[1] - from[1]) / len) * WALL_DIMENSION_OFFSET_M;
-    const ny = ((to[0] - from[0]) / len) * WALL_DIMENSION_OFFSET_M;
-    dimension(doc, [from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], dim.lengthM, 1);
+    // The side plan-geometry chose, shared with the SVG: world (x, z) → CAD (x, −z).
+    const outward: CadPoint = [dim.normal.x, -dim.normal.z];
+    const nx = outward[0] * WALL_DIMENSION_OFFSET_M;
+    const ny = outward[1] * WALL_DIMENSION_OFFSET_M;
+    dimension(doc, [from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], dim.lengthM, outward);
   }
 }
 
 /**
- * One dimension line with perpendicular end ticks and its length as TEXT,
- * on the left (`side` 1) or right (−1) of the line as drawn, kept upright.
+ * One dimension line with perpendicular end ticks and its length as TEXT
+ * beside it on the `outward` side (a CAD unit vector), kept upright.
  */
-function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: number, side: 1 | -1): void {
+function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: number, outward: CadPoint): void {
   const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
   if (len === 0) return;
   const ux = (to[0] - from[0]) / len;
@@ -664,7 +701,7 @@ function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: numb
   if (rotation > 90 + 1e-6) rotation -= 180;
   else if (rotation <= -90 + 1e-6) rotation += 180;
   const gap = DIMENSION_TEXT_HEIGHT;
-  const label: CadPoint = [(from[0] + to[0]) / 2 - uy * gap * side, (from[1] + to[1]) / 2 + ux * gap * side];
+  const label: CadPoint = [(from[0] + to[0]) / 2 + outward[0] * gap, (from[1] + to[1]) / 2 + outward[1] * gap];
   const metres = (Math.round(lengthM * 100) / 100).toFixed(2);
   doc.text('DIMENSIONS', label, DIMENSION_TEXT_HEIGHT, `${metres} m`, 'middle', rotation);
 }

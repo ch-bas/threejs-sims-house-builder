@@ -180,17 +180,17 @@ export interface PlanBounds {
  * are drawn as wall marks whose swing opens into the room, and their
  * footprint straddles the wall line by half its depth, which would pad every
  * sheet by 5 cm; a camera sits in the wall the same way, and one at 135° in a
- * corner poked past it and shifted the room off the sheet layout (#401).
+ * corner poked past it and shifted the room off the sheet layout (#401). A
+ * camera mounted on the outside of a wall (its centre beyond the walls)
+ * does count, or it would sit on the dimension strings.
  */
 export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
-  const bounds: PlanBounds = {
-    minX: -layout.width / 2,
-    minZ: -layout.height / 2,
-    maxX: layout.width / 2,
-    maxZ: layout.height / 2,
-  };
+  const hw = layout.width / 2;
+  const hd = layout.height / 2;
+  const bounds: PlanBounds = { minX: -hw, minZ: -hd, maxX: hw, maxZ: hd };
   for (const item of splitPlanItems(floor.items).furniture) {
-    if (isWallMounted(item.type)) continue;
+    const outside = Math.abs(item.position.x) > hw || Math.abs(item.position.z) > hd;
+    if (isWallMounted(item.type) && !outside) continue;
     for (const corner of itemWorldCorners(item)) {
       if (corner.x < bounds.minX) bounds.minX = corner.x;
       if (corner.x > bounds.maxX) bounds.maxX = corner.x;
@@ -346,15 +346,210 @@ export function roomDimensions(layout: Pick<RoomLayout, 'width' | 'height'>): { 
   };
 }
 
-/** One dimension per interior wall at least `MIN_DIMENSIONED_WALL_M` long (#424). */
-export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls'>): PlanDimension[] {
-  const dims: PlanDimension[] = [];
+/** An interior wall's dimension: the run plus the side it is drawn on. */
+export interface WallDimension extends PlanDimension {
+  /** Unit world-space normal (x right, z down) pointing to the side the dimension line and label sit on. */
+  normal: PlanPoint;
+}
+
+/** How far off a wall's centreline its dimension label sits, metres — for choosing a side. */
+const WALL_LABEL_PROBE_M = 0.36;
+/** Clearance around an item footprint a dimension label should keep, metres. */
+const LABEL_CLEARANCE_M = 0.25;
+
+/**
+ * One dimension per interior wall at least `MIN_DIMENSIONED_WALL_M` long
+ * (#424), each on one side of the wall in world space so the SVG and the DXF
+ * agree: the wall's left-hand normal (x right, z down) unless the label
+ * there would land on more item footprints than on the other side.
+ */
+export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls' | 'items'>): WallDimension[] {
+  const footprints = splitPlanItems(floor.items).furniture.map((item) => {
+    const corners = itemWorldCorners(item);
+    return {
+      minX: Math.min(...corners.map((c) => c.x)) - LABEL_CLEARANCE_M,
+      maxX: Math.max(...corners.map((c) => c.x)) + LABEL_CLEARANCE_M,
+      minZ: Math.min(...corners.map((c) => c.z)) - LABEL_CLEARANCE_M,
+      maxZ: Math.max(...corners.map((c) => c.z)) + LABEL_CLEARANCE_M,
+    };
+  });
+  const crowding = (p: PlanPoint): number =>
+    footprints.filter((b) => p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ).length;
+  const dims: WallDimension[] = [];
   for (const wall of floor.interiorWalls ?? []) {
     const lengthM = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
     if (lengthM < MIN_DIMENSIONED_WALL_M) continue;
-    dims.push({ from: { x: wall.x1, z: wall.z1 }, to: { x: wall.x2, z: wall.z2 }, lengthM, label: formatDimension(lengthM) });
+    const left = { x: -(wall.z2 - wall.z1) / lengthM, z: (wall.x2 - wall.x1) / lengthM };
+    const mid = { x: (wall.x1 + wall.x2) / 2, z: (wall.z1 + wall.z2) / 2 };
+    const probe = (sign: number): number =>
+      crowding({ x: mid.x + left.x * WALL_LABEL_PROBE_M * sign, z: mid.z + left.z * WALL_LABEL_PROBE_M * sign });
+    const sign = probe(-1) < probe(1) ? -1 : 1;
+    dims.push({
+      from: { x: wall.x1, z: wall.z1 },
+      to: { x: wall.x2, z: wall.z2 },
+      lengthM,
+      label: formatDimension(lengthM),
+      normal: { x: left.x * sign + 0, z: left.z * sign + 0 },
+    });
   }
   return dims;
+}
+
+/**
+ * How far coverage may carry the sheet past the plan content by default,
+ * metres (#420): enough to show an outward camera covering the garden or the
+ * street, not so far that a 30 m lens shrinks the house to a dot.
+ */
+export const COVERAGE_MARGIN_M = 5;
+
+/** How the coverage layer frames the sheet. */
+export type CoverageMode = 'off' | 'capped' | 'full';
+
+/** The tightest rectangle around everything the coverage layer draws, or null when it draws nothing. */
+export function coverageExtents(items: readonly FurnitureItem[]): PlanBounds | null {
+  let bounds: PlanBounds | null = null;
+  const add = (p: PlanPoint): void => {
+    bounds = bounds
+      ? { minX: Math.min(bounds.minX, p.x), minZ: Math.min(bounds.minZ, p.z), maxX: Math.max(bounds.maxX, p.x), maxZ: Math.max(bounds.maxZ, p.z) }
+      : { minX: p.x, minZ: p.z, maxX: p.x, maxZ: p.z };
+  };
+  for (const { center, radii } of coverageRings(items)) {
+    for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) add(polarPoint(center, radii[2], angle));
+  }
+  for (const wedge of visionWedges(items)) {
+    add(wedge.apex);
+    const sweep = wedge.full ? 2 * Math.PI : wedge.endAngle - wedge.startAngle;
+    add(polarPoint(wedge.apex, wedge.radius, wedge.startAngle));
+    add(polarPoint(wedge.apex, wedge.radius, wedge.startAngle + sweep));
+    for (let k = 0; k < 4; k++) {
+      const axis = (k * Math.PI) / 2;
+      if (normalizeRad(axis - wedge.startAngle) <= sweep) add(polarPoint(wedge.apex, wedge.radius, axis));
+    }
+  }
+  return bounds;
+}
+
+/**
+ * The rectangle a floor's sheet frames (#420): the plan content, grown to
+ * take in the coverage layer — by at most `COVERAGE_MARGIN_M` past the
+ * content when `capped`, all of it when `full`. The SVG clips its coverage
+ * to this rectangle and the DXF trims its rings and wedges to it, so the two
+ * formats show the same coverage.
+ */
+export function planFrameBounds(layout: RoomLayout, floor: FloorLayout, coverage: CoverageMode = 'capped'): PlanBounds {
+  const content = planContentBounds(layout, floor);
+  if (coverage === 'off') return content;
+  const reach = coverageExtents(floor.items);
+  if (!reach) return content;
+  const cap = coverage === 'full' ? null : growBounds(content, COVERAGE_MARGIN_M);
+  const union = unionBounds([content, reach]);
+  return cap ? intersectBounds(union, cap) : union;
+}
+
+/**
+ * The union of every floor's `planFrameBounds` (#405): the frame a
+ * whole-building SVG or an every-floor print gives each storey's sheet, so
+ * the rooms sit at the same place on every sheet.
+ */
+export function buildingFrameBounds(layout: RoomLayout, coverage: CoverageMode = 'capped'): PlanBounds {
+  if (layout.floors.length === 0) return growBounds({ minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 }, 0);
+  return unionBounds(layout.floors.map((floor) => planFrameBounds(layout, floor, coverage)));
+}
+
+/** The smallest rectangle containing every one of `all` (at least one). */
+export function unionBounds(all: readonly PlanBounds[]): PlanBounds {
+  return all.reduce((acc, b) => ({
+    minX: Math.min(acc.minX, b.minX),
+    minZ: Math.min(acc.minZ, b.minZ),
+    maxX: Math.max(acc.maxX, b.maxX),
+    maxZ: Math.max(acc.maxZ, b.maxZ),
+  }));
+}
+
+function intersectBounds(a: PlanBounds, b: PlanBounds): PlanBounds {
+  return { minX: Math.max(a.minX, b.minX), minZ: Math.max(a.minZ, b.minZ), maxX: Math.min(a.maxX, b.maxX), maxZ: Math.min(a.maxZ, b.maxZ) };
+}
+
+function normalizeRad(angle: number): number {
+  const turn = 2 * Math.PI;
+  return ((angle % turn) + turn) % turn;
+}
+
+const CLIP_EPS = 1e-9;
+
+function insideBounds(p: PlanPoint, rect: PlanBounds): boolean {
+  return p.x >= rect.minX - 1e-7 && p.x <= rect.maxX + 1e-7 && p.z >= rect.minZ - 1e-7 && p.z <= rect.maxZ + 1e-7;
+}
+
+/** The part of segment a→b inside `rect` (Liang–Barsky), or null when none is. */
+export function clipSegment(a: PlanPoint, b: PlanPoint, rect: PlanBounds): PlanSegment | null {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  let t0 = 0;
+  let t1 = 1;
+  const edges: Array<[number, number]> = [
+    [-dx, a.x - rect.minX],
+    [dx, rect.maxX - a.x],
+    [-dz, a.z - rect.minZ],
+    [dz, rect.maxZ - a.z],
+  ];
+  for (const [p, q] of edges) {
+    if (Math.abs(p) < CLIP_EPS) {
+      if (q < 0) return null;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return null;
+  }
+  return { from: { x: a.x + dx * t0, z: a.z + dz * t0 }, to: { x: a.x + dx * t1, z: a.z + dz * t1 } };
+}
+
+/**
+ * The pieces of the arc about `center` from `start` sweeping `sweep` radians
+ * (plan angles, increasing clockwise on the sheet) that lie inside `rect`,
+ * as [from, to] angle pairs with from < to. A whole circle inside the
+ * rectangle comes back as one piece spanning the full sweep.
+ */
+export function clipArc(center: PlanPoint, radius: number, start: number, sweep: number, rect: PlanBounds): Array<[number, number]> {
+  const cuts: number[] = [0, sweep];
+  const crossX = (x: number): void => {
+    const c = (x - center.x) / radius;
+    if (Math.abs(c) > 1) return;
+    const a = Math.acos(c);
+    for (const angle of [a, -a]) cuts.push(normalizeRad(angle - start));
+  };
+  const crossZ = (z: number): void => {
+    const s = (z - center.z) / radius;
+    if (Math.abs(s) > 1) return;
+    const a = Math.asin(s);
+    for (const angle of [a, Math.PI - a]) cuts.push(normalizeRad(angle - start));
+  };
+  crossX(rect.minX);
+  crossX(rect.maxX);
+  crossZ(rect.minZ);
+  crossZ(rect.maxZ);
+  const sorted = [...new Set(cuts.filter((t) => t >= 0 && t <= sweep))].sort((p, q) => p - q);
+  const pieces: Array<[number, number]> = [];
+  for (let i = 0; i + 1 < sorted.length; i++) {
+    const t0 = sorted[i]!;
+    const t1 = sorted[i + 1]!;
+    if (t1 - t0 < 1e-9) continue;
+    if (!insideBounds(polarPoint(center, radius, start + (t0 + t1) / 2), rect)) continue;
+    const last = pieces[pieces.length - 1];
+    if (last && Math.abs(last[1] - (start + t0)) < 1e-9) last[1] = start + t1;
+    else pieces.push([start + t0, start + t1]);
+  }
+  // A whole circle cut open: the piece ending at the start angle carries on
+  // into the one beginning there.
+  const first = pieces[0];
+  const last = pieces[pieces.length - 1];
+  if (sweep >= 2 * Math.PI - 1e-9 && pieces.length > 1 && first && last && Math.abs(first[0] - start) < 1e-9 && Math.abs(last[1] - (start + sweep)) < 1e-9) {
+    pieces.pop();
+    first[0] = last[0] - sweep;
+  }
+  return pieces;
 }
 
 /** One line of the item schedule: identical placed items counted together. */

@@ -257,7 +257,7 @@ describe('layoutToSvg', () => {
     expect(layoutToSvg(layout, floor)).toContain('<g class="plan" transform="translate(0 0)">');
   });
 
-  it('draws the coverage layer under the furniture, clipped to the plan content (#420)', () => {
+  it('draws the coverage layer under the furniture, on a sheet grown to show it (#420)', () => {
     const floor = makeFloor({
       items: [
         makeItem({ id: 'ap', type: 'wifi', name: 'AP', width: 0.2, depth: 0.2, position: { x: 0, z: 0 }, isWiFiAccessPoint: true, signalRange: 6 }),
@@ -276,8 +276,17 @@ describe('layoutToSvg', () => {
     expect(svg).toContain('<circle class="wifi-ring" cx="260" cy="260" r="100"');
     // Lens at (260, 65); ±45° about straight down at 7 m (350 px).
     expect(svg).toContain('<path class="vision" d="M 260 65 L 507.49 312.49 A 350 350 0 0 1 12.51 312.49 Z"');
-    expect(svg).toContain('<clipPath id="coverage-clip"><rect x="60" y="60" width="400" height="400"/></clipPath>');
+    // The 6 m Wi-Fi rings reach 2 m past every wall: the sheet frames ±6 m
+    // (12 m + 2 × 1.2 m margin), the room moves in by 2 m, and the clip is
+    // that whole frame.
+    expect(svg).toContain('viewBox="0 0 720 720"');
+    expect(svg).toContain('<g class="plan" transform="translate(100 100)">');
+    expect(svg).toContain('<clipPath id="coverage-clip"><rect x="-40" y="-40" width="600" height="600"/></clipPath>');
     expect(svg).toContain('<g class="coverage" clip-path="url(#coverage-clip)">');
+    // Room dimensions still hug the room, not the grown frame.
+    expect(svg).toContain('<line x1="60" y1="474" x2="460" y2="474" stroke-width="0.75"/>');
+    // Without coverage the sheet is the plain room sheet.
+    expect(layoutToSvg(layout, floor, { coverage: false })).toContain('viewBox="0 0 520 520"');
     expect(svg.indexOf('class="coverage"')).toBeLessThan(svg.indexOf('class="furniture"'));
     expect(svg.indexOf('class="coverage"')).toBeGreaterThan(svg.indexOf('class="wall"'));
     // Off on request, and absent when nothing radiates.
@@ -362,6 +371,42 @@ describe('layoutToSvg', () => {
     expect(planSheetSize(layout, floor, { bounds })).toEqual({ widthPx: 620, heightPx: 570, widthM: 12.4, heightM: 11.4 });
     // No override: unchanged.
     expect(planSheetSize(layout, floor)).toEqual({ widthPx: 520, heightPx: 520, widthM: 10.4, heightM: 10.4 });
+  });
+});
+
+describe('outward coverage (#420)', () => {
+  // A 30 m camera on the outside of the south wall, facing the garden.
+  const outward = makeItem({ id: 'co', type: 'security-camera', name: 'Cam', width: 0.25, depth: 0.2, position: { x: 0, z: 4.12 }, rotation: 0, hasVisionCone: true, visionRange: 30, visionFov: 103 });
+  const floor = makeFloor({ items: [outward] });
+  const layout = makeLayout({ floors: [floor] });
+
+  it('shows an outward camera’s wedge, capped 5 m past the content, symmetric about the house', () => {
+    const svg = layoutToSvg(layout, floor);
+    expect(count(svg, 'class="vision"')).toBe(1);
+    // Content: the room plus the camera body (to z 4.22); the frame adds 5 m
+    // south and 5 m east and west (the wedge is wider than that), none north.
+    const clip = /<clipPath id="coverage-clip"><rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"\/>/.exec(svg)!;
+    const [x, y, w, h] = clip.slice(1).map(Number);
+    expect(x).toBe(60 - 250);
+    expect(y).toBe(60);
+    expect(w).toBe(400 + 500);
+    expect(h).toBeCloseTo(400 + 0.22 * 50 + 250, 0);
+    // The room sits centred across the sheet's width.
+    expect(svg).toContain('<g class="plan" transform="translate(250 0)">');
+  });
+
+  it('frames all of it with coverage: full', () => {
+    const svg = layoutToSvg(layout, floor, { coverage: 'full' });
+    const h = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg)![1]);
+    // 30 m below a camera at z 4.12 → the sheet reaches z ≈ 34.1.
+    expect(h).toBeCloseTo((34.12 + 4) * 50 + 120, -1);
+  });
+
+  it('lets the caller prefix element ids so sheets can share a page', () => {
+    const svg = layoutToSvg(layout, floor, { idPrefix: 'sheet1-' });
+    expect(svg).toContain('<clipPath id="sheet1-coverage-clip">');
+    expect(svg).toContain('url(#sheet1-coverage-clip)');
+    expect(svg).not.toContain('id="coverage-clip"');
   });
 });
 

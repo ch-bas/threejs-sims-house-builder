@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
 import { buildingToDxf, DXF_LAYERS, layoutToDxf } from './dxf';
+import { buildingFrameBounds, interiorWallDimensions } from './plan-geometry';
 import { layoutToSvg } from './svg';
 
 function count(haystack: string, needle: string): number {
@@ -450,6 +451,80 @@ describe('layoutToDxf', () => {
   });
 });
 
+describe('coverage frame (#420)', () => {
+  // A 30 m camera on the outside of the south wall, facing the garden, and a
+  // 10 m Wi-Fi AP inside: an 8 m house.
+  const floor = makeFloor({
+    items: [
+      makeItem({ id: 'co', type: 'security-camera', name: 'Cam', width: 0.25, depth: 0.2, position: { x: 0, z: 4.12 }, rotation: 0, hasVisionCone: true, visionRange: 30, visionFov: 103 }),
+      makeItem({ id: 'ap', type: 'wifi', name: 'AP', width: 0.2, depth: 0.2, position: { x: -2, z: -2 }, isWiFiAccessPoint: true, signalRange: 10 }),
+    ],
+  });
+  const layout = makeLayout({ floors: [floor] });
+  const header = (dxf: string, name: string): [number, number] => {
+    const at = dxf.indexOf(`${name}\n`);
+    const lines = dxf.slice(at).split('\n');
+    return [Number(lines[2]), Number(lines[4])];
+  };
+
+  it('trims rings and wedges to the same frame the SVG clips to', () => {
+    const dxf = layoutToDxf(layout, floor);
+    // The frame: content (room + camera body to z 4.22) grown ≤ 5 m: CAD x −5…13, y −5.22…8 (+ the AP's reach north, capped).
+    for (const entity of entities(dxf, undefined, 'COVERAGE')) {
+      for (const [code, value] of entity.tags) {
+        if (code === 10 || code === 11) expect(Number(value)).toBeGreaterThanOrEqual(-5.001);
+        if (code === 10 || code === 11) expect(Number(value)).toBeLessThanOrEqual(13.001);
+      }
+    }
+    // The outer 10 m ring runs off the frame to the north-west: one ARC
+    // (merged across 0°); the inner two fit whole. The wedge's 30 m arc lies
+    // wholly beyond the frame, so it is dropped, and its two sides are
+    // trimmed at the frame's edge.
+    expect(entities(dxf, 'ARC', 'COVERAGE')).toHaveLength(1);
+    expect(entities(dxf, 'CIRCLE', 'COVERAGE')).toHaveLength(2);
+    const sides = entities(dxf, 'LINE', 'COVERAGE');
+    expect(sides).toHaveLength(2);
+    // Each side ends on the frame: the south edge (CAD y −5.22) or a side edge.
+    for (const side of sides) {
+      const [x, y] = [Number(tag(side, 11)), Number(tag(side, 21))];
+      expect(Math.abs(y + 5.22) < 0.01 || Math.abs(x + 5) < 0.01 || Math.abs(x - 13) < 0.01).toBe(true);
+    }
+  });
+
+  it('opens on the plan, not on a 30 m lens: extents and viewport follow the frame (#397)', () => {
+    const dxf = layoutToDxf(layout, floor);
+    const [minX, minY] = header(dxf, '$EXTMIN');
+    const [maxX, maxY] = header(dxf, '$EXTMAX');
+    // The frame is at most 5 m past the 8 m house on each side, plus the
+    // dimensions, arrow and title just outside it.
+    expect(maxX - minX).toBeLessThan(8 + 2 * 5 + 2);
+    expect(maxY - minY).toBeLessThan(8 + 2 * 5 + 2);
+    expect(minY).toBeGreaterThan(-6);
+    // The full option keeps everything (and the extents follow it).
+    const full = layoutToDxf(layout, floor, { coverage: 'full' });
+    expect(header(full, '$EXTMIN')[1]).toBeLessThan(-29);
+  });
+});
+
+describe('interior wall dimensions', () => {
+  it('sit on the same side of the wall as in the SVG, clear of an item label', () => {
+    // Wall running south at x = −1.5 with a desk against its west face.
+    const desk = makeItem({ id: 'd', type: 'desk', name: 'Desk 45', width: 1.2, depth: 0.5, position: { x: -2.3, z: -2 }, rotation: Math.PI / 4 });
+    const floor = makeFloor({ items: [desk], interiorWalls: [{ id: 'iw', x1: -1.5, z1: -4, x2: -1.5, z2: 0 }] });
+    const layout = makeLayout({ floors: [floor] });
+    const [dim] = interiorWallDimensions(floor);
+    expect(dim!.normal).toEqual({ x: 1, z: 0 }); // east, away from the desk
+    // DXF: the dimension line runs 0.2 m east of the wall's CAD x 2.5.
+    const dxf = layoutToDxf(layout, floor);
+    const label = entities(dxf, 'TEXT', 'DIMENSIONS').find((t) => tag(t, 1) === '4.00 m')!;
+    expect(Number(tag(label, 10))).toBeGreaterThan(2.5);
+    // SVG: the wall's dimension label also sits east of the wall (x px 160).
+    const svg = layoutToSvg(layout, floor);
+    const svgLabel = /class="wall-dimension">.*?transform="translate\(([\d.]+) /.exec(svg)!;
+    expect(Number(svgLabel[1])).toBeGreaterThan(160);
+  });
+});
+
 describe('buildingToDxf', () => {
   it('lays every floor out side by side on the same layers, ground first (#405)', () => {
     const building = makeRichBuilding();
@@ -460,10 +535,11 @@ describe('buildingToDxf', () => {
     expect(titles).toEqual(['My Home - Ground Floor', 'My Home - First Floor']);
     const outlines = entities(dxf, 'LWPOLYLINE', 'WALLS');
     expect(outlines).toHaveLength(2);
-    // The ground floor's content runs to the oak at x 6.7 → CAD 10.7; the
-    // first floor starts 3 m further east, at CAD 13.7.
+    // Every floor shares the building frame (as the SVG does), placed at its
+    // width + 3 m: the rooms line up across the sheet.
+    const frame = buildingFrameBounds(building);
     expect(tag(outlines[0]!, 10)).toBe('0.000');
-    expect(tag(outlines[1]!, 10)).toBe('13.700');
+    expect(Number(tag(outlines[1]!, 10))).toBeCloseTo(frame.maxX - frame.minX + 3, 3);
     // Same entity set per floor as the single-floor export.
     for (const floor of building.floors) {
       const single = layoutToDxf(building, floor);
