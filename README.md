@@ -902,7 +902,9 @@ components/
   are pure string builders drawing from floor data, with shared maths in
   `plan-geometry.ts`: footprint corners, opening axes, stairs, the
   coverage rings and camera wedges (the 2D view's maths, with the 3D
-  cone's range/FOV fallbacks, #420, #401), dimension runs, and the item
+  cone's range/FOV fallbacks, `DEFAULT_VISION_RANGE_M` and
+  `DEFAULT_VISION_FOV_DEG`, which the 2D plan and the blueprint use too,
+  #420, #401), dimension runs, and the item
   schedule (#424). Wall-mounted items (openings, cameras) stay out of the
   content bounds unless mounted outside the walls. Coverage frames the
   sheet: `planFrameBounds` grows the content to take in the rings and

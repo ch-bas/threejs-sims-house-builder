@@ -6,6 +6,7 @@ import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
+import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M } from '../lib/constants';
 import { isWallMounted } from '../lib/opening-snap';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
@@ -202,8 +203,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           {item.type === 'security-camera' && (
             <CameraModelCard
               modelId={item.cctvModelId ?? ''}
-              fov={item.visionFov ?? 70}
-              range={item.visionRange ?? 7}
+              fov={item.visionFov ?? DEFAULT_VISION_FOV_DEG}
+              range={item.visionRange ?? DEFAULT_VISION_RANGE_M}
               onPickModel={(modelId) => {
                 const model = getCctvModel(modelId);
                 if (model) {
