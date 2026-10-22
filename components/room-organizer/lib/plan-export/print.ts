@@ -11,7 +11,7 @@
  */
 
 import { isWallMounted } from '../opening-snap';
-import { planContentBounds, type PlanBounds } from './plan-geometry';
+import { planFrameBounds, unionBounds } from './plan-geometry';
 import { DEFAULT_SVG_MARGIN, layoutToSvg, planSheetSize } from './svg';
 import type { FloorLayout, RoomLayout } from '../types';
 
@@ -187,26 +187,19 @@ export function printedFloor(layout: RoomLayout, floor: FloorLayout, includeOutd
   return items.length === floor.items.length ? floor : { ...floor, items };
 }
 
-function unionBounds(all: readonly PlanBounds[]): PlanBounds {
-  return all.reduce((acc, b) => ({
-    minX: Math.min(acc.minX, b.minX),
-    minZ: Math.min(acc.minZ, b.minZ),
-    maxX: Math.max(acc.maxX, b.maxX),
-    maxZ: Math.max(acc.maxZ, b.maxZ),
-  }));
-}
-
 function resolvePrint(layout: RoomLayout, floor: FloorLayout, options: Partial<PrintOptions>) {
   const opts: PrintOptions = { ...DEFAULT_PRINT_OPTIONS, ...options };
   const sourceFloors = opts.allFloors && layout.floors.length > 0 ? layout.floors : [floor];
   const floors = sourceFloors.map((source) => ({ source, printed: printedFloor(layout, source, opts.includeOutdoor) }));
-  // The sheet follows the plan content (room + outdoor items, #287), so the
-  // scale is chosen for that extent, not the room alone.
-  const content = unionBounds(floors.map(({ printed }) => planContentBounds(layout, printed)));
-  const contentWidthM = content.maxX - content.minX;
-  const contentHeightM = content.maxZ - content.minZ;
+  // The sheet follows the plan content (room + outdoor items, #287, plus the
+  // capped coverage layer, #420), so the scale is chosen for that extent, not
+  // the room alone. Every page frames the same union, so the rooms sit at the
+  // same place page to page (#405).
+  const frame = unionBounds(floors.map(({ printed }) => planFrameBounds(layout, printed)));
+  const contentWidthM = frame.maxX - frame.minX;
+  const contentHeightM = frame.maxZ - frame.minZ;
   const scale = pickPrintScale(contentWidthM, contentHeightM, opts);
-  return { floors, contentWidthM, contentHeightM, scale };
+  return { floors, frame, contentWidthM, contentHeightM, scale };
 }
 
 /** The scale and page the print options resolve to — what the options panel previews. */
@@ -225,14 +218,17 @@ export function buildPrintDocument(
   options: Partial<PrintOptions> = {},
   date: string = new Date().toLocaleDateString()
 ): string {
-  const { floors, contentWidthM, contentHeightM, scale } = resolvePrint(layout, floor, options);
+  const { floors, frame, contentWidthM, contentHeightM, scale } = resolvePrint(layout, floor, options);
   const pxPerMetre = printPxPerMetre(scale.denominator);
   // Outsized: shrink every page by the same factor (the label already says
   // it is not to scale) rather than run off the page.
   const shrink = shrinkFactor(sheetMm(contentWidthM, contentHeightM, scale.denominator), printableArea(scale.paper, scale.orientation));
 
   const sheets = floors.map(({ source, printed }, index) => {
-    const sheet = planSheetSize(layout, printed, { pxPerMetre });
+    // One frame for every page (#405), and per-sheet ids: the sheets share
+    // one HTML page, where `url(#id)` resolves to the first match.
+    const svgOptions = { pxPerMetre, bounds: frame, idPrefix: `sheet${index}-` };
+    const sheet = planSheetSize(layout, printed, svgOptions);
     // Placed items only: an unplaced one is on neither the plan nor the tally.
     const drawn = printed.items.filter((item) => item.position).length;
     const omitted = source.items.filter((item) => item.position).length - drawn;
@@ -240,7 +236,7 @@ export function buildPrintDocument(
       floorName: floors.length > 1 ? `${source.name} (${index + 1} of ${floors.length})` : source.name,
       itemsLabel: `${drawn} item${drawn === 1 ? '' : 's'}${omitted > 0 ? ` (${omitted} outside the walls left off)` : ''}`,
       sheetWidthCss: `${(sheet.widthPx * PRINT_MM_PER_PX * shrink).toFixed(1)}mm`,
-      svg: layoutToSvg(layout, printed, { pxPerMetre }),
+      svg: layoutToSvg(layout, printed, svgOptions),
     };
   });
 

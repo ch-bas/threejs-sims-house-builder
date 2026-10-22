@@ -212,11 +212,28 @@ describe('buildPrintDocument', () => {
     expect(html).toContain('<title>My Home — All floors — Floor plan</title>');
     expect(html).toContain('Ground Floor (1 of 2)');
     expect(html).toContain('First Floor (2 of 2)');
-    // Both sheets at the ground floor's 1:100: the upper sheet is 8 m at 40 px/m + 120 px.
+    // Both sheets at the ground floor's 1:100, and both frame the union of
+    // the floors' content: same sheet size, the room at the same place, so
+    // the pages line up even though only the ground floor has the tree.
     expect(html.match(/1:100 \(A4 portrait\)/g)).toHaveLength(2);
-    expect(html).toContain('viewBox="0 0 440 440"');
+    const viewBoxes = [...html.matchAll(/viewBox="([^"]+)"/g)].map((m) => m[1]);
+    expect(viewBoxes).toHaveLength(2);
+    expect(viewBoxes[0]).toBe(viewBoxes[1]);
+    const rooms = [...html.matchAll(/<g class="plan" transform="([^"]+)"/g)].map((m) => m[1]);
+    expect(rooms).toEqual([rooms[0], rooms[0]]);
+    // 8 m wide at 40 px/m + 2 × 60 px; the tree takes the content to z 12.7.
+    expect(viewBoxes[0]).toBe('0 0 440 788');
     expect(html).toContain('.sheet + .sheet { break-before: page; }');
     expect(resolvePrintScale(layout, upper, { allFloors: true })).toMatchObject({ denominator: 100 });
+  });
+
+  it('gives each sheet its own clip-path id, so a page of sheets clips each by its own frame', () => {
+    const ap = makeItem({ id: 'ap', type: 'wifi', name: 'AP', width: 0.2, depth: 0.2, position: { x: 0, z: 0 }, isWiFiAccessPoint: true, signalRange: 6 });
+    const layout = makeLayout({ floors: [makeFloor({ id: 'g', items: [ap] }), makeFloor({ id: 'f', name: 'First Floor', items: [{ ...ap, id: 'ap2' }] })] });
+    const html = buildPrintDocument(layout, layout.floors[0]!, { allFloors: true }, 'd');
+    const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual(['sheet0-coverage-clip', 'sheet1-coverage-clip']);
+    expect(html).toContain('clip-path="url(#sheet1-coverage-clip)"');
   });
 
   it('escapes the project name in the title block', () => {
