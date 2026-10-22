@@ -66,6 +66,7 @@ export {
   Sprite,
   SpriteMaterial,
   Texture,
+  TextureSource,
   Vector2,
   Vector3,
   WebGLRenderer,

@@ -82,6 +82,19 @@ export function planExportFileName(layout: RoomLayout, floor: FloorLayout, exten
   return exportFileName(layout.name, extension, slugify(floor.name, 'floor'));
 }
 
+/**
+ * The whole-building plan's name (#405): `<layout-name>-all-floors.<ext>`,
+ * numbered (`-all-floors-2`, …) when a floor's own name would give it the
+ * same file, so a floor called "All floors" can't overwrite it or be
+ * overwritten.
+ */
+export function buildingExportFileName(layout: RoomLayout, extension: string): string {
+  const floorParts = new Set(layout.floors.map((floor) => slugify(floor.name, 'floor')));
+  let part = 'all-floors';
+  for (let n = 2; floorParts.has(part); n++) part = `all-floors-${n}`;
+  return exportFileName(layout.name, extension, part);
+}
+
 /** Trigger a download of `blob` via an object URL. */
 export function downloadBlob(fileName: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);

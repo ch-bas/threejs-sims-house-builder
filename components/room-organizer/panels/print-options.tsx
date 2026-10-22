@@ -18,8 +18,9 @@ import {
 } from '../lib/plan-export/print';
 
 /**
- * The print-to-scale button and its options (#435, #405): paper, orientation,
- * scale, whether items outside the walls are drawn, and every floor at once.
+ * The print-to-scale button and its options (#435, #405, #424): paper,
+ * orientation, scale, whether items outside the walls are drawn, an item
+ * schedule, and every floor at once.
  * The button folds the options open under it; their Print button opens the
  * popup, inside that click's user gesture. Renders two cells of the Export
  * grid, each spanning both columns.
@@ -115,6 +116,18 @@ export function PrintPlanControl(): JSX.Element {
             />
             <Label htmlFor={`${id}-outdoor`} className="cursor-pointer text-xs">
               Include items outside the walls
+            </Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id={`${id}-schedule`}
+              type="checkbox"
+              checked={effective.schedule}
+              onChange={(event) => patch({ schedule: event.target.checked })}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <Label htmlFor={`${id}-schedule`} className="cursor-pointer text-xs">
+              Item schedule under each plan
             </Label>
           </div>
           {multiStorey && (

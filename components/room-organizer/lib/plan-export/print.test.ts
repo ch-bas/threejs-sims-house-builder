@@ -183,6 +183,49 @@ describe('buildPrintDocument', () => {
     expect(without).toContain('1 item (1 outside the walls left off)');
   });
 
+  it('lists the printed items under the title block only when asked (#424)', () => {
+    const items = [
+      makeItem({ id: 'a', name: 'Chair', price: 40 }),
+      makeItem({ id: 'b', name: 'Chair', price: 40, position: { x: 1, z: 1 } }),
+      makeItem({ id: 'c', name: 'Sofa <3', width: 2, depth: 0.9, height: 0.8, price: 1200.5, position: { x: -2, z: 0 } }),
+    ];
+    expect(build(8, 8, items)).not.toContain('class="schedule"');
+    const html = build(8, 8, items, { schedule: true });
+    expect(html).toContain('<p class="schedule-title">Item schedule</p>');
+    expect(html).toContain('<td class="n">2</td><td class="n">$80</td>');
+    // Escaped, and sized in metres.
+    expect(html).toContain('<td>Sofa &lt;3</td><td>2 × 0.9 × 0.8</td>');
+    expect(html).toContain('<tr class="total"><td>Total</td><td></td><td class="n">3</td><td class="n">$1,281</td></tr>');
+    // No footer group: Chrome would repeat it on every page.
+    expect(html).not.toContain('<tfoot');
+    // Two lines and the total are one unbreakable block.
+    expect(html.match(/class="schedule-rows"/g)).toHaveLength(1);
+    // The plan's scale is untouched by the table.
+    expect(html).toContain('1:75 (A4 portrait)');
+  });
+
+  it('keeps the title, headings and first rows together and ends with the total (#424)', () => {
+    const items = Array.from({ length: 12 }, (_, i) => makeItem({ id: `t${i}`, name: `Thing ${String(i).padStart(2, '0')}`, position: { x: -3 + (i % 4), z: -3 + Math.floor(i / 4) } }));
+    const html = build(8, 8, items, { schedule: true });
+    const start = html.slice(html.indexOf('<div class="schedule-start">'), html.indexOf('</div>', html.indexOf('<div class="schedule-start">')));
+    expect(start).toContain('<th>Item</th>');
+    expect(start.match(/<tr><td>/g)).toHaveLength(3);
+    const tables = html.match(/<table class="schedule-rows">/g);
+    expect(tables).toHaveLength(2);
+    // The total is the last row of the last table.
+    expect(html).toMatch(/<tr class="total">[^]*?<\/tr><\/tbody><\/table>\s*<\/div>/);
+    expect(html).toContain('<td>Thing 11</td>');
+  });
+
+  it('leaves items off the schedule that are left off the plan (#424)', () => {
+    const far = tree({ id: 'pine', name: 'Pine Tree', position: { x: 24, z: 0 } });
+    const html = build(8, 8, [makeItem(), far], { includeOutdoor: false, schedule: true });
+    expect(html).toContain('<p class="schedule-title">Item schedule</p>');
+    expect(html).not.toContain('Pine Tree');
+    // An empty floor prints no table at all.
+    expect(build(8, 8, [], { schedule: true })).not.toContain('class="schedule"');
+  });
+
   it('counts only placed items in the left-off tally', () => {
     const far = tree({ id: 'pine', position: { x: 24, z: 0 } });
     const html = build(8, 8, [makeItem(), makeUnplacedItem({ id: 'stored' }), far], { includeOutdoor: false });

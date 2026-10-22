@@ -1,4 +1,10 @@
-import { CURRENCY_SYMBOL, DEFAULT_FLOOR_PLAN_OPACITY, GRID_SIZE_METERS } from '../lib/constants';
+import {
+  CURRENCY_SYMBOL,
+  DEFAULT_FLOOR_PLAN_OPACITY,
+  DEFAULT_VISION_FOV_DEG,
+  DEFAULT_VISION_RANGE_M,
+  GRID_SIZE_METERS,
+} from '../lib/constants';
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { planDrawOrder } from '../lib/plan-order';
@@ -630,7 +636,10 @@ function drawVisionCones(
   layout: RoomLayout
 ): void {
   for (const item of items) {
-    if (!item.position || !item.hasVisionCone || !item.visionRange || !item.visionFov) continue;
+    // Range and FOV fall back to the 3D cone's defaults, as the SVG and DXF do (#401).
+    if (!item.position || !item.hasVisionCone) continue;
+    const range = item.visionRange ?? DEFAULT_VISION_RANGE_M;
+    const fov = item.visionFov ?? DEFAULT_VISION_FOV_DEG;
     const cx = offsetX + (item.position.x + layout.width / 2) * scale;
     const cy = offsetY + (item.position.z + layout.height / 2) * scale;
     // The camera faces its local +Z: world direction (sin r, cos r), which
@@ -638,10 +647,10 @@ function drawVisionCones(
     // the footprint rotation, which goes through ctx.rotate().
     const rotation = item.rotation ?? 0;
     const centerAngle = Math.atan2(Math.cos(rotation), Math.sin(rotation));
-    const halfAngle = (item.visionFov * Math.PI) / 360;
+    const halfAngle = (fov * Math.PI) / 360;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, item.visionRange * scale, centerAngle - halfAngle, centerAngle + halfAngle);
+    ctx.arc(cx, cy, range * scale, centerAngle - halfAngle, centerAngle + halfAngle);
     ctx.closePath();
     ctx.fillStyle = 'rgba(127, 243, 255, 0.14)';
     ctx.fill();

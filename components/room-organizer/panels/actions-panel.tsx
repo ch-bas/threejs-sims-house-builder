@@ -11,9 +11,9 @@ import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from 
 import { totalCost } from '../lib/geometry';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
-import { downloadTextFile, planExportFileName } from '../lib/plan-export/download';
-import { layoutToDxf } from '../lib/plan-export/dxf';
-import { layoutToSvg } from '../lib/plan-export/svg';
+import { buildingExportFileName, downloadTextFile, planExportFileName } from '../lib/plan-export/download';
+import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
+import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
 import { PrintPlanControl } from './print-options';
@@ -37,6 +37,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   // The porch back wall is structure the reducer keeps on a clear (#357).
   const hasInteriorWalls = (activeFloor.interiorWalls ?? []).some((wall) => wall.id !== ENTRANCE_WALL_ID);
   const allLocked = hasItems && activeFloor.items.every((item) => item.locked === true);
+  const multiStorey = layout.floors.length > 1;
 
   // Doors/windows/cameras must stay on their walls and outdoor items must stay
   // outside the building — organizing them into the room grid tears openings
@@ -210,7 +211,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             </Button>
             {/* The plan exports of the active floor (#230). Not gated on
                 hasItems: the walls, openings and zones alone are a valid
-                plan — the blueprint included (#437). */}
+                plan — the blueprint included (#437). The SVG lists the
+                floor's items under the plan (#424). */}
             <Button
               onClick={() => openBlueprintPrintWindow(layout, activeFloor)}
               variant="outline"
@@ -224,12 +226,13 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 downloadTextFile(
                   planExportFileName(layout, activeFloor, 'svg'),
                   'image/svg+xml',
-                  layoutToSvg(layout, activeFloor)
+                  layoutToSvg(layout, activeFloor, { schedule: true })
                 )
               }
               variant="outline"
               size="sm"
               className="text-xs"
+              title={multiStorey ? 'This floor, with its item schedule' : 'The plan, with its item schedule'}
             >
               🖼 SVG
             </Button>
@@ -244,9 +247,46 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               variant="outline"
               size="sm"
               className="text-xs"
+              title={multiStorey ? 'This floor, in metres' : 'The plan, in metres'}
             >
               📐 DXF
             </Button>
+            {/* The whole building at one scale (#405): floors stacked down
+                one SVG, side by side in one DXF on the same layers. */}
+            {multiStorey && (
+              <>
+                <Button
+                  onClick={() =>
+                    downloadTextFile(
+                      buildingExportFileName(layout, 'svg'),
+                      'image/svg+xml',
+                      buildingToSvg(layout, { schedule: true })
+                    )
+                  }
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  title="Every floor on one sheet, stacked, each with its item schedule"
+                >
+                  🖼 SVG · all floors
+                </Button>
+                <Button
+                  onClick={() =>
+                    downloadTextFile(
+                      buildingExportFileName(layout, 'dxf'),
+                      'application/dxf',
+                      buildingToDxf(layout)
+                    )
+                  }
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  title="Every floor side by side, in metres"
+                >
+                  📐 DXF · all floors
+                </Button>
+              </>
+            )}
             {/* Print to scale with paper / scale / floor options (#435, #405). */}
             <PrintPlanControl />
             <Button onClick={props.onShareLink} variant="outline" size="sm" className="col-span-2 text-xs">
