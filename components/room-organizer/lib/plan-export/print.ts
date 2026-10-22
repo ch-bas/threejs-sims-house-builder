@@ -191,11 +191,13 @@ function resolvePrint(layout: RoomLayout, floor: FloorLayout, options: Partial<P
   const opts: PrintOptions = { ...DEFAULT_PRINT_OPTIONS, ...options };
   const sourceFloors = opts.allFloors && layout.floors.length > 0 ? layout.floors : [floor];
   const floors = sourceFloors.map((source) => ({ source, printed: printedFloor(layout, source, opts.includeOutdoor) }));
-  // The sheet follows the plan content (room + outdoor items, #287, plus the
-  // capped coverage layer, #420), so the scale is chosen for that extent, not
-  // the room alone. Every page frames the same union, so the rooms sit at the
-  // same place page to page (#405).
-  const frame = unionBounds(floors.map(({ printed }) => planFrameBounds(layout, printed)));
+  // The sheet follows the plan content (room + outdoor items, #287), so the
+  // scale is chosen for that extent, not the room alone. Coverage does not
+  // grow a printed sheet — a Wi-Fi AP's 10 m rings would push an 8 m house
+  // from 1:75 to 1:125 — so it is clipped to this frame on paper. Every page
+  // frames the same union, so the rooms sit at the same place page to page
+  // (#405).
+  const frame = unionBounds(floors.map(({ printed }) => planFrameBounds(layout, printed, 'off')));
   const contentWidthM = frame.maxX - frame.minX;
   const contentHeightM = frame.maxZ - frame.minZ;
   const scale = pickPrintScale(contentWidthM, contentHeightM, opts);

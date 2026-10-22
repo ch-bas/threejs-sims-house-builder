@@ -503,6 +503,8 @@ export function clipSegment(a: PlanPoint, b: PlanPoint, rect: PlanBounds): PlanS
     else t1 = Math.min(t1, t);
     if (t0 > t1) return null;
   }
+  // A segment that only touches the rectangle (or has no length) draws nothing.
+  if ((t1 - t0) * Math.hypot(dx, dz) < 1e-9) return null;
   return { from: { x: a.x + dx * t0, z: a.z + dz * t0 }, to: { x: a.x + dx * t1, z: a.z + dz * t1 } };
 }
 

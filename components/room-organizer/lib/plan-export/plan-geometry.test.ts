@@ -124,6 +124,9 @@ describe('coverage frame and clipping (#420)', () => {
     expect(clipSegment({ x: 0, z: 0 }, { x: 10, z: 0 }, rect)).toEqual({ from: { x: 0, z: 0 }, to: { x: 4, z: 0 } });
     expect(clipSegment({ x: 5, z: 5 }, { x: 9, z: 9 }, rect)).toBeNull();
     expect(clipSegment({ x: -1, z: 1 }, { x: 1, z: -1 }, rect)).toEqual({ from: { x: -1, z: 1 }, to: { x: 1, z: -1 } });
+    // Zero-length results draw nothing: a point, and a segment touching only a corner.
+    expect(clipSegment({ x: 1, z: 1 }, { x: 1, z: 1 }, rect)).toBeNull();
+    expect(clipSegment({ x: 4, z: 4 }, { x: 6, z: 6 }, rect)).toBeNull();
   });
 
   it('clips arcs to the rectangle', () => {

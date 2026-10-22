@@ -227,6 +227,26 @@ describe('buildPrintDocument', () => {
     expect(resolvePrintScale(layout, upper, { allFloors: true })).toMatchObject({ denominator: 100 });
   });
 
+  it('keeps the sheet tight: coverage never coarsens the print scale, it is clipped to the plan (#420)', () => {
+    const sofa = makeItem({ id: 's', type: 'sofa', name: 'Sofa', width: 2, depth: 0.9, position: { x: -1, z: 1 } });
+    const ap = (signalRange: number) =>
+      makeItem({ id: 'ap', type: 'wifi', name: 'Wi-Fi AP', width: 0.2, depth: 0.2, position: { x: -2, z: -2 }, isWiFiAccessPoint: true, signalRange });
+    for (const items of [[sofa], [sofa, ap(6)], [sofa, ap(10)]]) {
+      const floor = makeFloor({ items });
+      const layout = makeLayout({ floors: [floor] });
+      for (const includeOutdoor of [true, false]) {
+        expect(resolvePrintScale(layout, floor, { includeOutdoor })).toMatchObject({ denominator: 75, paper: 'A4', orientation: 'portrait' });
+      }
+    }
+    // The rings are clipped to the 8 m plan: 8 m at 1:75 + the margins.
+    const floor = makeFloor({ items: [sofa, ap(10)] });
+    const html = buildPrintDocument(makeLayout({ floors: [floor] }), floor, {}, 'd');
+    expect(html).toContain('class="wifi-ring"');
+    const clip = /<clipPath id="sheet0-coverage-clip"><rect x="60" y="60" width="([\d.]+)" height="([\d.]+)"\/>/.exec(html)!;
+    expect(clip[1]).toBe(clip[2]);
+    expect(html).toContain('<g class="plan" transform="translate(0 0)">');
+  });
+
   it('gives each sheet its own clip-path id, so a page of sheets clips each by its own frame', () => {
     const ap = makeItem({ id: 'ap', type: 'wifi', name: 'AP', width: 0.2, depth: 0.2, position: { x: 0, z: 0 }, isWiFiAccessPoint: true, signalRange: 6 });
     const layout = makeLayout({ floors: [makeFloor({ id: 'g', items: [ap] }), makeFloor({ id: 'f', name: 'First Floor', items: [{ ...ap, id: 'ap2' }] })] });
