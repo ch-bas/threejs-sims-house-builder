@@ -67,6 +67,7 @@ export function buildEntrance(THREE: ThreeModule, options: BuildEntranceOptions)
   });
   shell.userData.type = options.wallTag;
   shell.userData.wallId = 'north';
+  shell.name = 'Entrance';
 
   const groups = [shell];
   const steps = entranceSteps(g);
@@ -92,6 +93,7 @@ export function buildEntrance(THREE: ThreeModule, options: BuildEntranceOptions)
       stairs.add(step);
     }
     stairs.userData.type = options.floorTag;
+    stairs.name = 'Entrance steps';
     groups.push(stairs);
   }
   return groups;

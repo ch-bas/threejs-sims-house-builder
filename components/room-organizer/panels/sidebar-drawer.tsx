@@ -316,6 +316,7 @@ const DrawerBody = memo(function DrawerBody({
         <>
           <CameraPresetsPanel
             disabled={!isReady || view.view2D || view.walkthroughMode}
+            screenshotDisabled={!isReady || view.walkthroughMode}
             onApply={onApplyPreset}
             onFit={onFitToRoom}
             onScreenshot={onScreenshot}

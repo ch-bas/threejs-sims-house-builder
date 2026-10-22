@@ -213,6 +213,7 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = yOffset;
   floor.receiveShadow = true;
+  floor.name = 'Floor';
   floor.userData.type = ROOM_OBJECT_TAGS.Floor;
   makeStatic(floor);
   options.scene.add(floor);
@@ -295,6 +296,7 @@ function addFoundation(
   foundation.position.y = -plinthHeight;
   foundation.receiveShadow = true;
   foundation.castShadow = true;
+  foundation.name = 'Foundation';
   foundation.userData.type = ROOM_OBJECT_TAGS.Floor;
   makeStatic(foundation);
   scene.add(foundation);
@@ -311,6 +313,8 @@ interface FloorPlanImageEntry {
   url: string;
   image: HTMLImageElement | null;
   waiters: Array<(image: HTMLImageElement) => void>;
+  /** Called, once, if the decode fails — so an awaiting export can go on. */
+  failures: Array<() => void>;
   composites: Partial<Record<FloorPlanRole, { key: string; canvas: HTMLCanvasElement }>>;
 }
 type FloorPlanRole = 'map' | 'displacement';
@@ -326,13 +330,21 @@ export function clearFloorPlanImageCache(): void {
   floorPlanImageCache = null;
 }
 
-function withFloorPlanImage(THREE: ThreeModule, url: string, onReady: (image: HTMLImageElement) => void): void {
+function withFloorPlanImage(
+  THREE: ThreeModule,
+  url: string,
+  onReady: (image: HTMLImageElement) => void,
+  onFail?: () => void
+): void {
   if (floorPlanImageCache?.url === url) {
     if (floorPlanImageCache.image) onReady(floorPlanImageCache.image);
-    else floorPlanImageCache.waiters.push(onReady);
+    else {
+      floorPlanImageCache.waiters.push(onReady);
+      if (onFail) floorPlanImageCache.failures.push(onFail);
+    }
     return;
   }
-  const entry: FloorPlanImageEntry = { url, image: null, waiters: [onReady], composites: {} };
+  const entry: FloorPlanImageEntry = { url, image: null, waiters: [onReady], failures: onFail ? [onFail] : [], composites: {} };
   floorPlanImageCache = entry;
   new THREE.ImageLoader().load(
     url,
@@ -340,15 +352,30 @@ function withFloorPlanImage(THREE: ThreeModule, url: string, onReady: (image: HT
       entry.image = image;
       const waiters = entry.waiters;
       entry.waiters = [];
+      entry.failures = [];
       for (const waiter of waiters) waiter(image);
     },
     undefined,
     () => {
       // A broken image must not park every later rebuild's waiter forever.
       entry.waiters = [];
+      const failures = entry.failures;
+      entry.failures = [];
       if (floorPlanImageCache === entry) floorPlanImageCache = null;
+      for (const failure of failures) failure();
     }
   );
+}
+
+/**
+ * Decode the floor plan into the shared cache and resolve once it is ready
+ * (null if it fails to decode). A buildRoom call made after this resolves
+ * gets the plan synchronously. The GLB export awaits it (#373): the cache
+ * holds one entry and is only warmed when the ground floor is on screen, so
+ * an export built cold would carry the placeholder floor instead.
+ */
+export function loadFloorPlanImage(THREE: ThreeModule, url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => withFloorPlanImage(THREE, url, resolve, () => resolve(null)));
 }
 
 /**
@@ -431,8 +458,15 @@ function buildFloorPlanMaterial(
     texture.wrapT = THREE.ClampToEdgeWrapping;
   }
 
+  // A decode that lands after the floor was rebuilt or exported away must
+  // not paint into its disposed textures.
+  let disposed = false;
+  map.addEventListener('dispose', () => {
+    disposed = true;
+  });
   let decoding = false;
   withFloorPlanImage(THREE, imageUrl, (image) => {
+    if (disposed) return;
     map.image = fittedFloorPlan(image, 'map', options);
     map.needsUpdate = true;
     if (displacement) {
@@ -504,6 +538,7 @@ function buildWalls(
     const wall = new THREE.Mesh(geometry, material);
     wall.rotation.y = spec.rotateY;
     wall.position.set(spec.position[0], spec.position[1], spec.position[2]);
+    wall.name = `Wall ${spec.id}`;
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
     wall.userData.wallId = spec.id;
     // Solid walls block the sun like the roof, foundation, and interior walls
@@ -587,6 +622,7 @@ function addBaseboard(
     base.position.set(px - nx * inset + ax * mid, yOffset + BASEBOARD_HEIGHT / 2, pz - nz * inset + az * mid);
     base.receiveShadow = true;
     base.castShadow = ghostOpacity === undefined;
+    base.name = `Baseboard ${spec.id}`;
     base.userData.type = ROOM_OBJECT_TAGS.Wall;
     base.userData.wallId = spec.id;
     makeStatic(base);

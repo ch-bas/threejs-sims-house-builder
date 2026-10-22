@@ -140,6 +140,7 @@ function buildFlatRoof(
   mesh.position.set(0, baseY + thickness / 2, 0);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  mesh.name = 'Roof';
   mesh.userData.type = ROOF_TAG;
   return mesh;
 }
@@ -175,11 +176,13 @@ function buildGableRoof(
   if (ridgeAlongX) mesh.rotation.y = Math.PI / 2;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  mesh.name = 'Roof';
   mesh.userData.type = ROOF_TAG;
 
   // Fascia: thin trim board running along each eave for a clean edge.
   const group = new THREE.Group();
   group.add(mesh);
+  group.name = 'Gable';
   group.userData.type = ROOF_TAG;
   const fasciaColor = darkenHex(color, 0.4);
   addFascia(THREE, group, length, span, fasciaColor, baseY, ridgeAlongX);
@@ -223,6 +226,7 @@ function buildHippedRoof(
   mesh.position.y = baseY;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  mesh.name = 'Roof';
   mesh.userData.type = ROOF_TAG;
   return mesh;
 }
@@ -258,6 +262,7 @@ function addFascia(
     }
     fascia.castShadow = true;
     fascia.receiveShadow = true;
+    fascia.name = 'Fascia';
     fascia.userData.type = ROOF_TAG;
     parent.add(fascia);
   }

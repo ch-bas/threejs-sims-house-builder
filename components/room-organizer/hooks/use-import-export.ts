@@ -2,9 +2,10 @@ import { useCallback, type MutableRefObject, type RefObject } from 'react';
 import { notify } from '../lib/editor-notices';
 import {
   downloadCanvasAsPng,
-  downloadSceneAsGlb,
+  downloadLayoutAsGlb,
   readLayoutFromFile,
 } from '../lib/file-io';
+import { exportFileName } from '../lib/plan-export/download';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
 import type { LayoutActions } from './use-layout-state';
@@ -13,6 +14,8 @@ import type * as ThreeNS from 'three';
 
 export interface UseImportExportParams {
   layout: RoomLayout;
+  /** Names a 2D screenshot after the floor it shows (#427). */
+  activeFloorName: string;
   actions: LayoutActions;
   view2D: boolean;
   canvasRef: RefObject<HTMLCanvasElement>;
@@ -34,6 +37,7 @@ export interface UseImportExportResult {
 
 export function useImportExport({
   layout,
+  activeFloorName,
   actions,
   view2D,
   canvasRef,
@@ -51,20 +55,24 @@ export function useImportExport({
     if (!view2D && rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
-    void downloadCanvasAsPng(canvas, layout.name || 'room-layout').then((ok) => {
+    // The plan shows one floor, so its file says which (#427). It is
+    // transparent outside the house — the lawn is the canvas's CSS
+    // background — so paint that behind it (#391).
+    const fileName = view2D ? exportFileName(layout.name, 'png', activeFloorName) : exportFileName(layout.name, 'png');
+    const background = view2D ? getComputedStyle(canvas).backgroundColor : undefined;
+    void downloadCanvasAsPng(canvas, fileName, background).then((ok) => {
       if (!ok) notify('Could not export the screenshot — the image failed to encode.', 'error');
     });
-  }, [view2D, layout.name, canvasRef, canvas2DRef, rendererRef, sceneRef, cameraRef]);
+  }, [view2D, layout.name, activeFloorName, canvasRef, canvas2DRef, rendererRef, sceneRef, cameraRef]);
 
+  // The whole building from the layout, whatever the view shows (#373).
   const handleExportGlb = useCallback(async () => {
-    const scene = sceneRef.current;
-    if (!scene) return;
     try {
-      await downloadSceneAsGlb(scene, layout.name || 'room-layout');
+      await downloadLayoutAsGlb(layout);
     } catch (exportError) {
       notify(exportError instanceof Error ? exportError.message : 'GLB export failed.', 'error');
     }
-  }, [sceneRef, layout.name]);
+  }, [layout]);
 
   const handleShareLink = useCallback(async () => {
     const origin = window.location.origin + window.location.pathname;

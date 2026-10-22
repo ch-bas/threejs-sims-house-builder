@@ -832,6 +832,7 @@ export function RoomOrganizer(): JSX.Element {
 
   const { handleScreenshot, handleExportGlb, handleShareLink, handleImport } = useImportExport({
     layout,
+    activeFloorName: activeFloor.name,
     actions,
     view2D: view.view2D,
     canvasRef,

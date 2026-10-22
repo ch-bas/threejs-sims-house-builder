@@ -1,22 +1,10 @@
+import { downloadBlob, downloadTextFile, exportFileName } from './plan-export/download';
 import { MAX_LAYOUT_JSON_BYTES, parseStoredLayout } from './schema';
-import type { RoomLayout } from './types';
+import { zoneContains } from './zones';
+import type { FurnitureItem, RoomLayout, RoomZone } from './types';
 
 export function downloadLayoutAsJson(layout: RoomLayout): void {
-  const blob = new Blob([JSON.stringify(layout, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    // Guard the empty-name case (mirrors the CSV path) so we never produce a
-    // bare `.json` filename.
-    link.download = `${(layout.name || 'layout').replace(/\s+/g, '_')}.json`;
-    link.click();
-  } finally {
-    // Defer the revoke: revoking synchronously right after click() can cancel
-    // the download mid-flight in some browsers. A 0ms timeout releases the URL
-    // after the click has been dispatched.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
+  downloadTextFile(exportFileName(layout.name, 'json'), 'application/json', JSON.stringify(layout, null, 2));
 }
 
 export async function readLayoutFromFile(file: File): Promise<RoomLayout> {
@@ -91,11 +79,108 @@ function downscaleDataUrl(dataUrl: string): Promise<string> {
   });
 }
 
-export function downloadInventoryCsv(layout: RoomLayout): void {
-  const lines = ['Floor,Category,Type,Name,Width (m),Depth (m),Height (m),Color,Price'];
+/**
+ * Byte-order mark: without it Excel on Windows reads the UTF-8 file as the
+ * local code page and garbles accents and emoji in item names (#430).
+ */
+const CSV_BOM = '﻿';
+
+/** A CSV cell: text is formula-guarded and quoted as needed; numbers are written as is. */
+type CsvCell = string | number;
+
+function csvLine(cells: readonly CsvCell[]): string {
+  return cells.map((cell) => (typeof cell === 'number' ? String(cell) : csvField(cell))).join(',');
+}
+
+function csvField(value: string): string {
+  // Neutralize spreadsheet formula injection: a value beginning with =, +, -,
+  // @, or a tab is interpreted as a formula by Excel/Sheets, so an imported
+  // layout with an item named `=HYPERLINK(...)` would execute on export.
+  // Prefix a single quote to force it to a literal string. Numbers we write
+  // ourselves (a negative coordinate) are CsvCell numbers and bypass this.
+  const safe = /^[=+\-@\t]/.test(value) ? `'${value}` : value;
+  if (/[",\n\r]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
+}
+
+/** Metres to the centimetre, kept a number so `-2` stays numeric. */
+const metres = (value: number): number => Math.round(value * 100) / 100 || 0;
+
+/** Money to the cent: 12.95 × 6 is 77.7, not 77.69999999999999. */
+const cents = (value: number): number => Math.round(value * 100) / 100;
+
+/** Plan rotation in degrees, 0 ≤ r < 360, to a tenth. */
+function rotationDegrees(radians: number): number {
+  const degrees = Math.round(((radians * 180) / Math.PI) * 10) / 10;
+  const wrapped = ((degrees % 360) + 360) % 360;
+  // 360 after rounding, and -0, both read as 0.
+  return wrapped === 360 ? 0 : wrapped || 0;
+}
+
+/** The zones on the floor whose rectangle holds the item's centre, joined. */
+function zoneNames(item: FurnitureItem, zones: readonly RoomZone[] | undefined): string {
+  const position = item.position;
+  if (!position || !zones) return '';
+  return zones
+    .filter((zone) => zoneContains(zone, position.x, position.z))
+    .map((zone) => zone.name)
+    .join('; ');
+}
+
+/**
+ * One row per item on every floor (#430). The first nine columns are the
+ * original ones, in their original order; placement, state and zone follow,
+ * so a row tells three identical doors apart. Unplaced items leave X/Z blank.
+ */
+export function inventoryCsv(layout: RoomLayout): string {
+  const lines = [
+    csvLine([
+      'Floor', 'Category', 'Type', 'Name', 'Width (m)', 'Depth (m)', 'Height (m)', 'Color', 'Price',
+      'X (m)', 'Z (m)', 'Rotation (deg)', 'Mirrored', 'Locked', 'Zone',
+    ]),
+  ];
   for (const floor of layout.floors) {
     for (const item of floor.items) {
-      const fields: string[] = [
+      lines.push(
+        csvLine([
+          floor.name,
+          item.category ?? '',
+          item.type,
+          item.name,
+          item.width.toFixed(2),
+          item.depth.toFixed(2),
+          item.height.toFixed(2),
+          item.color,
+          item.price ?? 0,
+          item.position ? metres(item.position.x) : '',
+          item.position ? metres(item.position.z) : '',
+          rotationDegrees(item.rotation ?? 0),
+          item.mirrored === true ? 'yes' : 'no',
+          item.locked === true ? 'yes' : 'no',
+          zoneNames(item, floor.zones),
+        ])
+      );
+    }
+  }
+  return CSV_BOM + lines.join('\r\n') + '\r\n';
+}
+
+/**
+ * The grouped schedule (#430): one row per distinct product on each floor —
+ * same category, type, name, size, colour and price — with its quantity and
+ * line total, closed by a total row for the building.
+ */
+export function scheduleCsv(layout: RoomLayout): string {
+  const lines = [
+    csvLine(['Floor', 'Category', 'Type', 'Name', 'Width (m)', 'Depth (m)', 'Height (m)', 'Color', 'Unit price', 'Qty', 'Total']),
+  ];
+  let allQty = 0;
+  let allTotal = 0;
+  for (const floor of layout.floors) {
+    const rows = new Map<string, { cells: CsvCell[]; price: number; qty: number }>();
+    for (const item of floor.items) {
+      const price = item.price ?? 0;
+      const cells: CsvCell[] = [
         floor.name,
         item.category ?? '',
         item.type,
@@ -104,121 +189,57 @@ export function downloadInventoryCsv(layout: RoomLayout): void {
         item.depth.toFixed(2),
         item.height.toFixed(2),
         item.color,
-        (item.price ?? 0).toString(),
+        price,
       ];
-      lines.push(fields.map(csvField).join(','));
+      const key = JSON.stringify(cells);
+      const row = rows.get(key);
+      if (row) row.qty += 1;
+      else rows.set(key, { cells, price, qty: 1 });
+    }
+    for (const { cells, price, qty } of rows.values()) {
+      const total = cents(price * qty);
+      lines.push(csvLine([...cells, qty, total]));
+      allQty += qty;
+      allTotal += total;
     }
   }
-  const csv = lines.join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${(layout.name || 'inventory').replace(/\s+/g, '_')}_inventory.csv`;
-    link.click();
-  } finally {
-    // Defer the revoke so it can't truncate the download (see downloadLayoutAsJson).
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
+  lines.push(csvLine(['All floors', '', '', '', '', '', '', '', '', allQty, cents(allTotal)]));
+  return CSV_BOM + lines.join('\r\n') + '\r\n';
 }
 
-function csvField(value: string): string {
-  // Neutralize spreadsheet formula injection: a value beginning with =, +, -,
-  // @, or a tab is interpreted as a formula by Excel/Sheets, so an imported
-  // layout with an item named `=HYPERLINK(...)` would execute on export.
-  // Prefix a single quote to force it to a literal string.
-  const safe = /^[=+\-@\t]/.test(value) ? `'${value}` : value;
-  if (/[",\n\r]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
-  return safe;
+export function downloadInventoryCsv(layout: RoomLayout): void {
+  downloadTextFile(exportFileName(layout.name, 'csv', 'inventory'), 'text/csv;charset=utf-8', inventoryCsv(layout));
+}
+
+export function downloadScheduleCsv(layout: RoomLayout): void {
+  downloadTextFile(exportFileName(layout.name, 'csv', 'schedule'), 'text/csv;charset=utf-8', scheduleCsv(layout));
 }
 
 /**
- * userData.type tags that make up the "meaningful" model the user expects in an
- * exported .glb: the furniture and the room shell (walls incl. the floor grid
- * helper + baseboards, interior walls, floor incl. the foundation, and the
- * roof). Everything else — lights (`light:*`), the sky, the ground/outdoor
- * scenery, NPCs, Wi-Fi/vision overlays, measurement markers, and item labels —
- * is deliberately excluded.
+ * Export the whole building as a .glb (#373): every storey, the roof and
+ * dormers, every wall uncut, nodes named — built from the layout into a
+ * throwaway graph (three/building-export.ts), never cloned from the live
+ * scene, which holds only what the current view shows. Everything built for
+ * the file is disposed afterwards.
  */
-const GLB_EXPORT_TAGS: ReadonlySet<string> = new Set([
-  'furniture',
-  'floor',
-  'wall',
-  'interior-wall',
-  'roof',
-]);
-
-/**
- * Build a throwaway group holding CLONES of just the meaningful scene objects.
- * Cloning (rather than reparenting) keeps the live scene untouched and lets us
- * discard the group without disposing the shared geometries/materials the
- * clones borrow by reference. Transforms are preserved by clone().
- */
-function collectExportGroup(
-  THREE: typeof import('../three/three-runtime'),
-  scene: import('three').Object3D,
-  cloneSkinned: (source: import('three').Object3D) => import('three').Object3D
-): import('three').Group {
-  const group = new THREE.Group();
-  for (const child of scene.children) {
-    const tag = child.userData.type as string | undefined;
-    if (tag === undefined || !GLB_EXPORT_TAGS.has(tag)) continue;
-    // Plain clone() shares the LIVE scene's skeleton, so the exporter writes
-    // skins whose joints point at nodes outside the exported graph — the
-    // file then fails to parse (GLTFLoader: "Cannot set … 'isBone'"). Rigged
-    // people need SkeletonUtils.clone, which brings their bones (at the
-    // current pose) into the export group.
-    let hasSkinned = false;
-    child.traverse((node) => {
-      if ((node as import('three').SkinnedMesh).isSkinnedMesh) hasSkinned = true;
-    });
-    group.add(hasSkinned ? cloneSkinned(child) : child.clone());
-  }
-  return group;
-}
-
-export async function downloadSceneAsGlb(scene: import('three').Object3D, baseName: string): Promise<void> {
-  const THREE = await import('../three/three-runtime');
-  const [{ GLTFExporter }, SkeletonUtils] = await Promise.all([
+export async function downloadLayoutAsGlb(layout: RoomLayout): Promise<void> {
+  const [THREE, { GLTFExporter }, { buildExportBuilding, prepareExportBuilding }, { disposeObject }] = await Promise.all([
+    import('../three/three-runtime'),
     import('three/examples/jsm/exporters/GLTFExporter.js'),
-    import('three/examples/jsm/utils/SkeletonUtils.js'),
+    import('../three/building-export'),
+    import('../three/builder-utils'),
   ]);
-  const exporter = new GLTFExporter();
-  // Export a temporary group of cloned meshes so the .glb carries only the
-  // furniture + room shell — not lights, sky, NPCs, overlays, or markers.
-  const exportGroup = collectExportGroup(THREE, scene, SkeletonUtils.clone);
+  await prepareExportBuilding(THREE, layout);
+  const building = buildExportBuilding(THREE, layout);
   try {
-    await new Promise<void>((resolve, reject) => {
-      exporter.parse(
-        exportGroup,
-        (result) => {
-          const blob =
-            result instanceof ArrayBuffer
-              ? new Blob([result], { type: 'model/gltf-binary' })
-              : new Blob([JSON.stringify(result)], { type: 'application/json' });
-          const extension = result instanceof ArrayBuffer ? 'glb' : 'gltf';
-          const url = URL.createObjectURL(blob);
-          try {
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${baseName.replace(/\s+/g, '_')}.${extension}`;
-            link.click();
-          } finally {
-            // Defer the revoke so it can't truncate the download (see downloadLayoutAsJson).
-            setTimeout(() => URL.revokeObjectURL(url), 0);
-          }
-          resolve();
-        },
-        (error) => reject(error instanceof Error ? error : new Error('GLB export failed.')),
-        { binary: true }
-      );
-    });
+    const result = await new GLTFExporter().parseAsync(building, { binary: true });
+    const binary = result instanceof ArrayBuffer;
+    const blob = binary
+      ? new Blob([result], { type: 'model/gltf-binary' })
+      : new Blob([JSON.stringify(result)], { type: 'model/gltf+json' });
+    downloadBlob(exportFileName(layout.name, binary ? 'glb' : 'gltf'), blob);
   } finally {
-    // Discard the temp group. The clones borrow the live scene's geometries and
-    // materials by reference, so only detach them (clear) — never dispose, or
-    // we'd destroy resources the on-screen scene is still using.
-    exportGroup.clear();
+    disposeObject(building);
   }
 }
 
@@ -226,25 +247,34 @@ export async function downloadSceneAsGlb(scene: import('three').Object3D, baseNa
  * Trigger a PNG download of the canvas. Resolves to `true` on success and
  * `false` when `toBlob` yields null (e.g. a tainted canvas or an out-of-memory
  * encode) so the caller can surface a failure instead of a silent no-op.
+ *
+ * `background` is painted behind the canvas first: the 2D plan is
+ * transparent outside the house (the lawn is the element's CSS background),
+ * and a transparent PNG opens black in many viewers (#391).
  */
-export function downloadCanvasAsPng(canvas: HTMLCanvasElement, baseName: string): Promise<boolean> {
+export function downloadCanvasAsPng(canvas: HTMLCanvasElement, fileName: string, background?: string): Promise<boolean> {
+  let source = canvas;
+  if (background) {
+    const flat = document.createElement('canvas');
+    flat.width = canvas.width;
+    flat.height = canvas.height;
+    const ctx = flat.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, flat.width, flat.height);
+      ctx.drawImage(canvas, 0, 0);
+      source = flat;
+    }
+  }
   return new Promise((resolve) => {
-    canvas.toBlob((blob) => {
+    source.toBlob((blob) => {
       if (!blob) {
         resolve(false);
         return;
       }
-      const url = URL.createObjectURL(blob);
-      try {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${(baseName || 'screenshot').replace(/\s+/g, '_')}.png`;
-        link.click();
-      } finally {
-        // Defer the revoke so it can't truncate the download (see downloadLayoutAsJson).
-        setTimeout(() => URL.revokeObjectURL(url), 0);
-      }
+      downloadBlob(fileName, blob);
       resolve(true);
     }, 'image/png');
   });
 }
+

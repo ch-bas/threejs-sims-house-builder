@@ -7,7 +7,7 @@ import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { DEFAULT_BUDGET } from '../lib/constants';
-import { downloadLayoutAsJson, downloadInventoryCsv } from '../lib/file-io';
+import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { totalCost } from '../lib/geometry';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
@@ -33,6 +33,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const hasItems = activeFloor.items.length > 0;
+  const buildingHasItems = hasItems || layout.floors.some((floor) => floor.items.length > 0);
   // The porch back wall is structure the reducer keeps on a clear (#357).
   const hasInteriorWalls = (activeFloor.interiorWalls ?? []).some((wall) => wall.id !== ENTRANCE_WALL_ID);
   const allLocked = hasItems && activeFloor.items.every((item) => item.locked === true);
@@ -175,14 +176,27 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             >
               📂 Import
             </Button>
+            {/* The inventory lists every floor's items, so it is gated on
+                the building having any, not just this floor (#430). */}
             <Button
               onClick={() => downloadInventoryCsv(layout)}
               variant="outline"
               size="sm"
               className="text-xs"
-              disabled={!hasItems}
+              disabled={!buildingHasItems}
+              title="One row per item: size, price, position, rotation, zone"
             >
               📊 CSV
+            </Button>
+            <Button
+              onClick={() => downloadScheduleCsv(layout)}
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              disabled={!buildingHasItems}
+              title="Items grouped per floor with quantity and total"
+            >
+              🧾 Schedule
             </Button>
             <Button
               onClick={props.onExportGlb}
@@ -190,23 +204,21 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               size="sm"
               className="text-xs"
               disabled={!isReady}
+              title="The whole building: every floor, the roof, all walls"
             >
               🧊 GLB
             </Button>
-            <Button onClick={props.onShareLink} variant="outline" size="sm" className="text-xs">
-              🔗 Link
-            </Button>
+            {/* The plan exports of the active floor (#230). Not gated on
+                hasItems: the walls, openings and zones alone are a valid
+                plan — the blueprint included (#437). */}
             <Button
               onClick={() => openBlueprintPrintWindow(layout, activeFloor)}
               variant="outline"
               size="sm"
               className="text-xs"
-              disabled={!hasItems}
             >
               🖨 Print
             </Button>
-            {/* Vector plan exports of the active floor (#230). Not gated on
-                hasItems: the walls + openings alone are a valid plan. */}
             <Button
               onClick={() =>
                 downloadTextFile(
@@ -237,6 +249,9 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             </Button>
             {/* Print to scale with paper / scale / floor options (#435, #405). */}
             <PrintPlanControl />
+            <Button onClick={props.onShareLink} variant="outline" size="sm" className="col-span-2 text-xs">
+              🔗 Link
+            </Button>
           </div>
           {importStatus && (
             <p role="status" className="text-xs text-muted-foreground">
