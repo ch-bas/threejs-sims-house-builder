@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
-import { layoutToSvg, planSheetSize } from './svg';
+import { buildingToSvg, layoutToSvg, planSheetSize } from './svg';
 
 function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
@@ -217,5 +217,226 @@ describe('layoutToSvg', () => {
     // Under the furniture and openings, over the walls.
     expect(firstSvg.indexOf('class="stairwell"')).toBeGreaterThan(firstSvg.indexOf('class="wall"'));
     expect(firstSvg).not.toContain('NaN');
+  });
+
+  it('hinges a mirrored door on the other jamb, as the 3D model does (#386)', () => {
+    const door = makeItem({ id: 'd', type: 'door', name: 'Door', width: 0.9, depth: 0.1, position: { x: -4, z: 2.5 }, rotation: Math.PI / 2 });
+    const plainFloor = makeFloor({ items: [door] });
+    const mirroredFloor = makeFloor({ items: [{ ...door, mirrored: true }] });
+    const plain = layoutToSvg(makeLayout({ floors: [plainFloor] }), plainFloor);
+    const mirrored = layoutToSvg(makeLayout({ floors: [mirroredFloor] }), mirroredFloor);
+    expect(plain).toContain('transform="translate(60 385) rotate(-90)"');
+    // The symbol is flipped about the opening's centre, moving the leaf to the +X jamb.
+    expect(mirrored).toContain('transform="translate(60 385) rotate(-90) scale(-1 1)"');
+    // A window is symmetric, but mirroring it changes nothing else.
+    expect(count(mirrored, 'class="opening"')).toBe(1);
+  });
+
+  it('keeps item labels readable: never upside down, sideways ones read bottom-to-top (#401)', () => {
+    const at = (rotation: number) => {
+      const floor = makeFloor({ items: [makeItem({ name: 'TV Stand', width: 1.6, depth: 0.6, position: { x: 0, z: 0 }, rotation })] });
+      const svg = layoutToSvg(makeLayout({ floors: [floor] }), floor);
+      return /<text class="label"[^>]*>/.exec(svg)![0];
+    };
+    // Item rotation θ → SVG group rotate(−θ°).
+    expect(at(0)).not.toContain('transform');
+    expect(at(Math.PI)).toContain('transform="rotate(180)"'); // group 180° → net 0°
+    expect(at(-Math.PI)).toContain('transform="rotate(180)"');
+    expect(at(Math.PI / 2)).not.toContain('transform'); // group −90° reads bottom-to-top
+    expect(at(-Math.PI / 2)).toContain('transform="rotate(180)"'); // group +90° → net −90°
+    expect(at(Math.PI / 4)).not.toContain('transform');
+    expect(at((3 * Math.PI) / 4)).toContain('transform="rotate(180)"');
+  });
+
+  it('leaves wall-mounted cameras out of the sheet bounds (#401)', () => {
+    // A camera in the NE corner at 135° pokes its footprint past both walls.
+    const camera = makeItem({ id: 'cam', type: 'security-camera', name: 'Security Camera', width: 0.25, depth: 0.2, position: { x: 3.9, z: -3.9 }, rotation: (3 * Math.PI) / 4 });
+    const floor = makeFloor({ items: [camera] });
+    const layout = makeLayout({ floors: [floor] });
+    expect(layoutToSvg(layout, floor)).toContain('viewBox="0 0 520 520"');
+    expect(layoutToSvg(layout, floor)).toContain('<g class="plan" transform="translate(0 0)">');
+  });
+
+  it('draws the coverage layer under the furniture, on a sheet grown to show it (#420)', () => {
+    const floor = makeFloor({
+      items: [
+        makeItem({ id: 'ap', type: 'wifi', name: 'AP', width: 0.2, depth: 0.2, position: { x: 0, z: 0 }, isWiFiAccessPoint: true, signalRange: 6 }),
+        makeItem({ id: 'cctv', type: 'cctv', name: 'CCTV', width: 0.2, depth: 0.2, position: { x: 1, z: 1 }, isCCTV: true, signalRange: 3 }),
+        // Facing south, 90° FOV, no range: the 3D cone's 7 m default (#401).
+        makeItem({ id: 'cam', type: 'security-camera', name: 'Cam', width: 0.25, depth: 0.2, position: { x: 0, z: -3.9 }, hasVisionCone: true, visionFov: 90 }),
+        makeItem({ id: 'sofa', type: 'sofa', name: 'Sofa', width: 2, depth: 1, position: { x: -2, z: 2 } }),
+      ],
+    });
+    const layout = makeLayout({ floors: [floor] });
+    const svg = layoutToSvg(layout, floor);
+    expect(count(svg, 'class="wifi-ring"')).toBe(3);
+    expect(count(svg, 'class="cctv-ring"')).toBe(3);
+    // Rings at ⅓, ⅔ and the full range, outer first.
+    expect(svg).toContain('<circle class="wifi-ring" cx="260" cy="260" r="300"');
+    expect(svg).toContain('<circle class="wifi-ring" cx="260" cy="260" r="100"');
+    // Lens at (260, 65); ±45° about straight down at 7 m (350 px).
+    expect(svg).toContain('<path class="vision" d="M 260 65 L 507.49 312.49 A 350 350 0 0 1 12.51 312.49 Z"');
+    // The 6 m Wi-Fi rings reach 2 m past every wall: the sheet frames ±6 m
+    // (12 m + 2 × 1.2 m margin), the room moves in by 2 m, and the clip is
+    // that whole frame.
+    expect(svg).toContain('viewBox="0 0 720 720"');
+    expect(svg).toContain('<g class="plan" transform="translate(100 100)">');
+    expect(svg).toContain('<clipPath id="coverage-clip"><rect x="-40" y="-40" width="600" height="600"/></clipPath>');
+    expect(svg).toContain('<g class="coverage" clip-path="url(#coverage-clip)">');
+    // Room dimensions still hug the room, not the grown frame.
+    expect(svg).toContain('<line x1="60" y1="474" x2="460" y2="474" stroke-width="0.75"/>');
+    // Without coverage the sheet is the plain room sheet.
+    expect(layoutToSvg(layout, floor, { coverage: false })).toContain('viewBox="0 0 520 520"');
+    expect(svg.indexOf('class="coverage"')).toBeLessThan(svg.indexOf('class="furniture"'));
+    expect(svg.indexOf('class="coverage"')).toBeGreaterThan(svg.indexOf('class="wall"'));
+    // Off on request, and absent when nothing radiates.
+    expect(layoutToSvg(layout, floor, { coverage: false })).not.toContain('class="coverage"');
+    const { layout: plain, floor: plainFloor } = makeFixture();
+    expect(layoutToSvg(plain, plainFloor)).not.toContain('coverage');
+  });
+
+  it('dimensions the room in the margin band and each interior wall, and draws a north arrow (#424)', () => {
+    const { layout, floor } = makeFixture();
+    const svg = layoutToSvg(layout, floor);
+    expect(count(svg, 'class="room-dimension"')).toBe(2);
+    expect(count(svg, 'class="wall-dimension"')).toBe(1);
+    // Width 14 px below the room (y 460 → 474), label below it; depth 14 px left (x 60 → 46), reading upward.
+    expect(svg).toContain('<line x1="60" y1="474" x2="460" y2="474" stroke-width="0.75"/>');
+    expect(svg).toContain('transform="translate(260 482) rotate(0)">8.00 m</text>');
+    expect(svg).toContain('transform="translate(38 260) rotate(-90)">8.00 m</text>');
+    // The 4 m interior wall at x = −2 (160 px), dimensioned beside it.
+    expect(svg).toContain('>4.00 m</text>');
+    // North arrow centred in the right margin band, the scale bar untouched.
+    expect(svg).toContain('class="north-arrow"');
+    expect(svg).toContain('<text x="490" y="68" font-size="11" font-weight="bold" text-anchor="middle"');
+    expect(svg).toContain('class="scale-bar"');
+    const off = layoutToSvg(layout, floor, { dimensions: false });
+    expect(off).not.toContain('class="dimensions"');
+    expect(off).toContain('class="north-arrow"');
+    // The annotations live in the margin: the sheet size is unchanged.
+    expect(svg).toContain('viewBox="0 0 520 520"');
+  });
+
+  it('adds an opt-in item schedule under the plan and sizes the sheet for it (#424)', () => {
+    const { layout, floor } = makeFixture();
+    const priced = {
+      ...floor,
+      items: [...floor.items, makeItem({ id: 'chair-2', name: 'Chair', position: { x: 2, z: 2 }, price: 40 }), makeItem({ id: 'chair-3', name: 'Chair', position: { x: 3, z: 2 }, price: 40 })],
+    };
+    const off = layoutToSvg(layout, priced);
+    expect(off).not.toContain('class="schedule"');
+    const svg = layoutToSvg(layout, priced, { schedule: true });
+    expect(svg).toContain('>Item schedule</text>');
+    // Chair (unpriced) and Chair ×2 at $40 are different lines; Door, Sofa, Window.
+    expect(count(svg, 'class="schedule-row"')).toBe(5);
+    expect(svg).toContain('>$80</text>');
+    expect(svg).toContain('>1 × 1 × 1</text>');
+    // Plan 520 px + heading 52 + 6 rows × 16 + half margin 30.
+    const size = planSheetSize(layout, priced, { schedule: true });
+    expect(size).toEqual({ widthPx: 520, heightPx: 698, widthM: 10.4, heightM: 13.96 });
+    expect(svg).toContain('viewBox="0 0 520 698"');
+    // A narrow room widens the sheet to fit the table; the plan stays put.
+    const narrow = makeLayout({ width: 3, height: 3, floors: [priced] });
+    expect(planSheetSize(narrow, makeFloor(), { schedule: true }).widthPx).toBe(520);
+  });
+
+  it('never lets the title overprint the room size on a narrow sheet', () => {
+    // 8 m wide: both fit on one line, as before.
+    const { layout, floor } = makeFixture();
+    const wide = layoutToSvg(layout, floor);
+    expect(wide).toContain('class="plan-title" x="60" y="38"');
+    expect(wide).toContain('class="plan-dims" x="460" y="38"');
+    // 3 m wide (150 px between the margins): the size drops under the title.
+    const narrow = makeLayout({ width: 3, height: 6, floors: [floor] });
+    const stacked = layoutToSvg(narrow, makeFloor());
+    expect(stacked).toContain('class="plan-title" x="60" y="30" font-size="14" font-weight="bold" fill="#333333">My Home — Ground Floor</text>');
+    expect(stacked).toContain('class="plan-dims" x="210" y="48"');
+    // A name too long even for its own line is cut with an ellipsis; the <title> keeps it whole.
+    const name = 'A very long project name for the family house in the countryside, second revision';
+    const long = layoutToSvg(makeLayout({ name, width: 3, height: 6, floors: [floor] }), makeFloor());
+    const shown = /class="plan-title"[^>]*>([^<]*)<\/text>/.exec(long)![1]!;
+    expect(shown.endsWith('…')).toBe(true);
+    // Fits the 202 px from the left margin to 8 px short of the sheet edge, at ≤ 0.62 em per bold char.
+    expect([...shown].length * 14 * 0.62).toBeLessThanOrEqual(202);
+    expect(long).toContain(`<title>${name} — Ground Floor</title>`);
+  });
+
+  it('frames an explicit content bounds in place of the floor’s own (#405)', () => {
+    const { layout, floor } = makeFixture();
+    const bounds = { minX: -6, minZ: -4, maxX: 4, maxZ: 5 };
+    const svg = layoutToSvg(layout, floor, { bounds });
+    // 10 × 9 m + 1.2 m margins at 50 px/m; the room shifts right by the 2 m west of it.
+    expect(svg).toContain('viewBox="0 0 620 570"');
+    expect(svg).toContain('<g class="plan" transform="translate(100 0)">');
+    expect(planSheetSize(layout, floor, { bounds })).toEqual({ widthPx: 620, heightPx: 570, widthM: 12.4, heightM: 11.4 });
+    // No override: unchanged.
+    expect(planSheetSize(layout, floor)).toEqual({ widthPx: 520, heightPx: 520, widthM: 10.4, heightM: 10.4 });
+  });
+});
+
+describe('outward coverage (#420)', () => {
+  // A 30 m camera on the outside of the south wall, facing the garden.
+  const outward = makeItem({ id: 'co', type: 'security-camera', name: 'Cam', width: 0.25, depth: 0.2, position: { x: 0, z: 4.12 }, rotation: 0, hasVisionCone: true, visionRange: 30, visionFov: 103 });
+  const floor = makeFloor({ items: [outward] });
+  const layout = makeLayout({ floors: [floor] });
+
+  it('shows an outward camera’s wedge, capped 5 m past the content, symmetric about the house', () => {
+    const svg = layoutToSvg(layout, floor);
+    expect(count(svg, 'class="vision"')).toBe(1);
+    // Content: the room plus the camera body (to z 4.22); the frame adds 5 m
+    // south and 5 m east and west (the wedge is wider than that), none north.
+    const clip = /<clipPath id="coverage-clip"><rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"\/>/.exec(svg)!;
+    const [x, y, w, h] = clip.slice(1).map(Number);
+    expect(x).toBe(60 - 250);
+    expect(y).toBe(60);
+    expect(w).toBe(400 + 500);
+    expect(h).toBeCloseTo(400 + 0.22 * 50 + 250, 0);
+    // The room sits centred across the sheet's width.
+    expect(svg).toContain('<g class="plan" transform="translate(250 0)">');
+  });
+
+  it('frames all of it with coverage: full', () => {
+    const svg = layoutToSvg(layout, floor, { coverage: 'full' });
+    const h = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg)![1]);
+    // 30 m below a camera at z 4.12 → the sheet reaches z ≈ 34.1.
+    expect(h).toBeCloseTo((34.12 + 4) * 50 + 120, -1);
+  });
+
+  it('lets the caller prefix element ids so sheets can share a page', () => {
+    const svg = layoutToSvg(layout, floor, { idPrefix: 'sheet1-' });
+    expect(svg).toContain('<clipPath id="sheet1-coverage-clip">');
+    expect(svg).toContain('url(#sheet1-coverage-clip)');
+    expect(svg).not.toContain('id="coverage-clip"');
+  });
+});
+
+describe('buildingToSvg', () => {
+  it('stacks every floor at one scale, aligned on the building’s bounds (#405)', () => {
+    const tree = makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 6.7, z: 0 } });
+    const ground = makeFloor({ id: 'g', items: [tree] });
+    const first = makeFloor({ id: 'f', name: 'First Floor' });
+    const layout = makeLayout({ floors: [ground, first] });
+    const svg = buildingToSvg(layout);
+    expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
+    expect(count(svg, 'class="floor-sheet"')).toBe(2);
+    expect(count(svg, 'class="sheet-break"')).toBe(1);
+    // Both sheets frame x −4 … 7.4 (the ground floor's tree): 11.4 + 2.4 m wide, 10.4 m tall.
+    expect(svg).toContain('viewBox="0 0 690 1040"');
+    expect(svg).toContain('<g class="floor-sheet" data-floor="g" transform="translate(0 0)">');
+    expect(svg).toContain('<g class="floor-sheet" data-floor="f" transform="translate(0 520)">');
+    // The room sits at the same place on both sheets.
+    expect(count(svg, '<g class="plan" transform="translate(0 0)">')).toBe(2);
+    expect(svg).toContain('My Home — Ground Floor');
+    expect(svg).toContain('My Home — First Floor');
+    expect(svg).not.toContain('NaN');
+  });
+
+  it('keeps element ids unique across sheets', () => {
+    const ap = makeItem({ id: 'ap', type: 'wifi', name: 'AP', position: { x: 0, z: 0 }, isWiFiAccessPoint: true, signalRange: 4 });
+    const layout = makeLayout({ floors: [makeFloor({ id: 'g', items: [ap] }), makeFloor({ id: 'f', items: [{ ...ap, id: 'ap2' }] })] });
+    const svg = buildingToSvg(layout);
+    const ids = [...svg.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual(['f0-coverage-clip', 'f1-coverage-clip']);
+    expect(svg).toContain('url(#f1-coverage-clip)');
   });
 });

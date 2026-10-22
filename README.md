@@ -265,7 +265,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Inventory CSV** with a Floor column.
 - **PNG screenshot** of the current viewport.
 - **GLB / glTF export** of the live Three.js scene — opens in any viewer.
-- **Plan export**: scalable SVG, CAD-ready layered DXF, and a
+- **Plan export**: scalable SVG and CAD-ready layered DXF (dimensions, a
+  north arrow and the Wi-Fi/CCTV coverage layer included), and a
   print-to-scale PDF with title block. Its options choose the paper (A4,
   A3, Letter), the orientation and the scale (1:20–1:1000, or the largest
   that fits), whether items outside the walls are drawn, and whether every
@@ -398,9 +399,9 @@ components/
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode, shared by the 2D plan and the 3D floor canvas (#191)
     │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
-    │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs)
-    │       ├── svg.ts                   Vector SVG plan emitter (pure)
-    │       ├── dxf.ts                   DXF R12 plan emitter (pure)
+    │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
+    │       ├── svg.ts                   Vector SVG plan emitter, one floor or the whole building (pure)
+    │       ├── dxf.ts                   AutoCAD 2000 DXF plan emitter, one floor or the whole building (pure)
     │       ├── download.ts              Blob download + filename slugs (DOM)
     │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
@@ -820,6 +821,35 @@ components/
   controls wrap to the column at 40 px or more, it scrolls on its own, and
   the rest of the screen stays scene, so the framing puts the house there.
   Desktop (≥1101 × ≥701) is untouched where nothing overflows.
+- **Vector plan exports** (`lib/plan-export/`). The SVG and DXF emitters
+  are pure string builders drawing from floor data, with shared maths in
+  `plan-geometry.ts`: footprint corners, opening axes, stairs, the
+  coverage rings and camera wedges (the 2D view's maths, with the 3D
+  cone's range/FOV fallbacks, #420, #401), dimension runs, and the item
+  schedule (#424). Wall-mounted items (openings, cameras) stay out of the
+  content bounds unless mounted outside the walls. Coverage frames the
+  sheet: `planFrameBounds` grows the content to take in the rings and
+  wedges, at most `COVERAGE_MARGIN_M` (5 m) past it (`coverage: 'full'`
+  for all of it); the SVG clips to that rectangle and the DXF trims its
+  circles, arcs and lines to it, so both show the same coverage and a
+  30 m lens can't blow up the DXF extents. `buildingFrameBounds` unions
+  every floor so a whole-building SVG (`buildingToSvg`, floors stacked),
+  the whole-building DXF and the every-floor print line their sheets up,
+  through the SVG's `bounds` option (#405); `idPrefix` keeps ids unique
+  when the print inlines several sheets in one page. Interior-wall
+  dimensions take one world-space side, chosen clear of item footprints,
+  in both formats.
+  The SVG's sheet furniture (title, room size, dimensions, north arrow,
+  scale bar) lives in the margin band, so it never changes the sheet
+  size; the title block stacks and then ellipsizes on narrow sheets. A
+  mirrored door hinges on the other jamb, as in 3D (#386). The DXF is a
+  complete AutoCAD 2000 document (#397) — handles on every record,
+  owners, subclass markers, `$HANDSEED`, `$EXTMIN`/`$EXTMAX`, all nine
+  tables, the layout blocks and the OBJECTS dictionaries — checked by a
+  structural validator in `dxf.test.ts` and, during development, by
+  ezdxf's audit (zero fixes). Its layers: WALLS, INTERIOR, OPENINGS,
+  FURNITURE, LABELS, STAIRWELL, COVERAGE, DIMENSIONS; `buildingToDxf`
+  lays the floors out side by side on those same layers.
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure
