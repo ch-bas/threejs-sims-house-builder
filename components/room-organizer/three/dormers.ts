@@ -44,6 +44,7 @@ export function buildDormers(
     const group = buildDormer(THREE, dormer, frame, options.roofColor);
     group.userData.type = options.tag;
     group.userData.dormerId = dormer.id;
+    group.name = `Dormer ${dormer.id}`;
     groups.push(group);
   }
   return groups;

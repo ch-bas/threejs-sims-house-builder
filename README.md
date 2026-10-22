@@ -262,9 +262,13 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   of replacing your own; load any of them (undoable) or remove them. Bad
   or truncated links get an inline message.
 - **Export / import layout** as JSON (with structural validation).
-- **Inventory CSV** with a Floor column.
-- **PNG screenshot** of the current viewport.
-- **GLB / glTF export** of the live Three.js scene — opens in any viewer.
+- **Inventory CSV**: one row per item with floor, size, price, position,
+  rotation, mirrored and locked state and zone, plus a grouped **schedule
+  CSV** with quantities and totals. Both carry a UTF-8 BOM for Excel.
+- **PNG screenshot** of the current viewport, 3D or the 2D plan.
+- **GLB / glTF export** of the whole building — every storey, the roof and
+  dormers, every wall, named nodes — whatever the view shows. Opens in any
+  viewer.
 - **Plan export**: scalable SVG and CAD-ready layered DXF (dimensions, a
   north arrow and the Wi-Fi/CCTV coverage layer included), and a
   print-to-scale PDF with title block. Its options choose the paper (A4,
@@ -397,12 +401,12 @@ components/
     │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode, shared by the 2D plan and the 3D floor canvas (#191)
-    │   ├── file-io.ts                   JSON / image / PNG / CSV / GLB I/O
+    │   ├── file-io.ts                   JSON / image / PNG / CSV + schedule / GLB I/O
     │   └── plan-export/                 2D-plan exporters (#230)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
     │       ├── svg.ts                   Vector SVG plan emitter, one floor or the whole building (pure)
     │       ├── dxf.ts                   AutoCAD 2000 DXF plan emitter, one floor or the whole building (pure)
-    │       ├── download.ts              Blob download + filename slugs (DOM)
+    │       ├── download.ts              Blob download + the one filename rule, exportFileName (DOM)
     │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory (~110 lines)
@@ -427,6 +431,7 @@ components/
     │   │   └── builders-structure.ts    Door, window, stairs
     │   ├── people-model.ts              people.glb loader, cloning (shared geometry), box picking, clip names
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
+    │   ├── building-export.ts           The whole building as a named graph, for the GLB export
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
     │   ├── measurement.ts               Distance-tool spheres + line
@@ -721,6 +726,19 @@ components/
   instead of CPU-skinned triangles (#284).
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
+- **The GLB is the building, not the view.** The live scene holds only what
+  the view shows: the active storey, the walls the cutaway left up, the
+  roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
+  (`three/building-export.ts`) builds every storey, interior wall, item and
+  the roof from the layout with the scene's own builders, solid and
+  untinted, into a throwaway graph that is exported and then disposed; the
+  live scene is never touched. Nodes are named after the house, the floor,
+  the item or the part (`Wall north`, `Dormer d1`) (#373).
+- **One filename rule.** Every download — JSON, CSV, PNG, GLB, SVG, DXF —
+  is named by `exportFileName` (`lib/plan-export/download.ts`): the house
+  name and any parts slugified to `a-z0-9-`, so quotes, `&`, `%`, path
+  separators and bidi characters never reach the `download` attribute
+  (#427).
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged

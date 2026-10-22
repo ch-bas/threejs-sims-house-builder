@@ -213,6 +213,7 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = yOffset;
   floor.receiveShadow = true;
+  floor.name = 'Floor';
   floor.userData.type = ROOM_OBJECT_TAGS.Floor;
   makeStatic(floor);
   options.scene.add(floor);
@@ -295,6 +296,7 @@ function addFoundation(
   foundation.position.y = -plinthHeight;
   foundation.receiveShadow = true;
   foundation.castShadow = true;
+  foundation.name = 'Foundation';
   foundation.userData.type = ROOM_OBJECT_TAGS.Floor;
   makeStatic(foundation);
   scene.add(foundation);
@@ -504,6 +506,7 @@ function buildWalls(
     const wall = new THREE.Mesh(geometry, material);
     wall.rotation.y = spec.rotateY;
     wall.position.set(spec.position[0], spec.position[1], spec.position[2]);
+    wall.name = `Wall ${spec.id}`;
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
     wall.userData.wallId = spec.id;
     // Solid walls block the sun like the roof, foundation, and interior walls
@@ -587,6 +590,7 @@ function addBaseboard(
     base.position.set(px - nx * inset + ax * mid, yOffset + BASEBOARD_HEIGHT / 2, pz - nz * inset + az * mid);
     base.receiveShadow = true;
     base.castShadow = ghostOpacity === undefined;
+    base.name = `Baseboard ${spec.id}`;
     base.userData.type = ROOM_OBJECT_TAGS.Wall;
     base.userData.wallId = spec.id;
     makeStatic(base);

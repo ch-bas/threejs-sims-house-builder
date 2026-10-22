@@ -97,6 +97,7 @@ export function renderInteriorWalls(
     wallMesh.rotation.y = -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1);
     wallMesh.castShadow = true;
     wallMesh.receiveShadow = true;
+    wallMesh.name = `Interior wall ${wall.id}`;
     wallMesh.userData.type = INTERIOR_WALL_TAG;
     wallMesh.userData.wallId = wall.id;
     scene.add(wallMesh);
@@ -129,6 +130,7 @@ export function renderInteriorWalls(
       );
       base.rotation.y = wallMesh.rotation.y;
       base.receiveShadow = true;
+      base.name = `Baseboard ${wall.id}`;
       base.userData.type = INTERIOR_WALL_TAG;
       base.userData.wallId = wall.id;
       scene.add(base);

@@ -12,13 +12,16 @@ const PRESETS: ReadonlyArray<{ key: CameraPreset; label: string }> = [
 ];
 
 export interface CameraPresetsPanelProps {
+  /** The presets and Fit: 3D orbit only. */
   disabled: boolean;
+  /** The screenshot also saves the 2D plan, so it has its own gate (#391). */
+  screenshotDisabled: boolean;
   onApply(preset: CameraPreset): void;
   onFit(): void;
   onScreenshot(): void;
 }
 
-export function CameraPresetsPanel({ disabled, onApply, onFit, onScreenshot }: CameraPresetsPanelProps): JSX.Element {
+export function CameraPresetsPanel({ disabled, screenshotDisabled, onApply, onFit, onScreenshot }: CameraPresetsPanelProps): JSX.Element {
   return (
     <Card>
       <CardHeader>
@@ -42,7 +45,7 @@ export function CameraPresetsPanel({ disabled, onApply, onFit, onScreenshot }: C
         <Button variant="outline" size="sm" disabled={disabled} onClick={onFit} className="w-full text-xs">
           🔍 Fit to room
         </Button>
-        <Button variant="outline" size="sm" disabled={disabled} onClick={onScreenshot} className="w-full text-xs">
+        <Button variant="outline" size="sm" disabled={screenshotDisabled} onClick={onScreenshot} className="w-full text-xs">
           📸 Screenshot PNG
         </Button>
       </CardContent>
