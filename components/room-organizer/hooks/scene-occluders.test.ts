@@ -110,11 +110,11 @@ describe('planInsets on a desktop window (#381)', () => {
     const room = contentRect(fit);
     expect(room.bottom).toBeLessThanOrEqual(673 - PLAN_PANEL_GAP_PX + 1e-6);
     expect(room.top).toBeGreaterThanOrEqual(PLAN_INSET_PADDING_PX - 1e-6);
-    // Only the canvas edge costs a margin: 673 - 16 - 4.
-    expect(room.size).toBeCloseTo(653, 6);
+    // Only the canvas edge costs a margin: 673 - 20 - 4.
+    expect(room.size).toBeCloseTo(673 - PLAN_INSET_PADDING_PX - PLAN_PANEL_GAP_PX, 6);
   });
 
-  it('keeps the content clear of the zone chip, which only the plan treats as a panel', () => {
+  it('keeps the content clear of a plan-only panel (the header stats)', () => {
     const chip = document.createElement('div');
     chip.setAttribute('data-plan-occluder', '');
     chip.getBoundingClientRect = () => rectOf(560, 104, 880, 140);

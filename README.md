@@ -638,16 +638,19 @@ components/
   metres from the house is on the plan and can be clicked; an indoor-only
   plan fits exactly as before. Like the blueprint, the house stays at least
   half its room-only size: the outdoor items may widen the fit to twice the
-  room on each axis, and past that the furthest (`distanceOutsideWalls`) are
+  room on each axis, and on an axis that overflows the items sticking out
+  furthest along it (`distanceOutsideWalls` decides what is outside) are
   left out and drawn as edge markers, an icon, the distance and an arrow
-  towards the item. A press on a marker selects the item, whose popover's
+  towards the item. Markers on the same bearing fan apart along the edge,
+  so each one can be pressed; a press selects the item, whose popover's
   Centre brings it back; Placed Items lists it too. `get2DViewTransform`
   still maps the room's corner, so only its offsets move. On a desktop
   window the plan keeps the classic whole-canvas fit, pixel for pixel, until
   a HUD panel would cover it; then it fits the free rectangle
-  (`[data-scene-occluder]` panels plus the header stats and the zone tool's
-  chip, tagged `data-plan-occluder` because the 3D framing never needed to
-  clear them) that draws it biggest for its shape. Its 16 px margin sits
+  (`[data-scene-occluder]` panels plus the header stats, tagged
+  `data-plan-occluder` because the 3D framing never needed to clear them;
+  not the zone tool's chip, which only grazes the band above the plan) that
+  draws it biggest for its shape. Its 20 px margin sits
   under a panel on the right and bottom (a 4 px gap stays), and only the top
   and left keep it, for the room dimensions; a region up to 10% smaller wins
   when it is markedly more central, so a side column can't park the house in

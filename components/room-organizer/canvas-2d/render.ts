@@ -210,13 +210,17 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   if (options.offPlan && options.offPlan.length > 0) {
     const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
-    drawOffPlanMarkers(ctx, offPlanMarkers({ scale, offsetX, offsetY }, layout, fit, options.offPlan), options.thumbnail === true);
+    const markers = offPlanMarkers({ scale, offsetX, offsetY }, layout, fit, options.offPlan, options.thumbnail ? THUMB_MARKER_SPACING_PX : undefined);
+    drawOffPlanMarkers(ctx, markers, options.thumbnail === true);
   }
 
   if (options.zoneDraft) {
     drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale);
   }
 }
+
+/** A thumbnail's off-plan arrows are bare dots: fan them closer. */
+const THUMB_MARKER_SPACING_PX = 9;
 
 /**
  * Off-plan markers (#381): a disc with the item's icon and its distance

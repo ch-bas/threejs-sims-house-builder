@@ -7,6 +7,7 @@ import {
   desktopPlanInsets,
   hitOffPlanMarker,
   OFF_PLAN_MARKER_INSET_PX,
+  OFF_PLAN_MARKER_SPACING_PX,
   offPlanMarkers,
   PLAN_FIT_TOLERANCE_M,
   PLAN_INSET_PADDING_PX,
@@ -156,5 +157,44 @@ describe('bestPlanRegion: the middle wins a near tie (#381 review)', () => {
     const region = bestPlanRegion(canvas, hud, { width: 4, height: 8 }, PLAN_INSET_PADDING_PX)!;
     const centre = (region.left + region.right) / 2;
     expect(Math.abs(centre - 640)).toBeLessThan(200);
+  });
+});
+
+describe('planViewFit: per-axis drops and fanned markers (#381 re-review)', () => {
+  it('drops only items sticking out along the axis that overflows', () => {
+    // A 20 x 6 m room: x = 19 widens X to 29.7 m (cap 40), the tree at
+    // z = 9.5 overflows Z (cap 12). Only the tree goes.
+    const layout = makeLayout({ width: 20, height: 6 });
+    const east = makeItem({ id: 'east', width: 1.4, depth: 1.4, position: { x: 19, z: 0 } });
+    const south = makeItem({ id: 'south', width: 1.4, depth: 1.4, position: { x: 0, z: 9.5 } });
+    const floor = { ...layout.floors[0]!, items: [east, south] };
+    const fit = planViewFit({ ...layout, floors: [floor] }, floor);
+    expect(fit.offPlan.map(({ item }) => item.id)).toEqual(['south']);
+    expect(fit.bounds.maxX).toBeCloseTo(19.7);
+  });
+
+  it('fans markers on the same bearing apart, so each far item can be pressed', () => {
+    const bounds = { minX: -4, minZ: -4, maxX: 4, maxZ: 4 };
+    const t = { scale: 50, offsetX: 100, offsetY: 100 };
+    const far = (id: string, x: number, z: number, distance: number) => ({
+      item: makeItem({ id, position: { x, z } }) as ReturnType<typeof makeItem> & { position: { x: number; z: number } },
+      distance,
+    });
+    const markers = offPlanMarkers(t, { width: 8, height: 8 }, bounds, [far('a', 40, 0.4, 36), far('b', 45, 0.5, 41), far('c', 60, 0.6, 56)]);
+    expect(markers).toHaveLength(3);
+    for (let i = 0; i < markers.length; i++) {
+      for (let j = i + 1; j < markers.length; j++) {
+        expect(Math.hypot(markers[i]!.x - markers[j]!.x, markers[i]!.y - markers[j]!.y)).toBeGreaterThanOrEqual(OFF_PLAN_MARKER_SPACING_PX - 1e-6);
+      }
+    }
+    // All on the east edge, inside the plan, and each one hits its own item.
+    for (const marker of markers) {
+      expect(marker.x).toBeCloseTo(500 - OFF_PLAN_MARKER_INSET_PX, 0);
+      expect(marker.y).toBeGreaterThanOrEqual(100 + OFF_PLAN_MARKER_INSET_PX);
+      expect(marker.y).toBeLessThanOrEqual(500 - OFF_PLAN_MARKER_INSET_PX);
+      expect(hitOffPlanMarker(markers, marker.x, marker.y)?.item.id).toBe(marker.item.id);
+    }
+    // The nearest keeps its true bearing, on the centre row; the others fan out.
+    expect(Math.abs(markers.find((m) => m.item.id === 'a')!.y - 300)).toBeLessThan(2);
   });
 });

@@ -29,7 +29,7 @@ export const PLAN_PADDING_PX = 60;
  * the margin sits under the panel (`desktopPlanInsets`), so only the
  * canvas edges cost the plan any size.
  */
-export const PLAN_INSET_PADDING_PX = 16;
+export const PLAN_INSET_PADDING_PX = 20;
 /** The gap (CSS px) kept between the plan's content and a HUD panel beside it. */
 export const PLAN_PANEL_GAP_PX = 4;
 
@@ -83,9 +83,10 @@ function snappedContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBound
  * placed item's footprint (`planContentBounds`, the sheet the vector exports
  * use), overhangs under `PLAN_FIT_TOLERANCE_M` snapped back to the walls.
  * Items outside the walls (`distanceOutsideWalls`, the print route's rule)
- * are left out, furthest first, until the fit is within 1 /
- * `PLAN_MIN_ROOM_SHARE` of the room on each axis; they come back as
- * `offPlan`, which the plan draws as edge markers.
+ * are left out until the fit is within 1 / `PLAN_MIN_ROOM_SHARE` of the room
+ * on each axis: on an axis that overflows, the item sticking out furthest
+ * along it goes first. They come back as `offPlan` (furthest first), which
+ * the plan draws as edge markers.
  */
 export function planViewFit(layout: RoomLayout, floor: FloorLayout): PlanViewFit {
   const maxWidth = layout.width / PLAN_MIN_ROOM_SHARE;
@@ -93,16 +94,33 @@ export function planViewFit(layout: RoomLayout, floor: FloorLayout): PlanViewFit
   const fits = (b: PlanBounds) => b.maxX - b.minX <= maxWidth + 1e-9 && b.maxZ - b.minZ <= maxHeight + 1e-9;
   let bounds = snappedContentBounds(layout, floor);
   if (fits(bounds)) return { bounds, offPlan: [] };
-  const outside = floor.items
+  const remaining = floor.items
     .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
-    .filter((entry): entry is OffPlanItem => entry.distance > 0)
-    .sort((a, b) => b.distance - a.distance);
-  let dropped = 0;
-  while (dropped < outside.length && !fits(bounds)) {
-    const gone = new Set<FurnitureItem>(outside.slice(0, ++dropped).map(({ item }) => item));
+    .filter((entry): entry is OffPlanItem => entry.distance > 0);
+  const offPlan: OffPlanItem[] = [];
+  const gone = new Set<FurnitureItem>();
+  while (remaining.length > 0 && !fits(bounds)) {
+    // Only an axis that overflows sheds items, and only those sticking out
+    // along it: a long room's far end must not go because a tree past its
+    // short side overflowed the other axis.
+    const overX = bounds.maxX - bounds.minX > maxWidth + 1e-9;
+    const overZ = bounds.maxZ - bounds.minZ > maxHeight + 1e-9;
+    const overhang = ({ item }: OffPlanItem): number =>
+      Math.max(
+        overX ? Math.abs(item.position.x) - layout.width / 2 : 0,
+        overZ ? Math.abs(item.position.z) - layout.height / 2 : 0
+      );
+    let furthest = -1;
+    for (let i = 0; i < remaining.length; i++) {
+      if (overhang(remaining[i]!) > 0 && (furthest < 0 || overhang(remaining[i]!) > overhang(remaining[furthest]!))) furthest = i;
+    }
+    if (furthest < 0) break;
+    const [entry] = remaining.splice(furthest, 1);
+    offPlan.push(entry!);
+    gone.add(entry!.item);
     bounds = snappedContentBounds(layout, { ...floor, items: floor.items.filter((item) => !gone.has(item)) });
   }
-  return { bounds, offPlan: outside.slice(0, dropped) };
+  return { bounds, offPlan: offPlan.sort((a, b) => b.distance - a.distance) };
 }
 
 /** `planViewFit`'s bounds. */
@@ -123,6 +141,12 @@ export interface OffPlanMarker {
 
 /** How far inside the fitted content's edge a marker's centre sits (px). */
 export const OFF_PLAN_MARKER_INSET_PX = 14;
+/**
+ * Markers closer than this (px, centre to centre) are fanned apart along
+ * their edge, so each far item keeps a marker of its own to press: a disc
+ * and the distance label under it.
+ */
+export const OFF_PLAN_MARKER_SPACING_PX = 36;
 /** Hit radius of a marker (px). */
 export const OFF_PLAN_MARKER_HIT_PX = 13;
 
@@ -131,12 +155,18 @@ export const OFF_PLAN_MARKER_HIT_PX = 13;
  * towards the item, where it leaves the fitted content, pulled
  * `OFF_PLAN_MARKER_INSET_PX` back inside so it is always on screen.
  * `transform` is the plan's (`get2DViewTransform`), `bounds` what it fits.
+ *
+ * Items on about the same bearing would stack: nearest first, a marker that
+ * lands within `spacing` of one already placed slides along its edge, to
+ * alternate sides, until it is clear (kept inside the edge), so every far
+ * item stays reachable. The arrow still points at its item.
  */
 export function offPlanMarkers(
   transform: { scale: number; offsetX: number; offsetY: number },
   layout: Pick<RoomLayout, 'width' | 'height'>,
   bounds: PlanBounds,
-  offPlan: readonly OffPlanItem[]
+  offPlan: readonly OffPlanItem[],
+  spacing = OFF_PLAN_MARKER_SPACING_PX
 ): OffPlanMarker[] {
   const { scale, offsetX, offsetY } = transform;
   const px = (x: number) => offsetX + (x + layout.width / 2) * scale;
@@ -147,7 +177,10 @@ export function offPlanMarkers(
   const bottom = py(bounds.maxZ);
   const cx = px(0);
   const cy = py(0);
-  return offPlan.map(({ item, distance }) => {
+  const inset = OFF_PLAN_MARKER_INSET_PX;
+  const placed: OffPlanMarker[] = [];
+  const nearestFirst = [...offPlan].sort((a, b) => a.distance - b.distance);
+  for (const { item, distance } of nearestFirst) {
     const dx = px(item.position.x) - cx;
     const dy = py(item.position.z) - cy;
     const length = Math.hypot(dx, dy) || 1;
@@ -155,9 +188,26 @@ export function offPlanMarkers(
     const uy = dy / length;
     const tx = ux > 0 ? (right - cx) / ux : ux < 0 ? (left - cx) / ux : Infinity;
     const ty = uy > 0 ? (bottom - cy) / uy : uy < 0 ? (top - cy) / uy : Infinity;
-    const reach = Math.max(0, Math.min(tx, ty) - OFF_PLAN_MARKER_INSET_PX);
-    return { item, distance, x: cx + ux * reach, y: cy + uy * reach, angle: Math.atan2(uy, ux) };
-  });
+    const reach = Math.max(0, Math.min(tx, ty) - inset);
+    const x0 = cx + ux * reach;
+    const y0 = cy + uy * reach;
+    // Along a left or right edge the marker slides vertically, else sideways.
+    const vertical = tx <= ty;
+    const clampAlong = (v: number) =>
+      vertical
+        ? Math.min(Math.max(v, top + inset), Math.max(top + inset, bottom - inset))
+        : Math.min(Math.max(v, left + inset), Math.max(left + inset, right - inset));
+    let x = x0;
+    let y = y0;
+    for (let step = 1; step <= 2 * (offPlan.length + 1); step++) {
+      if (!placed.some((m) => Math.hypot(m.x - x, m.y - y) < spacing)) break;
+      const shift = Math.ceil(step / 2) * spacing * (step % 2 === 1 ? 1 : -1);
+      if (vertical) y = clampAlong(y0 + shift);
+      else x = clampAlong(x0 + shift);
+    }
+    placed.push({ item, distance, x, y, angle: Math.atan2(uy, ux) });
+  }
+  return placed;
 }
 
 /** The marker under a canvas point, if any (the last drawn wins). */

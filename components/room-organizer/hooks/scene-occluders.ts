@@ -17,8 +17,10 @@ export const OCCLUDER_SELECTOR = '[data-scene-occluder]';
 const OCCLUDER_CHILDREN = 'children';
 /**
  * Panels that cover the 2D plan but not the 3D framing: the desktop header
- * stats and the zone tool's top-centre chip (#381). The plan measures and
- * observes them on top of `OCCLUDER_SELECTOR`.
+ * stats (#381). The plan measures and observes them on top of
+ * `OCCLUDER_SELECTOR`. Not the zone tool's chip: it only grazes the band
+ * above the plan, and as a panel it moved the plan whenever drawing started
+ * or a zone was named.
  */
 export const PLAN_OCCLUDER_SELECTOR = '[data-plan-occluder]';
 /** The phone item sheet: an occluder while `<html data-sheet-open>` is set. */
@@ -123,7 +125,7 @@ export function planInsets(
   const bounds = canvas.getBoundingClientRect();
   let insets: Insets | undefined;
   if (compact || !content) {
-    const free = visibleRegion(bounds, planOccluderRects());
+    const free = visibleRegion(bounds, sceneOccluderRects(false));
     const measured = insetsFromRegion(bounds, free);
     // Nothing covers the canvas: the classic whole-canvas fit.
     insets = measured.top || measured.right || measured.bottom || measured.left ? measured : undefined;
