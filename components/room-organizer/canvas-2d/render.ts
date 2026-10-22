@@ -5,6 +5,7 @@ import { planDrawOrder } from '../lib/plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import type { PlanBounds } from '../lib/plan-export/plan-geometry';
 import type { Insets } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
@@ -36,6 +37,12 @@ export interface Render2DOptions {
    * full-screen plan on a compact viewport passes them; undefined is none.
    */
   insets?: Insets | undefined;
+  /**
+   * Fit this world rectangle (metres, room-centred) instead of the room: the
+   * blueprint passes the plan content so outdoor items past the walls are
+   * drawn, not clipped by the canvas edge (#377). See `get2DBoundsTransform`.
+   */
+  fitBounds?: PlanBounds | undefined;
 }
 
 const PADDING = 60;
@@ -153,7 +160,9 @@ export function render2DTopDown(options: Render2DOptions): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, viewWidth, viewHeight);
 
-  const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets);
+  const { scale, offsetX, offsetY } = options.fitBounds
+    ? get2DBoundsTransform(viewWidth, viewHeight, layout, options.fitBounds, options.padding ?? PADDING)
+    : get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
@@ -873,4 +882,30 @@ export function ensureFloorPlanImageDecoded(url: string): Promise<void> {
     image.addEventListener('load', done, { once: true });
     image.addEventListener('error', done, { once: true });
   });
+}
+
+// ---- Blueprint / print (plan sprint X3) -------------------------------------
+
+/**
+ * The blueprint's transform (#377): fit and centre `bounds` — the plan
+ * content, outdoor items included — on the canvas instead of the room.
+ * Returned in the same shape as `get2DViewTransform` (offsets are the
+ * room's top-left corner), so every draw helper and `canvasToWorld` work
+ * unchanged. Bounds no bigger than the room give exactly the room fit.
+ */
+export function get2DBoundsTransform(
+  canvasWidth: number,
+  canvasHeight: number,
+  layout: Pick<RoomLayout, 'width' | 'height'>,
+  bounds: PlanBounds,
+  padding: number = PADDING
+): View2DTransform {
+  const boundsWidth = bounds.maxX - bounds.minX;
+  const boundsHeight = bounds.maxZ - bounds.minZ;
+  const scale = Math.min((canvasWidth - padding * 2) / boundsWidth, (canvasHeight - padding * 2) / boundsHeight);
+  return {
+    scale,
+    offsetX: (canvasWidth - boundsWidth * scale) / 2 + (-layout.width / 2 - bounds.minX) * scale,
+    offsetY: (canvasHeight - boundsHeight * scale) / 2 + (-layout.height / 2 - bounds.minZ) * scale,
+  };
 }

@@ -2,13 +2,37 @@ import { ensureFloorPlanImageDecoded, render2DTopDown } from '../canvas-2d/rende
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
 import { floorKeepOut } from './floor-keep-out';
 import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
+import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
 import type { FloorLayout, RoomLayout } from './types';
 
+/** The box the blueprint image is fitted into, in canvas px. */
 const PAGE_WIDTH = 1200;
 const PAGE_HEIGHT = 900;
+/** Canvas margin around the plan content: room dimensions and item labels. */
+const BLUEPRINT_PADDING = 60;
+
+/**
+ * The blueprint canvas for a plan whose content spans `bounds` (#377): the
+ * content's aspect fitted into the PAGE_WIDTH × PAGE_HEIGHT box with
+ * `BLUEPRINT_PADDING` on every side. Sizing from the content rather than the
+ * room is what keeps a tree past the walls on the sheet — the old fixed
+ * 1200 × 900 canvas fitted the room and cut everything beyond about 0.6 m.
+ */
+export function blueprintCanvasSize(bounds: PlanBounds): { width: number; height: number } {
+  const contentWidth = bounds.maxX - bounds.minX;
+  const contentHeight = bounds.maxZ - bounds.minZ;
+  const scale = Math.min(
+    (PAGE_WIDTH - BLUEPRINT_PADDING * 2) / contentWidth,
+    (PAGE_HEIGHT - BLUEPRINT_PADDING * 2) / contentHeight
+  );
+  return {
+    width: Math.round(contentWidth * scale + BLUEPRINT_PADDING * 2),
+    height: Math.round(contentHeight * scale + BLUEPRINT_PADDING * 2),
+  };
+}
 
 /**
  * The storey's floor area in m²: the footprint less the recessed entrance's
@@ -43,9 +67,13 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
   const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
   if (layout.floorPlanImage && isGroundFloor) await ensureFloorPlanImageDecoded(layout.floorPlanImage);
 
+  // Fit the plan content, outdoor items included (#377), as the SVG and
+  // print-to-scale routes already do (#287).
+  const bounds = planContentBounds(layout, floor);
+  const size = blueprintCanvasSize(bounds);
   const canvas = document.createElement('canvas');
-  canvas.width = PAGE_WIDTH;
-  canvas.height = PAGE_HEIGHT;
+  canvas.width = size.width;
+  canvas.height = size.height;
   const floorIndex = planFloorIndex(layout.floors, floor);
   const keepOut = floorKeepOut(layout, floorIndex);
 
@@ -59,6 +87,8 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     // planning Wi-Fi and camera placement, and hardcoding this off hid the
     // signal rings AND the camera FOV wedges from the printout (#134).
     showWiFiSignals: true,
+    fitBounds: bounds,
+    padding: BLUEPRINT_PADDING,
     hasCollision: (item) =>
       hasCollisions(item, floor.items, layout.width, layout.height, { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) }),
   });

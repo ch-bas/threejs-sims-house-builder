@@ -1,34 +1,78 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
-import { openPlanPrintWindow, pickPrintScale, printPxPerMetre, printScaleLabel } from './print';
+import {
+  buildPrintDocument,
+  openPlanPrintWindow,
+  pickPrintScale,
+  printableArea,
+  printedFloor,
+  printPxPerMetre,
+  printScaleLabel,
+  resolvePrintScale,
+} from './print';
+import type { FurnitureItem } from '../types';
 
 describe('pickPrintScale', () => {
   it('picks the finest standard scale that fits A4 portrait', () => {
     // 3 m + 2 × 15 mm margins = 180 mm: exactly the portrait width at 1:20.
-    expect(pickPrintScale(3, 3)).toEqual({ denominator: 20, orientation: 'portrait', fits: true });
+    expect(pickPrintScale(3, 3)).toEqual({ denominator: 20, orientation: 'portrait', paper: 'A4', fits: true });
     // Default 8 m room: 190 mm at 1:50 overflows both orientations; 1:75 fits.
-    expect(pickPrintScale(8, 8)).toEqual({ denominator: 75, orientation: 'portrait', fits: true });
+    expect(pickPrintScale(8, 8)).toEqual({ denominator: 75, orientation: 'portrait', paper: 'A4', fits: true });
   });
 
   it('tries landscape before the next coarser scale (#288)', () => {
     // 20 × 6 m: 230 × 90 mm at 1:100 misses portrait width but fits landscape,
     // so 1:100 landscape wins over 1:200 portrait.
-    expect(pickPrintScale(20, 6)).toEqual({ denominator: 100, orientation: 'landscape', fits: true });
+    expect(pickPrintScale(20, 6)).toMatchObject({ denominator: 100, orientation: 'landscape', fits: true });
     // The 40 × 30 m lot from the issue: 230 × 180 mm at 1:200 fits neither
     // way; 1:250 landscape does (190 × 150 mm).
-    expect(pickPrintScale(40, 30)).toEqual({ denominator: 250, orientation: 'landscape', fits: true });
+    expect(pickPrintScale(40, 30)).toMatchObject({ denominator: 250, orientation: 'landscape', fits: true });
   });
 
   it('extends past 1:200 for big lots instead of overflowing the page (#288)', () => {
-    expect(pickPrintScale(60, 60)).toEqual({ denominator: 500, orientation: 'portrait', fits: true });
+    expect(pickPrintScale(60, 60)).toMatchObject({ denominator: 500, orientation: 'portrait', fits: true });
   });
 
-  it('reports a non-fit rather than claiming a scale (#288)', () => {
+  it('reports a non-fit rather than claiming a scale, on the page that shrinks it least (#288)', () => {
+    // 330 mm square at 1:1000: portrait (180 × 230) shrinks it less than landscape (265 × 150).
     const scale = pickPrintScale(300, 300);
-    expect(scale).toEqual({ denominator: 1000, orientation: 'landscape', fits: false });
-    expect(printScaleLabel(scale)).toMatch(/^Not to scale/);
+    expect(scale).toEqual({ denominator: 1000, orientation: 'portrait', paper: 'A4', fits: false });
+    expect(printScaleLabel(scale)).toBe('Not to scale — exceeds A4 at 1:1000, shrunk to fit');
     expect(printScaleLabel(pickPrintScale(8, 8))).toBe('1:75 (A4 portrait)');
+  });
+
+  it('uses the chosen paper size (#435)', () => {
+    // A3 portrait leaves 267 × 353 mm: the 8 m room fits at 1:50 (190 mm).
+    expect(pickPrintScale(8, 8, { paper: 'A3' })).toEqual({ denominator: 50, orientation: 'portrait', paper: 'A3', fits: true });
+    // Letter portrait is 185.9 mm wide: 1:50 misses by 4 mm, 1:75 fits.
+    expect(printScaleLabel(pickPrintScale(8, 8, { paper: 'Letter' }))).toBe('1:75 (Letter portrait)');
+  });
+
+  it('honours a fixed orientation (#435)', () => {
+    expect(pickPrintScale(8, 8, { orientation: 'landscape' })).toMatchObject({ denominator: 75, orientation: 'landscape', fits: true });
+    // 20 × 6 m in portrait only: 1:100 (230 mm) and 1:125 (190 mm) are too wide for 180 mm.
+    expect(pickPrintScale(20, 6, { orientation: 'portrait' })).toMatchObject({ denominator: 200, orientation: 'portrait' });
+  });
+
+  it('honours a fixed scale and says when it does not fit the page (#435)', () => {
+    expect(pickPrintScale(8, 8, { denominator: 100 })).toEqual({ denominator: 100, orientation: 'portrait', paper: 'A4', fits: true });
+    const tooFine = pickPrintScale(8, 8, { denominator: 20 });
+    expect(tooFine).toEqual({ denominator: 20, orientation: 'portrait', paper: 'A4', fits: false });
+    expect(printScaleLabel(tooFine)).toBe('Not to scale — exceeds A4 at 1:20, shrunk to fit');
+    // The same scale on A3 landscape (388 × 237 mm) still overflows the 430 mm sheet.
+    expect(pickPrintScale(8, 8, { denominator: 20, paper: 'A3' })).toMatchObject({ fits: false, orientation: 'portrait' });
+  });
+});
+
+describe('printableArea', () => {
+  it('keeps the A4 plan area the route always used and derives the rest the same way', () => {
+    expect(printableArea('A4', 'portrait')).toEqual({ width: 180, height: 230 });
+    expect(printableArea('A4', 'landscape')).toEqual({ width: 265, height: 150 });
+    expect(printableArea('A3', 'landscape')).toEqual({ width: 388, height: 237 });
+    const letter = printableArea('Letter', 'portrait');
+    expect(letter.width).toBeCloseTo(185.9, 6);
+    expect(letter.height).toBeCloseTo(212.4, 6);
   });
 });
 
@@ -45,55 +89,134 @@ describe('printPxPerMetre', () => {
   });
 });
 
-describe('openPlanPrintWindow', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+const tree = (overrides: Partial<FurnitureItem> = {}): FurnitureItem =>
+  makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 0, z: 6.7 }, ...overrides });
 
-  function openAndCapture(width: number, height: number, items = [makeItem()]): string {
+describe('printedFloor (#435)', () => {
+  it('drops only the items whose centre is outside the walls', () => {
+    const door = makeItem({ id: 'door', type: 'door', name: 'Door', width: 0.9, depth: 0.1, position: { x: 0, z: 4.04 } });
+    const camera = makeItem({ id: 'cam', type: 'security-camera', name: 'Camera', position: { x: 4.06, z: 0 } });
+    const edge = makeItem({ id: 'edge', position: { x: 4.03, z: 0 } });
+    const floor = makeFloor({ items: [makeItem(), tree(), door, camera, edge] });
+    const layout = makeLayout({ floors: [floor] });
+    expect(printedFloor(layout, floor, true)).toBe(floor);
+    expect(printedFloor(layout, floor, false).items.map((item) => item.id)).toEqual(['item-1', 'door', 'cam', 'edge']);
+    // Nothing outside: the same floor object, not a copy.
+    const indoor = makeFloor({ items: [makeItem()] });
+    expect(printedFloor(layout, indoor, false)).toBe(indoor);
+  });
+});
+
+describe('buildPrintDocument', () => {
+  function build(width: number, height: number, items = [makeItem()], options = {}): string {
     const floor = makeFloor({ items });
     const layout = makeLayout({ width, height, floors: [floor] });
-    let html = '';
-    const fakeWindow = { document: { write: (markup: string) => (html += markup), close: () => undefined } };
-    vi.spyOn(window, 'open').mockReturnValue(fakeWindow as unknown as Window);
-    openPlanPrintWindow(layout, floor);
-    return html;
+    return buildPrintDocument(layout, floor, options, '1/1/2026');
   }
 
   it('declares the chosen scale and orientation and sizes the plan to it', () => {
-    const html = openAndCapture(8, 8);
+    const html = build(8, 8);
     expect(html).toContain('1:75 (A4 portrait)');
     expect(html).toContain('@page { size: A4 portrait;');
     // 8 m at 1:75 is 106.7 mm plus 2 × 15 mm margins.
-    expect(html).toContain('.plan { width: 136.7mm; }');
+    expect(html).toContain('<div class="plan" style="width: 136.7mm;">');
     // The SVG is emitted in paper px: 53.33 px/m × 8 m + 120 px margins.
     expect(html).toContain('viewBox="0 0 546.67 546.67"');
   });
 
   it('switches to landscape for a wide lot instead of overflowing A4 (#288)', () => {
-    const html = openAndCapture(40, 30);
+    const html = build(40, 30);
     expect(html).toContain('1:250 (A4 landscape)');
     expect(html).toContain('@page { size: A4 landscape;');
-    expect(html).toContain('.plan { width: 190.0mm; }');
+    expect(html).toContain('style="width: 190.0mm;"');
   });
 
   it('sizes the sheet from the plan content so garden items are printed (#287)', () => {
     // Oak tree 2 m south of the wall: content is 8 × 11.4 m, not 8 × 8.
-    const tree = makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 0, z: 6.7 } });
-    const html = openAndCapture(8, 8, [makeItem(), tree]);
+    const html = build(8, 8, [makeItem(), tree()]);
     // 11.4 m at 1:75 is 152 mm + 30 mm margins = 182 mm: still inside the
     // 230 mm portrait height, so the scale holds and the sheet grows.
     expect(html).toContain('1:75 (A4 portrait)');
     expect(html).toContain('viewBox="0 0 546.67 728"');
     expect(html).toContain('>Oak Tree</text>');
     // The same tree 8 m from the wall (content 16.7 m → 253 mm) tips it to 1:100.
-    const farTree = { ...tree, position: { x: 0, z: 12 } };
-    expect(openAndCapture(8, 8, [makeItem(), farTree])).toContain('1:100 (A4 portrait)');
+    expect(build(8, 8, [makeItem(), tree({ position: { x: 0, z: 12 } })])).toContain('1:100 (A4 portrait)');
   });
 
-  it('says so when nothing fits and lets the page shrink the plan', () => {
-    const html = openAndCapture(300, 300);
+  it('shrinks an outsized plan to fit the page in both directions and says so', () => {
+    const html = build(300, 300);
     expect(html).toContain('Not to scale');
-    expect(html).toContain('.plan { width: 100%; }');
+    // The 330 mm sheet scaled to the 180 mm portrait width.
+    expect(html).toContain('style="width: 180.0mm;"');
+  });
+
+  it('prints on the chosen paper, orientation and scale (#435)', () => {
+    const a3 = build(8, 8, [makeItem()], { paper: 'A3', orientation: 'landscape', denominator: 100 });
+    expect(a3).toContain('@page { size: A3 landscape;');
+    expect(a3).toContain('1:100 (A3 landscape)');
+    // 8 m at 1:100 = 80 mm + 30 mm.
+    expect(a3).toContain('style="width: 110.0mm;"');
+    expect(build(8, 8, [makeItem()], { paper: 'Letter' })).toContain('@page { size: Letter portrait;');
+  });
+
+  it('leaves far outdoor items off when asked, so the house keeps its scale (#435)', () => {
+    const far = tree({ id: 'pine', name: 'Pine Tree', position: { x: 24, z: 0 } });
+    const withTree = build(8, 8, [makeItem(), far]);
+    expect(withTree).toContain('1:125 (A4 landscape)');
+    expect(withTree).toContain('>Pine Tree</text>');
+    const without = build(8, 8, [makeItem(), far], { includeOutdoor: false });
+    expect(without).toContain('1:75 (A4 portrait)');
+    expect(without).not.toContain('Pine Tree');
+    expect(without).toContain('1 item (1 outside the walls left off)');
+  });
+
+  it('prints every floor on its own page at one shared scale (#405)', () => {
+    const ground = makeFloor({ id: 'ground', name: 'Ground Floor', items: [makeItem(), tree({ position: { x: 0, z: 12 } })] });
+    const upper = makeFloor({ id: 'upper', name: 'First Floor', items: [makeItem({ id: 'bed' })] });
+    const layout = makeLayout({ floors: [ground, upper] });
+    // The upper floor alone prints at 1:75.
+    expect(buildPrintDocument(layout, upper, {}, 'd')).toContain('1:75 (A4 portrait)');
+    const html = buildPrintDocument(layout, upper, { allFloors: true }, 'd');
+    expect(html.match(/<section class="sheet">/g)).toHaveLength(2);
+    expect(html).toContain('<title>My Home — All floors — Floor plan</title>');
+    expect(html).toContain('Ground Floor (1 of 2)');
+    expect(html).toContain('First Floor (2 of 2)');
+    // Both sheets at the ground floor's 1:100: the upper sheet is 8 m at 40 px/m + 120 px.
+    expect(html.match(/1:100 \(A4 portrait\)/g)).toHaveLength(2);
+    expect(html).toContain('viewBox="0 0 440 440"');
+    expect(html).toContain('.sheet + .sheet { break-before: page; }');
+    expect(resolvePrintScale(layout, upper, { allFloors: true })).toMatchObject({ denominator: 100 });
+  });
+
+  it('escapes the project name in the title block', () => {
+    const floor = makeFloor();
+    const html = buildPrintDocument(makeLayout({ name: '<b>Home</b>', floors: [floor] }), floor, {}, 'd');
+    expect(html).toContain('&lt;b&gt;Home&lt;/b&gt;');
+    expect(html).not.toContain('<b>Home</b>');
+  });
+});
+
+describe('openPlanPrintWindow', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('writes the print document into the popup', () => {
+    const floor = makeFloor({ items: [makeItem()] });
+    const layout = makeLayout({ floors: [floor] });
+    let html = '';
+    const fakeWindow = { document: { write: (markup: string) => (html += markup), close: () => undefined } };
+    vi.spyOn(window, 'open').mockReturnValue(fakeWindow as unknown as Window);
+    openPlanPrintWindow(layout, floor, { paper: 'A3' });
+    expect(html).toContain('@page { size: A3 portrait;');
+    expect(html).toContain('window.print()');
+  });
+
+  it('alerts instead of throwing when pop-ups are blocked', () => {
+    const floor = makeFloor();
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+    openPlanPrintWindow(makeLayout({ floors: [floor] }), floor);
+    expect(alert).toHaveBeenCalledOnce();
   });
 });

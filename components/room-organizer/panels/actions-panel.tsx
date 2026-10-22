@@ -13,10 +13,10 @@ import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { downloadTextFile, planExportFileName } from '../lib/plan-export/download';
 import { layoutToDxf } from '../lib/plan-export/dxf';
-import { openPlanPrintWindow } from '../lib/plan-export/print';
 import { layoutToSvg } from '../lib/plan-export/svg';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from '../lib/street';
 import { surpriseLayout } from '../lib/surprise';
+import { PrintPlanControl } from './print-options';
 import type { FurnitureItem } from '../lib/types';
 
 export interface ActionsPanelProps {
@@ -235,14 +235,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             >
               📐 DXF
             </Button>
-            <Button
-              onClick={() => openPlanPrintWindow(layout, activeFloor)}
-              variant="outline"
-              size="sm"
-              className="col-span-2 text-xs"
-            >
-              📄 Print / PDF (to scale)
-            </Button>
+            {/* Print to scale with paper / scale / floor options (#435, #405). */}
+            <PrintPlanControl />
           </div>
           {importStatus && (
             <p role="status" className="text-xs text-muted-foreground">
