@@ -7,12 +7,21 @@ import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
 import { renderInteriorWalls } from './interior-walls';
 import { buildRoof } from './roof';
-import { ROOM_OBJECT_TAGS, buildRoom } from './room-builder';
+import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
 import { computeFloorOpenings, computeWallOpenings } from './wall-openings';
 import type { RoomLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
+
+/**
+ * Load what `buildExportBuilding` reads asynchronously, so the build that
+ * follows is complete: the traced floor plan, which buildRoom would
+ * otherwise paint in after the export has been written and disposed.
+ */
+export async function prepareExportBuilding(THREE: ThreeModule, layout: RoomLayout): Promise<void> {
+  if (layout.floorPlanImage) await loadFloorPlanImage(THREE, layout.floorPlanImage);
+}
 
 /**
  * The whole building as a standalone graph for the GLB export (#373): every

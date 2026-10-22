@@ -39,21 +39,50 @@ describe('exportFileName (#427)', () => {
   });
 
   it('never lets a name carry a path, a fake extension, control or bidi characters', () => {
-    for (const hostile of ['../../etc/passwd', 'a\\b/c', 'plan.html', 'evil‮gpj.exe', 'tab\there\nnew', '<script>"x"</script>']) {
-      expect(exportFileName(hostile, 'json')).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*\.json$/);
+    const hostile = [
+      '../../etc/passwd', 'a\\b/c', 'plan.html', 'evil‮gpj.exe', 'tab\there\nnew', '<script>"x"</script>',
+      'Дом‮/../мечты', '東京\u0000の家', 'x‏y⁦z',
+    ];
+    for (const name of hostile) {
+      expect(exportFileName(name, 'json')).toMatch(/^[\p{L}\p{M}\p{N}]+(-[\p{L}\p{M}\p{N}]+)*\.json$/u);
     }
     expect(exportFileName('plan.html', 'json')).toBe('plan-html.json');
+    expect(exportFileName('evil‮gpj.exe', 'json')).toBe('evil-gpj-exe.json');
+  });
+
+  it('keeps letters and digits of every script', () => {
+    expect(exportFileName('Дом мечты', 'json')).toBe('дом-мечты.json');
+    expect(exportFileName('東京の家', 'png', '2階')).toBe('東京の家-2階.png');
+    expect(exportFileName('بيت الأحلام', 'csv')).toBe('بيت-الأحلام.csv');
+    expect(exportFileName('Ferienhaus Müller', 'glb')).toBe('ferienhaus-muller.glb');
+    // Hangul and kana voicing marks come back composed.
+    expect(slugify('우리 집 がく')).toBe('우리-집-がく');
+  });
+
+  it('drops emoji, falling back when nothing else is left', () => {
+    expect(exportFileName('🏠️🌳', 'json')).toBe('layout.json');
+    expect(exportFileName('Casa 🏠️ 1️⃣', 'json')).toBe('casa-1.json');
+  });
+
+  it('suffixes the basenames Windows reserves', () => {
+    expect(exportFileName('CON', 'json')).toBe('con-house.json');
+    expect(exportFileName('nul', 'csv')).toBe('nul-house.csv');
+    expect(exportFileName('COM1', 'glb')).toBe('com1-house.glb');
+    expect(exportFileName('Con', 'csv', 'inventory')).toBe('con-inventory.csv');
   });
 
   it('falls back to "layout" and drops empty parts', () => {
     expect(exportFileName('', 'glb')).toBe('layout.glb');
-    expect(exportFileName('我的家', 'png', '***')).toBe('layout.png');
+    expect(exportFileName('***', 'png', '***')).toBe('layout.png');
     expect(exportFileName('Home', 'png', '')).toBe('home.png');
   });
 
-  it('caps a very long name', () => {
-    const fileName = exportFileName('a very long house name '.repeat(20), 'json');
-    expect(fileName.length).toBeLessThanOrEqual(85);
-    expect(fileName).not.toMatch(/-\.json$/);
+  it('caps a very long name in bytes, never mid-character', () => {
+    const latin = exportFileName('a very long house name '.repeat(20), 'json');
+    expect(new TextEncoder().encode(latin).length).toBeLessThanOrEqual(105);
+    expect(latin).not.toMatch(/-\.json$/);
+    const cjk = slugify('東京の家'.repeat(40));
+    expect(new TextEncoder().encode(cjk).length).toBeLessThanOrEqual(100);
+    expect(cjk).toBe('東京の家'.repeat(40).slice(0, 33));
   });
 });

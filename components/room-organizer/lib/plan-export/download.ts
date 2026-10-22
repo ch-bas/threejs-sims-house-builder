@@ -7,24 +7,59 @@
 
 import type { FloorLayout, RoomLayout } from '../types';
 
-/** Longest slug kept, well inside every file system's 255-byte name limit. */
-const MAX_SLUG_LENGTH = 80;
+/**
+ * Longest slug kept, in UTF-8 bytes (file systems count bytes, and a CJK
+ * character is three), well inside the 255-byte name limit.
+ */
+const MAX_SLUG_BYTES = 100;
+/** Longest basename `exportFileName` joins, in UTF-8 bytes. */
+const MAX_BASENAME_BYTES = 200;
+
+/** Basenames Windows reserves in every folder, whatever the extension. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/;
+
+function utf8Length(codePoint: number): number {
+  if (codePoint < 0x80) return 1;
+  if (codePoint < 0x800) return 2;
+  return codePoint < 0x10000 ? 3 : 4;
+}
+
+/** The longest prefix of `text` that fits in `maxBytes` of UTF-8, never splitting a character. */
+function truncateUtf8(text: string, maxBytes: number): string {
+  let bytes = 0;
+  let out = '';
+  for (const char of text) {
+    bytes += utf8Length(char.codePointAt(0) ?? 0);
+    if (bytes > maxBytes) break;
+    out += char;
+  }
+  return out;
+}
 
 /**
- * Lowercase, ASCII alphanumeric-and-dashes slug for filenames; never empty
- * unless the fallback is. Accents fold to their base letter; everything else
- * — quotes, `&`, `%`, path separators, `..`, control and bidi characters —
- * collapses to a dash, so a house name can never smuggle a path, a fake
- * extension or a reordered name into the download.
+ * Lowercase letters, digits and dashes, in any script, for filenames; never
+ * empty unless the fallback is. Latin accents fold to their base letter
+ * (`été` → `ete`); other scripts are kept (`Дом мечты` → `дом-мечты`,
+ * `東京の家` stays). Everything else — punctuation, quotes, `&`, `%`, path
+ * separators, `..`, emoji, control and bidi characters — collapses to a
+ * dash, so a house name can never smuggle a path, a fake extension or a
+ * reordered name into the download.
  */
 export function slugify(input: string, fallback = 'plan'): string {
-  const slug = input
+  const words = input
     .toLowerCase()
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '') // strip combining accents left by NFKD
-    .replace(/[^a-z0-9]+/g, '-')
-    .slice(0, MAX_SLUG_LENGTH)
-    .replace(/^-+|-+$/g, '');
+    .replace(/[̀-ͯ]/g, '') // strip the Latin accents NFKD split off
+    .normalize('NFC') // recompose the rest: Hangul syllables, kana voicing marks
+    // Emoji variation selectors and keycap-style enclosing marks are marks
+    // too, but invisible without their emoji.
+    .replace(/[\p{Me}︀-️\u{E0100}-\u{E01EF}]/gu, '')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
+    // A mark only means something on a letter (Devanagari, Arabic vowels).
+    .replace(/(^|[-\p{N}])\p{M}+/gu, '$1')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+/, '');
+  const slug = truncateUtf8(words, MAX_SLUG_BYTES).replace(/-+$/, '');
   return slug || fallback;
 }
 
@@ -32,11 +67,14 @@ export function slugify(input: string, fallback = 'plan'): string {
  * Every download's name (#427): `<house>[-<part>…].<ext>`, each piece
  * slugified, e.g. `maison-d-ete-inventory.csv` or `my-home-ground-floor.png`.
  * The house falls back to `layout`; a part that slugifies to nothing is
- * dropped rather than leaving a double dash.
+ * dropped rather than leaving a double dash. A basename Windows reserves
+ * (`con`, `nul`, `com1`, …) gets a `-house` suffix.
  */
 export function exportFileName(houseName: string, extension: string, ...parts: string[]): string {
   const segments = [slugify(houseName, 'layout'), ...parts.map((part) => slugify(part, '')).filter(Boolean)];
-  return `${segments.join('-')}.${slugify(extension, 'bin')}`;
+  let base = truncateUtf8(segments.join('-'), MAX_BASENAME_BYTES).replace(/-+$/, '');
+  if (WINDOWS_RESERVED.test(base)) base = `${base}-house`;
+  return `${base}.${slugify(extension, 'bin')}`;
 }
 
 /** `<layout-name>-<floor-name>.<ext>`, e.g. `my-home-ground-floor.svg`. */

@@ -106,6 +106,9 @@ function csvField(value: string): string {
 /** Metres to the centimetre, kept a number so `-2` stays numeric. */
 const metres = (value: number): number => Math.round(value * 100) / 100 || 0;
 
+/** Money to the cent: 12.95 × 6 is 77.7, not 77.69999999999999. */
+const cents = (value: number): number => Math.round(value * 100) / 100;
+
 /** Plan rotation in degrees, 0 ≤ r < 360, to a tenth. */
 function rotationDegrees(radians: number): number {
   const degrees = Math.round(((radians * 180) / Math.PI) * 10) / 10;
@@ -194,12 +197,13 @@ export function scheduleCsv(layout: RoomLayout): string {
       else rows.set(key, { cells, price, qty: 1 });
     }
     for (const { cells, price, qty } of rows.values()) {
-      lines.push(csvLine([...cells, qty, price * qty]));
+      const total = cents(price * qty);
+      lines.push(csvLine([...cells, qty, total]));
       allQty += qty;
-      allTotal += price * qty;
+      allTotal += total;
     }
   }
-  lines.push(csvLine(['All floors', '', '', '', '', '', '', '', '', allQty, allTotal]));
+  lines.push(csvLine(['All floors', '', '', '', '', '', '', '', '', allQty, cents(allTotal)]));
   return CSV_BOM + lines.join('\r\n') + '\r\n';
 }
 
@@ -219,12 +223,13 @@ export function downloadScheduleCsv(layout: RoomLayout): void {
  * the file is disposed afterwards.
  */
 export async function downloadLayoutAsGlb(layout: RoomLayout): Promise<void> {
-  const [THREE, { GLTFExporter }, { buildExportBuilding }, { disposeObject }] = await Promise.all([
+  const [THREE, { GLTFExporter }, { buildExportBuilding, prepareExportBuilding }, { disposeObject }] = await Promise.all([
     import('../three/three-runtime'),
     import('three/examples/jsm/exporters/GLTFExporter.js'),
     import('../three/building-export'),
     import('../three/builder-utils'),
   ]);
+  await prepareExportBuilding(THREE, layout);
   const building = buildExportBuilding(THREE, layout);
   try {
     const result = await new GLTFExporter().parseAsync(building, { binary: true });

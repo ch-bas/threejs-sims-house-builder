@@ -736,9 +736,15 @@ components/
   the item or the part (`Wall north`, `Dormer d1`) (#373).
 - **One filename rule.** Every download — JSON, CSV, PNG, GLB, SVG, DXF —
   is named by `exportFileName` (`lib/plan-export/download.ts`): the house
-  name and any parts slugified to `a-z0-9-`, so quotes, `&`, `%`, path
-  separators and bidi characters never reach the `download` attribute
-  (#427).
+  name and any parts slugified to lowercase letters, digits and dashes in
+  any script (`дом-мечты.glb`, `東京の家.json`; Latin accents fold), capped
+  in UTF-8 bytes, with Windows-reserved names such as `con` suffixed. Quotes,
+  `&`, `%`, emoji, path separators, control and bidi characters never reach
+  the `download` attribute (#427).
+- **The GLB waits for the floor plan.** The decoded plan lives in a
+  one-entry cache that only fills while the ground floor is on screen, so
+  the export decodes it first (`prepareExportBuilding`). A decode that lands
+  after its floor was disposed no longer paints into the dead textures.
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged

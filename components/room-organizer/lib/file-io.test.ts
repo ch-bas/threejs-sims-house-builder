@@ -90,4 +90,15 @@ describe('scheduleCsv (#430)', () => {
       'All floors,,,,,,,,,4,1280',
     ]);
   });
+
+  it('rounds money to the cent', () => {
+    const vase = { type: 'vase', name: 'Vase', price: 12.95 };
+    const items = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => makeItem({ id, ...vase }));
+    const layout = makeLayout({
+      floors: [makeFloor({ items: [...items, makeItem({ id: 'g', type: 'cup', name: 'Cup', price: 0.1 }), makeItem({ id: 'h', type: 'mug', name: 'Mug', price: 0.2 })] })],
+    });
+    const lines = rows(scheduleCsv(layout));
+    expect(lines[1]).toBe('Ground Floor,,vase,Vase,1.00,1.00,1.00,#ffffff,12.95,6,77.7');
+    expect(lines[4]).toBe('All floors,,,,,,,,,8,78');
+  });
 });
