@@ -37,6 +37,7 @@ export {
   LineBasicMaterial,
   LineSegments,
   LinearFilter,
+  LoopOnce,
   Matrix4,
   Mesh,
   MeshBasicMaterial,

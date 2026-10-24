@@ -1,7 +1,19 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath } from '../lib/npc-path';
-import { NPC_REPAINT, NPC_SHADOW, NPC_STILL, type NpcState, planRoute, rehomeNpcs, stepNpcs } from './use-npcs';
+import { findNpcSeats } from '../lib/npc-seats';
+import {
+  NPC_REPAINT,
+  NPC_SHADOW,
+  NPC_STILL,
+  type NpcSeats,
+  type NpcState,
+  planRoute,
+  planSeat,
+  rehomeNpcs,
+  stepNpcs,
+  wayAheadBlocked,
+} from './use-npcs';
 import type { KeepOutRect } from '../lib/geometry';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 
@@ -36,9 +48,14 @@ function walker(overrides: Partial<NpcState> = {}, to = { x: 2, z: 0 }): NpcStat
     group: new THREE.Group(),
     position: { x: 0, z: 0 },
     speed: 1,
+    scale: 1,
+    mode: overrides.pause ? 'pause' : 'walk',
     phase: 0,
     pause: 0,
     shadowSettle: 0,
+    seat: null,
+    target: { x: 0, z: 0 },
+    lift: 0,
     rig: null,
     anim: null,
     path,
@@ -239,5 +256,206 @@ describe('walkers on a furnished floor (#452)', () => {
     for (let frame = 0; frame < 3 * 60; frame++) stepNpcs([npc], FRAME, nav, 0, random);
     expect(gapTo(sofa, npc.position.x, npc.position.z)).toBeGreaterThan(NPC_RADIUS - 0.02);
     expect(npc.path[0] === -2 && npc.path[1] === 0.5).toBe(false);
+  });
+});
+
+/** One-second clips: the sit, stand and activity actions a full rig carries. */
+function seatedRig(overrides: Partial<NpcState> = {}, to?: { x: number; z: number }): NpcState {
+  const npc = rigged(overrides, to);
+  const mixer = npc.anim!.mixer;
+  const once = (name: string) => {
+    const action = mixer.clipAction(new THREE.AnimationClip(name, 1, []));
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    return action;
+  };
+  npc.anim!.sit = {
+    down: once('sit-down'),
+    up: once('stand-up'),
+    idle: [mixer.clipAction(new THREE.AnimationClip('sit-idle', 1, []))],
+  };
+  return npc;
+}
+
+function seatsOf(items: FurnitureItem[]): NpcSeats {
+  return new Map(findNpcSeats(items).map((seat) => [seat.key, seat]));
+}
+
+describe('walkers stop for each other', () => {
+  it('sees another person ahead, but not one behind, to the side or far off', () => {
+    const npc = walker({}, { x: 2, z: 0 });
+    expect(wayAheadBlocked(npc, [npc, walker({ position: { x: 0.6, z: 0.1 } })])).toBe(true);
+    expect(wayAheadBlocked(npc, [npc, walker({ position: { x: -0.6, z: 0 } })])).toBe(false);
+    expect(wayAheadBlocked(npc, [npc, walker({ position: { x: 0, z: 0.6 } })])).toBe(false);
+    expect(wayAheadBlocked(npc, [npc, walker({ position: { x: 1.5, z: 0 } })])).toBe(false);
+  });
+
+  it('two walkers heading at each other stop rather than pass through', () => {
+    const a = walker({ position: { x: -1, z: 0 } }, { x: 2, z: 0 });
+    const b = walker({ position: { x: 1, z: 0 } }, { x: -2, z: 0 });
+    const random = seeded(1);
+    for (let t = 0; t < 1.2; t += FRAME) stepNpcs([a, b], FRAME, OPEN, 0, random);
+    expect(a.mode).toBe('blocked');
+    expect(b.mode).toBe('blocked');
+    expect(b.position.x - a.position.x).toBeGreaterThan(0.5);
+  });
+
+  it('after the wait, walks on (somewhere else when still blocked)', () => {
+    const random = seeded(2);
+    const a = walker({ position: { x: -1, z: 0 } }, { x: 2, z: 0 });
+    const b = walker({ position: { x: 1, z: 0 } }, { x: -2, z: 0 });
+    for (let t = 0; t < 1.2; t += FRAME) stepNpcs([a, b], FRAME, OPEN, 0, random);
+    for (let t = 0; t < 2 && a.mode === 'blocked'; t += FRAME) stepNpcs([a, b], FRAME, OPEN, 0, random);
+    expect(a.mode).not.toBe('blocked');
+    expect(a.path[0] === 2 && a.path[1] === 0).toBe(false);
+  });
+});
+
+describe('walkers sit down', () => {
+  const chair = furniture('chair', 'chair', 0, 0, 0.5, 0.5);
+  const nav = makeNav([chair]);
+  const seats = seatsOf([chair]);
+  const seat = seats.get('chair:0')!;
+
+  function headingForChair(): NpcState {
+    const npc = seatedRig({ position: { x: 0, z: 2 }, pathLength: 0 });
+    expect(planSeat(npc, nav, seats, seeded(1))).toBe(true);
+    return npc;
+  }
+
+  it('walks to the chair, turns to face its way, sits, then gets up and steps back out', () => {
+    const npc = headingForChair();
+    expect(npc.seat).toBe(seat);
+    const modes = new Set<string>();
+    const random = seeded(4);
+    for (let t = 0; t < 8 && npc.mode !== 'seated'; t += FRAME) {
+      stepNpcs([npc], FRAME, nav, 0, random, seats);
+      modes.add(npc.mode);
+    }
+    expect([...modes]).toEqual(expect.arrayContaining(['walk', 'settle', 'turn', 'sitDown', 'seated']));
+    expect(npc.group.rotation.y).toBeCloseTo(0);
+    // Feet just in front of the seat, which faces +z.
+    expect(npc.position.z).toBeGreaterThan(0);
+    expect(npc.position.z).toBeLessThan(0.5);
+
+    npc.pause = 0;
+    for (let t = 0; t < 4 && npc.seat; t += FRAME) stepNpcs([npc], FRAME, nav, 0, random, seats);
+    expect(npc.seat).toBeNull();
+    // Back at the approach point, clear of the chair's footprint.
+    expect(gapTo(chair, npc.position.x, npc.position.z)).toBeGreaterThan(NPC_RADIUS);
+    expect(npc.lift).toBe(0);
+    expect(npc.mode).toBe('pause');
+  });
+
+  it('gets up when its chair is moved away', () => {
+    const npc = seatedRig({ seat, mode: 'seated', pause: 30 });
+    stepNpcs([npc], FRAME, nav, 0, seeded(1), seatsOf([{ ...chair, position: { x: 2, z: 2 } }]));
+    expect(npc.mode).toBe('standUp');
+  });
+
+  it('steps out to free floor when its chair is moved onto the way out', () => {
+    // The chair slides forward over the approach point the sitter would leave by.
+    const moved = { ...chair, position: { x: 0, z: 0.6 } };
+    const movedNav = makeNav([moved]);
+    const npc = seatedRig({ seat, mode: 'seated', pause: 30, position: { x: 0, z: 0.27 } });
+    const random = seeded(3);
+    for (let t = 0; t < 4 && npc.mode !== 'pause'; t += FRAME) stepNpcs([npc], FRAME, movedNav, 0, random, seatsOf([moved]));
+    expect(npc.mode).toBe('pause');
+    expect(npc.seat).toBeNull();
+    expect(gapTo(moved, npc.position.x, npc.position.z)).toBeGreaterThan(NPC_RADIUS - 0.02);
+  });
+
+  it('steps out of a chair turned in place while it was stepping in', () => {
+    // Turned a quarter in place: the seat's slot moves, and the chair's
+    // footprint still covers the spot the walker turns on.
+    const turned = { ...chair, rotation: Math.PI / 2 };
+    const turnedNav = makeNav([turned]);
+    const npc = seatedRig({ seat, mode: 'turn', position: { x: 0, z: 0.27 } });
+    const random = seeded(6);
+    let overlapping = 0;
+    for (let t = 0; t < 3 && npc.mode !== 'pause'; t += FRAME) {
+      stepNpcs([npc], FRAME, turnedNav, 0, random, seatsOf([turned]));
+      if (gapTo(turned, npc.position.x, npc.position.z) < NPC_RADIUS - 0.02) overlapping += FRAME;
+    }
+    expect(npc.mode).toBe('pause');
+    expect(npc.seat).toBeNull();
+    expect(gapTo(turned, npc.position.x, npc.position.z)).toBeGreaterThan(NPC_RADIUS - 0.02);
+    // Out within a stride or so, not after a whole stop.
+    expect(overlapping).toBeLessThan(0.5);
+  });
+
+  it("gives up a seat it hasn't reached when the seat is deleted", () => {
+    const npc = headingForChair();
+    stepNpcs([npc], FRAME, nav, 0, seeded(1), seatsOf([]));
+    expect(npc.seat).toBeNull();
+  });
+
+  it('one person per seat, and none in a seat with no room in front', () => {
+    const sitter = seatedRig({ seat, mode: 'seated', pause: 30 });
+    const npc = seatedRig({ position: { x: 0, z: 2 }, pathLength: 0 });
+    expect(planSeat(npc, nav, seats, seeded(1), [sitter, npc])).toBe(false);
+    // A chair tucked under a table: its approach point is inside the table.
+    const tucked = furniture('tucked', 'chair', 0, 0, 0.5, 0.5);
+    const table = furniture('table', 'table', 0, 0.8, 1.2, 0.8);
+    const tableNav = makeNav([tucked, table]);
+    expect(planSeat(npc, tableNav, seatsOf([tucked, table]), seeded(1))).toBe(false);
+  });
+
+  it('a floor edit leaves a seated walker in its seat', () => {
+    const npc = seatedRig({ seat, mode: 'seated', pause: 30, position: { x: seat.x, z: seat.z + 0.2 } });
+    rehomeNpcs([npc], nav, 0, seeded(1));
+    expect(npc.mode).toBe('seated');
+    expect(npc.seat).toBe(seat);
+    expect(npc.position).toEqual({ x: seat.x, z: seat.z + 0.2 });
+  });
+
+  it('procedural walkers never sit', () => {
+    const random = seeded(7);
+    const npc = walker({ position: { x: 0, z: 2 }, pathLength: 0 });
+    for (let t = 0; t < 60; t += FRAME) {
+      stepNpcs([npc], FRAME, nav, 0, random, seats);
+      expect(npc.seat).toBeNull();
+    }
+  });
+});
+
+describe('rigged walkers on a furnished floor', () => {
+  const wall: InteriorWall = { id: 'w', x1: 0, z1: -4, x2: 0, z2: 4 };
+  const door = { ...furniture('door', 'door', 0, 2, 0.9, 0.12), height: 2.05 };
+  const sofa = furniture('sofa', 'sofa', -2, -1, 2, 0.9);
+  const table = furniture('table', 'table', 2, -1.5, 1.4, 0.8, Math.PI / 5);
+  const chair = furniture('chair', 'chair', 2.5, 0.2, 0.5, 0.5, Math.PI / 2);
+  const stairs = furniture('stairs', 'stairs', 2.6, 2, 1.2, 2);
+  const items = [door, sofa, table, chair, stairs];
+  const nav = makeNav(items, [wall]);
+  const seats = seatsOf(items);
+
+  it('sit only in the seat they claimed, never in other furniture, and use the seats', () => {
+    const random = seeded(533);
+    const npcs: NpcState[] = [];
+    for (let i = 0; i < 4; i++) {
+      const cell = nav.free[Math.floor(random() * nav.freeCount)]!;
+      const npc = seatedRig({ position: { x: cellX(nav, cell), z: cellZ(nav, cell) }, pathLength: 0 });
+      planRoute(npc, nav, random, npcs);
+      npcs.push(npc);
+    }
+    const sat = new Set<string>();
+    const slack = 0.02;
+    for (let frame = 0; frame < 180 * 60; frame++) {
+      stepNpcs(npcs, FRAME, nav, 0, random, seats);
+      for (const npc of npcs) {
+        const { x, z } = npc.position;
+        const seatedIn = npc.mode !== 'walk' && npc.mode !== 'pause' && npc.mode !== 'blocked' ? npc.seat?.itemId : undefined;
+        if (npc.mode === 'seated') sat.add(npc.seat!.key);
+        for (const blocker of [sofa, table, chair, stairs]) {
+          if (blocker.id === seatedIn) continue;
+          expect(gapTo(blocker, x, z)).toBeGreaterThan(NPC_RADIUS - slack);
+        }
+      }
+      // One sitter per seat.
+      const keys = npcs.filter((npc) => npc.mode === 'seated').map((npc) => npc.seat!.key);
+      expect(new Set(keys).size).toBe(keys.length);
+    }
+    expect(sat.size).toBeGreaterThan(1);
   });
 });

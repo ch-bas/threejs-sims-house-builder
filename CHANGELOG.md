@@ -9,10 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - The app has an icon, a link preview with a picture of the builder when you share it, and a theme colour for mobile browsers ([#443](https://github.com/ch-bas/threejs-sims-house-builder/issues/443))
 - A wrong address shows a page in the app's style with a way back to the builder, instead of the stock 404 ([#459](https://github.com/ch-bas/threejs-sims-house-builder/issues/459))
+- **Walkers sit down:** now and then a walker heads for a free chair, armchair, sofa or bench, turns, sits for a while (idle or chatting), then gets up and walks on
+- **Walkers do things:** at a waypoint they sometimes dance, reach for something or pick something up instead of just standing
+- **Walkers give way to each other:** a walker with someone just ahead stops, waits a moment, then carries on or heads somewhere else
 
 ### Changed
 - The browser tab, prints and the blueprint name the app "Three.js Sims-like House Builder" instead of "3D Room Organizer" and "Standalone Room Organizer" ([#443](https://github.com/ch-bas/threejs-sims-house-builder/issues/443))
 - The README is shorter and links to the wiki; the module layout and design notes moved to `docs/`, and the contributor docs list every CI check ([#457](https://github.com/ch-bas/threejs-sims-house-builder/issues/457), [#440](https://github.com/ch-bas/threejs-sims-house-builder/issues/440))
+- `people.glb` carries seven more clips from the same CC0 library (about 730 KB, was 420 KB)
 
 ## [1.21.0] - 2026-10-24
 
