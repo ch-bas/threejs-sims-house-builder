@@ -41,7 +41,8 @@ export interface UseKeyboardShortcutsOptions {
    * When first-person walkthrough owns the keyboard (WASD/arrows drive the
    * camera), every bare single-key shortcut is gated off so holding e.g. W to
    * walk forward doesn't also toggle the WiFi overlay (see #67). Undo/redo and
-   * Escape still fire; duplicate/copy/paste do not (#339).
+   * Escape still fire; duplicate/copy/paste do not (#339). The view-only
+   * `[`/`]` (time of day) and PageUp/PageDown (floor) stay live (#463c, #446).
    */
   walkthroughActive?: boolean;
   /** Whether an item drag is in progress; read at keypress time. */
@@ -147,13 +148,6 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      // While walkthrough owns the keyboard, WASD/arrows/Shift drive the camera.
-      // Gate every bare single-key shortcut below off so walking forward (W)
-      // doesn't also toggle the WiFi overlay, `2`/`m`/`g`/`p`/`[`/`]`/PageUp/Down
-      // don't fire mid-walk, etc. (see #67). Undo/redo and Escape above still
-      // work; the walkthrough hook owns its own Esc-to-exit handling.
-      if (walkthroughActive) return;
-
       // Everything below is a bare single-key shortcut. Never swallow browser
       // shortcuts like Cmd/Ctrl+F (find), Ctrl+R (reload), or Cmd+M.
       // AltGr is reported as ctrlKey+altKey on Windows, so a plain guard on
@@ -162,6 +156,27 @@ export function useKeyboardShortcuts({
       // actually engaged — real Ctrl/Cmd chords never set the AltGraph state.
       const altGraph = event.getModifierState('AltGraph');
       if (!altGraph && (ctrlOrCmd || event.altKey)) return;
+
+      // The clock and the floor only change what you look at, so they work
+      // while walking too: day to night with `[`/`]` (#463c), another storey
+      // with PageUp/PageDown, landing at its stairs (#446).
+      if (event.key === '[' || event.key === ']') {
+        event.preventDefault();
+        handlers.advanceTime(event.key === ']' ? 1 : -1);
+        return;
+      }
+      if (event.key === 'PageUp' || event.key === 'PageDown') {
+        event.preventDefault();
+        handlers.changeFloor(event.key === 'PageUp' ? 1 : -1);
+        return;
+      }
+
+      // While walkthrough owns the keyboard, WASD/arrows/Shift drive the camera.
+      // Gate every other bare single-key shortcut below off so walking forward
+      // (W) doesn't also toggle the WiFi overlay, `2`/`m`/`g`/`p` don't fire
+      // mid-walk, etc. (see #67). Undo/redo and Escape above still work; the
+      // walkthrough hook owns its own Esc-to-exit handling.
+      if (walkthroughActive) return;
 
       if (key === 'f' && selectedItem) {
         event.preventDefault();
@@ -202,28 +217,6 @@ export function useKeyboardShortcuts({
       if (event.key === '2') {
         event.preventDefault();
         handlers.toggle2D();
-        return;
-      }
-
-      if (event.key === '[') {
-        event.preventDefault();
-        handlers.advanceTime(-1);
-        return;
-      }
-      if (event.key === ']') {
-        event.preventDefault();
-        handlers.advanceTime(1);
-        return;
-      }
-
-      if (event.key === 'PageUp') {
-        event.preventDefault();
-        handlers.changeFloor(1);
-        return;
-      }
-      if (event.key === 'PageDown') {
-        event.preventDefault();
-        handlers.changeFloor(-1);
         return;
       }
 

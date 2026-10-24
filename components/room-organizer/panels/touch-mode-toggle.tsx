@@ -21,11 +21,12 @@ export interface TouchModeToggleProps {
 }
 
 export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggleProps): JSX.Element {
-  const view = useViewSettings('showMinimap', 'view2D');
+  const view = useViewSettings('showMinimap', 'view2D', 'walkthroughMode');
   const [mode, setMode] = useState<TouchMode>('orbit');
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const shown = isTouchDevice && !view.view2D;
+  // The walkthrough has no orbit camera to drive: its HUD has a stick (#446).
+  const shown = isTouchDevice && !view.view2D && !view.walkthroughMode;
   // Short screens place the buttons in the top bar's free strip (globals.css).
   useTopBarSlot(rootRef, shown);
 

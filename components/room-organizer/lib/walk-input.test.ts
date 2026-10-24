@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WALK_MAX_FRAME_SECONDS, releasesHeldKeys, startsWalking, walkFrameSeconds } from './walk-input';
+import { WALK_MAX_FRAME_SECONDS, interacts, releasesHeldKeys, startsWalking, walkFrameSeconds } from './walk-input';
 
 const key = (code: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => ({
   code,
@@ -69,5 +69,18 @@ describe('releasesHeldKeys (#421)', () => {
     up('KeyZ', 'z');
     up('MetaLeft', 'Meta');
     expect(pressed.has('KeyW')).toBe(false);
+  });
+});
+
+describe('interacts (#463b)', () => {
+  it('E sits down or stands up', () => {
+    expect(interacts({ ...key('KeyE'), repeat: false })).toBe(true);
+  });
+
+  it('ignores the auto-repeat of a held E, chords and other keys', () => {
+    expect(interacts({ ...key('KeyE'), repeat: true })).toBe(false);
+    expect(interacts({ ...key('KeyE', { ctrlKey: true }), repeat: false })).toBe(false);
+    expect(interacts({ ...key('KeyE', { metaKey: true }), repeat: false })).toBe(false);
+    expect(interacts({ ...key('KeyW'), repeat: false })).toBe(false);
   });
 });

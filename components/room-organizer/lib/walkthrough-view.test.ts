@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from './walkthrough-view';
+import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay, walkthroughCeiling, walkthroughPit } from './walkthrough-view';
 
 describe('sceneWallDisplay', () => {
   it('keeps the chosen mode outside walkthrough', () => {
@@ -52,5 +52,23 @@ describe('walkthroughPit', () => {
 
   it('refuses an out-of-range floor index', () => {
     expect(walkthroughPit([{}, {}], 2)).toBeNull();
+  });
+});
+
+describe('leaving EXPLORE (#454)', () => {
+  it('remembers the last mode before EXPLORE, never EXPLORE itself', () => {
+    let remembered = rememberModeBeforeExplore('build', 'buy');
+    expect(remembered).toBe('buy');
+    remembered = rememberModeBeforeExplore(remembered, 'live');
+    expect(remembered).toBe('buy');
+  });
+
+  it('goes back to the mode EXPLORE was entered from', () => {
+    expect(modeAfterExplore('live', 'buy')).toBe('buy');
+    expect(modeAfterExplore('live', 'build')).toBe('build');
+  });
+
+  it('leaves another mode alone', () => {
+    expect(modeAfterExplore('build', 'buy')).toBe('build');
   });
 });

@@ -1,8 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { buildWalkColliders, resolveWalkerStep } from '../lib/walk-collision';
-import { releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  advanceWalker,
+  buildShellColliders,
+  buildStreetColliders,
+  buildWalkColliders,
+  streetSiteOf,
+  type ShellBuilding,
+  type WalkCollider,
+  type WalkerState,
+} from '../lib/walk-collision';
+import { interacts, releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
+import { findSeat, seatPose } from '../lib/walk-interact';
+import { walkArrival, walkSpawn, type WalkPose } from '../lib/walk-spawn';
+import { buildWalkWorld, eyeOffsetForStorey, type WalkWorld } from '../lib/walk-world';
+import type { StreetSite } from '../lib/street-row';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
-import type { WalkCollider, WalkCollisionOptions, WalkerPosition } from '../lib/walk-collision';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { PointerLockControls as PointerLockControlsType } from 'three/examples/jsm/controls/PointerLockControls.js';
@@ -11,6 +23,10 @@ type ThreeModule = typeof import('../three/three-runtime');
 
 const NO_ITEMS: readonly FurnitureItem[] = [];
 const NO_WALLS: readonly InteriorWall[] = [];
+const NO_COLLIDERS: readonly WalkCollider[] = [];
+
+/** The building the walker moves through: storeys, shell and the street around it. */
+export interface WalkthroughBuilding extends ShellBuilding, Pick<StreetSite, 'neighbours' | 'roof'> {}
 
 export interface UseWalkthroughOptions {
   enabled: boolean;
@@ -18,14 +34,16 @@ export interface UseWalkthroughOptions {
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
   orbitRef: React.MutableRefObject<OrbitControlsType | null>;
-  eyeHeight?: number;
   walkSpeed?: number;
-  /** Room footprint (metres) used to clamp the walker inside the walls. */
-  roomWidth?: number;
-  roomDepth?: number;
-  /** The active floor's furniture and partitions the walker collides with (#156). */
-  items?: readonly FurnitureItem[];
-  interiorWalls?: readonly InteriorWall[];
+  building: WalkthroughBuilding;
+  /** The storey shown; the walker's colliders and seats are this floor's. */
+  activeFloorIndex: number;
+  /**
+   * The walker climbed or came down the stairs onto another storey (#446):
+   * make it the active floor. A change the walker didn't ask for (PgUp/PgDn,
+   * the floor pills) moves the walker to the stairs on that storey instead.
+   */
+  onFloorChange?(index: number): void;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate?: () => void;
   /**
@@ -36,39 +54,70 @@ export interface UseWalkthroughOptions {
   onExit?: () => void;
 }
 
-// Keep the walker a little inside the exterior walls so the camera never clips
-// through them or steps off the floor plate. Furniture and interior walls are
-// solid via lib/walk-collision (#156); this footprint clamp stays the outer
-// guard for the exterior walls (see #67).
-const WALL_MARGIN = 0.35;
-// Shoulder-width walker: wide enough that the camera's near plane never pokes
-// into a sofa, narrow enough to fit a 0.8 m doorway with room to spare (#156).
-const WALKER_RADIUS = 0.3;
-
-/**
- * First-person walkthrough mode using PointerLockControls.
- *
- * When `enabled` flips on, this hook:
- *  - Disables the orbit controls.
- *  - Lazy-loads PointerLockControls and attaches them to the canvas.
- *  - Moves the camera to eye level and listens for WASD / arrow movement,
- *    with Shift for sprint.
- *  - Slides the walker around furniture and interior walls (#156) and clamps
- *    it to the room footprint so it can't leave the plate.
- *  - On disable / unmount, restores orbit controls and the camera pose.
- *
- * `eyeHeight` (which tracks the active floor) is read live from a ref so a floor
- * switch mid-walk only re-seats the camera's height — it never tears the mode
- * down and drops pointer lock (see #67).
- */
 export interface UseWalkthroughResult {
   /**
    * The browser refused the last pointer-lock request (Chrome does for about
    * a second after Esc released it). Cleared by the next successful lock (#351).
    */
   lockRefused: boolean;
+  /** Pointer lock is engaged: the mouse looks and the keys walk (#454). */
+  locked: boolean;
+  /** The seat in reach, by name, while standing; null when none (#463b). */
+  seatName: string | null;
+  seated: boolean;
+  /** The touch stick (#446): x right, y forward, each in [−1, 1]. */
+  setStick(x: number, y: number): void;
+  /** Sit on the seat in reach, or stand up (`E`, or the HUD's button on touch). */
+  toggleSit(): void;
 }
 
+/** Shoulder-width walker: wide enough that the camera's near plane never pokes
+ * into a sofa, narrow enough to fit a 0.8 m doorway with room to spare (#156). */
+const WALKER_RADIUS = 0.3;
+/** How fast the eye follows the feet up and down a flight (1/s): a smooth climb, not a judder. */
+const EYE_EASE = 14;
+/** Sitting down or standing up takes this long (s). */
+const SIT_SECONDS = 0.35;
+/** The seat prompt is looked up this often (ms), not every frame. */
+const SEAT_LOOKUP_MS = 120;
+/** Radians of turn per pixel of a touch drag. */
+const TOUCH_LOOK = 0.005;
+const MAX_PITCH = Math.PI / 2 - 0.05;
+
+interface WalkSession {
+  walker: WalkerState;
+  /** Eye height the camera is easing toward the feet with. */
+  eyeY: number;
+  stickX: number;
+  stickY: number;
+  /** Walking by touch: no pointer lock, the stick and drags drive the walker. */
+  touch: boolean;
+  /** Where the walker stood before sitting, or null while standing. */
+  seated: { x: number; z: number } | null;
+  seatTargetId: string | null;
+  /** The floor the walker last reported, and the reports React hasn't echoed yet. */
+  reportedFloor: number;
+  pendingFloors: number[];
+}
+
+/**
+ * First-person walkthrough mode (#67, #156, #446, #454, #463).
+ *
+ * When `enabled` flips on, this hook:
+ *  - Disables the orbit controls and places the walker inside the entrance
+ *    door, looking in (`lib/walk-spawn`).
+ *  - Lazy-loads PointerLockControls; a click locks the pointer, then WASD /
+ *    arrows walk (Shift sprints). On a touch screen a drag looks around and
+ *    the HUD's stick walks.
+ *  - Moves the walker over `lib/walk-world`: furniture, partitions and the
+ *    shell are solid, exterior doors lead out onto the lot, and stairs are a
+ *    ramp — reaching the other storey makes it the active floor.
+ *  - `E` sits on the seat in reach, facing the TV, and stands up again.
+ *  - On disable / unmount, restores orbit controls and the camera pose.
+ *
+ * Live inputs are read from refs, so a floor switch or an edit mid-walk never
+ * re-inits the mode and drops pointer lock (see #67).
+ */
 export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughResult {
   const {
     enabled,
@@ -76,41 +125,75 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     threeModuleRef,
     cameraRef,
     orbitRef,
-    eyeHeight = 1.6,
     walkSpeed = 3.0,
-    roomWidth = Infinity,
-    roomDepth = Infinity,
-    items = NO_ITEMS,
-    interiorWalls = NO_WALLS,
+    building,
+    activeFloorIndex,
+    onFloorChange,
     invalidate,
     onExit,
   } = options;
 
   const [lockRefused, setLockRefused] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [seatName, setSeatName] = useState<string | null>(null);
+  const [seated, setSeated] = useState(false);
 
-  // Colliders are rebuilt only when the floor's contents change, never per
-  // frame (#156). Outside walkthrough the memo is skipped entirely.
-  const colliders = useMemo<readonly WalkCollider[]>(
-    () => (enabled ? buildWalkColliders(items, interiorWalls, { roomWidth, roomDepth }) : []),
-    [enabled, items, interiorWalls, roomWidth, roomDepth]
+  // Built only when what they read changes, never per frame (#156); outside
+  // walkthrough they're skipped entirely.
+  const world = useMemo<WalkWorld | null>(() => (enabled ? buildWalkWorld(building) : null), [enabled, building]);
+  const streetColliders = useMemo(
+    () => (enabled ? buildStreetColliders(streetSiteOf(building)) : NO_COLLIDERS),
+    [enabled, building]
   );
+  const floor = building.floors[activeFloorIndex];
+  const colliders = useMemo<readonly WalkCollider[]>(() => {
+    if (!enabled || !floor) return NO_COLLIDERS;
+    return [
+      ...buildWalkColliders(floor.items, floor.interiorWalls ?? NO_WALLS, {
+        roomWidth: building.width,
+        roomDepth: building.depth,
+        stairsAsRamps: true,
+      }),
+      ...buildShellColliders(building, activeFloorIndex),
+      ...streetColliders,
+    ];
+  }, [enabled, floor, building, activeFloorIndex, streetColliders]);
 
-  // Live values the RAF loop / Esc handler read without re-running the init
+  // Live values the RAF loop and handlers read without re-running the init
   // effect (which would drop pointer lock). Updated every render.
-  const eyeHeightRef = useRef(eyeHeight);
-  const walkSpeedRef = useRef(walkSpeed);
-  const roomWidthRef = useRef(roomWidth);
-  const roomDepthRef = useRef(roomDepth);
+  const worldRef = useRef(world);
   const collidersRef = useRef(colliders);
+  const buildingRef = useRef(building);
+  const itemsRef = useRef(floor?.items ?? NO_ITEMS);
+  const walkSpeedRef = useRef(walkSpeed);
   const invalidateRef = useRef(invalidate);
   const onExitRef = useRef(onExit);
-  eyeHeightRef.current = eyeHeight;
-  walkSpeedRef.current = walkSpeed;
-  roomWidthRef.current = roomWidth;
-  roomDepthRef.current = roomDepth;
+  const onFloorChangeRef = useRef(onFloorChange);
+  const activeFloorRef = useRef(activeFloorIndex);
+  worldRef.current = world;
   collidersRef.current = colliders;
+  buildingRef.current = building;
+  itemsRef.current = floor?.items ?? NO_ITEMS;
+  walkSpeedRef.current = walkSpeed;
   invalidateRef.current = invalidate;
   onExitRef.current = onExit;
+  onFloorChangeRef.current = onFloorChange;
+  activeFloorRef.current = activeFloorIndex;
+
+  const sessionRef = useRef<WalkSession>({
+    walker: { x: 0, z: 0, y: 0, kind: 'floor', floorIndex: 0 },
+    eyeY: 0,
+    stickX: 0,
+    stickY: 0,
+    touch: false,
+    seated: null,
+    seatTargetId: null,
+    reportedFloor: 0,
+    pendingFloors: [],
+  });
+  // Set by the init effect while the mode runs; the HUD's buttons call them.
+  const toggleSitRef = useRef<(() => void) | null>(null);
+  const arriveRef = useRef<((floorIndex: number) => void) | null>(null);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -125,17 +208,126 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
 
     const cleanup: Array<() => void> = [];
     const pressed = new Set<string>();
+    const session = sessionRef.current;
     let cancelled = false;
     let controls: PointerLockControlsType | null = null;
-    // The orbit pose to come back to, saved before anything moves the
-    // camera: the eye-height effect below runs in the same commit, and the
-    // controls import is async.
+    // The orbit pose to come back to, saved before anything moves the camera.
     const savedCameraPosition = camera.position.clone();
     let rafId = 0;
+
+    // Scratch, reused every frame so the loop allocates nothing (#156).
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    // Cloned from the camera rather than constructed, so the scene's three
+    // runtime list (three/three-runtime.ts) needn't grow for two scratch types.
+    const lookEuler = camera.rotation.clone();
+    lookEuler.order = 'YXZ';
+    const lookMatrix = new THREE.Matrix4();
+    const lookTarget = new THREE.Vector3();
+    const fromPosition = new THREE.Vector3();
+    const toPosition = new THREE.Vector3();
+    const fromQuaternion = camera.quaternion.clone();
+    const toQuaternion = camera.quaternion.clone();
+    // Sitting down / standing up eases the camera between two poses.
+    const transition = { active: false, t: 0 };
+
+    const eyeFor = (walker: WalkerState): number => {
+      const height = worldRef.current?.storeyHeights[walker.floorIndex] ?? 3;
+      return walker.y + eyeOffsetForStorey(height);
+    };
+
+    const startTransition = (x: number, y: number, z: number, lookX: number, lookY: number, lookZ: number): void => {
+      fromPosition.copy(camera.position);
+      fromQuaternion.copy(camera.quaternion);
+      toPosition.set(x, y, z);
+      lookTarget.set(lookX, lookY, lookZ);
+      lookMatrix.lookAt(toPosition, lookTarget, camera.up);
+      toQuaternion.setFromRotationMatrix(lookMatrix);
+      transition.active = true;
+      transition.t = 0;
+    };
+
+    const placeAt = (pose: WalkPose): void => {
+      const walker = session.walker;
+      walker.x = pose.x;
+      walker.z = pose.z;
+      walker.y = pose.y;
+      walker.kind = pose.kind;
+      walker.floorIndex = pose.floorIndex;
+      session.seated = null;
+      transition.active = false;
+      session.eyeY = eyeFor(walker);
+      camera.position.set(walker.x, session.eyeY, walker.z);
+      if (pose.dirX !== 0 || pose.dirZ !== 0) {
+        camera.lookAt(walker.x + pose.dirX, session.eyeY, walker.z + pose.dirZ);
+      }
+      invalidateRef.current?.();
+    };
+
+    const spawnContext = (floorIndex: number) => {
+      const spawnWorld = worldRef.current;
+      return spawnWorld
+        ? { world: spawnWorld, building: buildingRef.current, colliders: collidersRef.current, radius: WALKER_RADIUS, floorIndex }
+        : null;
+    };
+
+    // Room-aware spawn (#463a): inside the entrance, looking in.
+    const initial = spawnContext(activeFloorRef.current);
+    session.reportedFloor = activeFloorRef.current;
+    session.pendingFloors.length = 0;
+    session.stickX = 0;
+    session.stickY = 0;
+    session.seatTargetId = null;
+    if (initial) placeAt(walkSpawn(initial, initial.floorIndex));
+
+    // A floor change the walker didn't walk: land at the stairs on it (#446).
+    arriveRef.current = (floorIndex) => {
+      const ctx = spawnContext(floorIndex);
+      if (!ctx) return;
+      if (session.seated) setSeated(false);
+      placeAt(walkArrival(ctx, floorIndex, session.walker.floorIndex, session.walker));
+    };
+
+    const standUp = (): void => {
+      const stand = session.seated;
+      if (!stand) return;
+      session.seated = null;
+      setSeated(false);
+      // Back where the walker stood, still looking where it looked.
+      fromPosition.copy(camera.position);
+      fromQuaternion.copy(camera.quaternion);
+      toPosition.set(session.walker.x, eyeFor(session.walker), session.walker.z);
+      toQuaternion.copy(camera.quaternion);
+      transition.active = true;
+      transition.t = 0;
+    };
+
+    const sitDown = (): void => {
+      const items = itemsRef.current;
+      const seat = items.find((item) => item.id === session.seatTargetId);
+      const walker = session.walker;
+      const floorY = worldRef.current?.elevations[walker.floorIndex] ?? 0;
+      const pose = seat ? seatPose(seat, items, floorY) : null;
+      if (!pose) return;
+      session.seated = { x: walker.x, z: walker.z };
+      setSeated(true);
+      startTransition(pose.x, pose.eyeY, pose.z, pose.lookX, pose.lookY, pose.lookZ);
+    };
+
+    const toggleSit = (): void => {
+      if (transition.active) return;
+      if (session.seated) standUp();
+      else sitDown();
+      invalidateRef.current?.();
+    };
+    toggleSitRef.current = toggleSit;
+
+    const walking = () => Boolean(controls?.isLocked) || session.touch;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (releasesHeldKeys(event)) pressed.clear();
       else if (startsWalking(event)) pressed.add(event.code);
+      else if (interacts(event) && walking()) toggleSit();
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (releasesHeldKeys(event)) pressed.clear();
@@ -156,25 +348,47 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     cleanup.push(() => window.removeEventListener('keyup', onKeyUp));
     cleanup.push(() => window.removeEventListener('keydown', onEscape));
 
-    const clampToFootprint = (): void => {
-      const halfW = roomWidthRef.current / 2 - WALL_MARGIN;
-      const halfD = roomDepthRef.current / 2 - WALL_MARGIN;
-      if (Number.isFinite(halfW) && halfW > 0) {
-        camera.position.x = Math.max(-halfW, Math.min(halfW, camera.position.x));
-      }
-      if (Number.isFinite(halfD) && halfD > 0) {
-        camera.position.z = Math.max(-halfD, Math.min(halfD, camera.position.z));
-      }
+    // Touch look (#446): phones have no pointer lock, so a one-finger drag
+    // on the canvas turns the head; the HUD's stick walks.
+    let lastPointerType = 'mouse';
+    let lookPointer: number | null = null;
+    let lookX = 0;
+    let lookY = 0;
+    const onPointerDown = (event: PointerEvent) => {
+      lastPointerType = event.pointerType;
+      if (event.pointerType === 'mouse' || lookPointer !== null) return;
+      session.touch = true;
+      lookPointer = event.pointerId;
+      lookX = event.clientX;
+      lookY = event.clientY;
     };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== lookPointer) return;
+      lookEuler.setFromQuaternion(camera.quaternion);
+      lookEuler.y -= (event.clientX - lookX) * TOUCH_LOOK;
+      lookEuler.x = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, lookEuler.x - (event.clientY - lookY) * TOUCH_LOOK));
+      camera.quaternion.setFromEuler(lookEuler);
+      lookX = event.clientX;
+      lookY = event.clientY;
+      invalidateRef.current?.();
+    };
+    const onPointerEnd = (event: PointerEvent) => {
+      if (event.pointerId === lookPointer) lookPointer = null;
+    };
+    canvas.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+    cleanup.push(() => canvas.removeEventListener('pointerdown', onPointerDown));
+    cleanup.push(() => window.removeEventListener('pointermove', onPointerMove));
+    cleanup.push(() => window.removeEventListener('pointerup', onPointerEnd));
+    cleanup.push(() => window.removeEventListener('pointercancel', onPointerEnd));
 
     void (async () => {
       const controlsModule = await import('three/examples/jsm/controls/PointerLockControls.js');
       if (cancelled) return;
 
       controls = new controlsModule.PointerLockControls(camera, canvas);
-      camera.position.set(0, eyeHeightRef.current, 3);
-      camera.lookAt(0, eyeHeightRef.current, 0);
-      clampToFootprint();
 
       // Not controls.lock(): it drops the promise requestPointerLock returns,
       // so a refused lock was an unhandled rejection the player never saw
@@ -184,7 +398,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         if (!cancelled) setLockRefused(true);
       };
       const requestLock = () => {
-        if (controls?.isLocked) return;
+        // A tap is touch walking: there is no pointer to lock (iOS has no
+        // pointer lock at all).
+        if (controls?.isLocked || lastPointerType !== 'mouse') return;
+        if (typeof canvas.requestPointerLock !== 'function') return;
         try {
           // Older Safari returns undefined instead of a promise.
           void Promise.resolve(canvas.requestPointerLock()).catch(markRefused);
@@ -192,13 +409,19 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           markRefused();
         }
       };
-      const clearRefused = () => setLockRefused(false);
+      const onLock = () => {
+        setLockRefused(false);
+        setLocked(true);
+      };
+      const onUnlock = () => setLocked(false);
       canvas.addEventListener('click', requestLock);
       cleanup.push(() => canvas.removeEventListener('click', requestLock));
       canvas.ownerDocument.addEventListener('pointerlockerror', markRefused);
       cleanup.push(() => canvas.ownerDocument.removeEventListener('pointerlockerror', markRefused));
-      controls.addEventListener('lock', clearRefused);
-      cleanup.push(() => controls?.removeEventListener('lock', clearRefused));
+      controls.addEventListener('lock', onLock);
+      cleanup.push(() => controls?.removeEventListener('lock', onLock));
+      controls.addEventListener('unlock', onUnlock);
+      cleanup.push(() => controls?.removeEventListener('unlock', onUnlock));
       // A keyup fired in another window never reaches us: Alt/Cmd-Tab (blur)
       // and any pointer-lock release strand held codes in `pressed`, and the
       // walker auto-marches on return until the key is tapped again (#216).
@@ -213,67 +436,99 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       // with no mousemove handler attached (#114). No-op when already unlocked.
       cleanup.push(() => controls?.unlock());
       cleanup.push(() => controls?.disconnect());
-      // Paint the eye-level starting pose. The main RAF tick no longer calls
+      // Paint the starting pose. The main RAF tick no longer calls
       // OrbitControls.update() in this mode (#114), so nothing else marks the
       // first walkthrough frame dirty.
       invalidateRef.current?.();
 
-      const forward = new THREE.Vector3();
-      const right = new THREE.Vector3();
-      // Scratch for the collision step — reused every frame so the loop
-      // allocates nothing (#156).
-      const walkFrom: WalkerPosition = { x: 0, z: 0 };
-      const walkTo: WalkerPosition = { x: 0, z: 0 };
-      const walkOut: WalkerPosition = { x: 0, z: 0 };
-      const walkOptions: WalkCollisionOptions = {};
       let lastTime = performance.now();
+      let lastSeatLookup = 0;
       const step = () => {
         rafId = requestAnimationFrame(step);
         const now = performance.now();
         const delta = walkFrameSeconds(now - lastTime);
         lastTime = now;
 
-        if (!controls?.isLocked) return;
-        // Walkthrough is an active mode: mouse-look mutates the camera outside
-        // this loop, so render every frame while pointer lock is engaged.
-        invalidateRef.current?.();
+        const isLocked = Boolean(controls?.isLocked);
+        if (!isLocked && !session.touch) return;
+        // Mouse-look mutates the camera outside this loop, so render every
+        // frame while pointer lock is engaged; touch renders when it changes.
+        let dirty = isLocked;
+        const walker = session.walker;
 
-        const sprint = pressed.has('ShiftLeft') || pressed.has('ShiftRight');
-        const speed = walkSpeedRef.current * (sprint ? 2 : 1);
+        if (transition.active) {
+          transition.t = Math.min(1, transition.t + delta / SIT_SECONDS);
+          const eased = transition.t * transition.t * (3 - 2 * transition.t);
+          camera.position.lerpVectors(fromPosition, toPosition, eased);
+          camera.quaternion.slerpQuaternions(fromQuaternion, toQuaternion, eased);
+          if (transition.t >= 1) {
+            transition.active = false;
+            if (!session.seated) session.eyeY = camera.position.y;
+          }
+          dirty = true;
+        }
 
-        let dz = 0;
-        let dx = 0;
+        let dz = -session.stickY;
+        let dx = session.stickX;
         if (pressed.has('KeyW') || pressed.has('ArrowUp')) dz -= 1;
         if (pressed.has('KeyS') || pressed.has('ArrowDown')) dz += 1;
         if (pressed.has('KeyA') || pressed.has('ArrowLeft')) dx -= 1;
         if (pressed.has('KeyD') || pressed.has('ArrowRight')) dx += 1;
-
-        if (dx === 0 && dz === 0) return;
         const len = Math.hypot(dx, dz);
-        dx /= len;
-        dz /= len;
 
-        camera.getWorldDirection(forward);
-        forward.y = 0;
-        forward.normalize();
-        right.crossVectors(forward, camera.up).normalize();
+        if (len > 0 && session.seated && !transition.active) {
+          // Any step stands the walker up first.
+          standUp();
+        } else if (len > 0 && !session.seated && !transition.active) {
+          // The stick is analogue: a light push walks slowly.
+          const scale = len > 1 ? 1 / len : 1;
+          const sprint = pressed.has('ShiftLeft') || pressed.has('ShiftRight');
+          const distance = walkSpeedRef.current * (sprint ? 2 : 1) * delta;
+          camera.getWorldDirection(forward);
+          forward.y = 0;
+          forward.normalize();
+          right.crossVectors(forward, camera.up).normalize();
+          const moveX = (forward.x * -dz + right.x * dx) * scale * distance;
+          const moveZ = (forward.z * -dz + right.z * dx) * scale * distance;
+          const world = worldRef.current;
+          if (world) advanceWalker(world, collidersRef.current, walker, moveX, moveZ, WALKER_RADIUS);
+          dirty = true;
+          // Climbing onto the other storey makes it the active floor (#446).
+          if (walker.floorIndex !== session.reportedFloor) {
+            session.reportedFloor = walker.floorIndex;
+            session.pendingFloors.push(walker.floorIndex);
+            onFloorChangeRef.current?.(walker.floorIndex);
+          }
+        }
 
-        const distance = speed * delta;
-        walkFrom.x = camera.position.x;
-        walkFrom.z = camera.position.z;
-        camera.position.addScaledVector(forward, -dz * distance);
-        camera.position.addScaledVector(right, dx * distance);
-        walkTo.x = camera.position.x;
-        walkTo.z = camera.position.z;
-        // Slide around furniture and interior walls (#156). Room dims decide
-        // whether outdoor items count; Infinity (no room) reads as "inside".
-        walkOptions.roomWidth = roomWidthRef.current;
-        walkOptions.roomDepth = roomDepthRef.current;
-        resolveWalkerStep(collidersRef.current, walkFrom, walkTo, WALKER_RADIUS, walkOut, walkOptions);
-        camera.position.x = walkOut.x;
-        camera.position.z = walkOut.z;
-        camera.position.y = eyeHeightRef.current;
-        clampToFootprint();
+        if (!session.seated && !transition.active) {
+          // The eye follows the feet up a flight, eased so treads don't judder.
+          const target = eyeFor(walker);
+          const gap = target - session.eyeY;
+          session.eyeY = Math.abs(gap) < 1e-3 ? target : session.eyeY + gap * Math.min(1, delta * EYE_EASE);
+          if (
+            camera.position.x !== walker.x ||
+            camera.position.z !== walker.z ||
+            camera.position.y !== session.eyeY
+          ) {
+            camera.position.set(walker.x, session.eyeY, walker.z);
+            dirty = true;
+          }
+        }
+
+        // What's in reach to sit on, for the HUD's prompt (#463b).
+        if (!session.seated && now - lastSeatLookup > SEAT_LOOKUP_MS) {
+          lastSeatLookup = now;
+          camera.getWorldDirection(forward);
+          const seat = findSeat(itemsRef.current, walker.x, walker.z, forward.x, forward.z);
+          const id = seat?.id ?? null;
+          if (id !== session.seatTargetId) {
+            session.seatTargetId = id;
+            setSeatName(seat?.name ?? null);
+          }
+        }
+
+        if (dirty) invalidateRef.current?.();
       };
       rafId = requestAnimationFrame(step);
       cleanup.push(() => cancelAnimationFrame(rafId));
@@ -281,7 +536,14 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
 
     return () => {
       cancelled = true;
+      toggleSitRef.current = null;
+      arriveRef.current = null;
+      session.touch = false;
+      session.seated = null;
       setLockRefused(false);
+      setLocked(false);
+      setSeated(false);
+      setSeatName(null);
       for (const fn of cleanup) {
         try {
           fn();
@@ -296,17 +558,33 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     };
   }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef]);
 
-  // Re-seat the camera's height when the active floor (eyeHeight) changes while
-  // walking, preserving x/z. Deliberately separate from the init effect so a
-  // floor switch never re-inits and drops pointer lock (see #67). Declared
-  // after it, so the init effect saves the orbit pose before this moves it.
+  // The active floor changed. An echo of the walker's own climb is ignored;
+  // anything else (PgUp/PgDn, the floor pills) moves the walker onto that
+  // storey's stairs (#446). Declared after the init effect, so on entry the
+  // walker has already spawned on the active floor and this is a no-op.
   useEffect(() => {
     if (!enabled) return;
-    const camera = cameraRef.current;
-    if (!camera) return;
-    camera.position.y = eyeHeight;
-    invalidateRef.current?.();
-  }, [enabled, eyeHeight, cameraRef]);
+    const session = sessionRef.current;
+    const pending = session.pendingFloors;
+    const echo = pending.indexOf(activeFloorIndex);
+    if (echo >= 0) {
+      pending.splice(0, echo + 1);
+      return;
+    }
+    pending.length = 0;
+    session.reportedFloor = activeFloorIndex;
+    if (session.walker.floorIndex === activeFloorIndex) return;
+    arriveRef.current?.(activeFloorIndex);
+  }, [enabled, activeFloorIndex]);
 
-  return { lockRefused };
+  const setStick = useCallback((x: number, y: number) => {
+    const session = sessionRef.current;
+    session.stickX = x;
+    session.stickY = y;
+    if (x !== 0 || y !== 0) session.touch = true;
+    invalidateRef.current?.();
+  }, []);
+  const toggleSit = useCallback(() => toggleSitRef.current?.(), []);
+
+  return { lockRefused, locked, seatName: seated ? null : seatName, seated, setStick, toggleSit };
 }
