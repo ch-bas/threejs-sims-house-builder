@@ -561,16 +561,16 @@ export function RoomOrganizer(): JSX.Element {
 
   /**
    * Hard budget (#463e): true, after telling the player, when a buy costing
-   * `price` is over what's left. The selection is left alone and no place
-   * cue plays: nothing was bought.
+   * `price` is over what's left. The selection is left alone and the
+   * refused cue plays instead of the place one: nothing was bought.
    */
   const refuseOverBudget = useCallback((price: number): boolean => {
     const refusal = purchaseRefusal(layoutStore.getState().layout, price);
     if (refusal === null) return false;
-    // REFUSED-CUE: G3's `refused` sound cue goes here at integration.
+    playCue('refused');
     notify(refusal, 'error');
     return true;
-  }, []);
+  }, [playCue]);
 
   // Wrap layout actions with the side-effect of clearing the selection when
   // the targeted item disappears. Discrete actions (delete, duplicate, add,

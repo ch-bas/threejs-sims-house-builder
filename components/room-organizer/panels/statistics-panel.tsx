@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useLayout } from '../hooks/use-layout-store';
+import { budgetSpent } from '../lib/budget';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory, totalCost } from '../lib/geometry';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
@@ -22,7 +23,9 @@ export function StatisticsPanel(): JSX.Element {
     [layout.floors]
   );
 
-  const cost = useMemo(() => totalCost(allItems), [allItems]);
+  // What the header and the library cards show: under the hard budget it
+  // includes the write-off of what was sold back (#463e).
+  const cost = budgetSpent(layout);
   // Per floor: a lamp upstairs doesn't stand on the desk below it (#462).
   const footprint = useMemo(
     () => layout.floors.reduce((sum, floor) => sum + footprintArea(floor.items), 0),

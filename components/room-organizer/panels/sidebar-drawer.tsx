@@ -285,7 +285,7 @@ const DrawerBody = memo(function DrawerBody({
               // Hard budget (#463e): say why instead of a silent refusal.
               const refusal = purchaseRefusal(layout, purchasePrice(items));
               if (refusal !== null) {
-                // REFUSED-CUE: G3's `refused` sound cue goes here at integration.
+                playCue('refused');
                 notify(refusal, 'error');
                 return;
               }
