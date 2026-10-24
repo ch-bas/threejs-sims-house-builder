@@ -9,9 +9,27 @@ import './globals.css';
 const sora = Sora({ subsets: ['latin'], display: 'swap', variable: '--pc-font-sora' });
 const nunito = Nunito({ subsets: ['latin'], display: 'swap', variable: '--pc-font-nunito' });
 
+const SITE_NAME = 'Three.js Sims-like House Builder';
+const DESCRIPTION =
+  'Build a house in your browser: walls, floors, stairs and a roof, furniture from a catalogue, a first-person walkthrough, and plans to print or export.';
+
+// Absolute URLs in the link preview resolve against the live site. Next adds
+// the GitHub Pages basePath to the icon and preview-image paths itself, from
+// the app/icon.svg, favicon.ico, apple-icon.png and opengraph-image.png files
+// (regenerate the rasters with scripts/build-icons.mjs).
 export const metadata: Metadata = {
-  title: '3D Room Organizer',
-  description: 'Design and visualize rooms in 3D with furniture, Wi-Fi, and CCTV planning',
+  metadataBase: new URL('https://ch-bas.github.io'),
+  title: SITE_NAME,
+  description: DESCRIPTION,
+  applicationName: SITE_NAME,
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    title: SITE_NAME,
+    description: DESCRIPTION,
+    url: '/threejs-sims-house-builder/',
+  },
+  twitter: { card: 'summary_large_image', title: SITE_NAME, description: DESCRIPTION },
 };
 
 // No maximumScale / userScalable: page zoom must stay available for the
@@ -23,6 +41,8 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  // The HUD's ink (--pc-ink), for the mobile browser bar.
+  themeColor: '#1A2A33',
 };
 
 // Stale-chunk recovery for the GitHub Pages static export. index.html is cached

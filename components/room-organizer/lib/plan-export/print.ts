@@ -316,7 +316,7 @@ function renderPrintHtml(input: PrintHtmlInput): string {
         </tr>
         <tr>
           <td class="k">Date</td><td>${escapeHtml(input.date)}</td>
-          <td class="k">Drawn by</td><td>Standalone Room Organizer</td>
+          <td class="k">Drawn by</td><td>Three.js Sims-like House Builder</td>
         </tr>
       </table>${renderScheduleTable(sheet.schedule)}
     </section>`

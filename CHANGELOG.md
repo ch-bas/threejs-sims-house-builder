@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- The app has an icon, a link preview with a picture of the builder when you share it, and a theme colour for mobile browsers ([#443](https://github.com/ch-bas/threejs-sims-house-builder/issues/443))
+- A wrong address shows a page in the app's style with a way back to the builder, instead of the stock 404 ([#459](https://github.com/ch-bas/threejs-sims-house-builder/issues/459))
+
+### Changed
+- The browser tab, prints and the blueprint name the app "Three.js Sims-like House Builder" instead of "3D Room Organizer" and "Standalone Room Organizer" ([#443](https://github.com/ch-bas/threejs-sims-house-builder/issues/443))
+- The README is shorter and links to the wiki; the module layout and design notes moved to `docs/`, and the contributor docs list every CI check ([#457](https://github.com/ch-bas/threejs-sims-house-builder/issues/457), [#440](https://github.com/ch-bas/threejs-sims-house-builder/issues/440))
+
 ## [1.21.0] - 2026-10-24
 
 The **Gameplay & delight** milestone: walk through the whole house, place things the way you'd expect, play with a real budget, and get credit only for what you build.
@@ -633,3 +643,44 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Grid-based room builder with Three.js
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
+
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.20.0...v1.21.0
+[1.20.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.19.0...v1.20.0
+[1.19.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.18.0...v1.19.0
+[1.18.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.17.0...v1.18.0
+[1.17.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.16.0...v1.17.0
+[1.16.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.15.0...v1.16.0
+[1.15.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.14.0...v1.15.0
+[1.14.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.13.0...v1.14.0
+[1.13.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.11.0...v1.12.0
+[1.11.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.10.1...v1.11.0
+[1.10.1]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.10.0...v1.10.1
+[1.10.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.9.1...v1.10.0
+[1.9.1]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.9.0...v1.9.1
+[1.9.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.15...v1.9.0
+[1.8.15]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.14...v1.8.15
+[1.8.14]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.13...v1.8.14
+[1.8.13]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.12...v1.8.13
+[1.8.12]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.11...v1.8.12
+[1.8.11]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.10...v1.8.11
+[1.8.10]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.9...v1.8.10
+[1.8.9]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.8...v1.8.9
+[1.8.8]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.7...v1.8.8
+[1.8.7]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.6...v1.8.7
+[1.8.6]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.5...v1.8.6
+[1.8.5]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.4...v1.8.5
+[1.8.4]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.3...v1.8.4
+[1.8.3]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.2...v1.8.3
+[1.8.2]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.1...v1.8.2
+[1.8.1]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.3.1...v1.4.0
+[1.3.1]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.0.0...v1.2.0
+[1.0.0]: https://github.com/ch-bas/threejs-sims-house-builder/releases/tag/v1.0.0
