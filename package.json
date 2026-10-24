@@ -5,10 +5,21 @@
   "author": "Bassem Chagra",
   "license": "MIT",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ch-bas/threejs-sims-house-builder.git"
+  },
+  "homepage": "https://ch-bas.github.io/threejs-sims-house-builder/",
+  "bugs": {
+    "url": "https://github.com/ch-bas/threejs-sims-house-builder/issues"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "npx serve@latest out",
     "lint": "eslint --ext .ts,.tsx app components lib",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
