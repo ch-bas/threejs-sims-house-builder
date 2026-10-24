@@ -301,7 +301,7 @@ export interface FreeSpaceOptions {
 }
 
 /** Finest spacing of the centres `placeSetInFreeSpace` probes (m). */
-export const FREE_SPACE_STEP = 0.25;
+const FREE_SPACE_STEP = 0.25;
 /** Most probe steps across the room's longer side, so a big house stays cheap. */
 const FREE_SPACE_MAX_STEPS = 40;
 

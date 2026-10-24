@@ -102,7 +102,7 @@ export interface SvgExportOptions {
 }
 
 /** The plan-geometry coverage mode for these options. */
-export function svgCoverageMode(options: Pick<SvgExportOptions, 'coverage'>): CoverageMode {
+function svgCoverageMode(options: Pick<SvgExportOptions, 'coverage'>): CoverageMode {
   if (options.coverage === false) return 'off';
   return options.coverage === 'full' ? 'full' : 'capped';
 }
@@ -115,7 +115,7 @@ export interface SvgSheetSize {
   heightM: number;
 }
 
-export const DEFAULT_SVG_PX_PER_METRE = 50;
+const DEFAULT_SVG_PX_PER_METRE = 50;
 export const DEFAULT_SVG_MARGIN = 60;
 
 // Colours match canvas-2d/render.ts: #ddd grid, #666 walls (3px), #bbb dashed

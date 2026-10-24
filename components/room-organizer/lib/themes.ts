@@ -16,7 +16,7 @@ export interface ThemeDefinition extends ThemeMeta {
   furniturePalette: Partial<Record<string, string>>;
 }
 
-export const THEMES: Record<ThemeKey, ThemeDefinition> = {
+const THEMES: Record<ThemeKey, ThemeDefinition> = {
   modern: {
     key: 'modern',
     label: 'Modern',

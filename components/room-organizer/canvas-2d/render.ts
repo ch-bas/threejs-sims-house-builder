@@ -279,8 +279,8 @@ function drawOffPlanMarkers(
 }
 
 /** Fill / outline alpha of a zone's tint, on top of the floor colour or tracing image. */
-export const ZONE_FILL_ALPHA = 0.18;
-export const ZONE_STROKE_ALPHA = 0.7;
+const ZONE_FILL_ALPHA = 0.18;
+const ZONE_STROKE_ALPHA = 0.7;
 /** A zone painted smaller than this (px, either edge) is too small for a label. */
 const ZONE_MIN_LABEL_EDGE_PX = 36;
 /**
@@ -290,14 +290,14 @@ const ZONE_MIN_LABEL_EDGE_PX = 36;
  * them at any scale (a 10 m house on a phone is ~22 px/m), dropping only a
  * name wider than its zone.
  */
-export const ZONE_LABEL_MIN_SCALE = 25;
+const ZONE_LABEL_MIN_SCALE = 25;
 
 /**
  * `#rgb` / `#rrggbb` → `rgba(...)` at the given alpha. Anything else (a
  * named colour from an imported file) is returned as-is: it still paints,
  * just without the tint.
  */
-export function withAlpha(color: string, alpha: number): string {
+function withAlpha(color: string, alpha: number): string {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color)?.[1];
   if (!hex) return color;
   const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;

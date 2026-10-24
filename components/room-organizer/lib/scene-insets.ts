@@ -25,8 +25,8 @@ export interface Rect {
  * Viewports at least this wide AND tall keep the classic desktop framing,
  * untouched (the HUD sits at the edges there and the house already fits).
  */
-export const DESKTOP_MIN_WIDTH = 1101;
-export const DESKTOP_MIN_HEIGHT = 701;
+const DESKTOP_MIN_WIDTH = 1101;
+const DESKTOP_MIN_HEIGHT = 701;
 
 /** How far each edge of a canvas is covered, in CSS pixels. */
 export interface Insets {

@@ -51,7 +51,7 @@ export const PLAN_FIT_TOLERANCE_M = 0.05;
  * edge markers instead, so one tree 40 m out can't shrink the house to a
  * smudge.
  */
-export const PLAN_MIN_ROOM_SHARE = 0.5;
+const PLAN_MIN_ROOM_SHARE = 0.5;
 
 /** An item too far outside the walls to fit, with its distance out (m). */
 export interface OffPlanItem {
@@ -148,7 +148,7 @@ export const OFF_PLAN_MARKER_INSET_PX = 14;
  */
 export const OFF_PLAN_MARKER_SPACING_PX = 36;
 /** Hit radius of a marker (px). */
-export const OFF_PLAN_MARKER_HIT_PX = 13;
+const OFF_PLAN_MARKER_HIT_PX = 13;
 
 /**
  * Where each off-plan item's marker goes: on the ray from the room centre
@@ -250,13 +250,13 @@ function overlaps(a: Rect, b: Rect): boolean {
  * column a hair bigger than the middle put the house in a corner with most
  * of the screen empty.
  */
-export const PLAN_REGION_SCALE_SLACK = 0.1;
+const PLAN_REGION_SCALE_SLACK = 0.1;
 /**
  * How much nearer the canvas centre (a share of the canvas width) a smaller
  * region's centre must be to win: a corner versus the middle, not two
  * near-central bands, where the size matters more.
  */
-export const PLAN_REGION_CENTRE_GAIN = 0.15;
+const PLAN_REGION_CENTRE_GAIN = 0.15;
 
 /**
  * The free rectangle of `bounds` (no occluder over it) that draws `content`

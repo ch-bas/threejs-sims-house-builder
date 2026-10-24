@@ -123,7 +123,7 @@ const BASE_STEP = 0.35;
  * much: a door onto a garden a little below the plinth, or the porch's
  * ledge. Anything more is a door in mid-air.
  */
-export const THRESHOLD_STEP = 1.2;
+const THRESHOLD_STEP = 1.2;
 /** three/room-builder's FOUNDATION_OVERHANG: the plinth ledge in front of a ground-floor porch. */
 const FOUNDATION_LEDGE = 0.35;
 /** How far past the flight a landing spot sits: clear of the last tread for a 0.3 m walker. */

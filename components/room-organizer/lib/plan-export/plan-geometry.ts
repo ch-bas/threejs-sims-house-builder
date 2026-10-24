@@ -229,16 +229,6 @@ export function growBounds(bounds: PlanBounds, marginM: number): PlanBounds {
   };
 }
 
-/**
- * The sheet a plan is drawn on: `planContentBounds` grown by `marginM` on
- * every side for the title, room dimensions and scale bar. With no item
- * outside the walls this is exactly the old room + margin sheet, so
- * indoor-only exports are unchanged (#287).
- */
-export function planBounds(layout: RoomLayout, floor: FloorLayout, marginM: number): PlanBounds {
-  return growBounds(planContentBounds(layout, floor), marginM);
-}
-
 /** A coverage disc set: three concentric rings at ⅓, ⅔ and the full range. */
 export interface CoverageRings {
   kind: 'wifi' | 'cctv';
@@ -320,7 +310,7 @@ export interface PlanDimension {
 }
 
 /** Interior walls shorter than this carry no dimension string — the label would not fit. */
-export const MIN_DIMENSIONED_WALL_M = 0.3;
+const MIN_DIMENSIONED_WALL_M = 0.3;
 
 /** "4.00 m": two decimals, the precision the wall tools snap to. */
 export function formatDimension(metres: number): string {

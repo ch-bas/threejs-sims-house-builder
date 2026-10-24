@@ -13,7 +13,7 @@ import type { Frontage, NeighbourFlag, NeighbourSide, NeighbourSpec, TerrainSpec
 export const MIN_TERRAIN_Y = -3;
 export const MAX_TERRAIN_Y = 6;
 
-export const NEIGHBOUR_SIDES: readonly NeighbourSide[] = ['west', 'east'];
+const NEIGHBOUR_SIDES: readonly NeighbourSide[] = ['west', 'east'];
 
 export function isTerrainY(value: unknown): value is number {
   return (
@@ -68,7 +68,7 @@ export function hasNeighbourOn(neighbours: NeighbourSpec | undefined, side: Neig
  */
 export const LOT_MARGIN = 6;
 /** Grass between the lot edge and the pavement with a front garden. */
-export const LOT_TO_PAVEMENT = 1.6;
+const LOT_TO_PAVEMENT = 1.6;
 export const PAVEMENT_DEPTH = 1.6;
 export const ROAD_DEPTH = 4.5;
 

@@ -249,7 +249,7 @@ export function deleteCustomSet(id: string, opts: CustomSetsOptions = {}): boole
   return true;
 }
 
-export function customSetKey(id: string): string {
+function customSetKey(id: string): string {
   return `${CUSTOM_KEY_PREFIX}${id}`;
 }
 

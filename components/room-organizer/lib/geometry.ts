@@ -87,7 +87,7 @@ export function itemInBounds(item: FurnitureItem, roomWidth: number, roomDepth: 
 }
 
 /** True when the item's rotation-aware AABB is entirely beyond the room rect. */
-export function itemFullyOutside(item: FurnitureItem, roomWidth: number, roomDepth: number): boolean {
+function itemFullyOutside(item: FurnitureItem, roomWidth: number, roomDepth: number): boolean {
   if (!item.position) return false;
   const { halfW, halfD } = rotatedHalfExtents(item);
   return (

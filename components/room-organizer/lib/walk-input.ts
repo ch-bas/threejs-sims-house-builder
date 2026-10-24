@@ -3,7 +3,7 @@
  * the walkthrough hook's RAF loop stays thin and the rules are testable.
  */
 
-export const WALK_MOVEMENT_KEYS: ReadonlySet<string> = new Set([
+const WALK_MOVEMENT_KEYS: ReadonlySet<string> = new Set([
   'KeyW',
   'KeyA',
   'KeyS',

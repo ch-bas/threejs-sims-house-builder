@@ -6,7 +6,7 @@ import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
 
-export const LIGHTING_TAGS = {
+const LIGHTING_TAGS = {
   Ambient: 'light:ambient',
   Directional: 'light:directional',
   Hemisphere: 'light:hemi',
