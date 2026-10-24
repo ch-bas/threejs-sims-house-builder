@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-10-24
+
+The **Toolchain, CI & repo hygiene** milestone, plus people who dress up, sit down and get out of each other's way.
+
 ### Added
 - The app has an icon, a link preview with a picture of the builder when you share it, and a theme colour for mobile browsers ([#443](https://github.com/ch-bas/threejs-sims-house-builder/issues/443))
 - A wrong address shows a page in the app's style with a way back to the builder, instead of the stock 404 ([#459](https://github.com/ch-bas/threejs-sims-house-builder/issues/459))
@@ -18,6 +22,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The browser tab, prints and the blueprint name the app "Three.js Sims-like House Builder" instead of "3D Room Organizer" and "Standalone Room Organizer" ([#443](https://github.com/ch-bas/threejs-sims-house-builder/issues/443))
 - The README is shorter and links to the wiki; the module layout and design notes moved to `docs/`, and the contributor docs list every CI check ([#457](https://github.com/ch-bas/threejs-sims-house-builder/issues/457), [#440](https://github.com/ch-bas/threejs-sims-house-builder/issues/440))
 - `people.glb` carries seven more clips from the same CC0 library (about 730 KB, was 420 KB)
+
+### Fixed
+- Print and blueprint popups no longer rely on inline scripts, and can't reach back into the editor ([#445](https://github.com/ch-bas/threejs-sims-house-builder/issues/445), [#455](https://github.com/ch-bas/threejs-sims-house-builder/issues/455))
+
+### Security
+- The site now ships a Content-Security-Policy: only the app's own scripts run, nothing loads from other sites ([#445](https://github.com/ch-bas/threejs-sims-house-builder/issues/445))
+- Production dependencies have no known high or critical advisories, and CI now checks that on every push ([#449](https://github.com/ch-bas/threejs-sims-house-builder/issues/449))
+
+### Developer
+- ESLint 10 on a flat config with the same rules, TypeScript 6, and current Next and three.js patch releases ([#449](https://github.com/ch-bas/threejs-sims-house-builder/issues/449), [#441](https://github.com/ch-bas/threejs-sims-house-builder/issues/441))
+- One CI workflow: the checks run once per push, the site deploys only the newest commit on main, and a release is created only after the checks pass, on the commit that bumped the version ([#447](https://github.com/ch-bas/threejs-sims-house-builder/issues/447))
+- Shared helpers exist once, dead exports are gone, and tests cover the catalogue, the builder registry, the CSV formula guard and HTML escaping ([#451](https://github.com/ch-bas/threejs-sims-house-builder/issues/451), [#453](https://github.com/ch-bas/threejs-sims-house-builder/issues/453), [#455](https://github.com/ch-bas/threejs-sims-house-builder/issues/455))
+- `npm start` serves the static build; Node 22.22.2 or later ([#440](https://github.com/ch-bas/threejs-sims-house-builder/issues/440), [#459](https://github.com/ch-bas/threejs-sims-house-builder/issues/459))
 
 ## [1.21.0] - 2026-10-24
 
@@ -649,7 +666,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.21.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.22.0...HEAD
+[1.22.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.19.0...v1.20.0
 [1.19.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.18.0...v1.19.0
