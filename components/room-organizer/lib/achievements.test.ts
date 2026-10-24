@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INITIAL_LAYOUT, layoutReducer } from '../hooks/layout-reducer';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { ACHIEVEMENTS, achievementsEarned, metAchievementIds } from './achievements';
+import { ACHIEVEMENTS, achievementsEarned } from './achievements';
 import { DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import type { FurnitureItem } from './types';
 
@@ -175,25 +175,62 @@ describe('achievements — catalogue invariants', () => {
   });
 });
 
-describe('achievementsEarned: loads earn nothing (#450)', () => {
+describe('achievementsEarned (#450)', () => {
   const none = new Set<string>();
-  const met = metAchievementIds(layoutWithItems(repeatItems(1)));
+  const earned = (before: FurnitureItem[] | null, now: FurnitureItem[], change: 'loaded' | 'edit' = 'edit') =>
+    achievementsEarned(change, before ? layoutWithItems(before) : null, layoutWithItems(now), none).map((a) => a.id);
+  const ap = (id: string) => makeItem({ id, type: 'wifi', isWiFiAccessPoint: true });
 
   it('a loaded house earns nothing, however much it meets', () => {
-    expect(achievementsEarned('loaded', none, met, none)).toEqual([]);
+    expect(earned([], [ap('a')], 'loaded')).toEqual([]);
   });
 
-  it('the starting house unlocks everything it meets', () => {
-    expect(achievementsEarned('baseline', none, met, none).map((a) => a.id)).toEqual(['first-steps']);
+  it('the starting house earns nothing', () => {
+    expect(earned(null, [ap('a')])).toEqual([]);
   });
 
-  it('an edit earns only what it made true', () => {
-    expect(achievementsEarned('edit', none, met, none).map((a) => a.id)).toEqual(['first-steps']);
-    // Already met before the edit (it came with a loaded house): not earned.
-    expect(achievementsEarned('edit', met, met, none)).toEqual([]);
+  it('an edit earns what it made true', () => {
+    expect(earned([], [makeItem()])).toEqual(['first-steps']);
+  });
+
+  it('an edit that keeps the counts earns nothing already met', () => {
+    expect(earned([ap('a')], [{ ...ap('a'), position: { x: 1, z: 1 } }])).toEqual([]);
+  });
+
+  it('an edit that raises a goal\'s count earns it, though it was already met', () => {
+    const got = earned([ap('a')], [ap('a'), ap('b')]);
+    expect(got).toContain('wifi-everywhere');
+    expect(got).toContain('first-steps');
+  });
+
+  it('a count goal earned by raising a different count is not handed out', () => {
+    // Adding a chair to a house that already has a door doesn't install a door.
+    const door = makeItem({ id: 'd', type: 'door' });
+    expect(earned([door], [door, makeItem({ id: 'c', type: 'chair' })])).not.toContain('door-installer');
+  });
+
+  it('a goal that is not a count needs to become true', () => {
+    const cheap = repeatItems(5, { price: 100 });
+    // Already under budget with five items: a sixth keeps it so, not earned.
+    expect(earned(cheap, [...cheap, makeItem({ id: 'x', price: 100 })])).not.toContain('open-plan');
+    expect(earned(cheap.slice(0, 4), cheap)).toContain('open-plan');
   });
 
   it('never earns an achievement twice', () => {
-    expect(achievementsEarned('edit', none, met, new Set(['first-steps']))).toEqual([]);
+    expect(
+      achievementsEarned('edit', layoutWithItems([]), layoutWithItems([makeItem()]), new Set(['first-steps']))
+    ).toEqual([]);
+  });
+
+  it('every count goal has a progress measure that grows with it', () => {
+    const counts = ACHIEVEMENTS.filter((a) => a.progress !== undefined).map((a) => a.id);
+    expect(counts.sort()).toEqual(
+      [
+        'big-spender', 'decorator', 'door-installer', 'first-steps', 'furnished', 'going-up', 'green-thumb',
+        'overstuffed', 'penthouse', 'sky-high', 'wall-whisperer', 'wifi-everywhere', 'window-watcher',
+      ].sort()
+    );
+    expect(achievement('window-watcher').progress?.(layoutWithItems(repeatItems(2, { type: 'window' })))).toBe(2);
   });
 });
+

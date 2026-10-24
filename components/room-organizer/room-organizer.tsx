@@ -132,6 +132,11 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   showCameraVision: true,
 };
 
+/** Whether an item landed: the reducer refuses adds and copies on a full floor. */
+function itemExists(id: string): boolean {
+  return layoutStore.getState().layout.floors.some((floor) => floor.items.some((item) => item.id === id));
+}
+
 export function RoomOrganizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvas2DRef = useRef<HTMLCanvasElement>(null);
@@ -483,20 +488,27 @@ export function RoomOrganizer(): JSX.Element {
     return new Set(Array.from(allSelectedIds).filter((id) => !lockedIds.has(id)));
   }, [activeFloor.items, allSelectedIds]);
 
-  // Returns whether anything actually rotated, so callers only play the
-  // rotate cue for a real rotation — a locked item's no-op used to chime
-  // anyway, audibly lying about what happened (#209).
+  // Returns whether anything actually rotated. A real rotation plays the
+  // rotate cue, a refused one (locked) the refused cue: a locked item's no-op
+  // used to chime anyway, audibly lying about what happened (#209, #460).
   const rotateItemHandler = useCallback(
     (id: string): boolean => {
       if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
         const unlocked = unlockedSelectedIds();
-        if (unlocked.size === 0) return false;
+        if (unlocked.size === 0) {
+          playCue('refused');
+          return false;
+        }
         actions.rotateSelection(unlocked, Math.PI / 2);
         playCue('rotate');
         return true;
       }
       const item = activeFloor.items.find((entry) => entry.id === id);
-      if (!item || item.locked) return false;
+      if (!item) return false;
+      if (item.locked) {
+        playCue('refused');
+        return false;
+      }
       if (item.type === 'security-camera') {
         // A flush camera can only face into the room or straight out, so Rotate
         // flips 180° along its wall's in/out axis. A bracketed camera pans freely.
@@ -596,6 +608,8 @@ export function RoomOrganizer(): JSX.Element {
   // copied (each offset by the reducer) and the copies become the new
   // selection, so the result is a clean set of duplicates rather than one new
   // copy mixed in with the stale originals' ids.
+  // The reducer refuses a copy on a full floor; only copies that landed are
+  // selected and chimed for, and a refusal sounds as one (#460).
   const duplicateSelected = useCallback(
     (primaryId: string) => {
       // Hard budget (#463e): all the copies or none, and say why — the
@@ -606,21 +620,20 @@ export function RoomOrganizer(): JSX.Element {
           : activeFloor.items.filter((item) => item.id === primaryId);
       if (refuseOverBudget(purchasePrice(copying))) return;
       commitHistoryNow();
-      playCue('place');
-      if (allSelectedIds.size > 1 && allSelectedIds.has(primaryId)) {
-        // Duplicate the primary first so it becomes the new primary, then the
-        // remaining selected items in a stable order.
-        const others = Array.from(allSelectedIds).filter((id) => id !== primaryId);
-        const newPrimary = actions.duplicateItem(primaryId);
-        const newExtras = others.map((id) => actions.duplicateItem(id));
-        setSelectedItemId(newPrimary);
-        setExtraSelectedIds(new Set(newExtras));
+      const multi = allSelectedIds.size > 1 && allSelectedIds.has(primaryId);
+      // Duplicate the primary first so it becomes the new primary, then the
+      // remaining selected items in a stable order.
+      const others = multi ? Array.from(allSelectedIds).filter((id) => id !== primaryId) : [];
+      const copies = [primaryId, ...others].map((id) => actions.duplicateItem(id)).filter(itemExists);
+      const [newPrimary, ...newExtras] = copies;
+      if (newPrimary === undefined) {
+        playCue('refused');
         return;
       }
-      const newId = actions.duplicateItem(primaryId);
-      setSelectedItemId(newId);
-      // Clear stale extras so the selection is only the fresh copy.
-      setExtraSelectedIds(new Set());
+      playCue('place');
+      setSelectedItemId(newPrimary);
+      // A single copy clears stale extras, so the selection is only the copy.
+      setExtraSelectedIds(new Set(newExtras));
     },
     [actions, commitHistoryNow, allSelectedIds, activeFloor.items, refuseOverBudget, playCue]
   );
@@ -630,6 +643,8 @@ export function RoomOrganizer(): JSX.Element {
     onHydrate: useCallback(
       (saved: RoomLayout) => {
         actions.applyLayout(saved);
+        // The saved or shared house the session opens on earns nothing (#450).
+        markLayoutLoaded();
         clearTransientSelection();
         // The store dispatch is synchronous, so this is the exact (normalised)
         // layout the next render shows — an explicit baseline (#354).
@@ -686,7 +701,13 @@ export function RoomOrganizer(): JSX.Element {
     (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
       commitHistoryNow();
       const id = placeCatalogItem(catalogItem, position);
-      if (id) playCue('place');
+      if (!id) return id;
+      // The reducer refuses an add on a full floor.
+      if (!itemExists(id)) {
+        playCue('refused');
+        return '';
+      }
+      playCue('place');
       return id;
     },
     [commitHistoryNow, placeCatalogItem, playCue]
@@ -942,13 +963,20 @@ export function RoomOrganizer(): JSX.Element {
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
           const unlocked = unlockedSelectedIds();
-          if (unlocked.size === 0) return;
+          if (unlocked.size === 0) {
+            playCue('refused');
+            return;
+          }
           actions.rotateSelection(unlocked, radians);
           playCue('rotate');
           return;
         }
         const item = activeFloor.items.find((entry) => entry.id === id);
-        if (!item || item.locked) return;
+        if (!item) return;
+        if (item.locked) {
+          playCue('refused');
+          return;
+        }
         const next = ((item.rotation ?? 0) + radians) % (Math.PI * 2);
         actions.setRotation(id, next);
         reseatCamera(id, next);
@@ -1084,6 +1112,7 @@ export function RoomOrganizer(): JSX.Element {
   const stableShareLink = useEvent(handleShareLink);
   const stablePlaceFromCatalog = useEvent(placeFromCatalog);
   const stableRemoveItem = useEvent(removeItem);
+  const stableDuplicateItem = useEvent(duplicateSelected);
   const orbitByPad = useEvent((direction: 'left' | 'right' | 'up' | 'down') => {
     const THREE = threeModuleRef.current;
     const camera = cameraRef.current;
@@ -1310,6 +1339,7 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Achievement toast */}
       <AchievementToast
+        drawerOpen={!sidebarCollapsed}
         pending={pendingAchievements}
         onDismiss={dismissAchievements}
       />
@@ -1326,6 +1356,7 @@ export function RoomOrganizer(): JSX.Element {
         onShareLink={stableShareLink}
         placeCatalogItem={stablePlaceFromCatalog}
         removeItem={stableRemoveItem}
+        duplicateItem={stableDuplicateItem}
       />
     </div>
     </SelectionProvider>

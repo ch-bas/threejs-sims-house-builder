@@ -25,6 +25,13 @@ export interface Achievement {
   description: string;
   icon: string;
   isMet(layout: RoomLayout): boolean;
+  /**
+   * How far along the goal is, for goals that are counts (items, floors,
+   * doors, …). An edit that raises it earns the goal even when a loaded house
+   * already met it: placing another access point is doing the thing (#450).
+   * Goals that aren't counts ("under §3,000") leave it out.
+   */
+  progress?(layout: RoomLayout): number;
 }
 
 export const ACHIEVEMENTS: readonly Achievement[] = [
@@ -34,6 +41,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Placed your first piece of furniture.',
     icon: '👟',
     isMet: (layout) => allItems(layout).length >= 1,
+    progress: (layout) => allItems(layout).length,
   },
   {
     id: 'furnished',
@@ -41,6 +49,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Placed 10 or more items in the building.',
     icon: '🪑',
     isMet: (layout) => allItems(layout).length >= 10,
+    progress: (layout) => allItems(layout).length,
   },
   {
     id: 'overstuffed',
@@ -48,6 +57,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Placed 25 or more items in the building.',
     icon: '📦',
     isMet: (layout) => allItems(layout).length >= 25,
+    progress: (layout) => allItems(layout).length,
   },
   {
     id: 'big-spender',
@@ -56,6 +66,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     icon: '💸',
     // "over" means strictly greater than — exactly 10,000 doesn't count.
     isMet: (layout) => totalCost(allItems(layout)) > 10_000,
+    progress: (layout) => totalCost(allItems(layout)),
   },
   {
     id: 'wifi-everywhere',
@@ -63,6 +74,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Placed at least one Wi-Fi access point.',
     icon: '📶',
     isMet: (layout) => allItems(layout).some((item) => item.isWiFiAccessPoint === true),
+    progress: (layout) => allItems(layout).filter((item) => item.isWiFiAccessPoint === true).length,
   },
   {
     id: 'sky-high',
@@ -70,6 +82,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Added a second floor to your building.',
     icon: '🌤',
     isMet: (layout) => layout.floors.length >= 2,
+    progress: (layout) => layout.floors.length,
   },
   {
     id: 'penthouse',
@@ -77,6 +90,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Stacked four floors tall.',
     icon: '🏙',
     isMet: (layout) => layout.floors.length >= 4,
+    progress: (layout) => layout.floors.length,
   },
   {
     id: 'going-up',
@@ -84,6 +98,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Placed your first staircase.',
     icon: '🪜',
     isMet: (layout) => allItems(layout).some((item) => item.type === 'stairs'),
+    progress: (layout) => countType(layout, 'stairs'),
   },
   {
     id: 'roof-it',
@@ -108,6 +123,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     icon: '🌿',
     isMet: (layout) =>
       allItems(layout).filter((item) => PLANTED_TYPES.has(item.type)).length >= 3,
+    progress: (layout) => allItems(layout).filter((item) => PLANTED_TYPES.has(item.type)).length,
   },
   {
     id: 'door-installer',
@@ -115,6 +131,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Placed your first door.',
     icon: '🚪',
     isMet: (layout) => allItems(layout).some((item) => item.type === 'door'),
+    progress: (layout) => countType(layout, 'door'),
   },
   {
     id: 'window-watcher',
@@ -122,6 +139,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Placed three or more windows.',
     icon: '🪟',
     isMet: (layout) => allItems(layout).filter((item) => item.type === 'window').length >= 3,
+    progress: (layout) => countType(layout, 'window'),
   },
   {
     id: 'wall-whisperer',
@@ -130,6 +148,11 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     icon: '🧱',
     isMet: (layout) =>
       layout.floors.some((floor) => (floor.interiorWalls ?? []).some((wall) => wall.id !== ENTRANCE_WALL_ID)),
+    progress: (layout) =>
+      layout.floors.reduce(
+        (sum, floor) => sum + (floor.interiorWalls ?? []).filter((wall) => wall.id !== ENTRANCE_WALL_ID).length,
+        0
+      ),
   },
   {
     id: 'decorator',
@@ -137,6 +160,7 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Mixed at least six unique furniture types in one building.',
     icon: '🎨',
     isMet: (layout) => new Set(allItems(layout).map((item) => item.type)).size >= 6,
+    progress: (layout) => new Set(allItems(layout).map((item) => item.type)).size,
   },
   {
     id: 'open-plan',
@@ -150,45 +174,36 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   },
 ];
 
-/** The ids of every achievement this layout meets, unlocked or not. */
-export function metAchievementIds(layout: RoomLayout): Set<string> {
-  const met = new Set<string>();
-  for (const achievement of ACHIEVEMENTS) {
-    if (achievement.isMet(layout)) met.add(achievement.id);
-  }
-  return met;
-}
-
 /**
  * How the layout on screen came to be, as far as achievements care (#450).
  *
- * - `baseline`: the house the session starts from, the default house or the
- *   player's own saved one. What it meets unlocks silently, as before (#146).
- * - `loaded`: a house the player didn't build here: a template, a library
- *   house, a share link, an import, a restore point, a cross-tab adopt, or
- *   an undo/redo step back onto one of those. It earns nothing.
+ * - `loaded`: a house the player didn't build here, or not just now: the
+ *   starting house, the saved or shared house the session opens on, a
+ *   template, a library house, a restore point, an import, a cross-tab
+ *   adopt, an undo/redo step. It earns nothing; what the player really
+ *   earned was saved when they earned it.
  * - `edit`: the player changed the house.
  */
-export type LayoutChange = 'baseline' | 'loaded' | 'edit';
+export type LayoutChange = 'loaded' | 'edit';
 
 /**
- * The achievements a layout change earns. An edit earns what it made true:
- * a goal already met before it, because it came with a loaded house, stays
- * unearned until the player meets it again themselves.
+ * The achievements a layout change earns. An edit earns a goal it meets
+ * when the goal wasn't met before it, or when the edit raised the goal's
+ * own count: a template that already has an access point doesn't hand out
+ * "Wi-Fi Everywhere", but placing another one earns it.
  */
 export function achievementsEarned(
   change: LayoutChange,
-  metBefore: ReadonlySet<string>,
-  metNow: ReadonlySet<string>,
+  before: RoomLayout | null,
+  now: RoomLayout,
   unlocked: ReadonlySet<string>
 ): Achievement[] {
-  if (change === 'loaded') return [];
-  return ACHIEVEMENTS.filter(
-    (achievement) =>
-      metNow.has(achievement.id) &&
-      !unlocked.has(achievement.id) &&
-      (change === 'baseline' || !metBefore.has(achievement.id))
-  );
+  if (change === 'loaded' || before === null) return [];
+  return ACHIEVEMENTS.filter((achievement) => {
+    if (unlocked.has(achievement.id) || !achievement.isMet(now)) return false;
+    if (!achievement.isMet(before)) return true;
+    return achievement.progress !== undefined && achievement.progress(now) > achievement.progress(before);
+  });
 }
 
 /**
@@ -197,6 +212,10 @@ export function achievementsEarned(
  */
 function allItems(layout: RoomLayout): RoomLayout['floors'][number]['items'] {
   return layout.floors.flatMap((floor) => floor.items.filter((item) => item.id !== ENTRANCE_DOOR_ID));
+}
+
+function countType(layout: RoomLayout, type: string): number {
+  return allItems(layout).filter((item) => item.type === type).length;
 }
 
 const STORAGE_KEY = 'standalone-room-organizer-achievements';

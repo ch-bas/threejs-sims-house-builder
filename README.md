@@ -233,6 +233,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   (`placeDiscrete`, `removeItem` / `removeSelected`, `duplicateSelected`,
   `rotateItemHandler`), so every entry point (tile click, drag-drop,
   keyboard, shortcut, popover, multi-selection) sounds the same (#460).
+  A refused action (a locked rotate, an add or copy on a full floor) plays
+  the `refused` cue instead of the success one.
 
 ### UI / chrome
 
@@ -301,11 +303,15 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   "Roof It", "Green Thumb", "Door Installer", "Window Watcher",
   "Wall Whisperer", "Decorator", "Open Plan") with toast pop-ups when
   unlocked and a sidebar gallery panel showing locked / unlocked progress.
-  They are earned by building: a template, library house, share link,
-  import, restore point, cross-tab adopt or undo/redo unlocks nothing, and
-  a goal that came with such a house is earned only once the player meets
-  it again themselves (#450). Toasts play one at a time, bottom-right just
-  above the mode panel on desktop, each with its own timer (#461).
+  They are earned by building: the house a session opens on (saved or
+  shared), a template, library house, import, restore point, cross-tab
+  adopt or undo/redo unlocks nothing (#450). An edit earns a goal it made
+  true, or a count goal (items, access points, doors, floors, …) whose
+  count it raised, so a goal that came with a loaded house is earned by
+  doing it again. Toasts play one at a time, each with its own timer:
+  bottom-right just above the mode panel on desktop, stepping left of the
+  item popover when it reaches down that far, and above the drawer's
+  scrim (#461).
 - **Hard budget** (the switch under the funds in the mode panel, off by
   default): catalogue tiles that cost more than what's left grey out (on
   touch they say "Over budget"), nothing can be bought past the budget by
@@ -376,7 +382,7 @@ components/
     │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214); per-item build keys + diff (#404)
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
-    │   ├── achievements.ts              15 predicate-based achievements; `achievementsEarned` (baseline / loaded / edit)
+    │   ├── achievements.ts              15 predicate-based achievements with count progress; `achievementsEarned` (loaded / edit)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it

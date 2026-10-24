@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useReducer, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { useEvent } from '../hooks/use-event';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { usePausableTimeout } from '../hooks/use-pausable-timeout';
@@ -30,9 +30,29 @@ function trayOpen(): boolean {
   return document.querySelector('.pc-mode-panel[data-more-open]') !== null;
 }
 
+/** Room left between the toast and the item popover beside it. */
+const POPOVER_GAP = 12;
+
+function subscribeDom(onChange: () => void): () => void {
+  if (typeof MutationObserver === 'undefined') return () => {};
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.body, { subtree: true, childList: true });
+  window.addEventListener('resize', onChange);
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('resize', onChange);
+  };
+}
+const noSubscription = (): (() => void) => () => {};
+
 export interface AchievementToastProps {
   pending: readonly Achievement[];
   onDismiss(): void;
+  /**
+   * The sidebar drawer is open: its scrim covers the scene, so the desktop
+   * toast is drawn above the scrim (and below the drawer, on the other side).
+   */
+  drawerOpen?: boolean;
 }
 
 /**
@@ -48,9 +68,11 @@ export interface AchievementToastProps {
  *
  * Desktop and tablet show it bottom-right, just above the mode panel
  * (`--pc-mode-top`), never over the mode buttons or Undo/Redo, and under the
- * View menu that opens upward from it. Hovering it holds the countdown.
+ * View menu that opens upward from it. When the item popover reaches down
+ * to it (short screens), it steps left of the popover. Hovering it holds the
+ * countdown.
  */
-export function AchievementToast({ pending, onDismiss }: AchievementToastProps): JSX.Element | null {
+export function AchievementToast({ pending, onDismiss, drawerOpen = false }: AchievementToastProps): JSX.Element | null {
   const compact = useMediaQuery(COMPACT_OVERLAY_QUERY);
   // Achievements already shown, by id; cleared with the queue. One host for
   // both placements, so rotating across the breakpoint carries on with the
@@ -58,6 +80,7 @@ export function AchievementToast({ pending, onDismiss }: AchievementToastProps):
   const [seen] = useState(() => new Set<string>());
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const [hovered, setHovered] = useState(false);
+  const hostRef = useRef<HTMLDivElement>(null);
   const statusBusy = useSyncExternalStore(statusToastInSlot.subscribe, statusToastInSlot.get, () => false);
   const heldBack = useSyncExternalStore(toastsHeldBack.subscribe, toastsHeldBack.get, () => false);
   const dockTrayOpen = useSyncExternalStore(subscribeTrayOpen, trayOpen, () => false);
@@ -84,6 +107,24 @@ export function AchievementToast({ pending, onDismiss }: AchievementToastProps):
     if (drained) onDismiss();
   }, [drained, onDismiss]);
 
+  // Desktop only, and only while a toast is up: the item popover's left edge
+  // when it reaches down into the toast's band, so the toast steps aside.
+  const avoiding = !compact && current !== undefined;
+  const popoverLeft = useCallback((): number | null => {
+    const popover = document.querySelector('.pc-item-popover');
+    const host = hostRef.current;
+    if (!popover) return null;
+    const box = popover.getBoundingClientRect();
+    const modeTop = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pc-mode-top'));
+    const bandTop = (Number.isFinite(modeTop) ? modeTop : window.innerHeight) - MODE_PANEL_GAP - (host?.offsetHeight ?? 0);
+    return box.bottom > bandTop ? Math.round(box.left) : null;
+  }, []);
+  const avoidLeft = useSyncExternalStore(
+    avoiding ? subscribeDom : noSubscription,
+    avoiding ? popoverLeft : () => null,
+    () => null
+  );
+
   if (!current) return null;
 
   if (compact) {
@@ -103,13 +144,15 @@ export function AchievementToast({ pending, onDismiss }: AchievementToastProps):
 
   return (
     <div
+      ref={hostRef}
       style={{
         position: 'fixed',
-        right: 16,
+        right: avoidLeft === null ? 16 : `calc(100vw - ${avoidLeft - POPOVER_GAP}px)`,
         bottom: `calc(100dvh - var(--pc-mode-top, calc(100dvh - 282px)) + ${MODE_PANEL_GAP}px)`,
         // Under the bottom HUD (25), so the View menu opening upward from
-        // the mode panel is drawn over the toast, never under it.
-        zIndex: 24,
+        // the mode panel is drawn over the toast, never under it. With the
+        // drawer open, above its scrim (35) and below the drawer (40).
+        zIndex: drawerOpen ? 38 : 24,
       }}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
