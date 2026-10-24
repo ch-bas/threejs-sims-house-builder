@@ -7,6 +7,8 @@ import {
   budgetRemaining,
   budgetSpent,
   furnitureSpend,
+  purchasePrice,
+  purchaseRefusal,
   repairHardBudget,
   sellBackLoss,
   sellBackRefund,
@@ -55,6 +57,16 @@ describe('budget arithmetic (#463e)', () => {
     expect(budgetBlockedReason(500, 500)).toBeNull();
     expect(budgetBlockedReason(501, 500)).toMatch(/Over budget: \$500 left/);
     expect(budgetBlockedReason(10, -40)).toMatch(/\$0 left/);
+    // A free item is never greyed, even over budget: buying it raises nothing.
+    expect(budgetBlockedReason(0, -40)).toBeNull();
+  });
+
+  it('purchaseRefusal prices a buy against what is left; the porch door is free', () => {
+    const on = makeLayout({ floors: [makeFloor({ items: [sofa] })], budget: { writeOff: 0 } });
+    expect(purchasePrice([sofa, lamp, makeItem({ id: ENTRANCE_DOOR_ID, price: 300 })])).toBe(695);
+    expect(purchaseRefusal(on, DEFAULT_BUDGET - 650)).toBeNull();
+    expect(purchaseRefusal(on, DEFAULT_BUDGET - 649)).toMatch(/Over budget/);
+    expect(purchaseRefusal({ ...on, budget: { writeOff: 0, enabled: false } }, DEFAULT_BUDGET * 9)).toBeNull();
   });
 
   it('repairs the stored field instead of refusing it', () => {
@@ -68,6 +80,10 @@ describe('budget arithmetic (#463e)', () => {
     expect(repairHardBudget({ writeOff: 1e300 })).toEqual({ writeOff: MAX_WRITE_OFF });
     expect(repairHardBudget({ writeOff: 'lots' })).toEqual({ writeOff: 0 });
     expect(repairHardBudget({ writeOff: 3, extra: 1 })).toEqual({ writeOff: 3 });
+    const disabled = { writeOff: 7, enabled: false };
+    expect(repairHardBudget(disabled)).toBe(disabled);
+    expect(repairHardBudget({ writeOff: 7, enabled: true })).toEqual({ writeOff: 7 });
+    expect(repairHardBudget({ writeOff: -7, enabled: false })).toEqual({ writeOff: 0, enabled: false });
   });
 });
 
@@ -80,6 +96,24 @@ describe('reducer: hard budget and sell-back (#463e)', () => {
     const again = layoutReducer(on, { type: 'setHardBudget', on: false });
     expect('budget' in again.layout).toBe(false);
     expect(layoutReducer(off, { type: 'setHardBudget', on: false })).toBe(off);
+  });
+
+  it('off after a sale keeps the write-off disabled; on again brings it back, so the loss is not free to dodge', () => {
+    let state = stateWith([sofa, lamp], { writeOff: 0 });
+    state = layoutReducer(state, { type: 'sellItems', ids: ['sofa'] });
+    state = layoutReducer(state, { type: 'setHardBudget', on: false });
+    expect(state.layout.budget).toEqual({ writeOff: 130, enabled: false });
+    expect(budgetRemaining(state.layout)).toBeNull();
+    expect(budgetSpent(state.layout)).toBe(45);
+    expect(layoutReducer(state, { type: 'setHardBudget', on: false })).toBe(state);
+    // Disabled: removal is plain, nothing more written off, nothing refused.
+    const sold = layoutReducer(state, { type: 'sellItems', ids: ['lamp'] });
+    expect(sold.layout.budget).toEqual({ writeOff: 130, enabled: false });
+    const pricey = makeItem({ id: 'p', price: DEFAULT_BUDGET * 2 });
+    expect(layoutReducer(state, { type: 'addItems', items: [pricey] })).not.toBe(state);
+    state = layoutReducer(state, { type: 'setHardBudget', on: true });
+    expect(state.layout.budget).toEqual({ writeOff: 130 });
+    expect(budgetRemaining(state.layout)).toBe(DEFAULT_BUDGET - 45 - 130);
   });
 
   it('with the budget off, sellItems is plain removal and leaves no field behind', () => {

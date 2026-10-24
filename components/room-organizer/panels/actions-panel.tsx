@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
+import { activeWriteOff } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { totalCost } from '../lib/geometry';
@@ -109,7 +110,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 roomWidth: layout.width,
                 roomDepth: layout.height,
                 // Under the hard budget, sell-back losses are spent too (#463e).
-                maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost - (layout.budget?.writeOff ?? 0)),
+                maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost - activeWriteOff(layout)),
               });
               // The entrance door is structure, not furniture — keep it (#273).
               actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);

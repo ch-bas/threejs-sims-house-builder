@@ -1,4 +1,4 @@
-import { MAX_WRITE_OFF, budgetSpent, sellBackLoss } from '../lib/budget';
+import { MAX_WRITE_OFF, budgetSpent, isHardBudgetOn, sellBackLoss } from '../lib/budget';
 import {
   DEFAULT_BUDGET,
   DEFAULT_ROOF,
@@ -183,7 +183,7 @@ const DOOR_REMOVAL_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
  * already-spent house: that raises nothing.
  */
 function overHardBudget(prev: LayoutState, next: LayoutState, action: LayoutAction): boolean {
-  if (!next.layout.budget || action.type === 'applyLayout' || next.layout.floors === prev.layout.floors) return false;
+  if (!isHardBudgetOn(next.layout) || action.type === 'applyLayout' || next.layout.floors === prev.layout.floors) return false;
   const spent = budgetSpent(next.layout);
   return spent > DEFAULT_BUDGET && spent > budgetSpent(prev.layout);
 }
@@ -434,15 +434,19 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       }));
       const budget = next.layout.budget;
       const loss = sellBackLoss(sold);
-      if (!budget || loss === 0) return next;
+      if (!budget || !isHardBudgetOn(next.layout) || loss === 0) return next;
       const writeOff = Math.min(MAX_WRITE_OFF, budget.writeOff + loss);
       return { ...next, layout: { ...next.layout, budget: { writeOff } } };
     }
 
     case 'setHardBudget':
+      // Off keeps a write-off, so off-and-on can't wipe sale losses; a
+      // budget that never sold anything leaves no field behind.
       return withLayout(state, (layout) => {
-        if ((layout.budget !== undefined) === action.on) return layout;
-        if (action.on) return { ...layout, budget: { writeOff: 0 } };
+        if (isHardBudgetOn(layout) === action.on) return layout;
+        const writeOff = layout.budget?.writeOff ?? 0;
+        if (action.on) return { ...layout, budget: { writeOff } };
+        if (writeOff > 0) return { ...layout, budget: { writeOff, enabled: false } };
         const { budget: _off, ...rest } = layout;
         return rest;
       });

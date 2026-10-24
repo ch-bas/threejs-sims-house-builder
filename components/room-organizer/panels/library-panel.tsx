@@ -4,8 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { budgetSpent } from '../lib/budget';
 import { CURRENCY_SYMBOL } from '../lib/constants';
-import { totalCost } from '../lib/geometry';
 import {
   countUnreadableSavedLayouts,
   deleteNamedLayout,
@@ -86,8 +86,9 @@ function describeChange(summary: VersionSummary, older: VersionSummary | undefin
   return parts.length > 0 ? parts.join(' · ') : 'no items added or removed';
 }
 
+/** The header's figure (#463e): porch door excluded, sale losses included under the hard budget. */
 function layoutCost(layout: RoomLayout): number {
-  return totalCost(layout.floors.flatMap((floor) => floor.items));
+  return budgetSpent(layout);
 }
 
 interface PasteStatus {

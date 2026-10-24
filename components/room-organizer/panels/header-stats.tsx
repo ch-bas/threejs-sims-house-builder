@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useLayout } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { budgetSpent } from '../lib/budget';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
-import { totalCost } from '../lib/geometry';
 import { HEADER_HIDDEN_QUERY } from '../lib/overlay-queue';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
@@ -37,7 +37,7 @@ export function HeaderStats({
   // catalog price (#382).
   const allItems = layout.floors.flatMap((floor) => floor.items).filter((item) => item.id !== ENTRANCE_DOOR_ID);
   // Under the hard budget, what selling back lost is spent too (#463e).
-  const cost = totalCost(allItems) + (layout.budget?.writeOff ?? 0);
+  const cost = budgetSpent(layout);
   const overBudget = cost > budget;
   const ratio = budget > 0 ? Math.min(1, cost / budget) : 0;
 

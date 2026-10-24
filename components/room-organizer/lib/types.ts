@@ -304,13 +304,15 @@ export interface NeighbourSpec {
 }
 
 /**
- * The hard budget (#463e): present means on. Tiles over what's left grey
- * out and Demolish refunds `SELL_BACK_RATE` of the price; `writeOff` is
+ * The hard budget (#463e): present and not `enabled: false` means on.
+ * Tiles over what's left grey out and Demolish refunds `SELL_BACK_RATE` of the price; `writeOff` is
  * the running total of what those sales lost, in whole currency units. See
  * lib/budget.ts for how "spent" is derived from it.
  */
 export interface HardBudget {
   writeOff: number;
+  /** `false`: switched off after use; the write-off is kept for when it comes back on. */
+  enabled?: false;
 }
 
 /**
