@@ -7,6 +7,7 @@ import { useEdgeVar } from '../hooks/use-edge-var';
 import { useEvent } from '../hooks/use-event';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { useSheetInset } from '../hooks/use-sheet-inset';
+import { activeWriteOff } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { totalCost } from '../lib/geometry';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
@@ -237,7 +238,8 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
             roomWidth: layout.width,
             roomDepth: layout.height,
             // Replaces the active floor: spend what the other floors leave (#136).
-            maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost),
+            // Under the hard budget, sell-back losses are spent too (#463e).
+            maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost - activeWriteOff(layout)),
           });
           // The entrance door is structure, not furniture — keep it (#273).
           actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);

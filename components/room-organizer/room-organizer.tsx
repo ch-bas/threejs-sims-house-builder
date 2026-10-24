@@ -30,6 +30,7 @@ import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough } from './hooks/use-walkthrough';
 import { useWeather } from './hooks/use-weather';
+import { purchasePrice, purchaseRefusal } from './lib/budget';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
@@ -541,13 +542,27 @@ export function RoomOrganizer(): JSX.Element {
   // time canUndo/canRedo flips.
   const { commitNow: commitHistoryNow, clear: clearHistory } = history;
 
+  /**
+   * Hard budget (#463e): true, after telling the player, when a buy costing
+   * `price` is over what's left. The selection is left alone and no place
+   * cue plays: nothing was bought.
+   */
+  const refuseOverBudget = useCallback((price: number): boolean => {
+    const refusal = purchaseRefusal(layoutStore.getState().layout, price);
+    if (refusal === null) return false;
+    // REFUSED-CUE: G3's `refused` sound cue goes here at integration.
+    notify(refusal, 'error');
+    return true;
+  }, []);
+
   // Wrap layout actions with the side-effect of clearing the selection when
   // the targeted item disappears. Discrete actions (delete, duplicate, add,
   // paste) each get an undo step of their own (#425).
   const removeItem = useCallback(
     (id: string) => {
       commitHistoryNow();
-      actions.removeItem(id);
+      // Demolish sells back: 80 % refunded under the hard budget (#463e).
+      actions.sellItems([id]);
       playCue('remove');
       setSelectedItemId((current) => (current === id ? null : current));
       setExtraSelectedIds((extras) => {
@@ -564,10 +579,9 @@ export function RoomOrganizer(): JSX.Element {
     if (allSelectedIds.size === 0) return;
     // A lock pins position, not existence: every placed item is locked after
     // placement and drag, so deletion ignores it like Demolish does (#358).
-    const remaining = activeFloor.items.filter((item) => !allSelectedIds.has(item.id));
-    if (remaining.length === activeFloor.items.length) return;
+    if (!activeFloor.items.some((item) => allSelectedIds.has(item.id))) return;
     commitHistoryNow();
-    actions.replaceItems(remaining);
+    actions.sellItems([...allSelectedIds]);
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
   }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds]);
@@ -578,6 +592,13 @@ export function RoomOrganizer(): JSX.Element {
   // copy mixed in with the stale originals' ids.
   const duplicateSelected = useCallback(
     (primaryId: string) => {
+      // Hard budget (#463e): all the copies or none, and say why — the
+      // reducer would refuse an unaffordable copy silently.
+      const copying =
+        allSelectedIds.size > 1 && allSelectedIds.has(primaryId)
+          ? activeFloor.items.filter((item) => allSelectedIds.has(item.id))
+          : activeFloor.items.filter((item) => item.id === primaryId);
+      if (refuseOverBudget(purchasePrice(copying))) return;
       commitHistoryNow();
       if (allSelectedIds.size > 1 && allSelectedIds.has(primaryId)) {
         // Duplicate the primary first so it becomes the new primary, then the
@@ -594,7 +615,7 @@ export function RoomOrganizer(): JSX.Element {
       // Clear stale extras so the selection is only the fresh copy.
       setExtraSelectedIds(new Set());
     },
-    [actions, commitHistoryNow, allSelectedIds]
+    [actions, commitHistoryNow, allSelectedIds, activeFloor.items, refuseOverBudget]
   );
 
   const { saveStatus, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
@@ -879,6 +900,7 @@ export function RoomOrganizer(): JSX.Element {
       floorIndex: activeFloorIndex,
     });
     if (built.length === 0) return false;
+    if (refuseOverBudget(purchasePrice(built))) return false;
     commitHistoryNow();
     actions.addItems(built);
     selectOnly(built[0]!.id);
@@ -887,7 +909,7 @@ export function RoomOrganizer(): JSX.Element {
     }
     playCue('place');
     return true;
-  }, [layout.width, layout.height, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue]);
+  }, [layout.width, layout.height, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
 
   const shortcutHandlers = useMemo(
     () => ({

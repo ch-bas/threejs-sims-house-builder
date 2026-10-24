@@ -444,6 +444,23 @@
   .pc-mode-panel[data-more-open] > div:first-child {
     display: block !important;
   }
+  /* Under the hard budget (#463e) the funds stay on the bar: greyed tiles
+     need a reason, and touch has no tooltips. The switch follows the label. */
+  .pc-mode-panel[data-hard-budget]:not([data-more-open]) {
+    grid-template-areas:
+      'money money money'
+      'primary pill more';
+  }
+  .pc-mode-panel[data-hard-budget] > div:first-child {
+    display: block !important;
+  }
+  .pc-mode-panel > div:first-child .pc-budget-switch {
+    position: static;
+    vertical-align: middle;
+    margin-left: 10px;
+    min-height: 28px;
+    font-size: 10px;
+  }
   .pc-mode-panel > div:first-child .pc-money {
     font-size: 18px !important;
     display: inline !important;

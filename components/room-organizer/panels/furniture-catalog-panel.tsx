@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useEditorView, useEditorViewActions } from '../contexts';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
-import { useActiveFloorIndex } from '../hooks/use-layout-store';
+import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-store';
+import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
@@ -30,6 +31,8 @@ export interface FurnitureCatalogPanelProps {
 
 export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JSX.Element {
   const activeFloorIndex = useActiveFloorIndex();
+  // Hard budget (#463e): tiles over what's left grey out; null when off.
+  const remaining = useBudgetRemaining();
   const [filter, setFilter] = useState<FilterKey>('all');
   // The search lives in the editor view store, shared with the 3D highlight;
   // subscribing here keeps a keystroke from re-rendering the drawer (#148).
@@ -77,7 +80,8 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
         ) : (
           <div ref={gridRef} className="grid grid-cols-3 gap-2 max-h-[460px] overflow-y-auto pr-1">
             {filtered.map((item, index) => {
-              const blockedReason = catalogTileBlockedReason(item, activeFloorIndex);
+              const blockedReason =
+                catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
               const add = () => {
                 if (!blockedReason) onAdd(item);
               };
@@ -88,6 +92,7 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
                   blockedReason={blockedReason}
                   onAdd={add}
                   roving={tileProps(index, add)}
+                  overBudget={budgetBlockedReason(item.price, remaining) !== null}
                 />
               );
             })}
@@ -165,9 +170,11 @@ interface CatalogTileProps {
   blockedReason: string | null;
   onAdd(): void;
   roving: RovingTileProps;
+  /** Greyed by the hard budget (#463e): the price line says so (no tooltip on touch). */
+  overBudget?: boolean;
 }
 
-function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, blockedReason, onAdd, roving, overBudget }: CatalogTileProps): JSX.Element {
   const blocked = blockedReason !== null;
   return (
     <button
@@ -199,8 +206,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): 
       <div className="px-1.5 py-1 text-center">
         <p className="text-[10px] leading-tight font-medium truncate">{item.name}</p>
         <p className="text-[9px] text-amber-400 font-semibold">
-          {CURRENCY_SYMBOL}
-          {item.price.toLocaleString()}
+          {overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}
         </p>
       </div>
     </button>

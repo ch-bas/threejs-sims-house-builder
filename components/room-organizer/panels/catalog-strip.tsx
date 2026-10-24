@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
-import { useActiveFloorIndex } from '../hooks/use-layout-store';
+import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { useScrollCue } from '../hooks/use-scroll-cue';
+import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
@@ -22,6 +23,8 @@ export interface CatalogStripProps {
 
 export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Element {
   const activeFloorIndex = useActiveFloorIndex();
+  // Hard budget (#463e): tiles over what's left grey out; null when off.
+  const remaining = useBudgetRemaining();
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
   // Docked on a phone (#395): one row of every item, scrolled sideways,
@@ -88,7 +91,8 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
           style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}
         >
           {visible.map((item, index) => {
-            const blockedReason = catalogTileBlockedReason(item, activeFloorIndex);
+            const blockedReason =
+              catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
             const add = () => {
               if (!blockedReason) onAdd(item);
             };
@@ -99,6 +103,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                 blockedReason={blockedReason}
                 onAdd={add}
                 roving={tileProps(index, add)}
+                overBudget={budgetBlockedReason(item.price, remaining) !== null}
                 showName
                 docked
               />
@@ -206,7 +211,8 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   />
                 );
               }
-              const blockedReason = catalogTileBlockedReason(item, activeFloorIndex);
+              const blockedReason =
+                catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
               const add = () => {
                 if (!blockedReason) onAdd(item);
               };
@@ -217,6 +223,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   blockedReason={blockedReason}
                   onAdd={add}
                   roving={tileProps(index, add)}
+                  overBudget={budgetBlockedReason(item.price, remaining) !== null}
                   showName={showNames}
                 />
               );
@@ -323,9 +330,11 @@ interface CatalogTileProps {
   showName?: boolean;
   /** A tile on the docked phone row: fixed width so the row scrolls. */
   docked?: boolean;
+  /** Greyed by the hard budget (#463e): where names show (touch), the price says so. */
+  overBudget?: boolean;
 }
 
-function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, overBudget }: CatalogTileProps): JSX.Element {
   const icon = iconForItem(item.type, item.category);
   const blocked = blockedReason !== null;
   return (
@@ -391,8 +400,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: C
           lineHeight: 1,
         }}
       >
-        {CURRENCY_SYMBOL}
-        {item.price.toLocaleString()}
+        {showName && overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}
       </span>
     </button>
   );

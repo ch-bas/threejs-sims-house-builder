@@ -1,5 +1,7 @@
 'use client';
 
+import { useBudgetRemaining } from '../hooks/use-layout-store';
+import { budgetBlockedReason } from '../lib/budget';
 import {
   CCTV_TYPE_ORDER,
   CCTV_TYPE_BLURB,
@@ -40,20 +42,25 @@ export function CctvMenu({ variant, onAdd }: CctvMenuProps): JSX.Element {
 
 /** Dark, horizontal row of five type tiles for the bottom catalog strip. */
 function StripMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
+  const remaining = useBudgetRemaining();
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
       {CCTV_TYPE_ORDER.map((type) => {
         const item = catalogItemForType(type);
         if (!item) return null;
         const count = modelsOfType(type).length;
+        // Hard budget (#463e): greyed out when the camera costs more than is left.
+        const overBudget = budgetBlockedReason(item.price, remaining);
         return (
           <button
             key={type}
             type="button"
             onClick={() => onAdd(item)}
-            title={`${type} camera — ${CCTV_TYPE_BLURB[type]} (${count} model${count > 1 ? 's' : ''})`}
+            disabled={overBudget !== null}
+            title={overBudget ?? `${type} camera — ${CCTV_TYPE_BLURB[type]} (${count} model${count > 1 ? 's' : ''})`}
             className="pc-tile"
             style={{
+              ...(overBudget ? { opacity: 0.35, cursor: 'not-allowed' } : {}),
               height: 64,
               display: 'flex',
               flexDirection: 'column',
@@ -77,7 +84,7 @@ function StripMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
               {type}
             </span>
             <span style={{ fontSize: 8, opacity: 0.7, lineHeight: 1 }}>
-              {count} model{count > 1 ? 's' : ''}
+              {overBudget ? 'Over budget' : `${count} model${count > 1 ? 's' : ''}`}
             </span>
           </button>
         );
@@ -88,6 +95,7 @@ function StripMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
 
 /** Light, vertical list of five type rows for the sidebar Buy tab. */
 function PanelMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
+  const remaining = useBudgetRemaining();
   return (
     <div className="flex flex-col gap-2">
       {CCTV_TYPE_ORDER.map((type) => {
@@ -95,12 +103,15 @@ function PanelMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
         if (!item) return null;
         const models = modelsOfType(type);
         const rep = getCctvModel(REPRESENTATIVE_MODEL_BY_TYPE[type]);
+        const overBudget = budgetBlockedReason(item.price, remaining);
         return (
           <button
             key={type}
             type="button"
             onClick={() => onAdd(item)}
-            className="group flex items-center gap-3 rounded-xl border bg-gradient-to-b from-white to-slate-50 hover:from-amber-50 hover:to-amber-100 hover:border-amber-300 active:scale-[0.99] transition-all p-2.5 text-left shadow-sm"
+            disabled={overBudget !== null}
+            {...(overBudget ? { title: overBudget } : {})}
+            className={`${overBudget ? 'opacity-40 cursor-not-allowed ' : ''}group flex items-center gap-3 rounded-xl border bg-gradient-to-b from-white to-slate-50 hover:from-amber-50 hover:to-amber-100 hover:border-amber-300 active:scale-[0.99] transition-all p-2.5 text-left shadow-sm`}
           >
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-cyan-300">
               <Icon name="vision" size={18} />
@@ -113,7 +124,7 @@ function PanelMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
               </span>
             </span>
             <span className="shrink-0 text-[10px] font-medium text-amber-700">
-              {models.length} model{models.length > 1 ? 's' : ''}
+              {overBudget ? 'Over budget' : `${models.length} model${models.length > 1 ? 's' : ''}`}
             </span>
           </button>
         );

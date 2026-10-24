@@ -304,6 +304,18 @@ export interface NeighbourSpec {
 }
 
 /**
+ * The hard budget (#463e): present and not `enabled: false` means on.
+ * Tiles over what's left grey out and Demolish refunds `SELL_BACK_RATE` of the price; `writeOff` is
+ * the running total of what those sales lost, in whole currency units. See
+ * lib/budget.ts for how "spent" is derived from it.
+ */
+export interface HardBudget {
+  writeOff: number;
+  /** `false`: switched off after use; the write-off is kept for when it comes back on. */
+  enabled?: false;
+}
+
+/**
  * A multi-floor building. `floors[0]` is the ground floor; subsequent
  * entries stack upward. Footprint and floor-plan upload live on the
  * building because they're shared across levels.
@@ -325,6 +337,8 @@ export interface RoomLayout {
   entrance?: EntranceSpec;
   /** 'pavement': the pavement runs right up to the front wall, no front garden. */
   frontage?: Frontage;
+  /** The opt-in hard budget (#463e); absent, the budget only advises. */
+  budget?: HardBudget;
 }
 
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */
