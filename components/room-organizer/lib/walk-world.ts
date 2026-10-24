@@ -437,3 +437,17 @@ export function seesNeighbourStoreys(wasNear: boolean, kind: WalkSurfaceKind, st
   if (kind === 'tread') return true;
   return stairwellDistance < (wasNear ? STAIRWELL_VIEW_LEAVE : STAIRWELL_VIEW_ENTER);
 }
+
+/**
+ * The storey whose lamps light a walker (#446): its own, except on a
+ * flight within a step of the landing above, where it is already that
+ * storey's (the top tread), a step before the active floor switches.
+ */
+export function walkLampStorey(world: WalkWorld, walker: { y: number; kind: WalkSurfaceKind; floorIndex: number }): number {
+  if (walker.kind !== 'tread') return walker.floorIndex;
+  const above = world.elevations[walker.floorIndex + 1];
+  if (above === undefined) return walker.floorIndex;
+  // Only the top tread is within the landing's own step of the floor above.
+  const step = world.landingStep[walker.floorIndex + 1] ?? 0.05;
+  return walker.y >= above - step ? walker.floorIndex + 1 : walker.floorIndex;
+}

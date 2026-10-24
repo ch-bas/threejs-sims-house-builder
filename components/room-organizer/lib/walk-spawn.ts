@@ -60,7 +60,7 @@ function standable(ctx: WalkSpawnContext, floorIndex: number, x: number, z: numb
   if (!walkSurfaceAt(ctx.world, x, z, y, 'floor', scratch)) return false;
   if (scratch.kind !== 'floor' || scratch.floorIndex !== floorIndex) return false;
   const inside = Math.abs(x) <= ctx.world.halfWidth && Math.abs(z) <= ctx.world.halfDepth;
-  return walkClearance(ctx.colliders, x, z, inside) >= ctx.radius + SPAWN_MARGIN;
+  return walkClearance(ctx.colliders, x, z, inside, y) >= ctx.radius + SPAWN_MARGIN;
 }
 
 function pose(ctx: WalkSpawnContext, floorIndex: number, x: number, z: number, dirX: number, dirZ: number): WalkPose {
@@ -102,7 +102,8 @@ function roomiest(ctx: WalkSpawnContext, floorIndex: number): { x: number; z: nu
     for (let z = -halfDepth + GRID_STEP; z < halfDepth; z += GRID_STEP) {
       if (!standable(ctx, floorIndex, x, z)) continue;
       // Ties go to the spot nearer the middle of the house.
-      const clearance = walkClearance(ctx.colliders, x, z, true) - Math.hypot(x, z) * 1e-3;
+      const clearance =
+        walkClearance(ctx.colliders, x, z, true, ctx.world.elevations[floorIndex]) - Math.hypot(x, z) * 1e-3;
       if (clearance <= bestClearance) continue;
       best = { x, z };
       bestClearance = clearance;

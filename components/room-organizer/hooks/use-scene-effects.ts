@@ -147,6 +147,8 @@ export interface UseSceneEffectsParams {
    * hide them, so only the walker's own storey is drawn.
    */
   walkNearStairs?: boolean;
+  /** The storey whose lamps light the walker (`walkLampStorey`, lib/walk-world). */
+  walkLampStorey?: number;
 }
 
 export function useSceneEffects({
@@ -173,6 +175,7 @@ export function useSceneEffects({
   measurementPoints,
   walkIndoors = false,
   walkNearStairs = false,
+  walkLampStorey,
 }: UseSceneEffectsParams): void {
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   // The furniture groups in the scene by furnitureMeshKey, with the build
@@ -286,10 +289,13 @@ export function useSceneEffects({
   // drawn: point lights cast no shadow, so an upstairs lamp would light the
   // room below through its ceiling (#446). The active floor follows the
   // walker, so the pool only ever holds lamps on the walker's storey.
+  // The walker's lamps switch storey a step before the landing, at the
+  // top tread, rather than once it is on the floor plate.
   const litAllFloors = view.showAllFloors && !walkthroughActive;
+  const litStorey = walkthroughActive && walkLampStorey !== undefined ? walkLampStorey : activeFloorIndex;
   const lampsKey = useMemo(
-    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex, showAllFloors: litAllFloors })),
-    [layout.floors, activeFloorIndex, litAllFloors]
+    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex: litStorey, showAllFloors: litAllFloors })),
+    [layout.floors, litStorey, litAllFloors]
   );
 
   // Wall preview during draw mode
@@ -455,7 +461,10 @@ export function useSceneEffects({
   // lined up to the storey above and down to the one below — otherwise the
   // view up or down the stairs runs out into the sky or the garden. The
   // walkthrough now builds every storey (#446): the plate stays (the floor
-  // above is invisible from below without it), the shafts go.
+  // above is invisible from below without it); the shafts line the
+  // stairwells while the storeys either side are hidden (the walker away
+  // from the stairs), so a hole never shows the sky, and go when they show.
+  const neighboursHidden = walkthroughActive && walkIndoors && !walkNearStairs;
   // Keyed on primitives so nothing is built, or rebuilt, outside walkthrough.
   const ceiling = walkthroughActive ? walkthroughCeiling(layout.floors, activeFloorIndex) : null;
   const pit = walkthroughActive ? walkthroughPit(layout.floors, activeFloorIndex) : null;
@@ -485,8 +494,8 @@ export function useSceneEffects({
         pitY !== undefined && pitTopY !== undefined && pitFloorColor !== undefined
           ? { y: pitY, topY: pitTopY, openings: computeFloorOpenings(layout.floors[activeFloorIndex - 1]), floorColor: pitFloorColor }
           : null,
-      // With every storey built, the stairwells open onto the real storeys.
-      shafts: !allFloors,
+      // Open onto the real storeys when they are drawn.
+      shafts: !allFloors || neighboursHidden,
     });
     if (!group) return undefined;
     requestShadowUpdate();
@@ -498,7 +507,7 @@ export function useSceneEffects({
     // activeFloor and the storey below are read for their stairwells only;
     // wallOpeningsKey covers them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, ceilingY, ceilingCapY, pitY, pitTopY, pitFloorColor, activeFloorIndex, allFloors, layout.width, layout.height, wallOpeningsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, ceilingY, ceilingCapY, pitY, pitTopY, pitFloorColor, activeFloorIndex, allFloors, neighboursHidden, layout.width, layout.height, wallOpeningsKey]);
 
   // Furniture meshes
   useEffect(() => {

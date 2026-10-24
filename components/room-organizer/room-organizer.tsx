@@ -903,6 +903,7 @@ export function RoomOrganizer(): JSX.Element {
     measurementPoints,
     walkIndoors: walkthroughActive && !walk.outside,
     walkNearStairs: walk.nearStairs,
+    walkLampStorey: walk.lampStorey,
   };
 
   useNpcs({

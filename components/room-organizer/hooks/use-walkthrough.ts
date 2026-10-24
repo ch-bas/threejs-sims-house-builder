@@ -15,6 +15,7 @@ import {
   distanceToStairwell,
   eyeOffsetForStorey,
   seesNeighbourStoreys,
+  walkLampStorey,
   type WalkWorld,
 } from '../lib/walk-world';
 import type { StreetSite } from '../lib/street-row';
@@ -76,6 +77,8 @@ export interface UseWalkthroughResult {
    * either side of its own can be seen; elsewhere the ceiling hides them (#446).
    */
   nearStairs: boolean;
+  /** The storey whose lamps light the walker: the one above from its top tread (#446). */
+  lampStorey: number;
   /** The touch stick (#446): x right, y forward, each in [−1, 1]. */
   setStick(x: number, y: number): void;
   /** Sit on the seat in reach, or stand up (`E`, or the HUD's button on touch). */
@@ -157,6 +160,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   const [seated, setSeated] = useState(false);
   const [outside, setOutside] = useState(false);
   const [nearStairs, setNearStairs] = useState(false);
+  const [lampStorey, setLampStorey] = useState(activeFloorIndex);
 
   // Built only when what they read changes, never per frame (#156); outside
   // walkthrough they're skipped entirely.
@@ -288,6 +292,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         session.nearStairs = near;
         setNearStairs(near);
       }
+      // A plain number: React skips the render when it is unchanged.
+      setLampStorey(world ? walkLampStorey(world, walker) : walker.floorIndex);
     };
 
     const placeAt = (pose: WalkPose): void => {
@@ -655,5 +661,5 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   }, []);
   const toggleSit = useCallback(() => toggleSitRef.current?.(), []);
 
-  return { lockRefused, locked, seatName: seated ? null : seatName, seated, outside, nearStairs, setStick, toggleSit };
+  return { lockRefused, locked, seatName: seated ? null : seatName, seated, outside, nearStairs, lampStorey, setStick, toggleSit };
 }

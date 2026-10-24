@@ -645,13 +645,22 @@ function advanceAxis(
 
 /**
  * How far (x, z) is from the nearest collider's surface: 0 inside one.
+ * With `feetY`, only boxes that meet a walker standing there count.
  * Outdoor colliders count only for a point outside the room, as in the
  * resolver. For picking a spawn spot, not for the per-frame loop.
  */
-export function walkClearance(colliders: readonly WalkCollider[], x: number, z: number, insideRoom: boolean): number {
+export function walkClearance(
+  colliders: readonly WalkCollider[],
+  x: number,
+  z: number,
+  insideRoom: boolean,
+  feetY?: number
+): number {
   let clearance = Infinity;
   for (const box of colliders) {
     if (box.outdoor && insideRoom) continue;
+    // A box on another storey (under a landing, upstairs) isn't in the way.
+    if (feetY !== undefined && !blocksAt(box, feetY)) continue;
     const dx = x - box.cx;
     const dz = z - box.cz;
     const lx = Math.max(0, Math.abs(dx * box.ax + dz * box.az) - box.hw);
