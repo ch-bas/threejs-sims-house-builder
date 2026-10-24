@@ -325,9 +325,12 @@ describe('openPlanPrintWindow', () => {
       },
       setTimeout: (callback: () => void) => callback(),
       print,
+      opener: window as unknown,
     };
     vi.spyOn(window, 'open').mockReturnValue(fakeWindow as unknown as Window);
     openPlanPrintWindow(layout, floor, { paper: 'A3' });
+    // The popup can't reach back into the editor (#455).
+    expect(fakeWindow.opener).toBeNull();
     expect(html).toContain('@page { size: A3 portrait;');
     // No inline handler: the popup inherits the opener's CSP (#445).
     expect(html).not.toMatch(/\son[a-z]+=/i);

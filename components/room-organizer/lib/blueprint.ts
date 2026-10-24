@@ -106,6 +106,8 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     window.alert('Pop-ups are blocked — allow pop-ups to print the blueprint.');
     return;
   }
+  // The popup only needs the opener's handle on it, not the reverse (#455).
+  printWindow.opener = null;
 
   // The tracing image is painted from a lazily-warmed decoded-image cache;
   // in 3D view with the minimap off nothing has rendered the plan yet, so

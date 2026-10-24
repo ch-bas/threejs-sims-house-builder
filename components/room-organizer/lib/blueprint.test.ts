@@ -31,11 +31,13 @@ describe('openBlueprintPrintWindow (#288)', () => {
     },
     // Printing is armed from the opener after the write (#445).
     addEventListener: (type: string) => events.push(`listen:${type}`),
+    opener: null as unknown,
   };
 
   beforeEach(() => {
     events.length = 0;
     decodeCalls.length = 0;
+    fakeWindow.opener = window;
     vi.spyOn(window, 'open').mockImplementation(() => {
       events.push('open');
       return fakeWindow as unknown as Window;
@@ -57,6 +59,8 @@ describe('openBlueprintPrintWindow (#288)', () => {
     releaseDecode();
     await done;
     expect(events).toEqual(['open', 'write:plan', 'close', 'listen:load']);
+    // The popup can't reach back into the editor (#455).
+    expect(fakeWindow.opener).toBeNull();
   });
 
   it('does not wait for a decode on upper floors, which never show the image', async () => {
@@ -170,7 +174,10 @@ describe('openBlueprintPrintWindow escaping (#455)', () => {
 
   it('escapes the house, floor, zone and left-off item names and icons', async () => {
     let html = '';
-    vi.spyOn(window, 'open').mockReturnValue({ document: { write: (m: string) => (html += m), close: () => undefined } } as unknown as Window);
+    vi.spyOn(window, 'open').mockReturnValue({
+      document: { write: (m: string) => (html += m), close: () => undefined, readyState: 'loading' },
+      addEventListener: () => undefined,
+    } as unknown as Window);
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,STUB');
     const far = makeItem({ id: 'far', type: 'tree', name: SCRIPT, icon: ATTR, position: { x: 40, z: 0 } });
     const floor = makeFloor({

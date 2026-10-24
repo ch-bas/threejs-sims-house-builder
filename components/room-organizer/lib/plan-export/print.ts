@@ -273,6 +273,8 @@ export function openPlanPrintWindow(layout: RoomLayout, floor: FloorLayout, opti
     window.alert('Pop-ups are blocked — allow pop-ups to print the plan.');
     return;
   }
+  // The popup only needs the opener's handle on it, not the reverse (#455).
+  printWindow.opener = null;
   printWindow.document.write(html);
   printWindow.document.close();
   printWhenLoaded(printWindow);
