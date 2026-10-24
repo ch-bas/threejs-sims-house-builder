@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { groundHeightAt } from '../lib/site';
 import {
   advanceWalker,
   buildWalkerColliders,
@@ -62,6 +63,8 @@ export interface UseWalkthroughResult {
   /** The seat in reach, by name, while standing; null when none (#463b). */
   seatName: string | null;
   seated: boolean;
+  /** The walker is out on the lot (or in the porch): the whole house is drawn (#446). */
+  outside: boolean;
   /** The touch stick (#446): x right, y forward, each in [−1, 1]. */
   setStick(x: number, y: number): void;
   /** Sit on the seat in reach, or stand up (`E`, or the HUD's button on touch). */
@@ -80,6 +83,11 @@ const SEAT_LOOKUP_MS = 120;
 /** Radians of turn per pixel of a touch drag. */
 const TOUCH_LOOK = 0.005;
 const MAX_PITCH = Math.PI / 2 - 0.05;
+/**
+ * Near plane while walking: its farthest corner stays inside the 0.35 m wall
+ * standoff up to a 3:1 screen at the 75° field of view.
+ */
+const WALK_NEAR = 0.1;
 
 interface WalkSession {
   walker: WalkerState;
@@ -92,6 +100,7 @@ interface WalkSession {
   /** Where the walker stood before sitting, or null while standing. */
   seated: { x: number; z: number } | null;
   seatTargetId: string | null;
+  outside: boolean;
   /** The floor the walker last reported, and the reports React hasn't echoed yet. */
   reportedFloor: number;
   pendingFloors: number[];
@@ -134,6 +143,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   const [locked, setLocked] = useState(false);
   const [seatName, setSeatName] = useState<string | null>(null);
   const [seated, setSeated] = useState(false);
+  const [outside, setOutside] = useState(false);
 
   // Built only when what they read changes, never per frame (#156); outside
   // walkthrough they're skipped entirely.
@@ -176,6 +186,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     touch: false,
     seated: null,
     seatTargetId: null,
+    outside: false,
     reportedFloor: 0,
     pendingFloors: [],
   });
@@ -202,6 +213,15 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     // The orbit pose to come back to, saved before anything moves the camera.
     const savedCameraPosition = camera.position.clone();
     const savedCameraQuaternion = camera.quaternion.clone();
+    // The orbit target follows the active storey even mid-walk; on exit the
+    // camera moves with it, so a floor change doesn't make the first orbit jump.
+    const savedTarget = orbit?.target.clone() ?? null;
+    // The orbit near plane (0.3 m) is wider than the 0.35 m wall standoff on a
+    // wide screen (a landscape phone), so it cut through a wall the walker
+    // stood against. Walking pulls it in; exit puts it back.
+    const savedNear = camera.near;
+    camera.near = WALK_NEAR;
+    camera.updateProjectionMatrix();
     let rafId = 0;
 
     // Scratch, reused every frame so the loop allocates nothing (#156).
@@ -244,6 +264,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       walker.kind = pose.kind;
       walker.floorIndex = pose.floorIndex;
       session.seated = null;
+      session.outside = pose.kind === 'ground';
+      setOutside(session.outside);
       transition.active = false;
       session.eyeY = eyeFor(walker);
       camera.position.set(walker.x, session.eyeY, walker.z);
@@ -295,7 +317,12 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       const items = itemsRef.current;
       const seat = items.find((item) => item.id === session.seatTargetId);
       const walker = session.walker;
-      const floorY = worldRef.current?.elevations[walker.floorIndex] ?? 0;
+      const world = worldRef.current;
+      // A garden bench sits on the lot, not on the storey's floor.
+      const floorY =
+        seat?.category === 'outdoor' && seat.position && world
+          ? groundHeightAt(world.terrain, seat.position.z, world.halfDepth)
+          : (world?.elevations[walker.floorIndex] ?? 0);
       const pose = seat ? seatPose(seat, items, floorY) : null;
       if (!pose) return;
       session.seated = { x: walker.x, z: walker.z };
@@ -315,7 +342,11 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (releasesHeldKeys(event)) pressed.clear();
-      else if (startsWalking(event)) pressed.add(event.code);
+      else if (startsWalking(event)) {
+        pressed.add(event.code);
+        // Keys walk under the pointer lock, not in touch mode.
+        if (!controls?.isLocked) session.touch = false;
+      }
       else if (interacts(event) && walking()) toggleSit();
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -345,7 +376,12 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     let lookY = 0;
     const onPointerDown = (event: PointerEvent) => {
       lastPointerType = event.pointerType;
-      if (event.pointerType === 'mouse' || lookPointer !== null) return;
+      if (event.pointerType === 'mouse') {
+        // A mouse is back: walking needs the pointer lock again.
+        session.touch = false;
+        return;
+      }
+      if (lookPointer !== null) return;
       session.touch = true;
       lookPointer = event.pointerId;
       lookX = event.clientX;
@@ -482,6 +518,11 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           const world = worldRef.current;
           if (world) advanceWalker(world, collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS, walker, moveX, moveZ, WALKER_RADIUS);
           dirty = true;
+          const isOutside = walker.kind === 'ground';
+          if (isOutside !== session.outside) {
+            session.outside = isOutside;
+            setOutside(isOutside);
+          }
           // Climbing onto the other storey makes it the active floor (#446).
           if (walker.floorIndex !== session.reportedFloor) {
             session.reportedFloor = walker.floorIndex;
@@ -533,6 +574,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       setLocked(false);
       setSeated(false);
       setSeatName(null);
+      setOutside(false);
       for (const fn of cleanup) {
         try {
           fn();
@@ -545,6 +587,9 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       // And its aim: the orbit tick doesn't run update() until the next
       // gesture, so the walker's heading otherwise lingered on exit.
       camera.quaternion.copy(savedCameraQuaternion);
+      if (orbit && savedTarget) camera.position.add(savedTarget.subVectors(orbit.target, savedTarget));
+      camera.near = savedNear;
+      camera.updateProjectionMatrix();
       invalidateRef.current?.();
       if (orbit) orbit.enabled = true;
     };
@@ -578,5 +623,5 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   }, []);
   const toggleSit = useCallback(() => toggleSitRef.current?.(), []);
 
-  return { lockRefused, locked, seatName: seated ? null : seatName, seated, setStick, toggleSit };
+  return { lockRefused, locked, seatName: seated ? null : seatName, seated, outside, setStick, toggleSit };
 }

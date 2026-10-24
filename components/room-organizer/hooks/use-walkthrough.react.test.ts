@@ -102,10 +102,11 @@ function pointer(target: EventTarget, type: string, init: { pointerType: string;
 }
 
 async function setup(b: WalkthroughBuilding, extra: Partial<UseWalkthroughOptions> = {}) {
-  const camera = new THREE.PerspectiveCamera();
+  // The app's orbit camera: 75°, near 0.3 (hooks/use-three-scene).
+  const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.3, 1000);
   camera.position.set(0, 8, 8);
   const canvas = document.createElement('canvas');
-  const orbit = { enabled: true };
+  const orbit = { enabled: true, target: new THREE.Vector3(0, 1.5, 0) };
   const onExit = vi.fn();
   const onFloorChange = vi.fn();
   const props: UseWalkthroughOptions = {
@@ -148,6 +149,21 @@ describe('useWalkthrough — spawn and HUD state (#463a, #454)', () => {
     rerender({ ...props, enabled: false });
     expect(camera.position.toArray()).toEqual([0, 8, 8]);
     expect(orbit.enabled).toBe(true);
+  });
+
+  it('pulls the near plane in while walking and puts it back (#446)', async () => {
+    const { camera, rerender, props } = await setup(building([FRONT_DOOR]));
+    expect(camera.near).toBe(0.1);
+    rerender({ ...props, enabled: false });
+    expect(camera.near).toBe(0.3);
+  });
+
+  it('on exit after a floor change, the camera moves with the orbit target (#446)', async () => {
+    const { camera, orbit, rerender, props } = await setup(building([FRONT_DOOR]));
+    // The orbit target follows the active storey mid-walk (useCameraTargetOnStorey).
+    orbit.target.y += 3;
+    rerender({ ...props, enabled: false });
+    expect(camera.position.toArray()).toEqual([0, 11, 8]);
   });
 
   it('Esc leaves only once the pointer is released', async () => {

@@ -901,6 +901,7 @@ export function RoomOrganizer(): JSX.Element {
     wallDraft,
     wallSnapResult,
     measurementPoints,
+    walkIndoors: walkthroughActive && !walk.outside,
   };
 
   useNpcs({

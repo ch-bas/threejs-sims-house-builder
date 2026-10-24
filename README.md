@@ -984,9 +984,20 @@ components/
   solid with the roof, as ALL floors does with the walls up (the scene
   effects key on `allFloors`): the flight climbs into the real storey
   above, the stairs show from the landing, and the house is whole from the
-  garden. The #359 ceiling plate stays under the storey above (a floor
-  plate is invisible from below); its stairwell shafts go. Sitting eases the camera to the seat and back to where the walker
-  stood; any step stands it up. The orchestrator remembers the mode before
+  garden. Indoors only the walker's storey and the ones directly above
+  and below are drawn (the rest are hidden, not rebuilt: shell and
+  partition objects carry their storey in `userData.storey`, walls are
+  flagged `offStorey` for `applyWallDisplay`); out on the lot the whole
+  house and its roof show. Only the walker's storey is lit, since point
+  lights cast no shadow. The #359 ceiling plate stays under the storey
+  above (a floor plate is invisible from below); its stairwell shafts go.
+  Colliders carry their storey's height span and the walker is tested
+  against its storey and the ones either side, so it passes over what
+  stands below a landing; a flight shorter than its storey allows the
+  taller last step. Walking pulls the camera's near plane in to 0.1 m so
+  a wide screen can't see through a wall, and on exit the orbit camera
+  moves with the target the floor change moved. Sitting eases the camera
+  to the seat and back to where the walker stood; any step stands it up. The orchestrator remembers the mode before
   EXPLORE (a store subscription, no re-render) and leaving returns to it.
 - **The phone dock.** At ≤768 px wide, and at ≤1100 × ≤500 px (landscape
   phones), the HUD docks on the bottom edge (#395, #307). The media queries

@@ -42,6 +42,13 @@ describe('applyWallDisplay', () => {
     expect(children.map((c) => c.visible)).toEqual([true, true, false]);
   });
 
+  it('keeps walls and partitions of a storey the walkthrough hides hidden in every mode (#446)', () => {
+    const off = (o: FakeObject): FakeObject => ({ ...o, userData: { ...o.userData, offStorey: true } });
+    const children = [wall('north'), off(wall('north')), off(grid()), off(interior('iw1')), interior('iw2')];
+    applyWallDisplay(makeScene(children), 0, 10, 'up', 8, 8);
+    expect(children.map((c) => c.visible)).toEqual([true, false, false, false, true]);
+  });
+
   it('cutaway hides only the walls between the camera and the room', () => {
     const children = [wall('north'), wall('south'), wall('east'), wall('west'), roof()];
     // Camera south of the room: the south wall faces it and is cut away.

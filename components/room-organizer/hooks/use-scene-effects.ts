@@ -40,7 +40,7 @@ import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildRoof, removeRoof, setRoofOnStorey } from '../three/roof';
-import { ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
+import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
 import { observeSceneOccluders, planFit } from './scene-occluders';
@@ -59,6 +59,33 @@ export function otherFloorGhostOpacity(
   isActive: boolean
 ): number | undefined {
   return showAllFloors && !isActive && wallDisplay !== 'up' ? 0.25 : undefined;
+}
+
+/** scene.userData-style key on a top-level object: the storey it was built for (#446). */
+const STOREY_KEY = 'storey';
+
+/** Tag every scene child from `first` on as built for `storey`. */
+function tagStorey(scene: ThreeNS.Scene, first: number, storey: number): void {
+  for (let i = first; i < scene.children.length; i++) scene.children[i]!.userData[STOREY_KEY] = storey;
+}
+
+/**
+ * Hide the storeys outside `range` (-1 / -1: none hidden). Floors and
+ * furniture are shown or hidden here; walls and partitions are flagged
+ * `OFF_STOREY_KEY` for applyWallDisplay, which owns their visibility.
+ */
+function applyStoreyRange(scene: ThreeNS.Scene, range: { from: number; to: number }): void {
+  const all = range.from === -1 && range.to === -1;
+  for (const obj of scene.children) {
+    const storey: unknown =
+      obj.userData.type === ROOM_OBJECT_TAGS.Furniture ? obj.userData.floorIndex : obj.userData[STOREY_KEY];
+    if (typeof storey !== 'number') continue;
+    const off = !all && (storey < range.from || storey > range.to);
+    if (obj.userData[OFF_STOREY_KEY] === off) continue;
+    obj.userData[OFF_STOREY_KEY] = off;
+    const tag = obj.userData.type;
+    if (tag !== ROOM_OBJECT_TAGS.Wall && tag !== 'interior-wall') obj.visible = !off;
+  }
 }
 
 function ghostifyGroup(group: import('three').Object3D, opacity = 0.3): void {
@@ -108,6 +135,12 @@ export interface UseSceneEffectsParams {
   wallDraft: { x: number; z: number } | null;
   wallSnapResult: { point: { x: number; z: number }; kind: string } | null;
   measurementPoints: ReadonlyArray<{ x: number; z: number }>;
+  /**
+   * The walker is indoors (#446): of the storeys every one of which the
+   * walkthrough builds, show only its own and the ones directly above and
+   * below. Outside, the whole house shows.
+   */
+  walkIndoors?: boolean;
 }
 
 export function useSceneEffects({
@@ -132,6 +165,7 @@ export function useSceneEffects({
   wallDraft,
   wallSnapResult,
   measurementPoints,
+  walkIndoors = false,
 }: UseSceneEffectsParams): void {
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   // The furniture groups in the scene by furnitureMeshKey, with the build
@@ -156,6 +190,18 @@ export function useSceneEffects({
   // so nothing is ghosted. Leaving restores the user's own choice.
   const allFloors = view.showAllFloors || walkthroughActive;
   const ghostOtherFloors = otherFloorGhostOpacity(allFloors, wallDisplay, false) !== undefined;
+  // Every storey is built while walking, but indoors only the walker's and
+  // its neighbours are drawn: a tall house would otherwise draw every room
+  // of every floor each frame. Hidden, not rebuilt, so walking up a flight
+  // flips visibility only. -1 / -1 shows everything.
+  const shownFrom = walkthroughActive && walkIndoors ? activeFloorIndex - 1 : -1;
+  const shownTo = walkthroughActive && walkIndoors ? activeFloorIndex + 1 : -1;
+  const storeyRangeRef = useRef({ from: shownFrom, to: shownTo });
+  storeyRangeRef.current = { from: shownFrom, to: shownTo };
+  // What the shell and partitions depend on of the active floor: only which
+  // storey is drawn and which is ghosted. With every storey drawn solid a
+  // floor switch (the walker reaching a landing) changes neither.
+  const shellActiveKey = allFloors && !ghostOtherFloors ? -1 : activeFloorIndex;
   // What the porch keep-out is fitted to (#285) — the effects key on this
   // rather than the whole layout.
   const entranceBuilding = useMemo<KeepOutBuilding>(
@@ -228,9 +274,14 @@ export function useSceneEffects({
   // Every night light on a rendered storey, bulb in world space (#215). The
   // string is the lamp effect's key, so a non-lamp item edit doesn't touch the
   // lights, while a floor switch or Show All Floors does.
+  // While walking only the walker's storey is lit, though every storey is
+  // drawn: point lights cast no shadow, so an upstairs lamp would light the
+  // room below through its ceiling (#446). The active floor follows the
+  // walker, so the pool only ever holds lamps on the walker's storey.
+  const litAllFloors = view.showAllFloors && !walkthroughActive;
   const lampsKey = useMemo(
-    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex, showAllFloors: allFloors })),
-    [layout.floors, activeFloorIndex, allFloors]
+    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex, showAllFloors: litAllFloors })),
+    [layout.floors, activeFloorIndex, litAllFloors]
   );
 
   // Wall preview during draw mode
@@ -282,6 +333,7 @@ export function useSceneEffects({
       : null;
 
     for (const { floor, index } of floorsToRender) {
+      const firstChild = scene.children.length;
       const isActive = index === activeFloorIndex;
       const wallOpenings = computeWallOpenings(
         floor.items,
@@ -337,8 +389,10 @@ export function useSceneEffects({
           else scene.add(group);
         }
       }
+      tagStorey(scene, firstChild, index);
     }
 
+    applyStoreyRange(scene, storeyRangeRef.current);
     const camera = cameraRef.current;
     if (camera) {
       applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
@@ -360,7 +414,7 @@ export function useSceneEffects({
     layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, allFloors, ghostOtherFloors,
-    activeFloorIndex,
+    shellActiveKey,
   ]);
 
   // Cutaway on orbit
@@ -531,6 +585,7 @@ export function useSceneEffects({
     // the set and its ghostFloor flags, and a gesture begun before this
     // change aborts (drag-handlers). Recompute the static shadow map only
     // when a shadow caster was added, removed or moved.
+    if (changed) applyStoreyRange(scene, storeyRangeRef.current);
     scene.userData[FURNITURE_REVISION_KEY] =
       ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
     if (changed) requestShadowUpdate();
@@ -815,6 +870,7 @@ export function useSceneEffects({
     for (const { floor, index } of floorsToRender) {
       const walls = floor.interiorWalls ?? [];
       if (walls.length === 0) continue;
+      const firstChild = scene.children.length;
       const isActive = index === activeFloorIndex;
       const floorY = floorElevation(layout.floors, index);
       const wallHeight = interiorWallHeight(floor);
@@ -838,7 +894,9 @@ export function useSceneEffects({
           storeyHeight: storeyHeight(floor),
         }
       );
+      tagStorey(scene, firstChild, index);
     }
+    applyStoreyRange(scene, storeyRangeRef.current);
     // Walls come out visible and this runs after the cutaway effect: re-apply
     // the display so walls-down survives a rebuild, e.g. the ghosting flip on
     // leaving walkthrough with "show all floors" on (#359).
@@ -853,7 +911,24 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, activeFloorIndex, allFloors, ghostOtherFloors, layout.width, layout.height, layout.entrance, layout.terrain]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, layout.width, layout.height, layout.entrance, layout.terrain]);
+
+  // Which storeys are drawn while walking indoors (#446). Declared after the
+  // shell, partition and furniture effects, so a rebuild in the same commit
+  // is covered; those effects apply the range to what they add as well.
+  useEffect(() => {
+    if (!isReady) return;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    applyStoreyRange(scene, { from: shownFrom, to: shownTo });
+    const camera = cameraRef.current;
+    if (camera) applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
+    requestShadowUpdate();
+    invalidate();
+    // wallDisplay and the footprint are read to re-apply the display only;
+    // the cutaway effect owns changes to them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, requestShadowUpdate, sceneRef, cameraRef, shownFrom, shownTo]);
 
   // Cyan outline on selected wall. Declared AFTER the shell + interior-wall
   // rebuild effects and keyed on the same rebuild keys, so it always snapshots
@@ -949,7 +1024,10 @@ export function useSceneEffects({
   // built while it is on screen and kept, hidden, below the top storey, so a
   // floor switch no longer rebuilds the roof and every dormer. A roof edit
   // made down there rebuilds it on the way back up, not while hidden.
-  const roofOnStorey = allFloors || activeFloorIndex === layout.floors.length - 1;
+  // Walking indoors, the roof shows only from the storeys next to it.
+  const roofOnStorey =
+    activeFloorIndex === layout.floors.length - 1 ||
+    (shownTo >= 0 ? shownTo >= layout.floors.length - 1 : allFloors);
   useEffect(() => {
     invalidate();
     if (!isReady) return;
