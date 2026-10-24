@@ -286,6 +286,7 @@ const DrawerBody = memo(function DrawerBody({
                 storeyHeight: storeyHeight(activeFloor),
               });
               if (items.length === 0) {
+                playCue('refused');
                 notify(`No free spot for the ${set.label} — make some room first.`, 'error');
                 return;
               }

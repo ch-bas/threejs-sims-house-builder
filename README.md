@@ -1026,14 +1026,21 @@ components/
   (`three/placement-ghost.ts`, no shadow, its own userData tag so
   raycasts and the furniture diff ignore it) or an SVG outline over the
   plan, mapped through `clientToWorld2D`'s own inverse — no dispatch per
-  move. Presses on the visible canvas are taken in the window's capture
-  phase, so the camera controls and selection never see them; right and
-  middle drags still orbit and pan. The release places through the
-  ordinary path (`placeCatalogItem` with the snapped spot and the ghost's
-  turn), so it is one undo entry and a cancel leaves no trace.
-  `snapCatalogPlacement` previews openings and cameras on their wall and
-  everything else through the drag's snaps. Picking a ghost from the
-  drawer folds it away, as zone drawing does.
+  move. Presses on the visible canvas are taken in the document's
+  capture phase, so the camera controls and selection never see them
+  while other document listeners (an open popover's outside click) still
+  do; right and middle drags still orbit and pan, and a second finger
+  cancels the press, so a pinch places nothing. While held, the ghost
+  owns R, Enter, Space and Escape ahead of a focused tile and the window
+  shortcuts. The release places through `placeDiscrete` (the snapped spot
+  and the ghost's turn), so it is one undo entry with one `place` cue, a
+  hard-budget refusal gets its toast and the `refused` cue, and a cancel
+  leaves no trace. The collision tint is re-checked when the floor's
+  items change; a mode switch or the wall, distance or zone tool puts the
+  ghost down. `snapCatalogPlacement` previews openings and cameras on
+  their wall and everything else through the drag's snaps. Picking a
+  ghost from the drawer folds it away, as zone drawing does. The pad's
+  material is shared and kept, so a pick compiles no shader.
 - **Free space for sets and Surprise** (#456, #448).
   `placeSetInFreeSpace` probes the preferred centre, then a grid over the
   room nearest-first (0.25 m, coarser past a 10 m room), and accepts the

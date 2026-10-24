@@ -700,9 +700,9 @@ export function RoomOrganizer(): JSX.Element {
   // Every catalog add (tile click, keyboard, drag-drop) comes through here,
   // so each chimes once (#460). '' = declined or refused: nothing was added.
   const placeDiscrete = useCallback(
-    (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
+    (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string => {
       commitHistoryNow();
-      const id = placeCatalogItem(catalogItem, position);
+      const id = placeCatalogItem(catalogItem, position, rotation);
       if (!id) return id;
       // The reducer refuses an add on a full floor.
       if (!itemExists(id)) {
@@ -807,14 +807,12 @@ export function RoomOrganizer(): JSX.Element {
         interiorWalls: activeFloor.interiorWalls,
         storeyHeight: activeStoreyHeight,
       }),
+    // placeDiscrete plays the place cue, or `refused` (hard budget, full floor).
     place: (catalogItem, position, rotation, keep) => {
-      commitHistoryNow();
-      const id = placeCatalogItem(catalogItem, position, rotation);
-      // '' = refused by the hard budget or declined at the soft confirm.
+      const id = placeDiscrete(catalogItem, position, rotation);
+      // '' = refused, or declined at the soft budget's confirm.
       if (!id) return false;
       selectOnly(keep ? null : id);
-      // Same chime as the other ways of adding an item (#167).
-      playCue('place');
       return true;
     },
     threeModuleRef,
