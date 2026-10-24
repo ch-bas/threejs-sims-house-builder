@@ -101,7 +101,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Animated people**: placed people and optional walkers ("Show walkers")
   are a rigged mannequin with motion-captured idle, talking and walk clips.
   The model (~420 KB) loads only once a layout has people in it; until then,
-  or if it can't load, a procedural jointed figure stands in.
+  or if it can't load, a procedural jointed figure stands in. Walkers
+  route around furniture, partitions, the stairs and stairwells, go
+  through doors, and stop to face the sofa or bookcase they came to see.
 - **7 room templates**: Bedroom, Living Room, Home Office, Kitchen,
   Bathroom, Studio Apartment, plus a populated multi-floor **Two-Story Home**.
 - **5 theme presets** (Modern, Rustic, Minimalist, Cozy, Tropical) that
@@ -395,6 +397,7 @@ components/
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture + interior walls
+    │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
     │   ├── walk-input.ts                Walkthrough frame-time cap and which keydowns walk (no Ctrl/Cmd/Alt chords)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359)
     │   ├── room-shapes.ts               Predefined room shape presets
@@ -479,7 +482,7 @@ components/
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-walkthrough.ts           PointerLock + WASD movement
-    │   ├── use-npcs.ts                  Animated wandering pedestrians
+    │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits
     │   ├── use-weather.ts               Self-invalidating rain / snow loop
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
@@ -786,6 +789,22 @@ components/
   instead of CPU-skinned triangles (#284).
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
+- **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
+  rasterises the active storey into 0.2 m cells a walker (radius 0.22 m)
+  can stand in: the walkthrough's colliders (furniture, partitions with
+  their door gaps) block, and so do the stairs and the storey's keep-out
+  (porch, stairwell holes), each collider marking only the cells in its
+  reach, so a 150-item floor builds in well under a millisecond. Cells are
+  flood-filled into regions, so a walker only targets somewhere it can
+  reach; A* (8-connected, no corner cutting) and a line-of-sight
+  string-pull give a few straight legs, and every step still runs through
+  `resolveWalkerStep`. Destinations favour free cells beside furniture,
+  which carry the heading that faces it, and skip spots another walker
+  has claimed. The nav is rebuilt only on the floor fields it reads, and
+  only while walkers are shown; an edit re-routes the walkers in place
+  and steps any it landed on to the nearest free cell, without a respawn.
+  Routes live in per-walker typed arrays and the search reuses the nav's
+  scratch, so the frame loop allocates nothing.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
