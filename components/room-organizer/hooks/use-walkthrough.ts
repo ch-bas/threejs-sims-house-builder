@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   advanceWalker,
-  buildShellColliders,
-  buildStreetColliders,
-  buildWalkColliders,
-  streetSiteOf,
+  buildWalkerColliders,
   type ShellBuilding,
   type WalkCollider,
   type WalkerState,
@@ -14,7 +11,7 @@ import { findSeat, seatPose } from '../lib/walk-interact';
 import { walkArrival, walkSpawn, type WalkPose } from '../lib/walk-spawn';
 import { buildWalkWorld, eyeOffsetForStorey, type WalkWorld } from '../lib/walk-world';
 import type { StreetSite } from '../lib/street-row';
-import type { FurnitureItem, InteriorWall } from '../lib/types';
+import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { PointerLockControls as PointerLockControlsType } from 'three/examples/jsm/controls/PointerLockControls.js';
@@ -22,8 +19,8 @@ import type { PointerLockControls as PointerLockControlsType } from 'three/examp
 type ThreeModule = typeof import('../three/three-runtime');
 
 const NO_ITEMS: readonly FurnitureItem[] = [];
-const NO_WALLS: readonly InteriorWall[] = [];
 const NO_COLLIDERS: readonly WalkCollider[] = [];
+const NO_STOREYS: readonly (readonly WalkCollider[])[] = [];
 
 /** The building the walker moves through: storeys, shell and the street around it. */
 export interface WalkthroughBuilding extends ShellBuilding, Pick<StreetSite, 'neighbours' | 'roof'> {}
@@ -141,23 +138,14 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   // Built only when what they read changes, never per frame (#156); outside
   // walkthrough they're skipped entirely.
   const world = useMemo<WalkWorld | null>(() => (enabled ? buildWalkWorld(building) : null), [enabled, building]);
-  const streetColliders = useMemo(
-    () => (enabled ? buildStreetColliders(streetSiteOf(building)) : NO_COLLIDERS),
+  const floor = building.floors[activeFloorIndex];
+  // Per storey: its own colliders with the storeys either side, each box
+  // spanning its own heights, so the walker on a flight is tested against
+  // both storeys it is between (#446).
+  const colliders = useMemo<readonly (readonly WalkCollider[])[]>(
+    () => (enabled ? buildWalkerColliders(building) : NO_STOREYS),
     [enabled, building]
   );
-  const floor = building.floors[activeFloorIndex];
-  const colliders = useMemo<readonly WalkCollider[]>(() => {
-    if (!enabled || !floor) return NO_COLLIDERS;
-    return [
-      ...buildWalkColliders(floor.items, floor.interiorWalls ?? NO_WALLS, {
-        roomWidth: building.width,
-        roomDepth: building.depth,
-        stairsAsRamps: true,
-      }),
-      ...buildShellColliders(building, activeFloorIndex),
-      ...streetColliders,
-    ];
-  }, [enabled, floor, building, activeFloorIndex, streetColliders]);
 
   // Live values the RAF loop and handlers read without re-running the init
   // effect (which would drop pointer lock). Updated every render.
@@ -268,7 +256,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     const spawnContext = (floorIndex: number) => {
       const spawnWorld = worldRef.current;
       return spawnWorld
-        ? { world: spawnWorld, building: buildingRef.current, colliders: collidersRef.current, radius: WALKER_RADIUS, floorIndex }
+        ? { world: spawnWorld, building: buildingRef.current, colliders: collidersRef.current[floorIndex] ?? NO_COLLIDERS, radius: WALKER_RADIUS, floorIndex }
         : null;
     };
 
@@ -492,7 +480,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           const moveX = (forward.x * -dz + right.x * dx) * scale * distance;
           const moveZ = (forward.z * -dz + right.z * dx) * scale * distance;
           const world = worldRef.current;
-          if (world) advanceWalker(world, collidersRef.current, walker, moveX, moveZ, WALKER_RADIUS);
+          if (world) advanceWalker(world, collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS, walker, moveX, moveZ, WALKER_RADIUS);
           dirty = true;
           // Climbing onto the other storey makes it the active floor (#446).
           if (walker.floorIndex !== session.reportedFloor) {

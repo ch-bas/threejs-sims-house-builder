@@ -51,6 +51,8 @@ interface Tread {
   y: number;
   /** The storey above is cut away over this tread (its stairwell, #205). */
   cut: boolean;
+  /** The flight's last tread, the one the landing above is stepped onto from. */
+  top: boolean;
 }
 
 /** Where a flight starts or ends, and which way a walker leaving it faces. */
@@ -100,6 +102,12 @@ export interface WalkWorld {
   stairsByFloor: WalkStair[][];
   /** The tallest step the walker takes: a stair riser, with room to spare. */
   maxStep: number;
+  /**
+   * Per storey, the step between its floor plate and the top tread of a
+   * flight from the storey below: a stair shorter than the storey (its own
+   * 2.6 m in a 3 m storey, #366) leaves a taller last step onto the landing.
+   */
+  landingStep: number[];
   porch: Porch | null;
   terrain: TerrainSpec | undefined;
   /** The lot the walker may roam outside the house. */
@@ -133,11 +141,15 @@ export function buildWalkWorld(building: WalkBuilding): WalkWorld {
   const elevations = floors.map((_floor, index) => floorElevation(floors, index));
   const storeyHeights = floors.map((floor) => storeyHeight(floor));
   let maxRiser = 0;
+  const landingStep = floors.map(() => 0);
   const stairsByFloor = floors.map((floor, floorIndex) => {
     const stairs: WalkStair[] = [];
     for (const item of floor.items) {
       if (item.type !== 'stairs' || !item.position) continue;
       const rise = stairRise(item, floor);
+      if (floorIndex + 1 < floors.length) {
+        landingStep[floorIndex + 1] = Math.max(landingStep[floorIndex + 1]!, storeyHeight(floor) - rise);
+      }
       maxRiser = Math.max(maxRiser, rise / STAIR_STEP_COUNT);
       stairs.push(buildStair(item, item.position, rise, storeyHeight(floor), elevations[floorIndex]!, floorIndex));
     }
@@ -177,6 +189,7 @@ export function buildWalkWorld(building: WalkBuilding): WalkWorld {
     storeyHeights,
     stairsByFloor,
     maxStep: Math.max(BASE_STEP, maxRiser + 0.05),
+    landingStep: landingStep.map((gap) => gap + 0.05),
     porch,
     terrain: building.terrain,
     lotHalfSize: outdoorGroundSize(building.width, building.depth) / 2 - LOT_EDGE_MARGIN,
@@ -221,6 +234,7 @@ function buildStair(
       maxZ: Math.max(...zs),
       y: floorY + step.top,
       cut: step.top > low,
+      top: false,
     };
     minX = Math.min(minX, tread.minX);
     maxX = Math.max(maxX, tread.maxX);
@@ -228,6 +242,8 @@ function buildStair(
     maxZ = Math.max(maxZ, tread.maxZ);
     return tread;
   });
+  const last = treads[treads.length - 1];
+  if (last) last.top = true;
   return {
     id: item.id,
     floorIndex,
@@ -279,8 +295,15 @@ function treadAt(stairs: readonly WalkStair[], x: number, z: number): Tread | nu
 }
 
 /** Whether a walker may move between two surfaces in one step. */
-function reachable(world: WalkWorld, fromY: number, fromKind: WalkSurfaceKind, y: number, kind: WalkSurfaceKind): boolean {
-  const limit = (fromKind === 'ground') !== (kind === 'ground') ? THRESHOLD_STEP : world.maxStep;
+function reachable(
+  world: WalkWorld,
+  fromY: number,
+  fromKind: WalkSurfaceKind,
+  y: number,
+  kind: WalkSurfaceKind,
+  landing: number
+): boolean {
+  const limit = (fromKind === 'ground') !== (kind === 'ground') ? THRESHOLD_STEP : Math.max(world.maxStep, landing);
   return Math.abs(y - fromY) <= limit + 1e-6;
 }
 
@@ -304,9 +327,10 @@ function offer(
   y: number,
   kind: WalkSurfaceKind,
   floorIndex: number,
-  out: WalkSurface
+  out: WalkSurface,
+  landing = 0
 ): void {
-  if (y <= pick.bestY || !reachable(world, footY, fromKind, y, kind)) return;
+  if (y <= pick.bestY || !reachable(world, footY, fromKind, y, kind, landing)) return;
   pick.bestY = y;
   pick.found = true;
   out.y = y;
@@ -342,12 +366,14 @@ export function walkSurfaceAt(
       const tread = treadAt(stairsByFloor[i]!, x, z);
       if (tread) {
         // The flight is solid down to its floor: its tread replaces the plate.
-        offer(world, footY, fromKind, tread.y, 'tread', i, out);
+        // A short flight's last step onto the landing may be the tallest.
+        const landing = tread.top && fromKind === 'floor' ? (world.landingStep[i + 1] ?? 0) : 0;
+        offer(world, footY, fromKind, tread.y, 'tread', i, out, landing);
         continue;
       }
       const below = i > 0 ? treadAt(stairsByFloor[i - 1]!, x, z) : null;
       if (below?.cut) continue; // the stairwell
-      offer(world, footY, fromKind, elevations[i]!, 'floor', i, out);
+      offer(world, footY, fromKind, elevations[i]!, 'floor', i, out, fromKind === 'tread' ? world.landingStep[i]! : 0);
     }
     if (inPorch) offer(world, footY, fromKind, porch.bottomY, 'ground', -1, out);
     return pick.found;
