@@ -230,6 +230,46 @@
 @media (prefers-reduced-motion: reduce) {
   .pc-funds-delta { animation: none; }
 }
+/* The hard-budget switch sits under the funds, left of their label. */
+.pc-budget-switch {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: var(--pc-tr-caps);
+  text-transform: uppercase;
+  color: var(--pc-paper-soft);
+}
+.pc-budget-switch[aria-checked='true'] { color: var(--pc-cyan-glow); }
+.pc-budget-switch:focus-visible { outline: 2px solid var(--pc-cyan-glow); outline-offset: 2px; border-radius: 4px; }
+.pc-budget-switch__track {
+  width: 22px;
+  height: 12px;
+  padding: 1px;
+  border-radius: var(--pc-r-pill);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.30);
+  box-sizing: content-box;
+  display: flex;
+}
+.pc-budget-switch__knob {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--pc-r-pill);
+  background: var(--pc-paper);
+  transition: transform 120ms ease-out;
+}
+.pc-budget-switch[aria-checked='true'] .pc-budget-switch__track { background: var(--pc-cyan-glow-deep); }
+.pc-budget-switch[aria-checked='true'] .pc-budget-switch__knob { transform: translateX(10px); }
 
 /* ===========================================================
    Mode toggle pill cell

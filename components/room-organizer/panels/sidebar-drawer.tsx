@@ -6,6 +6,7 @@ import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
+import { purchasePrice, purchaseRefusal } from '../lib/budget';
 import { notify } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { buildFurnitureSet } from '../lib/furniture-sets';
@@ -278,6 +279,13 @@ const DrawerBody = memo(function DrawerBody({
                 frontGap: entrancePlanOutline(layout, activeFloorIndex),
               });
               if (items.length === 0) return;
+              // Hard budget (#463e): say why instead of a silent refusal.
+              const refusal = purchaseRefusal(layout, purchasePrice(items));
+              if (refusal !== null) {
+                // REFUSED-CUE: G3's `refused` sound cue goes here at integration.
+                notify(refusal, 'error');
+                return;
+              }
               actions.addItems(items);
               const last = items[items.length - 1];
               if (last) selectOnly(last.id);
@@ -304,6 +312,13 @@ const DrawerBody = memo(function DrawerBody({
             <ItemResizePanel
               hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
               onDuplicate={(id) => {
+                const source = activeFloor.items.filter((item) => item.id === id);
+                const refusal = purchaseRefusal(layout, purchasePrice(source));
+                if (refusal !== null) {
+                  // REFUSED-CUE: G3's `refused` sound cue goes here at integration.
+                  notify(refusal, 'error');
+                  return;
+                }
                 const newId = actions.duplicateItem(id);
                 selectOnly(newId);
               }}

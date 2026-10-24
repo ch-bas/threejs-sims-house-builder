@@ -226,15 +226,6 @@
   }
 }
 
-/* The View menu opens upward from the mode panel. On a short desktop
-   (1280×800) its Game group made it taller than the room above the
-   panel: capped there, it scrolls instead of running under the top-right
-   pills. Where it fits, the cap changes nothing. */
-.pc-view-menu {
-  max-height: calc(var(--pc-mode-top, 100dvh) - var(--pc-top-pills-bottom, 60px) - 16px);
-  overflow-y: auto;
-}
-
 /* ================================================================
    Compact dock: phones in portrait (≤768px wide) and in landscape
    (≤1100px wide and ≤500px tall). The desktop HUD left a 70px band of
@@ -452,6 +443,23 @@
   }
   .pc-mode-panel[data-more-open] > div:first-child {
     display: block !important;
+  }
+  /* Under the hard budget (#463e) the funds stay on the bar: greyed tiles
+     need a reason, and touch has no tooltips. The switch follows the label. */
+  .pc-mode-panel[data-hard-budget]:not([data-more-open]) {
+    grid-template-areas:
+      'money money money'
+      'primary pill more';
+  }
+  .pc-mode-panel[data-hard-budget] > div:first-child {
+    display: block !important;
+  }
+  .pc-mode-panel > div:first-child .pc-budget-switch {
+    position: static;
+    vertical-align: middle;
+    margin-left: 10px;
+    min-height: 28px;
+    font-size: 10px;
   }
   .pc-mode-panel > div:first-child .pc-money {
     font-size: 18px !important;

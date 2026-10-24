@@ -92,6 +92,7 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
                   blockedReason={blockedReason}
                   onAdd={add}
                   roving={tileProps(index, add)}
+                  overBudget={budgetBlockedReason(item.price, remaining) !== null}
                 />
               );
             })}
@@ -169,9 +170,11 @@ interface CatalogTileProps {
   blockedReason: string | null;
   onAdd(): void;
   roving: RovingTileProps;
+  /** Greyed by the hard budget (#463e): the price line says so (no tooltip on touch). */
+  overBudget?: boolean;
 }
 
-function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, blockedReason, onAdd, roving, overBudget }: CatalogTileProps): JSX.Element {
   const blocked = blockedReason !== null;
   return (
     <button
@@ -203,8 +206,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving }: CatalogTileProps): 
       <div className="px-1.5 py-1 text-center">
         <p className="text-[10px] leading-tight font-medium truncate">{item.name}</p>
         <p className="text-[9px] text-amber-400 font-semibold">
-          {CURRENCY_SYMBOL}
-          {item.price.toLocaleString()}
+          {overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}
         </p>
       </div>
     </button>

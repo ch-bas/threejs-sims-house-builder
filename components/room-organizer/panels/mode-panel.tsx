@@ -3,7 +3,7 @@
 import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useEdgeVar } from '../hooks/use-edge-var';
-import { useBudgetRemaining } from '../hooks/use-layout-store';
+import { useBudgetRemaining, useLayoutActions } from '../hooks/use-layout-store';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
@@ -47,6 +47,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   // Hard budget (#463e): the readout shows what's left to spend instead.
   const remaining = useBudgetRemaining();
   const fundsDelta = useFundsDelta(remaining);
+  const { setHardBudget } = useLayoutActions();
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   // Docked on a phone, the action row folds behind ⋯ except Undo and Redo
   // (#395). The toggle is hidden at every other size.
@@ -65,6 +66,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
       className="pointer-events-auto pc-glass pc-mode-panel"
       data-scene-occluder=""
       data-more-open={moreOpen ? '' : undefined}
+      data-hard-budget={remaining !== null ? '' : undefined}
       style={{
         position: 'relative',
         width: 248,
@@ -103,6 +105,20 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
         >
           {remaining === null ? 'Furniture Value' : 'Funds Left'}
         </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={remaining !== null}
+          aria-label="Hard budget"
+          title="Hard budget: can't buy past the budget, Demolish refunds 80%"
+          className="pc-budget-switch"
+          onClick={() => setHardBudget(remaining === null)}
+        >
+          <span aria-hidden className="pc-budget-switch__track">
+            <span className="pc-budget-switch__knob" />
+          </span>
+          Hard budget
+        </button>
       </div>
 
       <div

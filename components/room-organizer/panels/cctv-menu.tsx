@@ -84,7 +84,7 @@ function StripMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
               {type}
             </span>
             <span style={{ fontSize: 8, opacity: 0.7, lineHeight: 1 }}>
-              {count} model{count > 1 ? 's' : ''}
+              {overBudget ? 'Over budget' : `${count} model${count > 1 ? 's' : ''}`}
             </span>
           </button>
         );
@@ -124,7 +124,7 @@ function PanelMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
               </span>
             </span>
             <span className="shrink-0 text-[10px] font-medium text-amber-700">
-              {models.length} model{models.length > 1 ? 's' : ''}
+              {overBudget ? 'Over budget' : `${models.length} model${models.length > 1 ? 's' : ''}`}
             </span>
           </button>
         );

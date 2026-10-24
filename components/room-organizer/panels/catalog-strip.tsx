@@ -103,6 +103,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                 blockedReason={blockedReason}
                 onAdd={add}
                 roving={tileProps(index, add)}
+                overBudget={budgetBlockedReason(item.price, remaining) !== null}
                 showName
                 docked
               />
@@ -222,6 +223,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   blockedReason={blockedReason}
                   onAdd={add}
                   roving={tileProps(index, add)}
+                  overBudget={budgetBlockedReason(item.price, remaining) !== null}
                   showName={showNames}
                 />
               );
@@ -328,9 +330,11 @@ interface CatalogTileProps {
   showName?: boolean;
   /** A tile on the docked phone row: fixed width so the row scrolls. */
   docked?: boolean;
+  /** Greyed by the hard budget (#463e): where names show (touch), the price says so. */
+  overBudget?: boolean;
 }
 
-function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, overBudget }: CatalogTileProps): JSX.Element {
   const icon = iconForItem(item.type, item.category);
   const blocked = blockedReason !== null;
   return (
@@ -396,8 +400,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked }: C
           lineHeight: 1,
         }}
       >
-        {CURRENCY_SYMBOL}
-        {item.price.toLocaleString()}
+        {showName && overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}
       </span>
     </button>
   );
