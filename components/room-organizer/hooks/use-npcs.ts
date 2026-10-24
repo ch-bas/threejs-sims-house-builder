@@ -10,6 +10,7 @@ import {
   findNpcPath,
   isFreeAt,
   nearestFreeCell,
+  npcNavSignature,
   pickDestination,
   randomFreeCell,
 } from '../lib/npc-path';
@@ -54,6 +55,13 @@ export interface NpcState {
   pathLength: number;
   /** The waypoint being walked to. */
   pathIndex: number;
+  /**
+   * The nav cell the route leads to, -1 for none. A route longer than the
+   * path buffer stops short of it, and is continued from there.
+   */
+  destination: number;
+  /** Where the destination cell's centre is. */
+  goal: { x: number; z: number };
   /** Heading that faces the furniture at the destination; NaN for open floor. */
   arrivalHeading: number;
   /** Heading to turn to while standing at a stop (the last arrival's); NaN keeps the current one. */
@@ -132,10 +140,17 @@ export function useNpcs(options: UseNpcsOptions): void {
   const stateRef = useRef<NpcState[]>([]);
   const navRef = useRef<NpcNav | null>(null);
 
-  // Rebuilt only on the fields it reads, and not at all while walkers are off.
+  // Rebuilt only when what it reads changes (not on a recolour or a lock,
+  // which still hand over new arrays), and not at all while walkers are off.
+  const signature = useMemo(
+    () => (enabled ? npcNavSignature({ items, interiorWalls, keepOut }) : null),
+    [enabled, items, interiorWalls, keepOut]
+  );
   const nav = useMemo(
-    () => (enabled ? buildNpcNav({ items, interiorWalls, keepOut, roomWidth, roomDepth }) : null),
-    [enabled, items, interiorWalls, keepOut, roomWidth, roomDepth]
+    () => (signature === null ? null : buildNpcNav({ items, interiorWalls, keepOut, roomWidth, roomDepth })),
+    // The signature stands for items, walls and keep-out.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signature, roomWidth, roomDepth]
   );
 
   // A floor with no free cell spawns nobody; clearing it lets them in.
@@ -276,6 +291,8 @@ function createNpc(
     path: new Float32Array(MAX_PATH_POINTS * 2),
     pathLength: 0,
     pathIndex: 0,
+    destination: -1,
+    goal: { x: 0, z: 0 },
     arrivalHeading: Number.NaN,
     standHeading: Number.NaN,
     stuck: 0,
@@ -291,26 +308,59 @@ function createNpc(
 export function planRoute(npc: NpcState, nav: NpcNav, random: () => number, others: readonly NpcState[] = []): void {
   npc.pathLength = 0;
   npc.pathIndex = 0;
+  npc.destination = -1;
   npc.stuck = 0;
   npc.arrivalHeading = Number.NaN;
-  const under = cellAt(nav, npc.position.x, npc.position.z);
-  const from = nav.walkable[under] === 1 ? under : nearestFreeCell(nav, npc.position.x, npc.position.z);
+  const from = standingCell(npc, nav);
   if (from < 0) return;
   const destination = pickDestination(nav, from, random, (x, z) => others.some((other) => other !== npc && claims(other, x, z)));
   if (destination < 0) return;
-  // Route from the cell's centre when the walker stands just off the grid's
-  // free cells (pushed against a face); its first waypoint is in reach.
-  const startX = from === under ? npc.position.x : cellX(nav, from);
-  const startZ = from === under ? npc.position.z : cellZ(nav, from);
-  npc.pathLength = findNpcPath(nav, startX, startZ, destination, npc.path);
+  routeTo(npc, nav, from, destination);
+  if (npc.pathLength === 0) return;
+  npc.destination = destination;
+  npc.goal.x = cellX(nav, destination);
+  npc.goal.z = cellZ(nav, destination);
   npc.arrivalHeading = nav.heading[destination] ?? Number.NaN;
+}
+
+/**
+ * At the end of its route but short of its destination (the route was
+ * longer than the path buffer): route on from here. False when it is there,
+ * or the rest can't be routed.
+ */
+function continueRoute(npc: NpcState, nav: NpcNav): boolean {
+  if (npc.destination < 0) return false;
+  if (Math.hypot(npc.goal.x - npc.position.x, npc.goal.z - npc.position.z) < WAYPOINT_REACHED) return false;
+  const from = standingCell(npc, nav);
+  if (from < 0) return false;
+  routeTo(npc, nav, from, npc.destination);
+  return npc.pathLength > 0;
+}
+
+/** The free cell a walker routes from: its own, or the nearest when a face pushed it just off the free cells. */
+function standingCell(npc: NpcState, nav: NpcNav): number {
+  const under = cellAt(nav, npc.position.x, npc.position.z);
+  return nav.walkable[under] === 1 ? under : nearestFreeCell(nav, npc.position.x, npc.position.z);
+}
+
+/** Fill the walker's route from `from` (its standing cell) to `destination`. */
+function routeTo(npc: NpcState, nav: NpcNav, from: number, destination: number): void {
+  // Off its own cell, route from the free cell's centre; the first waypoint is in reach.
+  const own = from === cellAt(nav, npc.position.x, npc.position.z);
+  npc.pathIndex = 0;
+  npc.pathLength = findNpcPath(
+    nav,
+    own ? npc.position.x : cellX(nav, from),
+    own ? npc.position.z : cellZ(nav, from),
+    destination,
+    npc.path
+  );
 }
 
 /** Whether a walker stands at, or is heading for, a spot within arm's reach of (x, z). */
 function claims(npc: NpcState, x: number, z: number): boolean {
-  const last = npc.pathLength - 1;
-  const atX = last >= 0 ? npc.path[last * 2]! : npc.position.x;
-  const atZ = last >= 0 ? npc.path[last * 2 + 1]! : npc.position.z;
+  const atX = npc.destination >= 0 ? npc.goal.x : npc.position.x;
+  const atZ = npc.destination >= 0 ? npc.goal.z : npc.position.z;
   return Math.hypot(atX - x, atZ - z) < PERSONAL_SPACE;
 }
 
@@ -394,7 +444,7 @@ export function stepNpcs(
       npc.pathIndex += 1;
     }
 
-    if (npc.pathIndex >= npc.pathLength) {
+    if (npc.pathIndex >= npc.pathLength && !continueRoute(npc, nav)) {
       // Arrived: face whatever it came to see while it stands for a moment,
       // then head somewhere new (planned now; it sets off after the pause).
       npc.standHeading = npc.arrivalHeading;

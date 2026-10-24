@@ -800,11 +800,14 @@ components/
   string-pull give a few straight legs, and every step still runs through
   `resolveWalkerStep`. Destinations favour free cells beside furniture,
   which carry the heading that faces it, and skip spots another walker
-  has claimed. The nav is rebuilt only on the floor fields it reads, and
-  only while walkers are shown; an edit re-routes the walkers in place
-  and steps any it landed on to the nearest free cell, without a respawn.
-  Routes live in per-walker typed arrays and the search reuses the nav's
-  scratch, so the frame loop allocates nothing.
+  has claimed. The nav is keyed on `npcNavSignature`, the item, partition
+  and keep-out geometry it reads, because the arrays themselves get a new
+  identity on a recolour or a lock; it is built only while walkers are
+  shown. A geometry edit re-routes the walkers in place and steps any it
+  landed on to the nearest free cell, without a respawn. Routes live in
+  per-walker typed arrays of 32 waypoints; a longer route is continued
+  from its last waypoint toward the destination it set out for. The
+  search reuses the nav's scratch, so the frame loop allocates nothing.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`

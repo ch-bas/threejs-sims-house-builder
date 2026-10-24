@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav } from '../lib/npc-path';
+import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath } from '../lib/npc-path';
 import { NPC_REPAINT, NPC_SHADOW, NPC_STILL, type NpcState, planRoute, rehomeNpcs, stepNpcs } from './use-npcs';
 import type { KeepOutRect } from '../lib/geometry';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
@@ -44,6 +44,8 @@ function walker(overrides: Partial<NpcState> = {}, to = { x: 2, z: 0 }): NpcStat
     path,
     pathLength: 1,
     pathIndex: 0,
+    destination: -1,
+    goal: { x: 0, z: 0 },
     arrivalHeading: Number.NaN,
     standHeading: Number.NaN,
     stuck: 0,
@@ -117,6 +119,34 @@ function gapTo(item: FurnitureItem, x: number, z: number): number {
 function furniture(id: string, type: string, x: number, z: number, width: number, depth: number, rotation = 0): FurnitureItem {
   return { id, type, name: id, width, depth, height: type === 'stairs' ? 3 : 0.8, color: '#000', icon: '', rotation, position: { x, z } };
 }
+
+describe('routes longer than the path buffer', () => {
+  // A serpentine of partitions 1 m apart with the gap at alternate ends:
+  // end to end takes far more than MAX_PATH_POINTS legs.
+  const walls: InteriorWall[] = [];
+  for (let i = 0; i < 17; i++) {
+    const x = -8 + i;
+    walls.push(i % 2 === 0 ? { id: `w${i}`, x1: x, z1: -4, x2: x, z2: 2.4 } : { id: `w${i}`, x1: x, z1: -2.4, x2: x, z2: 4 });
+  }
+  const nav = buildNpcNav({ items: [], interiorWalls: walls, keepOut: [], roomWidth: 20, roomDepth: 8 })!;
+
+  it('carries on past the buffer and arrives at the destination it set out for', () => {
+    const npc = walker({ position: { x: -9, z: 0 }, pathLength: 0 });
+    const goal = cellAt(nav, 9, 0);
+    npc.pathLength = findNpcPath(nav, -9, 0, goal, npc.path);
+    expect(npc.pathLength).toBe(MAX_PATH_POINTS); // truncated
+    npc.destination = goal;
+    npc.goal = { x: cellX(nav, goal), z: cellZ(nav, goal) };
+    const random = seeded(1);
+    let frames = 0;
+    while (npc.pause <= 0 && frames < 120 * 60) {
+      stepNpcs([npc], FRAME, nav, 0, random);
+      frames++;
+    }
+    expect(npc.pause).toBeGreaterThan(0);
+    expect(Math.hypot(npc.position.x - cellX(nav, goal), npc.position.z - cellZ(nav, goal))).toBeLessThan(0.15);
+  });
+});
 
 describe('walkers on a furnished floor (#452)', () => {
   // Two rooms split at x = 0 by a partition with a door at z = 2; a sofa,
@@ -195,7 +225,7 @@ describe('walkers on a furnished floor (#452)', () => {
     for (let trial = 0; trial < 40; trial++) {
       const [first, second] = spawn(random, 2);
       planRoute(second!, nav, random, [first!, second!]);
-      const end = (npc: NpcState) => [npc.path[(npc.pathLength - 1) * 2]!, npc.path[(npc.pathLength - 1) * 2 + 1]!] as const;
+      const end = (npc: NpcState) => [npc.goal.x, npc.goal.z] as const;
       const [ax, az] = end(first!);
       const [bx, bz] = end(second!);
       expect(Math.hypot(ax - bx, az - bz)).toBeGreaterThanOrEqual(0.9);

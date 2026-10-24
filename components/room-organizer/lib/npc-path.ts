@@ -85,6 +85,28 @@ export interface NpcNav {
 }
 
 /**
+ * Everything `buildNpcNav` reads from a storey, as a string: equal
+ * signatures build the same nav. Items and keep-out get a new identity on
+ * cosmetic edits (a recoloured sofa, a lock, the floor colour), and
+ * rebuilding on those would re-route every walker mid-stride.
+ */
+export function npcNavSignature(input: Omit<NpcNavInput, 'roomWidth' | 'roomDepth'>): string {
+  const parts: string[] = [];
+  for (const item of input.items) {
+    if (!item.position) continue;
+    parts.push(
+      `${item.id}:${item.type}:${item.category === 'outdoor' ? 1 : 0}:${item.position.x}:${item.position.z}:` +
+        `${item.width}:${item.depth}:${item.height}:${item.rotation ?? 0}`
+    );
+  }
+  parts.push('|');
+  for (const wall of input.interiorWalls) parts.push(`${wall.id}:${wall.x1}:${wall.z1}:${wall.x2}:${wall.z2}`);
+  parts.push('|');
+  for (const rect of input.keepOut) parts.push(`${rect.x0}:${rect.x1}:${rect.z0}:${rect.z1}:${rect.rotation ?? 0}`);
+  return parts.join(';');
+}
+
+/**
  * Rasterise one storey for the walkers. Returns null when the footprint is
  * too small to hold one.
  */
