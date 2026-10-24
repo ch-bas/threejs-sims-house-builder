@@ -23,7 +23,7 @@ CI runs these three on every pull request, and branch protection on `main` requi
 - **Lint:** `npm run lint -- --max-warnings=0` (a warning fails CI)
 - **Test:** `npm run test` (the Vitest unit suite)
 
-`npm run build` makes the static export in `out/`; serve it with `npx serve@latest out` (`next start` doesn't work on a static export).
+`npm run build` makes the static export in `out/`; serve it with `npm start` (`next start` doesn't work on a static export).
 
 Before you change a module, read its line in [docs/architecture.md](docs/architecture.md) and the relevant [design notes](docs/design-notes.md). A new module gets a line in `docs/architecture.md` in the same pull request (a unit test checks), and a change that sets a new rule gets a design note. The [wiki](https://github.com/ch-bas/threejs-sims-house-builder/wiki) covers the [architecture](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Architecture), [rendering](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Rendering), [data safety](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Data-safety) and [testing](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Development-and-testing).
 

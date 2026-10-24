@@ -88,7 +88,7 @@ file server:
 
 ```bash
 npm run build
-npx serve@latest out # http://localhost:3000
+npm start # serves out/ at http://localhost:3000
 ```
 
 `GITHUB_PAGES=true npm run build` builds for the GitHub Pages base path

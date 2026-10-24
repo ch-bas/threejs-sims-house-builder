@@ -6,7 +6,7 @@
   "license": "MIT",
   "private": true,
   "engines": {
-    "node": ">=22"
+    "node": ">=22.22.2"
   },
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "npx serve@latest out",
+    "start": "npx --yes serve@14 out",
     "lint": "eslint --ext .ts,.tsx app components lib",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
