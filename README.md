@@ -99,8 +99,8 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   fridges, stoves, sinks, toilets, bathtubs, showers, trees, fences,
   pools, stairs, pets, and more.
 - **Animated people**: placed people and optional walkers ("Show walkers")
-  are a rigged mannequin with motion-captured idle, talking and walk clips.
-  The model (~420 KB) loads only once a layout has people in it; until then,
+  are a rigged mannequin with motion-captured idle, talking, walk, sitting,
+  dancing and reaching clips. The model (~730 KB) loads only once a layout has people in it; until then,
   or if it can't load, a procedural jointed figure stands in.
 - **7 room templates**: Bedroom, Living Room, Home Office, Kitchen,
   Bathroom, Studio Apartment, plus a populated multi-floor **Two-Story Home**.
@@ -212,9 +212,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   the printed blueprint and the SVG export, and the Statistics panel
   reports each zone's item count, cost and area.
 - **Walking people**: rigged, animated mannequins (CC0 Quaternius rig)
-  that wander the active floor, pause to idle or chat at waypoints, and
-  crossfade between clips — with a procedural jointed figure as the
-  loading/offline fallback.
+  that wander the active floor, pause to idle, chat, dance or reach for
+  something at waypoints, sit down on chairs, sofas and benches, and stop
+  for furniture, walls and each other instead of walking through them —
+  with a procedural jointed figure as the loading/offline fallback.
 - **Collapsible sidebar** for full-viewport editing.
 - **Responsive HUD**: explicit desktop, tablet and phone layouts. On a
   phone the HUD docks as a slim bottom bar — labelled build-tool chips, one
@@ -388,6 +389,7 @@ components/
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture + interior walls
+    │   ├── npc-seats.ts                 Where walkers sit: seat slots, facing, approach points
     │   ├── walk-input.ts                Walkthrough frame-time cap and which keydowns walk (no Ctrl/Cmd/Alt chords)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359)
     │   ├── room-shapes.ts               Predefined room shape presets
@@ -472,7 +474,7 @@ components/
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-walkthrough.ts           PointerLock + WASD movement
-    │   ├── use-npcs.ts                  Animated wandering pedestrians
+    │   ├── use-npcs.ts                  Animated wandering pedestrians: obstacle stops, sitting, activities
     │   ├── use-weather.ts               Self-invalidating rain / snow loop
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag

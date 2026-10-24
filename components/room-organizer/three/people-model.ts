@@ -13,7 +13,22 @@ export const PEOPLE_CLIPS = {
   idle: 'Idle_Loop',
   talk: 'Idle_Talking_Loop',
   walk: 'Walk_Loop',
+  dance: 'Dance_Loop',
+  interact: 'Interact',
+  pickUp: 'PickUp_Table',
+  sitDown: 'Sitting_Enter',
+  sitIdle: 'Sitting_Idle_Loop',
+  sitTalk: 'Sitting_Talking_Loop',
+  standUp: 'Sitting_Exit',
 } as const;
+
+/**
+ * Sitting_Idle_Loop, measured for a figure scaled to 1.75 m: the hips end up
+ * this far behind the spot the feet stood on, and the pose suits a seat
+ * surface this high.
+ */
+export const SIT_HIP_BACK = 0.23;
+export const SIT_SURFACE_HEIGHT = 0.42;
 
 /** Ground speed (m/s) at which Walk_Loop's feet don't slide at timeScale 1. */
 export const WALK_CLIP_SPEED = 1.1;

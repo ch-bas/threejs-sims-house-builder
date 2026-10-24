@@ -363,3 +363,29 @@ function pushOutOfBox(box: WalkCollider, position: WalkerPosition, radius: numbe
   position.z += pushX * box.az + pushZ * box.bz;
   return true;
 }
+
+/**
+ * True when a circle at (x, z) overlaps any collider. The walkers' look-ahead
+ * probe (hooks/use-npcs.ts): unlike `resolveWalkerStep` it moves nothing, it
+ * only asks whether the way is clear. Pass `insideRoom` to ignore outdoor items.
+ */
+export function circleHitsColliders(
+  colliders: readonly WalkCollider[],
+  x: number,
+  z: number,
+  radius: number,
+  insideRoom = true
+): boolean {
+  for (const box of colliders) {
+    if (box.outdoor && insideRoom) continue;
+    const dx = x - box.cx;
+    const dz = z - box.cz;
+    if (Math.abs(dx) >= box.aabbHalfW + radius || Math.abs(dz) >= box.aabbHalfD + radius) continue;
+    const lx = dx * box.ax + dz * box.az;
+    const lz = dx * box.bx + dz * box.bz;
+    const nx = lx - Math.max(-box.hw, Math.min(box.hw, lx));
+    const nz = lz - Math.max(-box.hd, Math.min(box.hd, lz));
+    if (nx * nx + nz * nz < radius * radius) return true;
+  }
+  return false;
+}

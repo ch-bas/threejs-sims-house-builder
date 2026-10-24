@@ -784,6 +784,8 @@ export function RoomOrganizer(): JSX.Element {
     roomWidth: layout.width,
     roomDepth: layout.height,
     floorY: activeFloorY,
+    items: activeFloor.items,
+    interiorWalls: activeFloor.interiorWalls,
     riggedModelReady: peopleModelReady,
   });
 

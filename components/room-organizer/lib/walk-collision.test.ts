@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWalkColliders, resolveWalkerPosition, resolveWalkerStep } from './walk-collision';
+import { buildWalkColliders, circleHitsColliders, resolveWalkerPosition, resolveWalkerStep } from './walk-collision';
 import type { FurnitureCategory, FurnitureItem, InteriorWall } from './types';
 
 const RADIUS = 0.3;
@@ -260,5 +260,32 @@ describe('resolveWalkerStep', () => {
     const out = { x: 0, z: 0 };
     resolveWalkerStep(colliders, { x: 3, z: 3 }, { x: 3, z: 3 }, RADIUS, out, ROOM);
     expect(out).toEqual({ x: 3, z: 3 });
+  });
+});
+
+describe('circleHitsColliders', () => {
+  const colliders = buildWalkColliders([BOX], [WALL], ROOM);
+
+  it('reports a circle touching a box face, and clears one just short of it', () => {
+    expect(circleHitsColliders(colliders, 0, -0.75, RADIUS)).toBe(true);
+    expect(circleHitsColliders(colliders, 0, -0.69, RADIUS)).toBe(false);
+  });
+
+  it('sees interior walls', () => {
+    expect(circleHitsColliders(colliders, 1, 0.3, RADIUS)).toBe(true);
+    expect(circleHitsColliders(colliders, 1, 0.5, RADIUS)).toBe(false);
+  });
+
+  it('follows a rotated footprint', () => {
+    const turned = buildWalkColliders([item({ position: { x: 0, z: 0 }, rotation: Math.PI / 2 })], []);
+    // Turned a quarter, the 2 m width runs along z.
+    expect(circleHitsColliders(turned, 0, 1.2, RADIUS)).toBe(true);
+    expect(circleHitsColliders(turned, 1.2, 0, RADIUS)).toBe(false);
+  });
+
+  it('ignores outdoor items only for a walker inside the room', () => {
+    const outdoor = buildWalkColliders([item({ position: { x: 0, z: 0 }, category: 'outdoor' })], []);
+    expect(circleHitsColliders(outdoor, 0, 0, RADIUS)).toBe(false);
+    expect(circleHitsColliders(outdoor, 0, 0, RADIUS, false)).toBe(true);
   });
 });

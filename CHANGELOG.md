@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Walkers sit down:** now and then a walker heads for a free chair, armchair, sofa or bench, turns, sits for a while (idle or chatting), then gets up and walks on
+- **Walkers do things:** at a waypoint they sometimes dance, reach for something or pick something up instead of just standing
+- **Walkers stop for obstacles:** they look ahead and stop for furniture, interior walls, placed people and each other, wait a moment, then head somewhere they can reach
+
+### Changed
+- `people.glb` carries seven more clips from the same CC0 library (about 730 KB, was 420 KB)
+
 ## [1.20.0] - 2026-10-23
 
 The **2D plan & export** milestone: a 2D plan that shows the whole lot, prints you can choose, CAD files that open in CAD, and exports of the whole building.

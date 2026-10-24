@@ -8,7 +8,18 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, prune, quantize, resample, weld } from '@gltf-transform/functions';
 
-const KEEP = new Set(['Idle_Loop', 'Idle_Talking_Loop', 'Walk_Loop']);
+const KEEP = new Set([
+  'Idle_Loop',
+  'Idle_Talking_Loop',
+  'Walk_Loop',
+  'Dance_Loop',
+  'Interact',
+  'PickUp_Table',
+  'Sitting_Enter',
+  'Sitting_Idle_Loop',
+  'Sitting_Talking_Loop',
+  'Sitting_Exit',
+]);
 const input = process.argv[2];
 const output = process.argv[3] ?? 'components/room-organizer/assets/people.glb';
 if (!input) {
