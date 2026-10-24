@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - The app has an icon, a link preview with a picture of the builder when you share it, and a theme colour for mobile browsers ([#443](https://github.com/ch-bas/threejs-sims-house-builder/issues/443))
 - A wrong address shows a page in the app's style with a way back to the builder, instead of the stock 404 ([#459](https://github.com/ch-bas/threejs-sims-house-builder/issues/459))
+- **Dressed people:** placed people and walkers wear a top, trousers or shorts and shoes, with a skin tone and a hair style (short, buzzed, long, bun or bald). A placed person's colour is their top; the rest follows from the item, so they keep their look
 - **Walkers sit down:** now and then a walker heads for a free chair, armchair, sofa or bench, turns, sits for a while (idle or chatting), then gets up and walks on
 - **Walkers do things:** at a waypoint they sometimes dance, reach for something or pick something up instead of just standing
 - **Walkers give way to each other:** a walker with someone just ahead stops, waits a moment, then carries on or heads somewhere else

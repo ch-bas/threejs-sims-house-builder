@@ -133,6 +133,7 @@ components/
     │   │   ├── human-figure.ts          Procedural jointed figure + walk pose
     │   │   └── builders-structure.ts    Door, window, stairs
     │   ├── people-model.ts              people.glb loader, cloning (shared geometry), box picking, clip names
+    │   ├── people-outfits.ts            Body regions from skin weights, outfits, hair on the head bone
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts

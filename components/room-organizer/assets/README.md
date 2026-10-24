@@ -18,3 +18,9 @@ Rigged, animated mannequin used for placed people and the walking NPCs.
   contains a person or the walkers are switched on.
 
 Rebuild with `scripts/build-people-glb.mjs` (instructions in its header).
+
+At load, `three/people-outfits.ts` sorts the mesh's triangles into body
+regions by their strongest bone (head, torso, arms, hands, hips, legs, feet)
+so each person can be dressed with one material per region, and builds the
+hair meshes once against the rest pose. Nothing about that is baked into the
+file.
