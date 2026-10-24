@@ -1,9 +1,11 @@
 name: CI
 
-# Every pull request and every push to main runs the full quality gate.
-# Before this workflow existed, PRs ran zero checks and the first signal of a
-# broken change was a failed Pages deploy of main (#159). Action pinning to
-# SHAs across all workflows is tracked separately (#161).
+# One workflow for the whole pipeline (#447): every pull request and every
+# push to main runs the quality gate once, in `test` (the check branch
+# protection requires). On main, `deploy` publishes the site that job built
+# and `release` creates the GitHub release, both only after the gate passed
+# on that exact commit. Before, deploy repeated every gate and the release
+# ran beside CI rather than after it.
 
 on:
   pull_request:
@@ -11,9 +13,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Pull requests: a new push supersedes the run in progress. Main: one group
+# per commit, so no run is cancelled or dropped while queued; deploy and
+# release serialize in their own job-level groups below.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -21,19 +26,148 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          # 22+: the jsdom test environment needs newer Node platform
-          # internals (see the deploy workflow's note).
+          # 22+: the jsdom test environment (vitest per-file, since 1.8.3)
+          # pulls an undici that needs newer Node platform internals; on
+          # Node 20 the forks worker dies with "webidl.util.markAsUncloneable
+          # is not a function".
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
 
       - run: npm ci
-      - run: npx tsc --noEmit
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run typecheck
       - run: npm run lint -- --max-warnings=0
       - run: npm run test
+
+      # Built with the Pages basePath on every run, so a pull request checks
+      # the very build main deploys. next.config.mjs skips Next's own lint
+      # pass; the step above already ran it. Next's type check stays on as a
+      # deliberate safety net (it also guards a local `npm run build`), so
+      # each push lints once and checks types twice.
       - run: npm run build
+        env:
+          GITHUB_PAGES: 'true'
+
+      # The Content-Security-Policy meta, hashed from this build's inline
+      # scripts (#445). Idempotent, so it is safe if the build ran it too.
+      - name: Add the Content-Security-Policy
+        run: node scripts/add-csp.mjs
+
+      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: out
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    # Never cancel a deploy in flight: cancelling inside deploy-pages can
+    # leave the environment on a half-registered artifact. A newer commit
+    # waits, and replaces any older deploy still waiting.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Main runs test in parallel, one group per commit, so an older
+      # commit's slower test can finish after a newer one's and reach this
+      # job last. Only main's current head deploys; a superseded commit
+      # skips, so the site never steps back to an older build.
+      - name: Check this commit is still main's head
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::$GITHUB_SHA is no longer the head of main ($head); the newer commit's run deploys."
+          fi
+
+      - id: deployment
+        if: steps.head.outputs.current == 'true'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  release:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    # Per commit: a shared group keeps only one pending job, so a newer push
+    # could cancel the bump commit's waiting release. Only the bump commit
+    # (or a dispatch) creates a release, so nothing needs serializing.
+    concurrency:
+      group: release-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      # Depth 2: the parent is enough to see whether this commit bumped the
+      # version.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      # A push releases only from the commit that changed the version (the
+      # release PR's merge), so a later merge can never carry the tag. If
+      # that commit failed the gate, land the fix, then dispatch this
+      # workflow on main: a dispatch releases from the commit it runs on.
+      - name: Read the version
+        id: version
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          previous=$(git show HEAD^1:package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ "$version" != "$previous" ]; then
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A missing release reads as "not found"; any other failure (network,
+      # rate limit) stops the job instead of looking like a missing release
+      # and creating a duplicate.
+      - name: Check if the release exists
+        id: check
+        if: steps.version.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version }}
+        run: |
+          if out=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName 2>&1); then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif grep -qi 'not found' <<<"$out"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$out" >&2
+            exit 1
+          fi
+
+      # target_commitish pins a new tag to the commit that passed the gate,
+      # not to whatever main points at by now. A tag pushed by hand is used
+      # as it is.
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true

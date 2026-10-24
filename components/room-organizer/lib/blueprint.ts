@@ -4,7 +4,7 @@ import { floorKeepOut } from './floor-keep-out';
 import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
 import { escapeHtml } from './html-escape';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
-import { distanceOutsideWalls } from './plan-export/print';
+import { distanceOutsideWalls, printWhenLoaded } from './plan-export/print';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
@@ -94,8 +94,8 @@ export function floorArea(layout: EntranceBuilding, floorIndex: number): number 
 /**
  * Open a print-ready blueprint of the active floor in a new tab. The new
  * window writes a small HTML document with the rendered top-down image,
- * the building stats, and a category legend, and calls window.print() on
- * load. The data URL embeds the floor plan so the popup can be saved /
+ * the building stats, and a category legend, and prints it once it has
+ * loaded. The data URL embeds the floor plan so the popup can be saved /
  * shared without extra round-trips.
  */
 export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout): Promise<void> {
@@ -106,6 +106,8 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     window.alert('Pop-ups are blocked — allow pop-ups to print the blueprint.');
     return;
   }
+  // The popup only needs the opener's handle on it, not the reverse (#455).
+  printWindow.opener = null;
 
   // The tracing image is painted from a lazily-warmed decoded-image cache;
   // in 3D view with the minimap off nothing has rendered the plan yet, so
@@ -179,6 +181,7 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
 
   printWindow.document.write(html);
   printWindow.document.close();
+  printWhenLoaded(printWindow);
 }
 
 interface BlueprintHtmlInput {
@@ -213,7 +216,7 @@ function renderBlueprintHtml({ title, subtitle, imageUrl, legendHtml, zonesHtml,
       @media print { body { padding: 8px; } }
     </style>
   </head>
-  <body onload="setTimeout(function(){ window.print(); }, 200)">
+  <body>
     <header>
       <div>
         <h1>${escapeHtml(title)}</h1>

@@ -36,6 +36,12 @@ This application runs entirely client-side with no backend, authentication, or u
 - **XSS via share URLs** — malicious layout data encoded in the URL hash
 - **XSS via JSON import** — crafted layout files loaded through the import feature
 
+## Content Security Policy
+
+The deployed pages carry a Content-Security-Policy `<meta>` tag, added after `next build` by `scripts/add-csp.mjs`. It allows scripts only from the site's own origin plus the SHA-256 hashes of that build's inline scripts, and it blocks plugins, `<base>` rewriting and form submission. Inline event handlers (`onclick="…"` and the like) are not allowed; the step fails the build if one appears in the exported HTML.
+
+GitHub Pages cannot send custom response headers, and a `<meta>` policy ignores `frame-ancestors`, so the site cannot stop other pages from framing it (clickjacking). The app has no accounts or server-side actions for a framing page to abuse, so this is accepted rather than worked around with a script-based frame-buster.
+
 ## Dependency Updates
 
 We monitor dependencies with `npm audit` and address critical/high vulnerabilities promptly. If you notice an unpatched advisory, please report it.
