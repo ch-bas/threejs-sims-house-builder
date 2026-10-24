@@ -159,6 +159,22 @@ describe('usePlacementGhost (#463 d)', () => {
     window.removeEventListener('keydown', page);
   });
 
+  it('leaves Enter and Space on a focused button to that button', () => {
+    const { place, endGhost } = setup();
+    const cancel = document.createElement('button');
+    document.body.appendChild(cancel);
+    act(() => {
+      cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      cancel.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    });
+    expect(place).not.toHaveBeenCalled();
+    act(() => {
+      cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(endGhost).toHaveBeenCalled();
+    cancel.remove();
+  });
+
   it('places nothing when a second finger turns the press into a pinch', () => {
     const { plan, place } = setup();
     act(() => {

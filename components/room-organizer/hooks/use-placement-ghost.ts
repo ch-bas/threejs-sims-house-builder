@@ -68,6 +68,11 @@ function isTextField(target: EventTarget | null): boolean {
   return element.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName);
 }
 
+function isFocusedControl(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return typeof element?.closest === 'function' && element.closest('button, a[href], [role="button"]') !== null;
+}
+
 /**
  * The placement ghost (#463 d). A catalogue tile clicked or tapped hands its
  * entry here; a see-through copy then follows the pointer over the visible
@@ -245,6 +250,9 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       if (event.ctrlKey || event.metaKey || event.altKey || isTextField(event.target)) return;
       const key = event.key.toLowerCase();
       if (key !== 'r' && key !== 'enter' && key !== ' ' && key !== 'escape') return;
+      // Enter and Space on a focused button (the hint's Cancel, Undo, …) belong
+      // to that button; the picked tile is blurred, so it never lands here.
+      if ((key === 'enter' || key === ' ') && isFocusedControl(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
       if (key === 'escape') {
