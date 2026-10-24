@@ -1,4 +1,12 @@
-import { DEFAULT_ROOF, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { MAX_WRITE_OFF, budgetSpent, sellBackLoss } from '../lib/budget';
+import {
+  DEFAULT_BUDGET,
+  DEFAULT_ROOF,
+  FURNITURE_CATALOG,
+  MAX_FLOORS,
+  MAX_ITEM_DIMENSION,
+  MAX_ROOM_DIMENSION,
+} from '../lib/constants';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { rotatedHalfExtents } from '../lib/geometry';
 import { remapGroupIds } from '../lib/groups';
@@ -67,6 +75,8 @@ export type LayoutAction =
   // floor-scoped items — target the active floor
   | { type: 'addCatalogItem'; catalogItem: CatalogItem; id: string; position?: { x: number; z: number } }
   | { type: 'removeItem'; id: string }
+  | { type: 'sellItems'; ids: readonly string[] }
+  | { type: 'setHardBudget'; on: boolean }
   | { type: 'updateItem'; id: string; patch: Partial<FurnitureItem> }
   | { type: 'duplicateItem'; sourceId: string; newId: string }
   | { type: 'rotateItem'; id: string }
@@ -158,10 +168,29 @@ const ENTRANCE_RESYNC_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
  * itself (a momentarily unbuildable recess, a removed storey) leaves the
  * flag alone and re-creates the door once the recess is back (#273).
  */
-const DOOR_REMOVAL_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set(['removeItem', 'replaceItems', 'clearItems']);
+const DOOR_REMOVAL_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
+  'removeItem',
+  'sellItems',
+  'replaceItems',
+  'clearItems',
+]);
+
+/**
+ * Under the hard budget (#463e) nothing may push spending past the budget:
+ * an edit that raises the spend over it is refused whatever its route (a
+ * tile, paste, duplicate, a set). applyLayout is exempt — undo, redo and
+ * loads restore verbatim — and so is switching the hard budget on over an
+ * already-spent house: that raises nothing.
+ */
+function overHardBudget(prev: LayoutState, next: LayoutState, action: LayoutAction): boolean {
+  if (!next.layout.budget || action.type === 'applyLayout' || next.layout.floors === prev.layout.floors) return false;
+  const spent = budgetSpent(next.layout);
+  return spent > DEFAULT_BUDGET && spent > budgetSpent(prev.layout);
+}
 
 export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
   const next = reduceLayout(state, action);
+  if (overHardBudget(state, next, action)) return state;
   const entrance = next.layout.entrance;
   if (next === state || !entrance) return next;
   if (DOOR_REMOVAL_ACTIONS.has(action.type) && entrance.door === undefined) {
@@ -387,6 +416,35 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withActiveFloor(state, (floor) => {
         if (!floor.items.some((item) => item.id === action.id)) return floor;
         return { ...floor, items: floor.items.filter((item) => item.id !== action.id) };
+      });
+
+    // Demolish (#463e): removal that, under the hard budget, refunds
+    // SELL_BACK_RATE of the price — the rest is booked to the write-off, so
+    // "spent" stays derived from the house (lib/budget.ts). Budget off, it is
+    // plain removal. Like removeItem it ignores locks (#358).
+    case 'sellItems': {
+      const floor = state.layout.floors[state.activeFloorIndex];
+      if (!floor) return state;
+      const ids = new Set(action.ids);
+      const sold = floor.items.filter((item) => ids.has(item.id));
+      if (sold.length === 0) return state;
+      const next = withActiveFloor(state, (current) => ({
+        ...current,
+        items: current.items.filter((item) => !ids.has(item.id)),
+      }));
+      const budget = next.layout.budget;
+      const loss = sellBackLoss(sold);
+      if (!budget || loss === 0) return next;
+      const writeOff = Math.min(MAX_WRITE_OFF, budget.writeOff + loss);
+      return { ...next, layout: { ...next.layout, budget: { writeOff } } };
+    }
+
+    case 'setHardBudget':
+      return withLayout(state, (layout) => {
+        if ((layout.budget !== undefined) === action.on) return layout;
+        if (action.on) return { ...layout, budget: { writeOff: 0 } };
+        const { budget: _off, ...rest } = layout;
+        return rest;
       });
 
     case 'updateItem':

@@ -1,3 +1,4 @@
+import { repairHardBudget } from './budget';
 import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
@@ -360,6 +361,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   neighbours: true,
   entrance: true,
   frontage: true,
+  budget: true,
 });
 const FLOOR_KEYS = keysOf<FloorLayout>({
   id: true,
@@ -598,6 +600,16 @@ function repairLayout(layout: RoomLayout): RoomLayout {
   if (layout.roof) patch.roof = repairRoof(layout.roof);
   if (layout.terrain) patch.terrain = pick(layout.terrain, TERRAIN_KEYS);
   if (layout.entrance) patch.entrance = pick(layout.entrance, ENTRANCE_KEYS);
+  // The hard budget (#463e) is repaired, never refused: anything that isn't
+  // an object switches it off rather than costing the user their house.
+  if (layout.budget !== undefined) {
+    const budget = repairHardBudget(layout.budget);
+    if (budget === undefined) {
+      const { budget: _dropped, ...rest } = layout;
+      return rebuild(rest, LAYOUT_KEYS, patch);
+    }
+    patch.budget = budget;
+  }
   return rebuild(layout, LAYOUT_KEYS, patch);
 }
 

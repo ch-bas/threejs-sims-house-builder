@@ -237,7 +237,8 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
             roomWidth: layout.width,
             roomDepth: layout.height,
             // Replaces the active floor: spend what the other floors leave (#136).
-            maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost),
+            // Under the hard budget, sell-back losses are spent too (#463e).
+            maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost - (layout.budget?.writeOff ?? 0)),
           });
           // The entrance door is structure, not furniture — keep it (#273).
           actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);

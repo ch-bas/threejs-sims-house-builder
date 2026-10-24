@@ -547,7 +547,8 @@ export function RoomOrganizer(): JSX.Element {
   const removeItem = useCallback(
     (id: string) => {
       commitHistoryNow();
-      actions.removeItem(id);
+      // Demolish sells back: 80 % refunded under the hard budget (#463e).
+      actions.sellItems([id]);
       playCue('remove');
       setSelectedItemId((current) => (current === id ? null : current));
       setExtraSelectedIds((extras) => {
@@ -564,10 +565,9 @@ export function RoomOrganizer(): JSX.Element {
     if (allSelectedIds.size === 0) return;
     // A lock pins position, not existence: every placed item is locked after
     // placement and drag, so deletion ignores it like Demolish does (#358).
-    const remaining = activeFloor.items.filter((item) => !allSelectedIds.has(item.id));
-    if (remaining.length === activeFloor.items.length) return;
+    if (!activeFloor.items.some((item) => allSelectedIds.has(item.id))) return;
     commitHistoryNow();
-    actions.replaceItems(remaining);
+    actions.sellItems([...allSelectedIds]);
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
   }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds]);

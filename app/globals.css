@@ -226,6 +226,15 @@
   }
 }
 
+/* The View menu opens upward from the mode panel. On a short desktop
+   (1280×800) its Game group made it taller than the room above the
+   panel: capped there, it scrolls instead of running under the top-right
+   pills. Where it fits, the cap changes nothing. */
+.pc-view-menu {
+  max-height: calc(var(--pc-mode-top, 100dvh) - var(--pc-top-pills-bottom, 60px) - 16px);
+  overflow-y: auto;
+}
+
 /* ================================================================
    Compact dock: phones in portrait (≤768px wide) and in landscape
    (≤1100px wide and ≤500px tall). The desktop HUD left a 70px band of

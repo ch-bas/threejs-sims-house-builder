@@ -36,7 +36,8 @@ export function HeaderStats({
   // The porch door is structure, not furniture: older saves still carry its
   // catalog price (#382).
   const allItems = layout.floors.flatMap((floor) => floor.items).filter((item) => item.id !== ENTRANCE_DOOR_ID);
-  const cost = totalCost(allItems);
+  // Under the hard budget, what selling back lost is spent too (#463e).
+  const cost = totalCost(allItems) + (layout.budget?.writeOff ?? 0);
   const overBudget = cost > budget;
   const ratio = budget > 0 ? Math.min(1, cost / budget) : 0;
 

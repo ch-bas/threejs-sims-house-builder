@@ -204,6 +204,33 @@
   50%      { box-shadow: 0 0 0 1px var(--pc-cyan-glow), 0 0 22px 4px var(--pc-cyan-halo); }
 }
 
+/* Hard budget (#463e): the last purchase or sale floats up beside the
+   funds and fades. */
+.pc-funds-delta {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  font-family: var(--pc-font-display);
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 8px;
+  border-radius: var(--pc-r-pill);
+  background: rgba(10, 24, 32, 0.62);
+  pointer-events: none;
+  animation: pcFundsDelta 1.6s ease-out forwards;
+}
+@keyframes pcFundsDelta {
+  0%   { opacity: 0; transform: translateY(6px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-14px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-funds-delta { animation: none; }
+}
+
 /* ===========================================================
    Mode toggle pill cell
    =========================================================== */

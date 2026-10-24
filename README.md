@@ -296,6 +296,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   "Roof It", "Green Thumb", "Door Installer", "Window Watcher",
   "Wall Whisperer", "Decorator", "Open Plan") with toast pop-ups when
   unlocked and a sidebar gallery panel showing locked / unlocked progress.
+- **Hard budget** (View menu → Game, off by default): catalogue tiles that
+  cost more than what's left grey out, nothing can be bought past the
+  budget by any route, and Demolish sells back at 80 %. The mode panel
+  shows the funds left, and each purchase or sale floats past them.
 
 ### Stats
 
@@ -374,6 +378,7 @@ components/
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML, canvas fitted to the plan content (#377)
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
+    │   ├── budget.ts                    Hard budget (#463e): spend, funds left, 80 % sell-back, over-budget tile reason, schema repair
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── themes.ts                    Theme definitions + applyTheme
@@ -804,6 +809,21 @@ components/
   immutable 1×1 storage, and a larger image can't be written into it.
   A decode that lands after the floor was built therefore swaps in a new
   texture on its own `TextureSource` and disposes the placeholder one (#521).
+- **The hard budget derives "spent".** With `layout.budget` absent the
+  budget only advises, as before. Switched on, it holds one number,
+  `writeOff`: what selling back at 80 % has lost. Spent is always the
+  price of the furniture standing (porch door excluded) plus that number
+  (`lib/budget.ts`), so a house that gains furniture by any route — a
+  tile, paste, duplicate, a set, Surprise me — is charged without that
+  route knowing about budgets. Loading another house (a template, the
+  library, a share link) brings that house's own setting. The field is layout state: undo, autosave,
+  the library, restore points and share links carry it, and
+  `parseStoredLayout` repairs a broken one (off, or clamped) rather than
+  refusing the house. Enforcement is in the reducer: Demolish and Delete
+  dispatch `sellItems`, which books the 20 % loss, and any non-load action
+  that would raise spending past the budget returns the same state.
+  `applyLayout` is exempt, so undo and loads restore verbatim. Switching
+  the budget off drops the field (and its write-off) entirely.
 - **Drag fast-path.** While dragging, meshes are moved directly and the
   single state dispatch is deferred to drag end — no per-mousemove scene
   rebuild. Collision feedback stays live via an emissive tint on the dragged

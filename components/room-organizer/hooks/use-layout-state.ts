@@ -73,6 +73,10 @@ export interface LayoutActions {
   setStairsShape(id: string, shape: StairsShape, leadIn?: number): void;
   addCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
   removeItem(id: string): void;
+  /** Demolish: removal that refunds 80 % under the hard budget (#463e). */
+  sellItems(ids: readonly string[]): void;
+  /** Switch the hard budget (#463e) on or off. */
+  setHardBudget(on: boolean): void;
   duplicateItem(id: string): string;
   rotateItem(id: string): void;
   moveItem(id: string, x: number, z: number): void;

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type RefObject } from 'react';
 import { useEditorViewActions, useViewSettings } from '../contexts';
+import { useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { toggleViewOption, VIEW_OPTION_KEYS, type ViewOptionKey } from '../lib/view-options';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
@@ -31,6 +32,16 @@ const GROUPS: ReadonlyArray<{ title: string; options: readonly ViewOption[] }> =
   },
 ];
 
+/**
+ * Budget as a game (#463e). Layout state, not a view setting: it travels
+ * with the house (saves, share links) and undoes like any edit.
+ */
+const HARD_BUDGET_OPTION: Omit<ViewOption, 'key'> = {
+  label: 'Hard budget',
+  hint: "Can't buy past it · Demolish refunds 80%",
+  icon: 'coin',
+};
+
 export interface ViewOptionsMenuProps {
   id: string;
   /** The button that opened the menu: a press on it toggles, not dismisses. */
@@ -47,6 +58,8 @@ export interface ViewOptionsMenuProps {
 export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps): JSX.Element {
   const view = useViewSettings(...VIEW_OPTION_KEYS);
   const { setView } = useEditorViewActions();
+  const hardBudget = useLayoutStore((s) => s.layout.budget !== undefined);
+  const { setHardBudget } = useLayoutActions();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -107,6 +120,14 @@ export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps
           </div>
         </div>
       ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
+          Game
+        </div>
+        <div className="pc-glass--inset" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <ViewSwitch option={HARD_BUDGET_OPTION} on={hardBudget} onToggle={() => setHardBudget(!hardBudget)} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -116,7 +137,7 @@ function ViewSwitch({
   on,
   onToggle,
 }: {
-  option: ViewOption;
+  option: Omit<ViewOption, 'key'>;
   on: boolean;
   onToggle(): void;
 }): JSX.Element {

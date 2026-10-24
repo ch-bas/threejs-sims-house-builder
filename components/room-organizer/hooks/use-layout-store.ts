@@ -21,6 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { createStore, useStore } from 'zustand';
+import { budgetRemaining } from '../lib/budget';
 import { randomId, randomSuffix, withHouseId } from '../lib/ids';
 import { randomStreetSeed } from '../lib/street-row';
 import {
@@ -96,6 +97,8 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
       return id;
     },
     removeItem: (id) => dispatch({ type: 'removeItem', id }),
+    sellItems: (ids) => dispatch({ type: 'sellItems', ids }),
+    setHardBudget: (on) => dispatch({ type: 'setHardBudget', on }),
     duplicateItem: (id) => {
       const newId = nextId('copy');
       dispatch({ type: 'duplicateItem', sourceId: id, newId });
@@ -191,6 +194,14 @@ export function useActiveFloor(): FloorLayout {
     const { layout, activeFloorIndex } = s;
     return layout.floors[activeFloorIndex] ?? layout.floors[0] ?? INITIAL_GROUND_FLOOR;
   });
+}
+
+/**
+ * What's left under the hard budget, or null when it is off (#463e). A
+ * number, so a subscriber re-renders only when the amount changes.
+ */
+export function useBudgetRemaining(): number | null {
+  return useStore(layoutStore, (s) => budgetRemaining(s.layout));
 }
 
 // Actions are created once and never change identity, so this hook never causes
