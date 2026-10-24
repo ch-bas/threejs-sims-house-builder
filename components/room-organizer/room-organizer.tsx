@@ -29,7 +29,7 @@ import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
-import { useWalkthrough } from './hooks/use-walkthrough';
+import { useWalkthrough, type WalkthroughBuilding } from './hooks/use-walkthrough';
 import { useWeather } from './hooks/use-weather';
 import { purchasePrice, purchaseRefusal } from './lib/budget';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
@@ -47,7 +47,7 @@ import { snapshotBeforeReplace } from './lib/restore-point';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
 import { entrancePlanOutline } from './lib/street';
-import { sceneWallDisplay } from './lib/walkthrough-view';
+import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
@@ -66,7 +66,7 @@ import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { roofPeakHeight } from './three/roof';
 import type { HoverInfo } from './hooks/use-three-scene';
-import type { CatalogItem, FurnitureItem, RoomLayout, ViewSettings, WallId } from './lib/types';
+import type { CatalogItem, FurnitureItem, GameMode, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
   THREE: typeof import('./three/three-runtime'),
@@ -825,23 +825,51 @@ export function RoomOrganizer(): JSX.Element {
   const gameMode = useStore(viewStore, (state) => state.gameMode);
   useEffect(() => endGhost(), [gameMode, endGhost]);
 
-  const { lockRefused: walkthroughLockRefused } = useWalkthrough({
+
+  // The mode EXPLORE was entered from, so leaving it goes back there (#454).
+  // Read from the store, not rendered: a mode switch needn't re-render this.
+  const modeBeforeExploreRef = useRef<GameMode>(viewStore.getState().gameMode);
+  useEffect(
+    () =>
+      viewStore.subscribe((state) => {
+        modeBeforeExploreRef.current = rememberModeBeforeExplore(modeBeforeExploreRef.current, state.gameMode);
+      }),
+    [viewStore]
+  );
+  const exitWalkthrough = useCallback(() => {
+    setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
+    setGameMode((mode) => modeAfterExplore(mode, modeBeforeExploreRef.current));
+  }, [setView, setGameMode]);
+
+  // What the walker moves through (#446): every storey (stairs join them),
+  // the shell and the street outside. Only read while walking.
+  const walkRoofStyle = layout.roof?.style;
+  const walkRoofColor = layout.roof?.color;
+  const walkBuilding = useMemo<WalkthroughBuilding>(
+    () => ({
+      width: layout.width,
+      depth: layout.height,
+      floors: layout.floors,
+      terrain: layout.terrain,
+      entrance: layout.entrance,
+      frontage: layout.frontage,
+      ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
+      ...(walkRoofStyle ? { roof: { style: walkRoofStyle, ...(walkRoofColor ? { color: walkRoofColor } : {}) } } : {}),
+    }),
+    [layout.width, layout.height, layout.floors, layout.terrain, layout.entrance, layout.frontage, layout.neighbours, walkRoofStyle, walkRoofColor]
+  );
+
+  const walk = useWalkthrough({
     enabled: isReady && walkthroughActive,
     invalidate,
     canvasRef,
     threeModuleRef,
     cameraRef,
     orbitRef: controlsRef,
-    // Eye level, ducking under a low ceiling (a 1.1 m loft, #277).
-    eyeHeight: activeFloorY + Math.min(1.6, activeStoreyHeight - 0.2),
-    roomWidth: layout.width,
-    roomDepth: layout.height,
-    items: activeFloor.items,
-    ...(activeFloor.interiorWalls ? { interiorWalls: activeFloor.interiorWalls } : {}),
-    onExit: useCallback(() => {
-      setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
-      setGameMode((mode) => (mode === 'live' ? 'build' : mode));
-    }, [setView, setGameMode]),
+    building: walkBuilding,
+    activeFloorIndex,
+    onFloorChange: actions.setActiveFloorIndex,
+    onExit: exitWalkthrough,
   });
 
   // people.glb is fetched only once a person is placed or the walkers are on.
@@ -873,6 +901,9 @@ export function RoomOrganizer(): JSX.Element {
     wallDraft,
     wallSnapResult,
     measurementPoints,
+    walkIndoors: walkthroughActive && !walk.outside,
+    walkNearStairs: walk.nearStairs,
+    walkLampStorey: walk.lampStorey,
   };
 
   useNpcs({
@@ -908,12 +939,13 @@ export function RoomOrganizer(): JSX.Element {
   });
 
   // The roof as camera framing sees it: on screen only with the walls up,
-  // on the top storey or with every storey shown (as the roof effect shows it).
+  // on the top storey or with every storey shown (as the roof effect shows it;
+  // the walkthrough shows every storey, #446).
   const roofStyle = layout.roof?.style ?? 'none';
   const roofShows =
     roofStyle !== 'none' &&
     sceneWallDisplay(view.wallDisplay, walkthroughActive) === 'up' &&
-    (view.showAllFloors || activeFloorIndex === layout.floors.length - 1);
+    (view.showAllFloors || walkthroughActive || activeFloorIndex === layout.floors.length - 1);
   const roofPeak = roofShows ? roofPeakHeight(roofStyle, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),
@@ -1244,8 +1276,21 @@ export function RoomOrganizer(): JSX.Element {
         onSaveSelectionAsSet={saveSelectionAsSet}
         showMeasurements={view.showMeasurements}
         showMinimap={view.showMinimap}
-        walkthroughActive={walkthroughActive}
-        walkthroughLockRefused={walkthroughLockRefused}
+        walkHud={
+          walkthroughActive
+            ? {
+                locked: walk.locked,
+                lockRefused: walk.lockRefused,
+                seatName: walk.seatName,
+                seated: walk.seated,
+                floorName: activeFloor.name,
+                multiFloor: layout.floors.length > 1,
+                onStick: walk.setStick,
+                onToggleSit: walk.toggleSit,
+                onExit: exitWalkthrough,
+              }
+            : null
+        }
         measurementDistance={measurementDistance(measurementPoints)}
         {...(view.measurementMode ? { measurementPointsPlaced: measurementPoints.length } : {})}
         wallDrawStatus={

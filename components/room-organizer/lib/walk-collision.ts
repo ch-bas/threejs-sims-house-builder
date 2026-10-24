@@ -6,13 +6,21 @@
  * with the partition's thickness — and the walker is pushed out of whichever
  * boxes it overlaps, sliding along their faces rather than stopping dead.
  *
- * The footprint clamp in `hooks/use-walkthrough.ts` remains the outer guard:
- * exterior walls are never colliders here.
+ * The exterior walls are colliders too (#446), from `buildShellColliders`:
+ * solid runs either side of every exterior door and the porch's opening, so
+ * the walker leaves the house through a door and walks the lot outside.
+ * `advanceWalker` adds the vertical: it moves a walker with a foot height
+ * over the surfaces of `lib/walk-world`, climbing stairs as a ramp.
  */
 
 import { isWallHung } from './mount-band';
 import { interiorWallOpeningSpan, isWallMounted } from './opening-snap';
-import type { FurnitureItem, InteriorWall, Vec2 } from './types';
+import { hasNeighbours } from './site';
+import { floorElevation, interiorWallHeight, storeyHeight } from './storeys';
+import { entranceGeometry, entranceWallCut } from './street';
+import { generateStreet, type StreetSite } from './street-row';
+import { FLOOR_HEIGHT_METERS, type FloorLayout, type FurnitureItem, type InteriorWall, type Vec2, type WallId } from './types';
+import { walkSurfaceAt, type WalkBuilding, type WalkSurface, type WalkSurfaceKind, type WalkWorld } from './walk-world';
 
 /** One solid box in the XZ plane, in the `lib/geometry` OBB convention. */
 export interface WalkCollider {
@@ -31,6 +39,13 @@ export interface WalkCollider {
   aabbHalfD: number;
   /** Outdoor items only block a walker who is outside the room. */
   outdoor: boolean;
+  /**
+   * World Y span the box blocks (#446): the walker on a flight or another
+   * storey passes over or under it. Absent: from the ground to the sky.
+   * Only `advanceWalker` reads it.
+   */
+  bottom?: number;
+  top?: number;
 }
 
 export interface WalkerPosition {
@@ -46,6 +61,18 @@ export interface WalkCollisionOptions {
    */
   roomWidth?: number;
   roomDepth?: number;
+  /**
+   * Leave stairs out of the colliders: the walkthrough climbs them as a ramp
+   * (lib/walk-world) instead of stopping at an opaque box (#446).
+   */
+  stairsAsRamps?: boolean;
+  /**
+   * World Y of the storey's floor, and its height: the colliders' vertical
+   * span (`bottom`/`top`), so a walker on the stairs passes over the storey
+   * below and under the one above (#446). Default: a 3 m storey at 0.
+   */
+  baseY?: number;
+  storeyHeight?: number;
 }
 
 /**
@@ -103,10 +130,13 @@ export function buildWalkColliders(
   options: WalkCollisionOptions = {}
 ): WalkCollider[] {
   const colliders: WalkCollider[] = [];
+  const baseY = options.baseY ?? 0;
+  const wallTop = baseY + interiorWallHeight({ height: options.storeyHeight ?? FLOOR_HEIGHT_METERS });
   for (const item of items) {
     if (!item.position) continue;
     if (isWallMounted(item.type) || isWallHung(item.type)) continue;
     if (item.height <= LOW_PROFILE_MAX_HEIGHT) continue;
+    if (options.stairsAsRamps && item.type === 'stairs') continue;
     colliders.push(
       boxCollider(
         item.position.x,
@@ -114,7 +144,9 @@ export function buildWalkColliders(
         item.width,
         item.depth,
         item.rotation ?? 0,
-        item.category === 'outdoor'
+        item.category === 'outdoor',
+        baseY,
+        baseY + item.height
       )
     );
   }
@@ -133,7 +165,7 @@ export function buildWalkColliders(
     for (const [from, to] of solidRuns(wall, length, items, doorOwners)) {
       const mid = (from + to) / 2;
       colliders.push(
-        boxCollider(cx + ux * mid, cz + uz * mid, to - from, INTERIOR_WALL_THICKNESS, rotation, false)
+        boxCollider(cx + ux * mid, cz + uz * mid, to - from, INTERIOR_WALL_THICKNESS, rotation, false, baseY, wallTop)
       );
     }
   }
@@ -146,7 +178,9 @@ function boxCollider(
   width: number,
   depth: number,
   rotation: number,
-  outdoor: boolean
+  outdoor: boolean,
+  bottom?: number,
+  top?: number
 ): WalkCollider {
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
@@ -166,6 +200,8 @@ function boxCollider(
     aabbHalfW: halfW,
     aabbHalfD: halfD,
     outdoor,
+    ...(bottom !== undefined ? { bottom } : {}),
+    ...(top !== undefined ? { top } : {}),
   };
 }
 
@@ -312,16 +348,31 @@ function pushOut(
   colliders: readonly WalkCollider[],
   position: WalkerPosition,
   radius: number,
-  insideRoom: boolean
+  insideRoom: boolean,
+  feetY?: number
 ): void {
   for (let pass = 0; pass < RESOLVE_PASSES; pass++) {
     let moved = false;
     for (const box of colliders) {
       if (box.outdoor && insideRoom) continue;
+      if (feetY !== undefined && !blocksAt(box, feetY)) continue;
       if (pushOutOfBox(box, position, radius)) moved = true;
     }
     if (!moved) return;
   }
+}
+
+/**
+ * The walker's body, feet up: what it steps over (a rug, the top of the
+ * storey below seen from a stair) and what it walks under.
+ */
+const STEP_OVER = LOW_PROFILE_MAX_HEIGHT;
+const WALKER_HEIGHT = 1.8;
+
+/** Whether a box's vertical span meets a walker whose feet are at `feetY`. */
+function blocksAt(box: WalkCollider, feetY: number): boolean {
+  if (box.top !== undefined && box.top <= feetY + STEP_OVER) return false;
+  return box.bottom === undefined || box.bottom < feetY + WALKER_HEIGHT;
 }
 
 /**
@@ -362,4 +413,289 @@ function pushOutOfBox(box: WalkCollider, position: WalkerPosition, radius: numbe
   position.x += pushX * box.ax + pushZ * box.bx;
   position.z += pushX * box.az + pushZ * box.bz;
   return true;
+}
+
+/**
+ * Exterior walls are zero-thickness planes (three/room-builder). A 0.1 m
+ * slab keeps a 0.3 m walker 0.35 m off them — the old footprint clamp's
+ * margin, so the camera's near plane never clips the wall (#67, #446).
+ */
+const EXTERIOR_WALL_THICKNESS = 0.1;
+/** three/entrance.ts REVEAL_THICKNESS: the porch's side walls. */
+const PORCH_REVEAL_THICKNESS = 0.12;
+/** An exterior opening's cut never runs the wall's full length (three/wall-openings.ts). */
+const EXTERIOR_CUT_END_MARGIN = 0.05;
+
+/** The building as the shell colliders read it: per-floor items, hidden walls and partitions. */
+export interface ShellBuilding extends WalkBuilding {
+  floors: readonly Pick<FloorLayout, 'height' | 'items' | 'hiddenWalls' | 'interiorWalls'>[];
+}
+
+interface ExteriorWallLine {
+  id: WallId;
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+}
+
+function exteriorWallLines(halfWidth: number, halfDepth: number): ExteriorWallLine[] {
+  return [
+    { id: 'north', x1: -halfWidth, z1: -halfDepth, x2: halfWidth, z2: -halfDepth },
+    { id: 'south', x1: -halfWidth, z1: halfDepth, x2: halfWidth, z2: halfDepth },
+    { id: 'west', x1: -halfWidth, z1: -halfDepth, x2: -halfWidth, z2: halfDepth },
+    { id: 'east', x1: halfWidth, z1: -halfDepth, x2: halfWidth, z2: halfDepth },
+  ];
+}
+
+/**
+ * The exterior wall a door is cut from, or null when it isn't on one. The
+ * renderer's rule (three/wall-openings.ts classifyOpeningOwners): the nearest
+ * wall within its threshold, interior partitions included, so a door at a
+ * junction belongs to exactly one wall.
+ */
+export function exteriorDoorWall(
+  door: Pick<FurnitureItem, 'type' | 'position'>,
+  interiorWalls: readonly InteriorWall[],
+  roomWidth: number,
+  roomDepth: number
+): WallId | null {
+  if (door.type !== 'door' || !door.position) return null;
+  const { x, z } = door.position;
+  let best: WallId | null = null;
+  let bestDistance = Infinity;
+  for (const wall of exteriorWallLines(roomWidth / 2, roomDepth / 2)) {
+    const distance = distanceToSegment(x, z, wall.x1, wall.z1, wall.x2, wall.z2);
+    if (distance > EXTERIOR_DOOR_THRESHOLD || distance >= bestDistance) continue;
+    best = wall.id;
+    bestDistance = distance;
+  }
+  if (best === null) return null;
+  for (const wall of interiorWalls) {
+    const distance = distanceToSegment(x, z, wall.x1, wall.z1, wall.x2, wall.z2);
+    if (distance <= INTERIOR_DOOR_THRESHOLD && distance < bestDistance) return null;
+  }
+  return best;
+}
+
+/** `[from, to]` with every gap taken out, as the solid runs left. */
+function subtractGaps(from: number, to: number, gaps: Array<[number, number]>): Array<[number, number]> {
+  gaps.sort((a, b) => a[0] - b[0]);
+  const runs: Array<[number, number]> = [];
+  let cursor = from;
+  for (const [gapFrom, gapTo] of gaps) {
+    if (gapFrom - cursor >= MIN_RUN_LENGTH) runs.push([cursor, gapFrom]);
+    cursor = Math.max(cursor, gapTo);
+  }
+  if (to - cursor >= MIN_RUN_LENGTH) runs.push([cursor, to]);
+  return runs;
+}
+
+/**
+ * The house's shell on one storey as walker colliders (#446): each exterior
+ * wall the floor shows, solid either side of its doors and of the porch's
+ * opening, and the porch's two reveals. A hidden wall isn't there to stop
+ * anyone. Build when the storey or its doors change, not per frame.
+ */
+export function buildShellColliders(building: ShellBuilding, floorIndex: number): WalkCollider[] {
+  const floor = building.floors[floorIndex];
+  if (!floor) return [];
+  const halfWidth = building.width / 2;
+  const halfDepth = building.depth / 2;
+  const interiorWalls = floor.interiorWalls ?? [];
+
+  let porch: { x0: number; x1: number; frontZ: number; backZ: number } | null = null;
+  if (building.entrance) {
+    const geometry = entranceGeometry(building.entrance, {
+      width: building.width,
+      depth: building.depth,
+      floors: building.floors,
+      ...(building.terrain ? { terrain: building.terrain } : {}),
+    });
+    const cut = geometry ? entranceWallCut(geometry, building.floors, floorIndex) : null;
+    // A cut that starts above the floor (a tall porch's upper storey) is a
+    // window onto the soffit, not a way out.
+    if (geometry && cut && cut.bottomFromFloor < 0.05) porch = geometry;
+  }
+
+  const colliders: WalkCollider[] = [];
+  const bottom = floorElevation(building.floors, floorIndex);
+  const top = floorElevation(building.floors, floorIndex + 1);
+  for (const wall of exteriorWallLines(halfWidth, halfDepth)) {
+    if (floor.hiddenWalls?.includes(wall.id)) continue;
+    const alongX = wall.z1 === wall.z2;
+    const half = alongX ? halfWidth : halfDepth;
+    const gaps: Array<[number, number]> = [];
+    for (const item of floor.items) {
+      if (!item.position || exteriorDoorWall(item, interiorWalls, building.width, building.depth) !== wall.id) continue;
+      const width = Math.min(item.width, Math.max(0, half * 2 - EXTERIOR_CUT_END_MARGIN));
+      const centre = Math.max(-half + width / 2, Math.min(half - width / 2, alongX ? item.position.x : item.position.z));
+      gaps.push([centre - width / 2, centre + width / 2]);
+    }
+    if (wall.id === 'north' && porch) gaps.push([porch.x0, porch.x1]);
+    for (const [from, to] of subtractGaps(-half, half, gaps)) {
+      const mid = (from + to) / 2;
+      colliders.push(
+        alongX
+          ? boxCollider(mid, wall.z1, to - from, EXTERIOR_WALL_THICKNESS, 0, false, bottom, top)
+          : boxCollider(wall.x1, mid, EXTERIOR_WALL_THICKNESS, to - from, 0, false, bottom, top)
+      );
+    }
+  }
+  if (porch) {
+    const depth = porch.backZ - porch.frontZ;
+    const midZ = (porch.frontZ + porch.backZ) / 2;
+    colliders.push(boxCollider(porch.x0 - PORCH_REVEAL_THICKNESS / 2, midZ, PORCH_REVEAL_THICKNESS, depth, 0, false, bottom, top));
+    colliders.push(boxCollider(porch.x1 + PORCH_REVEAL_THICKNESS / 2, midZ, PORCH_REVEAL_THICKNESS, depth, 0, false, bottom, top));
+  }
+  return colliders;
+}
+
+/** The street site of a building, as `generateStreet` reads it. */
+export function streetSiteOf(building: WalkBuilding & Pick<StreetSite, 'neighbours' | 'roof'>): StreetSite {
+  return {
+    width: building.width,
+    depth: building.depth,
+    floorYs: building.floors.map((_floor, index) => floorElevation(building.floors, index)),
+    eavesY: floorElevation(building.floors, building.floors.length),
+    ...(building.roof ? { roof: building.roof } : {}),
+    ...(building.terrain ? { terrain: building.terrain } : {}),
+    ...(building.frontage ? { frontage: building.frontage } : {}),
+    ...(building.neighbours ? { neighbours: building.neighbours } : {}),
+  };
+}
+
+/**
+ * The neighbours' houses as walker colliders (#446): a walker out on the lot
+ * walks round the street, not through it. Each block is its footprint from
+ * the same generator the scenery is built from; flagged outdoor, so a walker
+ * indoors never tests them.
+ */
+export function buildStreetColliders(site: StreetSite): WalkCollider[] {
+  if (!hasNeighbours(site.neighbours)) return [];
+  return generateStreet(site).map((house) => {
+    // The house runs back from its street wall, away from the way it faces.
+    const backZ = house.frontZ - house.facing * house.depth;
+    return boxCollider(house.x, (house.frontZ + backZ) / 2, house.width, house.depth, 0, true);
+  });
+}
+
+/** A walker with feet: where it stands, on what, and on which storey. */
+export interface WalkerState extends WalkerPosition {
+  /** World Y of the walker's feet. */
+  y: number;
+  kind: WalkSurfaceKind;
+  /** The storey of the last floor plate or tread stood on (ground outside keeps it). */
+  floorIndex: number;
+}
+
+const surfaceScratch: WalkSurface = { y: 0, kind: 'floor', floorIndex: 0 };
+
+/**
+ * Move a walker by (dx, dz) against the colliders and over the walk world's
+ * surfaces (#446), in place. Like `resolveWalkerStep` the move is split into
+ * substeps and each axis is resolved alone, so the walker slides; an axis
+ * step onto nothing reachable (a flight's side, the stairwell, the lot's
+ * edge, a door in mid-air) is taken back, which slides the walker along
+ * that edge too. Climbing updates the foot height tread by tread.
+ * Allocation-free.
+ */
+export function advanceWalker(
+  world: WalkWorld,
+  colliders: readonly WalkCollider[],
+  walker: WalkerState,
+  dx: number,
+  dz: number,
+  radius: number
+): WalkerState {
+  const distance = Math.hypot(dx, dz);
+  const steps = Math.max(1, Math.min(MAX_SUBSTEPS, Math.ceil(distance / (radius * SUBSTEP_FRACTION))));
+  const stepX = dx / steps;
+  const stepZ = dz / steps;
+  for (let i = 0; i < steps; i++) {
+    if (stepX !== 0) advanceAxis(world, colliders, walker, stepX, 0, radius);
+    if (stepZ !== 0) advanceAxis(world, colliders, walker, 0, stepZ, radius);
+  }
+  return walker;
+}
+
+function advanceAxis(
+  world: WalkWorld,
+  colliders: readonly WalkCollider[],
+  walker: WalkerState,
+  dx: number,
+  dz: number,
+  radius: number
+): void {
+  const fromX = walker.x;
+  const fromZ = walker.z;
+  const insideRoom = Math.abs(fromX) <= world.halfWidth && Math.abs(fromZ) <= world.halfDepth;
+  walker.x += dx;
+  walker.z += dz;
+  pushOut(colliders, walker, radius, insideRoom, walker.y);
+  if (!walkSurfaceAt(world, walker.x, walker.z, walker.y, walker.kind, surfaceScratch)) {
+    walker.x = fromX;
+    walker.z = fromZ;
+    return;
+  }
+  walker.y = surfaceScratch.y;
+  walker.kind = surfaceScratch.kind;
+  if (surfaceScratch.kind !== 'ground') walker.floorIndex = surfaceScratch.floorIndex;
+}
+
+/**
+ * How far (x, z) is from the nearest collider's surface: 0 inside one.
+ * With `feetY`, only boxes that meet a walker standing there count.
+ * Outdoor colliders count only for a point outside the room, as in the
+ * resolver. For picking a spawn spot, not for the per-frame loop.
+ */
+export function walkClearance(
+  colliders: readonly WalkCollider[],
+  x: number,
+  z: number,
+  insideRoom: boolean,
+  feetY?: number
+): number {
+  let clearance = Infinity;
+  for (const box of colliders) {
+    if (box.outdoor && insideRoom) continue;
+    // A box on another storey (under a landing, upstairs) isn't in the way.
+    if (feetY !== undefined && !blocksAt(box, feetY)) continue;
+    const dx = x - box.cx;
+    const dz = z - box.cz;
+    const lx = Math.max(0, Math.abs(dx * box.ax + dz * box.az) - box.hw);
+    const lz = Math.max(0, Math.abs(dx * box.bx + dz * box.bz) - box.hd);
+    clearance = Math.min(clearance, Math.hypot(lx, lz));
+  }
+  return clearance;
+}
+
+/**
+ * The walker's colliders for each storey it can stand on (#446): that
+ * storey's furniture, partitions and shell with the storeys directly below
+ * and above it, plus the street. Each box carries its vertical span, so on a
+ * flight the walker passes over what stands below the landing and under
+ * what is upstairs, whichever storey it is counted on. Build when the
+ * building changes; index by the walker's storey per frame.
+ */
+export function buildWalkerColliders(
+  building: ShellBuilding & Pick<StreetSite, 'neighbours' | 'roof'>
+): WalkCollider[][] {
+  const street = buildStreetColliders(streetSiteOf(building));
+  const perStorey = building.floors.map((floor, index) => [
+    ...buildWalkColliders(floor.items, floor.interiorWalls ?? [], {
+      roomWidth: building.width,
+      roomDepth: building.depth,
+      stairsAsRamps: true,
+      baseY: floorElevation(building.floors, index),
+      storeyHeight: storeyHeight(floor),
+    }),
+    ...buildShellColliders(building, index),
+  ]);
+  return perStorey.map((_own, index) => [
+    ...(perStorey[index - 1] ?? []),
+    ...perStorey[index]!,
+    ...(perStorey[index + 1] ?? []),
+    ...street,
+  ]);
 }

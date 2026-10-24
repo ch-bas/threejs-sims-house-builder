@@ -46,6 +46,16 @@ export function startsWalking(event: KeyChord): boolean {
 }
 
 /**
+ * Whether a keydown is the walker's interact key: `E` sits down or stands up
+ * (#463b). A held key's auto-repeat isn't a second press, and a chord is a
+ * shortcut, not an interaction.
+ */
+export function interacts(event: KeyChord & { repeat: boolean }): boolean {
+  if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return false;
+  return event.code === 'KeyE';
+}
+
+/**
  * Whether a keydown or keyup must drop every held key. macOS never sends the
  * keyup of any key released while Cmd is down, so W held before a Cmd+Z and
  * let go during it would march the walker on. Dropping on both Cmd edges

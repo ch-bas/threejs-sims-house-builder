@@ -51,6 +51,12 @@ export type WallDisplay = 'up' | 'cutaway' | 'down';
  * the shadow map is static, so a flip needs a one-off shadow refresh — but
  * only a flip, not every orbit frame (#132).
  */
+/**
+ * userData flag on a top-level object of a storey the walkthrough hides
+ * (#446): applyWallDisplay keeps such walls hidden whatever the mode.
+ */
+export const OFF_STOREY_KEY = 'offStorey';
+
 export function applyWallDisplay(
   scene: ThreeNS.Scene,
   cameraX: number,
@@ -74,6 +80,12 @@ export function applyWallDisplay(
 
   for (const obj of scene.children) {
     const tag = obj.userData.type as string | undefined;
+    if (obj.userData[OFF_STOREY_KEY] === true && (tag === 'interior-wall' || tag === ROOM_OBJECT_TAGS.Wall)) {
+      setVisible(obj, false);
+      const id = obj.userData.wallId as string | undefined;
+      if (id) wallVisibility.set(`${tag}:${id}`, false);
+      continue;
+    }
     if (tag === 'roof') {
       // Roof only shows in "up" mode — cutaway and down both want the
       // interior visible from above — and only over the top storey.

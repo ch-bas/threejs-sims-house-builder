@@ -199,6 +199,33 @@ describe('useKeyboardShortcuts — walkthrough gate (#339)', () => {
     press('y', { ctrlKey: true });
     expect(calls()).toEqual(['undo', 'redo']);
   });
+
+  it('changes the time of day with [ and ] while walking (#463c)', () => {
+    const { handlers } = setup(false, false, { walkthroughActive: true });
+    expect(press(']').defaultPrevented).toBe(true);
+    press('[');
+    expect(handlers.advanceTime.mock.calls).toEqual([[1], [-1]]);
+  });
+
+  it('changes floor with PageUp and PageDown while walking (#446)', () => {
+    const { handlers } = setup(false, false, { walkthroughActive: true });
+    press('PageUp');
+    press('PageDown');
+    expect(handlers.changeFloor.mock.calls).toEqual([[1], [-1]]);
+  });
+
+  it.each([
+    ['w (WiFi)', 'w'],
+    ['2 (2D view)', '2'],
+    ['m (measurements)', 'm'],
+    ['r (rotate)', 'r'],
+    ['Delete', 'Delete'],
+    ['ArrowUp (nudge)', 'ArrowUp'],
+  ] as const)('still ignores %s while walking', (_label, key) => {
+    const { calls } = setup(false, false, { walkthroughActive: true, hasSignalItems: true });
+    press(key);
+    expect(calls()).toEqual([]);
+  });
 });
 
 describe('useKeyboardShortcuts — focused form controls (#415)', () => {

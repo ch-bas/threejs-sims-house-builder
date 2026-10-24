@@ -1,5 +1,5 @@
 import { floorElevation } from './storeys';
-import type { FloorLayout, ViewSettings } from './types';
+import type { FloorLayout, GameMode, ViewSettings } from './types';
 
 type WallDisplay = ViewSettings['wallDisplay'];
 
@@ -59,4 +59,17 @@ export function walkthroughPit(
     y: floorElevation(floors, activeFloorIndex - 1),
     topY: floorElevation(floors, activeFloorIndex),
   };
+}
+
+/**
+ * The mode to come back to when EXPLORE ends (#454): the last mode before it,
+ * updated as the game mode changes. EXPLORE itself is never remembered.
+ */
+export function rememberModeBeforeExplore(remembered: GameMode, current: GameMode): GameMode {
+  return current === 'live' ? remembered : current;
+}
+
+/** The game mode once the walkthrough is left: back to where EXPLORE was entered from (#454). */
+export function modeAfterExplore(current: GameMode, remembered: GameMode): GameMode {
+  return current === 'live' ? remembered : current;
 }

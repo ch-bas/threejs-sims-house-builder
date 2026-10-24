@@ -9,6 +9,7 @@ import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { Icon, iconForItem } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
 import { Minimap } from './minimap';
+import { WalkHud, type WalkHudProps } from './walk-hud';
 import type { FurnitureItem, RoomLayout } from '../lib/types';
 import type { FloorLayout } from '../lib/types';
 
@@ -38,9 +39,8 @@ export interface ViewportProps {
   onSaveSelectionAsSet?(name: string): boolean;
   showMeasurements: boolean;
   showMinimap: boolean;
-  walkthroughActive?: boolean;
-  /** The browser refused pointer lock; the hint asks for another click (#351). */
-  walkthroughLockRefused?: boolean;
+  /** The walkthrough HUD's state, while walking (#454). */
+  walkHud?: WalkHudProps | null;
   hover?: HoverState | null;
   measurementDistance?: number | null;
   /** Points placed with the distance tool; absent while the tool is off. */
@@ -389,33 +389,7 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
         <SelectionChip {...props} selectionCount={props.selectionCount} />
       )}
 
-      {props.walkthroughActive && (
-        <>
-          <div
-            aria-hidden
-            className="pointer-events-none absolute left-1/2 top-1/2"
-            style={{
-              transform: 'translate(-50%, -50%)',
-              height: 10,
-              width: 10,
-              borderRadius: 999,
-              background: 'var(--pc-cyan-glow)',
-              boxShadow: 'var(--pc-halo-cyan)',
-            }}
-          />
-          <div
-            className="pointer-events-none absolute bottom-4 left-1/2"
-            style={{ transform: 'translateX(-50%)' }}
-          >
-            <StatusChip intent="accent">
-              <Icon name="live" size={14} />
-              {props.walkthroughLockRefused
-                ? 'Click again to look around'
-                : 'WASD to walk · Shift to sprint · Esc to release'}
-            </StatusChip>
-          </div>
-        </>
-      )}
+      {props.walkHud && <WalkHud {...props.walkHud} />}
 
       {props.measurementPointsPlaced !== undefined && (
           // Top-centre under the header: the top-right corner is the floor

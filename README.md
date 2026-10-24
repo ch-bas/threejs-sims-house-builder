@@ -186,9 +186,14 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 ### View
 
 - **3D / 2D top-down** toggle.
-- **Walkthrough mode**: first-person WASD camera at the active floor's
-  eye height (PointerLockControls + Shift sprint); slides around furniture
-  and interior walls, passing through doorways.
+- **Walkthrough mode**: first-person WASD camera at eye height
+  (PointerLockControls + Shift sprint); slides around furniture and
+  interior walls, passing through doorways. You start just inside the
+  entrance door, looking in; climb the stairs (the floor switches at the
+  landing), step out of an exterior door onto the lot and round the
+  street, change floor with PgUp/PgDn (landing at the stairs) and the time
+  of day with `[`/`]`. `E` sits on the chair, sofa or bed in reach, facing
+  the TV. On a touch screen a drag looks around and a thumb stick walks.
 - **Camera presets**: Iso, Top-down, Front, Corner, plus **Fit-to-room**.
 - **Show all floors** toggle stacks every level at once with ghosted
   lower floors.
@@ -236,7 +241,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   single row of top pills, with touch camera buttons (Orbit, Pan, In, Out,
   Fit) down the left edge. Controls are at least 40 px and labels at least
   10 px; the safe-area insets keep it clear of a notch.
-- **Walkthrough HUD** with a centre reticle + WASD/Sprint/Esc help banner.
+- **Walkthrough HUD**: before the pointer is locked it says to click and
+  that a second Esc leaves; once locked, the walking keys; a sit prompt
+  under the reticle; the floor and the clock at the top. Leaving returns
+  to the mode EXPLORE was entered from.
 - **Multi-select badge** floating at the top of the viewport when more
   than one item is selected.
 - **Optional Web-Audio sound cues** for placement, removal, rotation,
@@ -425,10 +433,13 @@ components/
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
-    │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture + interior walls
+    │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
-    │   ├── walk-input.ts                Walkthrough frame-time cap and which keydowns walk (no Ctrl/Cmd/Alt chords)
-    │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359)
+    │   ├── walk-input.ts                Walkthrough frame-time cap, which keydowns walk (no Ctrl/Cmd/Alt chords), E to interact
+    │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
+    │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
+    │   ├── walk-interact.ts             Seats in reach and the seated pose (facing the TV)
+    │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359); the mode to return to on exit
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
@@ -511,7 +522,7 @@ components/
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
-    │   ├── use-walkthrough.ts           PointerLock + WASD movement
+    │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
     │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits
     │   ├── use-weather.ts               Self-invalidating rain / snow loop
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
@@ -565,6 +576,7 @@ components/
         ├── floor-pill.tsx
         ├── room-shapes-panel.tsx
         ├── dock-fold.tsx                Fold toggle for the wall tool's panels in the phone dock
+        ├── walk-hud.tsx                 Walkthrough HUD: lock-state hints, sit prompt, floor + clock; touch stick and buttons
         ├── wall-display-pill.tsx
         ├── wall-paint-panel.tsx
         ├── actions-panel.tsx
@@ -953,6 +965,44 @@ components/
   place, and the notice buttons get 44px tap areas.
   On desktop the minimap steps left of the open popover instead of hiding
   under it (#390).
+- **The walker (#446, #454, #463).** `lib/walk-world` is what the walker
+  stands on, rebuilt only when the building changes: every storey's floor
+  plate, each stair's treads (from `lib/stairs`, so the ramp matches the
+  mesh) solid down to their floor, the stairwell holes as the cut treads,
+  the porch and its steps, and the lot's slope. A move goes to the highest
+  surface under the walker's centre within one step (a riser, or 1.2 m
+  across a threshold onto the lot), so it climbs tread by tread, can't
+  board a flight from the side or walk off a landing, and can't step out
+  of an upper-floor door. `advanceWalker` (walk-collision) resolves each
+  axis substep against the colliders, then the surface, allocation-free.
+  A tread belongs to its stair's storey and a plate to its own, so the
+  active floor switches at the landings; the hook reports it and ignores
+  React's echo, and any other floor change (PgUp/PgDn, the pills) lands
+  the walker at that storey's stairs (`walkArrival`). The exterior walls
+  are 0.1 m colliders with gaps at exterior doors and the porch, which
+  keeps the old 0.35 m wall margin. While walking every storey is built
+  solid with the roof, as ALL floors does with the walls up (the scene
+  effects key on `allFloors`): the flight climbs into the real storey
+  above, the stairs show from the landing, and the house is whole from the
+  garden. Indoors only the walker's storey is drawn (the ceiling and the
+  floor hide the rest), plus the ones directly above and below while it is
+  on a flight or within 2.5 m of a stairwell or flight on its storey
+  (released at 3 m, so the edge doesn't flicker; `seesNeighbourStoreys`).
+  The rest are hidden, not rebuilt (shell and
+  partition objects carry their storey in `userData.storey`, walls are
+  flagged `offStorey` for `applyWallDisplay`). The roof shows with the
+  top storey. Out on the lot the whole
+  house and its roof show. Only the walker's storey is lit, since point
+  lights cast no shadow. The #359 ceiling plate stays under the storey
+  above (a floor plate is invisible from below); its stairwell shafts go.
+  Colliders carry their storey's height span and the walker is tested
+  against its storey and the ones either side, so it passes over what
+  stands below a landing; a flight shorter than its storey allows the
+  taller last step. Walking pulls the camera's near plane in to 0.1 m so
+  a wide screen can't see through a wall, and on exit the orbit camera
+  moves with the target the floor change moved. Sitting eases the camera
+  to the seat and back to where the walker stood; any step stands it up. The orchestrator remembers the mode before
+  EXPLORE (a store subscription, no re-render) and leaving returns to it.
 - **The phone dock.** At ≤768 px wide, and at ≤1100 × ≤500 px (landscape
   phones), the HUD docks on the bottom edge (#395, #307). The media queries
   live in `lib/hud-layout.ts` and must match `app/globals.css`: the catalog
@@ -1077,7 +1127,7 @@ components/
 - Walkthrough requires a click on the canvas to engage pointer lock.
 - The UI is responsive down to phone sizes — the HUD docks at the bottom,
   the item editor becomes a bottom sheet, the sidebar goes full-screen —
-  but walkthrough needs a keyboard.
+  and the walkthrough walks by touch (drag to look, a thumb stick).
 - No "rooms from enclosed walls" detection — interior walls are just
   drawn segments, not space-bounding entities.
 
