@@ -36,6 +36,27 @@ function consumeKeyboardPlacement(): boolean {
   return armed;
 }
 
+/**
+ * The pointer's twin of the flag above (#463 d): a click or tap on a tile
+ * arms it, and the wrapped `placeCatalogItem` then picks the entry up as a
+ * placement ghost instead of dropping it at the room centre.
+ */
+let ghostArmed = false;
+
+/** Called by a catalog tile on click or tap, immediately before its `onAdd`. */
+export function armGhostPlacement(): void {
+  ghostArmed = true;
+  queueMicrotask(() => {
+    ghostArmed = false;
+  });
+}
+
+function consumeGhostPlacement(): boolean {
+  const armed = ghostArmed;
+  ghostArmed = false;
+  return armed;
+}
+
 /** Where an arrow/Home/End press moves the focus in a `columns`-wide tile grid. */
 export function nextTileIndex(key: string, index: number, count: number, columns: number): number | null {
   const last = Math.max(0, count - 1);
@@ -119,6 +140,8 @@ export interface UseKeyboardPlacementParams {
   history: Pick<UseHistoryResult<RoomLayout>, 'commitNow' | 'truncateTo'>;
   selectOnly(id: string | null): void;
   placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
+  /** A tile picked up a ghost: clear the way to the view (the drawer folds away). */
+  onGhostPickUp?(): void;
 }
 
 export interface UseKeyboardPlacementResult {
@@ -133,6 +156,13 @@ export interface UseKeyboardPlacementResult {
   confirmPlacement(): void;
   /** Escape: take the item back out and end the session. */
   cancelPlacement(): void;
+  /**
+   * The catalogue entry a click or tap picked up as a placement ghost
+   * (#463 d), or null. Nothing is in the layout until it is placed.
+   */
+  ghost: CatalogItem | null;
+  /** Put the ghost down without placing it (placed, cancelled or abandoned). */
+  endGhost(): void;
 }
 
 function withoutItem(layout: RoomLayout, id: string): RoomLayout {
@@ -157,6 +187,7 @@ export function useKeyboardPlacement({
   history,
   selectOnly,
   placeCatalogItem,
+  onGhostPickUp,
 }: UseKeyboardPlacementParams): UseKeyboardPlacementResult {
   const [placingId, setPlacingId] = useState<string | null>(null);
   const { commitNow, truncateTo } = history;
@@ -164,8 +195,21 @@ export function useKeyboardPlacement({
   // committed on top of. Cancel truncates history back to it (#356).
   const sessionStartRef = useRef<RoomLayout | null>(null);
 
+  const [ghost, setGhost] = useState<CatalogItem | null>(null);
+  const endGhost = useCallback(() => setGhost(null), []);
+
   const placeTracked = useCallback(
     (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
+      // A click on a tile picks the entry up instead of placing it: the
+      // ghost session places it where the next click or tap lands. ''
+      // tells the tile nothing was added (no chime, no selection).
+      if (consumeGhostPlacement() && position === undefined) {
+        // The selection's popover and shortcuts would compete with it.
+        selectOnly(null);
+        onGhostPickUp?.();
+        setGhost(catalogItem);
+        return '';
+      }
       const armed = consumeKeyboardPlacement();
       // The add must be an entry of its own, so the session has a clean start
       // to truncate back to.
@@ -179,7 +223,7 @@ export function useKeyboardPlacement({
       setPlacingId(id);
       return id;
     },
-    [placeCatalogItem, actions, commitNow, layout]
+    [placeCatalogItem, actions, commitNow, layout, selectOnly, onGhostPickUp]
   );
 
   // The session is tied to the pending item staying the sole selection:
@@ -217,7 +261,9 @@ export function useKeyboardPlacement({
       placeCatalogItem: placeTracked,
       confirmPlacement,
       cancelPlacement,
+      ghost,
+      endGhost,
     }),
-    [placingId, placeTracked, confirmPlacement, cancelPlacement]
+    [placingId, placeTracked, confirmPlacement, cancelPlacement, ghost, endGhost]
   );
 }

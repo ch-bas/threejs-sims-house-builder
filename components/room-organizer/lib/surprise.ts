@@ -1,7 +1,13 @@
+import { activeWriteOff } from './budget';
 import { FURNITURE_CATALOG } from './constants';
-import { buildFurnitureSet, FURNITURE_SETS, setFitsRoom, type FurnitureSet } from './furniture-sets';
+import { floorKeepOut } from './floor-keep-out';
+import { FURNITURE_SETS, placeSetInFreeSpace, setFitsRoom, type FurnitureSet } from './furniture-sets';
+import { hasCollisions, totalCost, type CollisionContext, type KeepOutRect } from './geometry';
 import { randomSuffix } from './ids';
-import type { CatalogItem, FurnitureItem } from './types';
+import { isWallMounted, type WallGap } from './opening-snap';
+import { storeyHeight } from './storeys';
+import { entrancePlanOutline } from './street';
+import type { CatalogItem, FurnitureItem, InteriorWall, RoomLayout } from './types';
 
 const DECOR_TYPES = ['plant', 'flowerpot', 'rug', 'painting', 'vase', 'lamp', 'floor-lamp', 'mirror'] as const;
 
@@ -19,6 +25,15 @@ export interface SurpriseOptions {
   maxCost?: number;
   /** Stable seed for the RNG; if omitted, uses Date.now(). */
   seed?: number;
+  /** What stays on the floor (structure, garden); nothing is generated on top of it (#448). */
+  existing?: readonly FurnitureItem[];
+  /** The storey's porch and stairwells (`floorKeepOut`). */
+  keepOut?: readonly KeepOutRect[];
+  /** The storey's partitions: no piece straddles one. */
+  interiorWalls?: readonly InteriorWall[];
+  /** The recess's span of the north wall: no art hangs across the opening. */
+  frontGap?: WallGap | null;
+  storeyHeight?: number;
 }
 
 /**
@@ -40,11 +55,30 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
   // stamping "Surprise Me" twice in a row yields distinct items.
   const idTag = options.seed === undefined ? `${seed}-${randomSuffix()}` : `${seed}`;
 
+  const existing = options.existing ?? [];
+  const interiorWalls = options.interiorWalls ?? [];
+  const frontGap = options.frontGap ?? null;
+  const context: CollisionContext = {
+    keepOut: options.keepOut ?? [],
+    interiorWalls,
+    ...(options.storeyHeight !== undefined ? { storeyHeight: options.storeyHeight } : {}),
+  };
+  const room: Room = { width: roomWidth, depth: roomDepth, context, frontGap };
+
   const set = chooseSet(roomWidth, roomDepth, rng);
-  // A set is only chosen when at least one fits, but pass the room dims so
-  // buildFurnitureSet also scales its offsets in to keep pieces off the walls.
+  // A set is only chosen when at least one fits by size; it lands on the free
+  // spot nearest the room centre, clear of what the floor keeps (#448).
   const setItems = set
-    ? buildFurnitureSet(set, { center: { x: 0, z: 0 }, idPrefix: `surprise-set-${idTag}`, roomWidth, roomDepth })
+    ? placeSetInFreeSpace(set, {
+        roomWidth,
+        roomDepth,
+        existing,
+        keepOut: context.keepOut ?? [],
+        interiorWalls,
+        frontGap,
+        ...(options.storeyHeight !== undefined ? { storeyHeight: options.storeyHeight } : {}),
+        idPrefix: `surprise-set-${idTag}`,
+      })
     : [];
 
   const decor: FurnitureItem[] = [];
@@ -54,9 +88,10 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
   for (let i = 0; i < decorCount; i++) {
     const choice = pickRandom(rng, eligibleDecor(remainingBudget));
     if (!choice) break;
+    const placed = [...existing, ...setItems, ...decor];
     const placement = WALL_ART_TYPES.has(choice.type)
-      ? wallPosition(rng, roomWidth, roomDepth, choice, [...setItems, ...decor])
-      : floorPosition(rng, roomWidth, roomDepth, choice, [...setItems, ...decor]);
+      ? wallPosition(rng, room, choice, placed)
+      : floorPosition(rng, room, choice, placed);
     if (!placement) continue;
     decor.push({
       ...choice,
@@ -68,6 +103,46 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
   }
 
   return [...setItems, ...decor];
+}
+
+/**
+ * Structure and site, which Surprise keeps (#448): doors, windows and
+ * cameras (the entrance door among them), stairs, and the garden.
+ */
+export function keptBySurprise(item: Pick<FurnitureItem, 'type' | 'category'>): boolean {
+  return isWallMounted(item.type) || item.type === 'stairs' || item.category === 'outdoor';
+}
+
+/** Whether Surprise would replace anything on this floor, i.e. whether to ask first. */
+export function surpriseReplacesFurniture(items: readonly FurnitureItem[]): boolean {
+  return items.some((item) => !keptBySurprise(item));
+}
+
+/**
+ * The floor's items after Surprise (#448): its structure and garden kept,
+ * plus a generated set and decor fitted around them, the porch, the
+ * stairwells and the partitions. The generated pieces spend what the rest
+ * of the building leaves of `budget`.
+ */
+export function surpriseFloorItems(layout: RoomLayout, floorIndex: number, budget: number, seed?: number): FurnitureItem[] {
+  const floor = layout.floors[floorIndex];
+  if (!floor) return [];
+  const kept = floor.items.filter(keptBySurprise);
+  const replacedCost = totalCost(floor.items) - totalCost(kept);
+  // Under the hard budget, sell-back losses are spent too (#463e).
+  const spent = totalCost(layout.floors.flatMap((entry) => entry.items)) - replacedCost + activeWriteOff(layout);
+  const generated = surpriseLayout({
+    roomWidth: layout.width,
+    roomDepth: layout.height,
+    maxCost: Math.max(0, budget - spent),
+    ...(seed !== undefined ? { seed } : {}),
+    existing: kept,
+    keepOut: floorKeepOut(layout, floorIndex),
+    interiorWalls: floor.interiorWalls ?? [],
+    frontGap: entrancePlanOutline(layout, floorIndex),
+    storeyHeight: storeyHeight(floor),
+  });
+  return [...kept, ...generated];
 }
 
 function chooseSet(width: number, depth: number, rng: () => number) {
@@ -118,13 +193,21 @@ interface Placement {
   rotation: number;
 }
 
+/** The floor decor is generated on: its size and what `hasCollisions` checks. */
+interface Room {
+  width: number;
+  depth: number;
+  context: CollisionContext;
+  frontGap: WallGap | null;
+}
+
 function floorPosition(
   rng: () => number,
-  roomWidth: number,
-  roomDepth: number,
+  room: Room,
   candidate: CatalogItem,
   existing: readonly FurnitureItem[]
 ): Placement | null {
+  const { width: roomWidth, depth: roomDepth } = room;
   // Room dimensions are exterior measurements; inset by ~wall thickness plus a
   // small margin so decor never spawns under or inside the exterior walls.
   const WALL_INSET = 0.35;
@@ -139,7 +222,10 @@ function floorPosition(
   for (let attempt = 0; attempt < 30; attempt++) {
     const x = minX + rng() * (maxX - minX);
     const z = minZ + rng() * (maxZ - minZ);
-    if (!collides({ x, z, width: candidate.width, depth: candidate.depth }, existing)) {
+    if (collides({ x, z, width: candidate.width, depth: candidate.depth }, existing)) continue;
+    // The porch, stairwells and partitions too, not just the other items (#448).
+    const probe: FurnitureItem = { ...candidate, id: 'surprise-probe', position: { x, z }, rotation: 0 };
+    if (!hasCollisions(probe, existing, roomWidth, roomDepth, room.context)) {
       return { position: { x, z }, rotation: 0 };
     }
   }
@@ -158,11 +244,11 @@ const WALL_GAP = 0.01;
  */
 function wallPosition(
   rng: () => number,
-  roomWidth: number,
-  roomDepth: number,
+  room: Room,
   candidate: CatalogItem,
   existing: readonly FurnitureItem[]
 ): Placement | null {
+  const { width: roomWidth, depth: roomDepth, frontGap } = room;
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
   const inset = candidate.depth / 2 + WALL_GAP;
@@ -182,6 +268,8 @@ function wallPosition(
             ? { position: { x: -halfW + inset, z: offset }, rotation: Math.PI / 2 }
             : { position: { x: halfW - inset, z: offset }, rotation: -Math.PI / 2 };
     const { x, z } = placement.position;
+    // The recess cuts the north wall there: nothing to hang art on (#448).
+    if (wall === 0 && frontGap && x + candidate.width / 2 > frontGap.x0 && x - candidate.width / 2 < frontGap.x1) continue;
     if (!collides({ x, z, width: candidate.width, depth: candidate.depth }, existing)) return placement;
   }
   return null;

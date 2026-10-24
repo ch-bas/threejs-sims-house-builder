@@ -10,7 +10,7 @@ import { alignSelection, distributeSelection } from '../lib/alignment';
 import { purchasePrice, purchaseRefusal } from '../lib/budget';
 import { notify } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
-import { buildFurnitureSet } from '../lib/furniture-sets';
+import { placeSetInFreeSpace } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
@@ -273,15 +273,23 @@ const DrawerBody = memo(function DrawerBody({
           <SetsPanel
             onAddSet={(set) => {
               // Scale/refuse the set to the current room so pieces don't
-              // land through the walls in small rooms (#73). An empty
-              // result means the set can't fit here.
-              const items = buildFurnitureSet(set, {
+              // land through the walls in small rooms (#73), on the free
+              // spot nearest the centre rather than on top of what's
+              // there (#456). An empty result means it can't fit here.
+              const items = placeSetInFreeSpace(set, {
                 roomWidth: layout.width,
                 roomDepth: layout.height,
+                existing: activeFloor.items,
+                keepOut,
                 interiorWalls: activeFloor.interiorWalls ?? [],
                 frontGap: entrancePlanOutline(layout, activeFloorIndex),
+                storeyHeight: storeyHeight(activeFloor),
               });
-              if (items.length === 0) return;
+              if (items.length === 0) {
+                playCue('refused');
+                notify(`No free spot for the ${set.label} — make some room first.`, 'error');
+                return;
+              }
               // Hard budget (#463e): say why instead of a silent refusal.
               const refusal = purchaseRefusal(layout, purchasePrice(items));
               if (refusal !== null) {

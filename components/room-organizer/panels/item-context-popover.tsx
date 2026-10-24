@@ -9,10 +9,12 @@ import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M } from '../lib/constants';
 import { isWallMounted } from '../lib/opening-snap';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
+import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
+import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import { SliderRow } from './slider-row';
-import type { SofaShape } from '../lib/types';
+import type { SofaShape, StairsShape } from '../lib/types';
 
 type ResizableDimension = 'width' | 'depth' | 'height';
 
@@ -324,6 +326,51 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             />
           )}
 
+          {/* The type-specific controls the Style tab has, where players
+              look first (#458). Locked like W/D/H: they reshape the item. */}
+          {item.type === 'stairs' && (
+            <>
+              <SegmentedRow
+                label="Stairs"
+                value={item.stairsShape ?? 'straight'}
+                options={STAIRS_SHAPES}
+                labelWidth={TYPE_LABEL_WIDTH}
+                disabled={item.locked}
+                title={item.locked ? 'Locked — unlock to reshape' : undefined}
+                onChange={(shape) => actions.setStairsShape(item.id, shape)}
+              />
+              {item.stairsShape === 'winder' && (
+                <SliderRow
+                  label="Lead-in"
+                  min={0}
+                  max={MAX_STAIRS_LEAD_IN}
+                  step={1}
+                  value={item.stairsLeadIn ?? 0}
+                  format={(v) => `${v} ${v === 1 ? 'step' : 'steps'}`}
+                  onChange={(value) => actions.setStairsShape(item.id, 'winder', value)}
+                  labelWidth={TYPE_LABEL_WIDTH}
+                  disabled={item.locked}
+                  title={item.locked ? 'Locked — unlock to reshape' : undefined}
+                />
+              )}
+            </>
+          )}
+
+          {item.type === 'window' && (
+            <SliderRow
+              label="Sill"
+              min={MIN_SILL_HEIGHT}
+              max={MAX_SILL_HEIGHT}
+              step={0.05}
+              value={windowSillHeight(item)}
+              format={(v) => `${v.toFixed(2)} m`}
+              onChange={(value) => actions.setSillHeight(item.id, value)}
+              labelWidth={TYPE_LABEL_WIDTH}
+              disabled={item.locked}
+              title={item.locked ? 'Locked — unlock to move the sill' : undefined}
+            />
+          )}
+
           {(item.isWiFiAccessPoint || item.isCCTV) && (
             <SliderRow
               label={item.isWiFiAccessPoint ? 'Signal' : 'Coverage'}
@@ -473,17 +520,47 @@ interface SofaShapeSegmentedProps {
   onChange(value: SofaShape): void;
 }
 
+const SOFA_SHAPES: ReadonlyArray<SegmentOption<SofaShape>> = [
+  { key: 'standard', label: 'Std' },
+  { key: 'L-shape', label: 'L' },
+  { key: 'U-shape', label: 'U' },
+];
+
+/** Label column of the stairs and window rows: wide enough for "Lead-in" on one line. */
+const TYPE_LABEL_WIDTH = 58;
+
+const STAIRS_SHAPES: ReadonlyArray<SegmentOption<StairsShape>> = [
+  { key: 'straight', label: 'Straight' },
+  { key: 'winder', label: 'Winder' },
+];
+
 function SofaShapeSegmented({ value, onChange }: SofaShapeSegmentedProps): JSX.Element {
-  const options: ReadonlyArray<{ key: SofaShape; label: string }> = [
-    { key: 'standard', label: 'Std' },
-    { key: 'L-shape', label: 'L' },
-    { key: 'U-shape', label: 'U' },
-  ];
+  return <SegmentedRow label="Sofa" value={value} options={SOFA_SHAPES} onChange={onChange} />;
+}
+
+interface SegmentOption<T extends string> {
+  key: T;
+  label: string;
+}
+
+interface SegmentedRowProps<T extends string> {
+  label: string;
+  value: T;
+  options: ReadonlyArray<SegmentOption<T>>;
+  onChange(value: T): void;
+  /** Label column width (px). */
+  labelWidth?: number;
+  disabled?: boolean | undefined;
+  /** Tooltip explaining why the row is disabled. */
+  title?: string | undefined;
+}
+
+function SegmentedRow<T extends string>({ label, value, options, onChange, labelWidth = 48, disabled, title }: SegmentedRowProps<T>): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span
         style={{
-          width: 48,
+          width: labelWidth,
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 600,
           fontSize: 10,
@@ -492,16 +569,24 @@ function SofaShapeSegmented({ value, onChange }: SofaShapeSegmentedProps): JSX.E
           color: 'var(--pc-paper-soft)',
         }}
       >
-        Sofa
+        {label}
       </span>
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+      <div
+        role="group"
+        aria-label={label}
+        style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${options.length}, 1fr)`, gap: 4 }}
+      >
         {options.map((option) => (
           <button
             key={option.key}
             type="button"
             onClick={() => onChange(option.key)}
+            aria-pressed={value === option.key}
+            disabled={disabled}
+            title={title}
             className={`pc-tile${value === option.key ? ' pc-tile--active' : ''}`}
             style={{
+              ...(disabled ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
               padding: '4px 6px',
               borderRadius: 8,
               fontFamily: 'var(--pc-font-display)',

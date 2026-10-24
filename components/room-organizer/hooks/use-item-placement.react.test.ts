@@ -75,6 +75,64 @@ describe('useItemPlacement — wall-aligned catalog placement', () => {
     expect(activeItem(id).rotation).toBeCloseTo(expected.rotation, 10);
     expect(activeItem(id).wallRotation).toBeCloseTo(expected.rotation, 10);
   });
+
+  it('turns a free-standing item by the rotation it was placed with (the ghost’s R)', () => {
+    const { result } = mount();
+    const id = result.current.placeCatalogItem(makeCatalogItem(), { x: 1, z: 1 }, Math.PI / 2);
+    expect(activeItem(id).position).toEqual({ x: 1, z: 1 });
+    expect(activeItem(id).rotation).toBeCloseTo(Math.PI / 2, 10);
+    expect(activeItem(id).locked).toBe(true);
+  });
+
+  it('refuses a purchase over what a hard budget leaves, without asking', () => {
+    const { layout, activeFloorIndex, actions } = layoutStore.getState();
+    const { result } = renderHook(() =>
+      useItemPlacement({
+        activeFloor: layout.floors[activeFloorIndex]!,
+        activeFloorY: 0,
+        roomWidth: layout.width,
+        roomDepth: layout.height,
+        buildingCost: 0,
+        actions,
+        view: { snapToGrid: false, snapToWall: false, snapToItems: false },
+        refusePurchase: (price) => price > 50,
+      })
+    );
+    const before = layoutStore.getState().layout;
+    expect(result.current.placeCatalogItem(makeCatalogItem({ price: 100 }), { x: 0, z: 0 })).toBe('');
+    expect(layoutStore.getState().layout).toBe(before);
+    expect(result.current.placeCatalogItem(makeCatalogItem({ price: 40 }), { x: 0, z: 0 })).not.toBe('');
+  });
+
+  it('previews a catalogue door on its wall, facing the room (#463 d)', () => {
+    const { result } = mount();
+    const { width, height } = layoutStore.getState().layout;
+    const door = makeCatalogItem({ type: 'door', width: 0.9, depth: 0.12, height: 2.1 });
+    const drop = { x: width / 2 - 0.4, z: 0.3 };
+    const expected = snapOpeningToWall({ position: drop, itemWidth: door.width, roomWidth: width, roomDepth: height, interiorWalls: [] });
+    const preview = result.current.snapCatalogPlacement(door, drop.x, drop.z, 0);
+    expect(preview.position).toEqual(expected.position);
+    expect(preview.rotation).toBeCloseTo(expected.rotation, 10);
+  });
+
+  it('previews a free-standing item through the grid snap, keeping its turn', () => {
+    const { layout, activeFloorIndex, actions } = layoutStore.getState();
+    const { result } = renderHook(() =>
+      useItemPlacement({
+        activeFloor: layout.floors[activeFloorIndex]!,
+        activeFloorY: 0,
+        roomWidth: layout.width,
+        roomDepth: layout.height,
+        buildingCost: 0,
+        actions,
+        view: { snapToGrid: true, snapToWall: false, snapToItems: false },
+      })
+    );
+    const preview = result.current.snapCatalogPlacement(makeCatalogItem(), 1.13, -0.91, Math.PI);
+    expect(preview.rotation).toBe(Math.PI);
+    expect(preview.position.x).not.toBe(1.13);
+    expect(preview.position.z).not.toBe(-0.91);
+  });
 });
 
 describe('useItemPlacement — snapPosition', () => {

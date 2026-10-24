@@ -25,6 +25,7 @@ import { useLayoutState } from './hooks/use-layout-state';
 import { layoutStore } from './hooks/use-layout-store';
 import { useNpcs } from './hooks/use-npcs';
 import { usePeopleModel } from './hooks/use-people-model';
+import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
 import { useThreeScene } from './hooks/use-three-scene';
@@ -65,7 +66,7 @@ import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { roofPeakHeight } from './three/roof';
 import type { HoverInfo } from './hooks/use-three-scene';
-import type { CatalogItem, RoomLayout, ViewSettings, WallId } from './lib/types';
+import type { CatalogItem, FurnitureItem, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
   THREE: typeof import('./three/three-runtime'),
@@ -681,7 +682,7 @@ export function RoomOrganizer(): JSX.Element {
     [layout.floors]
   );
 
-  const { snapPosition, getDragPlaneY, placeCatalogItem } = useItemPlacement({
+  const { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
     activeFloor,
     activeFloorY,
     roomWidth: layout.width,
@@ -691,6 +692,7 @@ export function RoomOrganizer(): JSX.Element {
     view,
     allSelectedIds,
     frontGap,
+    refusePurchase: refuseOverBudget,
   });
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
@@ -698,9 +700,9 @@ export function RoomOrganizer(): JSX.Element {
   // Every catalog add (tile click, keyboard, drag-drop) comes through here,
   // so each chimes once (#460). '' = declined or refused: nothing was added.
   const placeDiscrete = useCallback(
-    (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
+    (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string => {
       commitHistoryNow();
-      const id = placeCatalogItem(catalogItem, position);
+      const id = placeCatalogItem(catalogItem, position, rotation);
       if (!id) return id;
       // The reducer refuses an add on a full floor.
       if (!itemExists(id)) {
@@ -720,6 +722,8 @@ export function RoomOrganizer(): JSX.Element {
     placeCatalogItem: placeFromCatalog,
     confirmPlacement,
     cancelPlacement,
+    ghost,
+    endGhost,
   } = useKeyboardPlacement({
     layout,
     selectedItemId,
@@ -727,6 +731,8 @@ export function RoomOrganizer(): JSX.Element {
     history,
     selectOnly,
     placeCatalogItem: placeDiscrete,
+    // The drawer's backdrop would take the click meant to place it.
+    onGhostPickUp: useCallback(() => setSidebarCollapsed(true), []),
   });
 
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
@@ -778,6 +784,46 @@ export function RoomOrganizer(): JSX.Element {
 
   sceneBoxRef.current = sceneRef;
   invalidateBoxRef.current = invalidate;
+
+  // Placement ghost (#463 d): a clicked catalogue tile follows the pointer
+  // until a click or tap places it.
+  // Another tool (walls, distance, zones, the walkthrough) owns the clicks:
+  // the ghost is put down rather than taking them.
+  const placementGhost = usePlacementGhost({
+    ghost,
+    endGhost,
+    enabled: !walkthroughActive && !view.drawWallMode && !view.measurementMode && !view.drawZoneMode,
+    sceneReady: isReady,
+    view2D: view.view2D,
+    canvasRef,
+    canvas2DRef,
+    worldPositionFromClient,
+    clientToWorld2D,
+    snapCatalogPlacement,
+    floorItems: activeFloor.items,
+    collides: (item: FurnitureItem) =>
+      hasCollisions(item, activeFloor.items, layout.width, layout.height, {
+        keepOut,
+        interiorWalls: activeFloor.interiorWalls,
+        storeyHeight: activeStoreyHeight,
+      }),
+    // placeDiscrete plays the place cue, or `refused` (hard budget, full floor).
+    place: (catalogItem, position, rotation, keep) => {
+      const id = placeDiscrete(catalogItem, position, rotation);
+      // '' = refused, or declined at the soft budget's confirm.
+      if (!id) return false;
+      selectOnly(keep ? null : id);
+      return true;
+    },
+    threeModuleRef,
+    sceneRef,
+    invalidate,
+    floorY: activeFloorY,
+    storeyHeight: activeStoreyHeight,
+  });
+  // A mode switch (Design, Furnish, Explore) puts the ghost down too.
+  const gameMode = useStore(viewStore, (state) => state.gameMode);
+  useEffect(() => endGhost(), [gameMode, endGhost]);
 
   const { lockRefused: walkthroughLockRefused } = useWalkthrough({
     enabled: isReady && walkthroughActive,
@@ -1053,11 +1099,15 @@ export function RoomOrganizer(): JSX.Element {
       // Only while a keyboard placement is pending, so Enter/Escape otherwise
       // keep their ordinary meaning (#168).
       ...(placingId ? { confirmPlacement, cancelPlacement } : {}),
+      // A placement ghost (#463 d) takes them the same way.
+      ...(ghost ? { confirmPlacement: () => placementGhost.confirm(), cancelPlacement: placementGhost.cancel } : {}),
     }),
     [
       placingId,
       confirmPlacement,
       cancelPlacement,
+      ghost,
+      placementGhost,
       frontGap,
       removeItem,
       removeSelected,
@@ -1331,7 +1381,7 @@ export function RoomOrganizer(): JSX.Element {
       <WelcomeBanner />
 
       {/* Keyboard-placement key hint (#168) */}
-      <PlacementHint active={placingId !== null} />
+      <PlacementHint active={placingId !== null} ghost={ghost} onCancel={placementGhost.cancel} />
 
       {/* Inline zone naming and export/share status (#374) */}
       <ZoneNameChip />

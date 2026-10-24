@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useEditorView, useEditorViewActions } from '../contexts';
-import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
+import { armGhostPlacement, useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-store';
 import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
@@ -179,12 +179,21 @@ function CatalogTile({ item, blockedReason, onAdd, roving, overBudget }: Catalog
   return (
     <button
       type="button"
-      onClick={onAdd}
+      // A click or tap picks the item up as a placement ghost (#463 d).
+      onClick={(event) => {
+        if (!blocked) {
+          armGhostPlacement();
+          // Hand the keys to the ghost: a focused tile's Enter/Space would
+          // start a second placement.
+          event.currentTarget.blur();
+        }
+        onAdd();
+      }}
       aria-disabled={blocked || undefined}
       title={
         blocked
           ? `${item.name} — ${blockedReason}`
-          : `${item.name} — drag onto the 3D view to place precisely, click to drop at center, or press Enter to place and position it with the keyboard`
+          : `${item.name} — click to pick it up and click again to place it, drag it onto the view, or press Enter to place and position it with the keyboard`
       }
       {...roving}
       draggable={!blocked}
