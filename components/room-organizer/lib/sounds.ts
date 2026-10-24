@@ -4,7 +4,8 @@
  * envelope so the cues feel snappy rather than musical.
  */
 
-export type SoundCue = 'place' | 'remove' | 'rotate' | 'success';
+/** `refused`: an action the editor declined (over budget, locked), so it isn't silent. */
+export type SoundCue = 'place' | 'remove' | 'rotate' | 'success' | 'refused';
 
 let audioContext: AudioContext | null = null;
 
@@ -34,6 +35,7 @@ const CUE_SPECS: Record<SoundCue, CueSpec> = {
   remove: { type: 'sawtooth', startFreq: 380, endFreq: 140, duration: 0.18, peakGain: 0.1 },
   rotate: { type: 'square', startFreq: 220, endFreq: 220, duration: 0.05, peakGain: 0.08 },
   success: { type: 'sine', startFreq: 660, endFreq: 990, duration: 0.32, peakGain: 0.14 },
+  refused: { type: 'square', startFreq: 160, endFreq: 110, duration: 0.14, peakGain: 0.06 },
 };
 
 export function playSound(cue: SoundCue): void {

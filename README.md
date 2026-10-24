@@ -229,7 +229,10 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Multi-select badge** floating at the top of the viewport when more
   than one item is selected.
 - **Optional Web-Audio sound cues** for placement, removal, rotation,
-  and achievement unlocks.
+  and achievement unlocks. The cues play in the shared action helpers
+  (`placeDiscrete`, `removeItem` / `removeSelected`, `duplicateSelected`,
+  `rotateItemHandler`), so every entry point (tile click, drag-drop,
+  keyboard, shortcut, popover, multi-selection) sounds the same (#460).
 
 ### UI / chrome
 
@@ -298,6 +301,11 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   "Roof It", "Green Thumb", "Door Installer", "Window Watcher",
   "Wall Whisperer", "Decorator", "Open Plan") with toast pop-ups when
   unlocked and a sidebar gallery panel showing locked / unlocked progress.
+  They are earned by building: a template, library house, share link,
+  import, restore point, cross-tab adopt or undo/redo unlocks nothing, and
+  a goal that came with such a house is earned only once the player meets
+  it again themselves (#450). Toasts play one at a time, bottom-right just
+  above the mode panel on desktop, each with its own timer (#461).
 - **Hard budget** (the switch under the funds in the mode panel, off by
   default): catalogue tiles that cost more than what's left grey out (on
   touch they say "Over budget"), nothing can be bought past the budget by
@@ -309,7 +317,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 
 - **Header chip strip**: items / floors / room dimensions / cost-vs-budget.
 - **Statistics panel**: items, floors, floor area, total area, footprint
-  coverage % (indoor items only), cost vs. budget, breakdown by category.
+  coverage % (what stands on the floor: no outdoor items, doors, windows,
+  cameras or hung decor, and a tabletop item on a surface counts once,
+  #462), cost vs. budget, breakdown by category.
 
 ### Welcome
 
@@ -366,7 +376,7 @@ components/
     │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214); per-item build keys + diff (#404)
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
-    │   ├── achievements.ts              15 predicate-based achievements
+    │   ├── achievements.ts              15 predicate-based achievements; `achievementsEarned` (baseline / loaded / edit)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
@@ -393,7 +403,7 @@ components/
     │   ├── custom-sets.ts               User-saved furniture sets: localStorage I/O + parser (#302)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
     │   ├── surprise.ts                  Random one-shot floor populate
-    │   ├── sounds.ts                    Web-Audio synth for UI cues
+    │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture + interior walls
@@ -488,7 +498,7 @@ components/
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
     │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
     │   ├── use-history.ts               Snapshot undo/redo
-    │   ├── use-achievements.ts          Diffed unlock detection
+    │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session + roving tile focus
@@ -543,7 +553,7 @@ components/
         ├── minimap.tsx
         ├── plan-thumb.tsx
         ├── achievements-panel.tsx
-        ├── achievement-toast.tsx        Unlock toasts: stacked on desktop, one at a time on small screens
+        ├── achievement-toast.tsx        Unlock toasts, one at a time: above the mode panel on desktop, the toast slot on small screens
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
@@ -917,7 +927,8 @@ components/
   timers pause while a toast is off screen and resume with the time left
   (`usePausableTimeout`); the queue never drops the toast on screen, and
   achievements already shown are not replayed after a rotation across the
-  breakpoint. On touch screens the save-failed notice opens its advice in
+  breakpoint. An achievement also waits while the dock's ⋯ tray is open,
+  whose value rows reach the slot in landscape. On touch screens the save-failed notice opens its advice in
   place, and the notice buttons get 44px tap areas.
   On desktop the minimap steps left of the open popover instead of hiding
   under it (#390).

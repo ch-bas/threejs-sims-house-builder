@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INITIAL_LAYOUT, layoutReducer } from '../hooks/layout-reducer';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { ACHIEVEMENTS } from './achievements';
+import { ACHIEVEMENTS, achievementsEarned, metAchievementIds } from './achievements';
 import { DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import type { FurnitureItem } from './types';
 
@@ -172,5 +172,28 @@ describe('achievements — catalogue invariants', () => {
   it('every achievement has a distinct icon', () => {
     const icons = ACHIEVEMENTS.map((a) => a.icon);
     expect(new Set(icons).size).toBe(icons.length);
+  });
+});
+
+describe('achievementsEarned: loads earn nothing (#450)', () => {
+  const none = new Set<string>();
+  const met = metAchievementIds(layoutWithItems(repeatItems(1)));
+
+  it('a loaded house earns nothing, however much it meets', () => {
+    expect(achievementsEarned('loaded', none, met, none)).toEqual([]);
+  });
+
+  it('the starting house unlocks everything it meets', () => {
+    expect(achievementsEarned('baseline', none, met, none).map((a) => a.id)).toEqual(['first-steps']);
+  });
+
+  it('an edit earns only what it made true', () => {
+    expect(achievementsEarned('edit', none, met, none).map((a) => a.id)).toEqual(['first-steps']);
+    // Already met before the edit (it came with a loaded house): not earned.
+    expect(achievementsEarned('edit', met, met, none)).toEqual([]);
+  });
+
+  it('never earns an achievement twice', () => {
+    expect(achievementsEarned('edit', none, met, new Set(['first-steps']))).toEqual([]);
   });
 });

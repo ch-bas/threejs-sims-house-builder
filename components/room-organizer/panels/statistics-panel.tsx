@@ -23,7 +23,11 @@ export function StatisticsPanel(): JSX.Element {
   );
 
   const cost = useMemo(() => totalCost(allItems), [allItems]);
-  const footprint = useMemo(() => footprintArea(allItems), [allItems]);
+  // Per floor: a lamp upstairs doesn't stand on the desk below it (#462).
+  const footprint = useMemo(
+    () => layout.floors.reduce((sum, floor) => sum + footprintArea(floor.items), 0),
+    [layout.floors]
+  );
   const roomArea = layout.width * layout.height;
   const totalArea = roomArea * layout.floors.length;
   const density = totalArea > 0 ? Math.min(100, (footprint / totalArea) * 100) : 0;

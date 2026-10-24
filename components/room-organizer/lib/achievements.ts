@@ -150,6 +150,47 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   },
 ];
 
+/** The ids of every achievement this layout meets, unlocked or not. */
+export function metAchievementIds(layout: RoomLayout): Set<string> {
+  const met = new Set<string>();
+  for (const achievement of ACHIEVEMENTS) {
+    if (achievement.isMet(layout)) met.add(achievement.id);
+  }
+  return met;
+}
+
+/**
+ * How the layout on screen came to be, as far as achievements care (#450).
+ *
+ * - `baseline`: the house the session starts from, the default house or the
+ *   player's own saved one. What it meets unlocks silently, as before (#146).
+ * - `loaded`: a house the player didn't build here: a template, a library
+ *   house, a share link, an import, a restore point, a cross-tab adopt, or
+ *   an undo/redo step back onto one of those. It earns nothing.
+ * - `edit`: the player changed the house.
+ */
+export type LayoutChange = 'baseline' | 'loaded' | 'edit';
+
+/**
+ * The achievements a layout change earns. An edit earns what it made true:
+ * a goal already met before it, because it came with a loaded house, stays
+ * unearned until the player meets it again themselves.
+ */
+export function achievementsEarned(
+  change: LayoutChange,
+  metBefore: ReadonlySet<string>,
+  metNow: ReadonlySet<string>,
+  unlocked: ReadonlySet<string>
+): Achievement[] {
+  if (change === 'loaded') return [];
+  return ACHIEVEMENTS.filter(
+    (achievement) =>
+      metNow.has(achievement.id) &&
+      !unlocked.has(achievement.id) &&
+      (change === 'baseline' || !metBefore.has(achievement.id))
+  );
+}
+
 /**
  * Everything the player placed. The porch's door and back wall come with the
  * recessed entrance — structure, not furniture — so they earn nothing (#382).
@@ -172,10 +213,15 @@ export function loadUnlocked(): Set<string> {
   }
 }
 
+/**
+ * Persists the unlocks, merged with what is stored: another tab may have
+ * unlocked something since this one loaded, and must not lose it.
+ */
 export function saveUnlocked(unlocked: ReadonlySet<string>): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(unlocked)));
+    const merged = new Set([...loadUnlocked(), ...unlocked]);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(merged)));
   } catch {
     /* ignore */
   }

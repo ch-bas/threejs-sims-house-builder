@@ -90,10 +90,9 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   const addFromStrip = useEvent((catalogItem: CatalogItem) => {
     const id = placeCatalogItem(catalogItem);
     // '' = placement declined (budget confirm) or refused — nothing
-    // was added, so no chime and no selection wipe (#146).
+    // was added, so no selection wipe (#146). The add chimed (#460).
     if (!id) return;
     selectOnly(id);
-    playCue('place');
   });
 
   if (!isReady || error) return <></>;

@@ -262,4 +262,23 @@ describe('footprintArea (#164)', () => {
     expect(footprintArea(garden)).toBe(0);
     expect(footprintArea([...garden, makeItem({ width: 2, depth: 1 })])).toBeCloseTo(2, 10);
   });
+
+  it('ignores doors, windows, cameras and hung decor, which cover no floor (#462)', () => {
+    const offFloor = [
+      makeItem({ type: 'door', width: 0.9, depth: 0.12 }),
+      makeItem({ type: 'window', width: 1.2, depth: 0.12 }),
+      makeItem({ type: 'security-camera', width: 0.2, depth: 0.2 }),
+      makeItem({ type: 'painting', width: 1, depth: 0.05 }),
+      makeItem({ type: 'pendant-light', width: 0.5, depth: 0.5 }),
+    ];
+    expect(footprintArea(offFloor)).toBe(0);
+  });
+
+  it('counts a tabletop item on a desk once, but on the bare floor in full (#462)', () => {
+    const desk = makeItem({ id: 'desk', type: 'desk', width: 1.4, depth: 0.7, position: { x: 0, z: 0 } });
+    const onDesk = makeItem({ id: 'pc', type: 'computer', width: 0.5, depth: 0.3, position: { x: 0.2, z: 0 } });
+    expect(footprintArea([desk, onDesk])).toBeCloseTo(1.4 * 0.7, 10);
+    const onFloor = makeItem({ id: 'plant', type: 'plant', width: 0.5, depth: 0.5, position: { x: 3, z: 3 } });
+    expect(footprintArea([desk, onFloor])).toBeCloseTo(1.4 * 0.7 + 0.25, 10);
+  });
 });

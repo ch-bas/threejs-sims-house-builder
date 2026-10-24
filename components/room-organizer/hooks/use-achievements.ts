@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { ACHIEVEMENTS, type Achievement, loadUnlocked, saveUnlocked } from '../lib/achievements';
+import {
+  type Achievement,
+  type LayoutChange,
+  achievementsEarned,
+  loadUnlocked,
+  metAchievementIds,
+  saveUnlocked,
+} from '../lib/achievements';
 import { STORAGE_KEY } from '../lib/constants';
 import { isShareHash } from '../lib/share';
+import { layoutStore } from './use-layout-store';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseAchievementsResult {
@@ -11,68 +19,71 @@ export interface UseAchievementsResult {
   dismiss(): void;
 }
 
+/** Layouts that replaced the house wholesale, by identity (#450). */
+const loadedLayouts = new WeakSet<RoomLayout>();
+
 /**
- * Is a hydration dispatch (share link or saved layout) about to replace the
- * initial layout right after mount? If so, the FIRST layout change is the
- * hydration landing, not a user edit — its unlocks must persist silently
- * instead of firing a toast burst for a house the user didn't just build (#146).
+ * Call right after an `applyLayout` that puts a house the player didn't
+ * build here on screen: a template, a library house or restore point, the
+ * paste-board, an import, a cross-tab adopt, an undo/redo step. The store
+ * dispatch is synchronous, so the layout it marks is the one that landed,
+ * and that layout earns no achievements (#450).
  */
-function hydrationPending(): boolean {
-  if (typeof window === 'undefined') return false;
+export function markLayoutLoaded(): void {
+  loadedLayouts.add(layoutStore.getState().layout);
+}
+
+/**
+ * Is a hydration dispatch about to replace the initial layout right after
+ * mount? A saved house is the player's own and unlocks silently (#146); a
+ * share link is someone else's and unlocks nothing (#450).
+ */
+function pendingHydration(): 'none' | 'saved' | 'shared' {
+  if (typeof window === 'undefined') return 'none';
   try {
-    return isShareHash(window.location.hash) || window.localStorage.getItem(STORAGE_KEY) !== null;
+    if (isShareHash(window.location.hash)) return 'shared';
+    return window.localStorage.getItem(STORAGE_KEY) !== null ? 'saved' : 'none';
   } catch {
-    return false;
+    return 'none';
   }
 }
 
 export function useAchievements(layout: RoomLayout): UseAchievementsResult {
   const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => loadUnlocked());
   const [pending, setPending] = useState<readonly Achievement[]>([]);
-  // Toasts are armed once the "starting" layout has been evaluated: for a
-  // fresh profile that's the very first evaluation (the default layout); for
-  // a returning/shared profile it's the first evaluation AFTER hydration
-  // lands. Crucially, arming must not depend on an unlock happening — tying
-  // it to `mutated` would swallow a returning user's first genuinely earned
-  // achievement of the session (the bug a drive-by fix for #146 introduced).
-  // Known gap: if a stored layout fails to parse, hydration never dispatches
-  // and the user's first edit is still treated as the baseline — acceptable
-  // for that rare corrupted-save path.
-  const initialisedRef = useRef(false);
-  const awaitingHydrationRef = useRef(hydrationPending());
-  const firstLayoutRef = useRef<RoomLayout | null>(null);
+  // The first layout is the starting house, and while a hydration is pending
+  // the one after it is too (the saved or shared house landing). Known gap:
+  // a stored layout that fails to parse never dispatches, so the player's
+  // first edit is then taken for the hydration.
+  const hydrationRef = useRef(pendingHydration());
+  /** The last layout evaluated, and the achievements it met. */
+  const lastRef = useRef<{ layout: RoomLayout; met: ReadonlySet<string> } | null>(null);
+  const unlockedRef = useRef(unlocked);
 
   useEffect(() => {
-    if (firstLayoutRef.current === null) firstLayoutRef.current = layout;
-    const isFirstLayout = layout === firstLayoutRef.current;
-    // Decide suppression BEFORE arming so the baseline evaluation itself
-    // (default layout, or the hydrated house) never toasts.
-    const suppressToasts = !initialisedRef.current;
-    if (!initialisedRef.current && (!awaitingHydrationRef.current || !isFirstLayout)) {
-      initialisedRef.current = true;
+    const last = lastRef.current;
+    if (last?.layout === layout) return;
+    let change: LayoutChange = 'edit';
+    if (last === null) {
+      change = 'baseline';
+    } else if (hydrationRef.current !== 'none') {
+      change = hydrationRef.current === 'shared' ? 'loaded' : 'baseline';
+      hydrationRef.current = 'none';
+    } else if (loadedLayouts.has(layout)) {
+      change = 'loaded';
     }
+    const met = metAchievementIds(layout);
+    lastRef.current = { layout, met };
 
-    const next: Achievement[] = [];
-    let mutated = false;
-    const newUnlocked = new Set(unlocked);
-
-    for (const achievement of ACHIEVEMENTS) {
-      if (newUnlocked.has(achievement.id)) continue;
-      if (achievement.isMet(layout)) {
-        newUnlocked.add(achievement.id);
-        next.push(achievement);
-        mutated = true;
-      }
-    }
-
-    if (!mutated) return;
-
-    setUnlocked(newUnlocked);
-    saveUnlocked(newUnlocked);
-
-    if (suppressToasts) return;
-    setPending((current) => [...current, ...next]);
-  }, [layout, unlocked]);
+    const earned = achievementsEarned(change, last?.met ?? new Set(), met, unlockedRef.current);
+    if (earned.length === 0) return;
+    const next = new Set(unlockedRef.current);
+    for (const achievement of earned) next.add(achievement.id);
+    unlockedRef.current = next;
+    setUnlocked(next);
+    saveUnlocked(next);
+    if (change === 'edit') setPending((current) => [...current, ...earned]);
+  }, [layout]);
 
   return {
     unlocked,

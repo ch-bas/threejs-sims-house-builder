@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
+import { markLayoutLoaded } from '../hooks/use-achievements';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
@@ -215,7 +216,6 @@ const DrawerBody = memo(function DrawerBody({
     const id = placeCatalogItem(catalogItem);
     if (!id) return;
     selectOnly(id);
-    playCue('place');
   });
 
   const handleFloorPlanUpload = async (file: File) => {
@@ -287,6 +287,7 @@ const DrawerBody = memo(function DrawerBody({
                 return;
               }
               actions.addItems(items);
+              playCue('place');
               const last = items[items.length - 1];
               if (last) selectOnly(last.id);
             }}
@@ -351,6 +352,7 @@ const DrawerBody = memo(function DrawerBody({
                 ...template,
                 floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
               });
+              markLayoutLoaded();
               selectOnly(null);
               return true;
             }}
@@ -363,6 +365,7 @@ const DrawerBody = memo(function DrawerBody({
               // one Ctrl+Z away from the design it replaced (#222).
               snapshotBeforeReplace(layout);
               actions.applyLayout(loaded);
+              markLayoutLoaded();
               selectOnly(null);
             }}
           />

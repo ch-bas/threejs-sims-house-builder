@@ -8,6 +8,7 @@ import {
 import { exportFileName } from '../lib/plan-export/download';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
+import { markLayoutLoaded } from './use-achievements';
 import type { LayoutActions } from './use-layout-state';
 import type { RoomLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -103,6 +104,7 @@ export function useImportExport({
         if (!confirmReplace(layout, `the imported “${next.name}”`)) return false;
         snapshotBeforeReplace(layout);
         actions.applyLayout(next);
+        markLayoutLoaded();
         onImported();
         return true;
       } catch (importError) {

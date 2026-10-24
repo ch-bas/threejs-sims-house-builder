@@ -7,7 +7,7 @@ import { EditorViewProvider, useEditorView } from './contexts/editor-view-contex
 import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
 import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
-import { useAchievements } from './hooks/use-achievements';
+import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
@@ -492,6 +492,7 @@ export function RoomOrganizer(): JSX.Element {
         const unlocked = unlockedSelectedIds();
         if (unlocked.size === 0) return false;
         actions.rotateSelection(unlocked, Math.PI / 2);
+        playCue('rotate');
         return true;
       }
       const item = activeFloor.items.find((entry) => entry.id === id);
@@ -503,13 +504,15 @@ export function RoomOrganizer(): JSX.Element {
         const next = ((item.rotation ?? 0) + step) % (Math.PI * 2);
         actions.setRotation(id, next);
         reseatCamera(id, next);
+        playCue('rotate');
         return true;
       }
       const next = ((item.rotation ?? 0) + Math.PI / 2) % (Math.PI * 2);
       actions.setRotation(id, next);
+      playCue('rotate');
       return true;
     },
-    [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera]
+    [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera, playCue]
   );
 
   // Toggle a camera's stand-off bracket. Enabling it keeps the current facing
@@ -535,6 +538,8 @@ export function RoomOrganizer(): JSX.Element {
   const history = useHistory(layout, useCallback(
     (snapshot: RoomLayout) => {
       actions.applyLayout(snapshot);
+      // An undo or redo restores a house; it earns nothing (#450).
+      markLayoutLoaded();
     },
     [actions]
   ));
@@ -582,9 +587,10 @@ export function RoomOrganizer(): JSX.Element {
     if (!activeFloor.items.some((item) => allSelectedIds.has(item.id))) return;
     commitHistoryNow();
     actions.sellItems([...allSelectedIds]);
+    playCue('remove');
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
-  }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds]);
+  }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds, playCue]);
 
   // Duplicate the current selection. For a multi-select every selected item is
   // copied (each offset by the reducer) and the copies become the new
@@ -600,6 +606,7 @@ export function RoomOrganizer(): JSX.Element {
           : activeFloor.items.filter((item) => item.id === primaryId);
       if (refuseOverBudget(purchasePrice(copying))) return;
       commitHistoryNow();
+      playCue('place');
       if (allSelectedIds.size > 1 && allSelectedIds.has(primaryId)) {
         // Duplicate the primary first so it becomes the new primary, then the
         // remaining selected items in a stable order.
@@ -615,7 +622,7 @@ export function RoomOrganizer(): JSX.Element {
       // Clear stale extras so the selection is only the fresh copy.
       setExtraSelectedIds(new Set());
     },
-    [actions, commitHistoryNow, allSelectedIds, activeFloor.items, refuseOverBudget]
+    [actions, commitHistoryNow, allSelectedIds, activeFloor.items, refuseOverBudget, playCue]
   );
 
   const { saveStatus, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
@@ -639,6 +646,7 @@ export function RoomOrganizer(): JSX.Element {
     if (!remoteLayout) return;
     snapshotBeforeReplace(layout);
     actions.applyLayout(remoteLayout);
+    markLayoutLoaded();
     clearTransientSelection();
     clearRemoteLayout();
   }, [remoteLayout, layout, actions, clearTransientSelection, clearRemoteLayout]);
@@ -672,12 +680,16 @@ export function RoomOrganizer(): JSX.Element {
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
 
+  // Every catalog add (tile click, keyboard, drag-drop) comes through here,
+  // so each chimes once (#460). '' = declined or refused: nothing was added.
   const placeDiscrete = useCallback(
     (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
       commitHistoryNow();
-      return placeCatalogItem(catalogItem, position);
+      const id = placeCatalogItem(catalogItem, position);
+      if (id) playCue('place');
+      return id;
     },
-    [commitHistoryNow, placeCatalogItem]
+    [commitHistoryNow, placeCatalogItem, playCue]
   );
 
   // Keyboard placement (#168): Enter on a catalog tile places through the
@@ -930,7 +942,9 @@ export function RoomOrganizer(): JSX.Element {
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
           const unlocked = unlockedSelectedIds();
-          if (unlocked.size > 0) actions.rotateSelection(unlocked, radians);
+          if (unlocked.size === 0) return;
+          actions.rotateSelection(unlocked, radians);
+          playCue('rotate');
           return;
         }
         const item = activeFloor.items.find((entry) => entry.id === id);
@@ -938,6 +952,7 @@ export function RoomOrganizer(): JSX.Element {
         const next = ((item.rotation ?? 0) + radians) % (Math.PI * 2);
         actions.setRotation(id, next);
         reseatCamera(id, next);
+        playCue('rotate');
       },
       moveItem: (id: string, x: number, z: number) => {
         // Arrow nudges settle wall-mounted items back onto their wall the way
@@ -1039,6 +1054,7 @@ export function RoomOrganizer(): JSX.Element {
       focusOn,
       rotateItemHandler,
       reseatCamera,
+      playCue,
       wallDraft,
       view.drawWallMode,
       view.measurementMode,
@@ -1187,8 +1203,6 @@ export function RoomOrganizer(): JSX.Element {
           const newId = placeDiscrete(item, world ?? undefined);
           if (!newId) return;
           selectOnly(newId);
-          // Same chime as both click-to-add paths (#167).
-          playCue('place');
         }}
       />
 
@@ -1260,9 +1274,7 @@ export function RoomOrganizer(): JSX.Element {
             layout.height,
             { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight }
           )}
-          onRotate={(id: string) => {
-            if (rotateItemHandler(id)) playCue('rotate');
-          }}
+          onRotate={rotateItemHandler}
           onToggleCameraBracket={toggleCameraBracket}
           onDuplicate={duplicateSelected}
           onRemove={removeItem}
