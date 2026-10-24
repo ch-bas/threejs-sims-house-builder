@@ -804,6 +804,9 @@ export function RoomOrganizer(): JSX.Element {
     sceneRef,
     roomWidth: layout.width,
     roomDepth: layout.height,
+    items: activeFloor.items,
+    interiorWalls: activeFloor.interiorWalls,
+    keepOut,
     floorY: activeFloorY,
     riggedModelReady: peopleModelReady,
   });

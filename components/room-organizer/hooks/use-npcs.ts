@@ -1,4 +1,20 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import {
+  MAX_PATH_POINTS,
+  NPC_RADIUS,
+  type NpcNav,
+  buildNpcNav,
+  cellAt,
+  cellX,
+  cellZ,
+  findNpcPath,
+  isFreeAt,
+  nearestFreeCell,
+  npcNavSignature,
+  pickDestination,
+  randomFreeCell,
+} from '../lib/npc-path';
+import { type WalkerPosition, resolveWalkerStep } from '../lib/walk-collision';
 import { disposeObject } from '../three/builder-utils';
 import { type HumanFigureRig, buildHumanFigure, poseWalk } from '../three/builders/human-figure';
 import {
@@ -9,6 +25,8 @@ import {
   findClip,
   getPeopleModel,
 } from '../three/people-model';
+import type { KeepOutRect } from '../lib/geometry';
+import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('../three/three-runtime');
@@ -18,7 +36,6 @@ const NPC_TAG = 'npc';
 export interface NpcState {
   group: ThreeNS.Group;
   position: { x: number; z: number };
-  target: { x: number; z: number };
   speed: number;
   /** Walk-cycle phase driving the procedural limb swing. */
   phase: number;
@@ -33,6 +50,24 @@ export interface NpcState {
   rig: HumanFigureRig | null;
   /** Rigged figure only: the mixer and its walk / standing clips. */
   anim: NpcAnimation | null;
+  /** The route to the current destination, as x, z pairs (#452). */
+  path: Float32Array;
+  pathLength: number;
+  /** The waypoint being walked to. */
+  pathIndex: number;
+  /**
+   * The nav cell the route leads to, -1 for none. A route longer than the
+   * path buffer stops short of it, and is continued from there.
+   */
+  destination: number;
+  /** Where the destination cell's centre is. */
+  goal: { x: number; z: number };
+  /** Heading that faces the furniture at the destination; NaN for open floor. */
+  arrivalHeading: number;
+  /** Heading to turn to while standing at a stop (the last arrival's); NaN keeps the current one. */
+  standHeading: number;
+  /** Seconds spent walking without getting anywhere; past `STUCK_SECONDS` it gives up. */
+  stuck: number;
 }
 
 export interface NpcAnimation {
@@ -43,6 +78,16 @@ export interface NpcAnimation {
 }
 
 const FADE_SECONDS = 0.35;
+/** Close enough to a waypoint to head for the next one. */
+const WAYPOINT_REACHED = 0.15;
+/** How fast a walker turns (radians per second): it rounds corners, never snaps. */
+const TURN_RATE = 7;
+/** Under this fraction of the intended stride counts as not getting anywhere. */
+const STUCK_PROGRESS = 0.25;
+const STUCK_SECONDS = 2;
+/** Walkers don't pick a stop closer than this to another's. */
+const PERSONAL_SPACE = 0.9;
+const EMPTY_WALLS: readonly InteriorWall[] = [];
 
 /** What `stepNpcs` found changed this frame. */
 export const NPC_STILL = 0;
@@ -59,6 +104,11 @@ export interface UseNpcsOptions {
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   roomWidth: number;
   roomDepth: number;
+  /** The active floor's items and partitions: what the walkers walk around. */
+  items: readonly FurnitureItem[];
+  interiorWalls?: readonly InteriorWall[] | undefined;
+  /** The active floor's porch and stairwell keep-out (`useFloorKeepOut`). */
+  keepOut: readonly KeepOutRect[];
   /** Y-offset to plant the NPCs on the active floor. */
   floorY: number;
   /**
@@ -76,31 +126,58 @@ export interface UseNpcsOptions {
 }
 
 /**
- * Sprinkles a few procedurally-built human figures into the scene and
- * walks them between random waypoints inside the room. Cleanup tears
- * down all NPC meshes and the RAF loop on every dependency change.
+ * Sprinkles a few human figures into the scene and walks them around the
+ * active floor's furniture, partitions, stairs and keep-out between spots
+ * worth stopping at (#452). The walkers are spawned once per floor; editing
+ * the floor re-routes them (and steps any the edit landed on into free
+ * space) without respawning.
  */
 export function useNpcs(options: UseNpcsOptions): void {
   const {
-    enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, riggedModelReady = false, invalidate, requestShadowUpdate,
+    enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, items, interiorWalls = EMPTY_WALLS, keepOut,
+    floorY, riggedModelReady = false, invalidate, requestShadowUpdate,
   } = options;
   const stateRef = useRef<NpcState[]>([]);
+  const navRef = useRef<NpcNav | null>(null);
+
+  // Rebuilt only when what it reads changes (not on a recolour or a lock,
+  // which still hand over new arrays), and not at all while walkers are off.
+  const signature = useMemo(
+    () => (enabled ? npcNavSignature({ items, interiorWalls, keepOut }) : null),
+    [enabled, items, interiorWalls, keepOut]
+  );
+  const nav = useMemo(
+    () => (signature === null ? null : buildNpcNav({ items, interiorWalls, keepOut, roomWidth, roomDepth })),
+    // The signature stands for items, walls and keep-out.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signature, roomWidth, roomDepth]
+  );
+
+  // A floor with no free cell spawns nobody; clearing it lets them in.
+  const hasRoom = (nav?.freeCount ?? 0) > 0;
+
+  // Declared before the spawn effect so a spawn always sees the current nav.
+  useEffect(() => {
+    navRef.current = nav;
+    if (!nav || stateRef.current.length === 0) return;
+    rehomeNpcs(stateRef.current, nav, floorY);
+    requestShadowUpdate?.();
+    invalidate?.();
+    // floorY is read for the rehome only; a floor change respawns below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav]);
 
   useEffect(() => {
     if (!enabled) return undefined;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
-    if (!THREE || !scene) return undefined;
-
-    const halfW = roomWidth / 2 - 0.4;
-    const halfD = roomDepth / 2 - 0.4;
-    if (halfW <= 0.2 || halfD <= 0.2) return undefined;
+    const startNav = navRef.current;
+    if (!THREE || !scene || !startNav || !hasRoom) return undefined;
 
     const people = riggedModelReady ? getPeopleModel() : null;
     const npcs: NpcState[] = [];
     for (let i = 0; i < count; i++) {
-      const npc = createNpc(THREE, scene, halfW, halfD, floorY, i, people);
-      npcs.push(npc);
+      npcs.push(createNpc(THREE, scene, startNav, floorY, i, people, npcs));
     }
     stateRef.current = npcs;
 
@@ -111,10 +188,12 @@ export function useNpcs(options: UseNpcsOptions): void {
       const now = performance.now();
       const delta = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
+      const currentNav = navRef.current;
+      if (!currentNav) return;
       // Repaint only when a pose changed, and recompute the 2048² shadow map
       // only when a walker moved: a rigged figure idles (breathes) every
       // frame, and re-rendering every caster for that pinned the GPU (#400).
-      const change = stepNpcs(stateRef.current, delta, halfW, halfD, floorY);
+      const change = stepNpcs(stateRef.current, delta, currentNav, floorY);
       if (change === NPC_SHADOW) requestShadowUpdate?.();
       if (change !== NPC_STILL) invalidate?.();
     };
@@ -134,17 +213,17 @@ export function useNpcs(options: UseNpcsOptions): void {
       requestShadowUpdate?.();
       invalidate?.();
     };
-  }, [enabled, count, riggedModelReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
+  }, [enabled, hasRoom, count, riggedModelReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
 }
 
 function createNpc(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
-  halfW: number,
-  halfD: number,
+  nav: NpcNav,
   floorY: number,
   index: number,
-  people: PeopleModel | null
+  people: PeopleModel | null,
+  others: readonly NpcState[]
 ): NpcState {
   const riggedBodies = [0x8a9bb0, 0xc9a27e, 0x9bb08a, 0xb0908a, 0xa39cc0];
   const palette = [0xc62828, 0x2e7d32, 0x1565c0, 0xf9a825, 0x6a1b9a];
@@ -190,24 +269,118 @@ function createNpc(
   }
   group.userData.type = NPC_TAG;
 
-  const position = { x: rand(-halfW, halfW), z: rand(-halfD, halfD) };
+  // Spawn in free space (never inside the sofa or the stair flight).
+  const spawn = randomFreeCell(nav, Math.random);
+  const position = { x: cellX(nav, spawn), z: cellZ(nav, spawn) };
   group.position.set(position.x, floorY, position.z);
+  group.rotation.y = Math.random() * Math.PI * 2;
   scene.add(group);
 
   const speed = 0.6 + Math.random() * 0.5;
   if (anim) anim.walk.timeScale = speed / WALK_CLIP_SPEED;
 
-  return {
+  const npc: NpcState = {
     group,
     position,
-    target: { x: rand(-halfW, halfW), z: rand(-halfD, halfD) },
     speed,
     phase: Math.random() * Math.PI * 2,
     pause: 0,
     shadowSettle: 0,
     rig,
     anim,
+    path: new Float32Array(MAX_PATH_POINTS * 2),
+    pathLength: 0,
+    pathIndex: 0,
+    destination: -1,
+    goal: { x: 0, z: 0 },
+    arrivalHeading: Number.NaN,
+    standHeading: Number.NaN,
+    stuck: 0,
   };
+  planRoute(npc, nav, Math.random, others);
+  return npc;
+}
+
+/**
+ * Give a walker a new destination it can reach and the route there. Leaves
+ * it with an empty route when its patch of floor has nowhere else to go.
+ */
+export function planRoute(npc: NpcState, nav: NpcNav, random: () => number, others: readonly NpcState[] = []): void {
+  npc.pathLength = 0;
+  npc.pathIndex = 0;
+  npc.destination = -1;
+  npc.stuck = 0;
+  npc.arrivalHeading = Number.NaN;
+  const from = standingCell(npc, nav);
+  if (from < 0) return;
+  const destination = pickDestination(nav, from, random, (x, z) => others.some((other) => other !== npc && claims(other, x, z)));
+  if (destination < 0) return;
+  routeTo(npc, nav, from, destination);
+  if (npc.pathLength === 0) return;
+  npc.destination = destination;
+  npc.goal.x = cellX(nav, destination);
+  npc.goal.z = cellZ(nav, destination);
+  npc.arrivalHeading = nav.heading[destination] ?? Number.NaN;
+}
+
+/**
+ * At the end of its route but short of its destination (the route was
+ * longer than the path buffer): route on from here. False when it is there,
+ * or the rest can't be routed.
+ */
+function continueRoute(npc: NpcState, nav: NpcNav): boolean {
+  if (npc.destination < 0) return false;
+  if (Math.hypot(npc.goal.x - npc.position.x, npc.goal.z - npc.position.z) < WAYPOINT_REACHED) return false;
+  const from = standingCell(npc, nav);
+  if (from < 0) return false;
+  routeTo(npc, nav, from, npc.destination);
+  return npc.pathLength > 0;
+}
+
+/** The free cell a walker routes from: its own, or the nearest when a face pushed it just off the free cells. */
+function standingCell(npc: NpcState, nav: NpcNav): number {
+  const under = cellAt(nav, npc.position.x, npc.position.z);
+  return nav.walkable[under] === 1 ? under : nearestFreeCell(nav, npc.position.x, npc.position.z);
+}
+
+/** Fill the walker's route from `from` (its standing cell) to `destination`. */
+function routeTo(npc: NpcState, nav: NpcNav, from: number, destination: number): void {
+  // Off its own cell, route from the free cell's centre; the first waypoint is in reach.
+  const own = from === cellAt(nav, npc.position.x, npc.position.z);
+  npc.pathIndex = 0;
+  npc.pathLength = findNpcPath(
+    nav,
+    own ? npc.position.x : cellX(nav, from),
+    own ? npc.position.z : cellZ(nav, from),
+    destination,
+    npc.path
+  );
+}
+
+/** Whether a walker stands at, or is heading for, a spot within arm's reach of (x, z). */
+function claims(npc: NpcState, x: number, z: number): boolean {
+  const atX = npc.destination >= 0 ? npc.goal.x : npc.position.x;
+  const atZ = npc.destination >= 0 ? npc.goal.z : npc.position.z;
+  return Math.hypot(atX - x, atZ - z) < PERSONAL_SPACE;
+}
+
+/**
+ * The floor changed under the walkers: step any that now stand in
+ * something into the nearest free space, and re-route every one, since its
+ * route may run through the new sofa.
+ */
+export function rehomeNpcs(npcs: readonly NpcState[], nav: NpcNav, floorY: number, random: () => number = Math.random): void {
+  for (const npc of npcs) {
+    if (!isFreeAt(nav, npc.position.x, npc.position.z)) {
+      const cell = nearestFreeCell(nav, npc.position.x, npc.position.z);
+      if (cell >= 0) {
+        npc.position.x = cellX(nav, cell);
+        npc.position.z = cellZ(nav, cell);
+        npc.group.position.set(npc.position.x, floorY, npc.position.z);
+      }
+    }
+    planRoute(npc, nav, random, npcs);
+  }
 }
 
 function crossFadeTo(anim: NpcAnimation, next: ThreeNS.AnimationAction): void {
@@ -217,17 +390,31 @@ function crossFadeTo(anim: NpcAnimation, next: ThreeNS.AnimationAction): void {
   anim.current = next;
 }
 
+/** Turn a walker toward a heading at `TURN_RATE`; true when it turned. */
+function turnToward(group: ThreeNS.Group, heading: number, delta: number): boolean {
+  const current = group.rotation.y;
+  const diff = Math.atan2(Math.sin(heading - current), Math.cos(heading - current));
+  if (Math.abs(diff) < 1e-3) return false;
+  const maxTurn = TURN_RATE * delta;
+  group.rotation.y = current + Math.max(-maxTurn, Math.min(maxTurn, diff));
+  return true;
+}
+
+const stepScratch: WalkerPosition = { x: 0, z: 0 };
+const targetScratch: WalkerPosition = { x: 0, z: 0 };
+
 /**
  * Advances every NPC one frame and reports the biggest change: a walker that
  * moved needs the shadow map recomputed, a rigged one idling needs only a
  * repaint, and procedural walkers standing still need nothing.
+ * Allocation-free: routes are planned into each walker's own buffer.
  */
 export function stepNpcs(
-  npcs: NpcState[],
+  npcs: readonly NpcState[],
   delta: number,
-  halfW: number,
-  halfD: number,
-  floorY: number
+  nav: NpcNav,
+  floorY: number,
+  random: () => number = Math.random
 ): NpcChange {
   let change: NpcChange = NPC_STILL;
   for (const npc of npcs) {
@@ -244,20 +431,27 @@ export function stepNpcs(
         npc.shadowSettle -= delta;
         change = NPC_SHADOW;
       }
-      if (npc.pause <= 0 && npc.anim) crossFadeTo(npc.anim, npc.anim.walk);
+      // Turn to look at whatever it stopped by.
+      if (!Number.isNaN(npc.standHeading) && turnToward(npc.group, npc.standHeading, delta)) change = NPC_SHADOW;
+      if (npc.pause <= 0 && npc.anim && npc.pathIndex < npc.pathLength) crossFadeTo(npc.anim, npc.anim.walk);
       continue;
     }
 
-    const dx = npc.target.x - npc.position.x;
-    const dz = npc.target.z - npc.position.z;
-    const distance = Math.hypot(dx, dz);
+    while (npc.pathIndex < npc.pathLength) {
+      const wx = npc.path[npc.pathIndex * 2]!;
+      const wz = npc.path[npc.pathIndex * 2 + 1]!;
+      if (Math.hypot(wx - npc.position.x, wz - npc.position.z) >= WAYPOINT_REACHED) break;
+      npc.pathIndex += 1;
+    }
 
-    if (distance < 0.15) {
-      // Reached the waypoint: stand for a moment, then head somewhere new.
-      npc.target = { x: rand(-halfW, halfW), z: rand(-halfD, halfD) };
-      npc.pause = 1.5 + Math.random() * 3;
+    if (npc.pathIndex >= npc.pathLength && !continueRoute(npc, nav)) {
+      // Arrived: face whatever it came to see while it stands for a moment,
+      // then head somewhere new (planned now; it sets off after the pause).
+      npc.standHeading = npc.arrivalHeading;
+      planRoute(npc, nav, random, npcs);
+      npc.pause = 1.5 + random() * 3;
       if (npc.anim) {
-        const stand = npc.anim.stand[Math.floor(Math.random() * npc.anim.stand.length)] ?? npc.anim.stand[0]!;
+        const stand = npc.anim.stand[Math.floor(random() * npc.anim.stand.length)] ?? npc.anim.stand[0]!;
         crossFadeTo(npc.anim, stand);
         npc.shadowSettle = FADE_SECONDS;
       } else if (npc.rig) {
@@ -270,14 +464,26 @@ export function stepNpcs(
 
     change = NPC_SHADOW;
 
-    const step = npc.speed * delta;
-    const nx = npc.position.x + (dx / distance) * step;
-    const nz = npc.position.z + (dz / distance) * step;
-    npc.position.x = clamp(nx, -halfW, halfW);
-    npc.position.z = clamp(nz, -halfD, halfD);
+    const wx = npc.path[npc.pathIndex * 2]!;
+    const wz = npc.path[npc.pathIndex * 2 + 1]!;
+    const dx = wx - npc.position.x;
+    const dz = wz - npc.position.z;
+    const distance = Math.hypot(dx, dz);
+    const stride = Math.min(npc.speed * delta, distance);
+    targetScratch.x = npc.position.x + (dx / distance) * stride;
+    targetScratch.z = npc.position.z + (dz / distance) * stride;
+    // The route keeps clear of everything; the resolver is the guarantee
+    // (a corner brushed between grid cells slides instead of clipping).
+    resolveWalkerStep(nav.colliders, npc.position, targetScratch, NPC_RADIUS, stepScratch, nav.collisionOptions);
+    const nx = Math.max(-nav.halfW, Math.min(nav.halfW, stepScratch.x));
+    const nz = Math.max(-nav.halfD, Math.min(nav.halfD, stepScratch.z));
+    const moved = Math.hypot(nx - npc.position.x, nz - npc.position.z);
+    npc.position.x = nx;
+    npc.position.z = nz;
+    npc.stuck = moved < stride * STUCK_PROGRESS ? npc.stuck + delta : 0;
+    if (npc.stuck > STUCK_SECONDS) planRoute(npc, nav, random, npcs);
 
-    // Face the direction of travel.
-    npc.group.rotation.y = Math.atan2(dx, dz);
+    turnToward(npc.group, Math.atan2(dx, dz), delta);
     npc.group.position.x = npc.position.x;
     npc.group.position.z = npc.position.z;
 
@@ -289,12 +495,4 @@ export function stepNpcs(
     }
   }
   return change;
-}
-
-function rand(min: number, max: number): number {
-  return min + Math.random() * (max - min);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }
