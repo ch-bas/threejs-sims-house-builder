@@ -15,7 +15,19 @@ import {
   releasePeopleGeometry,
   setPeopleModelForTests,
 } from './people-model';
+import { type PersonLook, REGION } from './people-outfits';
 import type { FurnitureItem } from '../lib/types';
+
+const LOOK: PersonLook = {
+  skin: 0xe0ac8a,
+  top: 0xff0000,
+  bottom: 0x0000ff,
+  shoes: 0x111111,
+  hair: 0x5a3825,
+  hairStyle: 'short',
+  shortSleeves: false,
+  shorts: false,
+};
 
 async function loadAsset(): Promise<PeopleModel> {
   const bytes = readFileSync(fileURLToPath(new URL('../assets/people.glb', import.meta.url)));
@@ -59,7 +71,7 @@ describe('clonePerson', () => {
   it('shares the cached geometry but owns its skeleton and materials; disposing a person leaves the cache intact (#284)', async () => {
     const people = await loadAsset();
     const [source] = skinnedMeshes(people.scene);
-    const person = clonePerson(THREE, people, { body: 0x123456, joints: 0x222222, opacity: 0.7 });
+    const person = clonePerson(THREE, people, LOOK, { opacity: 0.7 });
     const [copy] = skinnedMeshes(person);
     expect(copy!.geometry).toBe(source!.geometry);
     expect(copy!.material).not.toBe(source!.material);
@@ -77,7 +89,7 @@ describe('clonePerson', () => {
       disposeSkeleton();
     };
     let materialFreed = false;
-    (copy!.material as THREE.Material).addEventListener('dispose', () => {
+    (copy!.material as THREE.Material[])[REGION.torso]!.addEventListener('dispose', () => {
       materialFreed = true;
     });
     disposeObject(person);
@@ -86,16 +98,67 @@ describe('clonePerson', () => {
     expect(materialFreed).toBe(true);
   });
 
-  it('paints the body and joint materials and honours collision opacity', async () => {
+  it('dresses each body region and honours collision opacity', async () => {
     const people = await loadAsset();
-    const person = clonePerson(THREE, people, { body: 0xff0000, joints: 0x00ff00, opacity: 0.7 });
-    const materials = skinnedMeshes(person).map((m) => m.material as THREE.MeshStandardMaterial);
-    const body = materials.find((m) => m.name === 'M_Main');
-    const joints = materials.find((m) => m.name === 'M_Joints');
-    expect(body?.color.getHex()).toBe(0xff0000);
-    expect(joints?.color.getHex()).toBe(0x00ff00);
-    expect(body?.transparent).toBe(true);
-    expect(body?.opacity).toBe(0.7);
+    const person = clonePerson(THREE, people, LOOK, { opacity: 0.7, collision: true });
+    for (const mesh of skinnedMeshes(person)) {
+      expect(mesh.geometry.groups.length).toBeGreaterThan(5);
+      const colourOf = (region: number) => {
+        const group = mesh.geometry.groups.find((g) => g.materialIndex === region);
+        return group ? (mesh.material as THREE.MeshStandardMaterial[])[region]!.color.getHex() : undefined;
+      };
+      expect(colourOf(REGION.head)).toBe(LOOK.skin);
+      expect(colourOf(REGION.torso)).toBe(LOOK.top);
+      expect(colourOf(REGION.thigh)).toBe(LOOK.bottom);
+      expect(colourOf(REGION.foot)).toBe(LOOK.shoes);
+      const torso = (mesh.material as THREE.MeshStandardMaterial[])[REGION.torso]!;
+      expect(torso.transparent).toBe(true);
+      expect(torso.opacity).toBe(0.7);
+      expect(torso.emissive.getHex()).not.toBe(0);
+    }
+  });
+
+  it('bares the forearms and shins for short sleeves and shorts', async () => {
+    const people = await loadAsset();
+    const [mesh] = skinnedMeshes(clonePerson(THREE, people, { ...LOOK, shortSleeves: true, shorts: true }));
+    const materials = mesh!.material as THREE.MeshStandardMaterial[];
+    expect(materials[REGION.forearm]!.color.getHex()).toBe(LOOK.skin);
+    expect(materials[REGION.shin]!.color.getHex()).toBe(LOOK.skin);
+  });
+
+  it('puts the hair on the head bone, sized to the head, and none when bald', async () => {
+    const people = await loadAsset();
+    for (const style of ['short', 'buzz', 'long', 'bun'] as const) {
+      const person = clonePerson(THREE, people, { ...LOOK, hairStyle: style });
+      const hair = person.getObjectsByProperty('name', 'Hair');
+      expect(hair.length).toBeGreaterThan(0);
+      expect(hair[0]!.parent?.name).toBe('DEF-head');
+      person.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      for (const strand of hair) box.expandByObject(strand);
+      // On top of a 1.83 m model, no wider than a head and a bit.
+      expect(box.max.y).toBeGreaterThan(1.7);
+      expect(box.max.y).toBeLessThan(1.95);
+      expect(box.max.x - box.min.x).toBeLessThan(0.3);
+    }
+    const bald = clonePerson(THREE, people, { ...LOOK, hairStyle: 'bald' });
+    expect(bald.getObjectsByProperty('name', 'Hair')).toHaveLength(0);
+  });
+
+  it('shares the hair geometry between people', async () => {
+    const people = await loadAsset();
+    const first = clonePerson(THREE, people, LOOK);
+    const second = clonePerson(THREE, people, { ...LOOK, hair: 0x111111 });
+    const [a] = first.getObjectsByProperty('name', 'Hair') as THREE.Mesh[];
+    const [b] = second.getObjectsByProperty('name', 'Hair') as THREE.Mesh[];
+    expect(b!.geometry).toBe(a!.geometry);
+    expect(b!.material).not.toBe(a!.material);
+    let freed = false;
+    a!.geometry.addEventListener('dispose', () => {
+      freed = true;
+    });
+    disposeObject(first);
+    expect(freed).toBe(false);
   });
 });
 
@@ -157,7 +220,7 @@ describe('picking a rigged person (#284)', () => {
 describe('the shared people geometry (#284)', () => {
   it('is not marked in userData, so GLB extras stay clean', async () => {
     const people = await loadAsset();
-    const person = clonePerson(THREE, people, { body: 0x123456, joints: 0x222222 });
+    const person = clonePerson(THREE, people, LOOK);
     for (const mesh of skinnedMeshes(person)) expect(mesh.geometry.userData).toEqual({});
   });
 

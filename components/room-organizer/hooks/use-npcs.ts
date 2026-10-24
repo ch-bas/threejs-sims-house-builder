@@ -13,6 +13,7 @@ import {
   findClip,
   getPeopleModel,
 } from '../three/people-model';
+import { lookForSeed } from '../three/people-outfits';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -230,7 +231,6 @@ function createNpc(
   people: PeopleModel | null,
   world: NpcWorld
 ): NpcState {
-  const riggedBodies = [0x8a9bb0, 0xc9a27e, 0x9bb08a, 0xb0908a, 0xa39cc0];
   const palette = [0xc62828, 0x2e7d32, 0x1565c0, 0xf9a825, 0x6a1b9a];
   const hairPalette = [0x2b1d14, 0x5a3825, 0x1a1a1a, 0x8d6e4a, 0x3b2a20];
   const skinPalette = [0xe0ac8a, 0xc68863, 0x8d5a3b, 0xf1c7a5, 0xa8714f];
@@ -247,7 +247,7 @@ function createNpc(
   const idleClip = clip(PEOPLE_CLIPS.idle);
   if (people && walkClip && idleClip) {
     group = new THREE.Group();
-    const person = clonePerson(THREE, people, { body: pick(riggedBodies), joints: 0x3a3f47 });
+    const person = clonePerson(THREE, people, lookForSeed(index));
     person.scale.setScalar((1.75 / people.height) * heightScale);
     group.add(person);
     const mixer = new THREE.AnimationMixer(person);

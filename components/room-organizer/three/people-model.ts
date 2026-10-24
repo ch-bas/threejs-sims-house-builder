@@ -1,4 +1,12 @@
 import { markSharedGeometry } from './builder-utils';
+import {
+  HEAD_BONE,
+  type HairStyle,
+  type PersonLook,
+  buildHairGeometries,
+  partitionByRegion,
+  regionColours,
+} from './people-outfits';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -40,12 +48,14 @@ export interface PeopleModel {
   height: number;
   /** SkeletonUtils.clone — kept here so cloning stays synchronous. */
   cloneSkinned: (source: ThreeNS.Object3D) => ThreeNS.Object3D;
+  /** Hair meshes per style, in the head bone's space; shared by every person. */
+  hair: Map<HairStyle, ThreeNS.BufferGeometry[]>;
 }
 
-export interface PersonColours {
-  body: ThreeNS.ColorRepresentation;
-  joints: ThreeNS.ColorRepresentation;
+export interface PersonOptions {
   opacity?: number;
+  /** Placed people overlapping something glow red, like other furniture. */
+  collision?: boolean;
 }
 
 let model: PeopleModel | null = null;
@@ -104,40 +114,68 @@ export function preparePeopleModel(
 ): PeopleModel {
   const box = new THREE.Box3().setFromObject(scene);
   const height = box.max.y - Math.min(0, box.min.y);
-  return { scene, animations, height: height > 0 ? height : 1.8, cloneSkinned };
+  scene.traverse((node) => {
+    const mesh = node as ThreeNS.SkinnedMesh;
+    if (mesh.isSkinnedMesh) partitionByRegion(mesh);
+  });
+  const hair = buildHairGeometries(THREE, scene);
+  for (const parts of hair.values()) parts.forEach(markSharedGeometry);
+  return { scene, animations, height: height > 0 ? height : 1.8, cloneSkinned, hair };
 }
 
 /**
- * A copy of the model with its own skeleton and materials, drawing the cached
- * source geometry (#284): cloning 7.8k skinned vertices per person on every
- * furniture rebuild re-uploaded them to the GPU each time. The source
- * geometry is flagged shared, so disposing a person never frees it.
+ * A copy of the model with its own skeleton, dressed in `look`, drawing the
+ * cached source geometry (#284): cloning 7.8k skinned vertices per person on
+ * every furniture rebuild re-uploaded them to the GPU each time. The source
+ * geometry and the hair are flagged shared, so disposing a person never frees
+ * them; the materials are the person's own.
  */
 export function clonePerson(
   THREE: ThreeModule,
   source: PeopleModel,
-  colours: PersonColours
+  look: PersonLook,
+  options: PersonOptions = {}
 ): ThreeNS.Object3D {
   const root = source.cloneSkinned(source.scene);
-  const opacity = colours.opacity ?? 1;
+  const opacity = options.opacity ?? 1;
+  const cache = new Map<number, ThreeNS.MeshStandardMaterial>();
+  const paint = (colour: number, roughness: number) => {
+    const key = colour * 4 + Math.round(roughness * 3);
+    let made = cache.get(key);
+    if (!made) {
+      made = new THREE.MeshStandardMaterial({
+        color: colour,
+        roughness,
+        metalness: 0,
+        transparent: opacity < 1,
+        opacity,
+        emissive: options.collision ? 0x7f1d1d : 0x000000,
+      });
+      cache.set(key, made);
+    }
+    return made;
+  };
+  // Cloth is matte, skin a little less so.
+  const regions = regionColours(look).map((colour) => paint(colour, colour === look.skin ? 0.6 : 0.8));
   root.traverse((node) => {
     const mesh = node as ThreeNS.Mesh;
     if (!mesh.isMesh) return;
     markSharedGeometry(mesh.geometry);
-    const original = mesh.material as ThreeNS.MeshStandardMaterial;
-    const isJoint = original.name === 'M_Joints';
-    const material = new THREE.MeshStandardMaterial({
-      name: original.name,
-      color: isJoint ? colours.joints : colours.body,
-      roughness: isJoint ? 0.55 : 0.7,
-      metalness: 0,
-      transparent: opacity < 1,
-      opacity,
-    });
-    mesh.material = material;
+    mesh.material = mesh.geometry.groups.length > 0 ? regions : paint(look.top, 0.8);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
   });
+  const head = root.getObjectByName(HEAD_BONE);
+  const hair = source.hair.get(look.hairStyle) ?? [];
+  if (head && hair.length > 0) {
+    const hairMaterial = paint(look.hair, 0.9);
+    for (const geometry of hair) {
+      const strand = new THREE.Mesh(geometry, hairMaterial);
+      strand.name = 'Hair';
+      strand.castShadow = true;
+      head.add(strand);
+    }
+  }
   return root;
 }
 
@@ -175,6 +213,7 @@ export function releasePeopleGeometry(): void {
     const mesh = node as ThreeNS.Mesh;
     if (mesh.isMesh) mesh.geometry.dispose();
   });
+  for (const parts of model?.hair.values() ?? []) parts.forEach((geometry) => geometry.dispose());
 }
 
 export function findClip(source: PeopleModel, name: string): ThreeNS.AnimationClip | null {

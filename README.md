@@ -99,8 +99,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   fridges, stoves, sinks, toilets, bathtubs, showers, trees, fences,
   pools, stairs, pets, and more.
 - **Animated people**: placed people and optional walkers ("Show walkers")
-  are a rigged mannequin with motion-captured idle, talking, walk, sitting,
-  dancing and reaching clips. The model (~730 KB) loads only once a layout has people in it; until then,
+  are a rigged mannequin, dressed per person (skin tone, top, trousers or
+  shorts, shoes, hair style), with motion-captured idle, talking, walk,
+  sitting, dancing and reaching clips. The model (~730 KB) loads only once a layout has people in it; until then,
   or if it can't load, a procedural jointed figure stands in.
 - **7 room templates**: Bedroom, Living Room, Home Office, Kitchen,
   Bathroom, Studio Apartment, plus a populated multi-floor **Two-Story Home**.
@@ -437,6 +438,7 @@ components/
     │   │   ├── human-figure.ts          Procedural jointed figure + walk pose
     │   │   └── builders-structure.ts    Door, window, stairs
     │   ├── people-model.ts              people.glb loader, cloning (shared geometry), box picking, clip names
+    │   ├── people-outfits.ts            Body regions from skin weights, outfits, hair on the head bone
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts

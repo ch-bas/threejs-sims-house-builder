@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Dressed people:** placed people and walkers wear a top, trousers or shorts and shoes, with a skin tone and a hair style (short, buzzed, long, bun or bald). A placed person's colour is their top; the rest follows from the item, so they keep their look
 - **Walkers sit down:** now and then a walker heads for a free chair, armchair, sofa or bench, turns, sits for a while (idle or chatting), then gets up and walks on
 - **Walkers do things:** at a waypoint they sometimes dance, reach for something or pick something up instead of just standing
 - **Walkers stop for obstacles:** they look ahead and stop for furniture, interior walls, placed people and each other, wait a moment, then head somewhere they can reach
