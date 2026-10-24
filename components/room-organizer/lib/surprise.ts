@@ -1,7 +1,7 @@
 import { activeWriteOff } from './budget';
 import { FURNITURE_CATALOG } from './constants';
 import { floorKeepOut } from './floor-keep-out';
-import { FURNITURE_SETS, placeSetInFreeSpace, setFitsRoom, type FurnitureSet } from './furniture-sets';
+import { FURNITURE_SETS, WALL_INSET, placeSetInFreeSpace, setFitsRoom, type FurnitureSet } from './furniture-sets';
 import { hasCollisions, totalCost, type CollisionContext, type KeepOutRect } from './geometry';
 import { randomSuffix } from './ids';
 import { isWallMounted, type WallGap } from './opening-snap';
@@ -208,9 +208,6 @@ function floorPosition(
   existing: readonly FurnitureItem[]
 ): Placement | null {
   const { width: roomWidth, depth: roomDepth } = room;
-  // Room dimensions are exterior measurements; inset by ~wall thickness plus a
-  // small margin so decor never spawns under or inside the exterior walls.
-  const WALL_INSET = 0.35;
   const halfW = candidate.width / 2;
   const halfD = candidate.depth / 2;
   const minX = -roomWidth / 2 + WALL_INSET + halfW;

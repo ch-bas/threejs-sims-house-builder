@@ -1,3 +1,4 @@
+import { LOW_PROFILE_MAX_HEIGHT, rotatedHalfExtents } from './footprint';
 import { isCeilingHung, isWallHung, mountBand } from './mount-band';
 import { isOpening, isWallMounted } from './opening-snap';
 import { interiorWallHeight } from './storeys';
@@ -6,22 +7,6 @@ import type { FurnitureItem, InteriorWall, Vec2 } from './types';
 
 export function boundingRadius(item: Pick<FurnitureItem, 'width' | 'depth'>): number {
   return Math.hypot(item.width / 2, item.depth / 2);
-}
-
-/**
- * Half-extents of an item's axis-aligned bounding box in world space, given
- * its oriented footprint. Shared by bounds tests, wall snapping, and the 2D
- * renderer so rotated items report a consistent footprint everywhere.
- */
-export function rotatedHalfExtents(
-  item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation'>
-): { halfW: number; halfD: number } {
-  const cos = Math.abs(Math.cos(item.rotation ?? 0));
-  const sin = Math.abs(Math.sin(item.rotation ?? 0));
-  return {
-    halfW: (item.width * cos + item.depth * sin) / 2,
-    halfD: (item.width * sin + item.depth * cos) / 2,
-  };
 }
 
 /**
@@ -112,12 +97,6 @@ export function itemFullyOutside(item: FurnitureItem, roomWidth: number, roomDep
     item.position.z - halfD >= roomDepth / 2
   );
 }
-
-/**
- * Anything at or under this height goes UNDER furniture by design (rugs are
- * 0.02 m) — a rug beneath a sofa is the intended use, not a collision.
- */
-export const LOW_PROFILE_MAX_HEIGHT = 0.05;
 
 export function isLowProfile(item: Pick<FurnitureItem, 'height'>): boolean {
   return item.height <= LOW_PROFILE_MAX_HEIGHT;
@@ -524,9 +503,7 @@ export function snapToNeighbors({
   excludeIds,
   threshold = 0.2,
 }: SnapToNeighborOptions): Vec2 {
-  const { cosAbs, sinAbs } = rotatedExtents(movingItem.rotation ?? 0);
-  const halfW = (movingItem.width * cosAbs + movingItem.depth * sinAbs) / 2;
-  const halfD = (movingItem.width * sinAbs + movingItem.depth * cosAbs) / 2;
+  const { halfW, halfD } = rotatedHalfExtents(movingItem);
 
   let bestX = position.x;
   let bestZ = position.z;
@@ -535,9 +512,7 @@ export function snapToNeighbors({
 
   for (const other of otherItems) {
     if (other.id === movingItem.id || excludeIds?.has(other.id) || !other.position) continue;
-    const otherExtents = rotatedExtents(other.rotation ?? 0);
-    const otherHalfW = (other.width * otherExtents.cosAbs + other.depth * otherExtents.sinAbs) / 2;
-    const otherHalfD = (other.width * otherExtents.sinAbs + other.depth * otherExtents.cosAbs) / 2;
+    const { halfW: otherHalfW, halfD: otherHalfD } = rotatedHalfExtents(other);
 
     const candidatesX = [
       other.position.x,
@@ -571,8 +546,4 @@ export function snapToNeighbors({
   }
 
   return { x: bestX, z: bestZ };
-}
-
-function rotatedExtents(rotation: number): { cosAbs: number; sinAbs: number } {
-  return { cosAbs: Math.abs(Math.cos(rotation)), sinAbs: Math.abs(Math.sin(rotation)) };
 }

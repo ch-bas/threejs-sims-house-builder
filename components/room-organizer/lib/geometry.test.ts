@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { ROOM_TEMPLATES } from './constants';
+import { rotatedHalfExtents } from './footprint';
 import {
   autoOrganize,
   boundingRadius,
@@ -8,7 +9,6 @@ import {
   hasCollisions,
   itemInBounds,
   itemsOverlap,
-  rotatedHalfExtents,
   snapToGrid,
 } from './geometry';
 

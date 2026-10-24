@@ -13,6 +13,8 @@
  */
 
 import { CURRENCY_SYMBOL } from '../constants';
+import { escapeHtml } from '../html-escape';
+import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../street';
 import { zoneArea } from '../zones';
@@ -22,7 +24,6 @@ import {
   gridLinePositions,
   growBounds,
   interiorWallDimensions,
-  INTERIOR_WALL_THICKNESS_M,
   isWallHidden,
   itemSchedule,
   planContentBounds,
@@ -191,7 +192,7 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
   const sheet = renderSheet(layout, floor, options, options.idPrefix ?? '');
   return [
     svgOpen(sheet.widthPx, sheet.heightPx),
-    `<title>${escapeXml(`${layout.name} — ${floor.name}`)}</title>`,
+    `<title>${escapeHtml(`${layout.name} — ${floor.name}`)}</title>`,
     ...sheet.body,
     `</svg>`,
   ].join('\n');
@@ -213,7 +214,7 @@ export function buildingToSvg(layout: RoomLayout, options: SvgExportOptions = {}
   const heightPx = sheets.reduce((sum, { sheet }) => sum + sheet.heightPx, 0);
   const parts: string[] = [
     svgOpen(widthPx, heightPx),
-    `<title>${escapeXml(layout.name)}</title>`,
+    `<title>${escapeHtml(layout.name)}</title>`,
     `<rect width="${fmt(widthPx)}" height="${fmt(heightPx)}" fill="${theme.background}"/>`,
   ];
   let top = 0;
@@ -223,7 +224,7 @@ export function buildingToSvg(layout: RoomLayout, options: SvgExportOptions = {}
         `<line class="sheet-break" x1="0" y1="${fmt(top)}" x2="${fmt(widthPx)}" y2="${fmt(top)}" stroke="${theme.grid}" stroke-width="1"/>`
       );
     }
-    parts.push(`<g class="floor-sheet" data-floor="${escapeXml(floor.id)}" transform="translate(0 ${fmt(top)})">`, ...sheet.body, `</g>`);
+    parts.push(`<g class="floor-sheet" data-floor="${escapeHtml(floor.id)}" transform="translate(0 ${fmt(top)})">`, ...sheet.body, `</g>`);
     top += sheet.heightPx;
   });
   parts.push(`</svg>`);
@@ -319,7 +320,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
   const body: string[] = [
     `<rect width="${fmt(sheet.widthPx)}" height="${fmt(sheet.heightPx)}" fill="${theme.background}"/>`,
     `<g class="plan" transform="translate(${fmt(rootX)} ${fmt(rootY)})">`,
-    `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeXml(floor.floorColor)}"/>`,
+    `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeHtml(floor.floorColor)}"/>`,
     renderGrid(layout, margin, scale, theme),
     renderZones(floor, px, py, scale, theme),
     renderRoomOutline(layout, floor, margin, scale, theme),
@@ -425,13 +426,13 @@ function renderZones(
   if (zones.length === 0) return '';
   return zones
     .map((zone) => {
-      const color = escapeXml(zone.color);
+      const color = escapeHtml(zone.color);
       const cx = fmt(Number(px(zone.x)) + (zone.w * scale) / 2);
       const top = fmt(Number(py(zone.z)) + 15);
       return [
         `<g class="zone">`,
         `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"/>`,
-        `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}">${escapeXml(zone.name)}</text>`,
+        `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}">${escapeHtml(zone.name)}</text>`,
         `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}">${zoneArea(zone).toFixed(1)} m²</text>`,
         `</g>`,
       ].join('');
@@ -448,7 +449,7 @@ function renderInteriorWalls(
 ): string {
   const walls = floor.interiorWalls ?? [];
   if (walls.length === 0) return '';
-  const width = fmt(Math.max(2, INTERIOR_WALL_THICKNESS_M * scale));
+  const width = fmt(Math.max(2, INTERIOR_WALL_THICKNESS * scale));
   const lines = walls.map(
     (wall) =>
       `<line class="interior-wall" x1="${px(wall.x1)}" y1="${py(wall.z1)}" x2="${px(wall.x2)}" y2="${py(wall.z2)}" stroke="${theme.interiorWall}" stroke-width="${width}" stroke-linecap="butt"/>`
@@ -477,14 +478,14 @@ function renderCoverage(
     const opacities = kind === 'wifi' ? WIFI_RING_OPACITY : CCTV_RING_OPACITY;
     // Outer ring first, like the canvas, so the inner rings stack their tint.
     for (let ring = 2; ring >= 0; ring--) {
-      const colour = escapeXml(colours[ring] ?? theme.grid);
+      const colour = escapeHtml(colours[ring] ?? theme.grid);
       const [fillOpacity, strokeOpacity] = opacities[ring] ?? [0, 0];
       parts.push(
         `<circle class="${kind}-ring" cx="${px(center.x)}" cy="${py(center.z)}" r="${fmt((radii[ring] ?? 0) * scale)}" fill="${colour}" fill-opacity="${fillOpacity}" stroke="${colour}" stroke-opacity="${strokeOpacity}" stroke-width="1"/>`
       );
     }
   }
-  const vision = escapeXml(theme.vision);
+  const vision = escapeHtml(theme.vision);
   const style = `fill="${vision}" fill-opacity="0.14" stroke="${vision}" stroke-opacity="0.7" stroke-width="1"`;
   for (const wedge of visionWedges(floor.items)) {
     const r = fmt(wedge.radius * scale);
@@ -530,7 +531,7 @@ function renderOpening(
   // flips the group's local X and moves the hinge to the other jamb (#386).
   const mirror = item.mirrored ? ' scale(-1 1)' : '';
   const transform = `translate(${px(item.position.x)} ${py(item.position.z)}) rotate(${fmt(-((item.rotation ?? 0) * 180) / Math.PI)})${mirror}`;
-  const parts: string[] = [`<g class="opening" data-type="${escapeXml(item.type)}" transform="${transform}">`];
+  const parts: string[] = [`<g class="opening" data-type="${escapeHtml(item.type)}" transform="${transform}">`];
   parts.push(
     `<rect x="${fmt(-hw)}" y="${fmt(-gap / 2)}" width="${fmt(w)}" height="${fmt(gap)}" fill="${theme.background}"/>`
   );
@@ -562,11 +563,11 @@ function renderFurniture(
   // Three's rotateY is CCW, so the plan matches the 3D orientation.
   const degrees = -((item.rotation ?? 0) * 180) / Math.PI;
   const transform = `translate(${px(item.position.x)} ${py(item.position.z)}) rotate(${fmt(degrees)})`;
-  const rect = `<rect class="furniture" x="${fmt(-w / 2)}" y="${fmt(-d / 2)}" width="${fmt(w)}" height="${fmt(d)}" fill="${escapeXml(item.color)}" stroke="${theme.furnitureStroke}" stroke-width="1"/>`;
+  const rect = `<rect class="furniture" x="${fmt(-w / 2)}" y="${fmt(-d / 2)}" width="${fmt(w)}" height="${fmt(d)}" fill="${escapeHtml(item.color)}" stroke="${theme.furnitureStroke}" stroke-width="1"/>`;
   // Tiny footprints (cameras, vases) can't carry a legible in-rect label.
   const label =
     Math.min(w, d) >= MIN_LABEL_EDGE_PX
-      ? `<text class="label" x="0" y="0" dy="0.35em" font-size="10" text-anchor="middle" fill="${theme.label}"${uprightText(degrees)}>${escapeXml(item.name)}</text>`
+      ? `<text class="label" x="0" y="0" dy="0.35em" font-size="10" text-anchor="middle" fill="${theme.label}"${uprightText(degrees)}>${escapeHtml(item.name)}</text>`
       : '';
   // Stairs carry treads and a climb arrow instead of a name (#290).
   if (item.type === 'stairs') return `<g transform="${transform}">${rect}</g>${renderStairsSymbol(item, px, py, theme)}`;
@@ -728,7 +729,7 @@ function dimensionLine(
     `<line x1="${fmt(x0)}" y1="${fmt(y0)}" x2="${fmt(x1)}" y2="${fmt(y1)}" stroke-width="0.75"/>`,
     `<line x1="${fmt(x0 - tx)}" y1="${fmt(y0 - ty)}" x2="${fmt(x0 + tx)}" y2="${fmt(y0 + ty)}" stroke-width="1"/>`,
     `<line x1="${fmt(x1 - tx)}" y1="${fmt(y1 - ty)}" x2="${fmt(x1 + tx)}" y2="${fmt(y1 + ty)}" stroke-width="1"/>`,
-    `<text x="0" y="0" dy="0.35em" text-anchor="middle" stroke="none" transform="translate(${fmt(lx)} ${fmt(ly)}) rotate(${fmt(degrees)})">${escapeXml(dim.label)}</text>`,
+    `<text x="0" y="0" dy="0.35em" text-anchor="middle" stroke="none" transform="translate(${fmt(lx)} ${fmt(ly)}) rotate(${fmt(degrees)})">${escapeHtml(dim.label)}</text>`,
     `</g>`,
   ].join('');
 }
@@ -762,8 +763,8 @@ function renderTitleBlock(title: string, dims: string, margin: number, totalW: n
   // The title may run on into the right margin band: the north arrow there starts below the band's top.
   const shown = ellipsize(title, totalW - 8 - margin, TITLE_FONT_PX, true);
   return [
-    `<text class="plan-title" x="${fmt(margin)}" y="${fmt(titleY)}" font-size="${TITLE_FONT_PX}" font-weight="bold" fill="${theme.label}">${escapeXml(shown)}</text>`,
-    `<text class="plan-dims" x="${fmt(right)}" y="${fmt(dimsY)}" font-size="${DIMS_FONT_PX}" text-anchor="end" fill="${theme.label}">${escapeXml(dims)}</text>`,
+    `<text class="plan-title" x="${fmt(margin)}" y="${fmt(titleY)}" font-size="${TITLE_FONT_PX}" font-weight="bold" fill="${theme.label}">${escapeHtml(shown)}</text>`,
+    `<text class="plan-dims" x="${fmt(right)}" y="${fmt(dimsY)}" font-size="${DIMS_FONT_PX}" text-anchor="end" fill="${theme.label}">${escapeHtml(dims)}</text>`,
   ].join('\n');
 }
 
@@ -827,7 +828,7 @@ function renderSchedule(rows: readonly ScheduleRow[], margin: number, planHeight
   const rowY = (index: number): number => headY + SCHEDULE_ROW_PX * (index + 1);
   const price = (value: number): string => `${CURRENCY_SYMBOL}${Math.round(value).toLocaleString('en-US')}`;
   const cell = (x: number, y: number, value: string, anchor: 'start' | 'end', bold = false): string =>
-    `<text x="${fmt(x)}" y="${fmt(y)}" text-anchor="${anchor}"${bold ? ' font-weight="bold"' : ''}>${escapeXml(value)}</text>`;
+    `<text x="${fmt(x)}" y="${fmt(y)}" text-anchor="${anchor}"${bold ? ' font-weight="bold"' : ''}>${escapeHtml(value)}</text>`;
   const rule = (y: number): string =>
     `<line x1="${fmt(left)}" y1="${fmt(y)}" x2="${fmt(right)}" y2="${fmt(y)}" stroke="${theme.label}" stroke-width="0.75"/>`;
   const parts: string[] = [
@@ -868,21 +869,4 @@ function renderSchedule(rows: readonly ScheduleRow[], margin: number, planHeight
 function fmt(value: number): string {
   const rounded = Math.round(value * 100) / 100;
   return (Object.is(rounded, -0) ? 0 : rounded).toString();
-}
-
-function escapeXml(input: string): string {
-  return input.replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      default:
-        return '&#39;';
-    }
-  });
 }

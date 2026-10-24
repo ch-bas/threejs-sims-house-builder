@@ -12,6 +12,7 @@
  */
 
 import { CURRENCY_SYMBOL } from '../constants';
+import { escapeHtml } from '../html-escape';
 import { isWallMounted } from '../opening-snap';
 import { itemSchedule, planFrameBounds, unionBounds, type ScheduleRow } from './plan-geometry';
 import { DEFAULT_SVG_MARGIN, layoutToSvg, planSheetSize } from './svg';
@@ -406,22 +407,4 @@ function renderScheduleTable(rows: readonly ScheduleRow[]): string {
         <table class="schedule-rows">${cols}<tbody>${rest.join('')}</tbody></table>` : ''
         }
       </div>`;
-}
-
-// Duplicated from lib/blueprint.ts (private there).
-function escapeHtml(input: string): string {
-  return input.replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      default:
-        return '&#39;';
-    }
-  });
 }

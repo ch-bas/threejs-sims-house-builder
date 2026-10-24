@@ -5,23 +5,23 @@ import {
   countUnreadableSavedLayouts,
   deleteNamedLayout,
   layoutSlugExists,
+  librarySlotId,
   listSavedLayouts,
   loadNamedLayout,
   parseLibraryIndex,
   parseSavedLayoutEntry,
   saveNamedLayout,
-  slugify,
 } from './library';
 import { listSnapshots, recordSnapshot } from './version-history';
 
-describe('slugify', () => {
+describe('librarySlotId', () => {
   it('keeps short names unchanged (existing library saves keep their ids)', () => {
-    expect(slugify('Beach House')).toBe('beach-house');
-    expect(slugify('  My Cozy Loft!  ')).toBe('my-cozy-loft');
+    expect(librarySlotId('Beach House')).toBe('beach-house');
+    expect(librarySlotId('  My Cozy Loft!  ')).toBe('my-cozy-loft');
   });
 
   it('is stable for the same short name', () => {
-    expect(slugify('Villa')).toBe(slugify('Villa'));
+    expect(librarySlotId('Villa')).toBe(librarySlotId('Villa'));
   });
 
   it('gives distinct slugs to two 60-char names sharing a 40-char prefix', () => {
@@ -31,23 +31,23 @@ describe('slugify', () => {
     expect(nameA).toHaveLength(60);
     expect(nameB).toHaveLength(60);
 
-    const slugA = slugify(nameA);
-    const slugB = slugify(nameB);
+    const slugA = librarySlotId(nameA);
+    const slugB = librarySlotId(nameB);
     expect(slugA).not.toBe(slugB);
     // Both keep the readable truncated prefix and stay deterministic.
     expect(slugA.startsWith(prefix)).toBe(true);
     expect(slugB.startsWith(prefix)).toBe(true);
-    expect(slugify(nameA)).toBe(slugA);
-    expect(slugify(nameB)).toBe(slugB);
+    expect(librarySlotId(nameA)).toBe(slugA);
+    expect(librarySlotId(nameB)).toBe(slugB);
   });
 
   it('does not append a hash to a name exactly at the cap', () => {
     const name = 'a'.repeat(40);
-    expect(slugify(name)).toBe(name);
+    expect(librarySlotId(name)).toBe(name);
   });
 
   it('falls back to a layout-* slug for names with no usable characters', () => {
-    expect(slugify('!!!')).toMatch(/^layout-\d+$/);
+    expect(librarySlotId('!!!')).toMatch(/^layout-\d+$/);
   });
 });
 

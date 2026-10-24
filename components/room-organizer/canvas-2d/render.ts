@@ -6,7 +6,8 @@ import {
   GRID_SIZE_METERS,
 } from '../lib/constants';
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
-import { rotatedHalfExtents } from '../lib/geometry';
+import { rotatedHalfExtents } from '../lib/footprint';
+import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
@@ -65,8 +66,6 @@ export interface Render2DOptions {
 }
 
 const PADDING = PLAN_PADDING_PX;
-// Matches the 0.16 m thickness modelled in three/interior-walls.ts.
-const INTERIOR_WALL_THICKNESS_M = 0.16;
 
 /** The world→canvas mapping the 2D renderer draws with (CSS-pixel space). */
 export interface View2DTransform {
@@ -580,7 +579,7 @@ function drawInteriorWalls(
   ctx.save();
   ctx.strokeStyle = '#555';
   ctx.lineCap = 'butt';
-  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS_M * scale);
+  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS * scale);
   for (const wall of walls) {
     ctx.beginPath();
     ctx.moveTo(offsetX + (wall.x1 + halfW) * scale, offsetY + (wall.z1 + halfD) * scale);

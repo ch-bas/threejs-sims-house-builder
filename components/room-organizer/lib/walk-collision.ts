@@ -13,8 +13,9 @@
  * over the surfaces of `lib/walk-world`, climbing stairs as a ramp.
  */
 
+import { LOW_PROFILE_MAX_HEIGHT, rotatedHalfExtents } from './footprint';
 import { isWallHung } from './mount-band';
-import { interiorWallOpeningSpan, isWallMounted } from './opening-snap';
+import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan, isWallMounted } from './opening-snap';
 import { hasNeighbours } from './site';
 import { floorElevation, interiorWallHeight, storeyHeight } from './storeys';
 import { entranceGeometry, entranceWallCut } from './street';
@@ -74,19 +75,6 @@ export interface WalkCollisionOptions {
   baseY?: number;
   storeyHeight?: number;
 }
-
-/**
- * Interior walls are modelled 0.16 m thick (three/interior-walls.ts owns the
- * authoritative constant); the walker must not sink into that slab.
- */
-const INTERIOR_WALL_THICKNESS = 0.16;
-
-/**
- * Anything at or under this height goes UNDER furniture by design (rugs are
- * 0.02 m) — the walker steps over it. Mirrors the collision indicator's
- * low-profile layer in `lib/geometry` (#120).
- */
-const LOW_PROFILE_MAX_HEIGHT = 0.05;
 
 /**
  * A door is a passable gap in the wall that owns it. Ownership follows the
@@ -172,7 +160,12 @@ export function buildWalkColliders(
   return colliders;
 }
 
-function boxCollider(
+/**
+ * An oriented box collider centred at (`cx`, `cz`), its width along the
+ * rotated X axis; `bottom`/`top` bound its vertical span when given. Walkers
+ * (`lib/npc-path`) build their keep-out boxes with it too, never outdoor.
+ */
+export function boxCollider(
   cx: number,
   cz: number,
   width: number,
@@ -184,10 +177,7 @@ function boxCollider(
 ): WalkCollider {
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
-  // lib/geometry's rotatedHalfExtents, inlined: geometry builds its interior
-  // wall boxes from this module, so importing it back would be a cycle.
-  const halfW = (width * Math.abs(cos) + depth * Math.abs(sin)) / 2;
-  const halfD = (width * Math.abs(sin) + depth * Math.abs(cos)) / 2;
+  const { halfW, halfD } = rotatedHalfExtents({ width, depth, rotation });
   return {
     cx,
     cz,

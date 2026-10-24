@@ -14,10 +14,6 @@ import { isOpening, isWallMounted } from '../opening-snap';
 import { computeFloorOpenings, floorOpeningOutline, stairPlanSymbol, stairTreadLines } from '../stairs';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../types';
 
-/** Duplicated from canvas-2d/render.ts (`INTERIOR_WALL_THICKNESS_M`), which
- * mirrors the 0.16 m modelled in three/interior-walls.ts. */
-export const INTERIOR_WALL_THICKNESS_M = 0.16;
-
 /** A placed item: `position` narrowed to non-optional. */
 export type PlacedItem = FurnitureItem & { position: NonNullable<FurnitureItem['position']> };
 

@@ -8,7 +8,7 @@ import {
   MAX_ROOM_DIMENSION,
 } from '../lib/constants';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
-import { rotatedHalfExtents } from '../lib/geometry';
+import { clampToFootprint } from '../lib/footprint';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
@@ -1232,22 +1232,6 @@ function activeFrontGap(state: LayoutState): WallGap | null {
 function clampRoomDimension(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 1;
   return Math.min(value, MAX_ROOM_DIMENSION);
-}
-
-/** Clamp a position so the item's rotated footprint stays inside the room. */
-function clampToFootprint(
-  item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation'>,
-  position: { x: number; z: number },
-  roomWidth: number,
-  roomDepth: number
-): { x: number; z: number } {
-  const { halfW, halfD } = rotatedHalfExtents(item);
-  const maxX = Math.max(0, roomWidth / 2 - halfW);
-  const maxZ = Math.max(0, roomDepth / 2 - halfD);
-  return {
-    x: Math.min(maxX, Math.max(-maxX, position.x)),
-    z: Math.min(maxZ, Math.max(-maxZ, position.z)),
-  };
 }
 
 function normaliseLayout(layout: RoomLayout): RoomLayout {

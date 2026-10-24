@@ -32,12 +32,18 @@ export interface OpeningSnap {
 }
 
 /**
- * Interior walls are modelled 0.16 m thick (see three/interior-walls.ts, which
- * owns the authoritative constant). A flush inset measured from the wall
- * centreline would bury a wall-mounted item's back face half that depth inside
- * the wall, so seating against an interior wall adds this half-thickness.
+ * How thick an interior wall is modelled (#451): the 3D partition, the
+ * walker's collider, the 2D plan stroke and the SVG export all use this one
+ * value.
  */
-const INTERIOR_WALL_HALF_THICKNESS = 0.08;
+export const INTERIOR_WALL_THICKNESS = 0.16;
+
+/**
+ * A flush inset measured from the wall centreline would bury a wall-mounted
+ * item's back face half the wall's depth inside it, so seating against an
+ * interior wall adds this half-thickness.
+ */
+const INTERIOR_WALL_HALF_THICKNESS = INTERIOR_WALL_THICKNESS / 2;
 
 /** A stretch of the north wall that isn't there: the recessed entrance's cut (#394). */
 export interface WallGap {
