@@ -456,3 +456,30 @@ describe('buildingToSvg', () => {
     expect(svg).toContain('url(#f1-coverage-clip)');
   });
 });
+
+// The print popup inlines this SVG into a document.write, so it must never
+// carry user text raw — in an element or in an attribute (#455).
+describe('SVG escaping of user text (#455)', () => {
+  const SCRIPT = '<script>alert(1)</script>';
+  const ATTR = '" onmouseover="alert(1)';
+  const floor = (id: string) =>
+    makeFloor({
+      id: `${id}${ATTR}`,
+      name: ATTR,
+      floorColor: ATTR,
+      items: [makeItem({ id: `${id}-a`, type: SCRIPT, name: SCRIPT, color: ATTR }), makeItem({ id: `${id}-b`, name: ATTR, position: { x: 1, z: 1 } })],
+      zones: [{ id: `${id}-z`, name: SCRIPT, color: ATTR, x: -3, z: -3, w: 4, d: 4 }],
+    });
+  const layout = makeLayout({ name: SCRIPT, floors: [floor('g'), floor('f')] });
+
+  it.each([
+    ['one floor', () => layoutToSvg(layout, layout.floors[0]!, { schedule: true })],
+    ['the whole building', () => buildingToSvg(layout, { schedule: true })],
+  ])('escapes names, ids and colours in %s', (_label, render) => {
+    const svg = render();
+    expect(svg).not.toContain(SCRIPT);
+    expect(svg).not.toContain(ATTR);
+    expect(svg).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(svg).toContain('&quot; onmouseover=&quot;alert(1)');
+  });
+});
