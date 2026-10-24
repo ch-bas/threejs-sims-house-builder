@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.21.0] - 2026-10-24
+
+The **Gameplay & delight** milestone: walk through the whole house, place things the way you'd expect, play with a real budget, and get credit only for what you build.
+
+### Added
+- **Walk the whole house:** climb the stairs, walk out of the front door onto the lot and round the street, and change floors with PgUp/PgDn while walking. You arrive just inside the entrance; **E** sits you on a chair, sofa or bed facing the TV; **[** / **]** change the time of day as you walk ([#446](https://github.com/ch-bas/threejs-sims-house-builder/issues/446), [#463](https://github.com/ch-bas/threejs-sims-house-builder/issues/463))
+- **Walkthrough on phones and tablets:** drag to look, a thumb stick to walk, and buttons to sit and leave
+- **A walk HUD** that says how to look around, walk, change floors and leave; leaving returns to the mode you came from ([#454](https://github.com/ch-bas/threejs-sims-house-builder/issues/454))
+- **Placement preview:** clicking or tapping a catalogue tile picks the item up — a see-through copy follows your pointer or finger, red where it would collide, and snaps to walls for doors and windows. Click or tap to place, R to turn, Escape to cancel ([#463](https://github.com/ch-bas/threejs-sims-house-builder/issues/463))
+- **Hard budget (optional):** greys out what you can't afford and refunds 80% when you demolish; switch it on under the funds readout ([#463](https://github.com/ch-bas/threejs-sims-house-builder/issues/463))
+- Straight/winder switch and lead-in for stairs, and a sill height for windows, in the item editor ([#458](https://github.com/ch-bas/threejs-sims-house-builder/issues/458))
+- A short "refused" sound when something can't be done
+
+### Changed
+- **Walkers find their way:** they walk around furniture, partitions and stairs, use doors between rooms and stop to face furniture ([#452](https://github.com/ch-bas/threejs-sims-house-builder/issues/452))
+- **Achievements are earned, not inherited:** loading a template, a saved or shared house, a restore point or an import no longer unlocks anything; adding to a loaded house still earns what you add ([#450](https://github.com/ch-bas/threejs-sims-house-builder/issues/450))
+- **Furniture sets land in free space** instead of on top of the sofa ([#456](https://github.com/ch-bas/threejs-sims-house-builder/issues/456))
+- **Surprise me keeps the structure:** doors, windows, stairs and outdoor items stay, and the furniture is fitted around them ([#448](https://github.com/ch-bas/threejs-sims-house-builder/issues/448))
+- Achievement toasts no longer cover the mode buttons, and show one at a time ([#461](https://github.com/ch-bas/threejs-sims-house-builder/issues/461))
+- Every action plays its sound exactly once, including group rotate, duplicate and delete ([#460](https://github.com/ch-bas/threejs-sims-house-builder/issues/460))
+- Floor coverage in Statistics no longer counts doors, windows, wall decor or items standing on tables ([#462](https://github.com/ch-bas/threejs-sims-house-builder/issues/462))
+
 ## [1.20.0] - 2026-10-23
 
 The **2D plan & export** milestone: a 2D plan that shows the whole lot, prints you can choose, CAD files that open in CAD, and exports of the whole building.
