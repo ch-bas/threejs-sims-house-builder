@@ -87,6 +87,11 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
   pulses faster, and the sweeping scan line flares as it passes over the
   target. The overlay renders depth-test-free so walls and furniture
   never occlude it.
+- **Placement ghost**: click or tap a catalog tile and a see-through copy
+  follows the pointer (or your finger) in 3D and on the 2D plan, snapped
+  like a drag and red where it would collide; click or tap to place it,
+  Shift+click to place another, R to turn it, Esc or Cancel to put it
+  down. Doors and windows ride the nearest wall.
 - **Drag-from-catalog placement**: drag an item directly onto the 3D
   viewport to drop it where you release. Items **auto-lock** on placement
   and re-lock after every drag, so finished furniture can't be moved,
@@ -109,8 +114,9 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **5 theme presets** (Modern, Rustic, Minimalist, Cozy, Tropical) that
   recolour walls, floor, and furniture by category across every floor.
 - **5 furniture sets** that drop a curated combo (Dining, Bedroom,
-  Home Office, Kitchen Line, Lounge) at the current cursor. Sets the
-  room can't hold are greyed out with a "Room too small" hint.
+  Home Office, Kitchen Line, Lounge) on the free spot nearest the room
+  centre, clear of what's already there. Sets the room can't hold are
+  greyed out with a "Room too small" hint.
 - **Custom sets**: select an arrangement and **Save as set** on the
   selection chip to keep it — colours, sizes and groups included — beside
   the built-ins, ready to place in any layout (delete from the Sets panel).
@@ -134,13 +140,18 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 - **Per-item editor**: dimension sliders, **precise X/Z numeric inputs**,
   rotation in degrees, mirror, lock, "Centre in room" shortcut, colour
   picker (with a persisted "Recent" strip) + 🎲 randomise.
+  The floating item popover carries the type-specific controls too:
+  Straight/Winder and the lead-in for stairs, the sill height for windows.
 - **Bulk lock / unlock all** on the active floor.
 - **Collision visibility**: colliding items get a red row + ⚠️ badge in
   the placed-items list, and a counter shows up in stats.
 - **Snap-to-grid**, **snap-to-wall**, and **snap-to-items** toggles —
   stackable, rotation-aware.
 - **Auto-organize** with three strategies: packed, by category, by size.
-- **Surprise me** picks a room-appropriate furniture set + random decor.
+- **Surprise me** replaces the floor's furniture with a room-appropriate
+  set + random decor, keeping the structure (doors, windows, cameras,
+  stairs) and the garden, and fitting around them, the porch and the
+  partitions.
 - **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y) — snapshot-based,
   debounced, 50-entry stack. Loading a template or a saved layout is one
   Ctrl+Z away from the design it replaced.
@@ -345,6 +356,7 @@ npm run test         # Vitest unit suite (reducer, geometry, schema, share, …)
 | Move              | Arrow keys (Shift = 1 m) |
 | Deselect          | Esc                |
 | Place from catalog | Enter on a focused tile, then arrows / R · Enter confirm · Esc cancel |
+| Place with the ghost | Click a tile, then click to place · Shift+click another · R rotate · Esc cancel |
 | Focus on item     | F                  |
 | Multi-select      | Ctrl/⌘+click       |
 | Select one of a group | Alt+click      |
@@ -405,10 +417,11 @@ components/
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── hud-layout.ts                Phone-dock and sheet media queries, catalog page size, scroll cue, touch welcome tips
     │   ├── top-bar-slot.ts              The top bar's free strip between the lot badge and the pills, for the touch row
-    │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement
+    │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement; free-spot search (#456)
     │   ├── custom-sets.ts               User-saved furniture sets: localStorage I/O + parser (#302)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
-    │   ├── surprise.ts                  Random one-shot floor populate
+    │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
+    │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
@@ -444,6 +457,7 @@ components/
     │   ├── builder-utils.ts             Shared types + mesh()/material() helpers, dispose helpers (disposeScene on unmount, #213)
     │   ├── three-runtime.ts             The named three.js symbols the app uses; the engine's only runtime import (#411)
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
+    │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
     │   ├── drag-handlers.ts             Canvas mouse events: select/drag/hover/wall-pick
     │   ├── builders/                    Per-category builder functions
     │   │   ├── builders-seating.ts      Chair, armchair, bench, sofa
@@ -507,7 +521,8 @@ components/
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
-    │   ├── use-keyboard-placement.ts    Enter-on-tile placement session + roving tile focus
+    │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
+    │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d)
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
@@ -561,7 +576,7 @@ components/
         ├── achievements-panel.tsx
         ├── achievement-toast.tsx        Unlock toasts, one at a time: above the mode panel on desktop, the toast slot on small screens
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
-        ├── placement-hint.tsx           Key hint chip while a keyboard placement is pending
+        ├── placement-hint.tsx           Key hint chip while a keyboard placement or a ghost is pending (Cancel for touch)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), then the inline name field
         ├── dev-diagnostics.tsx          `?debug` overlay: draw calls, triangles, geometries, textures, programs, frames
@@ -1003,6 +1018,31 @@ components/
   ezdxf's audit (zero fixes). Its layers: WALLS, INTERIOR, OPENINGS,
   FURNITURE, LABELS, STAIRWELL, COVERAGE, DIMENSIONS; `buildingToDxf`
   lays the floors out side by side on those same layers.
+- **Placement ghost** (#463 d). A click or tap on a catalog tile arms a
+  one-shot flag (`armGhostPlacement`, the pointer twin of the keyboard
+  placement's), and the wrapped `placeCatalogItem` picks the entry up
+  instead of placing it. Nothing enters the layout while it is in hand:
+  `use-placement-ghost` moves a faded copy of the item's mesh in 3D
+  (`three/placement-ghost.ts`, no shadow, its own userData tag so
+  raycasts and the furniture diff ignore it) or an SVG outline over the
+  plan, mapped through `clientToWorld2D`'s own inverse — no dispatch per
+  move. Presses on the visible canvas are taken in the window's capture
+  phase, so the camera controls and selection never see them; right and
+  middle drags still orbit and pan. The release places through the
+  ordinary path (`placeCatalogItem` with the snapped spot and the ghost's
+  turn), so it is one undo entry and a cancel leaves no trace.
+  `snapCatalogPlacement` previews openings and cameras on their wall and
+  everything else through the drag's snaps. Picking a ghost from the
+  drawer folds it away, as zone drawing does.
+- **Free space for sets and Surprise** (#456, #448).
+  `placeSetInFreeSpace` probes the preferred centre, then a grid over the
+  room nearest-first (0.25 m, coarser past a 10 m room), and accepts the
+  first spot where no piece `hasCollisions` with the floor's items, the
+  porch and stairwells, or a partition. Surprise keeps
+  `keptBySurprise` items (wall-mounted, stairs, outdoor), places its set
+  through the same search, rejects decor spots that fail
+  `hasCollisions`, and hangs no art across the recess's span of the
+  north wall.
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure

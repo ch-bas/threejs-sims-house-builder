@@ -1,5 +1,5 @@
 import { FURNITURE_CATALOG } from './constants';
-import { itemsOverlap, rotatedHalfExtents } from './geometry';
+import { hasCollisions, itemsOverlap, rotatedHalfExtents, type KeepOutRect } from './geometry';
 import { remapGroupIds } from './groups';
 import { randomSuffix } from './ids';
 import { isWallMounted, settleWallMountedItem, type WallGap } from './opening-snap';
@@ -278,4 +278,79 @@ export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = 
   }
 
   return items;
+}
+
+export interface FreeSpaceOptions {
+  roomWidth: number;
+  roomDepth: number;
+  /** What already stands on the floor; no piece may collide with it (#456). */
+  existing: readonly FurnitureItem[];
+  /** The storey's porch and stairwells (`floorKeepOut`). */
+  keepOut?: readonly KeepOutRect[];
+  /** The storey's partitions: pieces may not straddle them, openings settle on them. */
+  interiorWalls?: readonly InteriorWall[];
+  frontGap?: WallGap | null;
+  storeyHeight?: number;
+  /** The centre tried first; the room centre when absent. */
+  preferred?: Vec2;
+  idPrefix?: string;
+}
+
+/** Finest spacing of the centres `placeSetInFreeSpace` probes (m). */
+export const FREE_SPACE_STEP = 0.25;
+/** Most probe steps across the room's longer side, so a big house stays cheap. */
+const FREE_SPACE_MAX_STEPS = 40;
+
+/**
+ * The centres a set is tried at: `preferred` first, then every point of a
+ * grid inside the room (FREE_SPACE_STEP, coarser in a big house), nearest
+ * first, so the set lands as close as it can to where it was asked for.
+ */
+export function candidateCentres(
+  preferred: Vec2,
+  roomWidth: number,
+  roomDepth: number,
+  step = Math.max(FREE_SPACE_STEP, Math.max(roomWidth, roomDepth) / FREE_SPACE_MAX_STEPS)
+): Vec2[] {
+  const halfW = Math.max(0, roomWidth / 2 - WALL_INSET);
+  const halfD = Math.max(0, roomDepth / 2 - WALL_INSET);
+  const grid: Vec2[] = [];
+  for (let x = -Math.floor(halfW / step) * step; x <= halfW + 1e-9; x += step) {
+    for (let z = -Math.floor(halfD / step) * step; z <= halfD + 1e-9; z += step) {
+      grid.push({ x: Math.round(x * 1000) / 1000, z: Math.round(z * 1000) / 1000 });
+    }
+  }
+  const distance = (point: Vec2): number => Math.hypot(point.x - preferred.x, point.z - preferred.z);
+  grid.sort((a, b) => distance(a) - distance(b) || a.x - b.x || a.z - b.z);
+  return [preferred, ...grid];
+}
+
+/**
+ * Build `set` at the free spot nearest `preferred` (#456): every piece is
+ * checked with `hasCollisions` against the floor's items, keep-out and
+ * partitions, so a set never lands on the sofa already there. Empty when the
+ * set can't fit the room at all or no spot is free.
+ */
+export function placeSetInFreeSpace(set: FurnitureSet, options: FreeSpaceOptions): FurnitureItem[] {
+  const { roomWidth, roomDepth, existing, preferred = { x: 0, z: 0 } } = options;
+  const idPrefix = options.idPrefix ?? `${set.key}-${Date.now()}-${randomSuffix()}`;
+  const context = {
+    keepOut: options.keepOut ?? [],
+    interiorWalls: options.interiorWalls ?? [],
+    ...(options.storeyHeight !== undefined ? { storeyHeight: options.storeyHeight } : {}),
+  };
+  for (const center of candidateCentres(preferred, roomWidth, roomDepth)) {
+    const pieces = buildFurnitureSet(set, {
+      center,
+      idPrefix,
+      roomWidth,
+      roomDepth,
+      interiorWalls: context.interiorWalls,
+      frontGap: options.frontGap ?? null,
+    });
+    // The fit and the self-collision refusal don't depend on the centre.
+    if (pieces.length === 0) return [];
+    if (pieces.every((piece) => !hasCollisions(piece, existing, roomWidth, roomDepth, context))) return pieces;
+  }
+  return [];
 }

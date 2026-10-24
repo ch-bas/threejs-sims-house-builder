@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { FURNITURE_CATALOG } from './constants';
-import { FURNITURE_SETS, buildFurnitureSet, setFitsRoom, type FurnitureSet, type SetItemSnapshot } from './furniture-sets';
-import { itemInBounds, itemsOverlap, rotatedHalfExtents } from './geometry';
+import {
+  FURNITURE_SETS,
+  buildFurnitureSet,
+  candidateCentres,
+  placeSetInFreeSpace,
+  setFitsRoom,
+  type FurnitureSet,
+  type SetItemSnapshot,
+} from './furniture-sets';
+import { hasCollisions, itemInBounds, itemsOverlap, rotatedHalfExtents } from './geometry';
 
 const setByKey = (key: string) => FURNITURE_SETS.find((s) => s.key === key)!;
 
@@ -125,5 +133,48 @@ describe('buildFurnitureSet — placement rules of a saved set (#384)', () => {
         expect(itemInBounds(item, size, size)).toBe(true);
       }
     }
+  });
+});
+
+describe('placeSetInFreeSpace — a set lands in free space (#456)', () => {
+  const sofa = { ...FURNITURE_CATALOG.find((entry) => entry.type === 'sofa')!, id: 'sofa-1', position: { x: 0, z: 0 }, rotation: 0 };
+
+  it('stays at the preferred centre when it is free', () => {
+    const items = placeSetInFreeSpace(setByKey('dining'), { roomWidth: 8, roomDepth: 8, existing: [], idPrefix: 'p' });
+    expect(items[0]!.position).toEqual({ x: 0, z: 0 });
+  });
+
+  it('moves off the sofa already at the centre, with no piece colliding', () => {
+    const items = placeSetInFreeSpace(setByKey('lounge'), { roomWidth: 8, roomDepth: 8, existing: [sofa], idPrefix: 'p' });
+    expect(items.length).toBeGreaterThan(0);
+    for (const piece of items) {
+      expect(hasCollisions(piece, [sofa], 8, 8), piece.id).toBe(false);
+    }
+  });
+
+  it('avoids the porch keep-out and partitions', () => {
+    const keepOut = [{ x0: -1, x1: 1, z0: -4, z1: -2 }];
+    const interiorWalls = [{ id: 'w', x1: -4, z1: 0.5, x2: 4, z2: 0.5 }];
+    const items = placeSetInFreeSpace(setByKey('dining'), { roomWidth: 8, roomDepth: 8, existing: [], keepOut, interiorWalls, idPrefix: 'p' });
+    expect(items.length).toBeGreaterThan(0);
+    for (const piece of items) {
+      expect(hasCollisions(piece, [], 8, 8, { keepOut, interiorWalls }), piece.id).toBe(false);
+    }
+  });
+
+  it('refuses when no spot is free', () => {
+    const filler = { ...sofa, id: 'filler', width: 7.2, depth: 7.2 };
+    expect(placeSetInFreeSpace(setByKey('dining'), { roomWidth: 8, roomDepth: 8, existing: [filler], idPrefix: 'p' })).toEqual([]);
+  });
+
+  it('refuses a set the room is too small for', () => {
+    expect(placeSetInFreeSpace(setByKey('dining'), { roomWidth: 3, roomDepth: 3, existing: [], idPrefix: 'p' })).toEqual([]);
+  });
+
+  it('tries the preferred centre first, then the nearest grid points', () => {
+    const centres = candidateCentres({ x: 1, z: 1 }, 4, 4);
+    expect(centres[0]).toEqual({ x: 1, z: 1 });
+    const distances = centres.slice(1).map((c) => Math.hypot(c.x - 1, c.z - 1));
+    expect(distances).toEqual([...distances].sort((a, b) => a - b));
   });
 });

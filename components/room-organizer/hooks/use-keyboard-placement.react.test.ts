@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeCatalogItem } from '../lib/__testfixtures__/fixtures';
 import { INITIAL_LAYOUT } from './layout-reducer';
 import { useHistory } from './use-history';
-import { armKeyboardPlacement, nextTileIndex, useKeyboardPlacement } from './use-keyboard-placement';
+import { armGhostPlacement, armKeyboardPlacement, nextTileIndex, useKeyboardPlacement } from './use-keyboard-placement';
 import { useLayoutState } from './use-layout-state';
 import { layoutStore } from './use-layout-store';
 
@@ -251,6 +251,62 @@ describe('useKeyboardPlacement (#168)', () => {
       result.current.cancelPlacement();
     });
     expect(activeItems().length).toBe(INITIAL_LAYOUT.floors[0]!.items.length);
+  });
+});
+
+describe('useKeyboardPlacement — the placement ghost (#463 d)', () => {
+  beforeEach(() => {
+    layoutStore.setState({ layout: { ...INITIAL_LAYOUT, id: 'house-test' }, activeFloorIndex: 0 });
+  });
+  afterEach(cleanup);
+
+  it('picks a clicked tile up as a ghost instead of placing it', () => {
+    const { result } = mount();
+    const before = layoutStore.getState().layout;
+    act(() => {
+      result.current.setSelectedItemId('something');
+    });
+    let id = 'unset';
+    act(() => {
+      armGhostPlacement();
+      id = result.current.placeCatalogItem(makeCatalogItem({ name: 'Ghost Chair' }));
+    });
+    expect(id).toBe('');
+    expect(result.current.ghost?.name).toBe('Ghost Chair');
+    // Nothing enters the layout, and the selection steps aside.
+    expect(layoutStore.getState().layout).toBe(before);
+    expect(result.current.selectedItemId).toBeNull();
+    act(() => {
+      result.current.endGhost();
+    });
+    expect(result.current.ghost).toBeNull();
+  });
+
+  it('places as before when nothing armed the ghost, or when a drop gives a spot', () => {
+    const { result } = mount();
+    let id = '';
+    act(() => {
+      id = result.current.add(false);
+    });
+    expect(id).not.toBe('');
+    act(() => {
+      armGhostPlacement();
+      id = result.current.placeCatalogItem(makeCatalogItem(), { x: 1, z: 1 });
+    });
+    expect(id).not.toBe('');
+    expect(result.current.ghost).toBeNull();
+  });
+
+  it('disarms after the click that armed it, so a later add is not picked up', async () => {
+    const { result } = mount();
+    armGhostPlacement();
+    await Promise.resolve();
+    let id = '';
+    act(() => {
+      id = result.current.add(false);
+    });
+    expect(id).not.toBe('');
+    expect(result.current.ghost).toBeNull();
   });
 });
 

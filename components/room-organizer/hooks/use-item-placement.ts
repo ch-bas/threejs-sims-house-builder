@@ -6,8 +6,9 @@ import {
   snapToWall as snapPositionToWall,
 } from '../lib/geometry';
 import { isOpening, snapOpeningToWall, snapWallMountedItem, type WallGap } from '../lib/opening-snap';
+import { ghostItem } from '../lib/placement-ghost';
 import type { LayoutActions } from './use-layout-state';
-import type { CatalogItem, FloorLayout, ViewSettings } from '../lib/types';
+import type { CatalogItem, FloorLayout, FurnitureItem, ViewSettings } from '../lib/types';
 
 export interface UseItemPlacementParams {
   activeFloor: FloorLayout;
@@ -17,6 +18,11 @@ export interface UseItemPlacementParams {
   roomDepth: number;
   /** Current furniture value across the whole building, for the budget guard. */
   buildingCost: number;
+  /**
+   * Hard budget (#463e): true, after telling the player, when a purchase of
+   * `price` is over what's left. It is refused before the soft confirm.
+   */
+  refusePurchase?(price: number): boolean;
   actions: LayoutActions;
   view: Pick<ViewSettings, 'snapToGrid' | 'snapToWall' | 'snapToItems'>;
   /**
@@ -36,8 +42,22 @@ export interface UseItemPlacementResult {
   /** Adjust a candidate drop position before it's applied (snap-to-grid/-wall/-items). */
   snapPosition(itemId: string, x: number, z: number): { x: number; z: number };
   getDragPlaneY(): number;
-  /** Wall-aware catalog placement (snaps doors/windows/cameras to walls). */
-  placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }): string;
+  /**
+   * Where a catalogue entry dropped at x/z would land, for the placement
+   * ghost (#463 d): openings and cameras on their wall, facing the room;
+   * anything else through the same snaps as a drag.
+   */
+  snapCatalogPlacement(
+    catalogItem: CatalogItem,
+    x: number,
+    z: number,
+    rotation: number
+  ): { position: { x: number; z: number }; rotation: number };
+  /**
+   * Wall-aware catalog placement (snaps doors/windows/cameras to walls).
+   * `rotation` turns anything that isn't wall-mounted (the ghost's R).
+   */
+  placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string;
 }
 
 export function useItemPlacement({
@@ -50,6 +70,7 @@ export function useItemPlacement({
   view,
   allSelectedIds,
   frontGap,
+  refusePurchase,
 }: UseItemPlacementParams): UseItemPlacementResult {
   // Keyed on the numbers, so a fresh outline object each render doesn't
   // rebuild the callbacks.
@@ -60,9 +81,40 @@ export function useItemPlacement({
     [gapX0, gapX1]
   );
 
+  /** Grid, neighbour and wall snaps for a free-standing item, as the toggles ask. */
+  const snapFree = useCallback(
+    (item: FurnitureItem, x: number, z: number, excludeIds?: ReadonlySet<string>) => {
+      let result = { x, z };
+      if (view.snapToGrid) {
+        result = {
+          x: snapValueToGrid(result.x, GRID_SIZE_METERS),
+          z: snapValueToGrid(result.z, GRID_SIZE_METERS),
+        };
+      }
+      if (view.snapToItems) {
+        result = snapToNeighbors({
+          position: result,
+          movingItem: item,
+          otherItems: activeFloor.items,
+          ...(excludeIds ? { excludeIds } : {}),
+        });
+      }
+      if (view.snapToWall) {
+        result = snapPositionToWall({
+          position: result,
+          item,
+          roomWidth,
+          roomDepth,
+        });
+      }
+      return result;
+    },
+    [view.snapToGrid, view.snapToItems, view.snapToWall, activeFloor.items, roomWidth, roomDepth]
+  );
+
   const snapPosition = useCallback(
     (itemId: string, x: number, z: number) => {
-      let result = { x, z };
+      const result = { x, z };
       const item = activeFloor.items.find((entry) => entry.id === itemId);
 
       // Doors and windows have to live on a wall — there's no such thing as
@@ -82,52 +134,49 @@ export function useItemPlacement({
       // Security cameras follow the cursor freely while dragging (no per-frame
       // wall-snap — that made them teleport/flip between walls). They snap onto
       // the nearest wall and orient into the room on release, in handleDragEnd.
+      if (!item) {
+        return view.snapToGrid
+          ? { x: snapValueToGrid(x, GRID_SIZE_METERS), z: snapValueToGrid(z, GRID_SIZE_METERS) }
+          : result;
+      }
 
-      if (view.snapToGrid) {
-        result = {
-          x: snapValueToGrid(result.x, GRID_SIZE_METERS),
-          z: snapValueToGrid(result.z, GRID_SIZE_METERS),
-        };
+      // Same membership as use-item-drag's session: locked co-selected
+      // items stay put, so they remain valid targets.
+      const group =
+        allSelectedIds && allSelectedIds.size > 1 && allSelectedIds.has(itemId)
+          ? new Set(
+              activeFloor.items
+                .filter((entry) => allSelectedIds.has(entry.id) && !entry.locked)
+                .map((entry) => entry.id)
+            )
+          : undefined;
+      return snapFree(item, result.x, result.z, group);
+    },
+    [view.snapToGrid, activeFloor.items, activeFloor.interiorWalls, allSelectedIds, gap, roomWidth, roomDepth, snapFree]
+  );
+
+  const snapCatalogPlacement = useCallback(
+    (catalogItem: CatalogItem, x: number, z: number, rotation: number) => {
+      const interiorWalls = activeFloor.interiorWalls ?? [];
+      if (isOpening(catalogItem.type)) {
+        const snapped = snapOpeningToWall({ position: { x, z }, itemWidth: catalogItem.width, roomWidth, roomDepth, interiorWalls, ...gap });
+        return { position: snapped.position, rotation: snapped.rotation };
       }
-      if (view.snapToItems && item) {
-        // Same membership as use-item-drag's session: locked co-selected
-        // items stay put, so they remain valid targets.
-        const group =
-          allSelectedIds && allSelectedIds.size > 1 && allSelectedIds.has(itemId)
-            ? new Set(
-                activeFloor.items
-                  .filter((entry) => allSelectedIds.has(entry.id) && !entry.locked)
-                  .map((entry) => entry.id)
-              )
-            : undefined;
-        result = snapToNeighbors({
-          position: result,
-          movingItem: item,
-          otherItems: activeFloor.items,
-          ...(group ? { excludeIds: group } : {}),
-        });
-      }
-      if (view.snapToWall && item) {
-        result = snapPositionToWall({
-          position: result,
-          item,
+      if (catalogItem.type === 'security-camera') {
+        const snapped = snapWallMountedItem({
+          position: { x, z },
+          itemWidth: catalogItem.width,
+          itemDepth: catalogItem.depth,
           roomWidth,
           roomDepth,
+          interiorWalls,
+          ...gap,
         });
+        return { position: snapped.position, rotation: snapped.rotation };
       }
-      return result;
+      return { position: snapFree(ghostItem(catalogItem, { x, z }, rotation), x, z), rotation };
     },
-    [
-      view.snapToGrid,
-      view.snapToWall,
-      view.snapToItems,
-      activeFloor.items,
-      activeFloor.interiorWalls,
-      allSelectedIds,
-      gap,
-      roomWidth,
-      roomDepth,
-    ]
+    [activeFloor.interiorWalls, gap, roomWidth, roomDepth, snapFree]
   );
 
   const getDragPlaneY = useCallback(() => activeFloorY, [activeFloorY]);
@@ -139,11 +188,12 @@ export function useItemPlacement({
    * openings only make sense embedded in a wall.
    */
   const placeCatalogItem = useCallback(
-    (catalogItem: CatalogItem, position?: { x: number; z: number }) => {
+    (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number) => {
       // Budget guard (#136): the budget used to be pure decoration — nothing
       // in the buy flow consulted it. Going over now asks instead of
       // silently proceeding (and instead of hard-blocking: it's a sandbox).
       const price = catalogItem.price ?? 0;
+      if (refusePurchase?.(price)) return '';
       if (price > 0 && buildingCost + price > DEFAULT_BUDGET && typeof window !== 'undefined') {
         const proceed = window.confirm(
           `This ${CURRENCY_SYMBOL}${price.toLocaleString()} purchase puts you over the ` +
@@ -196,10 +246,13 @@ export function useItemPlacement({
         const outsidePos = { x: 0, z: roomDepth / 2 + catalogItem.depth / 2 + 0.5 };
         return actions.addCatalogItem(catalogItem, outsidePos);
       }
-      return actions.addCatalogItem(catalogItem, position);
+      const id = actions.addCatalogItem(catalogItem, position);
+      // updateItem: the item is born locked, and setRotation refuses that (#209).
+      if (rotation) actions.updateItem(id, { rotation });
+      return id;
     },
-    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth, buildingCost, gap]
+    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth, buildingCost, refusePurchase, gap]
   );
 
-  return { snapPosition, getDragPlaneY, placeCatalogItem };
+  return { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem };
 }

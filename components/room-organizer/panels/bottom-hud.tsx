@@ -7,13 +7,10 @@ import { useEdgeVar } from '../hooks/use-edge-var';
 import { useEvent } from '../hooks/use-event';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { useSheetInset } from '../hooks/use-sheet-inset';
-import { activeWriteOff } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
-import { totalCost } from '../lib/geometry';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
 import { generateRoomShape } from '../lib/room-shapes';
-import { ENTRANCE_DOOR_ID } from '../lib/street';
-import { surpriseLayout } from '../lib/surprise';
+import { surpriseFloorItems, surpriseReplacesFurniture } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
 import { CameraPad } from './camera-pad';
 import { CatalogStrip } from './catalog-strip';
@@ -38,7 +35,7 @@ export interface BottomHudProps {
 // layout through its context, so the children that only take callbacks are
 // memoised too.
 export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem }: BottomHudProps): JSX.Element {
-  const { layout, activeFloor, actions, isReady, error, playCue } = useRoomEditor();
+  const { layout, activeFloor, activeFloorIndex, actions, isReady, error, playCue } = useRoomEditor();
   const view = useViewSettings('drawWallMode', 'view2D', 'walkthroughMode');
   const { toggle, setView, setGameMode } = useEditorViewActions();
   const gameMode = useEditorView((state) => state.gameMode);
@@ -223,25 +220,16 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           }
         }}
         onSurprise={() => {
-          // Surprise replaces the whole floor — never wipe placed furniture
-          // without asking (#105). An empty floor proceeds silently.
+          // Surprise replaces the furniture on the floor — never wipe it
+          // without asking (#105). Structure and garden stay (#448).
           if (
-            activeFloor.items.length > 0 &&
-            !window.confirm('Replace everything on this floor with a surprise layout?')
+            surpriseReplacesFurniture(activeFloor.items) &&
+            !window.confirm('Replace the furniture on this floor with a surprise layout?')
           ) {
             return;
           }
-          const otherFloorsCost =
-            totalCost(layout.floors.flatMap((f) => f.items)) - totalCost(activeFloor.items);
-          const items = surpriseLayout({
-            roomWidth: layout.width,
-            roomDepth: layout.height,
-            // Replaces the active floor: spend what the other floors leave (#136).
-            // Under the hard budget, sell-back losses are spent too (#463e).
-            maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost - activeWriteOff(layout)),
-          });
-          // The entrance door is structure, not furniture — keep it (#273).
-          actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);
+          // Spends what the rest of the building leaves of the budget (#136).
+          actions.replaceItems(surpriseFloorItems(layout, activeFloorIndex, DEFAULT_BUDGET));
           setSelectedItemId(null);
           setExtraSelectedIds(new Set());
         }}

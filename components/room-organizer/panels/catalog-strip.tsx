@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
+import { armGhostPlacement, useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { useScrollCue } from '../hooks/use-scroll-cue';
@@ -340,12 +340,16 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, ove
   return (
     <button
       type="button"
-      onClick={onAdd}
+      // A click or tap picks the item up as a placement ghost (#463 d).
+      onClick={() => {
+        if (!blocked) armGhostPlacement();
+        onAdd();
+      }}
       aria-disabled={blocked || undefined}
       title={
         blocked
           ? `${item.name} — ${blockedReason}`
-          : `${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Drag onto the 3D view to place precisely, or press Enter to place and position it with the keyboard.`
+          : `${item.name} — ${CURRENCY_SYMBOL}${item.price.toLocaleString()}. Click to pick it up and click again to place it, drag it onto the view, or press Enter to place and position it with the keyboard.`
       }
       {...roving}
       draggable={!blocked}

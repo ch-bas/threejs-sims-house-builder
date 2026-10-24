@@ -6,17 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
-import { activeWriteOff } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
-import { totalCost } from '../lib/geometry';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { buildingExportFileName, downloadTextFile, planExportFileName } from '../lib/plan-export/download';
 import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
 import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
-import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from '../lib/street';
-import { surpriseLayout } from '../lib/surprise';
+import { ENTRANCE_WALL_ID } from '../lib/street';
+import { surpriseFloorItems, surpriseReplacesFurniture } from '../lib/surprise';
 import { PrintPlanControl } from './print-options';
 import type { FurnitureItem } from '../lib/types';
 
@@ -28,7 +26,7 @@ export interface ActionsPanelProps {
 }
 
 export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
-  const { layout, activeFloor, actions, isReady, playCue } = useRoomEditor();
+  const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue } = useRoomEditor();
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -94,26 +92,16 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
           </div>
           <Button
             onClick={() => {
-              // Surprise replaces the whole floor — never wipe placed furniture
-              // without asking (#105). An empty floor proceeds silently.
+              // Surprise replaces the furniture on the floor — never wipe it
+              // without asking (#105). Structure and garden stay (#448).
               if (
-                hasItems &&
-                !window.confirm('Replace everything on this floor with a surprise layout?')
+                surpriseReplacesFurniture(activeFloor.items) &&
+                !window.confirm('Replace the furniture on this floor with a surprise layout?')
               ) {
                 return;
               }
-              // The generated set replaces the active floor, so its budget is
-              // whatever the OTHER floors leave of the building budget (#136).
-              const otherFloorsCost =
-                totalCost(layout.floors.flatMap((f) => f.items)) - totalCost(activeFloor.items);
-              const items = surpriseLayout({
-                roomWidth: layout.width,
-                roomDepth: layout.height,
-                // Under the hard budget, sell-back losses are spent too (#463e).
-                maxCost: Math.max(0, DEFAULT_BUDGET - otherFloorsCost - activeWriteOff(layout)),
-              });
-              // The entrance door is structure, not furniture — keep it (#273).
-              actions.replaceItems([...activeFloor.items.filter((item) => item.id === ENTRANCE_DOOR_ID), ...items]);
+              // Spends what the rest of the building leaves of the budget (#136).
+              actions.replaceItems(surpriseFloorItems(layout, activeFloorIndex, DEFAULT_BUDGET));
               setSelectedItemId(null);
               setExtraSelectedIds(new Set());
             }}
