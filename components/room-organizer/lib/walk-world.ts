@@ -76,6 +76,8 @@ export interface WalkStair {
   top: StairLanding;
   /** Just before the bottom tread, on the stair's own storey. */
   foot: StairLanding;
+  /** Bounds of the hole it cuts in the storey above (its cut treads), or null. */
+  hole: { minX: number; maxX: number; minZ: number; maxZ: number } | null;
 }
 
 interface Porch {
@@ -244,6 +246,16 @@ function buildStair(
   });
   const last = treads[treads.length - 1];
   if (last) last.top = true;
+  const cut = treads.filter((tread) => tread.cut);
+  const hole =
+    cut.length > 0
+      ? {
+          minX: Math.min(...cut.map((tread) => tread.minX)),
+          maxX: Math.max(...cut.map((tread) => tread.maxX)),
+          minZ: Math.min(...cut.map((tread) => tread.minZ)),
+          maxZ: Math.max(...cut.map((tread) => tread.maxZ)),
+        }
+      : null;
   return {
     id: item.id,
     floorIndex,
@@ -254,6 +266,7 @@ function buildStair(
     treads,
     top: landingPast(centroids, treads.length - 1, treads.length - 2),
     foot: landingPast(centroids, 0, 1),
+    hole,
   };
 }
 
@@ -384,4 +397,43 @@ export function walkSurfaceAt(
   const y = Number.isNaN(porchY) ? groundHeightAt(world.terrain, z, world.halfDepth) : porchY;
   offer(world, footY, fromKind, y, 'ground', -1, out);
   return pick.found;
+}
+
+function rectDistance(minX: number, maxX: number, minZ: number, maxZ: number, x: number, z: number): number {
+  const dx = Math.max(minX - x, 0, x - maxX);
+  const dz = Math.max(minZ - z, 0, z - maxZ);
+  return Math.hypot(dx, dz);
+}
+
+/**
+ * How far (x, z) is from a way between storeys on `floorIndex` (#446): the
+ * footprint of a flight on it, or a stairwell cut in it by a flight from
+ * below. Only from there can the walker see another storey; elsewhere the
+ * ceiling and the floor hide them. Allocation-free.
+ */
+export function distanceToStairwell(world: WalkWorld, floorIndex: number, x: number, z: number): number {
+  let best = Infinity;
+  for (const stair of world.stairsByFloor[floorIndex] ?? []) {
+    best = Math.min(best, rectDistance(stair.minX, stair.maxX, stair.minZ, stair.maxZ, x, z));
+  }
+  for (const stair of world.stairsByFloor[floorIndex - 1] ?? []) {
+    const hole = stair.hole;
+    if (hole) best = Math.min(best, rectDistance(hole.minX, hole.maxX, hole.minZ, hole.maxZ, x, z));
+  }
+  return best;
+}
+
+/** A walker this close to a stairwell sees the storey through it… */
+export const STAIRWELL_VIEW_ENTER = 2.5;
+/** …and keeps seeing it until this far, so the boundary doesn't flicker. */
+export const STAIRWELL_VIEW_LEAVE = 3;
+
+/**
+ * Whether the storeys either side of the walker's should be drawn (#446):
+ * on a flight always; on a floor near a stairwell, with hysteresis
+ * (`wasNear` is the last answer).
+ */
+export function seesNeighbourStoreys(wasNear: boolean, kind: WalkSurfaceKind, stairwellDistance: number): boolean {
+  if (kind === 'tread') return true;
+  return stairwellDistance < (wasNear ? STAIRWELL_VIEW_LEAVE : STAIRWELL_VIEW_ENTER);
 }

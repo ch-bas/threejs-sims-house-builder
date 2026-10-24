@@ -141,6 +141,12 @@ export interface UseSceneEffectsParams {
    * below. Outside, the whole house shows.
    */
   walkIndoors?: boolean;
+  /**
+   * Indoors, the walker is on a flight or near a stairwell: the storeys
+   * directly above and below show too. Elsewhere the ceiling and the floor
+   * hide them, so only the walker's own storey is drawn.
+   */
+  walkNearStairs?: boolean;
 }
 
 export function useSceneEffects({
@@ -166,6 +172,7 @@ export function useSceneEffects({
   wallSnapResult,
   measurementPoints,
   walkIndoors = false,
+  walkNearStairs = false,
 }: UseSceneEffectsParams): void {
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   // The furniture groups in the scene by furnitureMeshKey, with the build
@@ -190,12 +197,13 @@ export function useSceneEffects({
   // so nothing is ghosted. Leaving restores the user's own choice.
   const allFloors = view.showAllFloors || walkthroughActive;
   const ghostOtherFloors = otherFloorGhostOpacity(allFloors, wallDisplay, false) !== undefined;
-  // Every storey is built while walking, but indoors only the walker's and
-  // its neighbours are drawn: a tall house would otherwise draw every room
-  // of every floor each frame. Hidden, not rebuilt, so walking up a flight
-  // flips visibility only. -1 / -1 shows everything.
-  const shownFrom = walkthroughActive && walkIndoors ? activeFloorIndex - 1 : -1;
-  const shownTo = walkthroughActive && walkIndoors ? activeFloorIndex + 1 : -1;
+  // Every storey is built while walking, but indoors only the walker's is
+  // drawn, with its neighbours while it is on or near the stairs: a tall
+  // house would otherwise draw every room of every floor each frame. Hidden,
+  // not rebuilt, so walking about flips visibility only. -1 / -1 shows all.
+  const walkSpan = walkNearStairs ? 1 : 0;
+  const shownFrom = walkthroughActive && walkIndoors ? activeFloorIndex - walkSpan : -1;
+  const shownTo = walkthroughActive && walkIndoors ? activeFloorIndex + walkSpan : -1;
   const storeyRangeRef = useRef({ from: shownFrom, to: shownTo });
   storeyRangeRef.current = { from: shownFrom, to: shownTo };
   // What the shell and partitions depend on of the active floor: only which

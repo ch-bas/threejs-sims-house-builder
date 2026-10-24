@@ -984,10 +984,14 @@ components/
   solid with the roof, as ALL floors does with the walls up (the scene
   effects key on `allFloors`): the flight climbs into the real storey
   above, the stairs show from the landing, and the house is whole from the
-  garden. Indoors only the walker's storey and the ones directly above
-  and below are drawn (the rest are hidden, not rebuilt: shell and
+  garden. Indoors only the walker's storey is drawn (the ceiling and the
+  floor hide the rest), plus the ones directly above and below while it is
+  on a flight or within 2.5 m of a stairwell or flight on its storey
+  (released at 3 m, so the edge doesn't flicker; `seesNeighbourStoreys`).
+  The rest are hidden, not rebuilt (shell and
   partition objects carry their storey in `userData.storey`, walls are
-  flagged `offStorey` for `applyWallDisplay`); out on the lot the whole
+  flagged `offStorey` for `applyWallDisplay`). The roof shows with the
+  top storey. Out on the lot the whole
   house and its roof show. Only the walker's storey is lit, since point
   lights cast no shadow. The #359 ceiling plate stays under the storey
   above (a floor plate is invisible from below); its stairwell shafts go.

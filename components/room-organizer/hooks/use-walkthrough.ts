@@ -10,7 +10,13 @@ import {
 import { interacts, releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
 import { findSeat, seatPose } from '../lib/walk-interact';
 import { walkArrival, walkSpawn, type WalkPose } from '../lib/walk-spawn';
-import { buildWalkWorld, eyeOffsetForStorey, type WalkWorld } from '../lib/walk-world';
+import {
+  buildWalkWorld,
+  distanceToStairwell,
+  eyeOffsetForStorey,
+  seesNeighbourStoreys,
+  type WalkWorld,
+} from '../lib/walk-world';
 import type { StreetSite } from '../lib/street-row';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -65,6 +71,11 @@ export interface UseWalkthroughResult {
   seated: boolean;
   /** The walker is out on the lot (or in the porch): the whole house is drawn (#446). */
   outside: boolean;
+  /**
+   * Indoors, the walker is on a flight or near a stairwell, where the storeys
+   * either side of its own can be seen; elsewhere the ceiling hides them (#446).
+   */
+  nearStairs: boolean;
   /** The touch stick (#446): x right, y forward, each in [−1, 1]. */
   setStick(x: number, y: number): void;
   /** Sit on the seat in reach, or stand up (`E`, or the HUD's button on touch). */
@@ -101,6 +112,7 @@ interface WalkSession {
   seated: { x: number; z: number } | null;
   seatTargetId: string | null;
   outside: boolean;
+  nearStairs: boolean;
   /** The floor the walker last reported, and the reports React hasn't echoed yet. */
   reportedFloor: number;
   pendingFloors: number[];
@@ -144,6 +156,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   const [seatName, setSeatName] = useState<string | null>(null);
   const [seated, setSeated] = useState(false);
   const [outside, setOutside] = useState(false);
+  const [nearStairs, setNearStairs] = useState(false);
 
   // Built only when what they read changes, never per frame (#156); outside
   // walkthrough they're skipped entirely.
@@ -187,6 +200,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     seated: null,
     seatTargetId: null,
     outside: false,
+    nearStairs: false,
     reportedFloor: 0,
     pendingFloors: [],
   });
@@ -256,6 +270,26 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       transition.t = 0;
     };
 
+    // What the walker can see of the house: all of it from outside; indoors
+    // its own storey, and the ones either side near a stairwell. React state
+    // changes only when an answer flips.
+    const updateView = (wasNear: boolean): void => {
+      const walker = session.walker;
+      const isOutside = walker.kind === 'ground';
+      if (isOutside !== session.outside) {
+        session.outside = isOutside;
+        setOutside(isOutside);
+      }
+      const world = worldRef.current;
+      const near = world
+        ? seesNeighbourStoreys(wasNear, walker.kind, distanceToStairwell(world, walker.floorIndex, walker.x, walker.z))
+        : false;
+      if (near !== session.nearStairs) {
+        session.nearStairs = near;
+        setNearStairs(near);
+      }
+    };
+
     const placeAt = (pose: WalkPose): void => {
       const walker = session.walker;
       walker.x = pose.x;
@@ -264,8 +298,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       walker.kind = pose.kind;
       walker.floorIndex = pose.floorIndex;
       session.seated = null;
-      session.outside = pose.kind === 'ground';
-      setOutside(session.outside);
+      updateView(false);
       transition.active = false;
       session.eyeY = eyeFor(walker);
       camera.position.set(walker.x, session.eyeY, walker.z);
@@ -518,11 +551,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           const world = worldRef.current;
           if (world) advanceWalker(world, collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS, walker, moveX, moveZ, WALKER_RADIUS);
           dirty = true;
-          const isOutside = walker.kind === 'ground';
-          if (isOutside !== session.outside) {
-            session.outside = isOutside;
-            setOutside(isOutside);
-          }
+          updateView(session.nearStairs);
           // Climbing onto the other storey makes it the active floor (#446).
           if (walker.floorIndex !== session.reportedFloor) {
             session.reportedFloor = walker.floorIndex;
@@ -575,6 +604,9 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       setSeated(false);
       setSeatName(null);
       setOutside(false);
+      setNearStairs(false);
+      session.outside = false;
+      session.nearStairs = false;
       for (const fn of cleanup) {
         try {
           fn();
@@ -623,5 +655,5 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   }, []);
   const toggleSit = useCallback(() => toggleSitRef.current?.(), []);
 
-  return { lockRefused, locked, seatName: seated ? null : seatName, seated, outside, setStick, toggleSit };
+  return { lockRefused, locked, seatName: seated ? null : seatName, seated, outside, nearStairs, setStick, toggleSit };
 }

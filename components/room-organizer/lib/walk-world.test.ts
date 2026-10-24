@@ -10,7 +10,17 @@ import {
   type WalkCollider,
   type WalkerState,
 } from './walk-collision';
-import { buildWalkWorld, eyeOffsetForStorey, walkSurfaceAt, type WalkBuilding, type WalkSurface } from './walk-world';
+import {
+  STAIRWELL_VIEW_ENTER,
+  STAIRWELL_VIEW_LEAVE,
+  buildWalkWorld,
+  distanceToStairwell,
+  eyeOffsetForStorey,
+  seesNeighbourStoreys,
+  walkSurfaceAt,
+  type WalkBuilding,
+  type WalkSurface,
+} from './walk-world';
 import type { FloorLayout, FurnitureItem, InteriorWall } from './types';
 
 const RADIUS = 0.3;
@@ -279,5 +289,27 @@ describe('eyeOffsetForStorey', () => {
   it('is 1.6 m, ducking under a low ceiling', () => {
     expect(eyeOffsetForStorey(3)).toBe(1.6);
     expect(eyeOffsetForStorey(1.1)).toBeCloseTo(0.9, 9);
+  });
+});
+
+describe('seeing the storeys either side (#446)', () => {
+  const world = buildWalkWorld(building([STAIRS]));
+
+  it('measures to the flight on the storey and to the stairwell above it', () => {
+    // Flight footprint x in [2.6, 3.8], z in [-0.9, 1.5].
+    expect(distanceToStairwell(world, 0, 0.6, 0)).toBeCloseTo(2, 6);
+    expect(distanceToStairwell(world, 0, 3.2, 0)).toBe(0);
+    // Upstairs only the cut treads are a hole: from four goings up the flight.
+    expect(distanceToStairwell(world, 1, 3.2, -1.5)).toBeCloseTo(-0.9 + (4 * 2.4) / 14 + 1.5, 6);
+    expect(distanceToStairwell(world, 1, -3, -3)).toBeGreaterThan(5);
+  });
+
+  it('a flight always shows them; a floor near a stairwell does, with hysteresis', () => {
+    expect(seesNeighbourStoreys(false, 'tread', 10)).toBe(true);
+    expect(seesNeighbourStoreys(false, 'floor', STAIRWELL_VIEW_ENTER - 0.01)).toBe(true);
+    expect(seesNeighbourStoreys(false, 'floor', STAIRWELL_VIEW_ENTER + 0.2)).toBe(false);
+    // Once near, it holds until the far threshold: no flicker at the edge.
+    expect(seesNeighbourStoreys(true, 'floor', STAIRWELL_VIEW_ENTER + 0.2)).toBe(true);
+    expect(seesNeighbourStoreys(true, 'floor', STAIRWELL_VIEW_LEAVE + 0.01)).toBe(false);
   });
 });
