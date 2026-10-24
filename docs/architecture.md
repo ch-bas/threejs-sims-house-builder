@@ -81,6 +81,7 @@ components/
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
+    │   ├── npc-seats.ts                 Where walkers sit: seat slots, facing, approach points
     │   ├── walk-input.ts                Walkthrough frame-time cap, which keydowns walk (no Ctrl/Cmd/Alt chords), E to interact
     │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
     │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
@@ -132,6 +133,7 @@ components/
     │   │   ├── human-figure.ts          Procedural jointed figure + walk pose
     │   │   └── builders-structure.ts    Door, window, stairs
     │   ├── people-model.ts              people.glb loader, cloning (shared geometry), box picking, clip names
+    │   ├── people-outfits.ts            Body regions from skin weights, outfits, hair on the head bone
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
@@ -173,7 +175,7 @@ components/
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
-    │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits
+    │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits; giving way, sitting, activities
     │   ├── use-weather.ts               Self-invalidating rain / snow loop
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
