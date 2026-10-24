@@ -22,11 +22,11 @@ export interface QualityProfile {
 }
 
 /** Desktop and tablet cap: sharp on 2× displays, no more. */
-export const DESKTOP_PIXEL_RATIO_CAP = 2;
+const DESKTOP_PIXEL_RATIO_CAP = 2;
 /** Phone cap: a 3× phone shades ~44% fewer pixels than at 2, and antialiasing hides the difference. */
-export const PHONE_PIXEL_RATIO_CAP = 1.5;
+const PHONE_PIXEL_RATIO_CAP = 1.5;
 /** Short sides at or under this are phones (the largest phones are ~480 CSS px; an iPad mini is 744). */
-export const PHONE_MAX_SHORT_SIDE = 500;
+const PHONE_MAX_SHORT_SIDE = 500;
 
 export function isPhone(input: Pick<QualityInput, 'coarsePointer' | 'screenShortSide'>): boolean {
   return input.coarsePointer && input.screenShortSide > 0 && input.screenShortSide <= PHONE_MAX_SHORT_SIDE;

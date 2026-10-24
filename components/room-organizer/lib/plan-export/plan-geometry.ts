@@ -14,10 +14,6 @@ import { isOpening, isWallMounted } from '../opening-snap';
 import { computeFloorOpenings, floorOpeningOutline, stairPlanSymbol, stairTreadLines } from '../stairs';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../types';
 
-/** Duplicated from canvas-2d/render.ts (`INTERIOR_WALL_THICKNESS_M`), which
- * mirrors the 0.16 m modelled in three/interior-walls.ts. */
-export const INTERIOR_WALL_THICKNESS_M = 0.16;
-
 /** A placed item: `position` narrowed to non-optional. */
 export type PlacedItem = FurnitureItem & { position: NonNullable<FurnitureItem['position']> };
 
@@ -49,7 +45,7 @@ export function splitPlanItems(items: readonly FurnitureItem[]): PlanItems {
  * `-(item.rotation)` (canvas rotate() is clockwise while Three's rotateY is
  * CCW): a local offset (lx, lz) maps to
  *   (lx·cosθ + lz·sinθ, −lx·sinθ + lz·cosθ).
- * Consistent with `rotatedHalfExtents` in lib/geometry.ts, whose AABB is the
+ * Consistent with `rotatedHalfExtents` in lib/footprint.ts, whose AABB is the
  * max |x|/|z| of these corners.
  */
 export function itemWorldCorners(item: PlacedItem): Array<{ x: number; z: number }> {
@@ -233,16 +229,6 @@ export function growBounds(bounds: PlanBounds, marginM: number): PlanBounds {
   };
 }
 
-/**
- * The sheet a plan is drawn on: `planContentBounds` grown by `marginM` on
- * every side for the title, room dimensions and scale bar. With no item
- * outside the walls this is exactly the old room + margin sheet, so
- * indoor-only exports are unchanged (#287).
- */
-export function planBounds(layout: RoomLayout, floor: FloorLayout, marginM: number): PlanBounds {
-  return growBounds(planContentBounds(layout, floor), marginM);
-}
-
 /** A coverage disc set: three concentric rings at ⅓, ⅔ and the full range. */
 export interface CoverageRings {
   kind: 'wifi' | 'cctv';
@@ -324,7 +310,7 @@ export interface PlanDimension {
 }
 
 /** Interior walls shorter than this carry no dimension string — the label would not fit. */
-export const MIN_DIMENSIONED_WALL_M = 0.3;
+const MIN_DIMENSIONED_WALL_M = 0.3;
 
 /** "4.00 m": two decimals, the precision the wall tools snap to. */
 export function formatDimension(metres: number): string {

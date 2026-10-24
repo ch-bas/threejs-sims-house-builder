@@ -180,8 +180,6 @@ export const FURNITURE_CATALOG = [
   { type: 'window', category: 'structure', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, color: '#90CAF9', icon: '🪟', price: 240 },
 ] as const satisfies readonly CatalogItem[];
 
-export const FURNITURE_TYPES_WITH_SIGNALS = ['wifi', 'cctv'] as const;
-
 export type RoomTemplateKey = 'bedroom' | 'livingRoom' | 'office' | 'kitchen' | 'bathroom' | 'studio' | 'twoStory';
 
 function singleFloorTemplate(

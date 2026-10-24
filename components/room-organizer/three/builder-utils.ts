@@ -27,7 +27,7 @@ export function markSharedGeometry(geometry: ThreeNS.BufferGeometry): void {
   sharedGeometries.add(geometry);
 }
 
-export function isSharedGeometry(geometry: ThreeNS.BufferGeometry): boolean {
+function isSharedGeometry(geometry: ThreeNS.BufferGeometry): boolean {
   return sharedGeometries.has(geometry);
 }
 

@@ -1,5 +1,6 @@
 import { STORAGE_KEY } from './constants';
 import { notify } from './editor-notices';
+import { downloadTextFile } from './plan-export/download';
 import { isUntouched } from './restore-point';
 import { parseStoredLayout, storedEntryCount } from './schema';
 import { classifyStorageError, type StorageErrorKind } from './storage-errors';
@@ -445,15 +446,7 @@ export function discardRecoveryCopy(key: string, storage?: RawStore): boolean {
  * go through `downloadLayoutAsJson`.
  */
 export function downloadRawLayout(raw: string, fileName: string): void {
-  const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
-  try {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    link.click();
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
+  downloadTextFile(fileName, 'application/json', raw);
 }
 
 const RELOAD_ATTEMPT_KEY = 'pc-error-reload';

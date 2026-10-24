@@ -331,3 +331,27 @@ describe('openPlanPrintWindow', () => {
     expect(alert).toHaveBeenCalledOnce();
   });
 });
+
+// The popup is written with document.write, so any user text that reached it
+// unescaped would run in a window the app opened (#455).
+describe('buildPrintDocument escaping (#455)', () => {
+  const SCRIPT = '<script>alert(1)</script>';
+  const ATTR = '" onmouseover="alert(1)';
+
+  it('escapes every user string: house, floors, items, colours and zones, on every sheet', () => {
+    const floor = (id: string) =>
+      makeFloor({
+        id,
+        name: `${ATTR} ${id}`,
+        items: [makeItem({ id: `${id}-a`, name: SCRIPT, color: ATTR }), makeItem({ id: `${id}-b`, name: ATTR, position: { x: 1, z: 1 } })],
+        zones: [{ id: `${id}-z`, name: SCRIPT, color: ATTR, x: -3, z: -3, w: 4, d: 4 }],
+      });
+    const layout = makeLayout({ name: SCRIPT, floors: [floor('g'), floor('f')] });
+    const html = buildPrintDocument(layout, layout.floors[0]!, { schedule: true, allFloors: true }, SCRIPT);
+    expect(html).toContain('class="schedule"');
+    expect(html).not.toContain(SCRIPT);
+    expect(html).not.toContain(ATTR);
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).toContain('&quot; onmouseover=&quot;alert(1)');
+  });
+});

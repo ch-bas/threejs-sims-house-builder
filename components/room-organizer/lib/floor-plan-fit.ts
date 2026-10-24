@@ -44,7 +44,7 @@ export function computeFloorPlanPlacement(
 }
 
 /** Largest side of the composited 3D floor-plan canvas, in pixels. */
-export const FLOOR_PLAN_CANVAS_MAX = 4096;
+const FLOOR_PLAN_CANVAS_MAX = 4096;
 
 /**
  * The offscreen canvas the 3D floor maps 1:1 onto the room (#191): the fitted

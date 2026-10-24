@@ -6,7 +6,8 @@ import {
   GRID_SIZE_METERS,
 } from '../lib/constants';
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
-import { rotatedHalfExtents } from '../lib/geometry';
+import { rotatedHalfExtents } from '../lib/footprint';
+import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
@@ -65,8 +66,6 @@ export interface Render2DOptions {
 }
 
 const PADDING = PLAN_PADDING_PX;
-// Matches the 0.16 m thickness modelled in three/interior-walls.ts.
-const INTERIOR_WALL_THICKNESS_M = 0.16;
 
 /** The world→canvas mapping the 2D renderer draws with (CSS-pixel space). */
 export interface View2DTransform {
@@ -280,8 +279,8 @@ function drawOffPlanMarkers(
 }
 
 /** Fill / outline alpha of a zone's tint, on top of the floor colour or tracing image. */
-export const ZONE_FILL_ALPHA = 0.18;
-export const ZONE_STROKE_ALPHA = 0.7;
+const ZONE_FILL_ALPHA = 0.18;
+const ZONE_STROKE_ALPHA = 0.7;
 /** A zone painted smaller than this (px, either edge) is too small for a label. */
 const ZONE_MIN_LABEL_EDGE_PX = 36;
 /**
@@ -291,14 +290,14 @@ const ZONE_MIN_LABEL_EDGE_PX = 36;
  * them at any scale (a 10 m house on a phone is ~22 px/m), dropping only a
  * name wider than its zone.
  */
-export const ZONE_LABEL_MIN_SCALE = 25;
+const ZONE_LABEL_MIN_SCALE = 25;
 
 /**
  * `#rgb` / `#rrggbb` → `rgba(...)` at the given alpha. Anything else (a
  * named colour from an imported file) is returned as-is: it still paints,
  * just without the tint.
  */
-export function withAlpha(color: string, alpha: number): string {
+function withAlpha(color: string, alpha: number): string {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color)?.[1];
   if (!hex) return color;
   const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
@@ -580,7 +579,7 @@ function drawInteriorWalls(
   ctx.save();
   ctx.strokeStyle = '#555';
   ctx.lineCap = 'butt';
-  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS_M * scale);
+  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS * scale);
   for (const wall of walls) {
     ctx.beginPath();
     ctx.moveTo(offsetX + (wall.x1 + halfW) * scale, offsetY + (wall.z1 + halfD) * scale);

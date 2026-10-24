@@ -254,7 +254,7 @@ export function buildFlowerBed({ THREE, item, hasCollision, baseColor, opacity }
   return group;
 }
 
-export function buildSingleFlower({
+function buildSingleFlower({
   THREE,
   item,
   hasCollision,

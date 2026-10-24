@@ -6,7 +6,7 @@
  * (cross-floor paste is the point) but not a reload — deliberate MVP scope.
  */
 
-import { rotatedHalfExtents } from './geometry';
+import { clampToFootprint } from './footprint';
 import { remapGroupIds } from './groups';
 import { settleWallMountedItem } from './opening-snap';
 import type { FurnitureItem, InteriorWall, Vec2 } from './types';
@@ -110,13 +110,7 @@ export function buildPasteItems(options: PasteOptions): FurnitureItem[] {
     if (settled) return { ...copy, ...settled };
     if (copy.category === 'outdoor') return copy;
 
-    const { halfW, halfD } = rotatedHalfExtents(copy);
-    const maxX = Math.max(0, roomWidth / 2 - halfW);
-    const maxZ = Math.max(0, roomDepth / 2 - halfD);
-    copy.position = {
-      x: Math.min(maxX, Math.max(-maxX, copy.position!.x)),
-      z: Math.min(maxZ, Math.max(-maxZ, copy.position!.z)),
-    };
+    copy.position = clampToFootprint(copy, copy.position!, roomWidth, roomDepth);
     return copy;
   });
 }

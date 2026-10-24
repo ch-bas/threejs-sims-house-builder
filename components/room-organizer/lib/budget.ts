@@ -106,7 +106,7 @@ export function budgetBlockedReason(price: number, remaining: number | null): st
 }
 
 /** A stored write-off the schema accepts. */
-export function isWriteOff(value: unknown): value is number {
+function isWriteOff(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_WRITE_OFF;
 }
 

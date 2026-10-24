@@ -1,5 +1,6 @@
 import { FURNITURE_CATALOG } from './constants';
-import { hasCollisions, itemsOverlap, rotatedHalfExtents, type KeepOutRect } from './geometry';
+import { rotatedHalfExtents } from './footprint';
+import { hasCollisions, itemsOverlap, type KeepOutRect } from './geometry';
 import { remapGroupIds } from './groups';
 import { randomSuffix } from './ids';
 import { isWallMounted, settleWallMountedItem, type WallGap } from './opening-snap';
@@ -144,10 +145,13 @@ function specHalfExtents({ spec, base }: ResolvedSpec): { halfW: number; halfD: 
   return rotatedHalfExtents({ width: base.width, depth: base.depth, rotation: spec.rotation ?? 0 });
 }
 
-// Inset from the EXTERIOR half-width used when clamping generated placements.
-// The room dimensions are exterior measurements, so ~0.35 m (wall thickness
-// plus a small margin) keeps pieces from sitting under or inside the walls.
-const WALL_INSET = 0.35;
+/**
+ * Inset from the EXTERIOR half-width used when clamping generated placements
+ * (sets here, single pieces in lib/surprise.ts). The room dimensions are
+ * exterior measurements, so ~0.35 m (wall thickness plus a small margin) keeps
+ * pieces from sitting under or inside the walls.
+ */
+export const WALL_INSET = 0.35;
 /** Gap between the south wall and outdoor pieces moved out of the house. */
 const GARDEN_GAP = 0.5;
 
@@ -297,7 +301,7 @@ export interface FreeSpaceOptions {
 }
 
 /** Finest spacing of the centres `placeSetInFreeSpace` probes (m). */
-export const FREE_SPACE_STEP = 0.25;
+const FREE_SPACE_STEP = 0.25;
 /** Most probe steps across the room's longer side, so a big house stays cheap. */
 const FREE_SPACE_MAX_STEPS = 40;
 

@@ -119,7 +119,12 @@ function shortHash(input: string): string {
   return (hash >>> 0).toString(36).padStart(6, '0').slice(0, 6);
 }
 
-export function slugify(name: string): string {
+/**
+ * The library save slot a name maps to: ASCII letters, digits and dashes.
+ * Not the download `slugify` (lib/plan-export/download.ts): this one is a
+ * storage key that existing saves were written under, so it must never change.
+ */
+export function librarySlotId(name: string): string {
   const base = name
     .trim()
     .toLowerCase()
@@ -139,7 +144,7 @@ export function slugify(name: string): string {
  * without the overwrite prompt.
  */
 export function layoutSlugExists(name: string): boolean {
-  const id = slugify(name);
+  const id = librarySlotId(name);
   const index = readIndex();
   return (
     index.entries.some((entry) => entry.id === id) ||
@@ -177,7 +182,7 @@ export function saveNamedLayout(layout: RoomLayout, name: string): SaveResult | 
   const trimmed = name.trim() || layout.name || 'Untitled';
   // The slot comes from the full name, as it always has; the stored name is
   // capped like the schema caps it, so the saved house parses unchanged.
-  const id = slugify(trimmed);
+  const id = librarySlotId(trimmed);
   const shown = capText(trimmed, MAX_NAME_LENGTH);
   const index = readIndex();
   const existingIndex = index.entries.findIndex((entry) => entry.id === id);

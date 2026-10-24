@@ -102,3 +102,57 @@ describe('scheduleCsv (#430)', () => {
     expect(lines[4]).toBe('All floors,,,,,,,,,8,78');
   });
 });
+
+describe('the CSV formula guard (#455)', () => {
+  const nameCell = (name: string): string => {
+    const layout = makeLayout({ floors: [makeFloor({ items: [makeItem({ name })] })] });
+    const row = rows(inventoryCsv(layout))[1]!;
+    const prefix = 'Ground Floor,,chair,';
+    const suffix = ',1.00,1.00,1.00,#ffffff,0,0,0,0,no,no,';
+    expect(row.startsWith(prefix) && row.endsWith(suffix), row).toBe(true);
+    return row.slice(prefix.length, row.length - suffix.length);
+  };
+
+  it.each([
+    ['=cmd()', "'=cmd()"],
+    ['+1+1', "'+1+1"],
+    ['-2+3', "'-2+3"],
+    ['@SUM(A1:A9)', "'@SUM(A1:A9)"],
+    ['\t=cmd()', "'\t=cmd()"],
+  ])('neutralises a name starting a formula: %j', (name, cell) => {
+    expect(nameCell(name)).toBe(cell);
+  });
+
+  it('quotes a guarded name that also needs quoting', () => {
+    expect(nameCell('=1,2')).toBe(`"'=1,2"`);
+    expect(nameCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
+  });
+
+  it('writes a quoted "=cmd" so it reads back starting with a quote, which no spreadsheet evaluates', () => {
+    expect(nameCell('"=cmd"')).toBe('"""=cmd"""');
+  });
+
+  it('leaves ordinary names alone', () => {
+    expect(nameCell('Sofa 2-seat')).toBe('Sofa 2-seat');
+    expect(nameCell('Lamp @ desk')).toBe('Lamp @ desk');
+  });
+
+  it('guards every text column, not just the name', () => {
+    const layout = makeLayout({
+      floors: [
+        makeFloor({
+          name: '=floor()',
+          zones: [{ id: 'z', name: '@zone', color: '#f00', x: -4, z: -4, w: 8, d: 8 }],
+          items: [makeItem({ type: '+type', color: '-color' })],
+        }),
+      ],
+    });
+    expect(rows(inventoryCsv(layout))[1]).toBe("'=floor(),,'+type,Chair,1.00,1.00,1.00,'-color,0,0,0,0,no,no,'@zone");
+    expect(rows(scheduleCsv(layout))[1]).toBe("'=floor(),,'+type,Chair,1.00,1.00,1.00,'-color,0,1,0");
+  });
+
+  it('writes a negative coordinate as a number, not a guarded string', () => {
+    const layout = makeLayout({ floors: [makeFloor({ items: [makeItem({ position: { x: -1.5, z: -2 } })] })] });
+    expect(rows(inventoryCsv(layout))[1]).toContain(',-1.5,-2,');
+  });
+});

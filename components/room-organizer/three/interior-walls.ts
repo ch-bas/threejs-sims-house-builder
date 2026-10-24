@@ -1,4 +1,4 @@
-import { interiorWallOpeningSpan } from '../lib/opening-snap';
+import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan } from '../lib/opening-snap';
 import { OPENING_HEAD_CLEARANCE, fitOpeningToStorey } from '../lib/storeys';
 import { FLOOR_HEIGHT_METERS, type FurnitureItem, type InteriorWall } from '../lib/types';
 import { BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
@@ -9,7 +9,6 @@ import type * as ThreeNS from 'three';
 type ThreeModule = typeof import('./three-runtime');
 
 const INTERIOR_WALL_TAG = 'interior-wall';
-const WALL_THICKNESS = 0.16;
 /** Partition height in a classic 3 m storey; see `interiorWallHeight` (#202). */
 const DEFAULT_WALL_HEIGHT = 2.6;
 
@@ -89,8 +88,8 @@ export function renderInteriorWalls(
 
     const geometry =
       openings.length > 0
-        ? buildExtrudedWallGeometry(THREE, length, wallHeight, WALL_THICKNESS, openings)
-        : new THREE.BoxGeometry(length, wallHeight, WALL_THICKNESS);
+        ? buildExtrudedWallGeometry(THREE, length, wallHeight, INTERIOR_WALL_THICKNESS, openings)
+        : new THREE.BoxGeometry(length, wallHeight, INTERIOR_WALL_THICKNESS);
 
     const wallMesh = new THREE.Mesh(geometry, material);
     wallMesh.position.set((wall.x1 + wall.x2) / 2, yOffset + (openings.length > 0 ? 0 : wallHeight / 2), (wall.z1 + wall.z2) / 2);
@@ -120,7 +119,7 @@ export function renderInteriorWalls(
     for (const [from, to] of baseboardRuns(-half + BASEBOARD_WALL_GAP, half - BASEBOARD_WALL_GAP, openings)) {
       const mid = (from + to) / 2;
       const base = new THREE.Mesh(
-        new THREE.BoxGeometry(to - from, BASEBOARD_HEIGHT, WALL_THICKNESS + 0.01),
+        new THREE.BoxGeometry(to - from, BASEBOARD_HEIGHT, INTERIOR_WALL_THICKNESS + 0.01),
         baseMat
       );
       base.position.set(
@@ -274,7 +273,7 @@ export function renderInteriorWallPreview(
   const length = Math.hypot(end.x - start.x, end.z - start.z);
   mesh.visible = length >= 0.05;
   if (!mesh.visible) return;
-  mesh.scale.set(length, wallHeight, WALL_THICKNESS);
+  mesh.scale.set(length, wallHeight, INTERIOR_WALL_THICKNESS);
   mesh.position.set((start.x + end.x) / 2, yOffset + wallHeight / 2, (start.z + end.z) / 2);
   mesh.rotation.y = -Math.atan2(end.z - start.z, end.x - start.x);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeCatalogItem } from './__testfixtures__/fixtures';
-import { rotatedHalfExtents } from './geometry';
+import { rotatedHalfExtents } from './footprint';
 import { footprintCorners, ghostItem, ghostOutlinePoints, GHOST_ITEM_ID, invertClientToWorld } from './placement-ghost';
 
 describe('placement ghost helpers (#463 d)', () => {

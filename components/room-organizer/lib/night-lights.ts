@@ -11,7 +11,7 @@ import type { FloorLayout } from './types';
  * scaled to this scene's photometry rather than to the real world: the sun
  * peaks under 1, so a 60 cd room lamp would blow everything out (#375).
  */
-export const NIGHT_LIGHTS = {
+const NIGHT_LIGHTS = {
   lamp: { bulb: 0.9, candela: 8, range: 7 },
   'floor-lamp': { bulb: 0.9, candela: 10, range: 8 },
   // Placed by `pendantBulbY` instead.

@@ -37,10 +37,10 @@ export interface WeatherField {
   time: number;
 }
 
-export const WEATHER_PARTICLE_COUNT: Record<Precipitation, number> = { rain: 6000, snow: 4500 };
+const WEATHER_PARTICLE_COUNT: Record<Precipitation, number> = { rain: 6000, snow: 4500 };
 /** Particles wrap between these heights: just under the ground line, well over a 4-storey roof. */
-export const WEATHER_FLOOR_Y = -0.5;
-export const WEATHER_CEILING_Y = 22;
+const WEATHER_FLOOR_Y = -0.5;
+const WEATHER_CEILING_Y = 22;
 /** Snow sways this far either side of its resting x; the footprint clearance grows by it. */
 export const SNOW_SWAY = 0.35;
 

@@ -14,16 +14,16 @@ import type { DormerOpening, DormerOpeningKind, DormerSpec, RoofStyle, WallId } 
 export const ROOF_EAVE_OVERHANG = 0.35;
 
 export const MAX_DORMERS = 6;
-export const MAX_DORMER_OPENINGS = 8;
+const MAX_DORMER_OPENINGS = 8;
 export const MIN_DORMER_WIDTH = 0.6;
 export const MAX_DORMER_WIDTH = 8;
-export const MIN_DORMER_HEIGHT = 0.8;
-export const MAX_DORMER_HEIGHT = 2.5;
-export const MAX_DORMER_SETBACK = 2;
-export const DEFAULT_DORMER_HEIGHT = 1.4;
-export const DEFAULT_DORMER_SETBACK = 0.3;
-export const DORMER_OPENING_KINDS: readonly DormerOpeningKind[] = ['casement', 'french', 'sidelight'];
-export const DORMER_SIDES: readonly WallId[] = ['north', 'south', 'east', 'west'];
+const MIN_DORMER_HEIGHT = 0.8;
+const MAX_DORMER_HEIGHT = 2.5;
+const MAX_DORMER_SETBACK = 2;
+const DEFAULT_DORMER_HEIGHT = 1.4;
+const DEFAULT_DORMER_SETBACK = 0.3;
+const DORMER_OPENING_KINDS: readonly DormerOpeningKind[] = ['casement', 'french', 'sidelight'];
+const DORMER_SIDES: readonly WallId[] = ['north', 'south', 'east', 'west'];
 
 /** Headroom kept between a dormer's flat top and the ridge. */
 const RIDGE_CLEARANCE = 0.15;
@@ -106,7 +106,7 @@ function inRange(value: unknown, min: number, max: number): boolean {
   return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 }
 
-export function isDormerOpening(value: unknown): value is DormerOpening {
+function isDormerOpening(value: unknown): value is DormerOpening {
   if (!isPlainObject(value)) return false;
   return (
     DORMER_OPENING_KINDS.includes(value.kind as DormerOpeningKind) &&

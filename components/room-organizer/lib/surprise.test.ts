@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { floorKeepOut } from './floor-keep-out';
-import { hasCollisions, itemsOverlap, rotatedHalfExtents } from './geometry';
+import { rotatedHalfExtents } from './footprint';
+import { hasCollisions, itemsOverlap } from './geometry';
 import { entrancePlanOutline } from './street';
 import { keptBySurprise, surpriseFloorItems, surpriseLayout, surpriseReplacesFurniture } from './surprise';
 

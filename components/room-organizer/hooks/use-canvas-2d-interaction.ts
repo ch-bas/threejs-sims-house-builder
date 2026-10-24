@@ -21,7 +21,7 @@ import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../li
  * a 0.2 m Wi-Fi puck or a 0.12 m-deep window is a 4–8 px target at typical
  * plan scales, so a click a few pixels off its edge should still land.
  */
-export const HIT_SLOP_PX = 6;
+const HIT_SLOP_PX = 6;
 /** Items whose shorter side is under this (m) get the slop. */
 const SMALL_ITEM_MAX_SIDE_M = 0.3;
 

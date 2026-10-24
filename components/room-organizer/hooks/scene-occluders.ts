@@ -22,7 +22,7 @@ const OCCLUDER_CHILDREN = 'children';
  * above the plan, and as a panel it moved the plan whenever drawing started
  * or a zone was named.
  */
-export const PLAN_OCCLUDER_SELECTOR = '[data-plan-occluder]';
+const PLAN_OCCLUDER_SELECTOR = '[data-plan-occluder]';
 /** The phone item sheet: an occluder while `<html data-sheet-open>` is set. */
 export const SHEET_SELECTOR = '.pc-item-popover';
 
@@ -32,7 +32,7 @@ export const SHEET_SELECTOR = '.pc-item-popover';
  * contributes its visible children instead of its own, mostly transparent,
  * box.
  */
-export function sceneOccluderRects(withSheet = true): Rect[] {
+function sceneOccluderRects(withSheet = true): Rect[] {
   const selector = withSheet && document.documentElement.hasAttribute('data-sheet-open')
     ? `${OCCLUDER_SELECTOR}, ${SHEET_SELECTOR}`
     : OCCLUDER_SELECTOR;

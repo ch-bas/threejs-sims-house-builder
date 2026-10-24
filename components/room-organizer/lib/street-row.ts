@@ -64,10 +64,10 @@ export interface StreetSite {
 }
 
 /** Seed used when a layout has none: the street it always showed. */
-export const DEFAULT_STREET_SEED = 1;
+const DEFAULT_STREET_SEED = 1;
 
 /** The row never runs further than this either side of our centre; lib/sun-shadow.ts fits the sun's shadow to it (#282). */
-export const STREET_MAX_HALF_LENGTH = 24;
+const STREET_MAX_HALF_LENGTH = 24;
 /** Kept clear at each end so the last house isn't cut by the scenery's edge. */
 const STREET_END_MARGIN = 2;
 /** The facing row's own pavement-to-wall strip with a front garden; a pavement frontage mirrors ours. */
@@ -103,7 +103,7 @@ const DOOR_PALETTE: readonly string[] = ['#1f3a5f', '#8b1e2d', '#2e5e3a', '#f2f2
 const ROOF_STYLES: readonly StreetRoofStyle[] = ['gable', 'gable', 'hipped', 'hipped', 'flat'];
 
 /** Mulberry32 — the same small PRNG three/outdoor.ts scatters the lot with. */
-export function makeStreetRng(seed: number): () => number {
+function makeStreetRng(seed: number): () => number {
   let state = (seed | 0) || 1;
   return function next(): number {
     state |= 0;

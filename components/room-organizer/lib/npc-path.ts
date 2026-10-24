@@ -12,9 +12,10 @@
  * mid-loop allocates nothing. Randomness is injected for deterministic tests.
  */
 
+import { LOW_PROFILE_MAX_HEIGHT } from './footprint';
 import { isWallHung } from './mount-band';
 import { isWallMounted } from './opening-snap';
-import { type WalkCollider, type WalkCollisionOptions, buildWalkColliders } from './walk-collision';
+import { type WalkCollider, type WalkCollisionOptions, boxCollider, buildWalkColliders } from './walk-collision';
 import type { KeepOutRect } from './geometry';
 import type { FurnitureItem, InteriorWall } from './types';
 
@@ -26,8 +27,6 @@ const CELL_SIZE = 0.2;
 const EXTERIOR_MARGIN = 0.4;
 /** Furniture within this gap of a free cell makes the cell a spot worth stopping at. */
 const INTEREST_GAP = 0.35;
-/** Same low-profile cut as the walker colliders: a rug is walked over. */
-const LOW_PROFILE_MAX_HEIGHT = 0.05;
 /** Destination picks that try a spot by furniture before any free cell. */
 const INTEREST_CHANCE = 0.6;
 const PICK_TRIES = 12;
@@ -122,7 +121,7 @@ export function buildNpcNav(input: NpcNavInput): NpcNav | null {
   for (const item of items) {
     if (!item.position || item.category === 'outdoor') continue;
     if (isWallMounted(item.type) || isWallHung(item.type) || item.height <= LOW_PROFILE_MAX_HEIGHT) continue;
-    const box = boxCollider(item.position.x, item.position.z, item.width, item.depth, item.rotation ?? 0);
+    const box = boxCollider(item.position.x, item.position.z, item.width, item.depth, item.rotation ?? 0, false);
     // Walkers never take the stairs: the flight stays solid for them whatever
     // the first-person walker makes of it.
     if (item.type === 'stairs') colliders.push(box);
@@ -130,7 +129,7 @@ export function buildNpcNav(input: NpcNavInput): NpcNav | null {
   }
   for (const rect of keepOut) {
     colliders.push(
-      boxCollider((rect.x0 + rect.x1) / 2, (rect.z0 + rect.z1) / 2, rect.x1 - rect.x0, rect.z1 - rect.z0, rect.rotation ?? 0)
+      boxCollider((rect.x0 + rect.x1) / 2, (rect.z0 + rect.z1) / 2, rect.x1 - rect.x0, rect.z1 - rect.z0, rect.rotation ?? 0, false)
     );
   }
 
@@ -535,25 +534,6 @@ function nextStamp(nav: NpcNav): number {
     nav.closed.fill(0);
   }
   return nav.stamp;
-}
-
-/** An oriented box in `lib/walk-collision`'s convention (never outdoor: walkers stay in). */
-function boxCollider(cx: number, cz: number, width: number, depth: number, rotation: number): WalkCollider {
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  return {
-    cx,
-    cz,
-    hw: width / 2,
-    hd: depth / 2,
-    ax: cos,
-    az: -sin,
-    bx: sin,
-    bz: cos,
-    aabbHalfW: (width * Math.abs(cos) + depth * Math.abs(sin)) / 2,
-    aabbHalfD: (width * Math.abs(sin) + depth * Math.abs(cos)) / 2,
-    outdoor: false,
-  };
 }
 
 interface GridShape {

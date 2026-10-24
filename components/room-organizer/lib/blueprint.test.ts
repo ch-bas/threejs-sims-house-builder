@@ -153,3 +153,32 @@ describe('blueprintPlan (#377)', () => {
     expect(html).toContain('Pine Tree: 36.0 m outside the walls');
   });
 });
+
+// The popup is written with document.write, so any user text that reached it
+// unescaped would run in a window the app opened (#455).
+describe('openBlueprintPrintWindow escaping (#455)', () => {
+  const SCRIPT = '<script>alert(1)</script>';
+  const ATTR = '" onmouseover="alert(1)';
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('escapes the house, floor, zone and left-off item names and icons', async () => {
+    let html = '';
+    vi.spyOn(window, 'open').mockReturnValue({ document: { write: (m: string) => (html += m), close: () => undefined } } as unknown as Window);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,STUB');
+    const far = makeItem({ id: 'far', type: 'tree', name: SCRIPT, icon: ATTR, position: { x: 40, z: 0 } });
+    const floor = makeFloor({
+      name: ATTR,
+      items: [makeItem(), far],
+      zones: [{ id: 'z', name: SCRIPT, color: '#f00', x: -2, z: -2, w: 4, d: 4 }],
+    });
+    await openBlueprintPrintWindow(makeLayout({ name: SCRIPT, floors: [floor] }), floor);
+    expect(html).toContain('Off the plan');
+    expect(html).not.toContain(SCRIPT);
+    expect(html).not.toContain(ATTR);
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).toContain('&quot; onmouseover=&quot;alert(1)');
+  });
+});

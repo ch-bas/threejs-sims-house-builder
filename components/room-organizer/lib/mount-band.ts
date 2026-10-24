@@ -56,7 +56,7 @@ function pendantDrop(item: Pick<FurnitureItem, 'height'>, storeyHeight: number =
 /** The pendant's shade fills this share of its drop, from the bottom up. */
 export const PENDANT_SHADE_FRACTION = 0.18;
 /** The bulb's centre sits this far up the shade. */
-export const PENDANT_BULB_RISE = 0.55;
+const PENDANT_BULB_RISE = 0.55;
 
 /**
  * Height of a pendant's bulb above its storey's floor (#470): the drawn bulb

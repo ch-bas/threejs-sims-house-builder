@@ -1,3 +1,4 @@
+import { rotatedHalfExtents } from './footprint';
 import type { FurnitureItem, Vec2 } from './types';
 
 export type AlignEdge = 'min-x' | 'center-x' | 'max-x' | 'min-z' | 'center-z' | 'max-z';
@@ -11,19 +12,15 @@ interface ItemBounds {
   halfDepth: number;
 }
 
-function rotatedExtents(rotation: number): { cos: number; sin: number } {
-  return { cos: Math.abs(Math.cos(rotation)), sin: Math.abs(Math.sin(rotation)) };
-}
-
 function bounds(item: FurnitureItem): ItemBounds | null {
   if (!item.position) return null;
-  const { cos, sin } = rotatedExtents(item.rotation ?? 0);
+  const { halfW, halfD } = rotatedHalfExtents(item);
   return {
     id: item.id,
     centerX: item.position.x,
     centerZ: item.position.z,
-    halfWidth: (item.width * cos + item.depth * sin) / 2,
-    halfDepth: (item.width * sin + item.depth * cos) / 2,
+    halfWidth: halfW,
+    halfDepth: halfD,
   };
 }
 

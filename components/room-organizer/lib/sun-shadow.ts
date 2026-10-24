@@ -31,11 +31,11 @@ export interface ShadowSite {
 }
 
 /** Highest roof above its eaves: the tallest pitched roof plus a chimney (three/roof.ts, three/neighbours.ts). */
-export const ROOF_ALLOWANCE = 4.5;
+const ROOF_ALLOWANCE = 4.5;
 /** How far the perimeter trees and their crowns reach past the footprint (three/outdoor.ts). */
-export const LOT_SCENERY_REACH = LOT_MARGIN + 7;
+const LOT_SCENERY_REACH = LOT_MARGIN + 7;
 /** Top of the tallest perimeter tree above its ground. */
-export const TREE_TOP = 7;
+const TREE_TOP = 7;
 /** Tallest storey and deepest house the street generator draws (lib/street-row.ts). */
 const STREET_STOREY_MAX = 3.2;
 const STREET_DEPTH_MAX = 12;
@@ -146,7 +146,7 @@ export function fitSunShadow(sunDirection: Vec3, box: ShadowBox): SunShadowFit {
 }
 
 /** Rotation basis three's `Matrix4.lookAt(eye, target, +Y)` builds for a camera looking along −dir. */
-export function lookAtBasis(dir: Vec3): [Vec3, Vec3, Vec3] {
+function lookAtBasis(dir: Vec3): [Vec3, Vec3, Vec3] {
   let z = normalize(dir);
   let x = cross([0, 1, 0], z);
   if (Math.hypot(...x) === 0) {

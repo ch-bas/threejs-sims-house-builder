@@ -12,7 +12,7 @@ type ThreeModule = typeof import('./three-runtime');
  * and the cone both read it through `cameraMountHeight`, so the 3D light
  * volume connects the lens to the floor wedge.
  */
-export const CAMERA_MOUNT_HEIGHT = 2.3;
+const CAMERA_MOUNT_HEIGHT = 2.3;
 /** The camera head sits this far below the top of its mount run (the item's height). */
 const CAMERA_HEAD_CLEARANCE = 0.1;
 

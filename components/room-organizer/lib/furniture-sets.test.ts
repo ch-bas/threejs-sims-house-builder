@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FURNITURE_CATALOG } from './constants';
+import { rotatedHalfExtents } from './footprint';
 import {
   FURNITURE_SETS,
   buildFurnitureSet,
@@ -9,7 +10,7 @@ import {
   type FurnitureSet,
   type SetItemSnapshot,
 } from './furniture-sets';
-import { hasCollisions, itemInBounds, itemsOverlap, rotatedHalfExtents } from './geometry';
+import { hasCollisions, itemInBounds, itemsOverlap } from './geometry';
 
 const setByKey = (key: string) => FURNITURE_SETS.find((s) => s.key === key)!;
 

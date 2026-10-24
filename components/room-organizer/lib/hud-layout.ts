@@ -5,10 +5,10 @@
  */
 
 /** Portrait phones and small tablets: the HUD docks as a bottom bar. */
-export const PHONE_DOCK_QUERY = '(max-width: 768px)';
+const PHONE_DOCK_QUERY = '(max-width: 768px)';
 
 /** Landscape phones: short and not wide enough for the desktop HUD. */
-export const SHORT_DOCK_QUERY = '(max-width: 1100px) and (max-height: 500px)';
+const SHORT_DOCK_QUERY = '(max-width: 1100px) and (max-height: 500px)';
 
 /** Either compact dock: the catalog becomes one scrolling row of tiles. */
 export const COMPACT_DOCK_QUERY = `${PHONE_DOCK_QUERY}, ${SHORT_DOCK_QUERY}`;
