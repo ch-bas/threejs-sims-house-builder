@@ -275,6 +275,23 @@ export function openPlanPrintWindow(layout: RoomLayout, floor: FloorLayout, opti
   }
   printWindow.document.write(html);
   printWindow.document.close();
+  printWhenLoaded(printWindow);
+}
+
+/**
+ * Print a popup the opener has just written, once its document has loaded
+ * (images included), after a short beat for layout. The opener drives it
+ * rather than an inline `<body onload>`: an about:blank popup inherits the
+ * opener's Content-Security-Policy, which blocks inline handlers (#445).
+ * Called after `document.close()`, because `document.open()` erases the
+ * window's event listeners.
+ */
+export function printWhenLoaded(printWindow: Window): void {
+  const print = (): void => {
+    printWindow.setTimeout(() => printWindow.print(), 200);
+  };
+  if (printWindow.document.readyState === 'complete') print();
+  else printWindow.addEventListener('load', print, { once: true });
 }
 
 interface PrintSheet {
@@ -360,7 +377,7 @@ function renderPrintHtml(input: PrintHtmlInput): string {
       @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     </style>
   </head>
-  <body onload="setTimeout(function(){ window.print(); }, 200)">
+  <body>
     ${pages}
   </body>
 </html>`;

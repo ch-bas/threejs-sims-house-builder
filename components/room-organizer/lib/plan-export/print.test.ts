@@ -312,15 +312,28 @@ describe('openPlanPrintWindow', () => {
     vi.restoreAllMocks();
   });
 
-  it('writes the print document into the popup', () => {
+  it('writes the print document into the popup and prints it from the opener once loaded', () => {
     const floor = makeFloor({ items: [makeItem()] });
     const layout = makeLayout({ floors: [floor] });
     let html = '';
-    const fakeWindow = { document: { write: (markup: string) => (html += markup), close: () => undefined } };
+    let onLoad: (() => void) | undefined;
+    const print = vi.fn();
+    const fakeWindow = {
+      document: { readyState: 'loading', write: (markup: string) => (html += markup), close: () => undefined },
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'load') onLoad = listener;
+      },
+      setTimeout: (callback: () => void) => callback(),
+      print,
+    };
     vi.spyOn(window, 'open').mockReturnValue(fakeWindow as unknown as Window);
     openPlanPrintWindow(layout, floor, { paper: 'A3' });
     expect(html).toContain('@page { size: A3 portrait;');
-    expect(html).toContain('window.print()');
+    // No inline handler: the popup inherits the opener's CSP (#445).
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+    expect(print).not.toHaveBeenCalled();
+    onLoad?.();
+    expect(print).toHaveBeenCalledOnce();
   });
 
   it('alerts instead of throwing when pop-ups are blocked', () => {
