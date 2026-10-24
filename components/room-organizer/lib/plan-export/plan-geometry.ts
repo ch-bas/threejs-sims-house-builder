@@ -45,7 +45,7 @@ export function splitPlanItems(items: readonly FurnitureItem[]): PlanItems {
  * `-(item.rotation)` (canvas rotate() is clockwise while Three's rotateY is
  * CCW): a local offset (lx, lz) maps to
  *   (lx·cosθ + lz·sinθ, −lx·sinθ + lz·cosθ).
- * Consistent with `rotatedHalfExtents` in lib/geometry.ts, whose AABB is the
+ * Consistent with `rotatedHalfExtents` in lib/footprint.ts, whose AABB is the
  * max |x|/|z| of these corners.
  */
 export function itemWorldCorners(item: PlacedItem): Array<{ x: number; z: number }> {
