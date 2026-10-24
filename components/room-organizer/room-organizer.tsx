@@ -787,10 +787,12 @@ export function RoomOrganizer(): JSX.Element {
 
   // Placement ghost (#463 d): a clicked catalogue tile follows the pointer
   // until a click or tap places it.
+  // Another tool (walls, distance, zones, the walkthrough) owns the clicks:
+  // the ghost is put down rather than taking them.
   const placementGhost = usePlacementGhost({
     ghost,
     endGhost,
-    enabled: !walkthroughActive,
+    enabled: !walkthroughActive && !view.drawWallMode && !view.measurementMode && !view.drawZoneMode,
     sceneReady: isReady,
     view2D: view.view2D,
     canvasRef,
@@ -798,6 +800,7 @@ export function RoomOrganizer(): JSX.Element {
     worldPositionFromClient,
     clientToWorld2D,
     snapCatalogPlacement,
+    floorItems: activeFloor.items,
     collides: (item: FurnitureItem) =>
       hasCollisions(item, activeFloor.items, layout.width, layout.height, {
         keepOut,
@@ -820,6 +823,9 @@ export function RoomOrganizer(): JSX.Element {
     floorY: activeFloorY,
     storeyHeight: activeStoreyHeight,
   });
+  // A mode switch (Design, Furnish, Explore) puts the ghost down too.
+  const gameMode = useStore(viewStore, (state) => state.gameMode);
+  useEffect(() => endGhost(), [gameMode, endGhost]);
 
   const { lockRefused: walkthroughLockRefused } = useWalkthrough({
     enabled: isReady && walkthroughActive,

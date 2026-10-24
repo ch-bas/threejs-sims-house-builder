@@ -37,6 +37,7 @@ function setup(overrides: Partial<UsePlacementGhostParams> = {}) {
     worldPositionFromClient: () => null,
     clientToWorld2D: toWorld,
     // Snap to whole metres, so the test sees the snap applied.
+    floorItems: [],
     snapCatalogPlacement: (_item, x, z, rotation) => ({ position: { x: Math.round(x), z: Math.round(z) }, rotation }),
     collides: (item) => (item.position?.x ?? 0) > 2,
     place,
@@ -66,14 +67,14 @@ describe('usePlacementGhost (#463 d)', () => {
     const outline = host.querySelector('polygon')!;
     expect(outline).not.toBeNull();
     act(() => {
-      window.dispatchEvent(pointer('pointermove', W / 2 + 60, H / 2 + 10));
+      document.dispatchEvent(pointer('pointermove', W / 2 + 60, H / 2 + 10));
     });
     // (1.2, 0.2) snaps to (1, 0): the outline is centred there, 50 px/m.
     const xs = outline.getAttribute('points')!.split(' ').map((p) => Number(p.split(',')[0]));
     expect((Math.max(...xs) + Math.min(...xs)) / 2).toBeCloseTo(W / 2 + 50, 5);
     expect(outline.getAttribute('fill')).toContain('127,243,255');
     act(() => {
-      window.dispatchEvent(pointer('pointermove', W / 2 + 160, H / 2));
+      document.dispatchEvent(pointer('pointermove', W / 2 + 160, H / 2));
     });
     expect(outline.getAttribute('fill')).toContain('228,82,72');
   });
@@ -121,7 +122,7 @@ describe('usePlacementGhost (#463 d)', () => {
     });
     (document as { elementFromPoint?: unknown }).elementFromPoint = () => hud;
     act(() => {
-      window.dispatchEvent(pointer('pointerup', W / 2, H - 10));
+      document.dispatchEvent(pointer('pointerup', W / 2, H - 10));
     });
     expect(place).not.toHaveBeenCalled();
   });
@@ -135,6 +136,59 @@ describe('usePlacementGhost (#463 d)', () => {
     endGhost.mockClear();
     rerender({ ...params, ghost: { ...params.ghost } as CatalogItem, enabled: false });
     expect(endGhost).toHaveBeenCalled();
+  });
+
+  it('owns Enter, Space and Escape while held, ahead of the page', () => {
+    const { place, endGhost } = setup();
+    const page = vi.fn();
+    window.addEventListener('keydown', page);
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(place).toHaveBeenCalledTimes(1);
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', shiftKey: true, bubbles: true }));
+    });
+    expect(place).toHaveBeenLastCalledWith(expect.anything(), { x: 0, z: 0 }, 0, true);
+    endGhost.mockClear();
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(endGhost).toHaveBeenCalled();
+    expect(page).not.toHaveBeenCalled();
+    window.removeEventListener('keydown', page);
+  });
+
+  it('places nothing when a second finger turns the press into a pinch', () => {
+    const { plan, place } = setup();
+    act(() => {
+      plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2, { pointerType: 'touch' }));
+      plan.dispatchEvent(pointer('pointerdown', W / 2 + 40, H / 2, { pointerId: 2, isPrimary: false, pointerType: 'touch' }));
+      plan.dispatchEvent(pointer('pointerup', W / 2 + 80, H / 2, { pointerId: 2, isPrimary: false, pointerType: 'touch' }));
+      plan.dispatchEvent(pointer('pointerup', W / 2 - 80, H / 2, { pointerType: 'touch' }));
+    });
+    expect(place).not.toHaveBeenCalled();
+  });
+
+  it('lets an outside-click listener on the document still see a press on the view', () => {
+    const { plan } = setup();
+    const outside = vi.fn();
+    document.addEventListener('pointerdown', outside, true);
+    act(() => {
+      plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2));
+    });
+    expect(outside).toHaveBeenCalled();
+    document.removeEventListener('pointerdown', outside, true);
+  });
+
+  it('re-checks the collision tint when the floor changes under it', () => {
+    let blocked = false;
+    const { rerender, params, host } = setup({ collides: () => blocked });
+    const outline = host.querySelector('polygon')!;
+    expect(outline.getAttribute('fill')).toContain('127,243,255');
+    blocked = true;
+    rerender({ ...params, floorItems: [] });
+    expect(outline.getAttribute('fill')).toContain('228,82,72');
   });
 
   it('removes its outline and listeners when put down', () => {

@@ -341,8 +341,13 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, ove
     <button
       type="button"
       // A click or tap picks the item up as a placement ghost (#463 d).
-      onClick={() => {
-        if (!blocked) armGhostPlacement();
+      onClick={(event) => {
+        if (!blocked) {
+          armGhostPlacement();
+          // Hand the keys to the ghost: a focused tile's Enter/Space would
+          // start a second placement.
+          event.currentTarget.blur();
+        }
         onAdd();
       }}
       aria-disabled={blocked || undefined}

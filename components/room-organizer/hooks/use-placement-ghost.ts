@@ -6,7 +6,6 @@ import {
   ghostOutlinePoints,
   invertClientToWorld,
 } from '../lib/placement-ghost';
-import { disposeObject } from '../three/builder-utils';
 import { pointerOnCanvas } from '../three/drag-handlers';
 import { buildPlacementGhost, type PlacementGhostMesh } from '../three/placement-ghost';
 import type { CatalogItem, FurnitureItem, Vec2 } from '../lib/types';
@@ -29,6 +28,8 @@ export interface UsePlacementGhostParams {
   clientToWorld2D(clientX: number, clientY: number): Vec2 | null;
   /** use-item-placement's catalogue snap: walls for openings, the toggles otherwise. */
   snapCatalogPlacement(catalogItem: CatalogItem, x: number, z: number, rotation: number): { position: Vec2; rotation: number };
+  /** The active floor's items: the collision tint is re-checked when they change. */
+  floorItems: readonly FurnitureItem[];
   /** Whether the item would collide on the active floor (`hasCollisions` with its context). */
   collides(item: FurnitureItem): boolean;
   /** Place the entry for real; false when declined. `keep` = the ghost stays in hand. */
@@ -76,9 +77,10 @@ function isTextField(target: EventTarget | null): boolean {
  * down. Nothing enters the layout until it is placed, so the placement is one
  * ordinary undo entry and a cancel leaves no trace.
  *
- * Presses on the view are taken in the window's capture phase while the
- * ghost is up, so neither the camera controls nor selection see them; right
- * and middle drags still orbit and pan. The 3D preview is moved directly and
+ * Presses on the view are taken in the document's capture phase while the
+ * ghost is up, so neither the camera controls nor selection see them, while
+ * other document listeners (an open popover's outside click) still do; right
+ * and middle drags still orbit and pan. A second finger cancels the press. The 3D preview is moved directly and
  * the plan's outline is an SVG over the plan canvas: no state dispatch per
  * move (the drag fast-path rule).
  */
@@ -89,7 +91,13 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
   /** Re-renders the preview at the session's spot; set while the effect runs. */
   const renderRef = useRef<() => void>(() => {});
 
-  const { ghost, enabled, sceneReady, view2D, floorY, storeyHeight } = params;
+  const { ghost, enabled, sceneReady, view2D, floorY, storeyHeight, floorItems } = params;
+
+  // A placement, an undo or any other edit changes what the ghost collides
+  // with: re-check it where it stands.
+  useEffect(() => {
+    renderRef.current();
+  }, [floorItems]);
 
   const confirm = useCallback((keep = false) => {
     const p = paramsRef.current;
@@ -202,13 +210,20 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       if (event.target !== canvas || event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
-      // A second finger is swallowed too: it must not orbit under the ghost.
-      if (!event.isPrimary || pressId !== null) return;
+      // A second finger is a pinch, not a placement: drop the press so its
+      // release places nothing. It is swallowed too, so the camera never
+      // sees a lone finger and orbits under the ghost.
+      if (!event.isPrimary || pressId !== null) {
+        pressId = null;
+        return;
+      }
       pressId = event.pointerId;
       follow(event);
     };
     const onPointerMove = (event: PointerEvent): void => {
       if (event.pointerId === pressId) event.stopPropagation();
+      // A finger aims only during its own press: a pinch leaves it put.
+      else if (event.pointerType === 'touch') return;
       // Over the HUD the ghost holds its last spot, as a drag does (#511).
       if (onCanvas(event)) follow(event);
     };
@@ -224,34 +239,42 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     const onPointerCancel = (event: PointerEvent): void => {
       if (event.pointerId === pressId) pressId = null;
     };
+    // The ghost owns R, Enter, Space and Escape while it is held, ahead of
+    // a focused catalog tile's roving keys and the window shortcuts.
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key.toLowerCase() !== 'r' || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (isTextField(event.target)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || isTextField(event.target)) return;
+      const key = event.key.toLowerCase();
+      if (key !== 'r' && key !== 'enter' && key !== ' ' && key !== 'escape') return;
       event.preventDefault();
       event.stopPropagation();
-      live.turn = (live.turn + (event.shiftKey ? -1 : 1) * GHOST_ROTATION_STEP) % (2 * Math.PI);
-      moveTo(live.raw);
+      if (key === 'escape') {
+        paramsRef.current.endGhost();
+      } else if (key === 'r') {
+        live.turn = (live.turn + (event.shiftKey ? -1 : 1) * GHOST_ROTATION_STEP) % (2 * Math.PI);
+        moveTo(live.raw);
+      } else if (!event.repeat) {
+        confirm(event.shiftKey);
+      }
     };
 
-    window.addEventListener('pointerdown', onPointerDown, true);
-    window.addEventListener('pointermove', onPointerMove, true);
-    window.addEventListener('pointerup', onPointerUp, true);
-    window.addEventListener('pointercancel', onPointerCancel, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointermove', onPointerMove, true);
+    document.addEventListener('pointerup', onPointerUp, true);
+    document.addEventListener('pointercancel', onPointerCancel, true);
     window.addEventListener('keydown', onKeyDown, true);
     canvas.style.cursor = 'copy';
 
     return () => {
-      window.removeEventListener('pointerdown', onPointerDown, true);
-      window.removeEventListener('pointermove', onPointerMove, true);
-      window.removeEventListener('pointerup', onPointerUp, true);
-      window.removeEventListener('pointercancel', onPointerCancel, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('pointermove', onPointerMove, true);
+      document.removeEventListener('pointerup', onPointerUp, true);
+      document.removeEventListener('pointercancel', onPointerCancel, true);
       window.removeEventListener('keydown', onKeyDown, true);
       canvas.style.cursor = '';
       renderRef.current = () => {};
       if (mesh) {
         // Detached even if the scene was rebuilt under it; always freed.
-        mesh.group.removeFromParent();
-        disposeObject(mesh.group);
+        mesh.dispose();
         paramsRef.current.invalidate();
       }
       svg?.remove();

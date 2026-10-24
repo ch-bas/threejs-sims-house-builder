@@ -1,6 +1,6 @@
+import { disposeObject, type ThreeModule } from './builder-utils';
 import { fadeGroup } from './collision-tint';
 import { createFurnitureModel } from './furniture-builders';
-import type { ThreeModule } from './builder-utils';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -25,6 +25,20 @@ export interface PlacementGhostMesh {
   group: ThreeNS.Group;
   /** Recolour for a colliding spot or a free one. Allocation-free. */
   setColliding(colliding: boolean): void;
+  /** Detach and free it, all but the shared pad material. */
+  dispose(): void;
+}
+
+/**
+ * The pad's material, made once and kept: freeing it with each ghost let the
+ * renderer drop its shader program, so every pick compiled it again. One
+ * ghost is held at a time, so sharing its colour is safe.
+ */
+let padMaterial: ThreeNS.MeshBasicMaterial | null = null;
+
+function sharedPadMaterial(THREE: ThreeModule): ThreeNS.MeshBasicMaterial {
+  padMaterial ??= new THREE.MeshBasicMaterial({ color: PAD_FREE, transparent: true, opacity: PAD_OPACITY, depthWrite: false });
+  return padMaterial;
 }
 
 /**
@@ -50,8 +64,7 @@ export function buildPlacementGhost(THREE: ThreeModule, item: FurnitureItem, sto
     }
   });
   // The footprint, so the spot reads from any camera angle.
-  const padMaterial = new THREE.MeshBasicMaterial({ color: PAD_FREE, transparent: true, opacity: PAD_OPACITY, depthWrite: false });
-  const pad = new THREE.Mesh(new THREE.PlaneGeometry(item.width + 2 * PAD_MARGIN, item.depth + 2 * PAD_MARGIN), padMaterial);
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(item.width + 2 * PAD_MARGIN, item.depth + 2 * PAD_MARGIN), sharedPadMaterial(THREE));
   pad.rotation.x = -Math.PI / 2;
   pad.position.y = PAD_LIFT;
   group.add(pad);
@@ -62,8 +75,14 @@ export function buildPlacementGhost(THREE: ThreeModule, item: FurnitureItem, sto
     if (current === colliding) return;
     current = colliding;
     for (const m of glowing) m.emissive.setHex(colliding ? GHOST_BLOCKED : GHOST_GLOW);
-    padMaterial.color.setHex(colliding ? PAD_BLOCKED : PAD_FREE);
+    pad.material.color.setHex(colliding ? PAD_BLOCKED : PAD_FREE);
   };
   setColliding(false);
-  return { group, setColliding };
+  const dispose = (): void => {
+    group.removeFromParent();
+    group.remove(pad);
+    pad.geometry.dispose();
+    disposeObject(group);
+  };
+  return { group, setColliding, dispose };
 }

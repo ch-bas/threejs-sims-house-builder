@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { buildPlacementGhost, PLACEMENT_GHOST_TAG } from './placement-ghost';
 
@@ -23,6 +23,21 @@ describe('buildPlacementGhost (#463 d)', () => {
       expect(material.depthWrite).toBe(false);
       expect(material.opacity).toBeLessThan(1);
     }
+  });
+
+  it('frees itself on dispose but keeps the shared pad material, so a pick never recompiles it', () => {
+    const first = buildPlacementGhost(THREE, makeItem({ type: 'chair' }), 3);
+    const pad = materialsOf(first.group).find((m) => m instanceof THREE.MeshBasicMaterial)!;
+    const disposed = vi.fn();
+    pad.addEventListener('dispose', disposed);
+    const scene = new THREE.Scene();
+    scene.add(first.group);
+    first.dispose();
+    expect(first.group.parent).toBeNull();
+    expect(disposed).not.toHaveBeenCalled();
+    const second = buildPlacementGhost(THREE, makeItem({ type: 'sofa' }), 3);
+    expect(materialsOf(second.group)).toContain(pad);
+    second.dispose();
   });
 
   it('turns red where it collides and back where it fits', () => {
