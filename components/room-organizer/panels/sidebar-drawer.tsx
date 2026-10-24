@@ -2,6 +2,7 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
+import { markLayoutLoaded } from '../hooks/use-achievements';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
@@ -61,6 +62,8 @@ export interface SidebarDrawerProps {
    * multi-select set, which a local reimplementation here used to miss.
    */
   removeItem(id: string): void;
+  /** The orchestrator's duplicate: selection-aware, and it plays the cue (#460). */
+  duplicateItem(id: string): void;
 }
 
 // Memoised, and its panels read the editor through HeldEditorContexts, so a
@@ -205,6 +208,7 @@ const DrawerBody = memo(function DrawerBody({
   onShareLink,
   placeCatalogItem,
   removeItem,
+  duplicateItem,
 }: DrawerBodyProps): JSX.Element {
   const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue } = useRoomEditor();
   const view = useViewSettings('view2D', 'walkthroughMode');
@@ -215,7 +219,6 @@ const DrawerBody = memo(function DrawerBody({
     const id = placeCatalogItem(catalogItem);
     if (!id) return;
     selectOnly(id);
-    playCue('place');
   });
 
   const handleFloorPlanUpload = async (file: File) => {
@@ -282,11 +285,12 @@ const DrawerBody = memo(function DrawerBody({
               // Hard budget (#463e): say why instead of a silent refusal.
               const refusal = purchaseRefusal(layout, purchasePrice(items));
               if (refusal !== null) {
-                // REFUSED-CUE: G3's `refused` sound cue goes here at integration.
+                playCue('refused');
                 notify(refusal, 'error');
                 return;
               }
               actions.addItems(items);
+              playCue('place');
               const last = items[items.length - 1];
               if (last) selectOnly(last.id);
             }}
@@ -311,17 +315,7 @@ const DrawerBody = memo(function DrawerBody({
           {selectedItem && (
             <ItemResizePanel
               hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
-              onDuplicate={(id) => {
-                const source = activeFloor.items.filter((item) => item.id === id);
-                const refusal = purchaseRefusal(layout, purchasePrice(source));
-                if (refusal !== null) {
-                  // REFUSED-CUE: G3's `refused` sound cue goes here at integration.
-                  notify(refusal, 'error');
-                  return;
-                }
-                const newId = actions.duplicateItem(id);
-                selectOnly(newId);
-              }}
+              onDuplicate={duplicateItem}
             />
           )}
         </>
@@ -351,6 +345,7 @@ const DrawerBody = memo(function DrawerBody({
                 ...template,
                 floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
               });
+              markLayoutLoaded();
               selectOnly(null);
               return true;
             }}
@@ -363,6 +358,7 @@ const DrawerBody = memo(function DrawerBody({
               // one Ctrl+Z away from the design it replaced (#222).
               snapshotBeforeReplace(layout);
               actions.applyLayout(loaded);
+              markLayoutLoaded();
               selectOnly(null);
             }}
           />

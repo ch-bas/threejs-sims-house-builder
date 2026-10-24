@@ -104,12 +104,14 @@ describe('compact achievements', () => {
     advance(3500);
     expect(shown('Achievement b')).toBe(true);
     setCompact(false);
-    // The stacked host shows what is left, not what was already seen.
+    // The desktop placement carries on with what is left, not what was seen.
     expect(shown('Achievement a')).toBe(false);
     expect(shown('Achievement b')).toBe(true);
     setCompact(true);
-    // Everything was on screen already: the queue clears.
     expect(shown('Achievement a')).toBe(false);
+    expect(shown('Achievement b')).toBe(true);
+    // Its countdown carried over too: it ends on time, and the queue clears.
+    advance(3500);
     expect(shown('Achievement b')).toBe(false);
   });
 
@@ -123,5 +125,87 @@ describe('compact achievements', () => {
     advance(3500);
     expect(shown('Achievement a')).toBe(false);
     expect(shown('Copy this share link')).toBe(true);
+  });
+});
+
+describe('compact achievements and the dock tray', () => {
+  it('wait, paused, while the ⋯ tray is open', async () => {
+    const panel = document.createElement('div');
+    panel.className = 'pc-mode-panel';
+    panel.setAttribute('data-more-open', '');
+    document.body.appendChild(panel);
+    try {
+      render(<Harness initial={[achievement('a')]} />);
+      expect(shown('Achievement a')).toBe(false);
+      advance(10_000);
+      await act(async () => {
+        panel.removeAttribute('data-more-open');
+        await Promise.resolve(); // MutationObserver callbacks are microtasks
+      });
+      expect(shown('Achievement a')).toBe(true);
+      advance(3500);
+      expect(shown('Achievement a')).toBe(false);
+    } finally {
+      panel.remove();
+    }
+  });
+});
+
+describe('desktop achievements (#461)', () => {
+  beforeEach(() => {
+    compact = false;
+  });
+
+  it('play one at a time above the mode panel, each with its own timer', () => {
+    render(<Harness initial={[achievement('a'), achievement('b')]} />);
+    expect(shown('Achievement a')).toBe(true);
+    expect(shown('Achievement b')).toBe(false);
+    expect(shown('1 more')).toBe(true);
+    const host = screen.getByRole('status').parentElement;
+    expect(host?.style.bottom).toContain('--pc-mode-top');
+    advance(4499);
+    expect(shown('Achievement a')).toBe(true);
+    advance(1);
+    expect(shown('Achievement a')).toBe(false);
+    expect(shown('Achievement b')).toBe(true);
+    advance(4500);
+    expect(shown('Achievement b')).toBe(false);
+  });
+
+  it('a new unlock queues behind the one on screen without restarting its countdown', () => {
+    function Growing() {
+      const [pending, setPending] = useState<readonly Achievement[]>([achievement('a')]);
+      return (
+        <>
+          <button type="button" onClick={() => setPending((list) => [...list, achievement('c')])}>
+            unlock
+          </button>
+          <AchievementToast pending={pending} onDismiss={() => setPending([])} />
+        </>
+      );
+    }
+    render(<Growing />);
+    advance(3000);
+    act(() => {
+      screen.getByText('unlock').click();
+    });
+    advance(1500);
+    expect(shown('Achievement a')).toBe(false);
+    expect(shown('Achievement c')).toBe(true);
+  });
+
+  it('hold their countdown while hovered', () => {
+    render(<Harness initial={[achievement('a')]} />);
+    const host = screen.getByRole('status').parentElement!;
+    act(() => {
+      host.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    });
+    advance(10_000);
+    expect(shown('Achievement a')).toBe(true);
+    act(() => {
+      host.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }));
+    });
+    advance(4500);
+    expect(shown('Achievement a')).toBe(false);
   });
 });

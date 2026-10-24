@@ -476,15 +476,22 @@ export function totalCost(items: readonly FurnitureItem[]): number {
 }
 
 /**
- * Interior floor area covered by furniture. Outdoor items are excluded: they
- * must sit entirely outside the room, so counting them inflated the interior
- * coverage of a bare room with a garden (#164).
+ * Interior floor area covered by furniture: what stands on the floor. Left
+ * out are outdoor items, which must sit outside the room (#164); doors,
+ * windows and cameras, which live in the wall plane, and hung decor, which
+ * hangs above the floor (#462); and a tabletop item standing on a surface,
+ * whose floor the surface already counts. A plant or lamp on the bare floor
+ * still covers it.
  */
 export function footprintArea(items: readonly FurnitureItem[]): number {
-  return items.reduce(
-    (sum, item) => (item.category === 'outdoor' ? sum : sum + item.width * item.depth),
-    0
-  );
+  const surfaces = items.filter((item) => SURFACE_TYPES.has(item.type));
+  let area = 0;
+  for (const item of items) {
+    if (item.category === 'outdoor' || isWallMounted(item.type) || isWallHung(item.type)) continue;
+    if (isTabletopType(item.type) && surfaces.some((surface) => itemsOverlap(item, surface))) continue;
+    area += item.width * item.depth;
+  }
+  return area;
 }
 
 export function itemCountByCategory(items: readonly FurnitureItem[]): Map<string, number> {

@@ -28,7 +28,7 @@ export interface ActionsPanelProps {
 }
 
 export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
-  const { layout, activeFloor, actions, isReady } = useRoomEditor();
+  const { layout, activeFloor, actions, isReady, playCue } = useRoomEditor();
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -142,6 +142,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 // asking (#105, #223).
                 if (!window.confirm('Remove every item from this floor?')) return;
                 actions.clearItems();
+                playCue('remove');
                 selectOnly(null);
               }}
               variant="outline"
