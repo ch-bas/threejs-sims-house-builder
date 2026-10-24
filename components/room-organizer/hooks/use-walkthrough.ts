@@ -213,6 +213,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     let controls: PointerLockControlsType | null = null;
     // The orbit pose to come back to, saved before anything moves the camera.
     const savedCameraPosition = camera.position.clone();
+    const savedCameraQuaternion = camera.quaternion.clone();
     let rafId = 0;
 
     // Scratch, reused every frame so the loop allocates nothing (#156).
@@ -553,6 +554,9 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       }
       // Restored even when the exit beats the controls import.
       camera.position.copy(savedCameraPosition);
+      // And its aim: the orbit tick doesn't run update() until the next
+      // gesture, so the walker's heading otherwise lingered on exit.
+      camera.quaternion.copy(savedCameraQuaternion);
       invalidateRef.current?.();
       if (orbit) orbit.enabled = true;
     };

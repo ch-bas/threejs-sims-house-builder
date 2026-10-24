@@ -936,12 +936,13 @@ export function RoomOrganizer(): JSX.Element {
   });
 
   // The roof as camera framing sees it: on screen only with the walls up,
-  // on the top storey or with every storey shown (as the roof effect shows it).
+  // on the top storey or with every storey shown (as the roof effect shows it;
+  // the walkthrough shows every storey, #446).
   const roofStyle = layout.roof?.style ?? 'none';
   const roofShows =
     roofStyle !== 'none' &&
     sceneWallDisplay(view.wallDisplay, walkthroughActive) === 'up' &&
-    (view.showAllFloors || activeFloorIndex === layout.floors.length - 1);
+    (view.showAllFloors || walkthroughActive || activeFloorIndex === layout.floors.length - 1);
   const roofPeak = roofShows ? roofPeakHeight(roofStyle, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),

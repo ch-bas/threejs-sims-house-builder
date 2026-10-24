@@ -150,7 +150,12 @@ export function useSceneEffects({
   // interior-wall and furniture rebuilds read from the wall display. They key
   // on this rather than on wallDisplay, so a cutaway flip or entering
   // walkthrough rebuilds them only when the ghosting actually changes (#359).
-  const ghostOtherFloors = otherFloorGhostOpacity(view.showAllFloors, wallDisplay, false) !== undefined;
+  // Every storey is built while walking (#446): the walker climbs the stairs
+  // and steps outside, so a lone storey left a lined shaft on the flight, no
+  // stairs below a landing and a roofless box from the garden. Walls are up,
+  // so nothing is ghosted. Leaving restores the user's own choice.
+  const allFloors = view.showAllFloors || walkthroughActive;
+  const ghostOtherFloors = otherFloorGhostOpacity(allFloors, wallDisplay, false) !== undefined;
   // What the porch keep-out is fitted to (#285) — the effects key on this
   // rather than the whole layout.
   const entranceBuilding = useMemo<KeepOutBuilding>(
@@ -210,8 +215,8 @@ export function useSceneEffects({
 
   // What the furniture meshes are built from, and its two signatures (#214).
   const furniturePlan = useMemo(
-    () => planFurniture(entranceBuilding, view.showAllFloors, activeFloorIndex),
-    [entranceBuilding, view.showAllFloors, activeFloorIndex]
+    () => planFurniture(entranceBuilding, allFloors, activeFloorIndex),
+    [entranceBuilding, allFloors, activeFloorIndex]
   );
   const itemsKey = useMemo(() => furnitureItemsKey(furniturePlan), [furniturePlan]);
   const collisionKey = useMemo(() => furnitureCollisionKey(furniturePlan), [furniturePlan]);
@@ -224,8 +229,8 @@ export function useSceneEffects({
   // string is the lamp effect's key, so a non-lamp item edit doesn't touch the
   // lights, while a floor switch or Show All Floors does.
   const lampsKey = useMemo(
-    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex, showAllFloors: view.showAllFloors })),
-    [layout.floors, activeFloorIndex, view.showAllFloors]
+    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex, showAllFloors: allFloors })),
+    [layout.floors, activeFloorIndex, allFloors]
   );
 
   // Wall preview during draw mode
@@ -262,7 +267,7 @@ export function useSceneEffects({
     // not drop it per image-less call.)
     if (!layout.floorPlanImage) clearFloorPlanImageCache();
 
-    const floorsToRender = view.showAllFloors
+    const floorsToRender = allFloors
       ? layout.floors.map((floor, index) => ({ floor, index }))
       : [{ floor: activeFloor, index: activeFloorIndex }];
 
@@ -292,7 +297,7 @@ export function useSceneEffects({
       // Stairs on the floor below create openings in this floor's plane.
       const floorBelow = index > 0 ? layout.floors[index - 1] : undefined;
       const floorOpenings = computeFloorOpenings(floorBelow);
-      const ghostOpacity = otherFloorGhostOpacity(view.showAllFloors, wallDisplay, isActive);
+      const ghostOpacity = otherFloorGhostOpacity(allFloors, wallDisplay, isActive);
       buildRoom(THREE, {
         scene,
         width: layout.width,
@@ -354,7 +359,7 @@ export function useSceneEffects({
     // interior wall stays double-cut into the exterior wall (#119).
     layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
-    view.floorPlan3DEffect, view.showAllFloors, ghostOtherFloors,
+    view.floorPlan3DEffect, allFloors, ghostOtherFloors,
     activeFloorIndex,
   ]);
 
@@ -383,11 +388,13 @@ export function useSceneEffects({
     return () => controls.removeEventListener('change', apply);
   }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, wallDisplay, layout.width, layout.height]);
 
-  // Walkthrough enclosure (#359): only the active storey is built, so the
+  // Walkthrough enclosure (#359): when only the active storey is built, the
   // walker gets the underside of the storey above, and the stairwells are
   // lined up to the storey above and down to the one below — otherwise the
-  // view up or down the stairs runs out into the sky or the garden. Keyed on
-  // primitives so nothing is built, or rebuilt, outside walkthrough.
+  // view up or down the stairs runs out into the sky or the garden. The
+  // walkthrough now builds every storey (#446): the plate stays (the floor
+  // above is invisible from below without it), the shafts go.
+  // Keyed on primitives so nothing is built, or rebuilt, outside walkthrough.
   const ceiling = walkthroughActive ? walkthroughCeiling(layout.floors, activeFloorIndex) : null;
   const pit = walkthroughActive ? walkthroughPit(layout.floors, activeFloorIndex) : null;
   const ceilingY = ceiling?.y;
@@ -406,17 +413,18 @@ export function useSceneEffects({
       scene,
       width: layout.width,
       depth: layout.height,
-      // "Show all floors" draws the real storey above, plate and all.
+      // The storey above's floor plate faces up only, so the walker below
+      // sees its underside here, every storey built or not (#446).
       above:
-        !view.showAllFloors && ceilingY !== undefined && ceilingCapY !== undefined
+        ceilingY !== undefined && ceilingCapY !== undefined
           ? { y: ceilingY, capY: ceilingCapY, openings: computeFloorOpenings(activeFloor) }
           : null,
       below:
         pitY !== undefined && pitTopY !== undefined && pitFloorColor !== undefined
           ? { y: pitY, topY: pitTopY, openings: computeFloorOpenings(layout.floors[activeFloorIndex - 1]), floorColor: pitFloorColor }
           : null,
-      // "Show all floors" builds the real storeys above and below.
-      shafts: !view.showAllFloors,
+      // With every storey built, the stairwells open onto the real storeys.
+      shafts: !allFloors,
     });
     if (!group) return undefined;
     requestShadowUpdate();
@@ -428,7 +436,7 @@ export function useSceneEffects({
     // activeFloor and the storey below are read for their stairwells only;
     // wallOpeningsKey covers them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, ceilingY, ceilingCapY, pitY, pitTopY, pitFloorColor, activeFloorIndex, view.showAllFloors, layout.width, layout.height, wallOpeningsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, ceilingY, ceilingCapY, pitY, pitTopY, pitFloorColor, activeFloorIndex, allFloors, layout.width, layout.height, wallOpeningsKey]);
 
   // Furniture meshes
   useEffect(() => {
@@ -535,7 +543,7 @@ export function useSceneEffects({
   }, [
     isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
     itemsKey, collisionKey, storeyHeightsKey,
-    activeFloorIndex, view.showAllFloors, ghostOtherFloors,
+    activeFloorIndex, allFloors, ghostOtherFloors,
     // Not read in the body: createFurnitureModel picks the rigged person up
     // from the model cache, and this re-runs the build once it's filled.
     peopleModelReady,
@@ -616,7 +624,7 @@ export function useSceneEffects({
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
     activeFloorIndex, selectedItemId, extraSelectedIds, highlightedIds,
-    itemsKey, collisionKey, storeyHeightsKey, view.showAllFloors, ghostOtherFloors, peopleModelReady,
+    itemsKey, collisionKey, storeyHeightsKey, allFloors, ghostOtherFloors, peopleModelReady,
   ]);
 
   // Wi-Fi rings + camera vision cones. Independently tagged overlays, so
@@ -786,7 +794,7 @@ export function useSceneEffects({
     if (!THREE || !scene) return;
 
     clearInteriorWalls(scene);
-    const floorsToRender = view.showAllFloors
+    const floorsToRender = allFloors
       ? layout.floors.map((floor, index) => ({ floor, index }))
       : [{ floor: activeFloor, index: activeFloorIndex }];
 
@@ -820,7 +828,7 @@ export function useSceneEffects({
       renderInteriorWalls(
         THREE, scene, walls,
         floorY,
-        otherFloorGhostOpacity(view.showAllFloors, wallDisplay, isActive),
+        otherFloorGhostOpacity(allFloors, wallDisplay, isActive),
         {
           openingCandidates: floor.items,
           roomWidth: layout.width,
@@ -845,7 +853,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, activeFloorIndex, view.showAllFloors, ghostOtherFloors, layout.width, layout.height, layout.entrance, layout.terrain]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, activeFloorIndex, allFloors, ghostOtherFloors, layout.width, layout.height, layout.entrance, layout.terrain]);
 
   // Cyan outline on selected wall. Declared AFTER the shell + interior-wall
   // rebuild effects and keyed on the same rebuild keys, so it always snapshots
@@ -904,7 +912,7 @@ export function useSceneEffects({
     isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
     selectedWall, activeFloorIndex,
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
-    layout.width, layout.height, view.showAllFloors, ghostOtherFloors,
+    layout.width, layout.height, allFloors, ghostOtherFloors,
   ]);
 
   // Measurement markers
@@ -941,7 +949,7 @@ export function useSceneEffects({
   // built while it is on screen and kept, hidden, below the top storey, so a
   // floor switch no longer rebuilds the roof and every dormer. A roof edit
   // made down there rebuilds it on the way back up, not while hidden.
-  const roofOnStorey = view.showAllFloors || activeFloorIndex === layout.floors.length - 1;
+  const roofOnStorey = allFloors || activeFloorIndex === layout.floors.length - 1;
   useEffect(() => {
     invalidate();
     if (!isReady) return;

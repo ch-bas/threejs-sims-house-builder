@@ -980,10 +980,12 @@ components/
   React's echo, and any other floor change (PgUp/PgDn, the pills) lands
   the walker at that storey's stairs (`walkArrival`). The exterior walls
   are 0.1 m colliders with gaps at exterior doors and the porch, which
-  keeps the old 0.35 m wall margin. Only the active storey is built in
-  walkthrough, so the upper part of a flight shows the lined stairwell
-  shaft until the landing; with ALL floors on, every storey is drawn
-  solid. Sitting eases the camera to the seat and back to where the walker
+  keeps the old 0.35 m wall margin. While walking every storey is built
+  solid with the roof, as ALL floors does with the walls up (the scene
+  effects key on `allFloors`): the flight climbs into the real storey
+  above, the stairs show from the landing, and the house is whole from the
+  garden. The #359 ceiling plate stays under the storey above (a floor
+  plate is invisible from below); its stairwell shafts go. Sitting eases the camera to the seat and back to where the walker
   stood; any step stands it up. The orchestrator remembers the mode before
   EXPLORE (a store subscription, no re-render) and leaving returns to it.
 - **The phone dock.** At ≤768 px wide, and at ≤1100 × ≤500 px (landscape
