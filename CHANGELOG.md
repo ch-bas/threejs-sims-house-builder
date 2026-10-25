@@ -7,8 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- **Reduce motion:** with the system's "reduce motion" setting on, rain and snow hang still, walkers stand where they appear, camera cones stop sweeping, and the camera stops without gliding (and sits down or stands up in one step in walkthrough) ([#436](https://github.com/ch-bas/threejs-sims-house-builder/issues/436))
-
 ### Fixed
 - Walking the top storey, the ceiling overhead is plain plaster instead of the roof's shingled underside, and each dormer opens into the room so its window shows from inside ([#487](https://github.com/ch-bas/threejs-sims-house-builder/issues/487))
 - With the hard budget on, Clear floor, Remove floor and Surprise me now sell the furniture they take away back at 80 %, like Demolish, instead of refunding it in full ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))

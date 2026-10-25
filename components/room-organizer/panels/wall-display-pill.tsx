@@ -2,6 +2,7 @@
 
 import { useEditorViewActions, useViewSettings } from '../contexts';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+import { PlanViewToggle } from './view-options';
 import type { ViewSettings } from '../lib/types';
 
 type WallDisplay = ViewSettings['wallDisplay'];
@@ -22,7 +23,7 @@ const MODES: readonly Mode[] = [
 /**
  * Automatic wall display toggle: Up / Cut / Down. Lives as a small floating
  * overlay near the Floor Pill so view-level toggles stay grouped on the
- * top-right corner of the lot.
+ * top-right corner of the lot. The 2D plan switch leads it (#526).
  */
 export function WallDisplayPill(): JSX.Element {
   const view = useViewSettings('wallDisplay', 'view2D');
@@ -39,26 +40,17 @@ export function WallDisplayPill(): JSX.Element {
         alignItems: 'center',
         gap: 6,
       }}
-      role="radiogroup"
-      aria-label="Wall display"
     >
-      <div
-        className="pc-hud-header pc-pill-label"
-        style={{
-          fontSize: 9,
-          paddingLeft: 6,
-          paddingRight: 4,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          opacity: 0.85,
-        }}
-      >
-        <Icon name="wall" size={12} />
-        Walls
+      {/* In place of the "Walls" caption: beside it the switch would widen
+          the pill into the stats bar. The radio group keeps the name, and
+          the Up tile carries the wall glyph. */}
+      <div className="pc-pill-well">
+        <PlanViewToggle />
       </div>
 
       <div
+        role="radiogroup"
+        aria-label="Wall display"
         style={{
           background: 'rgba(0, 0, 0, 0.20)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
