@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,6 +24,7 @@ const DEFAULT_WALL_COLOR = '#cccccc';
 
 export function WallsPanel(): JSX.Element {
   const { activeFloor, actions } = useRoomEditor();
+  const id = useId();
 
   return (
     <Card>
@@ -31,8 +33,9 @@ export function WallsPanel(): JSX.Element {
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <Label className="text-xs">Floor Pattern</Label>
+          <Label htmlFor={`${id}-floor`} className="text-xs">Floor Pattern</Label>
           <Select
+            id={`${id}-floor`}
             value={activeFloor.floorPattern ?? 'solid'}
             onValueChange={(value) => actions.setFloorPattern(value as FloorPattern)}
             className="text-xs"
@@ -46,8 +49,9 @@ export function WallsPanel(): JSX.Element {
           </Select>
         </div>
         <div>
-          <Label className="text-xs">Wall Pattern</Label>
+          <Label htmlFor={`${id}-wall`} className="text-xs">Wall Pattern</Label>
           <Select
+            id={`${id}-wall`}
             value={activeFloor.wallPattern ?? 'solid'}
             onValueChange={(value) => actions.setWallPattern(value as WallPattern)}
             className="text-xs"
@@ -64,8 +68,9 @@ export function WallsPanel(): JSX.Element {
         <div className="grid grid-cols-2 gap-2 pt-2 border-t">
           {(Object.keys(WALL_LABELS) as WallId[]).map((wall) => (
             <div key={wall}>
-              <Label className="text-xs">{WALL_LABELS[wall]}</Label>
+              <Label htmlFor={`${id}-${wall}`} className="text-xs">{WALL_LABELS[wall]}</Label>
               <Input
+                id={`${id}-${wall}`}
                 type="color"
                 value={activeFloor.wallColors?.[wall] ?? DEFAULT_WALL_COLOR}
                 onChange={(event) => actions.setWallColor(wall, event.target.value)}

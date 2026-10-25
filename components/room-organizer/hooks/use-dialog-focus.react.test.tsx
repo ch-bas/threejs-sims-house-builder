@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDialogFocus } from './use-dialog-focus';
 
-function Harness({ trap = false, onEscape }: { trap?: boolean; onEscape?: () => void }) {
+function Harness({ trap = false, onEscape, parked = false }: { trap?: boolean; onEscape?: () => void; parked?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useDialogFocus(open, ref, { trap, onEscape: onEscape ?? (() => setOpen(false)) });
@@ -17,6 +17,11 @@ function Harness({ trap = false, onEscape }: { trap?: boolean; onEscape?: () => 
       <input aria-label="elsewhere" />
       {open && (
         <div ref={ref} role="dialog" tabIndex={-1} aria-label="dialog">
+          {parked && (
+            <button type="button" tabIndex={-1}>
+              parked
+            </button>
+          )}
           <button type="button">first</button>
           <button type="button" onClick={() => setOpen(false)}>
             last
@@ -94,6 +99,18 @@ describe('useDialogFocus (#152)', () => {
 
   it('traps Tab inside a modal dialog in both directions', () => {
     render(<Harness trap />);
+    openFrom('opener');
+    const first = screen.getByRole('button', { name: 'first' });
+    const last = screen.getByRole('button', { name: 'last' });
+    last.focus();
+    expect(key('Tab').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(first);
+    expect(key('Tab', { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('wraps onto tab stops only, past a roving-tabindex item parked at -1 (#434)', () => {
+    render(<Harness trap parked />);
     openFrom('opener');
     const first = screen.getByRole('button', { name: 'first' });
     const last = screen.getByRole('button', { name: 'last' });

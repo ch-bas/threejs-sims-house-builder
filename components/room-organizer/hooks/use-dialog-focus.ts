@@ -1,6 +1,10 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
-const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+// Tab stops only: a roving-tabindex widget (the drawer's tabs, #434) parks its
+// inactive items at tabindex -1, and wrapping onto one would skip the widget.
+const FOCUSABLE = ['button', '[href]', 'input', 'select', 'textarea', '[tabindex]']
+  .map((selector) => `${selector}:not([tabindex="-1"])`)
+  .join(', ');
 
 export interface UseDialogFocusOptions {
   /** Focused on open; defaults to the container itself (give it tabIndex={-1}). */

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/chunk-reload';
+import { REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
 import { qualityProfile } from '../lib/render-quality';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
@@ -216,8 +217,16 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       }
 
       const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
       controls.dampingFactor = 0.05;
+      // The orbit glides to a stop after the pointer lets go, unless the user
+      // asked the OS to reduce motion (#436); followed live.
+      const motionQuery = typeof window.matchMedia === 'function' ? window.matchMedia(REDUCED_MOTION_QUERY) : null;
+      const applyMotionPreference = () => {
+        controls.enableDamping = !motionQuery?.matches;
+      };
+      applyMotionPreference();
+      motionQuery?.addEventListener('change', applyMotionPreference);
+      cleanup.push(() => motionQuery?.removeEventListener('change', applyMotionPreference));
       controls.maxPolarAngle = Math.PI / 2.5;
       controls.screenSpacePanning = true;
       controlsRef.current = controls;

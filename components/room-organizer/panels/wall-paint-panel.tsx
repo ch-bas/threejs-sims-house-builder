@@ -760,6 +760,7 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
         >
           <input
             type="color"
+            aria-label="Custom colour"
             value={value ?? '#ffffff'}
             onChange={(event) => onCustomChange(event.target.value)}
             style={{

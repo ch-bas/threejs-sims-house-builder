@@ -151,6 +151,7 @@ export function FloorSwitcher(): JSX.Element {
                 {isRenaming ? (
                   <Input
                     autoFocus
+                    aria-label="Floor name"
                     value={draft}
                     maxLength={MAX_NAME_LENGTH}
                     onChange={(event) => setDraft(event.target.value)}

@@ -33,6 +33,7 @@ export function RoofPanel(): JSX.Element {
   const style = layout.roof?.style ?? 'none';
   // Show what the roof actually renders in when it has no colour of its own.
   const color = layout.roof?.color ?? ROOF_STYLE_DEFAULT_COLORS[style];
+  const id = useId();
 
   return (
     <Card>
@@ -49,8 +50,9 @@ export function RoofPanel(): JSX.Element {
           </p>
         )}
         <div>
-          <Label className="text-xs">Style</Label>
+          <Label htmlFor={`${id}-style`} className="text-xs">Style</Label>
           <Select
+            id={`${id}-style`}
             value={style}
             onValueChange={(value) => actions.setRoofStyle(value as RoofStyle)}
             className="text-xs"
@@ -65,8 +67,9 @@ export function RoofPanel(): JSX.Element {
         </div>
         {style !== 'none' && (
           <div>
-            <Label className="text-xs">Colour</Label>
+            <Label htmlFor={`${id}-colour`} className="text-xs">Colour</Label>
             <Input
+              id={`${id}-colour`}
               type="color"
               value={color}
               onChange={(event) => actions.setRoofColor(event.target.value)}

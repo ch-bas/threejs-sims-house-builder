@@ -308,6 +308,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             value={name}
             maxLength={MAX_NAME_LENGTH}
             onChange={(event) => setName(event.target.value)}
+            aria-label="Layout name"
             placeholder="Layout name"
             className="text-xs"
           />

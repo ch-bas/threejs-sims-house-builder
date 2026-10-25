@@ -2,6 +2,7 @@
 
 import { useActiveFloor, useLayoutStore } from '../hooks/use-layout-store';
 import { Icon } from '../plotcraft/icon';
+import { SIDE_PANELS_ID } from './sidebar-tabs';
 
 export interface LotBadgeProps {
   sidebarCollapsed: boolean;
@@ -87,6 +88,8 @@ export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): 
         onClick={onToggleSidebar}
         title={sidebarCollapsed ? 'Open panels' : 'Close panels'}
         aria-label={sidebarCollapsed ? 'Open panels' : 'Close panels'}
+        aria-expanded={!sidebarCollapsed}
+        aria-controls={SIDE_PANELS_ID}
         className={`pc-glass pc-glass--dark pc-tile${
           sidebarCollapsed ? '' : ' pc-tile--active'
         }`}

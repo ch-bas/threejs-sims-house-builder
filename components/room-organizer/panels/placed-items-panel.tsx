@@ -35,6 +35,7 @@ export function PlacedItemsPanel({
             below the threshold would trap the panel in "no items match". */}
         {(items.length > 4 || query !== '') && (
           <Input
+            aria-label="Filter placed items"
             placeholder="Filter items…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -63,13 +64,19 @@ export function PlacedItemsPanel({
                 }`}
                 onClick={() => selectOnly(item.id)}
               >
-                <span className="text-sm flex items-center gap-2">
-                  <span>{item.icon}</span>
+                {/* The row's keyboard handle (#434): Tab reaches it and
+                    Enter/Space select, through the row's click handler. */}
+                <button
+                  type="button"
+                  aria-current={selectedItemId === item.id ? 'true' : undefined}
+                  className="text-sm flex items-center gap-2 text-left rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span aria-hidden="true">{item.icon}</span>
                   <span>{item.name}</span>
-                  {item.locked && <span aria-label="Locked">🔒</span>}
-                  {item.mirrored && <span aria-label="Mirrored">↔️</span>}
-                  {isColliding && <span aria-label="Collision" title="Collides or out of bounds">⚠️</span>}
-                </span>
+                  {item.locked && <span role="img" aria-label="Locked">🔒</span>}
+                  {item.mirrored && <span role="img" aria-label="Mirrored">↔️</span>}
+                  {isColliding && <span role="img" aria-label="Collision" title="Collides or out of bounds">⚠️</span>}
+                </button>
                 <div className="flex gap-1">
                   <Button
                     size="sm"
@@ -80,7 +87,7 @@ export function PlacedItemsPanel({
                       event.stopPropagation();
                       onRotate(item.id);
                     }}
-                    aria-label="Rotate"
+                    aria-label={`Rotate ${item.name}`}
                   >
                     ↻
                   </Button>
@@ -91,7 +98,7 @@ export function PlacedItemsPanel({
                       event.stopPropagation();
                       onRemove(item.id);
                     }}
-                    aria-label="Remove"
+                    aria-label={`Remove ${item.name}`}
                   >
                     ✕
                   </Button>

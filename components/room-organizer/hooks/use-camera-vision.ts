@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { stepVisionCones } from '../three/camera-vision';
 import { ROOM_OBJECT_TAGS } from '../three/room-builder';
+import { useReducedMotion } from './use-reduced-motion';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('../three/three-runtime');
@@ -22,6 +23,7 @@ export interface UseCameraVisionOptions {
  * orbit, drag) happens to request frames.
  */
 export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef }: UseCameraVisionOptions): void {
+  const reducedMotion = useReducedMotion();
   useEffect(() => {
     if (!enabled) return undefined;
     const scene = sceneRef.current;
@@ -38,11 +40,13 @@ export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef 
         (child) => child.userData.type === ROOM_OBJECT_TAGS.CameraVision
       );
       if (!hasCones) return;
-      stepVisionCones(scene, (performance.now() - start) / 1000);
+      // Reduced motion (#436): the clock stands still, so the scan line and
+      // the wedge's pulse hold; detection and the alert colour still follow.
+      stepVisionCones(scene, reducedMotion ? 0 : (performance.now() - start) / 1000);
       invalidate?.();
     };
     rafId = requestAnimationFrame(tick);
 
     return () => cancelAnimationFrame(rafId);
-  }, [enabled, invalidate, threeModuleRef, sceneRef]);
+  }, [enabled, invalidate, threeModuleRef, sceneRef, reducedMotion]);
 }

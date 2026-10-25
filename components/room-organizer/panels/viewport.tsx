@@ -59,6 +59,8 @@ export interface ViewportProps {
 export function Viewport(props: ViewportProps): JSX.Element {
   const showLoading = !props.isReady && !props.error;
   const showError = Boolean(props.error);
+  // Named images for assistive technology (#436); the lot badge's fallback name.
+  const houseName = props.layout.name || 'Untitled Home';
 
   // Foreign-drag guard (#166): only the app's own catalog payload is accepted.
   // Without the types check, dragover preventDefault advertised a drop target
@@ -105,6 +107,8 @@ export function Viewport(props: ViewportProps): JSX.Element {
          */}
         <canvas
           ref={props.canvas2DRef}
+          role="img"
+          aria-label={`Floor plan of ${houseName}, ${props.activeFloor.name}`}
           // pc-plan-canvas: no text selection from a plan drag (#442).
           className={props.view2D ? 'pc-plan-canvas' : 'pc-plan-canvas hidden'}
           style={{
@@ -119,6 +123,8 @@ export function Viewport(props: ViewportProps): JSX.Element {
         />
         <canvas
           ref={props.canvasRef}
+          role="img"
+          aria-label={`3D view of ${houseName}`}
           className={props.view2D ? 'hidden' : ''}
           style={{
             width: '100%',

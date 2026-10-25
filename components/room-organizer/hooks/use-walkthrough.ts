@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { prefersReducedMotion } from '../lib/reduced-motion';
 import { groundHeightAt } from '../lib/site';
 import {
   advanceWalker,
@@ -271,7 +272,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       lookMatrix.lookAt(toPosition, lookTarget, camera.up);
       toQuaternion.setFromRotationMatrix(lookMatrix);
       transition.active = true;
-      transition.t = 0;
+      // Reduced motion (#436): the next frame lands on the pose, no ease.
+      transition.t = prefersReducedMotion() ? 1 : 0;
     };
 
     // What the walker can see of the house: all of it from outside; indoors
@@ -349,7 +351,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       toPosition.set(session.walker.x, eyeFor(session.walker), session.walker.z);
       toQuaternion.copy(camera.quaternion);
       transition.active = true;
-      transition.t = 0;
+      // Reduced motion (#436): the next frame lands on the pose, no ease.
+      transition.t = prefersReducedMotion() ? 1 : 0;
     };
 
     const sitDown = (): void => {
