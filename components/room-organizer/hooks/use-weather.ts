@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { outdoorGroundSize } from '../lib/site';
 import { buildWeatherMesh, createWeatherField, removeWeather, stepWeatherField, syncWeatherMesh } from '../three/weather';
+import { useReducedMotion } from './use-reduced-motion';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -29,6 +30,7 @@ export interface UseWeatherOptions {
  */
 export function useWeather(options: UseWeatherOptions): void {
   const { weather, enabled, threeModuleRef, sceneRef, roomWidth, roomDepth, invalidate } = options;
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     if (!enabled || weather === 'clear') return undefined;
@@ -44,6 +46,17 @@ export function useWeather(options: UseWeatherOptions): void {
     });
     const mesh = buildWeatherMesh(THREE, field);
     scene.add(mesh);
+
+    // Reduced motion (#436): the particles hang where they were scattered —
+    // one paint, no loop.
+    if (reducedMotion) {
+      syncWeatherMesh(mesh, field);
+      invalidate();
+      return () => {
+        removeWeather(scene);
+        invalidate();
+      };
+    }
 
     let rafId = 0;
     let lastTime = performance.now();
@@ -64,5 +77,5 @@ export function useWeather(options: UseWeatherOptions): void {
       removeWeather(scene);
       invalidate();
     };
-  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, invalidate]);
+  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, invalidate, reducedMotion]);
 }

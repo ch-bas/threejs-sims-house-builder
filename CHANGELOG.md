@@ -6,9 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Reduce motion:** with the system's "reduce motion" setting on, rain and snow hang still, walkers stand where they appear, camera cones stop sweeping, and the camera stops without gliding (and sits down or stands up in one step in walkthrough) ([#436](https://github.com/ch-bas/threejs-sims-house-builder/issues/436))
+
 ### Fixed
 - Walking the top storey, the ceiling overhead is plain plaster instead of the roof's shingled underside, and each dormer opens into the room so its window shows from inside ([#487](https://github.com/ch-bas/threejs-sims-house-builder/issues/487))
 - With the hard budget on, Clear floor, Remove floor and Surprise me now sell the furniture they take away back at 80 %, like Demolish, instead of refunding it in full ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))
+- Screen readers name every field in the side panels (wall and roof colours, search, filter, layout and floor names, room-shape sizes), and the 3D view and the floor plan are announced as pictures of the house ([#434](https://github.com/ch-bas/threejs-sims-house-builder/issues/434), [#436](https://github.com/ch-bas/threejs-sims-house-builder/issues/436))
+- Placed Items rows can be reached with Tab and selected with Enter or Space ([#434](https://github.com/ch-bas/threejs-sims-house-builder/issues/434))
+- The panels button says whether the panels are open, and the Build, Buy, Style and Manage tabs work as tabs: one Tab stop, arrow keys, Home and End ([#434](https://github.com/ch-bas/threejs-sims-house-builder/issues/434))
 
 ## [1.22.0] - 2026-10-24
 

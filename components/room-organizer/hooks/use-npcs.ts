@@ -29,6 +29,7 @@ import {
   getPeopleModel,
 } from '../three/people-model';
 import { lookForSeed } from '../three/people-outfits';
+import { useReducedMotion } from './use-reduced-motion';
 import type { KeepOutRect } from '../lib/geometry';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -191,6 +192,7 @@ export function useNpcs(options: UseNpcsOptions): void {
     enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, items, interiorWalls = EMPTY_WALLS, keepOut,
     floorY, riggedModelReady = false, invalidate, requestShadowUpdate,
   } = options;
+  const reducedMotion = useReducedMotion();
   const stateRef = useRef<NpcState[]>([]);
   const navRef = useRef<NpcNav | null>(null);
   const seatsRef = useRef<NpcSeats>(EMPTY_SEATS);
@@ -246,9 +248,11 @@ export function useNpcs(options: UseNpcsOptions): void {
     let rafId = 0;
     let lastTime = performance.now();
     const tick = () => {
-      rafId = requestAnimationFrame(tick);
+      // Reduced motion (#436): one frame poses the walkers where they
+      // spawned, and then they stand still — no loop, no wandering.
+      if (!reducedMotion) rafId = requestAnimationFrame(tick);
       const now = performance.now();
-      const delta = Math.min(0.1, (now - lastTime) / 1000);
+      const delta = reducedMotion ? 0 : Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
       const currentNav = navRef.current;
       if (!currentNav) return;
@@ -256,8 +260,8 @@ export function useNpcs(options: UseNpcsOptions): void {
       // only when a walker moved: a rigged figure idles (breathes) every
       // frame, and re-rendering every caster for that pinned the GPU (#400).
       const change = stepNpcs(stateRef.current, delta, currentNav, floorY, Math.random, seatsRef.current);
-      if (change === NPC_SHADOW) requestShadowUpdate?.();
-      if (change !== NPC_STILL) invalidate?.();
+      if (change === NPC_SHADOW || reducedMotion) requestShadowUpdate?.();
+      if (change !== NPC_STILL || reducedMotion) invalidate?.();
     };
     rafId = requestAnimationFrame(tick);
 
@@ -275,7 +279,7 @@ export function useNpcs(options: UseNpcsOptions): void {
       requestShadowUpdate?.();
       invalidate?.();
     };
-  }, [enabled, hasRoom, count, riggedModelReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY]);
+  }, [enabled, hasRoom, count, riggedModelReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, reducedMotion]);
 }
 
 function createNpc(

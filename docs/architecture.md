@@ -51,6 +51,7 @@ components/
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
     │   ├── render-quality.ts            Pixel-ratio cap per device class (phones 1.5, else 2)
+    │   ├── reduced-motion.ts            prefers-reduced-motion query and a one-off read for non-React code
     │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
     │   ├── library.ts                   Named-layout library I/O: an index of entries (name, saved-at, item and floor counts) + one blob per house; unreadable entries kept verbatim (#348)
     │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
@@ -189,6 +190,7 @@ components/
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
+    │   ├── use-reduced-motion.ts        The OS reduce-motion setting as a hook (gates weather, walkers, cone sweep)
     │   ├── use-pausable-timeout.ts      Countdown that pauses and resumes with the time left (toasts)
     │   ├── use-scroll-cue.ts            data-scrollable / data-more-before / -after on a HUD scroller (#426)
     │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308); places the touch row in the top bar

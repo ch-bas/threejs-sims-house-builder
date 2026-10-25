@@ -116,8 +116,8 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }
           gap: 4,
         }}
       >
-        <SizeRow label="W" value={clampedW} min={1.5} max={Math.max(1.5, maxWidth - 0.5)} onChange={setWidth} />
-        <SizeRow label="D" value={clampedD} min={1.5} max={Math.max(1.5, maxDepth - 0.5)} onChange={setDepth} />
+        <SizeRow label="W" name="Width" value={clampedW} min={1.5} max={Math.max(1.5, maxWidth - 0.5)} onChange={setWidth} />
+        <SizeRow label="D" name="Depth" value={clampedD} min={1.5} max={Math.max(1.5, maxDepth - 0.5)} onChange={setDepth} />
 
         <button
           type="button"
@@ -158,13 +158,15 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }
 
 interface SizeRowProps {
   label: string;
+  /** Accessible name of the slider; the visible label is a single letter. */
+  name: string;
   value: number;
   min: number;
   max: number;
   onChange(v: number): void;
 }
 
-function SizeRow({ label, value, min, max, onChange }: SizeRowProps): JSX.Element {
+function SizeRow({ label, name, value, min, max, onChange }: SizeRowProps): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <span
@@ -180,6 +182,8 @@ function SizeRow({ label, value, min, max, onChange }: SizeRowProps): JSX.Elemen
       </span>
       <input
         type="range"
+        aria-label={name}
+        aria-valuetext={`${value.toFixed(1)} m`}
         min={min}
         max={max}
         step={0.5}

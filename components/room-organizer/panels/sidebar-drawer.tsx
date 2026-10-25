@@ -31,7 +31,7 @@ import { RoofPanel } from './roof-panel';
 import { RoomSettingsPanel } from './room-settings-panel';
 import { SetsPanel } from './sets-panel';
 import { ShortcutsPanel } from './shortcuts-panel';
-import { SidebarTabs, type SidebarTab } from './sidebar-tabs';
+import { SIDE_PANELS_ID, SIDE_TABPANEL_ID, SidebarTabs, sideTabId, type SidebarTab } from './sidebar-tabs';
 import { SitePanel } from './site-panel';
 import { StatisticsPanel } from './statistics-panel';
 import { TemplatesPanel } from './templates-panel';
@@ -134,6 +134,7 @@ export const SidebarDrawer = memo(function SidebarDrawer({
       )}
       <aside
         ref={drawerRef}
+        id={SIDE_PANELS_ID}
         role="dialog"
         aria-modal={drawing ? undefined : 'true'}
         tabIndex={-1}
@@ -175,6 +176,9 @@ export const SidebarDrawer = memo(function SidebarDrawer({
 
         <div
           ref={scrollRef}
+          id={SIDE_TABPANEL_ID}
+          role="tabpanel"
+          aria-labelledby={sideTabId(sidebarTab)}
           style={{
             flex: 1,
             overflowY: 'auto',

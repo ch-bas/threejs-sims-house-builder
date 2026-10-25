@@ -49,10 +49,12 @@ function isSelected(value: string, swatch: string): boolean {
 }
 
 function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPickerProps): JSX.Element {
+  const labelId = useId();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
+          id={labelId}
           style={{
             width: 48,
             fontFamily: 'var(--pc-font-display)',
@@ -67,6 +69,7 @@ function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchP
         </span>
         <input
           type="color"
+          aria-labelledby={labelId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onBlur={(event) => onCommit(event.target.value)}
