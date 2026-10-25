@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { clampDormer, dormerPresetFields } from '../lib/dormers';
+import { buildDormerWell, dormerWells } from './dormers';
 import { buildRoof, removeRoof, ROOF_TAG } from './roof';
 import type { DormerSpec } from '../lib/types';
 
@@ -74,5 +75,52 @@ describe('dormers on the roof (#203)', () => {
       const ray = new THREE.Raycaster(new THREE.Vector3(at.x + width / 4, at.y - height / 4, -50), new THREE.Vector3(0, 0, 1));
       expect(ray.intersectObject(front, true)[0]?.object).toBe(pane);
     }
+  });
+});
+
+describe('dormer wells under the attic ceiling (#487)', () => {
+  it('opens one well inside each built dormer, on its own side of the ridge', () => {
+    const wells = dormerWells('gable', 10, 8, 6, DORMERS);
+    expect(wells).toHaveLength(2);
+    const [rear, front] = wells.map((well) => well.rect);
+    expect(rear!.z0).toBeGreaterThan(0);
+    expect(front!.z1).toBeLessThan(0);
+    expect(front!.x1).toBeLessThan(0);
+    // Inside the walls, so the plate's hole never meets its outline.
+    for (const rect of [rear!, front!]) {
+      expect(Math.abs(rect.x0)).toBeLessThan(5);
+      expect(Math.abs(rect.x1)).toBeLessThan(5);
+      expect(Math.abs(rect.z0)).toBeLessThan(4);
+      expect(Math.abs(rect.z1)).toBeLessThan(4);
+    }
+  });
+
+  it('matches the dormer in plan, its cheeks just outside the well', () => {
+    const scene = new THREE.Scene();
+    buildRoof(THREE, { scene, width: 10, depth: 8, baseY: 6, spec: { style: 'gable', dormers: DORMERS } });
+    const [, front] = dormerGroups(scene).map((g) => new THREE.Box3().setFromObject(g));
+    const rect = dormerWells('gable', 10, 8, 6, DORMERS)[1]!.rect;
+    expect(rect.x0).toBeGreaterThan(front!.min.x);
+    expect(rect.x1).toBeLessThan(front!.max.x);
+    expect(rect.x1 - rect.x0).toBeCloseTo(1.6 - 0.02, 5);
+  });
+
+  it('skips dormers that do not build and a well overlapping an earlier one', () => {
+    expect(dormerWells('flat', 10, 8, 6, DORMERS)).toHaveLength(0);
+    expect(dormerWells('gable', 10, 8, 6, [{ id: 'end', side: 'east', width: 2 }])).toHaveLength(0);
+    const twin: DormerSpec = { ...DORMERS[1]!, id: 'twin', offset: -1.5 };
+    expect(dormerWells('gable', 10, 8, 6, [DORMERS[1]!, twin])).toHaveLength(1);
+  });
+
+  it('lines the well from the ceiling to just under the dormer top', () => {
+    const [well] = dormerWells('gable', 10, 8, 6, [DORMERS[1]!]);
+    const lining = buildDormerWell(THREE, well!.frame, 5.99, new THREE.MeshBasicMaterial());
+    lining.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(lining);
+    expect(box.min.y).toBeCloseTo(5.99, 5);
+    expect(box.max.y).toBeLessThan(well!.frame.topY);
+    expect(box.max.y).toBeGreaterThan(well!.frame.topY - 0.05);
+    // Two sides, the back, the cap and the strip under the face.
+    expect(lining.children).toHaveLength(5);
   });
 });

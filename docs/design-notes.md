@@ -405,6 +405,13 @@ to respect.
   house and its roof show. Only the walker's storey is lit, since point
   lights cast no shadow. The #359 ceiling plate stays under the storey
   above (a floor plate is invisible from below); its stairwell shafts go.
+  Under the roof the walker gets the attic ceiling (#487, `buildAtticCeiling`
+  in `three/roof.ts`): a plaster plate just below the roof base, out to the
+  eaves, instead of the roof's shingled underside, opening into a lined well
+  under each dormer so its glazed face shows from inside. With wells, the
+  roof's shingled body stops writing colour and depth (`setRoofShellHidden`)
+  but still casts its shadow; its visibility stays with `applyWallDisplay`.
+  Nothing outside the walkthrough changes, nor the GLB.
   Colliders carry their storey's height span and the walker is tested
   against its storey and the ones either side, so it passes over what
   stands below a landing; a flight shorter than its storey allows the

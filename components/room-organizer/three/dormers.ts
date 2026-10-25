@@ -192,3 +192,97 @@ function addJulietRail(THREE: ThreeModule, group: ThreeNS.Group, rects: readonly
     group.add(bracket);
   }
 }
+
+/** A dormer's well in plan, world coordinates: where the attic ceiling opens under it. */
+export interface DormerWellRect {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+/** A dormer seen from the room under the roof (#487): its frame and the hole it needs. */
+export interface DormerWell {
+  frame: DormerFrame;
+  rect: DormerWellRect;
+}
+
+/** Keeps the well's lining just inside the dormer's cheeks and top (#276). */
+const WELL_INSET = 0.01;
+
+/**
+ * The wells the attic ceiling opens under `dormers`: one per dormer that
+ * builds, in the order given. A dormer whose well would overlap an earlier
+ * one (two dormers pushed together) keeps its ceiling closed: overlapping
+ * holes break the plate's triangulation.
+ */
+export function dormerWells(
+  style: RoofStyle,
+  width: number,
+  depth: number,
+  baseY: number,
+  dormers: readonly DormerSpec[]
+): DormerWell[] {
+  const wells: DormerWell[] = [];
+  for (const dormer of dormers) {
+    const frame = dormerFrame(style, width, depth, baseY, dormer);
+    if (!frame) continue;
+    const half = frame.width / 2 - WELL_INSET;
+    const cos = Math.cos(frame.rotationY);
+    const sin = Math.sin(frame.rotationY);
+    // Local (x, z) to world, as Object3D.rotation.y turns it.
+    const xs: number[] = [];
+    const zs: number[] = [];
+    for (const x of [frame.centerX - half, frame.centerX + half]) {
+      for (const z of [frame.faceZ, frame.backZ]) {
+        xs.push(x * cos + z * sin);
+        zs.push(-x * sin + z * cos);
+      }
+    }
+    const rect = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+    const overlaps = wells.some(
+      (other) => rect.x0 < other.rect.x1 && other.rect.x0 < rect.x1 && rect.z0 < other.rect.z1 && other.rect.z0 < rect.z1
+    );
+    if (!overlaps) wells.push({ frame, rect });
+  }
+  return wells;
+}
+
+/**
+ * The lining of a dormer's well, from the attic ceiling at `ceilingY` up to
+ * just under the dormer's flat top (#487): two sides, the back, the strip of
+ * front wall under the dormer's face, and a cap. The face itself, with its
+ * glazed openings, is the dormer's own, drawn two-sided. Built in the
+ * dormer's local frame and turned onto its side like the dormer.
+ */
+export function buildDormerWell(
+  THREE: ThreeModule,
+  frame: DormerFrame,
+  ceilingY: number,
+  material: ThreeNS.Material
+): ThreeNS.Group {
+  const group = new THREE.Group();
+  const half = frame.width / 2 - WELL_INSET;
+  const capY = frame.topY - WELL_INSET;
+  const run = frame.backZ - frame.faceZ;
+  const midZ = (frame.faceZ + frame.backZ) / 2;
+  const wall = (w: number, h: number, x: number, y: number, z: number, rotationY: number) => {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
+    mesh.position.set(frame.centerX + x, y, z);
+    mesh.rotation.y = rotationY;
+    group.add(mesh);
+  };
+  const height = capY - ceilingY;
+  if (height > 0 && run > 0) {
+    for (const side of [-1, 1]) wall(run, height, side * half, ceilingY + height / 2, midZ, Math.PI / 2);
+    wall(half * 2, height, 0, ceilingY + height / 2, frame.backZ, 0);
+    const cap = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, run), material);
+    cap.rotation.x = Math.PI / 2;
+    cap.position.set(frame.centerX, capY, midZ);
+    group.add(cap);
+  }
+  const front = frame.bottomY - ceilingY;
+  if (front > 0) wall(half * 2, front, 0, ceilingY + front / 2, frame.faceZ, 0);
+  group.rotation.y = frame.rotationY;
+  return group;
+}
