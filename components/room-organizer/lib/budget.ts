@@ -97,6 +97,32 @@ export function sellBackLoss(items: readonly Pick<FurnitureItem, 'id' | 'price'>
 }
 
 /**
+ * What removing `items` costs under the hard budget: the sell-back loss
+ * while it is on, nothing while it is off. Every route that takes furniture
+ * out of the house (Demolish, Clear floor, Remove floor, Surprise replacing a
+ * floor) sells at the same rate, so clearing and rebuying can't dodge it (#534).
+ */
+export function hardBudgetLoss(
+  layout: Pick<RoomLayout, 'budget'>,
+  items: readonly Pick<FurnitureItem, 'id' | 'price'>[]
+): number {
+  return isHardBudgetOn(layout) ? sellBackLoss(items) : 0;
+}
+
+/**
+ * `layout` with the sale of `items` booked to the write-off, or `layout`
+ * itself when the hard budget is off or the sale loses nothing.
+ */
+export function bookSale<T extends Pick<RoomLayout, 'budget'>>(
+  layout: T,
+  items: readonly Pick<FurnitureItem, 'id' | 'price'>[]
+): T {
+  const loss = hardBudgetLoss(layout, items);
+  if (loss === 0 || !layout.budget) return layout;
+  return { ...layout, budget: { writeOff: Math.min(MAX_WRITE_OFF, layout.budget.writeOff + loss) } };
+}
+
+/**
  * Why a catalogue tile can't be bought under the hard budget, or null when
  * it can (or the hard budget is off: `remaining` null).
  */

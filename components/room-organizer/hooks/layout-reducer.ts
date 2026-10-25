@@ -1,4 +1,4 @@
-import { MAX_WRITE_OFF, budgetSpent, isHardBudgetOn, sellBackLoss } from '../lib/budget';
+import { bookSale, budgetSpent, isHardBudgetOn } from '../lib/budget';
 import {
   DEFAULT_BUDGET,
   DEFAULT_ROOF,
@@ -432,11 +432,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         ...current,
         items: current.items.filter((item) => !ids.has(item.id)),
       }));
-      const budget = next.layout.budget;
-      const loss = sellBackLoss(sold);
-      if (!budget || !isHardBudgetOn(next.layout) || loss === 0) return next;
-      const writeOff = Math.min(MAX_WRITE_OFF, budget.writeOff + loss);
-      return { ...next, layout: { ...next.layout, budget: { writeOff } } };
+      return withSale(state, next, sold);
     }
 
     case 'setHardBudget':
@@ -608,9 +604,16 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       );
 
     // -- bulk item operations -----------------------------------------------
-    case 'replaceItems':
+    // Surprise and auto-arrange. Whatever leaves the floor (an id the new
+    // list doesn't carry) is sold back under the hard budget, like Demolish
+    // (#534); items that stay, merely moved, cost nothing.
+    case 'replaceItems': {
       if (!hasRoomFor(action.items, 0, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID)) return state;
-      return withActiveFloor(state, (floor) => ({ ...floor, items: action.items.map(boundItem) }));
+      const kept = new Set(action.items.map((item) => item.id));
+      const sold = state.layout.floors[state.activeFloorIndex]?.items.filter((item) => !kept.has(item.id)) ?? [];
+      const next = withActiveFloor(state, (floor) => ({ ...floor, items: action.items.map(boundItem) }));
+      return withSale(state, next, sold);
+    }
 
     case 'addItems':
       return withActiveFloor(state, (floor) =>
@@ -723,10 +726,15 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // recess, so it stays — otherwise clearing a floor would read as the
       // user deleting the door and the porch would keep a blank back wall
       // for good (#273).
-      return withActiveFloor(state, (floor) => {
-        const items = floor.items.filter((item) => item.id === ENTRANCE_DOOR_ID);
-        return items.length === floor.items.length ? floor : { ...floor, items };
-      });
+      // Under the hard budget the furniture is sold back, like Demolish (#534).
+      return withSale(
+        state,
+        withActiveFloor(state, (floor) => {
+          const items = floor.items.filter((item) => item.id === ENTRANCE_DOOR_ID);
+          return items.length === floor.items.length ? floor : { ...floor, items };
+        }),
+        state.layout.floors[state.activeFloorIndex]?.items ?? []
+      );
 
     // -- interior walls -----------------------------------------------------
     // Endpoints must be finite, or the save fails validation on reload (#418).
@@ -845,8 +853,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // slot; without the adjustment the editor silently switches floors.
       const nextActive =
         action.index < state.activeFloorIndex ? state.activeFloorIndex - 1 : state.activeFloorIndex;
+      // The storey's furniture is sold back under the hard budget (#534).
       return {
-        layout: { ...state.layout, floors },
+        layout: bookSale({ ...state.layout, floors }, state.layout.floors[action.index]?.items ?? []),
         activeFloorIndex: clampActiveIndex(nextActive, floors.length),
       };
     }
@@ -974,6 +983,17 @@ function withLayout(state: LayoutState, update: (layout: RoomLayout) => RoomLayo
   const next = update(state.layout);
   // A no-op keeps state identity, so it never registers in undo history.
   return next === state.layout ? state : { ...state, layout: next };
+}
+
+/**
+ * `next` with the sale of `sold` booked to the hard budget's write-off
+ * (lib/budget.ts `bookSale`). A refused edit (`next === state`) sells
+ * nothing and keeps its identity.
+ */
+function withSale(state: LayoutState, next: LayoutState, sold: readonly FurnitureItem[]): LayoutState {
+  if (next === state) return state;
+  const layout = bookSale(next.layout, sold);
+  return layout === next.layout ? next : { ...next, layout };
 }
 
 function withActiveFloor(state: LayoutState, update: (floor: FloorLayout) => FloorLayout): LayoutState {

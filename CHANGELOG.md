@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- With the hard budget on, Clear floor, Remove floor and Surprise me now sell the furniture they take away back at 80 %, like Demolish, instead of refunding it in full ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))
+
 ## [1.22.0] - 2026-10-24
 
 The **Toolchain, CI & repo hygiene** milestone, plus people who dress up, sit down and get out of each other's way.
