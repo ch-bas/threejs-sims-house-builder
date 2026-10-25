@@ -37,6 +37,8 @@ export function SidebarTabs({ active, onChange }: SidebarTabsProps): JSX.Element
   // WAI-ARIA tabs with automatic activation (#434): one tab stop, the arrow
   // keys (and Home/End) move between tabs and open the one they land on.
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    // Alt+Left is the browser's Back; leave modified keys alone.
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const index = TABS.findIndex((tab) => sideTabId(tab.key) === event.currentTarget.id);
     let next: number;
     switch (event.key) {

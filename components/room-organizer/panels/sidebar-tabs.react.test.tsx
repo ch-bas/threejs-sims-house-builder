@@ -65,4 +65,13 @@ describe('SidebarTabs (#434)', () => {
       window.removeEventListener('keydown', onWindowKey);
     }
   });
+
+  it('leaves modified arrows (Alt+Left is Back) to the browser', () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    const build = screen.getByRole('tab', { name: 'Build' });
+    fireEvent.keyDown(build, { key: 'ArrowLeft', altKey: true });
+    fireEvent.keyDown(build, { key: 'ArrowRight', metaKey: true });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
