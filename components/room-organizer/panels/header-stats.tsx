@@ -300,7 +300,8 @@ function Chip({ icon, label, value, intent = 'normal' }: ChipProps): JSX.Element
       <Icon name={icon} size={14} />
       <span
         style={{
-          opacity: 0.85,
+          // Full strength on a tinted chip: the label at 0.85 missed 4.5:1 (#432).
+          opacity: intent === 'normal' ? 0.85 : 1,
           fontWeight: 600,
           letterSpacing: 'var(--pc-tr-caps)',
           textTransform: 'uppercase',
