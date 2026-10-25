@@ -17,6 +17,7 @@ import { DEFAULT_BUDGET } from './constants';
 import { parseStoredLayout } from './schema';
 import { decodeShareUrl, encodeShareUrl } from './share';
 import { ENTRANCE_DOOR_ID } from './street';
+import { surpriseFloorItems } from './surprise';
 import type { FurnitureItem, RoomLayout } from './types';
 
 function stateWith(items: FurnitureItem[], budget?: { writeOff: number }): LayoutState {
@@ -208,5 +209,98 @@ describe('persistence and sharing (#463e)', () => {
     const { url } = await encodeShareUrl(on, 'https://x.test/');
     const decoded = await decodeShareUrl(url.slice(url.indexOf('#')));
     expect(decoded?.budget).toEqual({ writeOff: 130 });
+  });
+});
+
+describe('every removal route sells back under the hard budget (#534)', () => {
+  const chair = makeItem({ id: 'chair', price: 100 });
+  const upstairsBed = makeItem({ id: 'bed', price: 900 });
+
+  function twoStoreys(budget?: { writeOff: number }): LayoutState {
+    return {
+      layout: makeLayout({
+        floors: [makeFloor({ items: [sofa, lamp] }), makeFloor({ id: 'upper', name: 'First Floor', items: [upstairsBed, chair] })],
+        ...(budget ? { budget } : {}),
+      }),
+      activeFloorIndex: 0,
+    };
+  }
+
+  /** Undo is a snapshot restore: applyLayout of the layout before the edit. */
+  function undo(before: LayoutState, after: LayoutState): LayoutState {
+    return layoutReducer(after, { type: 'applyLayout', layout: before.layout });
+  }
+
+  it('Clear floor books 20 % of the cleared furniture, and undo takes it back', () => {
+    const state = twoStoreys({ writeOff: 10 });
+    const before = budgetRemaining(state.layout)!;
+    const next = layoutReducer(state, { type: 'clearItems' });
+    expect(next.layout.floors[0]!.items).toEqual([]);
+    expect(next.layout.budget).toEqual({ writeOff: 10 + 130 + 9 });
+    expect(budgetRemaining(next.layout)! - before).toBe(520 + 36);
+    expect(undo(state, next).layout).toEqual(state.layout);
+  });
+
+  it('Remove floor books 20 % of that storey, and undo takes it back', () => {
+    const state = twoStoreys({ writeOff: 0 });
+    const next = layoutReducer(state, { type: 'removeFloor', index: 1 });
+    expect(next.layout.floors).toHaveLength(1);
+    expect(next.layout.budget).toEqual({ writeOff: 180 + 20 });
+    expect(undo(state, next).layout).toEqual(state.layout);
+  });
+
+  it('Surprise replacing a floor books 20 % of what it replaced, not of what it kept', () => {
+    const state = twoStoreys({ writeOff: 0 });
+    const items = surpriseFloorItems(state.layout, 0, DEFAULT_BUDGET, 3);
+    const next = layoutReducer(state, { type: 'replaceItems', items });
+    expect(next).not.toBe(state);
+    expect(next.layout.budget).toEqual({ writeOff: 130 + 9 });
+    expect(undo(state, next).layout).toEqual(state.layout);
+    // Auto-arrange moves the same items: nothing is sold.
+    const moved = [{ ...sofa, position: { x: 1, z: 1 } }, lamp];
+    expect(layoutReducer(state, { type: 'replaceItems', items: moved }).layout.budget).toEqual({ writeOff: 0 });
+  });
+
+  it('Surprise budgets for the loss on what it replaces, so it is not refused for it', () => {
+    // 1,400 left; selling the 2,000 piece back frees 1,600 more, not 2,000.
+    const pricey = makeItem({ id: 'pricey', price: 2000 });
+    const tight: LayoutState = {
+      layout: makeLayout({ floors: [makeFloor({ items: [pricey] })], budget: { writeOff: DEFAULT_BUDGET - 3400 } }),
+      activeFloorIndex: 0,
+    };
+    expect(budgetRemaining(tight.layout)).toBe(1400);
+    // Seeds whose decor would fill a 3,400 cap to the brim.
+    for (const seed of [4, 20]) {
+      const items = surpriseFloorItems(tight.layout, 0, DEFAULT_BUDGET, seed);
+      expect(purchasePrice(items)).toBeLessThanOrEqual(3000);
+      const next = layoutReducer(tight, { type: 'replaceItems', items });
+      expect(next).not.toBe(tight);
+      expect(budgetRemaining(next.layout)).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('with the budget off, the three routes are plain removal and leave no field behind', () => {
+    const state = twoStoreys();
+    expect('budget' in layoutReducer(state, { type: 'clearItems' }).layout).toBe(false);
+    expect('budget' in layoutReducer(state, { type: 'removeFloor', index: 1 }).layout).toBe(false);
+    const items = surpriseFloorItems(state.layout, 0, DEFAULT_BUDGET, 3);
+    expect('budget' in layoutReducer(state, { type: 'replaceItems', items }).layout).toBe(false);
+    // Switched off after a sale: the stored write-off is left alone.
+    const off: LayoutState = { ...state, layout: { ...state.layout, budget: { writeOff: 50, enabled: false } } };
+    expect(layoutReducer(off, { type: 'clearItems' }).layout.budget).toEqual({ writeOff: 50, enabled: false });
+    expect(layoutReducer(off, { type: 'removeFloor', index: 1 }).layout.budget).toEqual({ writeOff: 50, enabled: false });
+  });
+
+  it('a no-op clear keeps state identity and books nothing', () => {
+    const empty = stateWith([], { writeOff: 5 });
+    expect(layoutReducer(empty, { type: 'clearItems' })).toBe(empty);
+  });
+
+  it('Clear floor keeps the porch door and charges nothing for it', () => {
+    const door = makeItem({ id: ENTRANCE_DOOR_ID, price: 400 });
+    const state = stateWith([door, lamp], { writeOff: 0 });
+    const next = layoutReducer(state, { type: 'clearItems' });
+    expect(next.layout.floors[0]!.items).toEqual([door]);
+    expect(next.layout.budget).toEqual({ writeOff: 9 });
   });
 });

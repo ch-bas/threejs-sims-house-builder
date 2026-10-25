@@ -1,4 +1,4 @@
-import { activeWriteOff } from './budget';
+import { activeWriteOff, hardBudgetLoss } from './budget';
 import { FURNITURE_CATALOG } from './constants';
 import { floorKeepOut } from './floor-keep-out';
 import { FURNITURE_SETS, WALL_INSET, placeSetInFreeSpace, setFitsRoom, type FurnitureSet } from './furniture-sets';
@@ -128,9 +128,12 @@ export function surpriseFloorItems(layout: RoomLayout, floorIndex: number, budge
   const floor = layout.floors[floorIndex];
   if (!floor) return [];
   const kept = floor.items.filter(keptBySurprise);
+  const replaced = floor.items.filter((item) => !keptBySurprise(item));
   const replacedCost = totalCost(floor.items) - totalCost(kept);
-  // Under the hard budget, sell-back losses are spent too (#463e).
-  const spent = totalCost(layout.floors.flatMap((entry) => entry.items)) - replacedCost + activeWriteOff(layout);
+  // Under the hard budget, sell-back losses are spent too (#463e), and that
+  // includes the loss on the furniture this replaces (#534).
+  const spent =
+    totalCost(layout.floors.flatMap((entry) => entry.items)) - replacedCost + activeWriteOff(layout) + hardBudgetLoss(layout, replaced);
   const generated = surpriseLayout({
     roomWidth: layout.width,
     roomDepth: layout.height,

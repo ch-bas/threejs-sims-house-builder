@@ -140,9 +140,9 @@ components/
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
     │   ├── measurement.ts               Distance-tool spheres + line
     │   ├── item-labels.ts               Floating sprite labels above items
-    │   ├── roof.ts                      Flat / gable / hipped roof
+    │   ├── roof.ts                      Flat / gable / hipped roof; walkthrough attic ceiling (#487)
     │   ├── ceiling.ts                   Walkthrough ceiling + stairwell shafts up and down (#359)
-    │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails
+    │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails; attic wells (#487)
     │   ├── neighbours.ts                The street's houses from their specs (merged + instanced)
     │   ├── terrain.ts                   Sloped ground + excavation faces
     │   ├── entrance.ts                  Recessed porch reveals, soffit, steps

@@ -1,7 +1,7 @@
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
 import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
 import { removeAndDispose } from './builder-utils';
-import { buildDormers } from './dormers';
+import { buildDormers, buildDormerWell, dormerWells } from './dormers';
 import { DisposableLruCache } from './texture-lru';
 import { getMaxAnisotropy } from './texture-settings';
 import type { RoofSpec, RoofStyle } from '../lib/types';
@@ -123,6 +123,111 @@ export function removeRoof(scene: ThreeNS.Scene): void {
     .forEach((obj) => removeAndDispose(scene, obj));
 }
 
+/**
+ * The shingled roof bodies: the slab, the gable or the hipped slopes. A
+ * WeakSet, not a userData flag: GLTFExporter writes userData into the GLB.
+ */
+const roofShells = new WeakSet<ThreeNS.Object3D>();
+
+/** Tag of the walkthrough attic ceiling (#487). */
+export const ATTIC_TAG = 'attic-ceiling';
+
+/** Below the roof's base, which a gable or a flat roof closes with a face (#276). */
+export const ATTIC_CEILING_GAP = 0.01;
+
+const ATTIC_COLOR = 0xf4f1ea;
+
+export interface AtticCeilingOptions {
+  scene: ThreeNS.Scene;
+  width: number;
+  depth: number;
+  /** Y of the roof base (top of the highest storey). */
+  baseY: number;
+  spec: RoofSpec;
+}
+
+/**
+ * What the walker on the top storey sees overhead (#487): a plain plaster
+ * ceiling just under the roof, out to the eaves so it also reads as the
+ * soffit from a window, instead of the roof's shingled underside. Under each
+ * dormer it opens into a lined well up to the dormer, whose glazed face
+ * then shows from inside. Only the walkthrough builds it; the roof itself
+ * is untouched, so the house from outside and the GLB export don't change.
+ * Returns the number of dormer wells (the caller hides the roof shell with
+ * `setRoofShellHidden` when there are any), or null when nothing is built.
+ */
+export function buildAtticCeiling(THREE: ThreeModule, options: AtticCeilingOptions): number | null {
+  const { scene, width, depth, baseY, spec } = options;
+  removeAtticCeiling(scene);
+  if (spec.style === 'none') return null;
+
+  const wells = spec.style === 'flat' ? [] : dormerWells(spec.style, width, depth, baseY, spec.dormers ?? []);
+  const group = new THREE.Group();
+  group.name = 'Attic ceiling';
+  group.userData.type = ATTIC_TAG;
+  const material = new THREE.MeshStandardMaterial({ color: ATTIC_COLOR, roughness: 0.95, side: THREE.DoubleSide });
+  const ceilingY = baseY - ATTIC_CEILING_GAP;
+
+  // Laid out in XY and turned flat: shape y is world −z.
+  const halfW = width / 2 + EAVE_OVERHANG;
+  const halfD = depth / 2 + EAVE_OVERHANG;
+  const outline = new THREE.Shape();
+  outline.moveTo(-halfW, -halfD);
+  outline.lineTo(halfW, -halfD);
+  outline.lineTo(halfW, halfD);
+  outline.lineTo(-halfW, halfD);
+  outline.closePath();
+  for (const { rect } of wells) {
+    const hole = new THREE.Path();
+    hole.moveTo(rect.x0, -rect.z1);
+    hole.lineTo(rect.x1, -rect.z1);
+    hole.lineTo(rect.x1, -rect.z0);
+    hole.lineTo(rect.x0, -rect.z0);
+    hole.closePath();
+    outline.holes.push(hole);
+  }
+  const plate = new THREE.Mesh(new THREE.ShapeGeometry(outline), material);
+  plate.rotation.x = -Math.PI / 2;
+  plate.position.y = ceilingY;
+  plate.name = 'Attic ceiling plate';
+  group.add(plate);
+  for (const { frame } of wells) group.add(buildDormerWell(THREE, frame, ceilingY, material));
+
+  // The roof above still casts the house's shadow; the ceiling adds none, so
+  // entering and leaving the top storey needn't redraw the shadow map.
+  group.traverse((obj) => {
+    obj.castShadow = false;
+    obj.receiveShadow = false;
+  });
+  scene.add(group);
+  return wells.length;
+}
+
+export function removeAtticCeiling(scene: ThreeNS.Scene): void {
+  scene.children
+    .filter((obj) => obj.userData.type === ATTIC_TAG)
+    .forEach((obj) => removeAndDispose(scene, obj));
+}
+
+/**
+ * Stop drawing the roof's shingled body, while keeping its shadow, its
+ * fascia and its dormers: under the attic ceiling's dormer wells it would
+ * otherwise close every well with its underside (#487). Only the colour and
+ * depth writes go, not the object's visibility, which the wall-display
+ * modes own (applyWallDisplay), and not the shadow pass, which ignores both.
+ */
+export function setRoofShellHidden(scene: ThreeNS.Scene, hidden: boolean): void {
+  for (const obj of scene.children) {
+    if (obj.userData.type !== ROOF_TAG) continue;
+    obj.traverse((child) => {
+      if (!roofShells.has(child) || !('material' in child)) return;
+      const material = child.material as ThreeNS.Material;
+      material.colorWrite = !hidden;
+      material.depthWrite = !hidden;
+    });
+  }
+}
+
 function defaultRoofColor(style: RoofStyle): string {
   return ROOF_STYLE_DEFAULT_COLORS[style];
 }
@@ -142,6 +247,7 @@ function buildFlatRoof(
   mesh.receiveShadow = true;
   mesh.name = 'Roof';
   mesh.userData.type = ROOF_TAG;
+  roofShells.add(mesh);
   return mesh;
 }
 
@@ -178,6 +284,7 @@ function buildGableRoof(
   mesh.receiveShadow = true;
   mesh.name = 'Roof';
   mesh.userData.type = ROOF_TAG;
+  roofShells.add(mesh);
 
   // Fascia: thin trim board running along each eave for a clean edge.
   const group = new THREE.Group();
@@ -228,6 +335,7 @@ function buildHippedRoof(
   mesh.receiveShadow = true;
   mesh.name = 'Roof';
   mesh.userData.type = ROOF_TAG;
+  roofShells.add(mesh);
   return mesh;
 }
 

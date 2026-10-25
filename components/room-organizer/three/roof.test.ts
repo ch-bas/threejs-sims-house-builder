@@ -1,6 +1,16 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { ROOF_OFF_STOREY_KEY, buildRoof, roofSurfaceUvs, setRoofOnStorey } from './roof';
+import {
+  ATTIC_CEILING_GAP,
+  ATTIC_TAG,
+  ROOF_OFF_STOREY_KEY,
+  buildAtticCeiling,
+  buildRoof,
+  removeAtticCeiling,
+  roofSurfaceUvs,
+  setRoofOnStorey,
+  setRoofShellHidden,
+} from './roof';
 import type { RoofStyle } from '../lib/types';
 
 function roofMeshes(style: RoofStyle, width: number, depth: number): THREE.Mesh[] {
@@ -90,5 +100,73 @@ describe('setRoofOnStorey (#283)', () => {
     expect(other.userData[ROOF_OFF_STOREY_KEY]).toBeUndefined();
     setRoofOnStorey(scene, true);
     expect(roofs.every((obj) => obj.userData[ROOF_OFF_STOREY_KEY] === false)).toBe(true);
+  });
+});
+
+describe('walkthrough attic ceiling (#487)', () => {
+  const DORMER = { id: 'd', side: 'north' as const, width: 2, window: true };
+  const atticOf = (scene: THREE.Scene) => scene.children.filter((obj) => obj.userData.type === ATTIC_TAG);
+  const shell = (scene: THREE.Scene): THREE.Material => {
+    let found: THREE.Material | undefined;
+    scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.name === 'Roof') found = obj.material as THREE.Material;
+    });
+    return found!;
+  };
+
+  it.each(['flat', 'gable', 'hipped'] as const)('lays a plain plate just under a %s roof, out to the eaves', (style) => {
+    const scene = new THREE.Scene();
+    expect(buildAtticCeiling(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style } })).toBe(0);
+    const [attic] = atticOf(scene);
+    const box = new THREE.Box3().setFromObject(attic!);
+    expect(box.max.y).toBeCloseTo(3 - ATTIC_CEILING_GAP, 5);
+    expect(box.max.x - box.min.x).toBeCloseTo(8 + 0.7, 5);
+    expect(box.max.z - box.min.z).toBeCloseTo(6 + 0.7, 5);
+    attic!.traverse((obj) => {
+      expect(obj.castShadow).toBe(false);
+      if (obj instanceof THREE.Mesh) expect((obj.material as THREE.MeshStandardMaterial).map).toBeNull();
+    });
+  });
+
+  it('builds nothing without a roof, and replaces itself on a rebuild', () => {
+    const scene = new THREE.Scene();
+    expect(buildAtticCeiling(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'none' } })).toBeNull();
+    expect(scene.children).toHaveLength(0);
+    buildAtticCeiling(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'gable' } });
+    buildAtticCeiling(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'gable', dormers: [DORMER] } });
+    expect(atticOf(scene)).toHaveLength(1);
+    removeAtticCeiling(scene);
+    expect(scene.children).toHaveLength(0);
+  });
+
+  it('opens a well per dormer, rising past the roof base to the dormer', () => {
+    const scene = new THREE.Scene();
+    expect(buildAtticCeiling(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'gable', dormers: [DORMER] } })).toBe(1);
+    const box = new THREE.Box3().setFromObject(atticOf(scene)[0]!);
+    expect(box.max.y).toBeGreaterThan(3.5);
+  });
+
+  it('hides the shingled body from the colour pass only, and brings it back', () => {
+    const scene = new THREE.Scene();
+    buildRoof(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'gable', dormers: [DORMER] } });
+    const others: THREE.Material[] = [];
+    scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.name !== 'Roof') others.push(obj.material as THREE.Material);
+    });
+    setRoofShellHidden(scene, true);
+    expect(shell(scene).colorWrite).toBe(false);
+    expect(shell(scene).depthWrite).toBe(false);
+    // The fascia and the dormers stay; so do visibility (the wall-display modes') and the shadow.
+    expect(others.every((m) => m.colorWrite && m.depthWrite)).toBe(true);
+    scene.traverse((obj) => expect(obj.visible).toBe(true));
+    setRoofShellHidden(scene, false);
+    expect(shell(scene).colorWrite).toBe(true);
+    expect(shell(scene).depthWrite).toBe(true);
+  });
+
+  it('keeps the shell mark out of userData, which the GLB export writes out', () => {
+    const scene = new THREE.Scene();
+    buildRoof(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'hipped' } });
+    scene.traverse((obj) => expect(Object.keys(obj.userData).every((key) => key === 'type')).toBe(true));
   });
 });

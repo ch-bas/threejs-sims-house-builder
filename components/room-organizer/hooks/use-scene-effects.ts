@@ -39,7 +39,7 @@ import { applyLampPool, applyTimeOfDay, computeSkyProfile, isLampPrewarmHour, pr
 import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { setOutdoorVisible } from '../three/outdoor';
-import { buildRoof, removeRoof, setRoofOnStorey } from '../three/roof';
+import { buildAtticCeiling, buildRoof, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
 import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
@@ -1082,6 +1082,35 @@ export function useSceneEffects({
     // re-applies it on change, so a display flip needn't rebuild the roof.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, layout.floors.length, storeyHeightsKey, roofOnStorey]);
+
+  // Walkthrough attic (#487): walking indoors where the top storey shows,
+  // the roof's shingled underside gives way to a plain ceiling that opens
+  // into a well under each dormer. Declared after the roof effect, so a roof
+  // rebuilt in the same commit is the one whose shell this hides.
+  const atticCeiling =
+    walkthroughActive && walkIndoors && shownTo >= layout.floors.length - 1 && !!layout.roof && layout.roof.style !== 'none';
+  useEffect(() => {
+    if (!isReady || !atticCeiling || !layout.roof) return undefined;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return undefined;
+    const wells = buildAtticCeiling(THREE, {
+      scene,
+      width: layout.width,
+      depth: layout.height,
+      baseY: buildingHeight(layout.floors),
+      spec: layout.roof,
+    });
+    if (wells) setRoofShellHidden(scene, true);
+    invalidate();
+    return () => {
+      removeAtticCeiling(scene);
+      setRoofShellHidden(scene, false);
+      invalidate();
+    };
+    // layout.floors is read for the eaves height only, as in the roof effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, threeModuleRef, sceneRef, atticCeiling, layout.roof, layout.width, layout.height, layout.floors.length, storeyHeightsKey]);
 
   // 2D top-down view. The backing store is sized to the container's
   // clientWidth/clientHeight × devicePixelRatio (via a ResizeObserver) so the
