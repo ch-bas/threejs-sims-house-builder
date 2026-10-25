@@ -63,7 +63,7 @@ const THEMES: Record<ThemeKey, ThemeDefinition> = {
     key: 'minimalist',
     label: 'Minimalist',
     icon: '⚪',
-    description: 'Whites, blacks, and one accent color.',
+    description: 'Whites, blacks, and one accent colour.',
     floorColor: '#f5f5f5',
     floorPattern: 'concrete',
     wallPattern: 'plaster',

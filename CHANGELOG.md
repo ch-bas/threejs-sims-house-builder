@@ -7,9 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+### Changed
+- The glass panels are darker, so their labels, prices, highlighted and hovered tools, the Demolish button and the panels toggle stay readable over the grass, the sky and white walls (at least 4.5:1, up from as low as 1.5:1) ([#432](https://github.com/ch-bas/threejs-sims-house-builder/issues/432))
+- One spelling and one unit format across the app: "colour", "catalogue" and "metres", lengths always written with a space before the unit ("2.5 m", "0.50 m") in the header, hover card, resize panel, room stamp and 2D plan, and History ages written "3 min ago" so they can't be read as metres ([#438](https://github.com/ch-bas/threejs-sims-house-builder/issues/438))
+- The same figure has the same name everywhere: the mode panel's "Furniture Value" and the Statistics "Total cost" are now "Cost", and the catalogue strip's title uses the tool's own name ("Openings", "Tech") ([#438](https://github.com/ch-bas/threejs-sims-house-builder/issues/438))
+- The CSV inventory and schedule exports name their colour column "Colour" (was "Color") ([#438](https://github.com/ch-bas/threejs-sims-house-builder/issues/438))
+- Statistics says which figures cover the whole house and which floor the collision count is for; Room Settings, Catalogue and Placed Items headings match the size of the other cards ([#438](https://github.com/ch-bas/threejs-sims-house-builder/issues/438))
+- With the hard budget on, the Clear floor and Remove floor confirms say that the furniture sells back at 80% ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))
 ### Fixed
 - Walking the top storey, the ceiling overhead is plain plaster instead of the roof's shingled underside, and each dormer opens into the room so its window shows from inside ([#487](https://github.com/ch-bas/threejs-sims-house-builder/issues/487))
-- With the hard budget on, Clear floor, Remove floor and Surprise me now sell the furniture they take away back at 80 %, like Demolish, instead of refunding it in full ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))
+- With the hard budget on, Clear floor, Remove floor and Surprise me now sell the furniture they take away back at 80%, like Demolish, instead of refunding it in full ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))
 - Screen readers name every field in the side panels (wall and roof colours, search, filter, layout and floor names, room-shape sizes), and the 3D view and the floor plan are announced as pictures of the house ([#434](https://github.com/ch-bas/threejs-sims-house-builder/issues/434), [#436](https://github.com/ch-bas/threejs-sims-house-builder/issues/436))
 - Placed Items rows can be reached with Tab and selected with Enter or Space ([#434](https://github.com/ch-bas/threejs-sims-house-builder/issues/434))
 - The panels button says whether the panels are open, and the Build, Buy, Style and Manage tabs work as tabs: one Tab stop, arrow keys, Home and End ([#434](https://github.com/ch-bas/threejs-sims-house-builder/issues/434))

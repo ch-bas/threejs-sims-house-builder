@@ -539,7 +539,7 @@ function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element 
       className="pc-hud-header"
       style={{
         fontSize: 9,
-        opacity: 0.75,
+        opacity: 0.9,
         marginTop: 6,
         marginBottom: 4,
         paddingLeft: 2,
@@ -725,7 +725,7 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
             key={swatch}
             type="button"
             onClick={() => onChange(swatch)}
-            aria-label={`Use color ${swatch}`}
+            aria-label={`Use colour ${swatch}`}
             aria-pressed={active}
             title={swatch}
             style={{

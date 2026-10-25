@@ -135,7 +135,7 @@ function zoneNames(item: FurnitureItem, zones: readonly RoomZone[] | undefined):
 export function inventoryCsv(layout: RoomLayout): string {
   const lines = [
     csvLine([
-      'Floor', 'Category', 'Type', 'Name', 'Width (m)', 'Depth (m)', 'Height (m)', 'Color', 'Price',
+      'Floor', 'Category', 'Type', 'Name', 'Width (m)', 'Depth (m)', 'Height (m)', 'Colour', 'Price',
       'X (m)', 'Z (m)', 'Rotation (deg)', 'Mirrored', 'Locked', 'Zone',
     ]),
   ];
@@ -172,7 +172,7 @@ export function inventoryCsv(layout: RoomLayout): string {
  */
 export function scheduleCsv(layout: RoomLayout): string {
   const lines = [
-    csvLine(['Floor', 'Category', 'Type', 'Name', 'Width (m)', 'Depth (m)', 'Height (m)', 'Color', 'Unit price', 'Qty', 'Total']),
+    csvLine(['Floor', 'Category', 'Type', 'Name', 'Width (m)', 'Depth (m)', 'Height (m)', 'Colour', 'Unit price', 'Qty', 'Total']),
   ];
   let allQty = 0;
   let allTotal = 0;

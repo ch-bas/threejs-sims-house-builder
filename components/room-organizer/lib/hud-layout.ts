@@ -49,7 +49,7 @@ export interface WelcomeTip {
 }
 
 const POINTER_TIPS: readonly WelcomeTip[] = [
-  { title: 'Drag from catalog', body: 'Drop any catalog item onto the lot to place it exactly where you let go.' },
+  { title: 'Drag from the catalogue', body: 'Drop any catalogue item onto the lot to place it exactly where you let go.' },
   { title: 'Move in 3D', body: 'Click and drag furniture, or select and nudge with the arrow keys — hold Shift for 1 m steps.' },
   { title: 'Grid snap', body: 'Press G to snap items you drag to a 0.5 m grid. Doors and windows snap to walls on their own.' },
   { title: 'Themes & sets', body: 'One-click templates rebuild the room. Library saves named layouts.' },
@@ -60,7 +60,7 @@ const POINTER_TIPS: readonly WelcomeTip[] = [
 // No keyboard, no modifier keys and no pointer lock on a phone (#429): only
 // what a finger can do.
 const TOUCH_TIPS: readonly WelcomeTip[] = [
-  { title: 'Tap to add', body: 'Tap a catalog tile to drop the item on the lot.' },
+  { title: 'Tap to add', body: 'Tap a catalogue tile to drop the item on the lot.' },
   { title: 'Drag to move', body: 'Drag an item with one finger to move it. Tap it to rotate, copy or delete it.' },
   { title: 'Look around', body: 'One finger orbits, pinch zooms, two fingers pan. Pan makes one finger pan; Fit frames the house.' },
   { title: 'Grid snap', body: 'The grid button (under ⋯ on a phone, beside the 2D plan switch) snaps items to 0.5 m. Doors and windows snap to walls on their own.' },

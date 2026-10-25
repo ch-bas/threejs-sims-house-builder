@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { formatMetres } from '../lib/format';
 import { isWallMounted } from '../lib/opening-snap';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
@@ -140,7 +141,7 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
           onClick={() => actions.setColor(item.id, randomHexColor())}
           className="text-xs w-full"
         >
-          🎲 Randomize color
+          🎲 Randomise colour
         </Button>
 
         {item.type === 'sofa' && (
@@ -343,7 +344,7 @@ function DimensionSlider({ item, dimension, disabled, title, onChange }: Dimensi
   return (
     <div title={title} className={disabled ? 'opacity-50' : undefined}>
       <Label htmlFor={inputId} className="text-xs">
-        {dimension.label}: {value.toFixed(2)}m
+        {dimension.label}: {formatMetres(value, 2)}
       </Label>
       <Input
         id={inputId}
@@ -402,7 +403,7 @@ function SignalRangeSlider({
   value,
   disabled,
   title,
-  format = (v) => `${v.toFixed(1)}m`,
+  format = (v) => formatMetres(v, 1),
   onChange,
 }: SignalRangeSliderProps): JSX.Element {
   const id = useId();

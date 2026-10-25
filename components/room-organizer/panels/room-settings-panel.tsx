@@ -63,15 +63,15 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
           />
         </div>
         <div>
-          <Label htmlFor={widthId}>Width (meters)</Label>
+          <Label htmlFor={widthId}>Width (metres)</Label>
           <RoomDimensionInput id={widthId} value={layout.width} onCommit={actions.setWidth} />
         </div>
         <div>
-          <Label htmlFor={heightId}>Depth (meters)</Label>
+          <Label htmlFor={heightId}>Depth (metres)</Label>
           <RoomDimensionInput id={heightId} value={layout.height} onCommit={actions.setHeight} />
         </div>
         <div>
-          <Label htmlFor={storeyId}>Storey height (meters)</Label>
+          <Label htmlFor={storeyId}>Storey height (metres)</Label>
           <div className="flex items-center gap-2">
             <RoomDimensionInput
               id={storeyId}
@@ -98,7 +98,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
           </p>
         </div>
         <div>
-          <Label htmlFor={colorId}>Floor Color</Label>
+          <Label htmlFor={colorId}>Floor colour</Label>
           <Input
             id={colorId}
             type="color"

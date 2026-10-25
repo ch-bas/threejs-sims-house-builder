@@ -69,7 +69,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
       className="pointer-events-auto pc-camera-pad"
       data-scene-occluder=""
       style={{
-        background: 'rgba(60, 90, 105, 0.32)',
+        background: 'var(--pc-glass-tint)',
         backdropFilter: 'var(--pc-glass-blur)',
         WebkitBackdropFilter: 'var(--pc-glass-blur)',
         border: '1px solid rgba(255, 255, 255, 0.30)',
@@ -84,7 +84,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
     >
       <div
         className="pc-hud-header"
-        style={{ fontSize: 9, opacity: 0.75, paddingLeft: 2 }}
+        style={{ fontSize: 9, opacity: 0.9, paddingLeft: 2 }}
       >
         Camera
       </div>

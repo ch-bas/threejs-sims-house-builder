@@ -25,7 +25,7 @@ function setup(floor: FloorLayout, selectedWall: Wall) {
     screen
       .queryAllByRole('button', { pressed: true })
       .map((button) => button.getAttribute('aria-label'))
-      .filter((label) => label?.startsWith('Use color'));
+      .filter((label) => label?.startsWith('Use colour'));
   return { actions, checkedChips, ringedSwatches };
 }
 
@@ -42,7 +42,7 @@ describe('WallPaintPanel — Apply-to truthfulness (#221)', () => {
 
   it('still paints only the interior wall from that state', () => {
     const { actions } = setup(interiorFloor(), { id: 'iw-1', kind: 'interior' });
-    fireEvent.click(screen.getByRole('button', { name: 'Use color #e8dcc4' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use colour #e8dcc4' }));
     expect(actions.setInteriorWallColor).toHaveBeenCalledWith('iw-1', '#e8dcc4');
     expect(actions.setWallColor).not.toHaveBeenCalled();
   });
@@ -63,10 +63,10 @@ describe('WallPaintPanel — Apply-to truthfulness (#221)', () => {
     const floor = makeFloor({
       wallColors: { north: '#ffffff', south: '#ffffff', east: '#FFFFFF', west: '#ffffff' },
     });
-    expect(setup(floor, null).ringedSwatches()).toEqual(['Use color #ffffff']);
+    expect(setup(floor, null).ringedSwatches()).toEqual(['Use colour #ffffff']);
   });
 
   it('treats unpainted walls as the default colour', () => {
-    expect(setup(makeFloor(), null).ringedSwatches()).toEqual(['Use color #e8dcc4']);
+    expect(setup(makeFloor(), null).ringedSwatches()).toEqual(['Use colour #e8dcc4']);
   });
 });

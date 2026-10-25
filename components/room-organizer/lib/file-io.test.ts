@@ -51,7 +51,7 @@ describe('inventoryCsv (#430)', () => {
 
   it('keeps the original columns first and adds placement, state and zone', () => {
     expect(rows(inventoryCsv(layout))[0]).toBe(
-      'Floor,Category,Type,Name,Width (m),Depth (m),Height (m),Color,Price,X (m),Z (m),Rotation (deg),Mirrored,Locked,Zone'
+      'Floor,Category,Type,Name,Width (m),Depth (m),Height (m),Colour,Price,X (m),Z (m),Rotation (deg),Mirrored,Locked,Zone'
     );
   });
 
@@ -83,7 +83,7 @@ describe('scheduleCsv (#430)', () => {
     const csv = scheduleCsv(layout);
     expect(csv.startsWith(BOM)).toBe(true);
     expect(rows(csv)).toEqual([
-      'Floor,Category,Type,Name,Width (m),Depth (m),Height (m),Color,Unit price,Qty,Total',
+      'Floor,Category,Type,Name,Width (m),Depth (m),Height (m),Colour,Unit price,Qty,Total',
       'Ground Floor,,door,Door,1.00,1.00,1.00,#ffffff,320,2,640',
       'Ground Floor,,door,Door,1.00,1.00,1.00,#000000,320,1,320',
       'Upstairs,,door,Door,1.00,1.00,1.00,#ffffff,320,1,320',

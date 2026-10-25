@@ -21,6 +21,9 @@ import type { FurnitureItem, HardBudget, RoomLayout } from './types';
 /** Share of an item's price Demolish pays back while the hard budget is on. */
 export const SELL_BACK_RATE = 0.8;
 
+/** Appended to a confirm that removes furniture while the hard budget is on. */
+export const HARD_BUDGET_SELL_BACK_NOTE = ` With the hard budget on, the furniture sells back at ${Math.round(SELL_BACK_RATE * 100)}%.`;
+
 /** Cap on the stored write-off: far past any house the editor can hold. */
 export const MAX_WRITE_OFF = 1e9;
 

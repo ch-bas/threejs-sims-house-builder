@@ -20,8 +20,10 @@
   --pc-lampshade:       #E8B85A;
 
   /* ---------- HUD / GLASS ---------- */
-  --pc-glass-tint:      rgba(110, 150, 165, 0.42);
-  --pc-glass-tint-dark: rgba(60,  90, 105, 0.55);
+  /* Dark enough that white, cyan and money text reach WCAG AA (4.5:1)
+     over the brightest backdrop, the sky or a white wall (#432). */
+  --pc-glass-tint:      rgba(20,  44,  56, 0.86);
+  --pc-glass-tint-dark: rgba(14,  32,  42, 0.80);
   --pc-glass-stroke:    rgba(255, 255, 255, 0.45);
   --pc-glass-inner:     rgba(255, 255, 255, 0.18);
   --pc-glass-shadow:    rgba(20, 40, 60, 0.25);
@@ -35,12 +37,14 @@
   --pc-ink:             #1A2A33;
   --pc-ink-soft:        rgba(26, 42, 51, 0.7);
   --pc-paper:           #FFFFFF;
-  --pc-paper-soft:      rgba(255, 255, 255, 0.78);
+  --pc-paper-soft:      rgba(255, 255, 255, 0.86);
   --pc-paper-faint:     rgba(255, 255, 255, 0.45);
 
   /* ---------- SEMANTIC ---------- */
   --pc-money:           #FBF7E8;
   --pc-demolish:        #E45248;
+  /* Demolish red lifted for text and icons on the dark glass (4.5:1, #432). */
+  --pc-demolish-ink:    #FFB3AD;
   --pc-warn-amber:      #F2B53D;
   --pc-confirm-green:   #6FCB58;
 
@@ -156,7 +160,7 @@
    Tile recipes — used by panel tiles + buttons
    =========================================================== */
 .pc-tile {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.13);
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: var(--pc-r-md);
   box-shadow: var(--pc-shadow-tile);
@@ -168,7 +172,7 @@
     border-color var(--pc-t-micro) var(--pc-ease-snap);
 }
 .pc-tile:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.18);
   border-color: rgba(127, 243, 255, 0.45);
   transform: translateY(-2px);
 }
@@ -177,15 +181,30 @@
   box-shadow: var(--pc-shadow-tile-press);
 }
 .pc-tile--active {
-  background: rgba(127, 243, 255, 0.18);
+  background: rgba(127, 243, 255, 0.12);
   border-color: var(--pc-cyan-glow);
   box-shadow: var(--pc-halo-cyan);
   color: var(--pc-cyan-glow);
 }
 .pc-tile--active:hover:not(:disabled) {
-  background: rgba(127, 243, 255, 0.22);
+  background: rgba(127, 243, 255, 0.15);
   border-color: var(--pc-cyan-glow);
   transform: translateY(-2px);
+}
+/* The fold chevron: a small tile inside a panel's title button. A lighter
+   wash than a full tile keeps its cyan at 4.5:1 over a white wall (#432). */
+span.pc-tile { background: rgba(255, 255, 255, 0.07); }
+span.pc-tile:hover:not(:disabled) { background: rgba(255, 255, 255, 0.10); }
+/* A tile that is also a glass chip on its own (the lot badge's panels
+   toggle) keeps the glass tint under the tile's light wash: over the sky
+   or a white wall the wash alone leaves its icon at 1-2:1 (#432). */
+.pc-glass--dark.pc-tile,
+.pc-glass--dark.pc-tile:hover:not(:disabled) {
+  background: linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)), var(--pc-glass-tint-dark);
+}
+.pc-glass--dark.pc-tile--active,
+.pc-glass--dark.pc-tile--active:hover:not(:disabled) {
+  background: linear-gradient(rgba(127, 243, 255, 0.12), rgba(127, 243, 255, 0.12)), var(--pc-glass-tint-dark);
 }
 .pc-tile--ghost {
   background: rgba(255, 255, 255, 0.06);
@@ -228,7 +247,7 @@
   100% { opacity: 0; transform: translateY(-14px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pc-funds-delta { animation: none; }
+  .pc-funds-delta, .pc-halo-pulse { animation: none; }
 }
 /* The hard-budget switch sits under the funds, left of their label. */
 .pc-budget-switch {

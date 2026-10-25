@@ -14,7 +14,7 @@ interface TabSpec {
 
 const TABS: readonly TabSpec[] = [
   { key: 'build',  icon: 'build',   label: 'Build',  hint: 'Floors, walls, roof, dimensions' },
-  { key: 'buy',    icon: 'buy',     label: 'Buy',    hint: 'Catalog, sets, placed items' },
+  { key: 'buy',    icon: 'buy',     label: 'Buy',    hint: 'Catalogue, sets, placed items' },
   { key: 'style',  icon: 'sparkle', label: 'Style',  hint: 'Themes, time of day, finishes' },
   { key: 'manage', icon: 'box',     label: 'Manage', hint: 'Templates, library, actions, stats' },
 ];

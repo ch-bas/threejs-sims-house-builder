@@ -90,7 +90,7 @@ function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchP
               <button
                 key={swatch}
                 type="button"
-                aria-label={`Use color ${swatch}`}
+                aria-label={`Use colour ${swatch}`}
                 onClick={() => onChange(swatch)}
                 style={{
                   height: 16,
@@ -145,7 +145,7 @@ function CardSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPi
   return (
     <div className="space-y-2">
       <Label htmlFor={inputId} className="text-xs">
-        Color
+        Colour
       </Label>
       <div className="flex items-center gap-2">
         <input
@@ -161,7 +161,7 @@ function CardSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPi
             <button
               key={swatch}
               type="button"
-              aria-label={`Use color ${swatch}`}
+              aria-label={`Use colour ${swatch}`}
               onClick={() => onChange(swatch)}
               className={`h-5 w-5 rounded-full border ${
                 isSelected(value, swatch) ? 'ring-2 ring-primary' : ''
