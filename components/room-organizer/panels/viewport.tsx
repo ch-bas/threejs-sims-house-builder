@@ -193,7 +193,7 @@ function ErrorOverlay({ message }: { message: string }): JSX.Element {
             borderRadius: 14,
             background: 'rgba(228,82,72,0.18)',
             border: '1px solid var(--pc-demolish)',
-            color: 'var(--pc-demolish)',
+            color: 'var(--pc-demolish-ink)',
             display: 'grid',
             placeItems: 'center',
           }}

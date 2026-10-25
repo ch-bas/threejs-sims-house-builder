@@ -725,7 +725,7 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
             key={swatch}
             type="button"
             onClick={() => onChange(swatch)}
-            aria-label={`Use color ${swatch}`}
+            aria-label={`Use colour ${swatch}`}
             aria-pressed={active}
             title={swatch}
             style={{

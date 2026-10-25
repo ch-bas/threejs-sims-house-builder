@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEditorViewActions, useViewSettings } from '../contexts';
 import { useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
+import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { MAX_FLOORS } from '../lib/constants';
 import { formatMetres } from '../lib/format';
 import { MAX_NAME_LENGTH } from '../lib/schema';
@@ -16,6 +17,7 @@ export function FloorSwitcher(): JSX.Element {
   // Layout slices come from the store via atomic selectors; view/toggle stay on
   // the context (mixed consumption — the incremental migration path).
   const floors = useLayoutStore((s) => s.layout.floors);
+  const hardBudget = useLayoutStore((s) => isHardBudgetOn(s.layout));
   const activeFloorIndex = useActiveFloorIndex();
   const actions = useLayoutActions();
   const view = useViewSettings('showAllFloors', 'view2D');
@@ -235,7 +237,9 @@ export function FloorSwitcher(): JSX.Element {
                   if (!canRemove) return;
                   if (
                     floor.items.length === 0 ||
-                    window.confirm(`Remove "${floor.name}" and its ${floor.items.length} item(s)?`)
+                    window.confirm(
+                      `Remove "${floor.name}" and its ${floor.items.length} item(s)?${hardBudget ? HARD_BUDGET_SELL_BACK_NOTE : ''}`
+                    )
                   ) {
                     actions.removeFloor(index);
                   }

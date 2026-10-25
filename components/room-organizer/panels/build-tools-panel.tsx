@@ -3,38 +3,32 @@
 import { useRef, useState } from 'react';
 import { useEditorView } from '../contexts';
 import { useScrollCue } from '../hooks/use-scroll-cue';
-import { categoriesForMode, type BuildToolKey } from '../lib/modes';
+import { buildToolLabel, categoriesForMode, type BuildToolKey } from '../lib/modes';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
 export type BuildToolCategory = BuildToolKey;
 
 interface ToolSpec {
   icon: PlotcraftIconName;
-  label: string;
   /** Tooltip; the tile label is too short to say what a category holds. */
   hint: string;
 }
 
 const TOOL_SPECS: Readonly<Record<BuildToolCategory, ToolSpec>> = {
-  structure:   { icon: 'window',    label: 'Openings', hint: 'Doors, windows, stairs' },
-  walls:       { icon: 'wall',      label: 'Walls',    hint: 'Draw interior walls, stamp room shapes' },
-  seating:     { icon: 'chair',     label: 'Seating',  hint: 'Seating' },
-  tables:      { icon: 'table',     label: 'Tables',   hint: 'Tables' },
-  bedroom:     { icon: 'bed',       label: 'Bedroom',  hint: 'Bedroom' },
-  storage:     { icon: 'bookshelf', label: 'Storage',  hint: 'Storage' },
-  kitchen:     { icon: 'fireplace', label: 'Kitchen',  hint: 'Kitchen' },
-  bathroom:    { icon: 'bath',      label: 'Bathroom', hint: 'Bathroom' },
-  decor:       { icon: 'plant',     label: 'Decor',    hint: 'Decor' },
-  electronics: { icon: 'light',     label: 'Tech',     hint: 'Electronics' },
-  security:    { icon: 'vision',    label: 'Security', hint: 'Security cameras' },
-  outdoor:     { icon: 'tree',      label: 'Outdoor',  hint: 'Outdoor' },
-  people:      { icon: 'person',    label: 'People',   hint: 'People and pets' },
+  structure:   { icon: 'window',    hint: 'Doors, windows, stairs' },
+  walls:       { icon: 'wall',      hint: 'Draw interior walls, stamp room shapes' },
+  seating:     { icon: 'chair',     hint: 'Seating' },
+  tables:      { icon: 'table',     hint: 'Tables' },
+  bedroom:     { icon: 'bed',       hint: 'Bedroom' },
+  storage:     { icon: 'bookshelf', hint: 'Storage' },
+  kitchen:     { icon: 'fireplace', hint: 'Kitchen' },
+  bathroom:    { icon: 'bath',      hint: 'Bathroom' },
+  decor:       { icon: 'plant',     hint: 'Decor' },
+  electronics: { icon: 'light',     hint: 'Electronics' },
+  security:    { icon: 'vision',    hint: 'Security cameras' },
+  outdoor:     { icon: 'tree',      hint: 'Outdoor' },
+  people:      { icon: 'person',    hint: 'People and pets' },
 };
-
-/** A tool tile's label, which the catalogue strip's title repeats (#438). */
-export function buildToolLabel(tool: BuildToolCategory): string {
-  return TOOL_SPECS[tool].label;
-}
 
 export interface BuildToolsPanelProps {
   active: BuildToolCategory;
@@ -157,7 +151,7 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {tool.label}
+                {buildToolLabel(key)}
               </span>
             </button>
           );

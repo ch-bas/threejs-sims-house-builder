@@ -83,7 +83,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
             key={fundsDelta.key}
             aria-hidden
             className="pc-funds-delta"
-            style={{ color: fundsDelta.amount > 0 ? 'var(--pc-confirm-green)' : 'var(--pc-demolish)' }}
+            style={{ color: fundsDelta.amount > 0 ? 'var(--pc-confirm-green)' : 'var(--pc-demolish-ink)' }}
           >
             {formatMoney(fundsDelta.amount, true)}
           </span>
@@ -94,7 +94,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
             fontSize: 36,
             lineHeight: 1,
             letterSpacing: '-0.01em',
-            ...(remaining !== null && remaining < 0 ? { color: 'var(--pc-demolish)' } : {}),
+            ...(remaining !== null && remaining < 0 ? { color: 'var(--pc-demolish-ink)' } : {}),
           }}
         >
           {remaining === null ? `${CURRENCY_SYMBOL}${totalCost.toLocaleString()}` : formatMoney(remaining, false)}

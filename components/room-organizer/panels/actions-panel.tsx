@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
+import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
@@ -128,7 +129,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               onClick={() => {
                 // Same rule as Surprise: never wipe placed furniture without
                 // asking (#105, #223).
-                if (!window.confirm('Remove every item from this floor?')) return;
+                if (!window.confirm(`Remove every item from this floor?${isHardBudgetOn(layout) ? HARD_BUDGET_SELL_BACK_NOTE : ''}`)) return;
                 actions.clearItems();
                 playCue('remove');
                 selectOnly(null);

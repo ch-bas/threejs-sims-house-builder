@@ -46,7 +46,7 @@ export function HeaderStats({
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
       <Chip icon="box" label="Items" value={allItems.length.toString()} />
       <Chip icon="stairs" label="Floors" value={layout.floors.length.toString()} />
-      <Chip icon="ruler" label="Footprint" value={formatSize(layout.width, layout.height)} />
+      <Chip icon="ruler" label="Room" value={formatSize(layout.width, layout.height)} />
       <Chip
         icon="coin"
         label="Cost"
@@ -275,7 +275,7 @@ function Chip({ icon, label, value, intent = 'normal' }: ChipProps): JSX.Element
     danger: {
       background: 'rgba(228,82,72,0.20)',
       borderColor: 'var(--pc-demolish)',
-      color: 'var(--pc-demolish)',
+      color: 'var(--pc-demolish-ink)',
     },
   };
   return (
@@ -283,10 +283,12 @@ function Chip({ icon, label, value, intent = 'normal' }: ChipProps): JSX.Element
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 8,
+        // Tight enough that the bar stays one row at 1440 px with spaced
+        // units and a five-figure cost (#438).
+        gap: 6,
         borderRadius: 999,
         border: '1px solid',
-        padding: '4px 12px 4px 10px',
+        padding: '4px 10px 4px 8px',
         fontFamily: 'var(--pc-font-display)',
         fontWeight: 600,
         fontSize: 11,

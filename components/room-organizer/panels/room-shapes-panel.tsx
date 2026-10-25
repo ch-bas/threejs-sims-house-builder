@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatMetres } from '../lib/format';
 import { ROOM_SHAPES, type RoomShapeId } from '../lib/room-shapes';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
@@ -183,11 +184,11 @@ function SizeRow({ label, name, value, min, max, onChange }: SizeRowProps): JSX.
       <input
         type="range"
         aria-label={name}
-        aria-valuetext={`${value.toFixed(1)} m`}
         min={min}
         max={max}
         step={0.5}
         value={value}
+        aria-valuetext={formatMetres(value, 1)}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)' }}
       />
@@ -202,7 +203,7 @@ function SizeRow({ label, name, value, min, max, onChange }: SizeRowProps): JSX.
           color: 'var(--pc-paper)',
         }}
       >
-        {value.toFixed(1)} m
+        {formatMetres(value, 1)}
       </span>
     </div>
   );

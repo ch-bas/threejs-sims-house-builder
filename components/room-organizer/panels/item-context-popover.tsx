@@ -404,7 +404,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
-              color: 'var(--pc-demolish)',
+              color: 'var(--pc-demolish-ink)',
               borderColor: 'rgba(228,82,72,0.5)',
               background: 'rgba(228,82,72,0.10)',
               fontFamily: 'var(--pc-font-display)',

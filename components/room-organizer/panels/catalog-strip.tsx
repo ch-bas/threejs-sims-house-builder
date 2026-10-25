@@ -9,8 +9,8 @@ import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
+import { buildToolLabel } from '../lib/modes';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
-import { buildToolLabel } from './build-tools-panel';
 import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, FurnitureCategory } from '../lib/types';
 
@@ -87,7 +87,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         <div
           ref={gridRef}
           role="group"
-          aria-label="Catalog"
+          aria-label="Catalogue"
           className="pc-catalog-row"
           style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}
         >

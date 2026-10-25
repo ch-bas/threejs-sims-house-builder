@@ -29,6 +29,30 @@ export const BUILD_TOOLS: readonly BuildToolKey[] = [
   'people',
 ];
 
+/**
+ * A Build Tools tile's label. The catalogue strip's title repeats it, so the
+ * two never name one category differently (#438).
+ */
+const BUILD_TOOL_LABELS: Readonly<Record<BuildToolKey, string>> = {
+  structure: 'Openings',
+  walls: 'Walls',
+  seating: 'Seating',
+  tables: 'Tables',
+  bedroom: 'Bedroom',
+  storage: 'Storage',
+  kitchen: 'Kitchen',
+  bathroom: 'Bathroom',
+  decor: 'Decor',
+  electronics: 'Tech',
+  security: 'Security',
+  outdoor: 'Outdoor',
+  people: 'People',
+};
+
+export function buildToolLabel(key: BuildToolKey): string {
+  return BUILD_TOOL_LABELS[key];
+}
+
 const STRUCTURE_KEYS: ReadonlySet<BuildToolKey> = new Set<BuildToolKey>(['walls', 'structure']);
 
 /** True for the tools that build the house itself: walls and openings/stairs. */
