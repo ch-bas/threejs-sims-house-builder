@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-10-25
+
+The **UX polish & accessibility** milestone: readable panels, screen-reader names and keyboard tabs, reduced motion, a 2D switch on every screen, and a proper attic ceiling.
+
 ### Added
+- **Reduce motion:** with the system's "reduce motion" setting on, rain and snow hang still, walkers stand where they appear, camera cones stop sweeping, and the camera stops without gliding (and sits down or stands up in one step in walkthrough) ([#436](https://github.com/ch-bas/threejs-sims-house-builder/issues/436))
+- A **2D** switch at the head of the walls pill, in place of its "Walls" caption, shows the floor plan and goes back to 3D at every screen size, so a tablet without a keyboard can reach the plan; phones keep it in the dock's ⋯ tray ([#526](https://github.com/ch-bas/threejs-sims-house-builder/issues/526))
+
 ### Changed
 - The glass panels are darker, so their labels, prices, highlighted and hovered tools, the Demolish button and the panels toggle stay readable over the grass, the sky and white walls (at least 4.5:1, up from as low as 1.5:1) ([#432](https://github.com/ch-bas/threejs-sims-house-builder/issues/432))
 - One spelling and one unit format across the app: "colour", "catalogue" and "metres", lengths always written with a space before the unit ("2.5 m", "0.50 m") in the header, hover card, resize panel, room stamp and 2D plan, and History ages written "3 min ago" so they can't be read as metres ([#438](https://github.com/ch-bas/threejs-sims-house-builder/issues/438))
@@ -14,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The CSV inventory and schedule exports name their colour column "Colour" (was "Color") ([#438](https://github.com/ch-bas/threejs-sims-house-builder/issues/438))
 - Statistics says which figures cover the whole house and which floor the collision count is for; Room Settings, Catalogue and Placed Items headings match the size of the other cards ([#438](https://github.com/ch-bas/threejs-sims-house-builder/issues/438))
 - With the hard budget on, the Clear floor and Remove floor confirms say that the furniture sells back at 80% ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))
+
 ### Fixed
 - Walking the top storey, the ceiling overhead is plain plaster instead of the roof's shingled underside, and each dormer opens into the room so its window shows from inside ([#487](https://github.com/ch-bas/threejs-sims-house-builder/issues/487))
 - With the hard budget on, Clear floor, Remove floor and Surprise me now sell the furniture they take away back at 80%, like Demolish, instead of refunding it in full ([#534](https://github.com/ch-bas/threejs-sims-house-builder/issues/534))
@@ -681,7 +689,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.23.0...HEAD
+[1.23.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.19.0...v1.20.0
