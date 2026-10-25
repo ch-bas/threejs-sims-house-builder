@@ -41,8 +41,9 @@ export function WallDisplayPill(): JSX.Element {
         gap: 6,
       }}
     >
-      {/* In place of the "Walls" caption, which left the stats bar too
-          little room to wrap into; the radio group keeps the name. */}
+      {/* In place of the "Walls" caption: beside it the switch would widen
+          the pill into the stats bar. The radio group keeps the name, and
+          the Up tile carries the wall glyph. */}
       <div className="pc-pill-well">
         <PlanViewToggle />
       </div>

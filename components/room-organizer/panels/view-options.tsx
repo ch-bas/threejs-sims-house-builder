@@ -195,7 +195,7 @@ export function PlanViewToggle(): JSX.Element {
       onClick={() => toggle('view2D')}
       className={`pc-tile pc-view-switch${view2D ? ' pc-tile--active' : ''}`}
     >
-      <Icon name="floor" size={12} />
+      {/* Text only: the floor glyph is the Down tile's, right beside it. */}
       2D
     </button>
   );
