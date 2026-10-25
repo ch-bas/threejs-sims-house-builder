@@ -6,15 +6,11 @@ import { Input } from '@/components/ui/input';
 import { useEditorViewActions, useViewSettings } from '../contexts';
 import { useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { MAX_FLOORS } from '../lib/constants';
+import { formatMetres } from '../lib/format';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { buildingHeight, storeyHeight } from '../lib/storeys';
 import { Icon } from '../plotcraft/icon';
 import { DISABLED_TILE } from './wall-display-pill';
-
-/** "3 m", "2.5 m" — the storey figures the plan and the shell are built from. */
-function formatMetres(value: number): string {
-  return `${Number(value.toFixed(2))} m`;
-}
 
 export function FloorSwitcher(): JSX.Element {
   // Layout slices come from the store via atomic selectors; view/toggle stay on

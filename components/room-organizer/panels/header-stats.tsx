@@ -5,6 +5,7 @@ import { useLayout } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { budgetSpent } from '../lib/budget';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
+import { formatAge, formatSize } from '../lib/format';
 import { HEADER_HIDDEN_QUERY } from '../lib/overlay-queue';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
@@ -45,7 +46,7 @@ export function HeaderStats({
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
       <Chip icon="box" label="Items" value={allItems.length.toString()} />
       <Chip icon="stairs" label="Floors" value={layout.floors.length.toString()} />
-      <Chip icon="ruler" label="Room" value={`${layout.width}m × ${layout.height}m`} />
+      <Chip icon="ruler" label="Footprint" value={formatSize(layout.width, layout.height)} />
       <Chip
         icon="coin"
         label="Cost"
@@ -198,7 +199,7 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
   let label = 'Auto-save on';
   if (failure) label = failure.label;
   else if (saving) label = 'Saving…';
-  else if (lastSavedAt) label = `Saved ${formatRelative(Date.now() - lastSavedAt)}`;
+  else if (lastSavedAt) label = `Saved ${formatAge(Date.now() - lastSavedAt, { seconds: true })}`;
 
   // Touch screens can't show the `title` tooltip: the advice opens in place.
   const [adviceOpen, setAdviceOpen] = useState(false);
@@ -252,13 +253,6 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
   );
 }
 
-function formatRelative(ms: number): string {
-  if (ms < 5_000) return 'just now';
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  return `${Math.floor(ms / 3_600_000)}h ago`;
-}
-
 interface ChipProps {
   icon: PlotcraftIconName;
   label: string;
@@ -304,7 +298,7 @@ function Chip({ icon, label, value, intent = 'normal' }: ChipProps): JSX.Element
       <Icon name={icon} size={14} />
       <span
         style={{
-          opacity: 0.7,
+          opacity: 0.85,
           fontWeight: 600,
           letterSpacing: 'var(--pc-tr-caps)',
           textTransform: 'uppercase',

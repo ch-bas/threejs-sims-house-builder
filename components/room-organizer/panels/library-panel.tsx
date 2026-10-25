@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { budgetSpent } from '../lib/budget';
 import { CURRENCY_SYMBOL } from '../lib/constants';
+import { formatAge } from '../lib/format';
 import {
   countUnreadableSavedLayouts,
   deleteNamedLayout,
@@ -52,14 +53,6 @@ export interface LibraryPanelProps {
 /** Row thumbnails (#303): wide enough to tell two houses apart, not a preview. */
 const THUMB_WIDTH = 96;
 const THUMB_HEIGHT = 64;
-
-/** "just now" / "3 m ago" / "2 h ago" / "4 d ago" for the History rows. */
-function formatAge(ms: number): string {
-  if (ms < 60_000) return 'just now';
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} h ago`;
-  return `${Math.floor(ms / 86_400_000)} d ago`;
-}
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;

@@ -7,6 +7,7 @@ import {
 } from '../lib/constants';
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/footprint';
+import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
@@ -406,7 +407,7 @@ function drawZoneDraft(
   ctx.fillStyle = '#1d4ed8';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(`${draft.w.toFixed(1)}m × ${draft.d.toFixed(1)}m`, x + w / 2, y - 4);
+  ctx.fillText(formatSize(draft.w, draft.d, 1), x + w / 2, y - 4);
   ctx.restore();
 }
 
@@ -719,7 +720,7 @@ function drawFurniture(
       ctx.fillStyle = '#333';
       ctx.font = '10px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(`${item.width}m × ${item.depth}m`, cx, cy + halfD * scale + 15);
+      ctx.fillText(formatSize(item.width, item.depth), cx, cy + halfD * scale + 15);
       ctx.restore();
     }
   }
@@ -769,11 +770,11 @@ function drawRoomDimensions(
   ctx.fillStyle = '#333';
   ctx.font = 'bold 12px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText(`${layout.width}m`, offsetX + (layout.width * scale) / 2, offsetY - 10);
+  ctx.fillText(formatMetres(layout.width), offsetX + (layout.width * scale) / 2, offsetY - 10);
   ctx.save();
   ctx.translate(offsetX - 10, offsetY + (layout.height * scale) / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText(`${layout.height}m`, 0, 0);
+  ctx.fillText(formatMetres(layout.height), 0, 0);
   ctx.restore();
 }
 

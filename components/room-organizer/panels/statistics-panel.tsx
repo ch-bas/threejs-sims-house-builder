@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
-import { useLayout } from '../hooks/use-layout-store';
+import { useActiveFloorIndex, useLayout } from '../hooks/use-layout-store';
 import { budgetSpent } from '../lib/budget';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory, totalCost } from '../lib/geometry';
@@ -15,7 +15,11 @@ export function StatisticsPanel(): JSX.Element {
   const layout = useLayout();
   const { collidingIds } = useRoomEditor();
   const budget = DEFAULT_BUDGET;
+  // Collisions are checked on the active floor only; everything else here
+  // covers the whole house, and the labels say which is which (#438).
   const collisionsOnActiveFloor = collidingIds.size;
+  const activeFloorIndex = useActiveFloorIndex();
+  const activeFloorName = layout.floors[activeFloorIndex]?.name ?? 'this floor';
 
   // The porch door is structure, not furniture (#382).
   const allItems = useMemo(
@@ -58,23 +62,24 @@ export function StatisticsPanel(): JSX.Element {
         <CardTitle className="text-base">📊 Statistics</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-xs">
+        <p className="text-muted-foreground">Whole house</p>
         <StatRow label="Items">{allItems.length}</StatRow>
         <StatRow label="Floors">{layout.floors.length}</StatRow>
-        <StatRow label="Floor area">{roomArea.toFixed(1)} m²</StatRow>
-        <StatRow label="Total area">{totalArea.toFixed(1)} m²</StatRow>
+        <StatRow label="Area per floor">{roomArea.toFixed(1)} m²</StatRow>
+        <StatRow label="Total floor area">{totalArea.toFixed(1)} m²</StatRow>
         <StatRow label="Furniture footprint">
           {footprint.toFixed(1)} m² ({density.toFixed(0)}%)
         </StatRow>
         <ProgressBar value={density / 100} label="Coverage" intent={density > 70 ? 'warning' : 'normal'} />
 
         {collisionsOnActiveFloor > 0 && (
-          <StatRow label="Collisions" highlight>
+          <StatRow label={`Collisions on ${activeFloorName}`} highlight>
             ⚠️ {collisionsOnActiveFloor}
           </StatRow>
         )}
 
         <div className="pt-2 border-t space-y-1">
-          <StatRow label="Total cost" highlight={overBudget}>
+          <StatRow label="Cost" highlight={overBudget}>
             {CURRENCY_SYMBOL}
             {cost.toLocaleString()}
           </StatRow>

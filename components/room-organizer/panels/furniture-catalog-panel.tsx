@@ -57,7 +57,7 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
     <Card className="shrink-0 overflow-hidden">
       <CardHeader className="space-y-3">
         <CardTitle className="flex items-center justify-between">
-          <span>Catalog</span>
+          <span>Catalogue</span>
           <span className="text-[10px] font-normal text-muted-foreground">{filtered.length} items</span>
         </CardTitle>
         <Input

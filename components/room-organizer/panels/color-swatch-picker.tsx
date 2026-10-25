@@ -145,7 +145,7 @@ function CardSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPi
   return (
     <div className="space-y-2">
       <Label htmlFor={inputId} className="text-xs">
-        Color
+        Colour
       </Label>
       <div className="flex items-center gap-2">
         <input

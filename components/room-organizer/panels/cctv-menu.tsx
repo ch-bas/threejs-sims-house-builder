@@ -83,7 +83,7 @@ function StripMenu({ onAdd }: { onAdd(item: CatalogItem): void }): JSX.Element {
             >
               {type}
             </span>
-            <span style={{ fontSize: 8, opacity: 0.7, lineHeight: 1 }}>
+            <span style={{ fontSize: 8, opacity: 0.85, lineHeight: 1 }}>
               {overBudget ? 'Over budget' : `${count} model${count > 1 ? 's' : ''}`}
             </span>
           </button>

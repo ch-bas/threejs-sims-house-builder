@@ -28,7 +28,7 @@ const MODES: ReadonlyArray<{
 }> = [
   { key: 'live',  label: 'EXPLORE', icon: 'live',  hint: 'Explore — walk through the house in first person' },
   { key: 'build', label: 'DESIGN',  icon: 'build', hint: 'Design — walls, doors, windows, stairs' },
-  { key: 'buy',   label: 'FURNISH', icon: 'buy',   hint: 'Furnish — the furniture catalog' },
+  { key: 'buy',   label: 'FURNISH', icon: 'buy',   hint: 'Furnish — the furniture catalogue' },
 ];
 
 export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Element {
@@ -103,7 +103,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           className="pc-hud-header"
           style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}
         >
-          {remaining === null ? 'Furniture Value' : 'Funds Left'}
+          {remaining === null ? 'Cost' : 'Funds Left'}
         </div>
         <button
           type="button"

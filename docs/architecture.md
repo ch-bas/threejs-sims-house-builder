@@ -105,6 +105,7 @@ components/
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode, shared by the 2D plan and the 3D floor canvas (#191)
     │   ├── file-io.ts                   JSON / image / PNG / CSV + schedule / GLB I/O
+    │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m"), formatSize, formatAge ("3 min ago", #438)
     │   └── plan-export/                 2D-plan exporters (#230)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
     │       ├── svg.ts                   Vector SVG plan emitter, one floor or the whole building (pure)

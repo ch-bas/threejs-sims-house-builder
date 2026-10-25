@@ -321,7 +321,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
       setIsReady(true);
     } catch (err) {
-      setError(messageOf(err, 'Failed to initialize WebGL renderer.'));
+      setError(messageOf(err, 'Failed to initialise WebGL renderer.'));
     }
 
     return () => {

@@ -5,6 +5,7 @@ import { useMediaQuery } from '../hooks/use-media-query';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
+import { formatSize } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { Icon, iconForItem } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
@@ -338,7 +339,7 @@ function HoverTooltip({ hover, containerRef }: HoverTooltipProps): JSX.Element |
           fontVariantNumeric: 'tabular-nums',
         }}
       >
-        {hover.item.width.toFixed(2)}m × {hover.item.depth.toFixed(2)}m
+        {formatSize(hover.item.width, hover.item.depth, 2)}
       </p>
     </div>
   );

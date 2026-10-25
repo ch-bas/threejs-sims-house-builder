@@ -249,7 +249,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             >
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>Stand-off bracket</span>
-                <span style={{ fontSize: 10.5, opacity: 0.7 }}>
+                <span style={{ fontSize: 10.5, opacity: 0.85 }}>
                   {item.cameraBracket
                     ? 'On its arm — pan left/right freely'
                     : 'Flush mount — Rotate flips in/out only'}

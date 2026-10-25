@@ -21,7 +21,7 @@ export function ThemesPanel({ onApply }: ThemesPanelProps): JSX.Element {
           ))}
         </div>
         <p className="text-[10px] text-muted-foreground mt-2">
-          Applies new walls, floor, and category-based colors. Use Undo to revert.
+          Applies new walls, floor, and category-based colours. Use Undo to revert.
         </p>
       </CardContent>
     </Card>

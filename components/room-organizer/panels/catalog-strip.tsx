@@ -7,9 +7,10 @@ import { useMediaQuery } from '../hooks/use-media-query';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
-import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
+import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
+import { buildToolLabel } from './build-tools-panel';
 import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, FurnitureCategory } from '../lib/types';
 
@@ -114,9 +115,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
     );
   }
 
-  const categoryMeta = CATEGORIES.find((entry) => entry.key === category);
-  const categoryLabel =
-    category === 'all' ? 'All' : (categoryMeta?.label ?? String(category));
+  const categoryLabel = category === 'all' ? 'All' : buildToolLabel(category);
 
   return (
     <div
@@ -184,11 +183,11 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
             style={{
               fontSize: 9,
               marginBottom: 6,
-              opacity: 0.7,
+              opacity: 0.9,
               paddingLeft: 2,
             }}
           >
-            Catalog Selection
+            Catalogue Selection
           </div>
           <div
             ref={gridRef}
@@ -256,7 +255,7 @@ function StripToggle({ label, collapsed, onToggle }: StripToggleProps): JSX.Elem
       type="button"
       onClick={onToggle}
       aria-expanded={!collapsed}
-      title={collapsed ? 'Show catalog' : 'Hide catalog'}
+      title={collapsed ? 'Show catalogue' : 'Hide catalogue'}
       className="pc-hud-header"
       style={{
         fontSize: 12,

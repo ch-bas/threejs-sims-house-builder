@@ -31,6 +31,11 @@ const TOOL_SPECS: Readonly<Record<BuildToolCategory, ToolSpec>> = {
   people:      { icon: 'person',    label: 'People',   hint: 'People and pets' },
 };
 
+/** A tool tile's label, which the catalogue strip's title repeats (#438). */
+export function buildToolLabel(tool: BuildToolCategory): string {
+  return TOOL_SPECS[tool].label;
+}
+
 export interface BuildToolsPanelProps {
   active: BuildToolCategory;
   drawWallMode: boolean;
