@@ -200,7 +200,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
         </div>
         <div className="pc-mode-actions-more" style={{ display: 'contents' }}>
         {/* Touch has no 2 key: the dock's tray carries the 2D/3D switch.
-            Hidden elsewhere, where the key and the menus cover it. */}
+            Hidden elsewhere, where the walls pill leads with it (#526). */}
         <ActionButton
           className="pc-mode-dock-only"
           label={view.view2D ? 'Show 3D view' : 'Show 2D plan'}

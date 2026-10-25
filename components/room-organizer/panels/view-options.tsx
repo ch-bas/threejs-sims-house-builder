@@ -175,3 +175,28 @@ function ViewSwitch({
     </button>
   );
 }
+
+/**
+ * The 2D plan / 3D view switch at the head of the walls pill (#526). The 2 key and
+ * the phone dock's tray had the only ways in, which left a touch-only
+ * tablet without one. A toggle with a fixed name: pressed means the plan
+ * is shown. The dock hides it and keeps its tray button.
+ */
+export function PlanViewToggle(): JSX.Element {
+  const { view2D } = useViewSettings('view2D');
+  const { toggle } = useEditorViewActions();
+  return (
+    <button
+      type="button"
+      aria-pressed={view2D}
+      aria-label="2D plan"
+      aria-keyshortcuts="2"
+      title={view2D ? 'Back to the 3D view (2)' : 'Show the 2D plan (2)'}
+      onClick={() => toggle('view2D')}
+      className={`pc-tile pc-view-switch${view2D ? ' pc-tile--active' : ''}`}
+    >
+      <Icon name="floor" size={12} />
+      2D
+    </button>
+  );
+}
