@@ -170,9 +170,9 @@ describe('headroom stairwell (#205)', () => {
     const rect = stairwellRect(straight, 3)!;
     // Treads whose top is above 3 − 2 = 1 m: from the 5th (15/14 m) up.
     const going = 2.4 / STAIR_STEP_COUNT;
-    // A margin at the foot of the cut; flush with the top tread, where the walker steps off (#572).
-    expect(rect.depth).toBeCloseTo(2.4 - 4 * going + 0.05);
-    expect(rect.centerZ + rect.depth / 2).toBeCloseTo(1.2);
+    // A margin both ends: past the head it covers the top step's nosing and the stringers (#572).
+    expect(rect.depth).toBeCloseTo(2.4 - 4 * going + 0.1);
+    expect(rect.centerZ + rect.depth / 2).toBeCloseTo(1.2 + 0.05);
     expect(rect.width).toBeCloseTo(1.3);
     expect(rect.depth).toBeLessThan(2.4 + 0.1);
     // Every tread under the kept floor still clears the headroom.
@@ -184,13 +184,12 @@ describe('headroom stairwell (#205)', () => {
 
   it('opens a winder as an L over its turn and return flight, keeping floor over the up flight', () => {
     const outline = winderStairwellOutline(winder, 3)!;
-    // Fan + full return flight: from the newel line on the up side, to the return
-    // flight's top on +x, flush with it (#572).
+    // Fan + full return flight: from the newel line on the up side, to the return foot on +x.
     const expected = [
       [-1.05, 0.25],
       [0, 0.25],
-      [0, -1.3],
-      [1.05, -1.3],
+      [0, -1.35],
+      [1.05, -1.35],
       [1.05, 1.35],
       [-1.05, 1.35],
     ];

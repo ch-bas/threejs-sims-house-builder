@@ -138,6 +138,16 @@ describe('walk world — stairs as a ramp (#446)', () => {
     expect(out).toEqual({ y: 3, kind: 'tread', floorIndex: 0 });
   });
 
+  it('steps across the stairwell margin past the head on the top tread’s nosing (#572)', () => {
+    const world = buildWalkWorld(house);
+    const out: WalkSurface = { y: 0, kind: 'floor', floorIndex: 0 };
+    // The flight's head is z = 1.5; the hole runs 5 cm past it, under the nosing.
+    expect(walkSurfaceAt(world, 3.2, 1.53, 3, 'tread', out)).toBe(true);
+    expect(out).toEqual({ y: 3, kind: 'tread', floorIndex: 0 });
+    expect(walkSurfaceAt(world, 3.2, 1.6, 3, 'tread', out)).toBe(true);
+    expect(out).toEqual({ y: 3, kind: 'floor', floorIndex: 1 });
+  });
+
   it('climbs a winder round its fan', () => {
     const winder = { ...STAIRS, width: 2, depth: 2.6, stairsShape: 'winder' as const, position: { x: 2.8, z: 0 } };
     const house2 = building([winder]);

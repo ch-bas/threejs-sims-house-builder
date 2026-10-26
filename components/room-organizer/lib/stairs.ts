@@ -172,9 +172,10 @@ const localRect = (x0: number, x1: number, z0: number, z1: number): StairwellRec
 /**
  * The part of the floor above that has to go, as one or two rectangles in
  * the stair's local frame (#205, #572): over every tread that comes within
- * the headroom of the ceiling, with a small margin — except at the top of
- * the flight, where the floor above meets the top tread flush, or the
- * walker would have a gap to cross onto the landing. Empty when no tread
+ * the headroom of the ceiling, with a small margin all round — past the
+ * head of the flight too, where it clears the top step's nosing and the
+ * stringers; the walker steps across it on the top tread's nosing
+ * (`stairTopNosing`). Empty when no tread
  * needs it (a very short flight under a tall storey). `ceiling` is the
  * height of the floor above, the storey's — not the stair's own rise, or a
  * shortened stair would cut a bigger hole (#366).
@@ -195,15 +196,14 @@ export function stairwellParts(item: StairItem, rise: number, ceiling = rise): S
   const zsOf = (i: number) => steps[i]!.outline.map(([, z]) => z);
   const layout = winderLayout(item);
   if (!layout) {
-    // A straight flight climbs +z: its top is the far end.
     const hw = item.width / 2;
-    return [localRect(-hw - m, hw + m, Math.min(...zsOf(first)) - m, item.depth / 2)];
+    return [localRect(-hw - m, hw + m, Math.min(...zsOf(first)) - m, item.depth / 2 + m)];
   }
   const hw = item.width / 2;
   const hd = item.depth / 2;
   const { up, fanZ } = layout;
   // The return flight climbs toward −z: its top is its foot on the plan.
-  const returnTop = Math.min(...zsOf(steps.length - 1));
+  const returnTop = Math.min(...zsOf(steps.length - 1)) - m;
   if (first >= up + WINDER_TREADS) {
     // Only part of the return flight: a strip on the +x half.
     return [localRect(-m, hw + m, returnTop, Math.max(...zsOf(first)) + m)];
@@ -215,6 +215,23 @@ export function stairwellParts(item: StairItem, rise: number, ceiling = rise): S
   // From part-way up the up flight (or the fan's −x quarter) round to the top.
   const upFrom = first < up ? Math.min(...zsOf(first)) : fanZ;
   return [localRect(-hw - m, 0, upFrom - m, hd + m), localRect(0, hw + m, returnTop, hd + m)];
+}
+
+/**
+ * The top tread's outline carried on over the stairwell's margin past the
+ * head of the flight (#572): the strip of hole between the top step and
+ * the floor above, which a walker crosses at the landing's height. A
+ * straight flight's head is its far end (+z); a winder's return flight
+ * climbs toward −z.
+ */
+export function stairTopNosing(item: StairItem, rise: number): Array<[number, number]> {
+  const steps = stairSteps(item, rise);
+  const outline = steps[steps.length - 1]!.outline;
+  const winder = winderLayout(item) !== null;
+  const zs = outline.map(([, z]) => z);
+  const head = winder ? Math.min(...zs) : Math.max(...zs);
+  const reach = winder ? -HOLE_MARGIN : HOLE_MARGIN;
+  return outline.map(([x, z]): [number, number] => [x, Math.abs(z - head) < 1e-9 ? z + reach : z]);
 }
 
 const rectBounds = (part: StairwellRect) => ({

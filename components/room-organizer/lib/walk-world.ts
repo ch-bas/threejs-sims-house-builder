@@ -14,7 +14,7 @@
  */
 
 import { groundHeightAt, outdoorGroundSize } from './site';
-import { STAIR_STEP_COUNT, stairSteps, stairToWorld, stairwellParts } from './stairs';
+import { STAIR_STEP_COUNT, stairSteps, stairToWorld, stairTopNosing, stairwellParts } from './stairs';
 import { stairRise, storeyHeight, floorElevation } from './storeys';
 import { entranceGeometry, entranceSteps, entranceWallCut } from './street';
 import type { EntranceSpec, FloorLayout, Frontage, FurnitureItem, TerrainSpec } from './types';
@@ -222,19 +222,24 @@ function buildStair(
   let minZ = Infinity;
   let maxZ = -Infinity;
   const centroids: Array<[number, number]> = [];
-  const treads = steps.map((step) => {
+  // The top tread reaches over the stairwell's margin to the floor above (#572).
+  const nosing = stairTopNosing(item, rise);
+  const treads = steps.map((step, index) => {
     const xs: number[] = [];
     const zs: number[] = [];
     let cx = 0;
     let cz = 0;
     for (const [lx, lz] of step.outline) {
       const [x, z] = toWorld(lx, lz);
-      xs.push(x);
-      zs.push(z);
       cx += x / step.outline.length;
       cz += z / step.outline.length;
     }
     centroids.push([cx, cz]);
+    for (const [lx, lz] of index === steps.length - 1 ? nosing : step.outline) {
+      const [x, z] = toWorld(lx, lz);
+      xs.push(x);
+      zs.push(z);
+    }
     const tread: Tread = {
       xs,
       zs,
