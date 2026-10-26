@@ -40,7 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Camera cones no longer turn red for furniture or walkers behind a wall or a partition ([#590](https://github.com/ch-bas/threejs-sims-house-builder/issues/590))
 - Camera cones on another storey no longer show through floors and ceilings, and while walking they hide with their storey ([#552](https://github.com/ch-bas/threejs-sims-house-builder/issues/552))
 - On a touch walk, typing in a search field no longer leaves EXPLORE on Escape, sits you down on E, or switches off the walking stick ([#558](https://github.com/ch-bas/threejs-sims-house-builder/issues/558))
-- In EXPLORE the Up/Cut/Down walls pill is switched off (the walls stay up while walking) and Surprise me no longer furnishes the floor ([#643](https://github.com/ch-bas/threejs-sims-house-builder/issues/643))
+- EXPLORE no longer edits the house: the Up/Cut/Down walls pill is switched off (the walls stay up while walking), and Surprise me, Add floor, the side panels' Arrange, Clear floor, Lock all, Import, Templates, Library loads, themes and the Build and Buy tabs are disabled there with a note saying why; the exports, time of day and weather still work ([#643](https://github.com/ch-bas/threejs-sims-house-builder/issues/643))
 
 ## [1.23.0] - 2026-10-25
 
