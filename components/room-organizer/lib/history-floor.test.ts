@@ -18,6 +18,15 @@ describe('floorIndexAfterRestore (#578)', () => {
     expect(floorIndexAfterRestore(house(b, c, a), 2, house(a, b, c))).toBe(0);
   });
 
+  it('shows the floor that comes back where the editor stands', () => {
+    // Undo "remove B" while on B: removal left the editor on C (index 1).
+    expect(floorIndexAfterRestore(house(a, c), 1, house(a, b, c))).toBe(1);
+    // Undo "remove C" while on C: removal clamped the editor to B.
+    expect(floorIndexAfterRestore(house(a, b), 1, house(a, b, c))).toBe(2);
+    // Redo "add floor D" from C.
+    expect(floorIndexAfterRestore(house(a, b, c), 2, house(a, b, c, floor('d')))).toBe(3);
+  });
+
   it('keeps the clamped index when the floor on screen did not exist yet', () => {
     // Undo "add floor D" while on D.
     expect(floorIndexAfterRestore(house(a, b, c, floor('d')), 3, house(a, b, c))).toBe(2);
