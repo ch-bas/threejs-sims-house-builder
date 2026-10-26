@@ -233,3 +233,140 @@ describe('useHistory — commitNow', () => {
     expect(apply).toHaveBeenLastCalledWith(v0);
   });
 });
+
+// #546: an undo inside the debounce window used to append the pending edit to
+// a non-empty `future`, so a later redo replayed the abandoned branch.
+describe('useHistory — undo of a pending edit invalidates older redo', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('leaves the pending edit as the only redo', () => {
+    const a: Doc = { name: 'A' };
+    const b: Doc = { name: 'B' };
+    const c: Doc = { name: 'C' };
+    const apply = vi.fn<(snapshot: Doc) => void>();
+    const { result, rerender } = renderHook(({ value }) => useHistory(value, apply, { debounceMs: 600 }), {
+      initialProps: { value: a },
+    });
+
+    rerender({ value: b });
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+    act(() => result.current.undo());
+    expect(apply).toHaveBeenLastCalledWith(a);
+    rerender({ value: a });
+
+    // A new edit abandons B; undo it before the debounce commits it.
+    rerender({ value: c });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    act(() => result.current.undo());
+    expect(apply).toHaveBeenLastCalledWith(a);
+    rerender({ value: a });
+
+    expect(result.current.canRedo).toBe(true);
+    act(() => result.current.redo());
+    expect(apply).toHaveBeenLastCalledWith(c);
+    rerender({ value: c });
+
+    // B belonged to the abandoned branch: nothing is left to redo.
+    expect(result.current.canRedo).toBe(false);
+    act(() => result.current.redo());
+    expect(apply).toHaveBeenCalledTimes(3);
+  });
+});
+
+// #578: undo used to keep the numeric active floor index, so undoing a floor
+// removal or reorder landed on another storey, and undoing an edit made on
+// another floor happened off-screen.
+describe('useHistory — undo lands on the right floor', () => {
+  const floor = (id: string, name: string) => ({ ...INITIAL_LAYOUT.floors[0]!, id, name, items: [] });
+  const threeFloors: RoomLayout = {
+    ...INITIAL_LAYOUT,
+    floors: [floor('fa', 'A'), floor('fb', 'B'), floor('fc', 'C')],
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    layoutStore.setState({ layout: threeFloors, activeFloorIndex: 0 });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const mount = () =>
+    renderHook(() => {
+      const { layout, actions } = useLayoutState();
+      return useHistory(layout, actions.restoreLayout);
+    });
+  const settle = () =>
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+  const store = () => layoutStore.getState();
+  const activeId = () => store().layout.floors[store().activeFloorIndex]?.id;
+
+  it('undoing a floor removal stays on the floor you were on', () => {
+    const { result } = mount();
+    act(() => store().actions.setActiveFloorIndex(2));
+    act(() => store().actions.removeFloor(0));
+    settle();
+    expect(activeId()).toBe('fc');
+    act(() => result.current.undo());
+    expect(store().layout.floors.map((f) => f.id)).toEqual(['fa', 'fb', 'fc']);
+    expect(activeId()).toBe('fc');
+    settle();
+    act(() => result.current.redo());
+    expect(activeId()).toBe('fc');
+  });
+
+  it('undoing a reorder stays on the moved floor', () => {
+    const { result } = mount();
+    act(() => store().actions.reorderFloor(0, 2));
+    settle();
+    expect(activeId()).toBe('fa');
+    act(() => result.current.undo());
+    expect(store().layout.floors.map((f) => f.id)).toEqual(['fa', 'fb', 'fc']);
+    expect(activeId()).toBe('fa');
+  });
+
+  it('undoing an edit on another floor switches to that floor', () => {
+    const { result } = mount();
+    act(() => store().actions.setActiveFloorIndex(1));
+    act(() => store().actions.addItems([makeItem({ id: 'bed' })]));
+    settle();
+    act(() => store().actions.setActiveFloorIndex(0));
+    act(() => result.current.undo());
+    expect(store().layout.floors[1]?.items).toEqual([]);
+    expect(activeId()).toBe('fb');
+    settle();
+    // Redo shows it too, and a second round still finds the floor after the
+    // restore cloned every storey.
+    act(() => store().actions.setActiveFloorIndex(2));
+    act(() => result.current.redo());
+    expect(store().layout.floors[1]?.items.map((i) => i.id)).toEqual(['bed']);
+    expect(activeId()).toBe('fb');
+    settle();
+    act(() => store().actions.setActiveFloorIndex(0));
+    act(() => result.current.undo());
+    expect(activeId()).toBe('fb');
+  });
+
+  it('undoing a change to the floor on screen stays there', () => {
+    const { result } = mount();
+    act(() => store().actions.setActiveFloorIndex(2));
+    act(() => store().actions.addItems([makeItem({ id: 'bed' })]));
+    settle();
+    act(() => result.current.undo());
+    expect(store().layout.floors[2]?.items).toEqual([]);
+    expect(activeId()).toBe('fc');
+  });
+});

@@ -109,6 +109,11 @@ export interface LayoutActions {
   renameFloor(index: number, name: string): void;
   reorderFloor(from: number, to: number): void;
   applyLayout(layout: RoomLayout): void;
+  /**
+   * Undo/redo's apply: `applyLayout`, then show the storey the swap concerns
+   * (`floorIndexAfterRestore`, #578), in one store update.
+   */
+  restoreLayout(layout: RoomLayout): void;
   /** Room zones on the active floor (#155). `addZone` returns the new zone's id. */
   addZone(zone: Omit<RoomZone, 'id'>): string;
   updateZone(id: string, patch: Partial<Omit<RoomZone, 'id'>>): void;

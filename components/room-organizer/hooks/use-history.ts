@@ -54,10 +54,13 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
   const { debounceMs = 600, maxEntries = 50 } = options;
 
   const [stacks, setStacks] = useState<HistoryStacks<T>>({ past: [], future: [] });
-  // Mirrors so event handlers read the current state without going through an
-  // updater function; kept in sync both on render and on every manual write.
+  // The source of truth, so event handlers read the current stacks without
+  // going through an updater function; `stacks` only drives re-renders. Every
+  // write sets the ref first. It is NOT re-synced from `stacks` on render: a
+  // store update renders at sync priority, ahead of a setStacks queued outside
+  // a discrete event (an import resumes after `await file.text()`), and that
+  // render would hand the ref the stale stacks and lose a commit (#555).
   const stacksRef = useRef(stacks);
-  stacksRef.current = stacks;
   const valueRef = useRef(value);
   valueRef.current = value;
   const lastCommittedRef = useRef<T>(value);
@@ -117,9 +120,11 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     // Undo it back to the last committed snapshot — without this, the pending
     // edit would be discarded and undo would jump one step too far. While
     // skipNextRef is armed the divergence is a not-yet-adopted baseline
-    // (undo/redo), not a pending edit.
+    // (undo/redo), not a pending edit. The pending edit started a new branch,
+    // so it is the only valid redo: whatever `future` held was abandoned the
+    // moment it was made, as commit() and redo()'s guard agree (#546).
     if (!skipNextRef.current && !Object.is(valueRef.current, lastCommittedRef.current)) {
-      stacksRef.current = { past, future: [...future, valueRef.current] };
+      stacksRef.current = { past, future: [valueRef.current] };
       setStacks(stacksRef.current);
       skipNextRef.current = true;
       apply(lastCommittedRef.current);

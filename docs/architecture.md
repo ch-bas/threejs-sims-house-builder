@@ -75,6 +75,7 @@ components/
     │   ├── custom-sets.ts               User-saved furniture sets: localStorage I/O + parser (#302)
     │   ├── clipboard.ts                 In-memory copy/paste: the selection normalised around its centroid, pasted with fresh ids (#153)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
+    │   ├── history-floor.ts             Which storey undo/redo lands on: same floor id, or the one other floor the swap changes (#578)
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
