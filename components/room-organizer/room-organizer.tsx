@@ -550,7 +550,8 @@ export function RoomOrganizer(): JSX.Element {
 
   const history = useHistory(layout, useCallback(
     (snapshot: RoomLayout) => {
-      actions.applyLayout(snapshot);
+      // On the storey the undone change was on (#578).
+      actions.restoreLayout(snapshot);
       // An undo or redo restores a house; it earns nothing (#450).
       markLayoutLoaded();
     },

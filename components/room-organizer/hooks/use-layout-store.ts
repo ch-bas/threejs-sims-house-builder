@@ -22,6 +22,7 @@
 
 import { createStore, useStore } from 'zustand';
 import { budgetRemaining } from '../lib/budget';
+import { floorIndexAfterRestore } from '../lib/history-floor';
 import { randomId, randomSuffix, withHouseId } from '../lib/ids';
 import { randomStreetSeed } from '../lib/street-row';
 import {
@@ -155,6 +156,13 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     reorderFloor: (from, to) => dispatch({ type: 'reorderFloor', from, to }),
 
     applyLayout: (next: RoomLayout) => dispatch({ type: 'applyLayout', layout: withHouseId(next) }),
+    // Worked out against the house being replaced, before the dispatch (#578).
+    restoreLayout: (next: RoomLayout) =>
+      set((state) => {
+        const index = floorIndexAfterRestore(state.layout, state.activeFloorIndex, next);
+        const applied = layoutReducer(state, { type: 'applyLayout', layout: withHouseId(next) });
+        return layoutReducer(applied, { type: 'setActiveFloorIndex', index });
+      }),
 
     // Room zones (#155).
     addZone: (zone) => {
