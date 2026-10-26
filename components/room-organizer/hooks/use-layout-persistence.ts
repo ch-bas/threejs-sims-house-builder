@@ -5,7 +5,9 @@ import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { notify } from '../lib/editor-notices';
 import {
   EDITOR_SETTLED_MS,
+  clearEditorCrashed,
   clearReloadAttempt,
+  editorHasCrashed,
   keepStoredLayout,
   loadLayout,
   sameLayoutContent,
@@ -81,8 +83,11 @@ export function useLayoutPersistence({
   // The last layout the editor survived (#568): one that crashed it must
   // never reach the save, or every reload crashes again. A crash in render or
   // in an effect unmounts the editor within the same task, so a layout only
-  // counts once a timer has fired after its commit. `layoutRef` can't serve:
-  // it is written during render, even for a render that threw.
+  // counts once a timer has fired after its commit. `layoutRef` can't serve
+  // after a crash: it is written during render, even for a render that threw.
+  // Only a crash falls back to it; an ordinary unmount or a page going away
+  // saves the layout on screen, since a big edit's render and scene rebuild
+  // is one long task that pagehide can follow before any timer runs.
   const settledRef = useRef<RoomLayout | null>(null);
   // The save status lives in a store of its own, read by the HUD's leaf
   // subscriber: as hook state, every flip re-rendered the whole editor (#3).
@@ -307,10 +312,10 @@ export function useLayoutPersistence({
 
   // Flush a still-debouncing save when the editor unmounts or the page goes
   // away — without this, edits made in the last debounceMs are silently lost
-  // on tab close. Only a settled layout is flushed (#568).
+  // on tab close. After a crash only a settled layout is flushed (#568).
   useEffect(() => {
-    const flush = () => {
-      const layout = settledRef.current;
+    clearEditorCrashed();
+    const flush = (layout: RoomLayout | null) => {
       if (!pendingRef.current || mainSaveHeldRef.current || layout === null) return;
       pendingRef.current = false;
       const result = saveLayout(layout);
@@ -319,10 +324,14 @@ export function useLayoutPersistence({
       // ring's 5-minute cadence (#231).
       if (!isUntouched(layout)) recordSnapshot(layout, { force: true });
     };
-    window.addEventListener('pagehide', flush);
+    // A crash has already removed this listener: pagehide is never a crash.
+    const onPageHide = () => flush(layoutRef.current);
+    window.addEventListener('pagehide', onPageHide);
     return () => {
-      window.removeEventListener('pagehide', flush);
-      flush();
+      window.removeEventListener('pagehide', onPageHide);
+      // A crash before any layout settled saves nothing: the stored house
+      // is the last one that opened.
+      flush(editorHasCrashed() ? settledRef.current : layoutRef.current);
     };
   }, []);
 

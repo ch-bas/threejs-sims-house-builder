@@ -9,6 +9,7 @@ import {
 import {
   crashRecurredAfterReload,
   downloadRawLayout,
+  noteEditorCrashed,
   noteReloadAttempt,
   parseLayoutJson,
   readStoredLayoutRaw,
@@ -53,6 +54,9 @@ const bodyStyle: React.CSSProperties = {
 };
 
 export default function Error({ error }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
+  // Before the crashed editor's cleanup runs: its unmount flush must not save
+  // the layout that crashed it (#568).
+  useState(noteEditorCrashed);
   useEffect(() => {
     // Stale-chunk failures hard-reload ONCE via the shared pc-chunk-reload
     // guard (`reset()` would just re-request the same dead chunk). An
