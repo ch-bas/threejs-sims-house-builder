@@ -305,6 +305,55 @@ export function entranceKeepOut(layout: EntranceBuilding, floorIndex: number): K
   return recess ? [{ x0: recess.x0, x1: recess.x1, z0: recess.frontZ, z1: recess.backZ }] : [];
 }
 
+/** Pieces of a wall shorter than this, left either side of the porch, are dropped. */
+const MIN_WALL_PIECE = 0.05;
+
+/**
+ * An interior wall with the part that crosses the recess taken out (#614):
+ * the porch is outside, so no partition runs through it. Returns the wall
+ * itself when it doesn't enter the recess (one along its edge doesn't), the
+ * one or two pieces either side when it does — the second with a `-b` id —
+ * and nothing when it lies wholly inside.
+ */
+export function clipWallToPorch<W extends { id: string; x1: number; z1: number; x2: number; z2: number }>(
+  wall: W,
+  recess: EntrancePlanOutline | null
+): W[] {
+  if (!recess) return [wall];
+  const dx = wall.x2 - wall.x1;
+  const dz = wall.z2 - wall.z1;
+  // Liang–Barsky: the parameter range of the wall within the recess.
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (p: number, q: number): boolean => {
+    if (Math.abs(p) < 1e-12) return q >= 0;
+    const r = q / p;
+    if (p < 0) t0 = Math.max(t0, r);
+    else t1 = Math.min(t1, r);
+    return t0 <= t1;
+  };
+  const inside =
+    clip(-dx, wall.x1 - recess.x0) &&
+    clip(dx, recess.x1 - wall.x1) &&
+    clip(-dz, wall.z1 - recess.frontZ) &&
+    clip(dz, recess.backZ - wall.z1);
+  if (!inside || t1 - t0 < 1e-9) return [wall];
+  // A wall along the recess edge only touches it: its middle isn't strictly inside.
+  const tm = (t0 + t1) / 2;
+  const mx = wall.x1 + dx * tm;
+  const mz = wall.z1 + dz * tm;
+  const eps = 1e-6;
+  if (!(mx > recess.x0 + eps && mx < recess.x1 - eps && mz > recess.frontZ + eps && mz < recess.backZ - eps)) return [wall];
+  const length = Math.hypot(dx, dz);
+  const pieces: W[] = [];
+  if (t0 * length >= MIN_WALL_PIECE) pieces.push({ ...wall, x2: wall.x1 + dx * t0, z2: wall.z1 + dz * t0 });
+  if ((1 - t1) * length >= MIN_WALL_PIECE) {
+    const piece = { ...wall, x1: wall.x1 + dx * t1, z1: wall.z1 + dz * t1 };
+    pieces.push(pieces.length > 0 ? { ...piece, id: `${wall.id}-b` } : piece);
+  }
+  return pieces;
+}
+
 /**
  * Which storey a plan is of: the floor's index in the building, by identity
  * then by id (the 2D drag paints a copy of the active floor with in-flight

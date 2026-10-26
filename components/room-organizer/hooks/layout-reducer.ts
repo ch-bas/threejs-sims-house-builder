@@ -29,6 +29,7 @@ import {
   MAX_SILL_HEIGHT,
   MIN_SILL_HEIGHT,
   clampEntrance,
+  clipWallToPorch,
   entranceBackWall,
   entranceFloorIndex,
   entranceGeometry,
@@ -742,9 +743,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       if (!isFiniteWall(action.wall)) return state;
       const wall = clampWall(action.wall);
       if (!wall) return state;
+      // No partition runs through the porch, which is outside (#614).
+      const pieces = clipWallToPorch(wall, entrancePlanOutline(state.layout, state.activeFloorIndex));
+      if (pieces.length === 0) return state;
       return withActiveFloor(state, (floor) =>
-        hasRoomFor(floor.interiorWalls, 1, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
-          ? { ...floor, interiorWalls: [...(floor.interiorWalls ?? []), wall] }
+        hasRoomFor(floor.interiorWalls, pieces.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
+          ? { ...floor, interiorWalls: [...(floor.interiorWalls ?? []), ...pieces] }
           : floor
       );
     }
@@ -753,7 +757,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // the whole stamp is a single history/undo entry rather than N of them.
     case 'addInteriorWalls': {
       if (action.walls.length === 0 || !action.walls.every(isFiniteWall)) return state;
-      const walls = action.walls.map(clampWall).filter((wall): wall is InteriorWall => wall !== null);
+      const porch = entrancePlanOutline(state.layout, state.activeFloorIndex);
+      const walls = action.walls
+        .map(clampWall)
+        .filter((wall): wall is InteriorWall => wall !== null)
+        .flatMap((wall) => clipWallToPorch(wall, porch)); // not through the porch (#614)
       if (walls.length === 0) return state;
       return withActiveFloor(state, (floor) =>
         hasRoomFor(floor.interiorWalls, walls.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
