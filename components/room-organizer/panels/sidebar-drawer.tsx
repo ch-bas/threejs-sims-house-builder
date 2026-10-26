@@ -12,6 +12,7 @@ import { notify } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { placeSetInFreeSpace, setForStorey } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
+import { sameLayoutContent } from '../lib/persistence';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
 import { storeyHeight } from '../lib/storeys';
@@ -329,10 +330,13 @@ const DrawerBody = memo(function DrawerBody({
         <>
           <ThemesPanel
             onApply={(themeKey) => {
+              // Re-clicking the active theme changes nothing: no undo step (#598).
+              const themed = applyTheme(layout, themeKey);
+              if (sameLayoutContent(themed, layout)) return;
               // Loads are discrete steps: an edit still in the debounce
               // window keeps an undo entry of its own (#555).
               history.commitNow();
-              actions.applyLayout(applyTheme(layout, themeKey));
+              actions.applyLayout(themed);
             }}
           />
 

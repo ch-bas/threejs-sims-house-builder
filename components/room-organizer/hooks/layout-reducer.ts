@@ -396,6 +396,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
 
     // -- item CRUD ----------------------------------------------------------
     case 'addCatalogItem': {
+      // A NaN position slips through clampPosition and makes the save
+      // unreadable on the next load (#593).
+      if (action.position && !isFinitePosition(action.position)) return state;
       const newItem: FurnitureItem = {
         ...action.catalogItem,
         id: action.id,
@@ -609,6 +612,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // list doesn't carry) is sold back under the hard budget, like Demolish
     // (#534); items that stay, merely moved, cost nothing.
     case 'replaceItems': {
+      if (!action.items.every(hasFinitePlacement)) return state;
       if (!hasRoomFor(action.items, 0, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID)) return state;
       const kept = new Set(action.items.map((item) => item.id));
       const sold = state.layout.floors[state.activeFloorIndex]?.items.filter((item) => !kept.has(item.id)) ?? [];
@@ -617,6 +621,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     }
 
     case 'addItems':
+      if (!action.items.every(hasFinitePlacement)) return state;
       return withActiveFloor(state, (floor) =>
         hasRoomFor(floor.items, action.items.length, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID)
           ? { ...floor, items: [...floor.items, ...action.items.map(boundItem)] }
@@ -660,8 +665,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         // Rotate the whole group about its centroid: each selected item both
         // spins in place (its own rotation) AND orbits the centroid, so the
         // arrangement is preserved instead of every piece twisting individually.
+        // Doors, windows and cameras belong to their wall and stay on it:
+        // orbiting them and re-snapping to the nearest wall stacked every
+        // opening of one wall on the same spot (#583).
         const selected = floor.items.filter(
-          (item) => action.ids.has(item.id) && item.position
+          (item) => action.ids.has(item.id) && item.position && !isWallMounted(item.type)
         );
         if (selected.length === 0) return floor;
         let cx = 0;
@@ -684,29 +692,21 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           // reducer is the guarantee (#115/#209); nor does the porch's
           // door, which belongs to the recess (#357).
           if (!action.ids.has(item.id) || item.locked || item.id === ENTRANCE_DOOR_ID) return item;
-          changed = true;
-          const nextRotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
-          if (!item.position) {
-            return { ...item, rotation: nextRotation };
+          if (isWallMounted(item.type)) return item;
+          const rotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
+          const moved: FurnitureItem = { ...item, rotation };
+          if (item.position) {
+            const dx = item.position.x - cx;
+            const dz = item.position.z - cz;
+            moved.position = clampPosition({
+              x: cx + dx * cos + dz * sin,
+              z: cz - dx * sin + dz * cos,
+            });
           }
-          const dx = item.position.x - cx;
-          const dz = item.position.z - cz;
-          const position = clampPosition({
-            x: cx + dx * cos + dz * sin,
-            z: cz - dx * sin + dz * cos,
-          });
-          // A wall-mounted item swept to an interior point re-snaps to the
-          // nearest wall instead of floating where the orbit dropped it
-          // (#210) — the same rule every other commit path follows.
-          const settled = settleWallMountedItem(
-            { ...item, rotation: nextRotation },
-            position,
-            state.layout.width,
-            state.layout.height,
-            floor.interiorWalls ?? [],
-            activeFrontGap(state)
-          );
-          return { ...item, rotation: nextRotation, ...(settled ?? { position }) };
+          // An unchanged result keeps identity: no undo entry (#598).
+          if (sameItem(item, moved)) return item;
+          changed = true;
+          return moved;
         });
         return changed ? { ...floor, items } : floor;
       });
@@ -1140,6 +1140,16 @@ function clampWall(wall: InteriorWall): InteriorWall | null {
   if (x1 === x2 && z1 === z2) return null;
   const same = x1 === wall.x1 && z1 === wall.z1 && x2 === wall.x2 && z2 === wall.z2;
   return same ? wall : { ...wall, x1, z1, x2, z2 };
+}
+
+function isFinitePosition(position: { x: number; z: number }): boolean {
+  return Number.isFinite(position.x) && Number.isFinite(position.z);
+}
+
+/** Whether an incoming item's placement can be saved and read back (#593). */
+function hasFinitePlacement(item: FurnitureItem): boolean {
+  if (item.position && !isFinitePosition(item.position)) return false;
+  return item.rotation === undefined || Number.isFinite(item.rotation);
 }
 
 /** An incoming item (paste, set, Surprise) with its position and name within the caps. */
