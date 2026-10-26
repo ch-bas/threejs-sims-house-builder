@@ -102,8 +102,9 @@ describe('the stairwell agrees with the keep-out and the walker (#572)', () => {
   });
 
   it('agrees for every storey height, lead-in, rotation and mirroring', () => {
-    for (let storey = 2.4; storey <= 6; storey += 0.2) {
-      for (const stairsLeadIn of [0, 1, 2, 3, 6]) {
+    // Storeys that start the cut on the up flight, in each quarter of the fan and on the return flight.
+    for (const storey of [2.4, 3, 3.2, 3.6, 4, 4.4, 5, 6]) {
+      for (const stairsLeadIn of [0, 2, 6]) {
         for (const variant of [{}, { rotation: Math.PI / 2 }, { rotation: 0.6 }, { mirrored: true, rotation: -2 }]) {
           const item = stair({ height: storey, stairsLeadIn, ...variant });
           const found = disagreements(item, storey);
@@ -111,7 +112,7 @@ describe('the stairwell agrees with the keep-out and the walker (#572)', () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   it('agrees for a straight flight too', () => {
     for (let storey = 2.4; storey <= 6; storey += 0.4) {

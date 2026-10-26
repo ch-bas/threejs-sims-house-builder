@@ -131,10 +131,10 @@ describe('drawStairwellHoles (#290)', () => {
     const corners = [points(calls, 'moveTo')[0]!, ...points(calls, 'lineTo')];
     const xs = corners.map(([x]) => x!);
     const ys = corners.map(([, y]) => y!);
-    // 1.3 m wide (1.2 m + 5 cm margin a side) about world x = 0, ending at the head of the flight.
+    // 1.3 m wide (1.2 m + 5 cm margin a side) about world x = 0, ending flush with the head of the flight (#572).
     expect(Math.min(...xs)).toBeCloseTo(260 - 32.5);
     expect(Math.max(...xs)).toBeCloseTo(260 + 32.5);
-    expect(Math.max(...ys)).toBeCloseTo(260 + 60 + 2.5);
+    expect(Math.max(...ys)).toBeCloseTo(260 + 60);
     expect(Math.min(...ys)).toBeGreaterThan(260 - 60);
   });
 });
