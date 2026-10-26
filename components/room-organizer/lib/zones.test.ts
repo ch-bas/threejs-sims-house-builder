@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { MAX_ROOM_DIMENSION } from './constants';
+import { autoOrganize, hasCollisions } from './geometry';
 import {
   MIN_ZONE_SIZE,
+  arrangeByZone,
   ZONE_COLORS,
   clampZoneRect,
   defaultZoneName,
@@ -41,6 +43,32 @@ describe('zoneFromCorners (#155)', () => {
     expect(zoneFromCorners({ x: 0, z: 0 }, { x: 3, z: 0.01 }, 10, 10)).toBeNull();
     // Entirely outside the room: clamps to a zero-width sliver.
     expect(zoneFromCorners({ x: 6, z: 0 }, { x: 9, z: 2 }, 8, 8)).toBeNull();
+  });
+
+  it('fits a floor whose size is not a multiple of 10 cm, edge to edge (#618)', () => {
+    // 5.05 × 4.33 m: the walls sit at ±2.525 and ±2.165.
+    for (const reach of [2.525, 2.56, 9]) {
+      const rect = zoneFromCorners({ x: -reach, z: -reach }, { x: reach, z: reach }, 5.05, 4.33)!;
+      expect(rect.x).toBeCloseTo(-2.525, 9);
+      expect(rect.z).toBeCloseTo(-2.165, 9);
+      expect(rect.x + rect.w).toBeLessThanOrEqual(2.525 + 1e-9);
+      expect(rect.z + rect.d).toBeLessThanOrEqual(2.165 + 1e-9);
+      expect(rect.x + rect.w).toBeCloseTo(2.525, 9);
+      expect(rect.z + rect.d).toBeCloseTo(2.165, 9);
+    }
+  });
+
+  it('keeps a corner off the walls on the 10 cm grid (#618)', () => {
+    const rect = zoneFromCorners({ x: -2.56, z: 0.04 }, { x: 1.03, z: 2.2 }, 5.05, 4.33)!;
+    expect(rect.x).toBeCloseTo(-2.525, 9);
+    expect(rect.x + rect.w).toBeCloseTo(1, 9);
+    expect(rect.z).toBeCloseTo(0, 9);
+    expect(rect.z + rect.d).toBeCloseTo(2.165, 9);
+  });
+
+  it('re-fitting a wall-to-wall zone to the same floor leaves it as it is (#618)', () => {
+    const rect = zoneFromCorners({ x: -3, z: -3 }, { x: 3, z: 3 }, 5.05, 4.33)!;
+    expect(clampZoneRect(rect, 5.05, 4.33)).toEqual(rect);
   });
 
   it('clampZoneRect re-fits a stored rectangle to a room that shrank', () => {
@@ -120,5 +148,65 @@ describe('zone defaults (#155)', () => {
     expect(sameZone(bedroom, { ...bedroom })).toBe(true);
     expect(sameZone(bedroom, { ...bedroom, name: 'Study' })).toBe(false);
     expect(sameZone(bedroom, { ...bedroom, w: 3.1 })).toBe(false);
+  });
+});
+
+describe('arrangeByZone (#629)', () => {
+  const W = 8;
+  const D = 8;
+  const west: RoomZone = { id: 'w', name: 'West', color: '#000', x: -4, z: -4, w: 4, d: 8 };
+  const east: RoomZone = { id: 'e', name: 'East', color: '#000', x: 0, z: -4, w: 4, d: 8 };
+  const box = (id: string, x: number, z: number) => makeItem({ id, width: 0.8, depth: 0.6, height: 1, position: { x, z } });
+  const items = [box('a', -1, 3), box('b', -2, 2), box('c', 2, 3), box('d', 3, -3), box('e', 1, 1)];
+
+  it('packs each zone’s items inside that zone', () => {
+    const result = arrangeByZone(items, W, D, 'shelf', { zones: [west, east] });
+    expect(result.map((item) => item.id).sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    for (const item of result) {
+      const zone = ['a', 'b'].includes(item.id) ? west : east;
+      const { x, z } = item.position!;
+      expect(x - 0.4, item.id).toBeGreaterThanOrEqual(zone.x);
+      expect(x + 0.4, item.id).toBeLessThanOrEqual(zone.x + zone.w);
+      expect(z - 0.3, item.id).toBeGreaterThanOrEqual(zone.z);
+      expect(z + 0.3, item.id).toBeLessThanOrEqual(zone.z + zone.d);
+    }
+    for (const item of result) expect(hasCollisions(item, result, W, D), item.id).toBe(false);
+  });
+
+  it('packs the items outside every zone into the space the zones leave', () => {
+    const north: RoomZone = { ...west, id: 'n', x: -4, z: -4, w: 8, d: 4 };
+    const result = arrangeByZone(items, W, D, 'shelf', { zones: [north] });
+    for (const item of result) expect(hasCollisions(item, result, W, D), item.id).toBe(false);
+    // d was the only item in the north half; the others pack south of it.
+    expect(result.find((item) => item.id === 'd')!.position!.z).toBeLessThan(0);
+    for (const id of ['a', 'b', 'c', 'e']) expect(result.find((item) => item.id === id)!.position!.z, id).toBeGreaterThan(0);
+  });
+
+  it('is plain autoOrganize without zones', () => {
+    expect(arrangeByZone(items, W, D, 'shelf', {})).toEqual(autoOrganize(items, W, D, 'shelf'));
+  });
+});
+
+describe('clampZoneRect re-fit (#618)', () => {
+  it('changes nothing on a second pass, and never overshoots', () => {
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 5000; i++) {
+      const w = 2 + rand() * 18;
+      const d = 2 + rand() * 18;
+      const a = { x: (rand() - 0.5) * w * 1.1, z: (rand() - 0.5) * d * 1.1 };
+      const b = { x: (rand() - 0.5) * w * 1.1, z: (rand() - 0.5) * d * 1.1 };
+      const first = zoneFromCorners(a, b, w, d);
+      if (!first) continue;
+      expect(clampZoneRect(first, w, d)).toEqual(first);
+      expect(first.x).toBeGreaterThanOrEqual(-w / 2 - 1e-9);
+      expect(first.x + first.w).toBeLessThanOrEqual(w / 2 + 1e-9);
+    }
+  });
+
+  it('re-fits the reported 2.83 × 18.4986 m case unchanged', () => {
+    const zone = zoneFromCorners({ x: -1, z: 4.2 }, { x: 1, z: 9.2 }, 2.83, 18.4986);
+    expect(zone).not.toBeNull();
+    expect(clampZoneRect(zone!, 2.83, 18.4986)).toEqual(zone);
   });
 });

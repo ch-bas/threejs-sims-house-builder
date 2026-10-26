@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem } from './__testfixtures__/fixtures';
 import { floorKeepOut, stairwellKeepOut } from './floor-keep-out';
-import { autoOrganize, hasCollisions, itemsOverlap } from './geometry';
-import type { FloorLayout } from './types';
+import { autoOrganize, type CollisionContext, hasCollisions, itemsOverlap } from './geometry';
+import type { FloorLayout, FurnitureItem } from './types';
 
 describe('hasCollisions — interior walls (#368)', () => {
   const W = 10;
@@ -206,7 +206,8 @@ describe('hasCollisions — stacking families (#403)', () => {
     ['lamp', 'side-table'],
     ['plant', 'picnic-table'],
     ['dining-chair', 'table'],
-    ['armchair', 'coffee-table'],
+    // An armchair tucks under a table, not a coffee table (#606).
+    ['armchair', 'table'],
     ['garden-bench', 'picnic-table'],
   ])('%s with %s is an intended stack', (top, surface) => {
     const a = at('a', top, 0.4, 0.8);
@@ -276,8 +277,82 @@ describe('autoOrganize — locked items (#389)', () => {
   it('terminates with no margin and a locked item filling a row', () => {
     const shelf = makeItem({ id: 'shelf', width: 4, depth: 1, position: { x: 0, z: -1.5 }, locked: true });
     const box = makeItem({ id: 'box', width: 1, depth: 1, position: { x: 1, z: 1 } });
-    const [, placed] = autoOrganize([shelf, box], 4, 4, 'shelf', 0);
+    const [, placed] = autoOrganize([shelf, box], 4, 4, 'shelf', { margin: 0 });
     expect(placed!.rotation).toBe(0);
     expect(itemsOverlap(placed!, shelf)).toBe(false);
+  });
+});
+
+describe('autoOrganize — the storey collision context (#577)', () => {
+  const W = 6;
+  const D = 6;
+  const cabinets = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      makeItem({ id: `cab${i}`, type: 'cabinet', width: 0.9, depth: 0.4, height: 1.6, position: { x: 0, z: 0 } })
+    );
+  const collided = (result: readonly FurnitureItem[], context: CollisionContext) =>
+    result.filter((item) => hasCollisions(item, result, W, D, context)).map((item) => item.id);
+
+  it('keeps packed rows off the porch', () => {
+    const context = { keepOut: [{ x0: -0.7, x1: 0.7, z0: -3, z1: -1.8 }] };
+    const result = autoOrganize(cabinets(6), W, D, 'shelf', { context });
+    expect(result).toHaveLength(6);
+    expect(collided(result, context)).toEqual([]);
+  });
+
+  it('keeps packed items off an interior wall', () => {
+    const context = { interiorWalls: [{ id: 'w', x1: -0.7, z1: -3, x2: -0.7, z2: 3 }] };
+    const result = autoOrganize(cabinets(6), W, D, 'shelf', { context });
+    expect(collided(result, context)).toEqual([]);
+  });
+
+  it('keeps packed items out of a stairwell hole', () => {
+    const context = { keepOut: [{ x0: -2.5, x1: -1.5, z0: -2.5, z1: 0.5, hole: true }] };
+    const result = autoOrganize(cabinets(6), W, D, 'shelf', { context });
+    expect(collided(result, context)).toEqual([]);
+  });
+
+  it('skips a rotated keep-out and a diagonal partition', () => {
+    const context = {
+      keepOut: [{ x0: -2, x1: 0, z0: -2.6, z1: -1.6, rotation: 0.5 }],
+      interiorWalls: [{ id: 'd', x1: 0.5, z1: -3, x2: 3, z2: 0 }],
+    };
+    const result = autoOrganize(cabinets(10), W, D, 'by-size', { context });
+    expect(collided(result, context)).toEqual([]);
+  });
+
+  it('lets a rug run into a stairwell hole and under a partition, as hasCollisions does', () => {
+    const rug = makeItem({ id: 'rug', type: 'rug', width: 2, depth: 1.5, height: 0.01, position: { x: 2, z: 2 } });
+    const context = {
+      keepOut: [{ x0: -3, x1: 3, z0: -3, z1: 0, hole: true }],
+      interiorWalls: [{ id: 'w', x1: -2, z1: -3, x2: -2, z2: 3 }],
+    };
+    const [placed] = autoOrganize([rug], W, D, 'shelf', { context });
+    expect(placed!.position!.x).toBeCloseTo(-1.7);
+    expect(placed!.position!.z).toBeCloseTo(-1.95);
+  });
+
+  it('leaves an item that fits nowhere at its spot', () => {
+    const big = makeItem({ id: 'big', width: 2, depth: 2, height: 1, position: { x: 1.5, z: 1.5 }, rotation: 0.4 });
+    // The free band south of the keep-out is 1.8 m deep: too shallow with the margins.
+    const context = { keepOut: [{ x0: -3, x1: 3, z0: -3, z1: 1.2 }] };
+    expect(autoOrganize([big], W, D, 'shelf', { context })[0]).toBe(big);
+  });
+});
+
+describe('autoOrganize — what stays put', () => {
+  it('leaves hung decor on its wall and stairs where their stairwell is', () => {
+    const painting = makeItem({ id: 'painting', type: 'painting', width: 0.8, depth: 0.05, height: 0.6, position: { x: -1, z: -2.975 } });
+    const curtains = makeItem({ id: 'curtains', type: 'curtains', width: 1.4, depth: 0.1, height: 2.2, position: { x: 1, z: -2.95 } });
+    const stairs = makeItem({ id: 'stairs', type: 'stairs', width: 1, depth: 3, height: 3, position: { x: -0.3, z: -1.5 } });
+    const sofa = makeItem({ id: 'sofa', type: 'sofa', width: 2, depth: 0.9, position: { x: 2, z: 2 } });
+    const result = autoOrganize([painting, curtains, stairs, sofa], 8, 6);
+    const byId = new Map(result.map((item) => [item.id, item]));
+    expect(byId.get('painting')).toBe(painting);
+    expect(byId.get('curtains')).toBe(curtains);
+    expect(byId.get('stairs')).toBe(stairs);
+    // The sofa is packed around the stairs, not onto them.
+    const placed = byId.get('sofa')!;
+    expect(hasCollisions(placed, result, 8, 6)).toBe(false);
   });
 });

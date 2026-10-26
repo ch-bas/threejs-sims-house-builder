@@ -66,6 +66,15 @@ describe('hung items are built where mountBand says (#471, #470)', () => {
     expect(Math.abs(box.max.y - band.top)).toBeLessThan(SLACK);
   });
 
+  it.each(hung.filter((type) => type !== 'pendant-light'))('%s: fits under a 1.2 m loft ceiling, where mountBand says (#610)', (type) => {
+    const item = catalogItem(type);
+    const box = bounds(build(item, 1.2));
+    const band = mountBand(item, 1.2);
+    expect(box.max.y).toBeLessThanOrEqual(1.2 - 0.05 + SLACK);
+    expect(box.min.y).toBeCloseTo(band.bottom, 1);
+    expect(Math.abs(box.max.y - band.top)).toBeLessThan(SLACK);
+  });
+
   it('hangs the pendant from the ceiling of a 3 m storey by default', () => {
     const box = bounds(build(catalogItem('pendant-light')));
     // Clear of the walkthrough ceiling plate 1 cm under the storey above (#359).

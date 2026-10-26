@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- On a floor with zones, Arrange keeps each room's furniture in its zone, and packs what stands outside every zone into the space left over ([#629](https://github.com/ch-bas/threejs-sims-house-builder/issues/629))
+
 ### Fixed
 - Undoing an edit straight after making it, then redoing, no longer brings back a change you had already undone and replaced ([#546](https://github.com/ch-bas/threejs-sims-house-builder/issues/546))
 - An edit made just before importing a file, loading a template or library house, applying a theme or taking another tab's version keeps its own undo step, instead of being lost when you undo the load ([#555](https://github.com/ch-bas/threejs-sims-house-builder/issues/555))
@@ -15,6 +18,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Template wardrobes and the Studio and Two-Story kitchens face into the room instead of the wall or the stove ([#575](https://github.com/ch-bas/threejs-sims-house-builder/issues/575))
 - Applying a theme no longer paints pools and ponds grey or trees, hedges and plants blue or orange: water, foliage, flowers, stepping stones and pendant-light shades keep their colours ([#597](https://github.com/ch-bas/threejs-sims-house-builder/issues/597))
 - The over-budget question and Surprise me no longer count the porch door of older saves, so they agree with the header's spending ([#600](https://github.com/ch-bas/threejs-sims-house-builder/issues/600))
+- Arrange leaves paintings, mirrors, clocks, shelves and curtains on their wall and stairs where their stairwell is, instead of packing them into the room ([#577](https://github.com/ch-bas/threejs-sims-house-builder/issues/577))
+- Arrange keeps furniture off the porch, out of the stairwell hole on the floor above the stairs and clear of interior walls ([#577](https://github.com/ch-bas/threejs-sims-house-builder/issues/577))
+- A chair, armchair or bench standing inside a dresser, nightstand, coffee table or counter is flagged as a collision; seats still tuck under desks and tables when their seat clears the tabletop ([#606](https://github.com/ch-bas/threejs-sims-house-builder/issues/606))
+- A zone drawn wall to wall on a floor whose size isn't a multiple of 10 cm ends at the wall instead of 5 cm past it, and renaming or recolouring it no longer shrinks it ([#618](https://github.com/ch-bas/threejs-sims-house-builder/issues/618))
+- On a low storey such as a 1.2 m loft, paintings, mirrors, clocks, wall shelves and curtains hang lower, and get shorter if they must, instead of poking through the ceiling; collisions test them where they are drawn ([#610](https://github.com/ch-bas/threejs-sims-house-builder/issues/610))
+- A saved set added on an upper floor leaves its garden pieces out instead of floating trees and benches beside the house, and a set made only of garden pieces says they go on the ground floor ([#591](https://github.com/ch-bas/threejs-sims-house-builder/issues/591))
 
 ## [1.23.0] - 2026-10-25
 

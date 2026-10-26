@@ -10,7 +10,7 @@ import { alignSelection, distributeSelection } from '../lib/alignment';
 import { purchasePrice, purchaseRefusal } from '../lib/budget';
 import { notify } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
-import { placeSetInFreeSpace } from '../lib/furniture-sets';
+import { placeSetInFreeSpace, setForStorey } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
@@ -288,7 +288,14 @@ const DrawerBody = memo(function DrawerBody({
                 interiorWalls: activeFloor.interiorWalls ?? [],
                 frontGap: entrancePlanOutline(layout, activeFloorIndex),
                 storeyHeight: storeyHeight(activeFloor),
+                floorIndex: activeFloorIndex,
               });
+              // Garden pieces stay on the ground floor (#591); an all-garden set says so.
+              if (setForStorey(set, activeFloorIndex).items.length === 0) {
+                playCue('refused');
+                notify(`The ${set.label} is all garden items, and garden items go on the ground floor.`, 'error');
+                return;
+              }
               if (items.length === 0) {
                 playCue('refused');
                 notify(`No free spot for the ${set.label} — make some room first.`, 'error');

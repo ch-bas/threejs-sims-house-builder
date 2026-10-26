@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
-import { ROOM_TEMPLATES } from './constants';
+import { FURNITURE_CATALOG, ROOM_TEMPLATES } from './constants';
 import { rotatedHalfExtents } from './footprint';
 import {
   autoOrganize,
@@ -156,6 +156,50 @@ describe('hasCollisions', () => {
     expect(hasCollisions(sofa, items, W, D)).toBe(false);
     expect(hasCollisions(window, items, W, D)).toBe(false);
     expect(hasCollisions(cam, items, W, D)).toBe(false);
+  });
+
+  describe('seats and surfaces (#606)', () => {
+    const entry = (type: string) => FURNITURE_CATALOG.find((candidate) => candidate.type === type)!;
+    const at = (type: string, id: string, x = 0) => makeItem({ ...entry(type), id, position: { x, z: 0 } });
+    // A garden pair stands outside; a garden piece indoors is flagged alone,
+    // so only what the pair adds counts.
+    const collides = (a: string, b: string) => {
+      const x = entry(a).category === 'outdoor' && entry(b).category === 'outdoor' ? 8 : 0;
+      const pair = [at(a, 'a', x), at(b, 'b', x)];
+      return pair.some((item) => hasCollisions(item, pair, W, D) && !hasCollisions(item, [item], W, D));
+    };
+
+    it('flags a seat standing inside a surface nothing tucks under', () => {
+      expect(collides('armchair', 'dresser')).toBe(true);
+      expect(collides('armchair', 'coffee-table')).toBe(true);
+      expect(collides('armchair', 'nightstand')).toBe(true);
+      expect(collides('garden-bench', 'dresser')).toBe(true);
+      expect(collides('chair', 'counter')).toBe(true);
+      expect(collides('dining-chair', 'side-table')).toBe(true);
+    });
+
+    it('still tucks a seat under a table whose underside clears its seat', () => {
+      expect(collides('dining-chair', 'dining-table')).toBe(false);
+      expect(collides('chair', 'desk')).toBe(false);
+      expect(collides('chair', 'table')).toBe(false);
+      expect(collides('bench', 'picnic-table')).toBe(false);
+      expect(collides('garden-bench', 'picnic-table')).toBe(false);
+    });
+
+    it('flags a seat too high for the table it is under', () => {
+      const stool = { ...at('chair', 'a'), height: 1.4 };
+      const table = at('dining-table', 'b');
+      expect(hasCollisions(stool, [stool, table], W, D)).toBe(true);
+      const lowTable = { ...table, height: 0.45 };
+      const chair = at('dining-chair', 'a');
+      expect(hasCollisions(chair, [chair, lowTable], W, D)).toBe(true);
+    });
+
+    it('keeps tabletop items on every surface', () => {
+      for (const surface of ['dresser', 'nightstand', 'coffee-table', 'counter', 'side-table', 'desk']) {
+        expect(collides('lamp', surface), surface).toBe(false);
+      }
+    });
   });
 
   it('a camera mounted over a door is not a collision; two cameras still are (#146)', () => {

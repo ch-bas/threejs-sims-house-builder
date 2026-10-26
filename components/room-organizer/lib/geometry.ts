@@ -119,16 +119,38 @@ const SURFACE_TYPES = new Set([
   'dresser',
 ]);
 const TABLETOP_TYPES = new Set(['computer', 'lamp', 'plant', 'books', 'candles', 'flowerpot', 'wifi']);
-const SEAT_TYPES = new Set(['chair', 'dining-chair', 'bench', 'armchair', 'garden-bench']);
+/** Surfaces with open legroom a seat can slide under (#606); a dresser or counter has none. */
+const TUCK_UNDER_TYPES = new Set(['desk', 'dining-table', 'table', 'picnic-table']);
+/**
+ * Seats that tuck under a table, with the height of their sitting surface
+ * as a share of the item height (the seating builders' proportions). Only
+ * the seat has to clear the table's underside; a backrest stays outside.
+ */
+const TUCK_SEAT_SURFACE: Readonly<Record<string, number>> = {
+  chair: 0.55,
+  'dining-chair': 0.55,
+  armchair: 0.575,
+  bench: 1,
+  'garden-bench': 0.53,
+};
+/** A table's top is this share of its height (three/builders/builders-tables.ts); its underside sits below it. */
+const TABLE_TOP_FRACTION = 0.1;
 
 /** Small items that sit ON a surface (desk, table, counter) rather than the floor. */
 export function isTabletopType(type: string): boolean {
   return TABLETOP_TYPES.has(type);
 }
 
+/** Whether `seat` slides under `table`: a table with legroom and a seat lower than its underside (#606). */
+function tucksUnder(seat: FurnitureItem, table: FurnitureItem): boolean {
+  const surface = TUCK_SEAT_SURFACE[seat.type];
+  if (surface === undefined || !TUCK_UNDER_TYPES.has(table.type)) return false;
+  return seat.height * surface < table.height * (1 - TABLE_TOP_FRACTION);
+}
+
 function isIntendedStack(a: FurnitureItem, b: FurnitureItem): boolean {
   const stacksOn = (surface: FurnitureItem, top: FurnitureItem): boolean =>
-    SURFACE_TYPES.has(surface.type) && (TABLETOP_TYPES.has(top.type) || SEAT_TYPES.has(top.type));
+    (SURFACE_TYPES.has(surface.type) && TABLETOP_TYPES.has(top.type)) || tucksUnder(top, surface);
   return stacksOn(a, b) || stacksOn(b, a);
 }
 
@@ -226,9 +248,13 @@ function itemInsideRect(item: FurnitureItem, rect: KeepOutRect): boolean {
   );
 }
 
+/** Whether the rect bars this item at all: a hole lets low-profile and hung items and stairs over it. */
+function keepOutApplies(item: FurnitureItem, rect: KeepOutRect): boolean {
+  return !(rect.hole && (isLowProfile(item) || isWallHung(item.type) || item.type === 'stairs'));
+}
+
 function keepsOut(item: FurnitureItem, rect: KeepOutRect): boolean {
-  if (rect.hole && (isLowProfile(item) || isWallHung(item.type) || item.type === 'stairs')) return false;
-  return itemEntersRect(item, rect);
+  return keepOutApplies(item, rect) && itemEntersRect(item, rect);
 }
 
 /** Whether a floor item stands inside one of the storey's partitions (#368). */
@@ -315,40 +341,93 @@ export function hasCollisions(
 
 export type AutoOrganizeStrategy = 'shelf' | 'by-category' | 'by-size';
 
+export interface AutoOrganizeOptions {
+  /** Gap kept between items and from the walls (m). */
+  margin?: number;
+  /** The storey's porch, stairwells and partitions, which the packing flows around (#577). */
+  context?: CollisionContext;
+  /** The rectangle to pack into (#629); the whole room when absent. */
+  bounds?: { x0: number; x1: number; z0: number; z1: number };
+  /** Items that stay where they are, such as another zone's, and are packed around like locked ones (#629). */
+  obstacles?: readonly FurnitureItem[];
+}
+
+/** How far Arrange slides along a row past a partition or a rotated keep-out (m). */
+const ARRANGE_PROBE_STEP = 0.05;
+
 export function autoOrganize(
   items: readonly FurnitureItem[],
   roomWidth: number,
   roomDepth: number,
   strategy: AutoOrganizeStrategy = 'shelf',
-  margin = 0.3
+  options: AutoOrganizeOptions = {}
 ): FurnitureItem[] {
   if (items.length === 0) return [];
+  const { margin = 0.3 } = options;
 
   const ordered = orderItemsForStrategy(items, strategy);
   // Locked items keep their spot and rotation like every other geometry
   // path (#389), and the packing flows around them.
-  const obstacles = items
-    .filter((item) => item.locked && item.position)
+  // Stairs stay too: moving a flight would leave its stairwell hole above
+  // behind. Hung decor stays on its wall (it is drawn over the furniture,
+  // so it is no obstacle either).
+  const anchored = (item: FurnitureItem) => item.locked || item.type === 'stairs';
+  const lockedRects: KeepOutRect[] = [...items.filter(anchored), ...(options.obstacles ?? [])]
+    .filter((item) => item.position)
     .map((item) => {
       const { halfW, halfD } = rotatedHalfExtents(item);
       const { x, z } = item.position ?? { x: 0, z: 0 };
       return { x0: x - halfW, x1: x + halfW, z0: z - halfD, z1: z + halfD };
     });
+  // The storey's porch, stairwell holes and partitions are obstacles too,
+  // each for the items `hasCollisions` keeps out of it (#577).
+  const context = options.context ?? {};
+  const keepOut = context.keepOut ?? [];
+  const interiorWalls = context.interiorWalls ?? [];
+  const walls: readonly WalkCollider[] =
+    interiorWalls.length > 0
+      ? buildWalkColliders(
+          items.filter((other) => isWallMounted(other.type)),
+          interiorWalls,
+          { roomWidth, roomDepth }
+        )
+      : [];
+  const { x0: left, x1: right, z0: top, z1: bottom } = options.bounds ?? {
+    x0: -roomWidth / 2,
+    x1: roomWidth / 2,
+    z0: -roomDepth / 2,
+    z1: roomDepth / 2,
+  };
   const organized: FurnitureItem[] = [];
-  let cursorX = -roomWidth / 2 + margin;
-  let cursorZ = -roomDepth / 2 + margin;
+  let cursorX = left + margin;
+  let cursorZ = top + margin;
   let rowMaxDepth = 0;
 
   for (const item of ordered) {
-    if (item.locked) {
+    if (anchored(item) || isWallHung(item.type) || isCeilingHung(item.type)) {
       organized.push(item);
       continue;
     }
 
+    // Axis-aligned obstacles are skipped in one jump; a rotated keep-out or
+    // a partition is probed (the item grown by the margin) and stepped past.
+    const rects = keepOut.filter((rect) => keepOutApplies(item, rect));
+    const obstacles = [...lockedRects, ...rects.filter((rect) => !rect.rotation)];
+    const angled = rects.filter((rect) => rect.rotation);
+    const blockedByPartition = interiorWalls.length > 0 && !isLowProfile(item) && !hangsClearOfPartitions(item, context.storeyHeight);
+    const probeHits = (centre: Vec2): boolean => {
+      if (angled.length === 0 && !blockedByPartition) return false;
+      const probe = { ...item, position: centre, rotation: 0, width: item.width + 2 * margin, depth: item.depth + 2 * margin };
+      if (angled.some((rect) => itemEntersRect(probe, rect))) return true;
+      if (!blockedByPartition) return false;
+      const box = toObb(probe);
+      return walls.some((wall) => obbOverlap(box, wall));
+    };
+
     let placed: Vec2 | null = null;
     for (;;) {
-      if (cursorX + item.width + margin > roomWidth / 2) {
-        cursorX = -roomWidth / 2 + margin;
+      if (cursorX + item.width + margin > right) {
+        cursorX = left + margin;
         // A row a locked item filled is empty; with no margin it must still
         // advance, or the skip loop below never ends.
         const rowStep = rowMaxDepth + margin;
@@ -360,12 +439,12 @@ export function autoOrganize(
       // row, or the rows have consumed the remaining depth — keeps its
       // original spot and rotation: packing what fits beats stacking every
       // leftover in an overlapping pile at the origin (#128).
-      const fitsWidth = cursorX + item.width + margin <= roomWidth / 2;
-      const fitsDepth = cursorZ + item.depth + margin <= roomDepth / 2;
+      const fitsWidth = cursorX + item.width + margin <= right;
+      const fitsDepth = cursorZ + item.depth + margin <= bottom;
       if (!fitsWidth || !fitsDepth) break;
 
-      // Skip past a locked item in the way (its edge plus the margin is
-      // always right of the cursor, so this terminates).
+      // Skip past a locked item, porch or stairwell in the way (its edge
+      // plus the margin is always right of the cursor, so this terminates).
       const blocker = obstacles.find(
         (rect) =>
           cursorX < rect.x1 + margin &&
@@ -378,7 +457,13 @@ export function autoOrganize(
         continue;
       }
 
-      placed = { x: cursorX + item.width / 2, z: cursorZ + item.depth / 2 };
+      const centre = { x: cursorX + item.width / 2, z: cursorZ + item.depth / 2 };
+      if (probeHits(centre)) {
+        cursorX += ARRANGE_PROBE_STEP;
+        continue;
+      }
+
+      placed = centre;
       cursorX += item.width + margin;
       rowMaxDepth = Math.max(rowMaxDepth, item.depth);
       break;

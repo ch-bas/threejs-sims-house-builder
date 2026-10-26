@@ -7,6 +7,7 @@ import {
   candidateCentres,
   placeSetInFreeSpace,
   setFitsRoom,
+  setForStorey,
   type FurnitureSet,
   type SetItemSnapshot,
 } from './furniture-sets';
@@ -177,5 +178,42 @@ describe('placeSetInFreeSpace — a set lands in free space (#456)', () => {
     expect(centres[0]).toEqual({ x: 1, z: 1 });
     const distances = centres.slice(1).map((c) => Math.hypot(c.x - 1, c.z - 1));
     expect(distances).toEqual([...distances].sort((a, b) => a - b));
+  });
+});
+
+describe('placeSetInFreeSpace — garden pieces stay on the ground floor (#591)', () => {
+  const snapshot = (type: string): SetItemSnapshot => {
+    const { price: _price, ...entry } = FURNITURE_CATALOG.find((c) => c.type === type)!;
+    return entry;
+  };
+  const set: FurnitureSet = {
+    key: 'custom:garden',
+    label: 'Garden corner',
+    icon: '⭐',
+    description: '',
+    items: [
+      { type: 'garden-bench', offset: { x: -1, z: 0 }, snapshot: snapshot('garden-bench') },
+      { type: 'tree', offset: { x: 1, z: 0 }, snapshot: snapshot('tree') },
+      { type: 'chair', offset: { x: 0, z: -1 }, snapshot: snapshot('chair') },
+    ],
+  };
+  const gardenOnly: FurnitureSet = { ...set, items: set.items.slice(0, 2) };
+  const options = { roomWidth: 8, roomDepth: 8, existing: [], idPrefix: 'p' };
+
+  it('drops the garden pieces above the ground floor', () => {
+    const items = placeSetInFreeSpace(set, { ...options, floorIndex: 1 });
+    expect(items.map((item) => item.type)).toEqual(['chair']);
+  });
+
+  it('keeps them on the ground floor', () => {
+    const items = placeSetInFreeSpace(set, { ...options, floorIndex: 0 });
+    expect(items.map((item) => item.type).sort()).toEqual(['chair', 'garden-bench', 'tree']);
+  });
+
+  it('places nothing from a garden-only set upstairs, and says it is garden-only', () => {
+    expect(placeSetInFreeSpace(gardenOnly, { ...options, floorIndex: 2 })).toEqual([]);
+    expect(setForStorey(gardenOnly, 2).items).toEqual([]);
+    expect(setForStorey(gardenOnly, 0)).toBe(gardenOnly);
+    expect(setForStorey(set, 1).items).toHaveLength(1);
   });
 });
