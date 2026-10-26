@@ -257,6 +257,26 @@ describe('walk world — the porch (#446)', () => {
     expect(ys[ys.length - 1]).toBeCloseTo(-0.5, 6);
   });
 
+  it('a raised porch leaves the basement floor under it walkable (#586)', () => {
+    // Street level with storey 1 on a hill: the porch opens there, over the basement.
+    const hill: WalkBuilding = {
+      width: 8,
+      depth: 8,
+      floors: [{ items: [] }, { items: [] }, { items: [] }],
+      entrance: { width: 1.4, depth: 1.2 },
+      terrain: { frontY: 3, backY: 3 },
+    };
+    const world = buildWalkWorld(hill);
+    expect(world.porch?.floorIndex).toBe(1);
+    const out: WalkSurface = { y: 0, kind: 'floor', floorIndex: 0 };
+    expect(walkSurfaceAt(world, 0, -3.4, 0, 'floor', out)).toBe(true);
+    expect(out).toEqual({ y: 0, kind: 'floor', floorIndex: 0 });
+    // The recess itself is still outside on storey 1.
+    expect(walkSurfaceAt(world, 0, -3.4, 3, 'ground', out)).toBe(true);
+    expect(out.kind).toBe('ground');
+    expect(out.y).toBe(3);
+  });
+
   it('the front wall is open across the recess and the reveals close its sides', () => {
     const shell = buildShellColliders(porchHouse, 0);
     // Walk north out of the recess to the street.

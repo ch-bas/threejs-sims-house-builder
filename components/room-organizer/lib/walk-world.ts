@@ -408,8 +408,9 @@ export function walkSurfaceAt(
   if (inside) {
     const { elevations, stairsByFloor } = world;
     for (let i = 0; i < elevations.length; i++) {
-      // A storey the porch cuts through has no floor in the recess.
-      if (inPorch && elevations[i]! < porch.topY) continue;
+      // A storey the porch cuts through has no floor in the recess; one
+      // below it (a basement under a raised porch, #586) keeps its floor.
+      if (inPorch && elevations[i]! >= porch.bottomY - 1e-6 && elevations[i]! < porch.topY) continue;
       const tread = treadAt(stairsByFloor[i]!, x, z);
       if (tread) {
         // The flight is solid down to its floor: its tread replaces the plate.
