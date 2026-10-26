@@ -14,6 +14,7 @@ import {
   stairSteps,
   stairToWorld,
   stairTreadLines,
+  stairwellParts,
   stairwellRect,
   winderFlights,
   winderLayout,
@@ -169,8 +170,9 @@ describe('headroom stairwell (#205)', () => {
     const rect = stairwellRect(straight, 3)!;
     // Treads whose top is above 3 − 2 = 1 m: from the 5th (15/14 m) up.
     const going = 2.4 / STAIR_STEP_COUNT;
-    expect(rect.depth).toBeCloseTo(2.4 - 4 * going + 0.1);
-    expect(rect.centerZ + rect.depth / 2).toBeCloseTo(1.2 + 0.05);
+    // A margin at the foot of the cut; flush with the top tread, where the walker steps off (#572).
+    expect(rect.depth).toBeCloseTo(2.4 - 4 * going + 0.05);
+    expect(rect.centerZ + rect.depth / 2).toBeCloseTo(1.2);
     expect(rect.width).toBeCloseTo(1.3);
     expect(rect.depth).toBeLessThan(2.4 + 0.1);
     // Every tread under the kept floor still clears the headroom.
@@ -182,12 +184,13 @@ describe('headroom stairwell (#205)', () => {
 
   it('opens a winder as an L over its turn and return flight, keeping floor over the up flight', () => {
     const outline = winderStairwellOutline(winder, 3)!;
-    // Fan + full return flight: from the newel line on the up side, to the return foot on +x.
+    // Fan + full return flight: from the newel line on the up side, to the return
+    // flight's top on +x, flush with it (#572).
     const expected = [
       [-1.05, 0.25],
       [0, 0.25],
-      [0, -1.35],
-      [1.05, -1.35],
+      [0, -1.3],
+      [1.05, -1.3],
       [1.05, 1.35],
       [-1.05, 1.35],
     ];
@@ -202,6 +205,21 @@ describe('headroom stairwell (#205)', () => {
     expect(tall).toHaveLength(4);
     expect(Math.min(...tall.map(([x]) => x))).toBeCloseTo(-0.05);
     expect(winderStairwellOutline({ width: 1.2, depth: 2.4 }, 3)).toBeNull();
+  });
+
+  it("starts a winder's cut part-way round the fan when the headroom does (#572)", () => {
+    // 2 × 3 winder under a 4 m storey: the cut starts at the fourth winder, in the fan's +x quarter.
+    const fourMetre = { width: 2, depth: 3, stairsShape: 'winder' as const };
+    const outline = winderStairwellOutline(fourMetre, 4)!;
+    expect(outline).toHaveLength(4);
+    expect(Math.min(...outline.map(([x]) => x))).toBeCloseTo(-0.05);
+    expect(Math.max(...outline.map(([, z]) => z))).toBeCloseTo(1.55);
+    expect(stairwellParts(fourMetre, 4)).toHaveLength(1);
+    // A classic 3 m storey: one rect per leg of the L, matching the outline's box.
+    const legs = stairwellParts(fourMetre, 3);
+    expect(legs).toHaveLength(2);
+    const box = stairwellRect(fourMetre, 3)!;
+    expect(box.width).toBeCloseTo(legs[0]!.width + legs[1]!.width);
   });
 
   it('validates shapes and lead-ins', () => {

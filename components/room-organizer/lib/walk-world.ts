@@ -14,7 +14,7 @@
  */
 
 import { groundHeightAt, outdoorGroundSize } from './site';
-import { STAIR_HEADROOM, STAIR_STEP_COUNT, stairSteps, stairToWorld } from './stairs';
+import { STAIR_STEP_COUNT, stairSteps, stairToWorld, stairwellParts } from './stairs';
 import { stairRise, storeyHeight, floorElevation } from './storeys';
 import { entranceGeometry, entranceSteps, entranceWallCut } from './street';
 import type { EntranceSpec, FloorLayout, Frontage, FurnitureItem, TerrainSpec } from './types';
@@ -40,17 +40,19 @@ export interface WalkBuilding {
   frontage?: Frontage | undefined;
 }
 
-/** One tread as a convex polygon in world XZ, with its world Y. */
-interface Tread {
+/** A convex polygon in world XZ, with its bounds. */
+interface Convex {
   xs: number[];
   zs: number[];
   minX: number;
   maxX: number;
   minZ: number;
   maxZ: number;
+}
+
+/** One tread as a convex polygon in world XZ, with its world Y. */
+interface Tread extends Convex {
   y: number;
-  /** The storey above is cut away over this tread (its stairwell, #205). */
-  cut: boolean;
   /** The flight's last tread, the one the landing above is stepped onto from. */
   top: boolean;
 }
@@ -76,8 +78,13 @@ export interface WalkStair {
   top: StairLanding;
   /** Just before the bottom tread, on the stair's own storey. */
   foot: StairLanding;
-  /** Bounds of the hole it cuts in the storey above (its cut treads), or null. */
+  /** Bounds of the hole it cuts in the storey above, or null. */
   hole: { minX: number; maxX: number; minZ: number; maxZ: number } | null;
+  /**
+   * The hole itself: the same rectangles the floor above is cut with and
+   * furniture is kept out of (`stairwellParts`, #572), in world XZ.
+   */
+  holeParts: Convex[];
 }
 
 interface Porch {
@@ -130,6 +137,8 @@ const FOUNDATION_LEDGE = 0.35;
 const LANDING_CLEARANCE = 0.55;
 /** The lot edge stays this far inside the ground plane. */
 const LOT_EDGE_MARGIN = 0.5;
+/** The walker's stairwell is this much inside the cut: the edge itself is floor. */
+const HOLE_EDGE = 1e-6;
 
 /** Eye height above the walker's feet: 1.6 m, ducking under a low ceiling (a 1.1 m loft, #277). */
 export function eyeOffsetForStorey(height: number): number {
@@ -208,7 +217,6 @@ function buildStair(
 ): WalkStair {
   const toWorld = stairToWorld(item, position);
   const steps = stairSteps(item, rise);
-  const low = ceiling - STAIR_HEADROOM;
   let minX = Infinity;
   let maxX = -Infinity;
   let minZ = Infinity;
@@ -235,7 +243,6 @@ function buildStair(
       minZ: Math.min(...zs),
       maxZ: Math.max(...zs),
       y: floorY + step.top,
-      cut: step.top > low,
       top: false,
     };
     minX = Math.min(minX, tread.minX);
@@ -246,14 +253,28 @@ function buildStair(
   });
   const last = treads[treads.length - 1];
   if (last) last.top = true;
-  const cut = treads.filter((tread) => tread.cut);
+  const holeParts = stairwellParts(item, rise, ceiling).map((part): Convex => {
+    // A hair inside the cut, so its edge flush with the top tread is floor
+    // whichever way the rounding falls.
+    const hw = part.width / 2 - HOLE_EDGE;
+    const hd = part.depth / 2 - HOLE_EDGE;
+    const corners = [
+      toWorld(part.centerX - hw, part.centerZ - hd),
+      toWorld(part.centerX + hw, part.centerZ - hd),
+      toWorld(part.centerX + hw, part.centerZ + hd),
+      toWorld(part.centerX - hw, part.centerZ + hd),
+    ];
+    const xs = corners.map(([x]) => x);
+    const zs = corners.map(([, z]) => z);
+    return { xs, zs, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+  });
   const hole =
-    cut.length > 0
+    holeParts.length > 0
       ? {
-          minX: Math.min(...cut.map((tread) => tread.minX)),
-          maxX: Math.max(...cut.map((tread) => tread.maxX)),
-          minZ: Math.min(...cut.map((tread) => tread.minZ)),
-          maxZ: Math.max(...cut.map((tread) => tread.maxZ)),
+          minX: Math.min(...holeParts.map((part) => part.minX)),
+          maxX: Math.max(...holeParts.map((part) => part.maxX)),
+          minZ: Math.min(...holeParts.map((part) => part.minZ)),
+          maxZ: Math.max(...holeParts.map((part) => part.maxZ)),
         }
       : null;
   return {
@@ -267,6 +288,7 @@ function buildStair(
     top: landingPast(centroids, treads.length - 1, treads.length - 2),
     foot: landingPast(centroids, 0, 1),
     hole,
+    holeParts,
   };
 }
 
@@ -283,10 +305,10 @@ function landingPast(centroids: ReadonlyArray<[number, number]>, end: number, pr
   return { x: ex + dirX * LANDING_CLEARANCE, z: ez + dirZ * LANDING_CLEARANCE, dirX, dirZ };
 }
 
-function insideConvex(tread: Tread, x: number, z: number): boolean {
-  if (x < tread.minX || x > tread.maxX || z < tread.minZ || z > tread.maxZ) return false;
-  // Even-odd crossing test: the treads are convex, but this needs no winding.
-  const { xs, zs } = tread;
+function insideConvex(shape: Convex, x: number, z: number): boolean {
+  if (x < shape.minX || x > shape.maxX || z < shape.minZ || z > shape.maxZ) return false;
+  // Even-odd crossing test: the shapes are convex, but this needs no winding.
+  const { xs, zs } = shape;
   let inside = false;
   for (let i = 0, j = xs.length - 1; i < xs.length; j = i++) {
     const zi = zs[i]!;
@@ -305,6 +327,18 @@ function treadAt(stairs: readonly WalkStair[], x: number, z: number): Tread | nu
     }
   }
   return null;
+}
+
+/** Whether (x, z) lies in the stairwell a flight of `stairs` cuts in the storey above. */
+function inStairwell(stairs: readonly WalkStair[], x: number, z: number): boolean {
+  for (const stair of stairs) {
+    const hole = stair.hole;
+    if (!hole || x < hole.minX || x > hole.maxX || z < hole.minZ || z > hole.maxZ) continue;
+    for (const part of stair.holeParts) {
+      if (insideConvex(part, x, z)) return true;
+    }
+  }
+  return false;
 }
 
 /** Whether a walker may move between two surfaces in one step. */
@@ -384,8 +418,7 @@ export function walkSurfaceAt(
         offer(world, footY, fromKind, tread.y, 'tread', i, out, landing);
         continue;
       }
-      const below = i > 0 ? treadAt(stairsByFloor[i - 1]!, x, z) : null;
-      if (below?.cut) continue; // the stairwell
+      if (i > 0 && inStairwell(stairsByFloor[i - 1]!, x, z)) continue; // the stairwell
       offer(world, footY, fromKind, elevations[i]!, 'floor', i, out, fromKind === 'tread' ? world.landingStep[i]! : 0);
     }
     if (inPorch) offer(world, footY, fromKind, porch.bottomY, 'ground', -1, out);

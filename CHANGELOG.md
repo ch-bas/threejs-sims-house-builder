@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A zone drawn wall to wall on a floor whose size isn't a multiple of 10 cm ends at the wall instead of 5 cm past it, and renaming or recolouring it no longer shrinks it ([#618](https://github.com/ch-bas/threejs-sims-house-builder/issues/618))
 - On a low storey such as a 1.2 m loft, paintings, mirrors, clocks, wall shelves and curtains hang lower, and get shorter if they must, instead of poking through the ceiling; collisions test them where they are drawn ([#610](https://github.com/ch-bas/threejs-sims-house-builder/issues/610))
 - A saved set added on an upper floor leaves its garden pieces out instead of floating trees and benches beside the house, and a set made only of garden pieces says they go on the ground floor ([#591](https://github.com/ch-bas/threejs-sims-house-builder/issues/591))
+- A winder stair's stairwell is the same shape everywhere: the hole in the floor above, where furniture may not stand and where you can't walk in the walkthrough now match, on every storey height, instead of leaving a walkable, furnishable hole under a tall storey or flagging a cabinet on solid floor under a 3 m one. The floor above now meets the top step flush ([#572](https://github.com/ch-bas/threejs-sims-house-builder/issues/572))
 
 ## [1.23.0] - 2026-10-25
 

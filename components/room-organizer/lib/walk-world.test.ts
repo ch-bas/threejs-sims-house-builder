@@ -299,8 +299,8 @@ describe('seeing the storeys either side (#446)', () => {
     // Flight footprint x in [2.6, 3.8], z in [-0.9, 1.5].
     expect(distanceToStairwell(world, 0, 0.6, 0)).toBeCloseTo(2, 6);
     expect(distanceToStairwell(world, 0, 3.2, 0)).toBe(0);
-    // Upstairs only the cut treads are a hole: from four goings up the flight.
-    expect(distanceToStairwell(world, 1, 3.2, -1.5)).toBeCloseTo(-0.9 + (4 * 2.4) / 14 + 1.5, 6);
+    // Upstairs only the cut treads are a hole: from four goings up the flight, less its margin (#572).
+    expect(distanceToStairwell(world, 1, 3.2, -1.5)).toBeCloseTo(-0.9 + (4 * 2.4) / 14 - 0.05 + 1.5, 5);
     expect(distanceToStairwell(world, 1, -3, -3)).toBeGreaterThan(5);
   });
 

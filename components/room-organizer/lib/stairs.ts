@@ -162,33 +162,86 @@ export interface StairwellRect {
   depth: number;
 }
 
+const localRect = (x0: number, x1: number, z0: number, z1: number): StairwellRect => ({
+  centerX: (x0 + x1) / 2,
+  centerZ: (z0 + z1) / 2,
+  width: x1 - x0,
+  depth: z1 - z0,
+});
+
 /**
- * The part of the floor above that has to go: over every tread that comes
- * within the headroom of the ceiling, as one local rectangle (with a small
- * margin), instead of the stair's whole footprint. Null when no tread does
- * (a very short flight under a tall storey). `ceiling` is the height of the
- * floor above, the storey's — not the stair's own rise, or a shortened stair
- * would cut a bigger hole (#366).
+ * The part of the floor above that has to go, as one or two rectangles in
+ * the stair's local frame (#205, #572): over every tread that comes within
+ * the headroom of the ceiling, with a small margin — except at the top of
+ * the flight, where the floor above meets the top tread flush, or the
+ * walker would have a gap to cross onto the landing. Empty when no tread
+ * needs it (a very short flight under a tall storey). `ceiling` is the
+ * height of the floor above, the storey's — not the stair's own rise, or a
+ * shortened stair would cut a bigger hole (#366).
+ *
+ * A straight flight's hole is one rectangle. A winder's is the return
+ * flight from its top, plus the fan, plus the top of the up flight when it
+ * reaches that far: one leg per half of the width, an L, so the floor stays
+ * over the foot of the up flight. The legs are axis-aligned in the stair's
+ * frame, so when the cut starts part-way round the fan the hole takes the
+ * whole quarter of the fan that winder lies in — the hole, the furniture
+ * keep-out and the walker's floor are all these same rectangles (#572).
+ */
+export function stairwellParts(item: StairItem, rise: number, ceiling = rise): StairwellRect[] {
+  const steps = stairSteps(item, rise);
+  const first = steps.findIndex((step) => step.top > ceiling - STAIR_HEADROOM);
+  if (first < 0) return [];
+  const m = HOLE_MARGIN;
+  const zsOf = (i: number) => steps[i]!.outline.map(([, z]) => z);
+  const layout = winderLayout(item);
+  if (!layout) {
+    // A straight flight climbs +z: its top is the far end.
+    const hw = item.width / 2;
+    return [localRect(-hw - m, hw + m, Math.min(...zsOf(first)) - m, item.depth / 2)];
+  }
+  const hw = item.width / 2;
+  const hd = item.depth / 2;
+  const { up, fanZ } = layout;
+  // The return flight climbs toward −z: its top is its foot on the plan.
+  const returnTop = Math.min(...zsOf(steps.length - 1));
+  if (first >= up + WINDER_TREADS) {
+    // Only part of the return flight: a strip on the +x half.
+    return [localRect(-m, hw + m, returnTop, Math.max(...zsOf(first)) + m)];
+  }
+  if (first >= up + WINDER_TREADS / 2) {
+    // From a winder in the fan's +x quarter: that quarter and the return flight.
+    return [localRect(-m, hw + m, returnTop, hd + m)];
+  }
+  // From part-way up the up flight (or the fan's −x quarter) round to the top.
+  const upFrom = first < up ? Math.min(...zsOf(first)) : fanZ;
+  return [localRect(-hw - m, 0, upFrom - m, hd + m), localRect(0, hw + m, returnTop, hd + m)];
+}
+
+const rectBounds = (part: StairwellRect) => ({
+  x0: part.centerX - part.width / 2,
+  x1: part.centerX + part.width / 2,
+  z0: part.centerZ - part.depth / 2,
+  z1: part.centerZ + part.depth / 2,
+});
+
+/**
+ * The stairwell as one local rectangle around `stairwellParts`, or null when
+ * no tread needs headroom.
  */
 export function stairwellRect(item: StairItem, rise: number, ceiling = rise): StairwellRect | null {
-  const low = ceiling - STAIR_HEADROOM;
-  const needed = stairSteps(item, rise).filter((step) => step.top > low);
-  if (needed.length === 0) return null;
-  const xs = needed.flatMap((step) => step.outline.map(([x]) => x));
-  const zs = needed.flatMap((step) => step.outline.map(([, z]) => z));
-  const x0 = Math.min(...xs) - HOLE_MARGIN;
-  const x1 = Math.max(...xs) + HOLE_MARGIN;
-  const z0 = Math.min(...zs) - HOLE_MARGIN;
-  const z1 = Math.max(...zs) + HOLE_MARGIN;
-  return { centerX: (x0 + x1) / 2, centerZ: (z0 + z1) / 2, width: x1 - x0, depth: z1 - z0 };
+  const parts = stairwellParts(item, rise, ceiling).map(rectBounds);
+  if (parts.length === 0) return null;
+  const x0 = Math.min(...parts.map((p) => p.x0));
+  const x1 = Math.max(...parts.map((p) => p.x1));
+  const z0 = Math.min(...parts.map((p) => p.z0));
+  const z1 = Math.max(...parts.map((p) => p.z1));
+  return localRect(x0, x1, z0, z1);
 }
 
 /**
- * The winder's stairwell as an outline in the stair's local frame (#205).
- * The treads that need headroom are always a tail of the climb, so the hole
- * is the return flight from its foot, plus the fan, plus the top of the up
- * flight when it reaches that far — an L (or a notched rectangle), never the
- * box around it, so the floor stays over the foot of the up flight.
+ * The winder's stairwell as an outline in the stair's local frame (#205):
+ * the outline of `stairwellParts` — an L (or a notched rectangle), never
+ * the box around it, or a strip on the return side.
  * Null for a straight flight (its hole is a plain rectangle) — including a
  * winder too shallow to turn, which stairSteps lays out straight (#278) —
  * or when no tread needs it.
@@ -198,37 +251,19 @@ export function winderStairwellOutline(
   rise: number,
   ceiling = rise
 ): Array<[number, number]> | null {
-  const layout = winderLayout(item);
-  if (!layout) return null;
-  const steps = stairSteps(item, rise);
-  const first = steps.findIndex((step) => step.top > ceiling - STAIR_HEADROOM);
-  if (first < 0) return null;
-  const hw = item.width / 2;
-  const hd = item.depth / 2;
-  const { up, fanZ } = layout;
-  const m = HOLE_MARGIN;
-  const zsOf = (i: number) => steps[i]!.outline.map(([, z]) => z);
-  const returnFoot = Math.min(...zsOf(steps.length - 1));
-
-  if (first >= up + WINDER_TREADS) {
-    // Only part of the return flight: a strip on the +x half.
-    const top = Math.max(...zsOf(first));
-    return [
-      [-m, returnFoot - m],
-      [hw + m, returnFoot - m],
-      [hw + m, top + m],
-      [-m, top + m],
-    ];
-  }
-  // From part-way up the up flight (or the fan) round to the return foot.
-  const upFrom = first < up ? Math.min(...zsOf(first)) : fanZ;
+  if (!winderLayout(item)) return null;
+  const parts = stairwellParts(item, rise, ceiling).map(rectBounds);
+  const [a, b] = parts;
+  if (!a) return null;
+  if (!b) return rect(a.x0, a.x1, a.z0, a.z1);
+  // The up leg (−x) and the return leg (+x) meet at x = 0, both up to the far end.
   return [
-    [-hw - m, upFrom - m],
-    [0, upFrom - m],
-    [0, returnFoot - m],
-    [hw + m, returnFoot - m],
-    [hw + m, hd + m],
-    [-hw - m, hd + m],
+    [a.x0, a.z0],
+    [a.x1, a.z0],
+    [b.x0, b.z0],
+    [b.x1, b.z0],
+    [b.x1, b.z1],
+    [a.x0, a.z1],
   ];
 }
 
@@ -282,6 +317,12 @@ export interface FloorOpening {
    * bounding box in the stair's frame.
    */
   outline?: Array<[number, number]>;
+  /**
+   * A hole of more than one rectangle (a winder's L, #572): each leg's
+   * centre in world coords and its size in the stair's frame, turned by
+   * `rotation` like the opening. The furniture keep-out is these legs.
+   */
+  parts?: Array<{ centerX: number; centerZ: number; width: number; depth: number }>;
 }
 
 /**
@@ -308,6 +349,7 @@ export function computeFloorOpenings(floorBelow: FloorLayout | undefined): reado
     const toWorld = stairToWorld(item, item.position);
     const [centerX, centerZ] = toWorld(rect.centerX, rect.centerZ);
     const outline = winderStairwellOutline(item, rise, ceiling);
+    const parts = stairwellParts(item, rise, ceiling);
     openings.push({
       id: item.id,
       centerX,
@@ -316,6 +358,14 @@ export function computeFloorOpenings(floorBelow: FloorLayout | undefined): reado
       depth: rect.depth,
       rotation: item.rotation ?? 0,
       ...(outline ? { outline: outline.map(([x, z]) => toWorld(x, z)) } : {}),
+      ...(parts.length > 1
+        ? {
+            parts: parts.map((part) => {
+              const [x, z] = toWorld(part.centerX, part.centerZ);
+              return { centerX: x, centerZ: z, width: part.width, depth: part.depth };
+            }),
+          }
+        : {}),
     });
   }
   return openings;
