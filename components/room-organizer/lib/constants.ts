@@ -204,15 +204,48 @@ function singleFloorTemplate(
   };
 }
 
+/**
+ * A template's door or window, on an exterior wall the way the opening snap
+ * seats one (`snapOpeningToWall`): north at z = -depth/2 (rotation 0), south
+ * at +depth/2 (π), east at +width/2 (-π/2), west at -width/2 (π/2). `along`
+ * is x on the north and south walls, z on the east and west ones (#570).
+ */
+function templateOpening(
+  id: string,
+  type: 'door' | 'window',
+  wall: 'north' | 'south' | 'east' | 'west',
+  along: number,
+  room: { width: number; depth: number }
+): FloorLayout['items'][number] {
+  const catalog = type === 'door'
+    ? { name: 'Door', width: 0.9, depth: 0.12, height: 2.05, color: '#6D4C41', icon: '🚪', price: 320 }
+    : { name: 'Window', width: 1.2, depth: 0.12, height: 1.2, color: '#90CAF9', icon: '🪟', price: 240 };
+  const halfW = room.width / 2;
+  const halfD = room.depth / 2;
+  const seat =
+    wall === 'north'
+      ? { position: { x: along, z: -halfD }, rotation: 0 }
+      : wall === 'south'
+        ? { position: { x: along, z: halfD }, rotation: Math.PI }
+        : wall === 'east'
+          ? { position: { x: halfW, z: along }, rotation: -Math.PI / 2 }
+          : { position: { x: -halfW, z: along }, rotation: Math.PI / 2 };
+  return { id, type, category: 'structure', ...catalog, ...seat };
+}
+
 export const ROOM_TEMPLATES = {
   bedroom: singleFloorTemplate('Bedroom', 4, 3.5, '#F5E6D3', [
     { id: 'bed-1', type: 'bed', category: 'bedroom', name: 'Double Bed', width: 2.0, depth: 1.6, height: 0.6, color: '#E8E8E8', icon: '🛏️', price: 800, position: { x: 0, z: -0.5 }, rotation: 0 },
     { id: 'nightstand-1', type: 'nightstand', category: 'bedroom', name: 'Nightstand', width: 0.5, depth: 0.4, height: 0.6, color: '#8B4513', icon: '🕯️', price: 120, position: { x: -1.3, z: -0.5 }, rotation: 0 },
     { id: 'nightstand-2', type: 'nightstand', category: 'bedroom', name: 'Nightstand', width: 0.5, depth: 0.4, height: 0.6, color: '#8B4513', icon: '🕯️', price: 120, position: { x: 1.3, z: -0.5 }, rotation: 0 },
-    { id: 'wardrobe-1', type: 'wardrobe', category: 'bedroom', name: 'Wardrobe', width: 1.4, depth: 0.6, height: 2.1, color: '#6D4C41', icon: '🚪', price: 540, position: { x: -1.0, z: 1.3 }, rotation: 0 },
+    { id: 'wardrobe-1', type: 'wardrobe', category: 'bedroom', name: 'Wardrobe', width: 1.4, depth: 0.6, height: 2.1, color: '#6D4C41', icon: '🚪', price: 540, position: { x: -1.0, z: 1.3 }, rotation: Math.PI },
     // Opposite corner from the wardrobe — at (-1.5, 1.2) the floor lamp stood
     // inside the wardrobe's footprint (#120).
     { id: 'lamp-1', type: 'lamp', category: 'electronics', name: 'Lamp', width: 0.3, depth: 0.3, height: 1.5, color: '#FFD700', icon: '💡', price: 110, position: { x: 1.5, z: 1.3 }, rotation: 0 },
+    // The wardrobe faces into the room (#575); the door is beside it (#570).
+    templateOpening('door-1', 'door', 'south', 0.5, { width: 4, depth: 3.5 }),
+    templateOpening('window-1', 'window', 'north', 0, { width: 4, depth: 3.5 }),
+    templateOpening('window-2', 'window', 'east', 0.4, { width: 4, depth: 3.5 }),
   ]),
   livingRoom: singleFloorTemplate('Living Room', 6, 5, '#D4C5B9', [
     { id: 'sofa-1', type: 'sofa', category: 'seating', name: 'Sofa', width: 2.0, depth: 0.9, height: 0.8, color: '#4A5568', icon: '🛋️', price: 650, position: { x: 0, z: -1.5 }, rotation: 0, sofaShape: 'standard' },
@@ -222,6 +255,10 @@ export const ROOM_TEMPLATES = {
     { id: 'plant-1', type: 'plant', category: 'decor', name: 'House Plant', width: 0.4, depth: 0.4, height: 1.0, color: '#228B22', icon: '🪴', price: 60, position: { x: -2.5, z: 2 }, rotation: 0 },
     { id: 'rug-1', type: 'rug', category: 'decor', name: 'Area Rug', width: 2.0, depth: 1.4, height: 0.02, color: '#C62828', icon: '🟥', price: 220, position: { x: 0, z: -0.5 }, rotation: 0 },
     { id: 'wifi-1', type: 'wifi', category: 'electronics', name: 'Wi-Fi AP', width: 0.2, depth: 0.2, height: 0.1, color: '#0088FF', icon: '📶', price: 140, isWiFiAccessPoint: true, signalRange: 10, position: { x: 2, z: 1.5 }, rotation: 0 },
+    templateOpening('door-1', 'door', 'north', 2, { width: 6, depth: 5 }),
+    templateOpening('window-1', 'window', 'north', 0, { width: 6, depth: 5 }),
+    templateOpening('window-2', 'window', 'west', 0.5, { width: 6, depth: 5 }),
+    templateOpening('window-3', 'window', 'east', -0.5, { width: 6, depth: 5 }),
   ]),
   office: singleFloorTemplate('Home Office', 3.5, 3, '#E8DCC4', [
     { id: 'desk-1', type: 'desk', category: 'tables', name: 'Desk', width: 1.2, depth: 0.6, height: 0.75, color: '#8B4513', icon: '🖥️', price: 320, position: { x: 0, z: -0.8 }, rotation: 0 },
@@ -230,6 +267,9 @@ export const ROOM_TEMPLATES = {
     { id: 'bookshelf-1', type: 'bookshelf', category: 'storage', name: 'Bookshelf', width: 1.0, depth: 0.3, height: 2.0, color: '#654321', icon: '📚', price: 260, position: { x: -1.2, z: -0.8 }, rotation: 0 },
     { id: 'lamp-1', type: 'lamp', category: 'electronics', name: 'Desk Lamp', width: 0.3, depth: 0.3, height: 1.5, color: '#FFD700', icon: '💡', price: 110, position: { x: 0.5, z: -0.8 }, rotation: 0 },
     { id: 'plant-1', type: 'plant', category: 'decor', name: 'Plant', width: 0.4, depth: 0.4, height: 1.0, color: '#228B22', icon: '🪴', price: 60, position: { x: 1.3, z: 1 }, rotation: 0 },
+    templateOpening('door-1', 'door', 'east', -0.2, { width: 3.5, depth: 3 }),
+    templateOpening('window-1', 'window', 'north', 0, { width: 3.5, depth: 3 }),
+    templateOpening('window-2', 'window', 'west', 0.5, { width: 3.5, depth: 3 }),
   ]),
   kitchen: singleFloorTemplate('Kitchen', 4.5, 3.5, '#ECEFF1', [
     { id: 'fridge-1', type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200, position: { x: -1.8, z: -1.2 }, rotation: 0 },
@@ -239,20 +279,30 @@ export const ROOM_TEMPLATES = {
     { id: 'dining-1', type: 'dining-table', category: 'tables', name: 'Dining Table', width: 1.8, depth: 1.0, height: 0.75, color: '#A0522D', icon: '🟫', price: 420, position: { x: 0, z: 0.6 }, rotation: 0 },
     { id: 'dining-chair-1', type: 'dining-chair', category: 'seating', name: 'Dining Chair', width: 0.45, depth: 0.45, height: 0.9, color: '#5D4037', icon: '🪑', price: 95, position: { x: -0.7, z: 0.6 }, rotation: Math.PI / 2 },
     { id: 'dining-chair-2', type: 'dining-chair', category: 'seating', name: 'Dining Chair', width: 0.45, depth: 0.45, height: 0.9, color: '#5D4037', icon: '🪑', price: 95, position: { x: 0.7, z: 0.6 }, rotation: -Math.PI / 2 },
+    templateOpening('door-1', 'door', 'south', 1.4, { width: 4.5, depth: 3.5 }),
+    templateOpening('window-1', 'window', 'north', 1.0, { width: 4.5, depth: 3.5 }),
+    templateOpening('window-2', 'window', 'west', 0.5, { width: 4.5, depth: 3.5 }),
   ]),
   bathroom: singleFloorTemplate('Bathroom', 3, 2.5, '#E0F2F1', [
     { id: 'toilet-1', type: 'toilet', category: 'bathroom', name: 'Toilet', width: 0.4, depth: 0.7, height: 0.8, color: '#FAFAFA', icon: '🚽', price: 220, position: { x: -1.0, z: -0.7 }, rotation: 0 },
     { id: 'sink-1', type: 'bathroom-sink', category: 'bathroom', name: 'Sink', width: 0.6, depth: 0.45, height: 0.85, color: '#FAFAFA', icon: '🪞', price: 280, position: { x: 0.2, z: -0.85 }, rotation: 0 },
     { id: 'bathtub-1', type: 'bathtub', category: 'bathroom', name: 'Bathtub', width: 1.7, depth: 0.8, height: 0.55, color: '#FAFAFA', icon: '🛁', price: 950, position: { x: 0, z: 0.7 }, rotation: 0 },
     { id: 'mirror-1', type: 'mirror', category: 'decor', name: 'Mirror', width: 0.7, depth: 0.05, height: 1.2, color: '#B0BEC5', icon: '🪞', price: 190, position: { x: 0.2, z: -1.15 }, rotation: 0 },
+    templateOpening('door-1', 'door', 'east', -0.3, { width: 3, depth: 2.5 }),
+    templateOpening('window-1', 'window', 'south', 0, { width: 3, depth: 2.5 }),
   ]),
   studio: singleFloorTemplate('Studio Apartment', 7, 6, '#EFEBE9', [
     { id: 'bed-1', type: 'bed', category: 'bedroom', name: 'Double Bed', width: 2.0, depth: 1.6, height: 0.6, color: '#E8E8E8', icon: '🛏️', price: 800, position: { x: -2.2, z: -1.8 }, rotation: 0 },
     { id: 'sofa-1', type: 'sofa', category: 'seating', name: 'Sofa', width: 2.0, depth: 0.9, height: 0.8, color: '#4A5568', icon: '🛋️', price: 650, position: { x: 1.5, z: 1.0 }, rotation: -Math.PI / 2, sofaShape: 'standard' },
     { id: 'desk-1', type: 'desk', category: 'tables', name: 'Desk', width: 1.2, depth: 0.6, height: 0.75, color: '#8B4513', icon: '🖥️', price: 320, position: { x: 2.5, z: -2.2 }, rotation: 0 },
-    { id: 'fridge-1', type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200, position: { x: -3.0, z: 2.4 }, rotation: 0 },
-    { id: 'stove-1', type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850, position: { x: -2.2, z: 2.4 }, rotation: 0 },
-    { id: 'sink-1', type: 'kitchen-sink', category: 'kitchen', name: 'Sink', width: 0.9, depth: 0.6, height: 0.9, color: '#BDBDBD', icon: '🚰', price: 450, position: { x: -1.2, z: 2.4 }, rotation: 0 },
+    { id: 'fridge-1', type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200, position: { x: -3.0, z: 2.4 }, rotation: Math.PI },
+    { id: 'stove-1', type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850, position: { x: -2.2, z: 2.4 }, rotation: Math.PI },
+    { id: 'sink-1', type: 'kitchen-sink', category: 'kitchen', name: 'Sink', width: 0.9, depth: 0.6, height: 0.9, color: '#BDBDBD', icon: '🚰', price: 450, position: { x: -1.2, z: 2.4 }, rotation: Math.PI },
+    // The kitchen run faces into the room, not the south wall (#575).
+    templateOpening('door-1', 'door', 'north', 0.5, { width: 7, depth: 6 }),
+    templateOpening('window-1', 'window', 'north', -2.2, { width: 7, depth: 6 }),
+    templateOpening('window-2', 'window', 'east', 0.5, { width: 7, depth: 6 }),
+    templateOpening('window-3', 'window', 'south', -1.2, { width: 7, depth: 6 }),
   ]),
   twoStory: {
     name: 'Two-Story Home',
@@ -266,9 +316,13 @@ export const ROOM_TEMPLATES = {
         items: [
           { id: 'gf-sofa', type: 'sofa', category: 'seating', name: 'Sofa', width: 2.0, depth: 0.9, height: 0.8, color: '#4A5568', icon: '🛋️', price: 650, position: { x: -1.4, z: -1.5 }, rotation: 0 },
           { id: 'gf-tv', type: 'tv', category: 'electronics', name: 'TV Stand', width: 1.5, depth: 0.4, height: 0.5, color: '#2C3E50', icon: '📺', price: 600, position: { x: -1.4, z: 1.8 }, rotation: Math.PI },
-          { id: 'gf-fridge', type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200, position: { x: 2.2, z: -2.0 }, rotation: 0 },
-          { id: 'gf-stove', type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850, position: { x: 2.2, z: -1.1 }, rotation: 0 },
+          { id: 'gf-fridge', type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200, position: { x: 2.2, z: -2.0 }, rotation: -Math.PI / 2 },
+          { id: 'gf-stove', type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850, position: { x: 2.2, z: -1.1 }, rotation: -Math.PI / 2 },
           { id: 'gf-stairs', type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, position: { x: 2.0, z: 1.0 }, rotation: 0 },
+          // The fridge and stove face the room from the east wall (#575).
+          templateOpening('gf-door', 'door', 'north', 0.6, { width: 6, depth: 5 }),
+          templateOpening('gf-window-1', 'window', 'north', -1.4, { width: 6, depth: 5 }),
+          templateOpening('gf-window-2', 'window', 'west', 0.3, { width: 6, depth: 5 }),
         ],
       },
       {
@@ -277,8 +331,10 @@ export const ROOM_TEMPLATES = {
         floorColor: '#F5E6D3',
         items: [
           { id: 'ff-bed', type: 'bed', category: 'bedroom', name: 'Double Bed', width: 2.0, depth: 1.6, height: 0.6, color: '#E8E8E8', icon: '🛏️', price: 800, position: { x: -1.5, z: -1.5 }, rotation: 0 },
-          { id: 'ff-wardrobe', type: 'wardrobe', category: 'bedroom', name: 'Wardrobe', width: 1.4, depth: 0.6, height: 2.1, color: '#6D4C41', icon: '🚪', price: 540, position: { x: -2.0, z: 1.5 }, rotation: 0 },
+          { id: 'ff-wardrobe', type: 'wardrobe', category: 'bedroom', name: 'Wardrobe', width: 1.4, depth: 0.6, height: 2.1, color: '#6D4C41', icon: '🚪', price: 540, position: { x: -2.0, z: 1.85 }, rotation: Math.PI },
           { id: 'ff-stairs', type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, position: { x: 2.0, z: 1.0 }, rotation: 0 },
+          templateOpening('ff-window-1', 'window', 'north', -1.5, { width: 6, depth: 5 }),
+          templateOpening('ff-window-2', 'window', 'west', 0, { width: 6, depth: 5 }),
         ],
       },
     ],
