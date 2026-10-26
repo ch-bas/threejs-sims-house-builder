@@ -233,3 +233,52 @@ describe('useHistory — commitNow', () => {
     expect(apply).toHaveBeenLastCalledWith(v0);
   });
 });
+
+// #546: an undo inside the debounce window used to append the pending edit to
+// a non-empty `future`, so a later redo replayed the abandoned branch.
+describe('useHistory — undo of a pending edit invalidates older redo', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('leaves the pending edit as the only redo', () => {
+    const a: Doc = { name: 'A' };
+    const b: Doc = { name: 'B' };
+    const c: Doc = { name: 'C' };
+    const apply = vi.fn<(snapshot: Doc) => void>();
+    const { result, rerender } = renderHook(({ value }) => useHistory(value, apply, { debounceMs: 600 }), {
+      initialProps: { value: a },
+    });
+
+    rerender({ value: b });
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+    act(() => result.current.undo());
+    expect(apply).toHaveBeenLastCalledWith(a);
+    rerender({ value: a });
+
+    // A new edit abandons B; undo it before the debounce commits it.
+    rerender({ value: c });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    act(() => result.current.undo());
+    expect(apply).toHaveBeenLastCalledWith(a);
+    rerender({ value: a });
+
+    expect(result.current.canRedo).toBe(true);
+    act(() => result.current.redo());
+    expect(apply).toHaveBeenLastCalledWith(c);
+    rerender({ value: c });
+
+    // B belonged to the abandoned branch: nothing is left to redo.
+    expect(result.current.canRedo).toBe(false);
+    act(() => result.current.redo());
+    expect(apply).toHaveBeenCalledTimes(3);
+  });
+});

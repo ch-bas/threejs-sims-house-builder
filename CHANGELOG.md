@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Undoing an edit straight after making it, then redoing, no longer brings back a change you had already undone and replaced ([#546](https://github.com/ch-bas/threejs-sims-house-builder/issues/546))
+
 ## [1.23.0] - 2026-10-25
 
 The **UX polish & accessibility** milestone: readable panels, screen-reader names and keyboard tabs, reduced motion, a 2D switch on every screen, and a proper attic ceiling.

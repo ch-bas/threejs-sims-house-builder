@@ -117,9 +117,11 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     // Undo it back to the last committed snapshot — without this, the pending
     // edit would be discarded and undo would jump one step too far. While
     // skipNextRef is armed the divergence is a not-yet-adopted baseline
-    // (undo/redo), not a pending edit.
+    // (undo/redo), not a pending edit. The pending edit started a new branch,
+    // so it is the only valid redo: whatever `future` held was abandoned the
+    // moment it was made, as commit() and redo()'s guard agree (#546).
     if (!skipNextRef.current && !Object.is(valueRef.current, lastCommittedRef.current)) {
-      stacksRef.current = { past, future: [...future, valueRef.current] };
+      stacksRef.current = { past, future: [valueRef.current] };
       setStacks(stacksRef.current);
       skipNextRef.current = true;
       apply(lastCommittedRef.current);
