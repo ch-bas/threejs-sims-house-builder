@@ -206,7 +206,8 @@ describe('hasCollisions — stacking families (#403)', () => {
     ['lamp', 'side-table'],
     ['plant', 'picnic-table'],
     ['dining-chair', 'table'],
-    ['armchair', 'coffee-table'],
+    // An armchair tucks under a table, not a coffee table (#606).
+    ['armchair', 'table'],
     ['garden-bench', 'picnic-table'],
   ])('%s with %s is an intended stack', (top, surface) => {
     const a = at('a', top, 0.4, 0.8);

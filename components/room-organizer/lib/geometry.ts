@@ -119,16 +119,38 @@ const SURFACE_TYPES = new Set([
   'dresser',
 ]);
 const TABLETOP_TYPES = new Set(['computer', 'lamp', 'plant', 'books', 'candles', 'flowerpot', 'wifi']);
-const SEAT_TYPES = new Set(['chair', 'dining-chair', 'bench', 'armchair', 'garden-bench']);
+/** Surfaces with open legroom a seat can slide under (#606); a dresser or counter has none. */
+const TUCK_UNDER_TYPES = new Set(['desk', 'dining-table', 'table', 'picnic-table']);
+/**
+ * Seats that tuck under a table, with the height of their sitting surface
+ * as a share of the item height (the seating builders' proportions). Only
+ * the seat has to clear the table's underside; a backrest stays outside.
+ */
+const TUCK_SEAT_SURFACE: Readonly<Record<string, number>> = {
+  chair: 0.55,
+  'dining-chair': 0.55,
+  armchair: 0.575,
+  bench: 1,
+  'garden-bench': 0.53,
+};
+/** A table's top is this share of its height (three/builders/builders-tables.ts); its underside sits below it. */
+const TABLE_TOP_FRACTION = 0.1;
 
 /** Small items that sit ON a surface (desk, table, counter) rather than the floor. */
 export function isTabletopType(type: string): boolean {
   return TABLETOP_TYPES.has(type);
 }
 
+/** Whether `seat` slides under `table`: a table with legroom and a seat lower than its underside (#606). */
+function tucksUnder(seat: FurnitureItem, table: FurnitureItem): boolean {
+  const surface = TUCK_SEAT_SURFACE[seat.type];
+  if (surface === undefined || !TUCK_UNDER_TYPES.has(table.type)) return false;
+  return seat.height * surface < table.height * (1 - TABLE_TOP_FRACTION);
+}
+
 function isIntendedStack(a: FurnitureItem, b: FurnitureItem): boolean {
   const stacksOn = (surface: FurnitureItem, top: FurnitureItem): boolean =>
-    SURFACE_TYPES.has(surface.type) && (TABLETOP_TYPES.has(top.type) || SEAT_TYPES.has(top.type));
+    (SURFACE_TYPES.has(surface.type) && TABLETOP_TYPES.has(top.type)) || tucksUnder(top, surface);
   return stacksOn(a, b) || stacksOn(b, a);
 }
 

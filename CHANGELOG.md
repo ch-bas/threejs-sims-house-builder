@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Applying a theme no longer paints pools and ponds grey or trees, hedges and plants blue or orange: water, foliage, flowers, stepping stones and pendant-light shades keep their colours ([#597](https://github.com/ch-bas/threejs-sims-house-builder/issues/597))
 - The over-budget question and Surprise me no longer count the porch door of older saves, so they agree with the header's spending ([#600](https://github.com/ch-bas/threejs-sims-house-builder/issues/600))
 - Arrange keeps furniture off the porch, out of the stairwell hole on the floor above the stairs and clear of interior walls ([#577](https://github.com/ch-bas/threejs-sims-house-builder/issues/577))
+- A chair, armchair or bench standing inside a dresser, nightstand, coffee table or counter is flagged as a collision; seats still tuck under desks and tables when their seat clears the tabletop ([#606](https://github.com/ch-bas/threejs-sims-house-builder/issues/606))
 
 ## [1.23.0] - 2026-10-25
 
