@@ -117,3 +117,15 @@ describe('layoutReducer: rotating a selection never stacks openings (#583)', () 
     expect(byId.get('table')!.position!.z).toBeCloseTo(1);
   });
 });
+
+describe('layoutReducer: a locked sofa keeps its shape (#636)', () => {
+  it('setSofaShape refuses a locked sofa', () => {
+    const state = stateWith([makeItem({ id: 's', type: 'sofa', sofaShape: 'standard', locked: true })]);
+    expect(reduce(state, { type: 'setSofaShape', id: 's', shape: 'L-shape' })).toBe(state);
+  });
+
+  it('setSofaShape still reshapes an unlocked sofa', () => {
+    const state = stateWith([makeItem({ id: 's', type: 'sofa', sofaShape: 'standard' })]);
+    expect(items(reduce(state, { type: 'setSofaShape', id: 's', shape: 'L-shape' }))[0]!.sofaShape).toBe('L-shape');
+  });
+});

@@ -559,8 +559,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         return { [action.dimension]: value, ...settled };
       });
 
+    // The shape changes the footprint: geometry, so refused while locked
+    // like the stairs shape (#209, #636).
     case 'setSofaShape':
-      return patchItem(state, action.id, () => ({ sofaShape: action.shape }));
+      return patchItem(state, action.id, (item) => (item.locked ? null : { sofaShape: action.shape }));
 
     case 'setSillHeight':
       return patchItem(state, action.id, (item) => {

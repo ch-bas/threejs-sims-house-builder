@@ -6,7 +6,7 @@ import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
-import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M } from '../lib/constants';
+import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
 import { isWallMounted } from '../lib/opening-snap';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
@@ -14,7 +14,7 @@ import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/stree
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import { SliderRow } from './slider-row';
-import type { SofaShape, StairsShape } from '../lib/types';
+import type { FurnitureItem, SofaShape, StairsShape } from '../lib/types';
 
 type ResizableDimension = 'width' | 'depth' | 'height';
 
@@ -30,6 +30,16 @@ const DIMENSIONS: readonly DimensionConfig[] = [
   { label: 'D', key: 'depth',  min: 0.1, max: 5 },
   { label: 'H', key: 'height', min: 0.1, max: 3 },
 ];
+
+/**
+ * A range input clamps its value to `max`, so a Pine Tree (4.5 m) shown on a
+ * 3 m slider shrank to 3 m on the first nudge (#547). The slider reaches the
+ * item's own size and its catalogue size, whichever is larger.
+ */
+function sliderMax(dimension: DimensionConfig, item: FurnitureItem): number {
+  const catalog = FURNITURE_CATALOG.find((entry) => entry.type === item.type);
+  return Math.max(dimension.max, item[dimension.key], catalog?.[dimension.key] ?? 0);
+}
 
 export interface ItemContextPopoverProps {
   hasCollision: boolean;
@@ -275,6 +285,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             icon="mirror"
             label="Mirror"
             active={item.mirrored}
+            disabled={item.locked}
+            title={item.locked ? 'Locked — unlock to mirror' : undefined}
             onClick={() => actions.toggleMirror(item.id)}
           />
           <ActionTile
@@ -306,7 +318,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 key={dimension.key}
                 label={dimension.label}
                 min={dimension.min}
-                max={dimension.max}
+                max={sliderMax(dimension, item)}
                 step={0.1}
                 value={item[dimension.key]}
                 format={(v) => `${v.toFixed(2)} m`}
@@ -322,6 +334,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           {item.type === 'sofa' && (
             <SofaShapeSegmented
               value={item.sofaShape ?? 'standard'}
+              disabled={item.locked}
+              title={item.locked ? 'Locked — unlock to reshape' : undefined}
               onChange={(shape) => actions.setSofaShape(item.id, shape)}
             />
           )}
@@ -518,6 +532,8 @@ function ActionTile({ icon, label, onClick, active, disabled, title }: ActionTil
 interface SofaShapeSegmentedProps {
   value: SofaShape;
   onChange(value: SofaShape): void;
+  disabled?: boolean | undefined;
+  title?: string | undefined;
 }
 
 const SOFA_SHAPES: ReadonlyArray<SegmentOption<SofaShape>> = [
@@ -534,8 +550,10 @@ const STAIRS_SHAPES: ReadonlyArray<SegmentOption<StairsShape>> = [
   { key: 'winder', label: 'Winder' },
 ];
 
-function SofaShapeSegmented({ value, onChange }: SofaShapeSegmentedProps): JSX.Element {
-  return <SegmentedRow label="Sofa" value={value} options={SOFA_SHAPES} onChange={onChange} />;
+function SofaShapeSegmented({ value, onChange, disabled, title }: SofaShapeSegmentedProps): JSX.Element {
+  return (
+    <SegmentedRow label="Sofa" value={value} options={SOFA_SHAPES} onChange={onChange} disabled={disabled} title={title} />
+  );
 }
 
 interface SegmentOption<T extends string> {
