@@ -214,7 +214,7 @@ const DrawerBody = memo(function DrawerBody({
   removeItem,
   duplicateItem,
 }: DrawerBodyProps): JSX.Element {
-  const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue } = useRoomEditor();
+  const { layout, activeFloor, activeFloorIndex, actions, history, isReady, playCue } = useRoomEditor();
   const view = useViewSettings('view2D', 'walkthroughMode');
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
@@ -320,7 +320,14 @@ const DrawerBody = memo(function DrawerBody({
 
       {sidebarTab === 'style' && (
         <>
-          <ThemesPanel onApply={(themeKey) => actions.applyLayout(applyTheme(layout, themeKey))} />
+          <ThemesPanel
+            onApply={(themeKey) => {
+              // Loads are discrete steps: an edit still in the debounce
+              // window keeps an undo entry of its own (#555).
+              history.commitNow();
+              actions.applyLayout(applyTheme(layout, themeKey));
+            }}
+          />
 
           <TimeOfDayPanel />
 
@@ -353,6 +360,7 @@ const DrawerBody = memo(function DrawerBody({
             onLoadTemplate={(template) => {
               if (!confirmReplace(layout, `the ${template.name} template`)) return false;
               snapshotBeforeReplace(layout);
+              history.commitNow();
               actions.applyLayout({
                 ...template,
                 floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
@@ -369,6 +377,7 @@ const DrawerBody = memo(function DrawerBody({
               // No history.clear(): like a template load, this must stay
               // one Ctrl+Z away from the design it replaced (#222).
               snapshotBeforeReplace(layout);
+              history.commitNow();
               actions.applyLayout(loaded);
               markLayoutLoaded();
               selectOnly(null);

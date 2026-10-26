@@ -18,6 +18,11 @@ export interface UseImportExportParams {
   /** Names a 2D screenshot after the floor it shows (#427). */
   activeFloorName: string;
   actions: LayoutActions;
+  /**
+   * `history.commitNow`: a load is a discrete step, so an edit still inside
+   * the debounce window keeps an undo entry of its own (#555).
+   */
+  commitHistoryNow(): void;
   view2D: boolean;
   canvasRef: RefObject<HTMLCanvasElement>;
   canvas2DRef: RefObject<HTMLCanvasElement | null>;
@@ -40,6 +45,7 @@ export function useImportExport({
   layout,
   activeFloorName,
   actions,
+  commitHistoryNow,
   view2D,
   canvasRef,
   canvas2DRef,
@@ -103,6 +109,7 @@ export function useImportExport({
         const next = await readLayoutFromFile(file);
         if (!confirmReplace(layout, `the imported “${next.name}”`)) return false;
         snapshotBeforeReplace(layout);
+        commitHistoryNow();
         actions.applyLayout(next);
         markLayoutLoaded();
         onImported();
@@ -116,7 +123,7 @@ export function useImportExport({
         return false;
       }
     },
-    [layout, actions, onImported]
+    [layout, actions, commitHistoryNow, onImported]
   );
 
   return { handleScreenshot, handleExportGlb, handleShareLink, handleImport };

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Undoing an edit straight after making it, then redoing, no longer brings back a change you had already undone and replaced ([#546](https://github.com/ch-bas/threejs-sims-house-builder/issues/546))
+- An edit made just before importing a file, loading a template or library house, applying a theme or taking another tab's version keeps its own undo step, instead of being lost when you undo the load ([#555](https://github.com/ch-bas/threejs-sims-house-builder/issues/555))
 
 ## [1.23.0] - 2026-10-25
 

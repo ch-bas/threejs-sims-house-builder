@@ -661,11 +661,13 @@ export function RoomOrganizer(): JSX.Element {
   const adoptRemoteLayout = useCallback(() => {
     if (!remoteLayout) return;
     snapshotBeforeReplace(layout);
+    // An edit still in the debounce window keeps its own undo step (#555).
+    commitHistoryNow();
     actions.applyLayout(remoteLayout);
     markLayoutLoaded();
     clearTransientSelection();
     clearRemoteLayout();
-  }, [remoteLayout, layout, actions, clearTransientSelection, clearRemoteLayout]);
+  }, [remoteLayout, layout, actions, commitHistoryNow, clearTransientSelection, clearRemoteLayout]);
 
   const selectedItem = useMemo(
     () => (selectedItemId ? activeFloor.items.find((item) => item.id === selectedItemId) ?? null : null),
@@ -969,6 +971,7 @@ export function RoomOrganizer(): JSX.Element {
     layout,
     activeFloorName: activeFloor.name,
     actions,
+    commitHistoryNow,
     view2D: view.view2D,
     canvasRef,
     canvas2DRef,

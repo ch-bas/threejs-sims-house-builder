@@ -54,10 +54,13 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
   const { debounceMs = 600, maxEntries = 50 } = options;
 
   const [stacks, setStacks] = useState<HistoryStacks<T>>({ past: [], future: [] });
-  // Mirrors so event handlers read the current state without going through an
-  // updater function; kept in sync both on render and on every manual write.
+  // The source of truth, so event handlers read the current stacks without
+  // going through an updater function; `stacks` only drives re-renders. Every
+  // write sets the ref first. It is NOT re-synced from `stacks` on render: a
+  // store update renders at sync priority, ahead of a setStacks queued outside
+  // a discrete event (an import resumes after `await file.text()`), and that
+  // render would hand the ref the stale stacks and lose a commit (#555).
   const stacksRef = useRef(stacks);
-  stacksRef.current = stacks;
   const valueRef = useRef(value);
   valueRef.current = value;
   const lastCommittedRef = useRef<T>(value);
