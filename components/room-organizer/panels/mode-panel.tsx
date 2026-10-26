@@ -221,6 +221,8 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           label="Surprise me"
           icon="sparkle"
           accent
+          // EXPLORE looks around and never edits the house (#643).
+          disabled={gameMode === 'live'}
           onClick={onSurprise}
         />
         {/* The minimap, the walkers and the camera cones are 3D-only too (#444). */}

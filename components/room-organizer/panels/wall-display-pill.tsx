@@ -1,6 +1,7 @@
 'use client';
 
 import { useEditorViewActions, useViewSettings } from '../contexts';
+import { sceneWallDisplay } from '../lib/walkthrough-view';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { PlanViewToggle } from './view-options';
 import type { ViewSettings } from '../lib/types';
@@ -26,9 +27,13 @@ const MODES: readonly Mode[] = [
  * top-right corner of the lot. The 2D plan switch leads it (#526).
  */
 export function WallDisplayPill(): JSX.Element {
-  const view = useViewSettings('wallDisplay', 'view2D');
+  const view = useViewSettings('wallDisplay', 'view2D', 'walkthroughMode');
   // The plan draws no walls up or down: off in 2D, like the time controls (#220, #444).
-  const off = view.view2D;
+  // Walking keeps every wall up (#359), so the pill is off then too (#643)
+  // and shows the walls the scene draws; the chosen mode comes back on exit.
+  const walking = view.walkthroughMode && !view.view2D;
+  const off = view.view2D || walking;
+  const shown = sceneWallDisplay(view.wallDisplay, walking);
   const { setView } = useEditorViewActions();
 
   return (
@@ -62,7 +67,7 @@ export function WallDisplayPill(): JSX.Element {
         }}
       >
         {MODES.map((entry) => {
-          const isActive = view.wallDisplay === entry.key;
+          const isActive = shown === entry.key;
           return (
             <button
               key={entry.key}
@@ -71,7 +76,7 @@ export function WallDisplayPill(): JSX.Element {
               aria-checked={isActive}
               onClick={() => setView((v) => ({ ...v, wallDisplay: entry.key }))}
               disabled={off}
-              title={off ? `${entry.hint} — switch back to 3D view` : entry.hint}
+              title={walking ? `${entry.hint} — walls stay up while walking` : off ? `${entry.hint} — switch back to 3D view` : entry.hint}
               className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
               style={{
                 padding: '4px 8px',
