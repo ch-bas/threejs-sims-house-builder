@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { buildSightWalls, type ShellBuilding } from '../lib/walk-collision';
 import { stepVisionCones } from '../three/camera-vision';
 import { ROOM_OBJECT_TAGS } from '../three/room-builder';
 import { useReducedMotion } from './use-reduced-motion';
@@ -12,6 +13,8 @@ export interface UseCameraVisionOptions {
   invalidate?: () => void;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
+  /** The walls a cone can't see through (#590); absent, it sees through all. */
+  building?: ShellBuilding;
 }
 
 /**
@@ -22,8 +25,13 @@ export interface UseCameraVisionOptions {
  * painted — without it the sweep only advances when something else (camera
  * orbit, drag) happens to request frames.
  */
-export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef }: UseCameraVisionOptions): void {
+export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef, building }: UseCameraVisionOptions): void {
   const reducedMotion = useReducedMotion();
+  // Built when the building changes, never per frame; read through a ref so
+  // an edit doesn't restart the loop.
+  const sightWalls = useMemo(() => (enabled && building ? buildSightWalls(building) : undefined), [enabled, building]);
+  const sightWallsRef = useRef(sightWalls);
+  sightWallsRef.current = sightWalls;
   useEffect(() => {
     if (!enabled) return undefined;
     const scene = sceneRef.current;
@@ -42,7 +50,7 @@ export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef 
       if (!hasCones) return;
       // Reduced motion (#436): the clock stands still, so the scan line and
       // the wedge's pulse hold; detection and the alert colour still follow.
-      stepVisionCones(scene, reducedMotion ? 0 : (performance.now() - start) / 1000);
+      stepVisionCones(scene, reducedMotion ? 0 : (performance.now() - start) / 1000, sightWallsRef.current);
       invalidate?.();
     };
     rafId = requestAnimationFrame(tick);

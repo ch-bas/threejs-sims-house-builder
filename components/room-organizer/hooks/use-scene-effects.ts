@@ -711,22 +711,31 @@ export function useSceneEffects({
     removeTagged(scene, ROOM_OBJECT_TAGS.Signal, ROOM_OBJECT_TAGS.CameraVision);
     if (!view.showWiFiSignals && !view.showCameraVision) return;
 
+    // A cone with a storey drawn above it, or seen by the walker, is hidden
+    // by floor plates and walls; the top storey's paints over the world (#552).
+    const topStorey = furniturePlan.reduce((top, floor) => Math.max(top, floor.index), -1);
     for (const { index, items } of furniturePlan) {
+      const firstChild = scene.children.length;
       const floorY = floorElevation(layout.floors, index);
       if (view.showWiFiSignals) {
         addSignalOverlays(THREE, scene, items, floorY);
       }
       if (view.showCameraVision) {
-        addVisionCones(THREE, scene, items, floorY, index, storeyHeight(layout.floors[index]));
+        addVisionCones(THREE, scene, items, floorY, index, storeyHeight(layout.floors[index]), {
+          occludable: walkthroughActive || index < topStorey,
+        });
       }
+      // Hidden with their storey while walking (#552).
+      tagStorey(scene, firstChild, index);
     }
+    applyStoreyRange(scene, storeyRangeRef.current);
     // Keyed on what the overlays read, not `layout.floors` identity (#214)
     // nor every item edit (#409); the plan already follows the active floor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
     overlaysKey, storeyHeightsKey,
-    view.showWiFiSignals, view.showCameraVision,
+    view.showWiFiSignals, view.showCameraVision, walkthroughActive,
   ]);
 
   // Lighting. The sun's shadow camera is fitted to everything that casts a

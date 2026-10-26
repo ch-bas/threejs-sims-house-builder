@@ -81,7 +81,7 @@ components/
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
-    │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world
+    │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
     │   ├── npc-seats.ts                 Where walkers sit: seat slots, facing, approach points
     │   ├── seat-surface.ts              Sitting-surface height per seat type, from the builders: one table for the walkers and the seated player (#623)
@@ -156,7 +156,7 @@ components/
     │   ├── texture-settings.ts          Renderer anisotropy captured at init, for the CanvasTexture builders
     │   ├── texture-lru.ts               LRU cache for texture masters (evict + dispose)
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
-    │   ├── camera-vision.ts             Directional CCTV vision-cone overlays
+    │   ├── camera-vision.ts             Directional CCTV vision-cone overlays; no alert through walls (#590), depth-tested under another storey or while walking (#552)
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
     │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part

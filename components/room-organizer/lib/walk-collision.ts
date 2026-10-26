@@ -641,6 +641,21 @@ function advanceAxis(
 }
 
 /**
+ * The walls of each storey, for line-of-sight tests (#590): its partitions,
+ * cut at their doors, and its shell. No furniture, no street, and no
+ * neighbouring storeys. Build when the building changes, not per frame.
+ */
+export function buildSightWalls(building: ShellBuilding): WalkCollider[][] {
+  return building.floors.map((floor, index) => [
+    ...buildWalkColliders(floor.items, floor.interiorWalls ?? [], {
+      roomWidth: building.width,
+      roomDepth: building.depth,
+    }).filter((collider) => collider.wall),
+    ...buildShellColliders(building, index),
+  ]);
+}
+
+/**
  * Whether a wall stands between (x1, z1) and (x2, z2) (#566, #590): the
  * segment crosses a `wall` collider, a partition run or the shell. Door gaps
  * are open, furniture never blocks. A wall the start point is inside (the
