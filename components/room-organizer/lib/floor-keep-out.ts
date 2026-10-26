@@ -10,19 +10,21 @@ export interface KeepOutBuilding extends Omit<EntranceBuilding, 'floors'> {
 
 /**
  * The stairwell holes the stairs on the floor below cut into this storey,
- * as keep-out (#372). A winder's L is approximated by its bounding box in
- * the stair's frame.
+ * as keep-out (#372): one rect per leg of the hole, so a winder's L keeps
+ * furniture out of exactly the floor it removes (#572).
  */
 export function stairwellKeepOut(floors: readonly FloorLayout[], floorIndex: number): KeepOutRect[] {
   if (floorIndex < 1) return [];
-  return computeFloorOpenings(floors[floorIndex - 1]).map((opening) => ({
-    x0: opening.centerX - opening.width / 2,
-    x1: opening.centerX + opening.width / 2,
-    z0: opening.centerZ - opening.depth / 2,
-    z1: opening.centerZ + opening.depth / 2,
-    ...(opening.rotation ? { rotation: opening.rotation } : {}),
-    hole: true,
-  }));
+  return computeFloorOpenings(floors[floorIndex - 1]).flatMap((opening) =>
+    (opening.parts ?? [opening]).map((part) => ({
+      x0: part.centerX - part.width / 2,
+      x1: part.centerX + part.width / 2,
+      z0: part.centerZ - part.depth / 2,
+      z1: part.centerZ + part.depth / 2,
+      ...(opening.rotation ? { rotation: opening.rotation } : {}),
+      hole: true,
+    }))
+  );
 }
 
 /** Everything `hasCollisions` keeps furniture out of on one storey: the porch and the stairwells. */

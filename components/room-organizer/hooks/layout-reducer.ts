@@ -29,6 +29,7 @@ import {
   MAX_SILL_HEIGHT,
   MIN_SILL_HEIGHT,
   clampEntrance,
+  clipWallToPorch,
   entranceBackWall,
   entranceFloorIndex,
   entranceGeometry,
@@ -742,9 +743,13 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       if (!isFiniteWall(action.wall)) return state;
       const wall = clampWall(action.wall);
       if (!wall) return state;
+      // No partition runs through the porch, which is outside (#614).
+      const taken = new Set([...activeWallIds(state), wall.id]);
+      const pieces = clipWallToPorch(wall, entrancePlanOutline(state.layout, state.activeFloorIndex), taken);
+      if (pieces.length === 0) return state;
       return withActiveFloor(state, (floor) =>
-        hasRoomFor(floor.interiorWalls, 1, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
-          ? { ...floor, interiorWalls: [...(floor.interiorWalls ?? []), wall] }
+        hasRoomFor(floor.interiorWalls, pieces.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
+          ? { ...floor, interiorWalls: [...(floor.interiorWalls ?? []), ...pieces] }
           : floor
       );
     }
@@ -753,7 +758,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // the whole stamp is a single history/undo entry rather than N of them.
     case 'addInteriorWalls': {
       if (action.walls.length === 0 || !action.walls.every(isFiniteWall)) return state;
-      const walls = action.walls.map(clampWall).filter((wall): wall is InteriorWall => wall !== null);
+      const porch = entrancePlanOutline(state.layout, state.activeFloorIndex);
+      const taken = new Set([...activeWallIds(state), ...action.walls.map((wall) => wall.id)]);
+      const walls = action.walls
+        .map(clampWall)
+        .filter((wall): wall is InteriorWall => wall !== null)
+        .flatMap((wall) => clipWallToPorch(wall, porch, taken)); // not through the porch (#614)
       if (walls.length === 0) return state;
       return withActiveFloor(state, (floor) =>
         hasRoomFor(floor.interiorWalls, walls.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
@@ -1114,6 +1124,11 @@ function clampPosition(position: { x: number; z: number }): { x: number; z: numb
   const x = clampCoordinate(position.x);
   const z = clampCoordinate(position.z);
   return x === position.x && z === position.z ? position : { x, z };
+}
+
+/** The ids of the active floor's interior walls: a split wall's new piece avoids them (#614). */
+function activeWallIds(state: LayoutState): string[] {
+  return (state.layout.floors[state.activeFloorIndex]?.interiorWalls ?? []).map((wall) => wall.id);
 }
 
 /** Ends clamped like positions; null when that leaves no wall at all. */
