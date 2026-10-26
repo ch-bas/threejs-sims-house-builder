@@ -312,12 +312,14 @@ const MIN_WALL_PIECE = 0.05;
  * An interior wall with the part that crosses the recess taken out (#614):
  * the porch is outside, so no partition runs through it. Returns the wall
  * itself when it doesn't enter the recess (one along its edge doesn't), the
- * one or two pieces either side when it does — the second with a `-b` id —
- * and nothing when it lies wholly inside.
+ * one or two pieces either side when it does — the second with a `-b` id
+ * that isn't in `takenIds` (and is added to it) — and nothing when it lies
+ * wholly inside.
  */
 export function clipWallToPorch<W extends { id: string; x1: number; z1: number; x2: number; z2: number }>(
   wall: W,
-  recess: EntrancePlanOutline | null
+  recess: EntrancePlanOutline | null,
+  takenIds: Set<string> = new Set()
 ): W[] {
   if (!recess) return [wall];
   const dx = wall.x2 - wall.x1;
@@ -349,7 +351,14 @@ export function clipWallToPorch<W extends { id: string; x1: number; z1: number; 
   if (t0 * length >= MIN_WALL_PIECE) pieces.push({ ...wall, x2: wall.x1 + dx * t0, z2: wall.z1 + dz * t0 });
   if ((1 - t1) * length >= MIN_WALL_PIECE) {
     const piece = { ...wall, x1: wall.x1 + dx * t1, z1: wall.z1 + dz * t1 };
-    pieces.push(pieces.length > 0 ? { ...piece, id: `${wall.id}-b` } : piece);
+    if (pieces.length > 0) {
+      let id = `${wall.id}-b`;
+      for (let n = 2; takenIds.has(id) || id === wall.id; n++) id = `${wall.id}-b${n}`;
+      takenIds.add(id);
+      pieces.push({ ...piece, id });
+    } else {
+      pieces.push(piece);
+    }
   }
   return pieces;
 }

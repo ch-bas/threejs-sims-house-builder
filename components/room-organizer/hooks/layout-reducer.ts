@@ -744,7 +744,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       const wall = clampWall(action.wall);
       if (!wall) return state;
       // No partition runs through the porch, which is outside (#614).
-      const pieces = clipWallToPorch(wall, entrancePlanOutline(state.layout, state.activeFloorIndex));
+      const taken = new Set([...activeWallIds(state), wall.id]);
+      const pieces = clipWallToPorch(wall, entrancePlanOutline(state.layout, state.activeFloorIndex), taken);
       if (pieces.length === 0) return state;
       return withActiveFloor(state, (floor) =>
         hasRoomFor(floor.interiorWalls, pieces.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
@@ -758,10 +759,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     case 'addInteriorWalls': {
       if (action.walls.length === 0 || !action.walls.every(isFiniteWall)) return state;
       const porch = entrancePlanOutline(state.layout, state.activeFloorIndex);
+      const taken = new Set([...activeWallIds(state), ...action.walls.map((wall) => wall.id)]);
       const walls = action.walls
         .map(clampWall)
         .filter((wall): wall is InteriorWall => wall !== null)
-        .flatMap((wall) => clipWallToPorch(wall, porch)); // not through the porch (#614)
+        .flatMap((wall) => clipWallToPorch(wall, porch, taken)); // not through the porch (#614)
       if (walls.length === 0) return state;
       return withActiveFloor(state, (floor) =>
         hasRoomFor(floor.interiorWalls, walls.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
@@ -1122,6 +1124,11 @@ function clampPosition(position: { x: number; z: number }): { x: number; z: numb
   const x = clampCoordinate(position.x);
   const z = clampCoordinate(position.z);
   return x === position.x && z === position.z ? position : { x, z };
+}
+
+/** The ids of the active floor's interior walls: a split wall's new piece avoids them (#614). */
+function activeWallIds(state: LayoutState): string[] {
+  return (state.layout.floors[state.activeFloorIndex]?.interiorWalls ?? []).map((wall) => wall.id);
 }
 
 /** Ends clamped like positions; null when that leaves no wall at all. */

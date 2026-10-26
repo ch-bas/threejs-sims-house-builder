@@ -53,6 +53,26 @@ describe('interior walls and the porch (#614)', () => {
     expect(wall!.z2).toBeCloseTo(porch.backZ);
   });
 
+  it('gives the second piece an id no other wall on the floor has', () => {
+    let state = porchHouse();
+    state = layoutReducer(state, { type: 'addInteriorWall', wall: { id: 'w-b', x1: 2, z1: 2, x2: 3, z2: 2 } });
+    state = layoutReducer(state, { type: 'addInteriorWall', wall: { id: 'w', x1: -3, z1: -3.5, x2: 3, z2: -3.5 } });
+    const ids = ownWalls(state).map((wall) => wall.id);
+    expect(ids).toHaveLength(3);
+    expect(new Set(ids).size).toBe(3);
+    // A stamp's own walls count too.
+    const stamp = layoutReducer(porchHouse(), {
+      type: 'addInteriorWalls',
+      walls: [
+        { id: 's', x1: -3, z1: -3.5, x2: 3, z2: -3.5 },
+        { id: 's-b', x1: 2, z1: 2, x2: 3, z2: 2 },
+      ],
+    });
+    const stampIds = ownWalls(stamp).map((wall) => wall.id);
+    expect(stampIds).toHaveLength(3);
+    expect(new Set(stampIds).size).toBe(3);
+  });
+
   it('refuses a wall wholly inside the recess, returning the same state', () => {
     const state = porchHouse();
     const next = layoutReducer(state, { type: 'addInteriorWall', wall: { id: 'w', x1: -0.3, z1: -3.5, x2: 0.3, z2: -3.5 } });
