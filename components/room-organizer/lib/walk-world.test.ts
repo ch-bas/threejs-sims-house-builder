@@ -271,6 +271,10 @@ describe('walk world — the porch (#446)', () => {
     const out: WalkSurface = { y: 0, kind: 'floor', floorIndex: 0 };
     expect(walkSurfaceAt(world, 0, -3.4, 0, 'floor', out)).toBe(true);
     expect(out).toEqual({ y: 0, kind: 'floor', floorIndex: 0 });
+    // Walking the basement north from its middle reaches the front wall under the porch.
+    const w = walk({ ...hill, floors: [{ items: [] }, { items: [] }, { items: [] }] }, walker(0, 0), 0, -3.6);
+    expect(w.z).toBeLessThan(-3.5);
+    expect(w.floorIndex).toBe(0);
     // The recess itself is still outside on storey 1.
     expect(walkSurfaceAt(world, 0, -3.4, 3, 'ground', out)).toBe(true);
     expect(out.kind).toBe('ground');
