@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A winder stair's stairwell is the same shape everywhere: the hole in the floor above, where furniture may not stand and where you can't walk in the walkthrough now match, on every storey height, instead of leaving a walkable, furnishable hole under a tall storey or flagging a cabinet on solid floor under a 3 m one. A winder against a wall no longer cuts a whole box out of the floor above ([#572](https://github.com/ch-bas/threejs-sims-house-builder/issues/572))
 - Interior walls no longer run through the recessed porch: a room stamp or a drawn wall that crosses it stops at its edge, either side of the recess, and one wholly inside it isn't added ([#614](https://github.com/ch-bas/threejs-sims-house-builder/issues/614))
 - On a hill where the porch opens onto an upper storey, the walkthrough no longer stops you at an invisible wall in the basement under the porch ([#586](https://github.com/ch-bas/threejs-sims-house-builder/issues/586))
+- Garden items (trees, fences, benches and the like) in an imported file, a share link or a saved library entry that carry no category are recognised as garden items again, instead of turning red for being outside the house and blocking walkers ([#662](https://github.com/ch-bas/threejs-sims-house-builder/issues/662))
 
 ## [1.23.0] - 2026-10-25
 

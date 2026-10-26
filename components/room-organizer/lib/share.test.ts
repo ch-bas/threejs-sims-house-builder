@@ -48,6 +48,7 @@ function makeLargeLayout(itemCount = 100): RoomLayout {
     makeItem({
       id: `item-${i}-${Math.random().toString(36).slice(2)}`,
       type: i % 2 === 0 ? 'sofa' : 'bed',
+      category: i % 2 === 0 ? 'seating' : 'bedroom',
       name: `Furniture piece number ${i}`,
       position: { x: (i * 0.137 + 0.0001) % 7.5, z: (i * 0.291 + 0.0002) % 7.5 },
       rotation: (i * 15) % 360,
@@ -88,8 +89,8 @@ describe('encodeShareUrl / decodeShareUrl roundtrip', () => {
   it('roundtrips a layout with items across multiple floors', async () => {
     const layout = makeLayout({
       floors: [
-        makeFloor({ id: 'g', items: [makeItem({ id: 'a', type: 'sofa' })] }),
-        makeFloor({ id: 'u', name: 'First Floor', items: [makeItem({ id: 'b', type: 'bed' })] }),
+        makeFloor({ id: 'g', items: [makeItem({ id: 'a', type: 'sofa', category: 'seating' })] }),
+        makeFloor({ id: 'u', name: 'First Floor', items: [makeItem({ id: 'b', type: 'bed', category: 'bedroom' })] }),
       ],
     });
     const decoded = await decodeShareUrl(hashOf((await encodeShareUrl(layout, ORIGIN)).url));

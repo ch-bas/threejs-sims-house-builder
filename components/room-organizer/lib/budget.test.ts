@@ -27,7 +27,7 @@ function stateWith(items: FurnitureItem[], budget?: { writeOff: number }): Layou
   };
 }
 
-const sofa = makeItem({ id: 'sofa', price: 650 });
+const sofa = makeItem({ id: 'sofa', category: 'seating', price: 650 });
 const lamp = makeItem({ id: 'lamp', price: 45 });
 
 describe('budget arithmetic (#463e)', () => {
