@@ -89,6 +89,18 @@ export interface VisionConeOptions {
 }
 
 /**
+ * Whether the cones of `storey` are depth-tested (#552): always while
+ * walking, else when a storey is drawn above them, but never the active
+ * storey's while the others are ghosted: a ghost slab overhead would hide
+ * the cones of the floor being edited. `ghostedActive` is the active storey
+ * when the other storeys are ghosted, else -1.
+ */
+export function visionConesOccludable(storey: number, topStorey: number, walking: boolean, ghostedActive: number): boolean {
+  if (walking) return true;
+  return storey < topStorey && storey !== ghostedActive;
+}
+
+/**
  * Build the floor-wedge / light-volume / scan-line group for every item that
  * projects a vision cone, and add it to the scene. The group is positioned at
  * the item and rotated so its local +Z (the camera's forward axis) fans into

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { buildSightWalls } from '../lib/walk-collision';
-import { addVisionCones, stepVisionCones } from './camera-vision';
+import { addVisionCones, stepVisionCones, visionConesOccludable } from './camera-vision';
 import { ROOM_OBJECT_TAGS } from './room-builder';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 
@@ -90,6 +90,19 @@ describe('camera vision cones on other storeys (#552)', () => {
 
   it('draw over the world by default, as on the active storey', () => {
     expect(materials(sceneWith([CAMERA])).every((material) => !material.depthTest)).toBe(true);
+  });
+
+  it('are occludable under a drawn storey and while walking, never on the active storey under ghosts', () => {
+    // One storey, or the top one: over the world.
+    expect(visionConesOccludable(0, 0, false, -1)).toBe(false);
+    expect(visionConesOccludable(1, 1, false, -1)).toBe(false);
+    // All floors, walls up: the storey below the top is under a solid plate.
+    expect(visionConesOccludable(0, 1, false, -1)).toBe(true);
+    // All floors with ghosts, ground floor active: its cones stay visible.
+    expect(visionConesOccludable(0, 1, false, 0)).toBe(false);
+    expect(visionConesOccludable(0, 2, false, 1)).toBe(true);
+    // Walking: always depth-tested.
+    expect(visionConesOccludable(1, 1, true, -1)).toBe(true);
   });
 
   it('are hidden behind floor plates and walls when occludable', () => {
