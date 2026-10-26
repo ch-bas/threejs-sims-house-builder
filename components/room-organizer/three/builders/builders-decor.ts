@@ -1,11 +1,8 @@
 import {
   CURTAIN_PANEL_FRACTION,
   CURTAIN_PANEL_TOP_OFFSET,
-  MIRROR_MOUNT_Y,
-  PAINTING_MOUNT_Y,
-  WALL_CLOCK_MOUNT_Y,
+  fitHungDecor,
   WALL_SHELF_BRACKET_DROP,
-  WALL_SHELF_MOUNT_Y,
   WALL_SHELF_ORNAMENT_RISE,
 } from '../../lib/mount-band';
 import { type BuilderContext, material, mesh } from '../builder-utils';
@@ -29,11 +26,14 @@ export function buildRug({ THREE, item, hasCollision, baseColor, opacity }: Buil
   return group;
 }
 
-export function buildPainting({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildPainting({ THREE, item: authored, hasCollision, baseColor, opacity, storeyHeight }: BuilderContext): ThreeNS.Group {
+  // Fitted under a low storey's ceiling (#610).
+  const { mount, height } = fitHungDecor(authored, storeyHeight);
+  const item = { ...authored, height };
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
   const canvasMat = material(THREE, 0xfff3e0, hasCollision, opacity, { roughness: 0.8 });
-  const centerY = item.height / 2 + PAINTING_MOUNT_Y;
+  const centerY = item.height / 2 + mount;
 
   // Back to front (z): frame from just off the wall to 0.2 × depth, the
   // canvas proud of it to 0.35 × depth, paint up to 0.48 × depth. The gap
@@ -85,7 +85,10 @@ export function buildVase({ THREE, item, hasCollision, baseColor, opacity }: Bui
   return group;
 }
 
-export function buildMirror({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildMirror({ THREE, item: authored, hasCollision, baseColor, opacity, storeyHeight }: BuilderContext): ThreeNS.Group {
+  // Fitted under a low storey's ceiling (#610).
+  const { mount, height } = fitHungDecor(authored, storeyHeight);
+  const item = { ...authored, height };
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5 });
   const reflectMat = material(THREE, 0xb3e5fc, hasCollision, opacity, { roughness: 0.05, metalness: 0.95 });
@@ -93,7 +96,7 @@ export function buildMirror({ THREE, item, hasCollision, baseColor, opacity }: B
   // Frame from just off the wall to 0.3 × depth, the glass proud of it.
   const frameDepth = item.depth * 0.8 - HUNG_WALL_GAP;
   const frame = mesh(THREE, new THREE.BoxGeometry(item.width, item.height, frameDepth), frameMat);
-  frame.position.set(0, item.height / 2 + MIRROR_MOUNT_Y, item.depth * 0.3 - frameDepth / 2);
+  frame.position.set(0, item.height / 2 + mount, item.depth * 0.3 - frameDepth / 2);
   group.add(frame);
 
   const surface = mesh(
@@ -101,12 +104,15 @@ export function buildMirror({ THREE, item, hasCollision, baseColor, opacity }: B
     new THREE.BoxGeometry(item.width * 0.9, item.height * 0.9, item.depth * 0.25),
     reflectMat
   );
-  surface.position.set(0, item.height / 2 + MIRROR_MOUNT_Y, item.depth * 0.325);
+  surface.position.set(0, item.height / 2 + mount, item.depth * 0.325);
   group.add(surface);
   return group;
 }
 
-export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildCurtains({ THREE, item: authored, hasCollision, baseColor, opacity, storeyHeight }: BuilderContext): ThreeNS.Group {
+  // Fitted under a low storey's ceiling (#610).
+  const { height } = fitHungDecor(authored, storeyHeight);
+  const item = { ...authored, height };
   const group = new THREE.Group();
   const rodMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 0.7 });
   const fabricMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.95 });
@@ -162,7 +168,10 @@ export function buildCurtains({ THREE, item, hasCollision, baseColor, opacity }:
 // placed at floor level, so a wall item that models itself from y=0 lies on
 // the floor (#163). The heights live in lib/mount-band.ts (#471).
 
-export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildWallShelf({ THREE, item: authored, hasCollision, baseColor, opacity, storeyHeight }: BuilderContext): ThreeNS.Group {
+  // Fitted under a low storey's ceiling (#610).
+  const { mount, height } = fitHungDecor(authored, storeyHeight);
+  const item = { ...authored, height };
   const group = new THREE.Group();
   const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
   const bracketMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.4, metalness: 0.6 });
@@ -171,7 +180,7 @@ export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }
   // around the board's underside at y=0, then hung as one unit — the brackets'
   // negative y only makes sense once the shelf is off the floor.
   const hung = new THREE.Group();
-  hung.position.y = WALL_SHELF_MOUNT_Y;
+  hung.position.y = mount;
   group.add(hung);
 
   // Shelf board itself.
@@ -219,7 +228,10 @@ export function buildWallShelf({ THREE, item, hasCollision, baseColor, opacity }
   return group;
 }
 
-export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildWallClock({ THREE, item: authored, hasCollision, baseColor, opacity, storeyHeight }: BuilderContext): ThreeNS.Group {
+  // Fitted under a low storey's ceiling (#610).
+  const { mount, height } = fitHungDecor(authored, storeyHeight);
+  const item = { ...authored, height };
   const group = new THREE.Group();
   const frameMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 0.5 });
   const faceMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
@@ -228,7 +240,7 @@ export function buildWallClock({ THREE, item, hasCollision, baseColor, opacity }
   // Same hanging rule as the shelf: the face is modelled around y=0..height,
   // then the whole clock is lifted so its centre sits at eye level.
   const hung = new THREE.Group();
-  hung.position.y = WALL_CLOCK_MOUNT_Y;
+  hung.position.y = mount;
   group.add(hung);
 
   const radius = Math.min(item.width, item.height) / 2;

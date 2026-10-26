@@ -33,7 +33,9 @@ export interface MountBand {
   top: number;
 }
 
-// Hanging heights above the floor, read by three/builders/builders-decor.ts.
+// Hanging heights above the floor on a storey tall enough for them; on a
+// low one `fitHungDecor` lowers them (#610). The builders in
+// three/builders/builders-decor.ts read them through it.
 export const PAINTING_MOUNT_Y = 0.8;
 export const MIRROR_MOUNT_Y = 0.4;
 export const WALL_CLOCK_MOUNT_Y = 1.25;
@@ -67,6 +69,44 @@ export function pendantBulbY(item: { height: number }, storeyHeight: number): nu
   return storeyHeight - drop + drop * PENDANT_SHADE_FRACTION * PENDANT_BULB_RISE;
 }
 
+/** Wall decor stops this far below the ceiling of its storey (#610). */
+export const HUNG_CEILING_CLEARANCE = 0.05;
+
+/** Where a piece of wall decor hangs on its storey and how tall it is drawn (`fitHungDecor`). */
+export interface FittedDecor {
+  /** Height of the mount point above the floor (the curtain rod hangs from the item's top: 0). */
+  mount: number;
+  height: number;
+}
+
+/** A decor type's authored mount point, and what its mesh reaches below and above the mount + height. */
+const DECOR_MOUNTS: Readonly<Record<string, { mount: number; below: number; above: number }>> = {
+  painting: { mount: PAINTING_MOUNT_Y, below: 0, above: 0 },
+  mirror: { mount: MIRROR_MOUNT_Y, below: 0, above: 0 },
+  'wall-clock': { mount: WALL_CLOCK_MOUNT_Y, below: 0, above: 0 },
+  'wall-shelf': { mount: WALL_SHELF_MOUNT_Y, below: WALL_SHELF_BRACKET_DROP, above: WALL_SHELF_ORNAMENT_RISE },
+  curtains: { mount: 0, below: 0, above: 0 },
+};
+
+/**
+ * Wall decor fitted under its storey's ceiling (#610), as
+ * `fitOpeningToStorey` fits doors and windows (#277): on a low storey the
+ * mount point drops first (never below the floor), then anything still too
+ * tall is cut down. A classic 3 m storey is unchanged for every catalog
+ * item. The mesh builders and `mountBand` both read this.
+ */
+export function fitHungDecor(
+  item: Pick<FurnitureItem, 'type' | 'height'>,
+  storeyHeight: number = FLOOR_HEIGHT_METERS
+): FittedDecor {
+  const spec = DECOR_MOUNTS[item.type];
+  if (!spec) return { mount: 0, height: item.height };
+  const ceiling = storeyHeight - HUNG_CEILING_CLEARANCE;
+  const mount = Math.max(spec.below, Math.min(spec.mount, ceiling - item.height - spec.above));
+  const height = Math.max(0, Math.min(item.height, ceiling - mount - spec.above));
+  return { mount, height };
+}
+
 /**
  * Where an item's mesh sits vertically: wall-hung decor at its hanging
  * height, a pendant light down from the ceiling of a storey `storeyHeight`
@@ -79,21 +119,25 @@ export function mountBand(
   const { height } = item;
   switch (item.type) {
     case 'painting':
-      return { bottom: PAINTING_MOUNT_Y, top: PAINTING_MOUNT_Y + height };
     case 'mirror':
-      return { bottom: MIRROR_MOUNT_Y, top: MIRROR_MOUNT_Y + height };
-    case 'wall-clock':
-      return { bottom: WALL_CLOCK_MOUNT_Y, top: WALL_CLOCK_MOUNT_Y + height };
-    case 'wall-shelf':
+    case 'wall-clock': {
+      const fitted = fitHungDecor(item, storeyHeight);
+      return { bottom: fitted.mount, top: fitted.mount + fitted.height };
+    }
+    case 'wall-shelf': {
+      const fitted = fitHungDecor(item, storeyHeight);
       return {
-        bottom: WALL_SHELF_MOUNT_Y - WALL_SHELF_BRACKET_DROP,
-        top: WALL_SHELF_MOUNT_Y + height + WALL_SHELF_ORNAMENT_RISE,
+        bottom: fitted.mount - WALL_SHELF_BRACKET_DROP,
+        top: fitted.mount + fitted.height + WALL_SHELF_ORNAMENT_RISE,
       };
-    case 'curtains':
+    }
+    case 'curtains': {
+      const fitted = fitHungDecor(item, storeyHeight);
       return {
-        bottom: Math.max(0, height * (1 - CURTAIN_PANEL_FRACTION) - CURTAIN_PANEL_TOP_OFFSET),
-        top: height,
+        bottom: Math.max(0, fitted.height * (1 - CURTAIN_PANEL_FRACTION) - CURTAIN_PANEL_TOP_OFFSET),
+        top: fitted.height,
       };
+    }
     case 'pendant-light':
       return { bottom: storeyHeight - pendantDrop(item, storeyHeight), top: storeyHeight };
     case 'window': {

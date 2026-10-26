@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Arrange keeps furniture off the porch, out of the stairwell hole on the floor above the stairs and clear of interior walls ([#577](https://github.com/ch-bas/threejs-sims-house-builder/issues/577))
 - A chair, armchair or bench standing inside a dresser, nightstand, coffee table or counter is flagged as a collision; seats still tuck under desks and tables when their seat clears the tabletop ([#606](https://github.com/ch-bas/threejs-sims-house-builder/issues/606))
 - A zone drawn wall to wall on a floor whose size isn't a multiple of 10 cm ends at the wall instead of 5 cm past it, and renaming or recolouring it no longer shrinks it ([#618](https://github.com/ch-bas/threejs-sims-house-builder/issues/618))
+- On a low storey such as a 1.2 m loft, paintings, mirrors, clocks, wall shelves and curtains hang lower, and get shorter if they must, instead of poking through the ceiling; collisions test them where they are drawn ([#610](https://github.com/ch-bas/threejs-sims-house-builder/issues/610))
 
 ## [1.23.0] - 2026-10-25
 
