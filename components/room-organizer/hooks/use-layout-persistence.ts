@@ -78,6 +78,12 @@ export function useLayoutPersistence({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const pendingRef = useRef(false);
+  // The last layout the editor survived (#568): one that crashed it must
+  // never reach the save, or every reload crashes again. A crash in render or
+  // in an effect unmounts the editor within the same task, so a layout only
+  // counts once a timer has fired after its commit. `layoutRef` can't serve:
+  // it is written during render, even for a render that threw.
+  const settledRef = useRef<RoomLayout | null>(null);
   // The save status lives in a store of its own, read by the HUD's leaf
   // subscriber: as hook state, every flip re-rendered the whole editor (#3).
   const [saveStatus] = useState(createSaveStatusStore);
@@ -292,18 +298,26 @@ export function useLayoutPersistence({
     return () => window.clearTimeout(handle);
   }, [layout, debounceMs, saveStatus]);
 
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      settledRef.current = layout;
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [layout]);
+
   // Flush a still-debouncing save when the editor unmounts or the page goes
   // away — without this, edits made in the last debounceMs are silently lost
-  // on tab close.
+  // on tab close. Only a settled layout is flushed (#568).
   useEffect(() => {
     const flush = () => {
-      if (!pendingRef.current || mainSaveHeldRef.current) return;
+      const layout = settledRef.current;
+      if (!pendingRef.current || mainSaveHeldRef.current || layout === null) return;
       pendingRef.current = false;
-      const result = saveLayout(layoutRef.current);
+      const result = saveLayout(layout);
       if (result.ok) lastSavedJsonRef.current = result.json;
       // The page is going away — capture a restore point regardless of the
       // ring's 5-minute cadence (#231).
-      if (!isUntouched(layoutRef.current)) recordSnapshot(layoutRef.current, { force: true });
+      if (!isUntouched(layout)) recordSnapshot(layout, { force: true });
     };
     window.addEventListener('pagehide', flush);
     return () => {
