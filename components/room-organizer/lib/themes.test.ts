@@ -64,3 +64,29 @@ describe('applyTheme (#455)', () => {
     }
   });
 });
+
+describe('applyTheme leaves water, foliage, lights and mirrors alone (#597)', () => {
+  const natural = [
+    makeItem({ id: 'pool', type: 'pool', category: 'outdoor', color: '#03A9F4' }),
+    makeItem({ id: 'pond', type: 'pond', category: 'outdoor', color: '#0277BD' }),
+    makeItem({ id: 'tree', type: 'tree', category: 'outdoor', color: '#2E7D32' }),
+    makeItem({ id: 'hedge', type: 'hedge', category: 'outdoor', color: '#388E3C' }),
+    makeItem({ id: 'plant', type: 'plant', category: 'decor', color: '#228B22' }),
+    makeItem({ id: 'lamp', type: 'lamp', category: 'electronics', color: '#FFD700' }),
+    makeItem({ id: 'mirror', type: 'mirror', category: 'decor', color: '#B0BEC5' }),
+  ];
+  const fence = makeItem({ id: 'fence', type: 'fence', category: 'outdoor', color: '#8D6E63' });
+  const layout = makeLayout({ floors: [makeFloor({ items: [...natural, fence] })] });
+
+  it.each(THEME_LIST.map((theme) => theme.key))('%s keeps the pool blue and the greenery green', (key) => {
+    const items = applyTheme(layout, key).floors[0]!.items;
+    for (const original of natural) {
+      expect(items.find((item) => item.id === original.id)!.color, original.id).toBe(original.color);
+    }
+  });
+
+  it('still restyles the built outdoor pieces, such as a fence', () => {
+    const items = applyTheme(layout, 'minimalist').floors[0]!.items;
+    expect(items.find((item) => item.id === 'fence')!.color).toBe('#bdbdbd');
+  });
+});
