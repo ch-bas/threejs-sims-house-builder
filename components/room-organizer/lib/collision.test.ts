@@ -339,3 +339,20 @@ describe('autoOrganize — the storey collision context (#577)', () => {
     expect(autoOrganize([big], W, D, 'shelf', { context })[0]).toBe(big);
   });
 });
+
+describe('autoOrganize — what stays put', () => {
+  it('leaves hung decor on its wall and stairs where their stairwell is', () => {
+    const painting = makeItem({ id: 'painting', type: 'painting', width: 0.8, depth: 0.05, height: 0.6, position: { x: -1, z: -2.975 } });
+    const curtains = makeItem({ id: 'curtains', type: 'curtains', width: 1.4, depth: 0.1, height: 2.2, position: { x: 1, z: -2.95 } });
+    const stairs = makeItem({ id: 'stairs', type: 'stairs', width: 1, depth: 3, height: 3, position: { x: -0.3, z: -1.5 } });
+    const sofa = makeItem({ id: 'sofa', type: 'sofa', width: 2, depth: 0.9, position: { x: 2, z: 2 } });
+    const result = autoOrganize([painting, curtains, stairs, sofa], 8, 6);
+    const byId = new Map(result.map((item) => [item.id, item]));
+    expect(byId.get('painting')).toBe(painting);
+    expect(byId.get('curtains')).toBe(curtains);
+    expect(byId.get('stairs')).toBe(stairs);
+    // The sofa is packed around the stairs, not onto them.
+    const placed = byId.get('sofa')!;
+    expect(hasCollisions(placed, result, 8, 6)).toBe(false);
+  });
+});

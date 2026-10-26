@@ -368,7 +368,11 @@ export function autoOrganize(
   const ordered = orderItemsForStrategy(items, strategy);
   // Locked items keep their spot and rotation like every other geometry
   // path (#389), and the packing flows around them.
-  const lockedRects: KeepOutRect[] = [...items.filter((item) => item.locked), ...(options.obstacles ?? [])]
+  // Stairs stay too: moving a flight would leave its stairwell hole above
+  // behind. Hung decor stays on its wall (it is drawn over the furniture,
+  // so it is no obstacle either).
+  const anchored = (item: FurnitureItem) => item.locked || item.type === 'stairs';
+  const lockedRects: KeepOutRect[] = [...items.filter(anchored), ...(options.obstacles ?? [])]
     .filter((item) => item.position)
     .map((item) => {
       const { halfW, halfD } = rotatedHalfExtents(item);
@@ -400,7 +404,7 @@ export function autoOrganize(
   let rowMaxDepth = 0;
 
   for (const item of ordered) {
-    if (item.locked) {
+    if (anchored(item) || isWallHung(item.type) || isCeilingHung(item.type)) {
       organized.push(item);
       continue;
     }
