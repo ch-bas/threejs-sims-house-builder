@@ -129,17 +129,18 @@ export const THEME_LIST: readonly ThemeMeta[] = (Object.values(THEMES) as ThemeM
 );
 
 /**
- * Types a theme never recolours (#597): their colour is what they are made
- * of, not a finish. The builders use it as the water, the leaves or flowers,
- * the light's shade and the mirror's glass, so a palette colour turned pools
- * grey and trees blue. The one list of exemptions; everything else in a
- * palette category (fences, benches, rugs, vases, ...) still restyles.
+ * Types a theme never recolours (#597): the builders use their colour as
+ * the water, the leaves or flowers, the stone or the glowing shade, so a
+ * palette colour turned pools grey and trees blue. The one list of
+ * exemptions. Lamps, mirrors and the birdbath are not here: their colour is
+ * only the stand, the frame or the basin (the shade, the glass and the
+ * water are fixed in the builders), so they restyle like the rest of the
+ * palette categories (fences, benches, rugs, vases, ...).
  */
 export const THEME_EXEMPT_TYPES: ReadonlySet<string> = new Set([
   // Water
   'pool',
   'pond',
-  'birdbath',
   // Foliage and flowers
   'plant',
   'tree',
@@ -152,12 +153,8 @@ export const THEME_EXEMPT_TYPES: ReadonlySet<string> = new Set([
   'rose-bush',
   // Natural stone
   'stepping-stone',
-  // Light fittings: the colour is the shade that glows
-  'lamp',
-  'floor-lamp',
+  // The shade that glows
   'pendant-light',
-  // Glass
-  'mirror',
 ]);
 
 /**
