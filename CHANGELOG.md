@@ -7,7 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
-
+- Undoing an edit straight after making it, then redoing, no longer brings back a change you had already undone and replaced ([#546](https://github.com/ch-bas/threejs-sims-house-builder/issues/546))
+- An edit made just before importing a file, loading a template or library house, applying a theme or taking another tab's version keeps its own undo step, instead of being lost when you undo the load ([#555](https://github.com/ch-bas/threejs-sims-house-builder/issues/555))
+- Undo and redo show the right floor: undoing a floor removal or reorder stays on the floor you were on, and undoing a change made on another floor switches to that floor so you can see it ([#578](https://github.com/ch-bas/threejs-sims-house-builder/issues/578))
+- Surprise me stays within the budget: it picks a furniture set you can afford (or decor only), with the hard budget on it says "Over budget" and plays the refusal sound instead of doing nothing after you confirm, and with the hard budget off it asks "Place it anyway?" before going over, like a catalogue buy ([#581](https://github.com/ch-bas/threejs-sims-house-builder/issues/581))
+- Every template now has a front door and windows, so in EXPLORE you can walk out of the house onto the lot ([#570](https://github.com/ch-bas/threejs-sims-house-builder/issues/570))
+- Template wardrobes and the Studio and Two-Story kitchens face into the room instead of the wall or the stove ([#575](https://github.com/ch-bas/threejs-sims-house-builder/issues/575))
+- Applying a theme no longer paints pools and ponds grey or trees, hedges and plants blue or orange: water, foliage, flowers, stepping stones and pendant-light shades keep their colours ([#597](https://github.com/ch-bas/threejs-sims-house-builder/issues/597))
+- The over-budget question and Surprise me no longer count the porch door of older saves, so they agree with the header's spending ([#600](https://github.com/ch-bas/threejs-sims-house-builder/issues/600))
 
 ## [1.23.0] - 2026-10-25
 
