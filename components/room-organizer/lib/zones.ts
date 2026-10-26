@@ -99,9 +99,12 @@ export function zoneFromCorners(a: Vec2, b: Vec2, roomWidth: number, roomDepth: 
 
 /** A corner on the grid, or on the wall when it is within half a grid step of it or beyond. */
 function snapCorner(value: number, half: number): number {
-  if (value >= half - ZONE_GRID / 2) return half;
-  if (value <= -half + ZONE_GRID / 2) return -half;
-  return round(value);
+  // Round first, then test the rounded corner: a value that rounds to within
+  // half a step of the wall must land on it, or the next re-fit would move it.
+  const snapped = round(value);
+  if (snapped >= half - ZONE_GRID / 2 || value >= half - ZONE_GRID / 2) return half;
+  if (snapped <= -half + ZONE_GRID / 2 || value <= -half + ZONE_GRID / 2) return -half;
+  return snapped;
 }
 
 /** Drops binary float noise (2.9999999999 → 3) without moving a value off the wall. */

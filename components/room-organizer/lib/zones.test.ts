@@ -186,3 +186,27 @@ describe('arrangeByZone (#629)', () => {
     expect(arrangeByZone(items, W, D, 'shelf', {})).toEqual(autoOrganize(items, W, D, 'shelf'));
   });
 });
+
+describe('clampZoneRect re-fit (#618)', () => {
+  it('changes nothing on a second pass, and never overshoots', () => {
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 5000; i++) {
+      const w = 2 + rand() * 18;
+      const d = 2 + rand() * 18;
+      const a = { x: (rand() - 0.5) * w * 1.1, z: (rand() - 0.5) * d * 1.1 };
+      const b = { x: (rand() - 0.5) * w * 1.1, z: (rand() - 0.5) * d * 1.1 };
+      const first = zoneFromCorners(a, b, w, d);
+      if (!first) continue;
+      expect(clampZoneRect(first, w, d)).toEqual(first);
+      expect(first.x).toBeGreaterThanOrEqual(-w / 2 - 1e-9);
+      expect(first.x + first.w).toBeLessThanOrEqual(w / 2 + 1e-9);
+    }
+  });
+
+  it('re-fits the reported 2.83 × 18.4986 m case unchanged', () => {
+    const zone = zoneFromCorners({ x: -1, z: 4.2 }, { x: 1, z: 9.2 }, 2.83, 18.4986);
+    expect(zone).not.toBeNull();
+    expect(clampZoneRect(zone!, 2.83, 18.4986)).toEqual(zone);
+  });
+});
