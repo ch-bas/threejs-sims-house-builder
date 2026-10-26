@@ -8,10 +8,9 @@ import { useEvent } from '../hooks/use-event';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { useSheetInset } from '../hooks/use-sheet-inset';
 import { DEFAULT_BUDGET } from '../lib/constants';
-import { notify } from '../lib/editor-notices';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
 import { generateRoomShape } from '../lib/room-shapes';
-import { decideSurprise } from '../lib/surprise';
+import { runSurprise } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
 import { CameraPad } from './camera-pad';
 import { CatalogStrip } from './catalog-strip';
@@ -226,14 +225,12 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           // spends what the rest of the building leaves of the budget: the
           // hard budget refuses before asking, the soft one asks before
           // going over (#136, #581).
-          const outcome = decideSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, (message) => window.confirm(message));
-          if (outcome === null) return;
-          if ('refusal' in outcome) {
-            playCue('refused');
-            notify(outcome.refusal, 'error');
-            return;
-          }
-          actions.replaceItems(outcome.items);
+          const replaced = runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
+            confirm: (message) => window.confirm(message),
+            playCue,
+            replaceItems: (items) => actions.replaceItems(items),
+          });
+          if (!replaced) return;
           setSelectedItemId(null);
           setExtraSelectedIds(new Set());
         }}

@@ -3,8 +3,10 @@ import { layoutReducer, type LayoutState } from '../hooks/layout-reducer';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { budgetSpent, purchasePrice } from './budget';
 import { DEFAULT_BUDGET } from './constants';
+import { subscribeNotices, type Notice } from './editor-notices';
 import { ENTRANCE_DOOR_ID } from './street';
-import { decideSurprise, keptBySurprise, surpriseFloorItems, surpriseLayout } from './surprise';
+import { decideSurprise, keptBySurprise, runSurprise, surpriseFloorItems, surpriseLayout } from './surprise';
+import type { SoundCue } from './sounds';
 import type { FurnitureItem, RoomLayout } from './types';
 
 /** Filler on the upper floor that spends the budget down to `left`. */
@@ -99,5 +101,40 @@ describe('Surprise does not count a legacy porch door (#600)', () => {
       const b = surpriseFloorItems(withFree, 0, DEFAULT_BUDGET, seed).filter((item) => item.id !== ENTRANCE_DOOR_ID);
       expect(a, `seed ${seed}`).toEqual(b);
     }
+  });
+});
+
+describe('runSurprise: the one place Surprise plays its cue (#581)', () => {
+  function run(layout: RoomLayout) {
+    const cues: SoundCue[] = [];
+    const replaced: FurnitureItem[][] = [];
+    const notices: Notice[] = [];
+    const stop = subscribeNotices((notice) => notices.push(notice));
+    try {
+      const done = runSurprise(layout, 0, DEFAULT_BUDGET, {
+        confirm: () => true,
+        playCue: (cue) => cues.push(cue),
+        replaceItems: (items) => replaced.push(items),
+      });
+      return { done, cues, replaced, notices };
+    } finally {
+      stop();
+    }
+  }
+
+  it('a hard-budget refusal plays `refused` once, shows why and replaces nothing', () => {
+    const { done, cues, replaced, notices } = run(houseWithLeft(5, true));
+    expect(done).toBe(false);
+    expect(cues).toEqual(['refused']);
+    expect(replaced).toEqual([]);
+    expect(notices.map((notice) => [notice.tone, notice.message])).toEqual([['error', expect.stringMatching(/Over budget/) as unknown]]);
+  });
+
+  it('an affordable surprise replaces the floor without a refusal', () => {
+    const { done, cues, replaced, notices } = run(houseWithLeft(20_000, true));
+    expect(done).toBe(true);
+    expect(cues).toEqual([]);
+    expect(replaced).toHaveLength(1);
+    expect(notices).toEqual([]);
   });
 });

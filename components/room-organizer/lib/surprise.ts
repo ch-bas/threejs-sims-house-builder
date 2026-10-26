@@ -1,5 +1,6 @@
 import { activeWriteOff, budgetBlockedReason, furnitureSpend, hardBudgetLoss, isHardBudgetOn, purchasePrice } from './budget';
 import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from './constants';
+import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
 import {
   FURNITURE_SETS,
@@ -14,6 +15,7 @@ import { randomSuffix } from './ids';
 import { isWallMounted, type WallGap } from './opening-snap';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline } from './street';
+import type { SoundCue } from './sounds';
 import type { CatalogItem, FurnitureItem, InteriorWall, RoomLayout } from './types';
 
 const DECOR_TYPES = ['plant', 'flowerpot', 'rug', 'painting', 'vase', 'lamp', 'floor-lamp', 'mirror'] as const;
@@ -215,6 +217,30 @@ export function decideSurprise(
     if (!proceed) return null;
   }
   return { items };
+}
+
+export interface SurpriseEffects {
+  confirm(message: string): boolean;
+  playCue(cue: SoundCue): void;
+  replaceItems(items: FurnitureItem[]): void;
+}
+
+/**
+ * The Surprise button, for every place that shows one (the HUD and Layout
+ * actions): `decideSurprise`, then either the refusal (the `refused` cue and
+ * the reason as a notice, from here only) or the new floor. True when the
+ * floor was replaced, so the caller can clear the selection.
+ */
+export function runSurprise(layout: RoomLayout, floorIndex: number, budget: number, effects: SurpriseEffects): boolean {
+  const outcome = decideSurprise(layout, floorIndex, budget, effects.confirm);
+  if (outcome === null) return false;
+  if ('refusal' in outcome) {
+    effects.playCue('refused');
+    notify(outcome.refusal, 'error');
+    return false;
+  }
+  effects.replaceItems(outcome.items);
+  return true;
 }
 
 function chooseSet(width: number, depth: number, rng: () => number, maxCost: number, allowOverBudget: boolean) {

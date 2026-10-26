@@ -8,7 +8,6 @@ import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
-import { notify } from '../lib/editor-notices';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
@@ -16,7 +15,7 @@ import { buildingExportFileName, downloadTextFile, planExportFileName } from '..
 import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
 import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
 import { ENTRANCE_WALL_ID } from '../lib/street';
-import { decideSurprise } from '../lib/surprise';
+import { runSurprise } from '../lib/surprise';
 import { PrintPlanControl } from './print-options';
 import type { FurnitureItem } from '../lib/types';
 
@@ -99,14 +98,12 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               // spends what the rest of the building leaves of the budget: the
               // hard budget refuses before asking, the soft one asks before
               // going over (#136, #581).
-              const outcome = decideSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, (message) => window.confirm(message));
-              if (outcome === null) return;
-              if ('refusal' in outcome) {
-                playCue('refused');
-                notify(outcome.refusal, 'error');
-                return;
-              }
-              actions.replaceItems(outcome.items);
+              const replaced = runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
+                confirm: (message) => window.confirm(message),
+                playCue,
+                replaceItems: (items) => actions.replaceItems(items),
+              });
+              if (!replaced) return;
               setSelectedItemId(null);
               setExtraSelectedIds(new Set());
             }}
