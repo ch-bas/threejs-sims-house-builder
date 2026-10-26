@@ -10,7 +10,7 @@ import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
+import { type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { buildingExportFileName, downloadTextFile, planExportFileName } from '../lib/plan-export/download';
 import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
@@ -18,6 +18,7 @@ import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
 import { storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { runSurprise } from '../lib/surprise';
+import { arrangeByZone } from '../lib/zones';
 import { PrintPlanControl } from './print-options';
 import type { FurnitureItem } from '../lib/types';
 
@@ -58,7 +59,9 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
       interiorWalls: activeFloor.interiorWalls,
       storeyHeight: storeyHeight(activeFloor),
     };
-    actions.replaceItems([...anchored, ...autoOrganize(movable, layout.width, layout.height, strategy, { context })]);
+    // A floor with zones is arranged room by room (#629).
+    const arranged = arrangeByZone(movable, layout.width, layout.height, strategy, { context, zones: activeFloor.zones });
+    actions.replaceItems([...anchored, ...arranged]);
   };
 
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {

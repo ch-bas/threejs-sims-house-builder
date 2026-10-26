@@ -1,5 +1,5 @@
 import { MAX_ROOM_DIMENSION } from './constants';
-import { totalCost } from './geometry';
+import { autoOrganize, type AutoOrganizeStrategy, type CollisionContext, totalCost } from './geometry';
 import type { FurnitureItem, RoomZone, Vec2 } from './types';
 
 /**
@@ -148,6 +148,51 @@ export function defaultZoneName(existing: readonly RoomZone[]): string {
     const name = `Zone ${n}`;
     if (!names.has(name)) return name;
   }
+}
+
+/**
+ * Arrange (#629) zone by zone, so a house with rooms keeps each room's
+ * furniture in it: each zone's items (centre inside, the first zone wins on
+ * a shared edge) are packed inside that zone, around the locked items and
+ * the zones already done; then the items outside every zone are packed into
+ * the space the zones leave. Without zones it is plain `autoOrganize`. The
+ * result keeps the input order.
+ */
+export function arrangeByZone(
+  items: readonly FurnitureItem[],
+  roomWidth: number,
+  roomDepth: number,
+  strategy: AutoOrganizeStrategy,
+  options: { zones?: readonly ZoneRect[] | undefined; context?: CollisionContext; margin?: number }
+): FurnitureItem[] {
+  const zones = options.zones ?? [];
+  const shared = {
+    ...(options.context ? { context: options.context } : {}),
+    ...(options.margin !== undefined ? { margin: options.margin } : {}),
+  };
+  if (zones.length === 0) return autoOrganize(items, roomWidth, roomDepth, strategy, shared);
+
+  const locked = items.filter((item) => item.locked);
+  let rest = items.filter((item) => !item.locked);
+  const arranged: FurnitureItem[] = [];
+  for (const zone of zones) {
+    const inside = itemsInZone(zone, rest);
+    if (inside.length === 0) continue;
+    rest = rest.filter((item) => !inside.includes(item));
+    const bounds = { x0: zone.x, x1: zone.x + zone.w, z0: zone.z, z1: zone.z + zone.d };
+    arranged.push(
+      ...autoOrganize(inside, roomWidth, roomDepth, strategy, { ...shared, bounds, obstacles: [...locked, ...arranged] })
+    );
+  }
+  if (rest.length > 0) {
+    const zoneRects = zones.map((zone) => ({ x0: zone.x, x1: zone.x + zone.w, z0: zone.z, z1: zone.z + zone.d }));
+    const context = { ...options.context, keepOut: [...(options.context?.keepOut ?? []), ...zoneRects] };
+    arranged.push(
+      ...autoOrganize(rest, roomWidth, roomDepth, strategy, { ...shared, context, obstacles: [...locked, ...arranged] })
+    );
+  }
+  const byId = new Map(arranged.map((item) => [item.id, item]));
+  return items.map((item) => byId.get(item.id) ?? item);
 }
 
 /** Field-wise equality, so re-submitting a zone unchanged keeps state identity. */

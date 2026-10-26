@@ -346,6 +346,10 @@ export interface AutoOrganizeOptions {
   margin?: number;
   /** The storey's porch, stairwells and partitions, which the packing flows around (#577). */
   context?: CollisionContext;
+  /** The rectangle to pack into (#629); the whole room when absent. */
+  bounds?: { x0: number; x1: number; z0: number; z1: number };
+  /** Items that stay where they are, such as another zone's, and are packed around like locked ones (#629). */
+  obstacles?: readonly FurnitureItem[];
 }
 
 /** How far Arrange slides along a row past a partition or a rotated keep-out (m). */
@@ -364,8 +368,8 @@ export function autoOrganize(
   const ordered = orderItemsForStrategy(items, strategy);
   // Locked items keep their spot and rotation like every other geometry
   // path (#389), and the packing flows around them.
-  const lockedRects: KeepOutRect[] = items
-    .filter((item) => item.locked && item.position)
+  const lockedRects: KeepOutRect[] = [...items.filter((item) => item.locked), ...(options.obstacles ?? [])]
+    .filter((item) => item.position)
     .map((item) => {
       const { halfW, halfD } = rotatedHalfExtents(item);
       const { x, z } = item.position ?? { x: 0, z: 0 };
@@ -384,9 +388,15 @@ export function autoOrganize(
           { roomWidth, roomDepth }
         )
       : [];
+  const { x0: left, x1: right, z0: top, z1: bottom } = options.bounds ?? {
+    x0: -roomWidth / 2,
+    x1: roomWidth / 2,
+    z0: -roomDepth / 2,
+    z1: roomDepth / 2,
+  };
   const organized: FurnitureItem[] = [];
-  let cursorX = -roomWidth / 2 + margin;
-  let cursorZ = -roomDepth / 2 + margin;
+  let cursorX = left + margin;
+  let cursorZ = top + margin;
   let rowMaxDepth = 0;
 
   for (const item of ordered) {
@@ -412,8 +422,8 @@ export function autoOrganize(
 
     let placed: Vec2 | null = null;
     for (;;) {
-      if (cursorX + item.width + margin > roomWidth / 2) {
-        cursorX = -roomWidth / 2 + margin;
+      if (cursorX + item.width + margin > right) {
+        cursorX = left + margin;
         // A row a locked item filled is empty; with no margin it must still
         // advance, or the skip loop below never ends.
         const rowStep = rowMaxDepth + margin;
@@ -425,8 +435,8 @@ export function autoOrganize(
       // row, or the rows have consumed the remaining depth — keeps its
       // original spot and rotation: packing what fits beats stacking every
       // leftover in an overlapping pile at the origin (#128).
-      const fitsWidth = cursorX + item.width + margin <= roomWidth / 2;
-      const fitsDepth = cursorZ + item.depth + margin <= roomDepth / 2;
+      const fitsWidth = cursorX + item.width + margin <= right;
+      const fitsDepth = cursorZ + item.depth + margin <= bottom;
       if (!fitsWidth || !fitsDepth) break;
 
       // Skip past a locked item, porch or stairwell in the way (its edge

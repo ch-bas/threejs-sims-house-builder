@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { MAX_ROOM_DIMENSION } from './constants';
+import { autoOrganize, hasCollisions } from './geometry';
 import {
   MIN_ZONE_SIZE,
+  arrangeByZone,
   ZONE_COLORS,
   clampZoneRect,
   defaultZoneName,
@@ -146,5 +148,41 @@ describe('zone defaults (#155)', () => {
     expect(sameZone(bedroom, { ...bedroom })).toBe(true);
     expect(sameZone(bedroom, { ...bedroom, name: 'Study' })).toBe(false);
     expect(sameZone(bedroom, { ...bedroom, w: 3.1 })).toBe(false);
+  });
+});
+
+describe('arrangeByZone (#629)', () => {
+  const W = 8;
+  const D = 8;
+  const west: RoomZone = { id: 'w', name: 'West', color: '#000', x: -4, z: -4, w: 4, d: 8 };
+  const east: RoomZone = { id: 'e', name: 'East', color: '#000', x: 0, z: -4, w: 4, d: 8 };
+  const box = (id: string, x: number, z: number) => makeItem({ id, width: 0.8, depth: 0.6, height: 1, position: { x, z } });
+  const items = [box('a', -1, 3), box('b', -2, 2), box('c', 2, 3), box('d', 3, -3), box('e', 1, 1)];
+
+  it('packs each zone’s items inside that zone', () => {
+    const result = arrangeByZone(items, W, D, 'shelf', { zones: [west, east] });
+    expect(result.map((item) => item.id).sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+    for (const item of result) {
+      const zone = ['a', 'b'].includes(item.id) ? west : east;
+      const { x, z } = item.position!;
+      expect(x - 0.4, item.id).toBeGreaterThanOrEqual(zone.x);
+      expect(x + 0.4, item.id).toBeLessThanOrEqual(zone.x + zone.w);
+      expect(z - 0.3, item.id).toBeGreaterThanOrEqual(zone.z);
+      expect(z + 0.3, item.id).toBeLessThanOrEqual(zone.z + zone.d);
+    }
+    for (const item of result) expect(hasCollisions(item, result, W, D), item.id).toBe(false);
+  });
+
+  it('packs the items outside every zone into the space the zones leave', () => {
+    const north: RoomZone = { ...west, id: 'n', x: -4, z: -4, w: 8, d: 4 };
+    const result = arrangeByZone(items, W, D, 'shelf', { zones: [north] });
+    for (const item of result) expect(hasCollisions(item, result, W, D), item.id).toBe(false);
+    // d was the only item in the north half; the others pack south of it.
+    expect(result.find((item) => item.id === 'd')!.position!.z).toBeLessThan(0);
+    for (const id of ['a', 'b', 'c', 'e']) expect(result.find((item) => item.id === id)!.position!.z, id).toBeGreaterThan(0);
+  });
+
+  it('is plain autoOrganize without zones', () => {
+    expect(arrangeByZone(items, W, D, 'shelf', {})).toEqual(autoOrganize(items, W, D, 'shelf'));
   });
 });

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- On a floor with zones, Arrange keeps each room's furniture in its zone, and packs what stands outside every zone into the space left over ([#629](https://github.com/ch-bas/threejs-sims-house-builder/issues/629))
+
 ### Fixed
 - Undoing an edit straight after making it, then redoing, no longer brings back a change you had already undone and replaced ([#546](https://github.com/ch-bas/threejs-sims-house-builder/issues/546))
 - An edit made just before importing a file, loading a template or library house, applying a theme or taking another tab's version keeps its own undo step, instead of being lost when you undo the load ([#555](https://github.com/ch-bas/threejs-sims-house-builder/issues/555))
