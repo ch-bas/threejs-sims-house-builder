@@ -31,7 +31,7 @@ import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough, type WalkthroughBuilding } from './hooks/use-walkthrough';
 import { useWeather } from './hooks/use-weather';
-import { purchasePrice, purchaseRefusal } from './lib/budget';
+import { furnitureSpend, purchasePrice, purchaseRefusal } from './lib/budget';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
@@ -39,7 +39,7 @@ import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
 import { notify } from './lib/editor-notices';
-import { hasCollisions, totalCost } from './lib/geometry';
+import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
@@ -680,10 +680,9 @@ export function RoomOrganizer(): JSX.Element {
     [activeFloor.items]
   );
 
-  const buildingCost = useMemo(
-    () => totalCost(layout.floors.flatMap((floor) => floor.items)),
-    [layout.floors]
-  );
+  // What the header counts: the porch door is free (#600). The soft-budget
+  // confirm reads it, so the hard budget's write-off doesn't matter here.
+  const buildingCost = useMemo(() => furnitureSpend({ floors: layout.floors }), [layout.floors]);
 
   const { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
     activeFloor,

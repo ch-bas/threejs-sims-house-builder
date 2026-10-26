@@ -8,6 +8,7 @@ import { useSelection } from '../contexts';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
+import { notify } from '../lib/editor-notices';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { autoOrganize, type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
@@ -15,7 +16,7 @@ import { buildingExportFileName, downloadTextFile, planExportFileName } from '..
 import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
 import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
 import { ENTRANCE_WALL_ID } from '../lib/street';
-import { surpriseFloorItems, surpriseReplacesFurniture } from '../lib/surprise';
+import { decideSurprise } from '../lib/surprise';
 import { PrintPlanControl } from './print-options';
 import type { FurnitureItem } from '../lib/types';
 
@@ -94,15 +95,18 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
           <Button
             onClick={() => {
               // Surprise replaces the furniture on the floor — never wipe it
-              // without asking (#105). Structure and garden stay (#448).
-              if (
-                surpriseReplacesFurniture(activeFloor.items) &&
-                !window.confirm('Replace the furniture on this floor with a surprise layout?')
-              ) {
+              // without asking (#105). Structure and garden stay (#448). It
+              // spends what the rest of the building leaves of the budget: the
+              // hard budget refuses before asking, the soft one asks before
+              // going over (#136, #581).
+              const outcome = decideSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, (message) => window.confirm(message));
+              if (outcome === null) return;
+              if ('refusal' in outcome) {
+                playCue('refused');
+                notify(outcome.refusal, 'error');
                 return;
               }
-              // Spends what the rest of the building leaves of the budget (#136).
-              actions.replaceItems(surpriseFloorItems(layout, activeFloorIndex, DEFAULT_BUDGET));
+              actions.replaceItems(outcome.items);
               setSelectedItemId(null);
               setExtraSelectedIds(new Set());
             }}
