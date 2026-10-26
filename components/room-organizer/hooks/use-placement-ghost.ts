@@ -6,6 +6,7 @@ import {
   ghostOutlinePoints,
   invertClientToWorld,
 } from '../lib/placement-ghost';
+import { isTypingTarget } from '../lib/walk-input';
 import { pointerOnCanvas } from '../three/drag-handlers';
 import { buildPlacementGhost, type PlacementGhostMesh } from '../three/placement-ghost';
 import type { CatalogItem, FurnitureItem, Vec2 } from '../lib/types';
@@ -61,12 +62,6 @@ interface GhostSession {
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function isTextField(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
-  if (!element?.tagName) return false;
-  return element.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName);
-}
 
 function isFocusedControl(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
@@ -247,7 +242,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     // The ghost owns R, Enter, Space and Escape while it is held, ahead of
     // a focused catalog tile's roving keys and the window shortcuts.
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.ctrlKey || event.metaKey || event.altKey || isTextField(event.target)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) return;
       const key = event.key.toLowerCase();
       if (key !== 'r' && key !== 'enter' && key !== ' ' && key !== 'escape') return;
       // Enter and Space on a focused button (the hint's Cancel, Undo, …) belong

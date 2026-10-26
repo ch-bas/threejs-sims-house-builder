@@ -67,10 +67,10 @@ export function releasesHeldKeys(event: { key: string }): boolean {
 
 /**
  * Whether a key event's target takes typing: an input, a textarea, a select
- * or anything contentEditable (#558). The walker ignores those keys, so on a
- * touch walk Escape in the catalogue search doesn't leave EXPLORE and a `w`
- * typed there doesn't switch the touch stick off. The same rule as the
- * shortcuts' and the placement ghost's guards.
+ * or anything contentEditable (#558). The one guard every window key
+ * handler uses: the walker (so on a touch walk Escape in the catalogue
+ * search doesn't leave EXPLORE and a `w` typed there doesn't switch the
+ * touch stick off), the editor shortcuts and the placement ghost.
  */
 export function isTypingTarget(target: EventTarget | null): boolean {
   const element = target as { tagName?: unknown; isContentEditable?: unknown } | null;
