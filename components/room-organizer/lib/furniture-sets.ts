@@ -295,9 +295,25 @@ export interface FreeSpaceOptions {
   interiorWalls?: readonly InteriorWall[];
   frontGap?: WallGap | null;
   storeyHeight?: number;
+  /** The storey the set goes on; above the ground floor its garden pieces are left out (#591). */
+  floorIndex?: number;
   /** The centre tried first; the room centre when absent. */
   preferred?: Vec2;
   idPrefix?: string;
+}
+
+/**
+ * The pieces of `set` that may go on storey `floorIndex` (#591): garden
+ * pieces only go on the ground floor, as with paste and the catalogue. The
+ * ground floor gets the set itself; an empty result above it means the set
+ * is all garden.
+ */
+export function setForStorey(set: FurnitureSet, floorIndex: number): FurnitureSet {
+  if (floorIndex < 1) return set;
+  const items = resolveSpecs(set)
+    .filter(({ base }) => pieceKind(base) !== 'outdoor')
+    .map(({ spec }) => spec);
+  return items.length === set.items.length ? set : { ...set, items };
 }
 
 /** Finest spacing of the centres `placeSetInFreeSpace` probes (m). */
@@ -335,8 +351,10 @@ export function candidateCentres(
  * partitions, so a set never lands on the sofa already there. Empty when the
  * set can't fit the room at all or no spot is free.
  */
-export function placeSetInFreeSpace(set: FurnitureSet, options: FreeSpaceOptions): FurnitureItem[] {
+export function placeSetInFreeSpace(fullSet: FurnitureSet, options: FreeSpaceOptions): FurnitureItem[] {
   const { roomWidth, roomDepth, existing, preferred = { x: 0, z: 0 } } = options;
+  const set = setForStorey(fullSet, options.floorIndex ?? 0);
+  if (set.items.length === 0) return [];
   const idPrefix = options.idPrefix ?? `${set.key}-${Date.now()}-${randomSuffix()}`;
   const context = {
     keepOut: options.keepOut ?? [],

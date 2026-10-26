@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A chair, armchair or bench standing inside a dresser, nightstand, coffee table or counter is flagged as a collision; seats still tuck under desks and tables when their seat clears the tabletop ([#606](https://github.com/ch-bas/threejs-sims-house-builder/issues/606))
 - A zone drawn wall to wall on a floor whose size isn't a multiple of 10 cm ends at the wall instead of 5 cm past it, and renaming or recolouring it no longer shrinks it ([#618](https://github.com/ch-bas/threejs-sims-house-builder/issues/618))
 - On a low storey such as a 1.2 m loft, paintings, mirrors, clocks, wall shelves and curtains hang lower, and get shorter if they must, instead of poking through the ceiling; collisions test them where they are drawn ([#610](https://github.com/ch-bas/threejs-sims-house-builder/issues/610))
+- A saved set added on an upper floor leaves its garden pieces out instead of floating trees and benches beside the house, and a set made only of garden pieces says they go on the ground floor ([#591](https://github.com/ch-bas/threejs-sims-house-builder/issues/591))
 
 ## [1.23.0] - 2026-10-25
 
