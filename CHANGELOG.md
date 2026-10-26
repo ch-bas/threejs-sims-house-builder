@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The over-budget question and Surprise me no longer count the porch door of older saves, so they agree with the header's spending ([#600](https://github.com/ch-bas/threejs-sims-house-builder/issues/600))
 - Arrange keeps furniture off the porch, out of the stairwell hole on the floor above the stairs and clear of interior walls ([#577](https://github.com/ch-bas/threejs-sims-house-builder/issues/577))
 - A chair, armchair or bench standing inside a dresser, nightstand, coffee table or counter is flagged as a collision; seats still tuck under desks and tables when their seat clears the tabletop ([#606](https://github.com/ch-bas/threejs-sims-house-builder/issues/606))
+- A zone drawn wall to wall on a floor whose size isn't a multiple of 10 cm ends at the wall instead of 5 cm past it, and renaming or recolouring it no longer shrinks it ([#618](https://github.com/ch-bas/threejs-sims-house-builder/issues/618))
 
 ## [1.23.0] - 2026-10-25
 

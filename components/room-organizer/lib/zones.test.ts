@@ -43,6 +43,32 @@ describe('zoneFromCorners (#155)', () => {
     expect(zoneFromCorners({ x: 6, z: 0 }, { x: 9, z: 2 }, 8, 8)).toBeNull();
   });
 
+  it('fits a floor whose size is not a multiple of 10 cm, edge to edge (#618)', () => {
+    // 5.05 × 4.33 m: the walls sit at ±2.525 and ±2.165.
+    for (const reach of [2.525, 2.56, 9]) {
+      const rect = zoneFromCorners({ x: -reach, z: -reach }, { x: reach, z: reach }, 5.05, 4.33)!;
+      expect(rect.x).toBeCloseTo(-2.525, 9);
+      expect(rect.z).toBeCloseTo(-2.165, 9);
+      expect(rect.x + rect.w).toBeLessThanOrEqual(2.525 + 1e-9);
+      expect(rect.z + rect.d).toBeLessThanOrEqual(2.165 + 1e-9);
+      expect(rect.x + rect.w).toBeCloseTo(2.525, 9);
+      expect(rect.z + rect.d).toBeCloseTo(2.165, 9);
+    }
+  });
+
+  it('keeps a corner off the walls on the 10 cm grid (#618)', () => {
+    const rect = zoneFromCorners({ x: -2.56, z: 0.04 }, { x: 1.03, z: 2.2 }, 5.05, 4.33)!;
+    expect(rect.x).toBeCloseTo(-2.525, 9);
+    expect(rect.x + rect.w).toBeCloseTo(1, 9);
+    expect(rect.z).toBeCloseTo(0, 9);
+    expect(rect.z + rect.d).toBeCloseTo(2.165, 9);
+  });
+
+  it('re-fitting a wall-to-wall zone to the same floor leaves it as it is (#618)', () => {
+    const rect = zoneFromCorners({ x: -3, z: -3 }, { x: 3, z: 3 }, 5.05, 4.33)!;
+    expect(clampZoneRect(rect, 5.05, 4.33)).toEqual(rect);
+  });
+
   it('clampZoneRect re-fits a stored rectangle to a room that shrank', () => {
     expect(clampZoneRect({ x: -4, z: -3, w: 3, d: 2.5 }, 4, 4)).toEqual({ x: -2, z: -2, w: 1, d: 1.5 });
     expect(clampZoneRect({ x: Number.NaN, z: 0, w: 1, d: 1 }, 8, 8)).toBeNull();

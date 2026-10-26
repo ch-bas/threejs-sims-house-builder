@@ -74,22 +74,39 @@ export function isRoomZone(value: unknown): value is RoomZone {
 }
 
 /**
- * The rectangle spanned by two dragged corners (any order), rounded to
- * ZONE_GRID and clamped to the room's footprint; `null` when what's left
- * is too small to be a room. Used by the 2D draw gesture and, on every
- * add/update, by the reducer — so a stored zone always fits its floor.
+ * The rectangle spanned by two dragged corners (any order), clamped to the
+ * room's footprint; `null` when what's left is too small to be a room. A
+ * corner rounds to ZONE_GRID, except one within half a step of a wall (or
+ * past it), which lands on the wall, so a zone drawn edge to edge on a
+ * 5.05 m floor ends at the wall rather than 5 cm past it (#618). Used by
+ * the 2D draw gesture and, on every add/update, by the reducer — so a
+ * stored zone always fits its floor, and re-fitting it changes nothing.
  */
 export function zoneFromCorners(a: Vec2, b: Vec2, roomWidth: number, roomDepth: number): ZoneRect | null {
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
-  const x0 = clamp(round(Math.min(a.x, b.x)), -halfW, halfW);
-  const x1 = clamp(round(Math.max(a.x, b.x)), -halfW, halfW);
-  const z0 = clamp(round(Math.min(a.z, b.z)), -halfD, halfD);
-  const z1 = clamp(round(Math.max(a.z, b.z)), -halfD, halfD);
-  const w = round(x1 - x0);
-  const d = round(z1 - z0);
+  const x0 = snapCorner(Math.min(a.x, b.x), halfW);
+  const x1 = snapCorner(Math.max(a.x, b.x), halfW);
+  const z0 = snapCorner(Math.min(a.z, b.z), halfD);
+  const z1 = snapCorner(Math.max(a.z, b.z), halfD);
+  // Sizes from the corners, without re-rounding to the grid; only float
+  // noise is trimmed, and never past the far wall.
+  const w = Math.min(trimNoise(x1 - x0), halfW - x0);
+  const d = Math.min(trimNoise(z1 - z0), halfD - z0);
   if (!(w >= MIN_ZONE_SIZE) || !(d >= MIN_ZONE_SIZE)) return null;
   return { x: x0, z: z0, w, d };
+}
+
+/** A corner on the grid, or on the wall when it is within half a grid step of it or beyond. */
+function snapCorner(value: number, half: number): number {
+  if (value >= half - ZONE_GRID / 2) return half;
+  if (value <= -half + ZONE_GRID / 2) return -half;
+  return round(value);
+}
+
+/** Drops binary float noise (2.9999999999 → 3) without moving a value off the wall. */
+function trimNoise(value: number): number {
+  return Math.round(value * 1e9) / 1e9;
 }
 
 /** `zoneFromCorners` for a rectangle already expressed as corner + size. */
@@ -143,8 +160,4 @@ export function sameZone(a: RoomZone, b: RoomZone): boolean {
 function round(value: number): number {
   const steps = 1 / ZONE_GRID;
   return Math.round(value * steps) / steps;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
