@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeCatalogItem, makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { parseStoredLayout } from '../lib/schema';
-import { layoutReducer, type LayoutAction, type LayoutState } from './layout-reducer';
+import { layoutReducer, selectionTurns, type LayoutAction, type LayoutState } from './layout-reducer';
 import type { FurnitureItem } from '../lib/types';
 
 function stateWith(items: FurnitureItem[]): LayoutState {
@@ -127,5 +127,26 @@ describe('layoutReducer: a locked sofa keeps its shape (#636)', () => {
   it('setSofaShape still reshapes an unlocked sofa', () => {
     const state = stateWith([makeItem({ id: 's', type: 'sofa', sofaShape: 'standard' })]);
     expect(items(reduce(state, { type: 'setSofaShape', id: 's', shape: 'L-shape' }))[0]!.sofaShape).toBe('L-shape');
+  });
+});
+
+describe('selectionTurns: what R on a selection can turn (#583 review)', () => {
+  const openings = [
+    makeItem({ id: 'w1', type: 'window', position: { x: -1, z: -4 } }),
+    makeItem({ id: 'd1', type: 'door', position: { x: 1, z: -4 } }),
+  ];
+
+  it('a selection of only doors and windows turns nothing, so R plays the refused cue', () => {
+    expect(selectionTurns(openings, new Set(['w1', 'd1']))).toBe(false);
+  });
+
+  it('a locked chair turns nothing either', () => {
+    const chair = makeItem({ id: 'c', locked: true });
+    expect(selectionTurns([...openings, chair], new Set(['w1', 'c']))).toBe(false);
+  });
+
+  it('a free-standing item does turn', () => {
+    const chair = makeItem({ id: 'c' });
+    expect(selectionTurns([...openings, chair], new Set(['w1', 'c']))).toBe(true);
   });
 });

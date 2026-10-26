@@ -7,6 +7,7 @@ import { EditorViewProvider, useEditorView } from './contexts/editor-view-contex
 import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
 import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
+import { selectionTurns } from './hooks/layout-reducer';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
 import { useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
@@ -496,7 +497,9 @@ export function RoomOrganizer(): JSX.Element {
     (id: string): boolean => {
       if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
         const unlocked = unlockedSelectedIds();
-        if (unlocked.size === 0) {
+        // Doors and windows stay on their walls (#583): a selection of only
+        // those turns nothing, so the cue must not say it did.
+        if (!selectionTurns(activeFloor.items, unlocked)) {
           playCue('refused');
           return false;
         }
@@ -1044,7 +1047,7 @@ export function RoomOrganizer(): JSX.Element {
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
           const unlocked = unlockedSelectedIds();
-          if (unlocked.size === 0) {
+          if (!selectionTurns(activeFloor.items, unlocked)) {
             playCue('refused');
             return;
           }

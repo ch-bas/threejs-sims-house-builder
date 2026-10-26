@@ -693,8 +693,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           // Locked items neither spin nor orbit — callers filter, but the
           // reducer is the guarantee (#115/#209); nor does the porch's
           // door, which belongs to the recess (#357).
-          if (!action.ids.has(item.id) || item.locked || item.id === ENTRANCE_DOOR_ID) return item;
-          if (isWallMounted(item.type)) return item;
+          if (!action.ids.has(item.id) || !turnsInSelection(item)) return item;
           const rotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
           const moved: FurnitureItem = { ...item, rotation };
           if (item.position) {
@@ -1142,6 +1141,20 @@ function clampWall(wall: InteriorWall): InteriorWall | null {
   if (x1 === x2 && z1 === z2) return null;
   const same = x1 === wall.x1 && z1 === wall.z1 && x2 === wall.x2 && z2 === wall.z2;
   return same ? wall : { ...wall, x1, z1, x2, z2 };
+}
+
+/**
+ * Whether rotateSelection turns `item` when it is selected: not when locked
+ * (#115, #209), not the porch's door (#357), and not a door, window or camera,
+ * which stays on its wall (#583).
+ */
+function turnsInSelection(item: FurnitureItem): boolean {
+  return !item.locked && item.id !== ENTRANCE_DOOR_ID && !isWallMounted(item.type);
+}
+
+/** Whether rotateSelection over `ids` turns anything: if not, R is refused. */
+export function selectionTurns(items: readonly FurnitureItem[], ids: ReadonlySet<string>): boolean {
+  return items.some((item) => ids.has(item.id) && turnsInSelection(item));
 }
 
 function isFinitePosition(position: { x: number; z: number }): boolean {
