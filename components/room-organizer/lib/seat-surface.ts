@@ -32,14 +32,19 @@ const SEAT_SURFACES: Readonly<Record<string, SeatSurface>> = {
   toilet: { fraction: 0.535 },
 };
 
+/** The type's sitting surface; undefined for anything else, a prototype key such as "constructor" included. */
+function seatSurfaceOf(type: string): SeatSurface | undefined {
+  return Object.hasOwn(SEAT_SURFACES, type) ? SEAT_SURFACES[type] : undefined;
+}
+
 /** Whether the item has a sitting surface. */
 export function hasSeatSurface(item: Pick<FurnitureItem, 'type'>): boolean {
-  return Object.hasOwn(SEAT_SURFACES, item.type);
+  return seatSurfaceOf(item.type) !== undefined;
 }
 
 /** Height of the sitting surface above the item's base, metres; null for something you can't sit on. */
 export function seatSurfaceHeight(item: Pick<FurnitureItem, 'type' | 'height'>): number | null {
-  if (!hasSeatSurface(item)) return null;
-  const surface = SEAT_SURFACES[item.type]!;
+  const surface = seatSurfaceOf(item.type);
+  if (!surface) return null;
   return Math.min(item.height, item.height * surface.fraction + (surface.offset ?? 0));
 }

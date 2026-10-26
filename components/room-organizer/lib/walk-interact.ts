@@ -26,13 +26,18 @@ export function isSeat(item: Pick<FurnitureItem, 'type'>): boolean {
   return hasSeatSurface(item);
 }
 
-/** Distance from (x, z) to the item's rotated footprint; 0 inside it. */
-function footprintDistance(item: FurnitureItem & { position: { x: number; z: number } }, x: number, z: number): number {
+interface Point {
+  x: number;
+  z: number;
+}
+
+/** Distance from (x, z) to the item, standing at `at`: its rotated footprint; 0 inside it. */
+function footprintDistance(item: FurnitureItem, at: Point, x: number, z: number): number {
   const rotation = item.rotation ?? 0;
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
-  const dx = x - item.position.x;
-  const dz = z - item.position.z;
+  const dx = x - at.x;
+  const dz = z - at.z;
   // Three's rotateY: local +x is (cos, −sin), local +z is (sin, cos).
   const lx = Math.max(0, Math.abs(dx * cos - dz * sin) - item.width / 2);
   const lz = Math.max(0, Math.abs(dx * sin + dz * cos) - item.depth / 2);
@@ -47,16 +52,28 @@ export interface SeatSight {
   feetY?: number;
   /**
    * The walker is out on the lot: seats indoors are not in reach, and
-   * indoors a garden seat outside isn't either.
+   * indoors a seat outside isn't either.
    */
   outside?: boolean;
+  /**
+   * The house's footprint (metres, centred on the origin): a seat standing
+   * outside it is outdoors, whatever its category. Without it the catalogue
+   * category decides.
+   */
+  footprint?: { width: number; depth: number };
 }
 
-/** The point a walker sits on: a little forward of the centre, clear of the back. */
-function sitPoint(seat: FurnitureItem & { position: { x: number; z: number } }): { x: number; z: number } {
+/** The point a walker sits on, for a seat standing at `at`: a little forward of the centre, clear of the back. */
+function sitPoint(seat: FurnitureItem, at: Point): Point {
   const rotation = seat.rotation ?? 0;
   const inset = seat.type === 'bed' ? 0 : seat.depth * SEAT_FORWARD;
-  return { x: seat.position.x + Math.sin(rotation) * inset, z: seat.position.z + Math.cos(rotation) * inset };
+  return { x: at.x + Math.sin(rotation) * inset, z: at.z + Math.cos(rotation) * inset };
+}
+
+/** Whether a seat standing at `at` is out on the lot. */
+function seatOutdoors(seat: FurnitureItem, at: Point, footprint: SeatSight['footprint']): boolean {
+  if (!footprint) return seat.category === 'outdoor';
+  return Math.abs(at.x) > footprint.width / 2 || Math.abs(at.z) > footprint.depth / 2;
 }
 
 /**
@@ -77,12 +94,12 @@ export function findSeat(
   let bestScore = Infinity;
   const dirLength = Math.hypot(dirX, dirZ) || 1;
   for (const item of items) {
-    if (!item.position || !isSeat(item)) continue;
-    const placed = item as FurnitureItem & { position: { x: number; z: number } };
-    const distance = footprintDistance(placed, x, z);
+    const at = item.position;
+    if (!at || !isSeat(item)) continue;
+    const distance = footprintDistance(item, at, x, z);
     if (distance > SEAT_REACH) continue;
-    const toX = item.position.x - x;
-    const toZ = item.position.z - z;
+    const toX = at.x - x;
+    const toZ = at.z - z;
     const toLength = Math.hypot(toX, toZ);
     const facing = toLength < 1e-6 ? 1 : (toX * dirX + toZ * dirZ) / (toLength * dirLength);
     if (distance > SEAT_TOUCHING && facing < SEAT_VIEW_COS) continue;
@@ -91,8 +108,8 @@ export function findSeat(
     if (score >= bestScore) continue;
     if (sight) {
       // Sitting never crosses the shell: the view stays indoors or out.
-      if (Boolean(sight.outside) !== (item.category === 'outdoor')) continue;
-      const seatAt = sitPoint(placed);
+      if (Boolean(sight.outside) !== seatOutdoors(item, at, sight.footprint)) continue;
+      const seatAt = sitPoint(item, at);
       if (sightBlocked(sight.colliders, x, z, seatAt.x, seatAt.z, sight.feetY)) continue;
     }
     best = item;
@@ -129,7 +146,7 @@ export function seatPose(
   const rotation = seat.rotation ?? 0;
   const forwardX = Math.sin(rotation);
   const forwardZ = Math.cos(rotation);
-  const { x, z } = sitPoint(seat as FurnitureItem & { position: { x: number; z: number } });
+  const { x, z } = sitPoint(seat, seat.position);
   // The walkers' seat table (#623): a person beside the player sits as high.
   const eyeY = floorY + (seatSurfaceHeight(seat) ?? seat.height) + SEATED_EYE;
 

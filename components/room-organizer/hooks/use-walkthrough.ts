@@ -598,6 +598,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
             colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS,
             feetY: walker.y,
             outside: walker.kind === 'ground',
+            footprint: { width: buildingRef.current.width, depth: buildingRef.current.depth },
           });
           const id = seat?.id ?? null;
           if (id !== session.seatTargetId) {

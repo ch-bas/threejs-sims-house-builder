@@ -17,6 +17,8 @@ describe('isSeat', () => {
   it('knows what you can sit on', () => {
     expect(['chair', 'dining-chair', 'armchair', 'sofa', 'bench', 'garden-bench', 'bed', 'toilet'].every((type) => isSeat({ type }))).toBe(true);
     expect(isSeat({ type: 'dining-table' })).toBe(false);
+    // A prototype key is not a seat type.
+    for (const type of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(isSeat({ type })).toBe(false);
   });
 });
 
@@ -126,6 +128,16 @@ describe('seats and the TV behind walls (#566)', () => {
     const items = [DOOR, bench];
     expect(findSeat(items, 2.2, 4.0, 0, -1, sight(items, 0, true))?.id).toBe('garden');
     expect(findSeat(items, 2.2, 2.1, 0, 1, sight(items))).toBeNull();
+  });
+
+  it('decides indoors or out by where the seat stands, not its category', () => {
+    // A dining chair out on the lawn, and a garden bench in the living room.
+    const patioChair = item({ id: 'patio', type: 'chair', category: 'seating', width: 0.5, depth: 0.5, height: 0.8, position: { x: 2.2, z: 3.4 } });
+    const indoorBench = item({ id: 'bench-in', type: 'garden-bench', category: 'outdoor', width: 1.5, depth: 0.5, height: 0.85, position: { x: -1.5, z: -1 } });
+    const footprint = { width: 6, depth: 5 };
+    const items = [DOOR, patioChair, indoorBench];
+    expect(findSeat(items, 2.2, 4.2, 0, -1, { ...sight(items, 0, true), footprint })?.id).toBe('patio');
+    expect(findSeat(items, -1.5, -0.2, 0, -1, { ...sight(items), footprint })?.id).toBe('bench-in');
   });
 
   it('does not offer a seat across a partition', () => {
