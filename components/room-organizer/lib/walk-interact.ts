@@ -4,19 +4,10 @@
  * faces. Pure: which seat the walker is looking at, and the pose it takes.
  */
 
+import { hasSeatSurface, seatSurfaceHeight } from './seat-surface';
+import { sightBlocked, type WalkCollider } from './walk-collision';
 import type { FurnitureItem } from './types';
 
-/** Seat height above the floor for each type you can sit on, capped by the item's own height. */
-const SEAT_HEIGHTS: Readonly<Record<string, number>> = {
-  chair: 0.46,
-  'dining-chair': 0.46,
-  armchair: 0.42,
-  sofa: 0.42,
-  bench: 0.45,
-  'garden-bench': 0.45,
-  bed: 0.55,
-  toilet: 0.42,
-};
 /** Seated eye height above the seat. */
 export const SEATED_EYE = 0.72;
 /** A seat this far from the walker's centre (to its footprint) is in reach. */
@@ -32,7 +23,7 @@ const TV_SCREEN_ABOVE_STAND = 0.35;
 const SEAT_FORWARD = 0.1;
 
 export function isSeat(item: Pick<FurnitureItem, 'type'>): boolean {
-  return item.type in SEAT_HEIGHTS;
+  return hasSeatSurface(item);
 }
 
 /** Distance from (x, z) to the item's rotated footprint; 0 inside it. */
@@ -48,16 +39,39 @@ function footprintDistance(item: FurnitureItem & { position: { x: number; z: num
   return Math.hypot(lx, lz);
 }
 
+/** Where the walker can see: the walls between it and a seat or a TV (#566). */
+export interface SeatSight {
+  /** The walker's colliders; only the walls among them block the view. */
+  colliders: readonly WalkCollider[];
+  /** World Y of the feet: walls of the storeys either side are skipped. */
+  feetY?: number;
+  /**
+   * The walker is out on the lot: seats indoors are not in reach, and
+   * indoors a garden seat outside isn't either.
+   */
+  outside?: boolean;
+}
+
+/** The point a walker sits on: a little forward of the centre, clear of the back. */
+function sitPoint(seat: FurnitureItem & { position: { x: number; z: number } }): { x: number; z: number } {
+  const rotation = seat.rotation ?? 0;
+  const inset = seat.type === 'bed' ? 0 : seat.depth * SEAT_FORWARD;
+  return { x: seat.position.x + Math.sin(rotation) * inset, z: seat.position.z + Math.cos(rotation) * inset };
+}
+
 /**
  * The seat the walker at (x, z), facing (dirX, dirZ), would sit on: the
  * nearest one in reach that is in view, or right beside it. Null when none.
+ * With `sight`, a seat behind a wall or a partition is not in reach, and
+ * neither is one on the other side of the shell (#566).
  */
 export function findSeat(
   items: readonly FurnitureItem[],
   x: number,
   z: number,
   dirX: number,
-  dirZ: number
+  dirZ: number,
+  sight?: SeatSight
 ): FurnitureItem | null {
   let best: FurnitureItem | null = null;
   let bestScore = Infinity;
@@ -75,6 +89,12 @@ export function findSeat(
     // Prefer what is straight ahead over what is merely nearer.
     const score = distance - facing * 0.5;
     if (score >= bestScore) continue;
+    if (sight) {
+      // Sitting never crosses the shell: the view stays indoors or out.
+      if (Boolean(sight.outside) !== (item.category === 'outdoor')) continue;
+      const seatAt = sitPoint(placed);
+      if (sightBlocked(sight.colliders, x, z, seatAt.x, seatAt.z, sight.feetY)) continue;
+    }
     best = item;
     bestScore = score;
   }
@@ -96,17 +116,22 @@ export interface SeatPose {
  * Where a walker sits on `seat` on a storey whose floor is at `floorY`, and
  * what it looks at: the nearest TV in front of the seat within range, else
  * the way the seat faces (catalog seats face local +z, like the sofa that
- * faces its TV in the starter layouts).
+ * faces its TV in the starter layouts). With `sight`, a TV behind a wall or
+ * a partition doesn't count (#566).
  */
-export function seatPose(seat: FurnitureItem, items: readonly FurnitureItem[], floorY: number): SeatPose | null {
+export function seatPose(
+  seat: FurnitureItem,
+  items: readonly FurnitureItem[],
+  floorY: number,
+  sight?: Pick<SeatSight, 'colliders'>
+): SeatPose | null {
   if (!seat.position || !isSeat(seat)) return null;
   const rotation = seat.rotation ?? 0;
   const forwardX = Math.sin(rotation);
   const forwardZ = Math.cos(rotation);
-  const inset = seat.type === 'bed' ? 0 : seat.depth * SEAT_FORWARD;
-  const x = seat.position.x + forwardX * inset;
-  const z = seat.position.z + forwardZ * inset;
-  const eyeY = floorY + Math.min(seat.height, SEAT_HEIGHTS[seat.type] ?? seat.height) + SEATED_EYE;
+  const { x, z } = sitPoint(seat as FurnitureItem & { position: { x: number; z: number } });
+  // The walkers' seat table (#623): a person beside the player sits as high.
+  const eyeY = floorY + (seatSurfaceHeight(seat) ?? seat.height) + SEATED_EYE;
 
   let tv: FurnitureItem | null = null;
   let tvDistance = TV_RANGE;
@@ -117,6 +142,7 @@ export function seatPose(seat: FurnitureItem, items: readonly FurnitureItem[], f
     const distance = Math.hypot(toX, toZ);
     if (distance < 1e-6 || distance >= tvDistance) continue;
     if ((toX * forwardX + toZ * forwardZ) / distance < 0.3) continue;
+    if (sight && sightBlocked(sight.colliders, x, z, item.position.x, item.position.z, floorY)) continue;
     tv = item;
     tvDistance = distance;
   }

@@ -6,6 +6,7 @@
  * three/builders/builders-seating.ts put every backrest at −z.
  */
 
+import { seatSurfaceHeight } from './seat-surface';
 import type { FurnitureItem } from './types';
 
 export interface NpcSeat {
@@ -24,15 +25,8 @@ export interface NpcSeat {
   approachZ: number;
 }
 
-/** Height of the sitting surface as a fraction of the item height, per builder. */
-const SEAT_SURFACE: Record<string, number> = {
-  chair: 0.55,
-  'dining-chair': 0.55,
-  armchair: 0.575,
-  sofa: 0.65,
-  bench: 1,
-  'garden-bench': 0.53,
-};
+/** What the walkers sit on; how high comes from lib/seat-surface (#623). */
+const NPC_SEAT_TYPES: ReadonlySet<string> = new Set(['chair', 'dining-chair', 'armchair', 'sofa', 'bench', 'garden-bench']);
 
 /** Seats wide enough for several people get one slot per this many metres. */
 const SLOT_WIDTH = 0.65;
@@ -42,7 +36,7 @@ const APPROACH_GAP = 0.35;
 const HIP_FORWARD = 0.08;
 
 export function isNpcSeat(item: Pick<FurnitureItem, 'type' | 'sofaShape'>): boolean {
-  if (!(item.type in SEAT_SURFACE)) return false;
+  if (!NPC_SEAT_TYPES.has(item.type)) return false;
   // Corner sofas have no single front to sit facing.
   return item.type !== 'sofa' || (item.sofaShape ?? 'standard') === 'standard';
 }
@@ -58,7 +52,7 @@ export function findNpcSeats(items: readonly FurnitureItem[]): NpcSeat[] {
     const wx = Math.cos(rotation);
     const wz = -Math.sin(rotation);
     const slots = Math.max(1, Math.floor(item.width / SLOT_WIDTH));
-    const seatHeight = item.height * (SEAT_SURFACE[item.type] ?? 0.55);
+    const seatHeight = seatSurfaceHeight(item) ?? item.height;
     for (let slot = 0; slot < slots; slot++) {
       const along = (slot + 0.5) * (item.width / slots) - item.width / 2;
       const cx = item.position.x + wx * along;

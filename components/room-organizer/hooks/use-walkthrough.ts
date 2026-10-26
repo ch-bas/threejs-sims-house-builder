@@ -365,7 +365,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         seat?.category === 'outdoor' && seat.position && world
           ? groundHeightAt(world.terrain, seat.position.z, world.halfDepth)
           : (world?.elevations[walker.floorIndex] ?? 0);
-      const pose = seat ? seatPose(seat, items, floorY) : null;
+      // A TV behind a wall isn't what the sitter faces (#566).
+      const pose = seat
+        ? seatPose(seat, items, floorY, { colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS })
+        : null;
       if (!pose) return;
       session.seated = { x: walker.x, z: walker.z };
       setSeated(true);
@@ -588,7 +591,12 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         if (!session.seated && now - lastSeatLookup > SEAT_LOOKUP_MS) {
           lastSeatLookup = now;
           camera.getWorldDirection(forward);
-          const seat = findSeat(itemsRef.current, walker.x, walker.z, forward.x, forward.z);
+          // Never through a wall, nor across the shell (#566).
+          const seat = findSeat(itemsRef.current, walker.x, walker.z, forward.x, forward.z, {
+            colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS,
+            feetY: walker.y,
+            outside: walker.kind === 'ground',
+          });
           const id = seat?.id ?? null;
           if (id !== session.seatTargetId) {
             session.seatTargetId = id;

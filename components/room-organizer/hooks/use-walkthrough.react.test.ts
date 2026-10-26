@@ -247,7 +247,7 @@ describe('useWalkthrough — sitting (#463b)', () => {
     frames(30);
     expect(result.current.seated).toBe(true);
     expect(result.current.seatName).toBeNull();
-    expect(camera.position.y).toBeCloseTo(0.42 + 0.72, 6);
+    expect(camera.position.y).toBeCloseTo(0.8 * 0.65 + 0.72, 6);
     expect(camera.position.z).toBeCloseTo(-2 + 0.09, 6);
     expect(facing().z).toBeGreaterThan(0.9);
     // A step stands the walker up where it stood.
