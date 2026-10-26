@@ -209,6 +209,8 @@ function singleFloorTemplate(
  * seats one (`snapOpeningToWall`): north at z = -depth/2 (rotation 0), south
  * at +depth/2 (π), east at +width/2 (-π/2), west at -width/2 (π/2). `along`
  * is x on the north and south walls, z on the east and west ones (#570).
+ * Front-wall openings stay clear of the middle 1.4 m, where adding the
+ * default porch cuts its recess (`DEFAULT_ENTRANCE`): |x| >= 0.7 + width/2.
  */
 function templateOpening(
   id: string,
@@ -244,7 +246,7 @@ export const ROOM_TEMPLATES = {
     { id: 'lamp-1', type: 'lamp', category: 'electronics', name: 'Lamp', width: 0.3, depth: 0.3, height: 1.5, color: '#FFD700', icon: '💡', price: 110, position: { x: 1.5, z: 1.3 }, rotation: 0 },
     // The wardrobe faces into the room (#575); the door is beside it (#570).
     templateOpening('door-1', 'door', 'south', 0.5, { width: 4, depth: 3.5 }),
-    templateOpening('window-1', 'window', 'north', 0, { width: 4, depth: 3.5 }),
+    templateOpening('window-1', 'window', 'north', -1.3, { width: 4, depth: 3.5 }),
     templateOpening('window-2', 'window', 'east', 0.4, { width: 4, depth: 3.5 }),
   ]),
   livingRoom: singleFloorTemplate('Living Room', 6, 5, '#D4C5B9', [
@@ -256,7 +258,7 @@ export const ROOM_TEMPLATES = {
     { id: 'rug-1', type: 'rug', category: 'decor', name: 'Area Rug', width: 2.0, depth: 1.4, height: 0.02, color: '#C62828', icon: '🟥', price: 220, position: { x: 0, z: -0.5 }, rotation: 0 },
     { id: 'wifi-1', type: 'wifi', category: 'electronics', name: 'Wi-Fi AP', width: 0.2, depth: 0.2, height: 0.1, color: '#0088FF', icon: '📶', price: 140, isWiFiAccessPoint: true, signalRange: 10, position: { x: 2, z: 1.5 }, rotation: 0 },
     templateOpening('door-1', 'door', 'north', 2, { width: 6, depth: 5 }),
-    templateOpening('window-1', 'window', 'north', 0, { width: 6, depth: 5 }),
+    templateOpening('window-1', 'window', 'north', -1.6, { width: 6, depth: 5 }),
     templateOpening('window-2', 'window', 'west', 0.5, { width: 6, depth: 5 }),
     templateOpening('window-3', 'window', 'east', -0.5, { width: 6, depth: 5 }),
   ]),
@@ -268,7 +270,7 @@ export const ROOM_TEMPLATES = {
     { id: 'lamp-1', type: 'lamp', category: 'electronics', name: 'Desk Lamp', width: 0.3, depth: 0.3, height: 1.5, color: '#FFD700', icon: '💡', price: 110, position: { x: 0.5, z: -0.8 }, rotation: 0 },
     { id: 'plant-1', type: 'plant', category: 'decor', name: 'Plant', width: 0.4, depth: 0.4, height: 1.0, color: '#228B22', icon: '🪴', price: 60, position: { x: 1.3, z: 1 }, rotation: 0 },
     templateOpening('door-1', 'door', 'east', -0.2, { width: 3.5, depth: 3 }),
-    templateOpening('window-1', 'window', 'north', 0, { width: 3.5, depth: 3 }),
+    templateOpening('window-1', 'window', 'south', 0, { width: 3.5, depth: 3 }),
     templateOpening('window-2', 'window', 'west', 0.5, { width: 3.5, depth: 3 }),
   ]),
   kitchen: singleFloorTemplate('Kitchen', 4.5, 3.5, '#ECEFF1', [
@@ -280,7 +282,7 @@ export const ROOM_TEMPLATES = {
     { id: 'dining-chair-1', type: 'dining-chair', category: 'seating', name: 'Dining Chair', width: 0.45, depth: 0.45, height: 0.9, color: '#5D4037', icon: '🪑', price: 95, position: { x: -0.7, z: 0.6 }, rotation: Math.PI / 2 },
     { id: 'dining-chair-2', type: 'dining-chair', category: 'seating', name: 'Dining Chair', width: 0.45, depth: 0.45, height: 0.9, color: '#5D4037', icon: '🪑', price: 95, position: { x: 0.7, z: 0.6 }, rotation: -Math.PI / 2 },
     templateOpening('door-1', 'door', 'south', 1.4, { width: 4.5, depth: 3.5 }),
-    templateOpening('window-1', 'window', 'north', 1.0, { width: 4.5, depth: 3.5 }),
+    templateOpening('window-1', 'window', 'north', 1.5, { width: 4.5, depth: 3.5 }),
     templateOpening('window-2', 'window', 'west', 0.5, { width: 4.5, depth: 3.5 }),
   ]),
   bathroom: singleFloorTemplate('Bathroom', 3, 2.5, '#E0F2F1', [
@@ -299,7 +301,7 @@ export const ROOM_TEMPLATES = {
     { id: 'stove-1', type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850, position: { x: -2.2, z: 2.4 }, rotation: Math.PI },
     { id: 'sink-1', type: 'kitchen-sink', category: 'kitchen', name: 'Sink', width: 0.9, depth: 0.6, height: 0.9, color: '#BDBDBD', icon: '🚰', price: 450, position: { x: -1.2, z: 2.4 }, rotation: Math.PI },
     // The kitchen run faces into the room, not the south wall (#575).
-    templateOpening('door-1', 'door', 'north', 0.5, { width: 7, depth: 6 }),
+    templateOpening('door-1', 'door', 'north', 1.3, { width: 7, depth: 6 }),
     templateOpening('window-1', 'window', 'north', -2.2, { width: 7, depth: 6 }),
     templateOpening('window-2', 'window', 'east', 0.5, { width: 7, depth: 6 }),
     templateOpening('window-3', 'window', 'south', -1.2, { width: 7, depth: 6 }),
@@ -320,7 +322,7 @@ export const ROOM_TEMPLATES = {
           { id: 'gf-stove', type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850, position: { x: 2.2, z: -1.1 }, rotation: -Math.PI / 2 },
           { id: 'gf-stairs', type: 'stairs', category: 'structure', name: 'Stairs', width: 1.2, depth: 2.4, height: 3.0, color: '#8B4513', icon: '🪜', price: 1500, position: { x: 2.0, z: 1.0 }, rotation: 0 },
           // The fridge and stove face the room from the east wall (#575).
-          templateOpening('gf-door', 'door', 'north', 0.6, { width: 6, depth: 5 }),
+          templateOpening('gf-door', 'door', 'north', 1.2, { width: 6, depth: 5 }),
           templateOpening('gf-window-1', 'window', 'north', -1.4, { width: 6, depth: 5 }),
           templateOpening('gf-window-2', 'window', 'west', 0.3, { width: 6, depth: 5 }),
         ],

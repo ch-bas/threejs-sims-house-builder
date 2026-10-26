@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { layoutReducer, type LayoutState } from '../hooks/layout-reducer';
 import { ROOM_TEMPLATES } from './constants';
 import { rotatedHalfExtents } from './footprint';
-import { snapOpeningToWall } from './opening-snap';
+import { isOpening, snapOpeningToWall } from './opening-snap';
+import { ENTRANCE_DOOR_ID, entrancePlanOutline } from './street';
 import { buildShellColliders, buildWalkColliders, exteriorDoorWall, walkClearance, type ShellBuilding } from './walk-collision';
 import { walkSpawn, type WalkSpawnContext } from './walk-spawn';
 import { buildWalkWorld } from './walk-world';
@@ -43,6 +45,24 @@ describe('templates have doors and windows (#570)', () => {
         expect(Math.abs(Math.sin((snap.rotation - (opening.rotation ?? 0)) / 2)), opening.id).toBeLessThan(1e-9);
       }
     }
+  });
+
+  it.each(templates)('%s keeps its openings clear of the porch recess once one is added', (_key, template) => {
+    const state: LayoutState = { layout: { ...template, floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })) }, activeFloorIndex: 0 };
+    const next = layoutReducer(state, { type: 'setEntrance', entrance: { width: 1.4, depth: 1.2 } });
+    let checked = 0;
+    next.layout.floors.forEach((floor, floorIndex) => {
+      const recess = entrancePlanOutline(next.layout, floorIndex);
+      if (!recess) return;
+      checked += 1;
+      for (const item of floor.items) {
+        if (item.id === ENTRANCE_DOOR_ID || !isOpening(item.type) || !item.position) continue;
+        if (Math.abs(item.position.z + template.height / 2) > 1e-6) continue;
+        const clear = item.position.x + item.width / 2 <= recess.x0 + 1e-9 || item.position.x - item.width / 2 >= recess.x1 - 1e-9;
+        expect(clear, `${floor.id}/${item.id} at x ${item.position.x}`).toBe(true);
+      }
+    });
+    expect(checked).toBeGreaterThan(0);
   });
 
   it.each(templates)('%s lets the walker in EXPLORE walk out through the door', (_key, template) => {
