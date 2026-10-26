@@ -260,6 +260,38 @@ describe('useWalkthrough — sitting (#463b)', () => {
     expect(camera.position.z).toBeCloseTo(-3.1, 6);
   });
 
+  it('keys typed into a text field never reach the walker on a touch walk (#558)', async () => {
+    const { camera, canvas, onExit, result } = await setup(building([FRONT_DOOR, SOFA, TV]));
+    // A tap: touch walking, no pointer lock.
+    pointer(canvas, 'pointerdown', { pointerType: 'touch', pointerId: 3, clientX: 10, clientY: 10 });
+    pointer(window, 'pointerup', { pointerType: 'touch', pointerId: 3, clientX: 10, clientY: 10 });
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    const typeInto = (code: string, keyName: string) =>
+      act(() => {
+        field.dispatchEvent(new KeyboardEvent('keydown', { code, key: keyName, bubbles: true }));
+      });
+    frames(10, 20);
+    expect(result.current.seatName).toBe('Sofa');
+    typeInto('Escape', 'Escape');
+    expect(onExit).not.toHaveBeenCalled();
+    typeInto('KeyE', 'e');
+    frames(30);
+    expect(result.current.seated).toBe(false);
+    // `w` in the field leaves touch walking on: the stick still walks.
+    // A `w` typed into the field is not held down as a walking key.
+    typeInto('KeyW', 'w');
+    const before = camera.position.clone();
+    act(() => result.current.setStick(0, 0.01));
+    frames(10);
+    act(() => result.current.setStick(0, 0));
+    expect(camera.position.distanceTo(before)).toBeLessThan(0.05);
+    // Outside the field Escape still leaves.
+    field.remove();
+    key('keydown', 'Escape', 'Escape');
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
   it("E does nothing before the pointer is locked", async () => {
     const { result } = await setup(building([FRONT_DOOR, SOFA, TV]));
     key('keydown', 'KeyE', 'e');

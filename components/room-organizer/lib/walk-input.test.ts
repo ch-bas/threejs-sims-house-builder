@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WALK_MAX_FRAME_SECONDS, interacts, releasesHeldKeys, startsWalking, walkFrameSeconds } from './walk-input';
+import { WALK_MAX_FRAME_SECONDS, interacts, isTypingTarget, releasesHeldKeys, startsWalking, walkFrameSeconds } from './walk-input';
 
 const key = (code: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => ({
   code,
@@ -82,5 +82,21 @@ describe('interacts (#463b)', () => {
     expect(interacts({ ...key('KeyE', { ctrlKey: true }), repeat: false })).toBe(false);
     expect(interacts({ ...key('KeyE', { metaKey: true }), repeat: false })).toBe(false);
     expect(interacts({ ...key('KeyW'), repeat: false })).toBe(false);
+  });
+});
+
+describe('isTypingTarget (#558)', () => {
+  const element = (tagName: string, isContentEditable = false) => ({ tagName, isContentEditable }) as unknown as EventTarget;
+
+  it('is true for fields that take typing', () => {
+    for (const tag of ['INPUT', 'TEXTAREA', 'SELECT']) expect(isTypingTarget(element(tag))).toBe(true);
+    expect(isTypingTarget(element('DIV', true))).toBe(true);
+  });
+
+  it('is false for the canvas, buttons, the window and nothing', () => {
+    expect(isTypingTarget(element('CANVAS'))).toBe(false);
+    expect(isTypingTarget(element('BUTTON'))).toBe(false);
+    expect(isTypingTarget({} as EventTarget)).toBe(false);
+    expect(isTypingTarget(null)).toBe(false);
   });
 });

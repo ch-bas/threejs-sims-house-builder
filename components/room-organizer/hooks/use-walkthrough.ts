@@ -8,7 +8,7 @@ import {
   type WalkCollider,
   type WalkerState,
 } from '../lib/walk-collision';
-import { interacts, releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
+import { interacts, isTypingTarget, releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
 import { findSeat, seatPose } from '../lib/walk-interact';
 import { walkArrival, walkSpawn, type WalkPose } from '../lib/walk-spawn';
 import {
@@ -386,6 +386,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     const walking = () => Boolean(controls?.isLocked) || session.touch;
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // Typing in a field is not walking (#558). Key-ups still release.
+      if (isTypingTarget(event.target)) return;
       if (releasesHeldKeys(event)) pressed.clear();
       else if (startsWalking(event)) {
         pressed.add(event.code);
@@ -402,7 +404,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     // lock, so we only act on an Escape received while already unlocked — that
     // second press leaves walkthrough mode entirely (see #67).
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || isTypingTarget(event.target)) return;
       if (controls?.isLocked) return;
       onExitRef.current?.();
     };
