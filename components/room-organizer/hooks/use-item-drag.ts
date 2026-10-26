@@ -73,6 +73,16 @@ function sessionMoved(
   return false;
 }
 
+/**
+ * The viewport's width, read when a drag starts and on every move. The camera
+ * is re-framed when it changes (a phone turned to landscape), while the drag
+ * plane and grab offset are from before, so the item would land far from the
+ * finger (#677). Only the width counts: a phone's URL bar changes the height.
+ */
+function viewportWidth(): number {
+  return typeof window === 'undefined' ? 0 : window.innerWidth;
+}
+
 export function useItemDrag({
   activeFloor,
   activeFloorIndex,
@@ -91,6 +101,9 @@ export function useItemDrag({
     primaryId: string;
     origins: Map<string, { x: number; z: number }>;
     latest: Map<string, { x: number; z: number }>;
+    viewportWidth: number;
+    /** The viewport turned mid-drag: the release commits nothing (#677). */
+    void: boolean;
   } | null>(null);
 
   const findFurnitureGroup = useCallback(
@@ -126,6 +139,30 @@ export function useItemDrag({
     });
   }, []);
 
+  /**
+   * Once the viewport turns, the session is void: every member goes back to
+   * its origin, on each move and on the release, since the front end keeps
+   * moving the primary under the finger. The session stays open until the
+   * release, so those moves are ignored rather than dispatched as
+   * programmatic moves. True when the session is void.
+   */
+  const voidIfViewportTurned = useCallback(
+    (session: NonNullable<typeof dragSessionRef.current>): boolean => {
+      if (!session.void && viewportWidth() === session.viewportWidth) return false;
+      session.void = true;
+      for (const [memberId, origin] of session.origins) {
+        const group = findFurnitureGroup(memberId);
+        if (!group) continue;
+        group.position.x = origin.x;
+        group.position.z = origin.z;
+        if (memberId === session.primaryId) setDragCollisionTint(group, false);
+      }
+      invalidateBoxRef.current();
+      return true;
+    },
+    [findFurnitureGroup, setDragCollisionTint]
+  );
+
   const handleDragStart = useCallback(
     (primaryId: string) => {
       const ids = allSelectedIds.size > 1 ? allSelectedIds : new Set([primaryId]);
@@ -140,7 +177,7 @@ export function useItemDrag({
         if (item.locked && id !== primaryId) continue;
         origins.set(id, { x: item.position.x, z: item.position.z });
       }
-      dragSessionRef.current = { primaryId, origins, latest: new Map(origins) };
+      dragSessionRef.current = { primaryId, origins, latest: new Map(origins), viewportWidth: viewportWidth(), void: false };
     },
     [allSelectedIds, activeFloor.items]
   );
@@ -153,6 +190,7 @@ export function useItemDrag({
         actions.moveItem(id, x, z);
         return;
       }
+      if (voidIfViewportTurned(session)) return;
       session.latest.set(id, { x, z });
 
       // Group drag: translate every other selected group by the same delta.
@@ -184,13 +222,14 @@ export function useItemDrag({
       }
       invalidateBoxRef.current();
     },
-    [actions, activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint]
+    [actions, activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint, voidIfViewportTurned]
   );
 
   const handleDragEnd = useCallback(
     (id: string) => {
       const session = dragSessionRef.current;
       dragSessionRef.current = null;
+      if (session && voidIfViewportTurned(session)) return;
       const finalPos = session?.latest.get(id);
       // A gesture that never actually moved anything (a stray zero-distance
       // drag) must not write state or add an undo entry, and must not re-lock
@@ -230,7 +269,7 @@ export function useItemDrag({
         if (settled) actions.updateItem(movedId, settled);
       }
     },
-    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, actions, findFurnitureGroup, setDragCollisionTint]
+    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, actions, findFurnitureGroup, setDragCollisionTint, voidIfViewportTurned]
   );
 
   const handleDragCancel = useCallback(
