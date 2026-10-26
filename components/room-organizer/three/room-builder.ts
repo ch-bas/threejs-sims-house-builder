@@ -796,11 +796,19 @@ export function floorHoleOutlines(
     if (x1 - x0 <= 0 || y1 - y0 <= 0) return;
     holes.push([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
   };
-  // A hole with any corner outside the contour is cut as its clamped AABB
-  // instead — a slightly larger hole beats corrupt triangulation (#146).
+  // A hole with any corner outside the contour is clipped to the inset
+  // contour, so a winder's L against a wall stays an L (#572). Should the
+  // clip leave a polygon that touches itself (the hole split in two), it is
+  // cut as its clamped AABB instead — a slightly larger hole beats corrupt
+  // triangulation (#146).
   const pushPolygon = (points: Array<[number, number]>): void => {
     if (!points.some(([x, y]) => x <= -halfW || x >= halfW || y <= -halfD || y >= halfD)) {
       holes.push(points);
+      return;
+    }
+    const clipped = clipToRect(points, -halfW + HOLE_INSET, -halfD + HOLE_INSET, halfW - HOLE_INSET, halfD - HOLE_INSET);
+    if (clipped.length >= 3 && isSimplePolygon(clipped)) {
+      if (Math.abs(polygonArea(clipped)) > 1e-9) holes.push(clipped);
       return;
     }
     const xs = points.map(([x]) => x);
@@ -851,6 +859,87 @@ export function floorHoleOutlines(
   for (const o of outlined) pushPolygon(o.outline!.map(([x, z]): [number, number] => [x, -z]));
 
   return holes;
+}
+
+/**
+ * Sutherland–Hodgman: `points` clipped to the rectangle [x0, x1] × [y0, y1],
+ * with repeated and collinear vertices dropped.
+ */
+function clipToRect(points: ReadonlyArray<[number, number]>, x0: number, y0: number, x1: number, y1: number): Array<[number, number]> {
+  const edges: Array<[(p: [number, number]) => number, number]> = [
+    [([x]) => x - x0, 0],
+    [([x]) => x1 - x, 0],
+    [([, y]) => y - y0, 1],
+    [([, y]) => y1 - y, 1],
+  ];
+  let polygon: Array<[number, number]> = [...points];
+  for (const [inside] of edges) {
+    const next: Array<[number, number]> = [];
+    for (let i = 0; i < polygon.length; i++) {
+      const a = polygon[i]!;
+      const b = polygon[(i + 1) % polygon.length]!;
+      const da = inside(a);
+      const db = inside(b);
+      if (da >= 0) next.push(a);
+      if (da >= 0 !== db >= 0) {
+        const t = da / (da - db);
+        next.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    polygon = next;
+    if (polygon.length === 0) return [];
+  }
+  // Drop repeated points, then points in line with their neighbours.
+  const unique = polygon.filter((p, i) => {
+    const q = polygon[(i + 1) % polygon.length]!;
+    return Math.abs(p[0] - q[0]) > 1e-9 || Math.abs(p[1] - q[1]) > 1e-9;
+  });
+  return unique.filter((p, i) => {
+    const prev = unique[(i + unique.length - 1) % unique.length]!;
+    const next = unique[(i + 1) % unique.length]!;
+    return Math.abs((p[0] - prev[0]) * (next[1] - prev[1]) - (p[1] - prev[1]) * (next[0] - prev[0])) > 1e-12;
+  });
+}
+
+function polygonArea(points: ReadonlyArray<[number, number]>): number {
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [ax, ay] = points[i]!;
+    const [bx, by] = points[(i + 1) % points.length]!;
+    sum += ax * by - bx * ay;
+  }
+  return sum / 2;
+}
+
+/** No two non-adjacent edges touch or cross, and no vertex repeats. */
+function isSimplePolygon(points: ReadonlyArray<[number, number]>): boolean {
+  const n = points.length;
+  const orient = (p: [number, number], q: [number, number], r: [number, number]) =>
+    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const onSegment = (p: [number, number], q: [number, number], r: [number, number]) =>
+    Math.min(p[0], q[0]) - 1e-12 <= r[0] && r[0] <= Math.max(p[0], q[0]) + 1e-12 &&
+    Math.min(p[1], q[1]) - 1e-12 <= r[1] && r[1] <= Math.max(p[1], q[1]) + 1e-12;
+  const touch = (a: [number, number], b: [number, number], c: [number, number], d: [number, number]): boolean => {
+    const o1 = orient(a, b, c);
+    const o2 = orient(a, b, d);
+    const o3 = orient(c, d, a);
+    const o4 = orient(c, d, b);
+    if (((o1 > 0 && o2 < 0) || (o1 < 0 && o2 > 0)) && ((o3 > 0 && o4 < 0) || (o3 < 0 && o4 > 0))) return true;
+    const eps = 1e-12;
+    return (
+      (Math.abs(o1) < eps && onSegment(a, b, c)) ||
+      (Math.abs(o2) < eps && onSegment(a, b, d)) ||
+      (Math.abs(o3) < eps && onSegment(c, d, a)) ||
+      (Math.abs(o4) < eps && onSegment(c, d, b))
+    );
+  };
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+      if (touch(points[i]!, points[(i + 1) % n]!, points[j]!, points[(j + 1) % n]!)) return false;
+    }
+  }
+  return true;
 }
 
 /**
