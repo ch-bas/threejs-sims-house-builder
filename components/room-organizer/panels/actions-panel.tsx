@@ -15,7 +15,7 @@ import { buildingExportFileName, downloadTextFile, planExportFileName } from '..
 import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
 import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
 import { ENTRANCE_WALL_ID } from '../lib/street';
-import { surpriseFloorItems, surpriseReplacesFurniture } from '../lib/surprise';
+import { runSurprise } from '../lib/surprise';
 import { PrintPlanControl } from './print-options';
 import type { FurnitureItem } from '../lib/types';
 
@@ -94,15 +94,16 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
           <Button
             onClick={() => {
               // Surprise replaces the furniture on the floor — never wipe it
-              // without asking (#105). Structure and garden stay (#448).
-              if (
-                surpriseReplacesFurniture(activeFloor.items) &&
-                !window.confirm('Replace the furniture on this floor with a surprise layout?')
-              ) {
-                return;
-              }
-              // Spends what the rest of the building leaves of the budget (#136).
-              actions.replaceItems(surpriseFloorItems(layout, activeFloorIndex, DEFAULT_BUDGET));
+              // without asking (#105). Structure and garden stay (#448). It
+              // spends what the rest of the building leaves of the budget: the
+              // hard budget refuses before asking, the soft one asks before
+              // going over (#136, #581).
+              const replaced = runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
+                confirm: (message) => window.confirm(message),
+                playCue,
+                replaceItems: (items) => actions.replaceItems(items),
+              });
+              if (!replaced) return;
               setSelectedItemId(null);
               setExtraSelectedIds(new Set());
             }}

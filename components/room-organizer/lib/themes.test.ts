@@ -64,3 +64,41 @@ describe('applyTheme (#455)', () => {
     }
   });
 });
+
+describe('applyTheme leaves water, foliage and glowing shades alone (#597)', () => {
+  const natural = [
+    makeItem({ id: 'pool', type: 'pool', category: 'outdoor', color: '#03A9F4' }),
+    makeItem({ id: 'pond', type: 'pond', category: 'outdoor', color: '#0277BD' }),
+    makeItem({ id: 'tree', type: 'tree', category: 'outdoor', color: '#2E7D32' }),
+    makeItem({ id: 'hedge', type: 'hedge', category: 'outdoor', color: '#388E3C' }),
+    makeItem({ id: 'plant', type: 'plant', category: 'decor', color: '#228B22' }),
+    makeItem({ id: 'pendant', type: 'pendant-light', category: 'decor', color: '#FFE082' }),
+  ];
+  // Their colour is only a stand, a frame or a stone basin: the shade, the
+  // glass and the water are fixed in the builders, so they restyle.
+  const finished = [
+    makeItem({ id: 'fence', type: 'fence', category: 'outdoor', color: '#8D6E63' }),
+    makeItem({ id: 'lamp', type: 'lamp', category: 'electronics', color: '#FFD700' }),
+    makeItem({ id: 'floor-lamp', type: 'floor-lamp', category: 'electronics', color: '#FFD700' }),
+    makeItem({ id: 'mirror', type: 'mirror', category: 'decor', color: '#B0BEC5' }),
+    makeItem({ id: 'birdbath', type: 'birdbath', category: 'outdoor', color: '#B0BEC5' }),
+  ];
+  const layout = makeLayout({ floors: [makeFloor({ items: [...natural, ...finished] })] });
+
+  it.each(THEME_LIST.map((theme) => theme.key))('%s keeps the pool blue and the greenery green', (key) => {
+    const items = applyTheme(layout, key).floors[0]!.items;
+    for (const original of natural) {
+      expect(items.find((item) => item.id === original.id)!.color, original.id).toBe(original.color);
+    }
+  });
+
+  it('still restyles fences, lamp stands, mirror frames and birdbaths', () => {
+    const items = applyTheme(layout, 'minimalist').floors[0]!.items;
+    const color = (id: string) => items.find((item) => item.id === id)!.color;
+    expect(color('fence')).toBe('#bdbdbd');
+    expect(color('birdbath')).toBe('#bdbdbd');
+    expect(color('lamp')).toBe('#212121');
+    expect(color('floor-lamp')).toBe('#212121');
+    expect(color('mirror')).toBe('#ff5722');
+  });
+});

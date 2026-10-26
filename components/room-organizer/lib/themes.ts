@@ -129,9 +129,39 @@ export const THEME_LIST: readonly ThemeMeta[] = (Object.values(THEMES) as ThemeM
 );
 
 /**
+ * Types a theme never recolours (#597): the builders use their colour as
+ * the water, the leaves or flowers, the stone or the glowing shade, so a
+ * palette colour turned pools grey and trees blue. The one list of
+ * exemptions. Lamps, mirrors and the birdbath are not here: their colour is
+ * only the stand, the frame or the basin (the shade, the glass and the
+ * water are fixed in the builders), so they restyle like the rest of the
+ * palette categories (fences, benches, rugs, vases, ...).
+ */
+export const THEME_EXEMPT_TYPES: ReadonlySet<string> = new Set([
+  // Water
+  'pool',
+  'pond',
+  // Foliage and flowers
+  'plant',
+  'tree',
+  'pine-tree',
+  'bush',
+  'hedge',
+  'flowerbed',
+  'tulips',
+  'sunflower',
+  'rose-bush',
+  // Natural stone
+  'stepping-stone',
+  // The shade that glows
+  'pendant-light',
+]);
+
+/**
  * Apply a theme to a layout. Walls and floor finishes are updated on every
  * floor; items keep their existing color unless they belong to a known
- * category, in which case they get the theme's palette color.
+ * category, in which case they get the theme's palette color, except for
+ * the natural and functional types in `THEME_EXEMPT_TYPES`.
  */
 export function applyTheme(layout: RoomLayout, themeKey: ThemeKey): RoomLayout {
   const theme = THEMES[themeKey];
@@ -142,6 +172,7 @@ export function applyTheme(layout: RoomLayout, themeKey: ThemeKey): RoomLayout {
     wallPattern: theme.wallPattern,
     wallColors: { ...theme.wallColors },
     items: floor.items.map((item) => {
+      if (THEME_EXEMPT_TYPES.has(item.type)) return item;
       const color = item.category ? theme.furniturePalette[item.category] : undefined;
       return color ? { ...item, color } : item;
     }),

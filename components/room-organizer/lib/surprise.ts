@@ -1,12 +1,21 @@
-import { activeWriteOff, hardBudgetLoss } from './budget';
-import { FURNITURE_CATALOG } from './constants';
+import { activeWriteOff, budgetBlockedReason, furnitureSpend, hardBudgetLoss, isHardBudgetOn, purchasePrice } from './budget';
+import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from './constants';
+import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
-import { FURNITURE_SETS, WALL_INSET, placeSetInFreeSpace, setFitsRoom, type FurnitureSet } from './furniture-sets';
-import { hasCollisions, totalCost, type CollisionContext, type KeepOutRect } from './geometry';
+import {
+  FURNITURE_SETS,
+  WALL_INSET,
+  buildFurnitureSet,
+  placeSetInFreeSpace,
+  setFitsRoom,
+  type FurnitureSet,
+} from './furniture-sets';
+import { hasCollisions, type CollisionContext, type KeepOutRect } from './geometry';
 import { randomSuffix } from './ids';
 import { isWallMounted, type WallGap } from './opening-snap';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline } from './street';
+import type { SoundCue } from './sounds';
 import type { CatalogItem, FurnitureItem, InteriorWall, RoomLayout } from './types';
 
 const DECOR_TYPES = ['plant', 'flowerpot', 'rug', 'painting', 'vase', 'lamp', 'floor-lamp', 'mirror'] as const;
@@ -21,8 +30,13 @@ const WALL_ART_TYPES: ReadonlySet<string> = new Set(['painting', 'mirror']);
 export interface SurpriseOptions {
   roomWidth: number;
   roomDepth: number;
-  /** Approximate cost cap for the random pick; defaults to a generous budget. */
+  /** Cost cap for the set and the decor; defaults to a generous budget (#581). */
   maxCost?: number;
+  /**
+   * When no set is affordable, pick one anyway (the soft budget: the caller
+   * asks before going over). Off, an unaffordable room gets decor only.
+   */
+  allowOverBudgetSet?: boolean;
   /** Stable seed for the RNG; if omitted, uses Date.now(). */
   seed?: number;
   /** What stays on the floor (structure, garden); nothing is generated on top of it (#448). */
@@ -65,7 +79,7 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
   };
   const room: Room = { width: roomWidth, depth: roomDepth, context, frontGap };
 
-  const set = chooseSet(roomWidth, roomDepth, rng);
+  const set = chooseSet(roomWidth, roomDepth, rng, maxCost, options.allowOverBudgetSet === true);
   // A set is only chosen when at least one fits by size; it lands on the free
   // spot nearest the room centre, clear of what the floor keeps (#448).
   const setItems = set
@@ -83,7 +97,7 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
 
   const decor: FurnitureItem[] = [];
   const decorCount = 3 + Math.floor(rng() * 4);
-  let remainingBudget = Math.max(0, maxCost - sumPrice(setItems));
+  let remainingBudget = Math.max(0, maxCost - purchasePrice(setItems));
 
   for (let i = 0; i < decorCount; i++) {
     const choice = pickRandom(rng, eligibleDecor(remainingBudget));
@@ -118,26 +132,33 @@ export function surpriseReplacesFurniture(items: readonly FurnitureItem[]): bool
   return items.some((item) => !keptBySurprise(item));
 }
 
-/**
- * The floor's items after Surprise (#448): its structure and garden kept,
- * plus a generated set and decor fitted around them, the porch, the
- * stairwells and the partitions. The generated pieces spend what the rest
- * of the building leaves of `budget`.
- */
-export function surpriseFloorItems(layout: RoomLayout, floorIndex: number, budget: number, seed?: number): FurnitureItem[] {
+/** What Surprise generates for a floor, and what it costs against the budget. */
+interface SurprisePlan {
+  /** The floor's items after Surprise: what it keeps plus the generated pieces. */
+  items: FurnitureItem[];
+  /** Price of the generated pieces. */
+  price: number;
+  /** Budget left for them: what the rest of the building and the sell-back leave. */
+  remaining: number;
+  hard: boolean;
+}
+
+function planSurprise(layout: RoomLayout, floorIndex: number, budget: number, seed?: number): SurprisePlan | null {
   const floor = layout.floors[floorIndex];
-  if (!floor) return [];
+  if (!floor) return null;
   const kept = floor.items.filter(keptBySurprise);
   const replaced = floor.items.filter((item) => !keptBySurprise(item));
-  const replacedCost = totalCost(floor.items) - totalCost(kept);
-  // Under the hard budget, sell-back losses are spent too (#463e), and that
-  // includes the loss on the furniture this replaces (#534).
-  const spent =
-    totalCost(layout.floors.flatMap((entry) => entry.items)) - replacedCost + activeWriteOff(layout) + hardBudgetLoss(layout, replaced);
+  // The same count as the header (`budgetSpent`): the porch door is free
+  // (#382, #600). Under the hard budget, sell-back losses are spent too
+  // (#463e), and that includes the loss on the furniture this replaces (#534).
+  const spent = furnitureSpend(layout) - purchasePrice(replaced) + activeWriteOff(layout) + hardBudgetLoss(layout, replaced);
+  const remaining = budget - spent;
+  const hard = isHardBudgetOn(layout);
   const generated = surpriseLayout({
     roomWidth: layout.width,
     roomDepth: layout.height,
-    maxCost: Math.max(0, budget - spent),
+    maxCost: Math.max(0, remaining),
+    allowOverBudgetSet: !hard,
     ...(seed !== undefined ? { seed } : {}),
     existing: kept,
     keepOut: floorKeepOut(layout, floorIndex),
@@ -145,10 +166,84 @@ export function surpriseFloorItems(layout: RoomLayout, floorIndex: number, budge
     frontGap: entrancePlanOutline(layout, floorIndex),
     storeyHeight: storeyHeight(floor),
   });
-  return [...kept, ...generated];
+  return { items: [...kept, ...generated], price: purchasePrice(generated), remaining, hard };
 }
 
-function chooseSet(width: number, depth: number, rng: () => number) {
+/**
+ * The floor's items after Surprise (#448): its structure and garden kept,
+ * plus a generated set and decor fitted around them, the porch, the
+ * stairwells and the partitions. The generated pieces spend what the rest
+ * of the building leaves of `budget` (#581).
+ */
+export function surpriseFloorItems(layout: RoomLayout, floorIndex: number, budget: number, seed?: number): FurnitureItem[] {
+  return planSurprise(layout, floorIndex, budget, seed)?.items ?? [];
+}
+
+/**
+ * The Surprise button's whole decision (#581), with the dialogs injected:
+ * under the hard budget, a floor with nothing affordable is refused BEFORE
+ * any question (the caller plays `refused` and shows the reason); then it
+ * asks before replacing furniture (#105); under the soft budget, a result
+ * that goes over asks "Place it anyway?" like a catalogue buy (#136).
+ * Returns the floor's new items, a refusal, or null when the player said no.
+ */
+export function decideSurprise(
+  layout: RoomLayout,
+  floorIndex: number,
+  budget: number,
+  confirm: (message: string) => boolean,
+  seed?: number
+): { items: FurnitureItem[] } | { refusal: string } | null {
+  const plan = planSurprise(layout, floorIndex, budget, seed);
+  if (!plan) return null;
+  const { items, price, remaining, hard } = plan;
+  if (hard) {
+    // Nothing generated because nothing is affordable: say so. The generator
+    // never exceeds `remaining` under the hard budget; the price check is a
+    // guard so the reducer never drops a confirmed Surprise silently.
+    const cheapest = Math.min(...eligibleDecor(Infinity).map((item) => item.price));
+    const refusal = price === 0 && remaining < cheapest ? budgetBlockedReason(cheapest, remaining) : budgetBlockedReason(price, remaining);
+    if (refusal !== null) return { refusal };
+  }
+  const floor = layout.floors[floorIndex];
+  if (floor && surpriseReplacesFurniture(floor.items) && !confirm('Replace the furniture on this floor with a surprise layout?')) {
+    return null;
+  }
+  if (!hard && price > 0 && price > remaining) {
+    const proceed = confirm(
+      `This ${CURRENCY_SYMBOL}${price.toLocaleString()} surprise puts you over the ` +
+        `${CURRENCY_SYMBOL}${budget.toLocaleString()} budget. Place it anyway?`
+    );
+    if (!proceed) return null;
+  }
+  return { items };
+}
+
+export interface SurpriseEffects {
+  confirm(message: string): boolean;
+  playCue(cue: SoundCue): void;
+  replaceItems(items: FurnitureItem[]): void;
+}
+
+/**
+ * The Surprise button, for every place that shows one (the HUD and Layout
+ * actions): `decideSurprise`, then either the refusal (the `refused` cue and
+ * the reason as a notice, from here only) or the new floor. True when the
+ * floor was replaced, so the caller can clear the selection.
+ */
+export function runSurprise(layout: RoomLayout, floorIndex: number, budget: number, effects: SurpriseEffects): boolean {
+  const outcome = decideSurprise(layout, floorIndex, budget, effects.confirm);
+  if (outcome === null) return false;
+  if ('refusal' in outcome) {
+    effects.playCue('refused');
+    notify(outcome.refusal, 'error');
+    return false;
+  }
+  effects.replaceItems(outcome.items);
+  return true;
+}
+
+function chooseSet(width: number, depth: number, rng: () => number, maxCost: number, allowOverBudget: boolean) {
   const area = width * depth;
   // Prefer the lounge in big rooms, bedroom in medium, office in small.
   const weighted: Array<[string, number]> = [
@@ -166,6 +261,19 @@ function chooseSet(width: number, depth: number, rng: () => number) {
     .filter((entry): entry is { set: FurnitureSet; weight: number } =>
       entry.set != null && entry.weight > 0 && setFitsRoom(entry.set, width, depth)
     );
+  // Only sets the budget covers (#581); the soft budget falls back to any
+  // fitting set and the caller asks before going over.
+  const affordable = eligible.filter(({ set }) => setPrice(set) <= maxCost);
+  const pool = affordable.length > 0 || !allowOverBudget ? affordable : eligible;
+  return pickWeighted(pool, rng);
+}
+
+/** A set's catalogue price, before any scaling to the room. */
+function setPrice(set: FurnitureSet): number {
+  return purchasePrice(buildFurnitureSet(set, { idPrefix: 'price' }));
+}
+
+function pickWeighted(eligible: ReadonlyArray<{ set: FurnitureSet; weight: number }>, rng: () => number): FurnitureSet | null {
   if (eligible.length === 0) return null;
 
   const totalWeight = eligible.reduce((sum, { weight }) => sum + weight, 0);
@@ -185,10 +293,6 @@ function eligibleDecor(budget: number): readonly CatalogItem[] {
 function pickRandom<T>(rng: () => number, items: readonly T[]): T | undefined {
   if (items.length === 0) return undefined;
   return items[Math.floor(rng() * items.length)];
-}
-
-function sumPrice(items: readonly FurnitureItem[]): number {
-  return items.reduce((sum, item) => sum + (item.price ?? 0), 0);
 }
 
 interface Placement {

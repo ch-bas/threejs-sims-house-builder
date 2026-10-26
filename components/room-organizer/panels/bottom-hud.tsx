@@ -10,7 +10,7 @@ import { useSheetInset } from '../hooks/use-sheet-inset';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
 import { generateRoomShape } from '../lib/room-shapes';
-import { surpriseFloorItems, surpriseReplacesFurniture } from '../lib/surprise';
+import { runSurprise } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
 import { CameraPad } from './camera-pad';
 import { CatalogStrip } from './catalog-strip';
@@ -35,7 +35,7 @@ export interface BottomHudProps {
 // layout through its context, so the children that only take callbacks are
 // memoised too.
 export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem }: BottomHudProps): JSX.Element {
-  const { layout, activeFloor, activeFloorIndex, actions, isReady, error, playCue } = useRoomEditor();
+  const { layout, activeFloorIndex, actions, isReady, error, playCue } = useRoomEditor();
   const view = useViewSettings('drawWallMode', 'view2D', 'walkthroughMode');
   const { toggle, setView, setGameMode } = useEditorViewActions();
   const gameMode = useEditorView((state) => state.gameMode);
@@ -221,15 +221,16 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
         }}
         onSurprise={() => {
           // Surprise replaces the furniture on the floor — never wipe it
-          // without asking (#105). Structure and garden stay (#448).
-          if (
-            surpriseReplacesFurniture(activeFloor.items) &&
-            !window.confirm('Replace the furniture on this floor with a surprise layout?')
-          ) {
-            return;
-          }
-          // Spends what the rest of the building leaves of the budget (#136).
-          actions.replaceItems(surpriseFloorItems(layout, activeFloorIndex, DEFAULT_BUDGET));
+          // without asking (#105). Structure and garden stay (#448). It
+          // spends what the rest of the building leaves of the budget: the
+          // hard budget refuses before asking, the soft one asks before
+          // going over (#136, #581).
+          const replaced = runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
+            confirm: (message) => window.confirm(message),
+            playCue,
+            replaceItems: (items) => actions.replaceItems(items),
+          });
+          if (!replaced) return;
           setSelectedItemId(null);
           setExtraSelectedIds(new Set());
         }}
