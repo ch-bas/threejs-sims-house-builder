@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWalkColliders, resolveWalkerPosition, resolveWalkerStep } from './walk-collision';
+import { buildSightWalls, buildWalkColliders, resolveWalkerPosition, resolveWalkerStep, sightBlocked } from './walk-collision';
 import type { FurnitureCategory, FurnitureItem, InteriorWall } from './types';
 
 const RADIUS = 0.3;
@@ -260,5 +260,30 @@ describe('resolveWalkerStep', () => {
     const out = { x: 0, z: 0 };
     resolveWalkerStep(colliders, { x: 3, z: 3 }, { x: 3, z: 3 }, RADIUS, out, ROOM);
     expect(out).toEqual({ x: 3, z: 3 });
+  });
+});
+
+describe('sightBlocked and buildSightWalls (#566, #590)', () => {
+  const partition: InteriorWall = { id: 'p', x1: -5, z1: 0, x2: 5, z2: 0 };
+  const sofa = { id: 'sofa', type: 'sofa', name: 'Sofa', width: 2, depth: 0.9, height: 0.8, color: '#000', icon: '', position: { x: 0, z: -2 }, rotation: 0 } as FurnitureItem;
+  const door = { ...sofa, id: 'door', type: 'door', width: 0.9, depth: 0.1, height: 2.1, position: { x: 3, z: 0 } } as FurnitureItem;
+  const walls = (items: FurnitureItem[]) => buildSightWalls({ width: 10, depth: 10, floors: [{ items, interiorWalls: [partition] }] })[0]!;
+
+  it('a partition blocks the view, its door gap does not', () => {
+    const w = walls([door]);
+    expect(sightBlocked(w, 0, -1, 0, 1)).toBe(true);
+    expect(sightBlocked(w, 3, -1, 3, 1)).toBe(false);
+  });
+
+  it('furniture never blocks the view', () => {
+    expect(sightBlocked(walls([sofa]), 0, -4, 0, -1)).toBe(false);
+  });
+
+  it('the shell blocks the view out of the house', () => {
+    expect(sightBlocked(walls([]), 0, -4, 0, -6)).toBe(true);
+  });
+
+  it('ignores the wall the start point is inside, like a camera hung on it', () => {
+    expect(sightBlocked(walls([]), 0, 0.02, 0, 2)).toBe(false);
   });
 });

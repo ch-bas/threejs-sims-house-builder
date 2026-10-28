@@ -47,6 +47,11 @@ export interface WalkCollider {
    */
   bottom?: number;
   top?: number;
+  /**
+   * A wall (a partition run or the shell): it blocks the view as well as the
+   * walker (#566, #590). Furniture blocks the walker but not the view.
+   */
+  wall?: boolean;
 }
 
 export interface WalkerPosition {
@@ -152,9 +157,10 @@ export function buildWalkColliders(
     const rotation = -Math.atan2(uz, ux);
     for (const [from, to] of solidRuns(wall, length, items, doorOwners)) {
       const mid = (from + to) / 2;
-      colliders.push(
-        boxCollider(cx + ux * mid, cz + uz * mid, to - from, INTERIOR_WALL_THICKNESS, rotation, false, baseY, wallTop)
-      );
+      colliders.push({
+        ...boxCollider(cx + ux * mid, cz + uz * mid, to - from, INTERIOR_WALL_THICKNESS, rotation, false, baseY, wallTop),
+        wall: true,
+      });
     }
   }
   return colliders;
@@ -525,18 +531,19 @@ export function buildShellColliders(building: ShellBuilding, floorIndex: number)
     if (wall.id === 'north' && porch) gaps.push([porch.x0, porch.x1]);
     for (const [from, to] of subtractGaps(-half, half, gaps)) {
       const mid = (from + to) / 2;
-      colliders.push(
-        alongX
+      colliders.push({
+        ...(alongX
           ? boxCollider(mid, wall.z1, to - from, EXTERIOR_WALL_THICKNESS, 0, false, bottom, top)
-          : boxCollider(wall.x1, mid, EXTERIOR_WALL_THICKNESS, to - from, 0, false, bottom, top)
-      );
+          : boxCollider(wall.x1, mid, EXTERIOR_WALL_THICKNESS, to - from, 0, false, bottom, top)),
+        wall: true,
+      });
     }
   }
   if (porch) {
     const depth = porch.backZ - porch.frontZ;
     const midZ = (porch.frontZ + porch.backZ) / 2;
-    colliders.push(boxCollider(porch.x0 - PORCH_REVEAL_THICKNESS / 2, midZ, PORCH_REVEAL_THICKNESS, depth, 0, false, bottom, top));
-    colliders.push(boxCollider(porch.x1 + PORCH_REVEAL_THICKNESS / 2, midZ, PORCH_REVEAL_THICKNESS, depth, 0, false, bottom, top));
+    colliders.push({ ...boxCollider(porch.x0 - PORCH_REVEAL_THICKNESS / 2, midZ, PORCH_REVEAL_THICKNESS, depth, 0, false, bottom, top), wall: true });
+    colliders.push({ ...boxCollider(porch.x1 + PORCH_REVEAL_THICKNESS / 2, midZ, PORCH_REVEAL_THICKNESS, depth, 0, false, bottom, top), wall: true });
   }
   return colliders;
 }
@@ -631,6 +638,80 @@ function advanceAxis(
   walker.y = surfaceScratch.y;
   walker.kind = surfaceScratch.kind;
   if (surfaceScratch.kind !== 'ground') walker.floorIndex = surfaceScratch.floorIndex;
+}
+
+/**
+ * The walls of each storey, for line-of-sight tests (#590): its partitions,
+ * cut at their doors, and its shell. No furniture, no street, and no
+ * neighbouring storeys. Build when the building changes, not per frame.
+ */
+export function buildSightWalls(building: ShellBuilding): WalkCollider[][] {
+  return building.floors.map((floor, index) => [
+    ...buildWalkColliders(floor.items, floor.interiorWalls ?? [], {
+      roomWidth: building.width,
+      roomDepth: building.depth,
+    }).filter((collider) => collider.wall),
+    ...buildShellColliders(building, index),
+  ]);
+}
+
+/**
+ * Whether a wall stands between (x1, z1) and (x2, z2) (#566, #590): the
+ * segment crosses a `wall` collider, a partition run or the shell. Door gaps
+ * are open, furniture never blocks. A wall the start point is inside (the
+ * one a camera hangs on) doesn't count. With `feetY`, only walls that meet
+ * a walker standing there count, as for the walker itself.
+ */
+export function sightBlocked(
+  colliders: readonly WalkCollider[],
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number,
+  feetY?: number
+): boolean {
+  const dx = x2 - x1;
+  const dz = z2 - z1;
+  for (const box of colliders) {
+    if (!box.wall) continue;
+    if (feetY !== undefined && !blocksAt(box, feetY)) continue;
+    // The segment in the box's local frame.
+    const ox = x1 - box.cx;
+    const oz = z1 - box.cz;
+    const p0 = ox * box.ax + oz * box.az;
+    const q0 = ox * box.bx + oz * box.bz;
+    if (Math.abs(p0) <= box.hw && Math.abs(q0) <= box.hd) continue;
+    const dp = dx * box.ax + dz * box.az;
+    const dq = dx * box.bx + dz * box.bz;
+    if (crossesBox(p0, dp, box.hw, q0, dq, box.hd)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether `(p0, q0) + t · (dp, dq)`, t in [0, 1], enters the box ±`hw` ×
+ * ±`hd` (in its local frame): the Liang–Barsky clip, one slab per axis.
+ */
+function crossesBox(p0: number, dp: number, hw: number, q0: number, dq: number, hd: number): boolean {
+  let from = 0;
+  let to = 1;
+  if (Math.abs(dp) < 1e-12) {
+    if (Math.abs(p0) >= hw) return false;
+  } else {
+    const a = (-hw - p0) / dp;
+    const b = (hw - p0) / dp;
+    from = Math.max(from, Math.min(a, b));
+    to = Math.min(to, Math.max(a, b));
+  }
+  if (Math.abs(dq) < 1e-12) {
+    if (Math.abs(q0) >= hd) return false;
+  } else {
+    const a = (-hd - q0) / dq;
+    const b = (hd - q0) / dq;
+    from = Math.max(from, Math.min(a, b));
+    to = Math.min(to, Math.max(a, b));
+  }
+  return from < to;
 }
 
 /**

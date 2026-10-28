@@ -81,13 +81,14 @@ components/
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
     │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
-    │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world
+    │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
     │   ├── npc-seats.ts                 Where walkers sit: seat slots, facing, approach points
-    │   ├── walk-input.ts                Walkthrough frame-time cap, which keydowns walk (no Ctrl/Cmd/Alt chords), E to interact
+    │   ├── seat-surface.ts              Sitting-surface height per seat type, from the builders: one table for the walkers and the seated player (#623)
+    │   ├── walk-input.ts                Walkthrough frame-time cap, which keydowns walk (no Ctrl/Cmd/Alt chords), E to interact, keys typed into a field ignored
     │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
     │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
-    │   ├── walk-interact.ts             Seats in reach and the seated pose (facing the TV)
+    │   ├── walk-interact.ts             Seats in reach and the seated pose (facing the TV), never through a wall or across the shell (#566)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359); the mode to return to on exit
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
@@ -155,7 +156,7 @@ components/
     │   ├── texture-settings.ts          Renderer anisotropy captured at init, for the CanvasTexture builders
     │   ├── texture-lru.ts               LRU cache for texture masters (evict + dispose)
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
-    │   ├── camera-vision.ts             Directional CCTV vision-cone overlays
+    │   ├── camera-vision.ts             Directional CCTV vision-cone overlays; no alert through walls (#590), depth-tested under another storey or while walking (#552)
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
     │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
@@ -191,6 +192,7 @@ components/
     │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d)
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap, Escape, restore
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
+    │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
     │   ├── use-reduced-motion.ts        The OS reduce-motion setting as a hook (gates weather, walkers, cone sweep)
     │   ├── use-pausable-timeout.ts      Countdown that pauses and resumes with the time left (toasts)

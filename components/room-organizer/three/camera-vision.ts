@@ -1,6 +1,7 @@
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M } from '../lib/constants';
 import { fitOpeningToStorey } from '../lib/storeys';
 import { FLOOR_HEIGHT_METERS, type FurnitureItem } from '../lib/types';
+import { sightBlocked, type WalkCollider } from '../lib/walk-collision';
 import { ROOM_OBJECT_TAGS } from './room-builder';
 import type * as ThreeNS from 'three';
 
@@ -78,6 +79,27 @@ interface VisionConeUserData {
   scanMaterial: ThreeNS.MeshBasicMaterial;
 }
 
+export interface VisionConeOptions {
+  /**
+   * Depth-test the cone (#552): floor plates, ceilings and walls hide it. For
+   * a cone with a storey drawn above it, and while walking; otherwise it
+   * paints over the world, so walls and rugs never hide the active floor's.
+   */
+  occludable?: boolean;
+}
+
+/**
+ * Whether the cones of `storey` are depth-tested (#552): always while
+ * walking, else when a storey is drawn above them, but never the active
+ * storey's while the others are ghosted: a ghost slab overhead would hide
+ * the cones of the floor being edited. `ghostedActive` is the active storey
+ * when the other storeys are ghosted, else -1.
+ */
+export function visionConesOccludable(storey: number, topStorey: number, walking: boolean, ghostedActive: number): boolean {
+  if (walking) return true;
+  return storey < topStorey && storey !== ghostedActive;
+}
+
 /**
  * Build the floor-wedge / light-volume / scan-line group for every item that
  * projects a vision cone, and add it to the scene. The group is positioned at
@@ -91,7 +113,8 @@ export function addVisionCones(
   items: readonly FurnitureItem[],
   yOffset = 0,
   floorIndex = 0,
-  storeyHeight = FLOOR_HEIGHT_METERS
+  storeyHeight = FLOOR_HEIGHT_METERS,
+  options: VisionConeOptions = {}
 ): void {
   // Item ids on this floor a cone may alert on. Rebuilt with the cones on
   // every item add/remove, so it never goes stale; live positions are read
@@ -108,7 +131,7 @@ export function addVisionCones(
     // The light volume's apex follows the body, fitted to the storey like
     // the camera mesh is (#277).
     const apexY = cameraMountHeight(fitOpeningToStorey(item, storeyHeight));
-    const group = buildCone(THREE, range, fov, apexY, item.id, floorIndex, detectableIds);
+    const group = buildCone(THREE, range, fov, apexY, item.id, floorIndex, detectableIds, options.occludable ?? false);
     group.position.set(item.position.x, yOffset, item.position.z);
     group.rotation.y = item.rotation ?? 0;
     group.userData.type = ROOM_OBJECT_TAGS.CameraVision;
@@ -120,8 +143,14 @@ export function addVisionCones(
  * Advance every vision cone in the scene by the elapsed time: swing the scan
  * line back and forth across the field of view and pulse the wedge opacity.
  * Called once per animation frame; the shared render loop paints the result.
+ * `sightWalls` (per storey, `buildSightWalls`): a target behind a wall or a
+ * partition of the cone's storey doesn't trip it (#590).
  */
-export function stepVisionCones(scene: ThreeNS.Scene, elapsedSeconds: number): void {
+export function stepVisionCones(
+  scene: ThreeNS.Scene,
+  elapsedSeconds: number,
+  sightWalls?: readonly (readonly WalkCollider[] | undefined)[]
+): void {
   // Candidate targets, collected once per frame and shared by every cone:
   // furniture groups (live positions, valid mid-drag) and wandering NPCs.
   const furniture: ThreeNS.Object3D[] = [];
@@ -145,6 +174,7 @@ export function stepVisionCones(scene: ThreeNS.Scene, elapsedSeconds: number): v
     const sinYaw = Math.sin(yaw);
     let detected = false;
     let scanHit = false;
+    const walls = sightWalls?.[data.floorIndex];
 
     const testTarget = (obj: ThreeNS.Object3D): void => {
       const dx = obj.position.x - child.position.x;
@@ -159,6 +189,8 @@ export function stepVisionCones(scene: ThreeNS.Scene, elapsedSeconds: number): v
       // Angular slack widens for near targets so size still matters up close.
       const slack = Math.atan2(TARGET_RADIUS, Math.max(distance, 0.5));
       if (Math.abs(angle) > data.fov / 2 + slack) return;
+      // One segment test per target in the wedge; the camera's own wall is skipped.
+      if (walls && sightBlocked(walls, child.position.x, child.position.z, obj.position.x, obj.position.z)) return;
       detected = true;
       if (Math.abs(angle - scanAngle) <= data.scanFov / 2 + slack) scanHit = true;
     };
@@ -219,9 +251,15 @@ function buildCone(
   apexY: number,
   ownerId: string,
   floorIndex: number,
-  detectableIds: ReadonlySet<string>
+  detectableIds: ReadonlySet<string>,
+  occludable: boolean
 ): ThreeNS.Group {
   const group = new THREE.Group();
+  // Occludable (#552): depth-tested, pulled toward the viewer so the wedge
+  // never z-fights the floor or a rug it lies on.
+  const depth = occludable
+    ? { depthTest: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 }
+    : { depthTest: false };
 
   // All cone layers render as a Desperados-style overlay: depthTest is off so
   // walls, furniture, and floor coverings (rugs share the wedge's y) can never
@@ -236,7 +274,7 @@ function buildCone(
     opacity: WEDGE_BASE_OPACITY,
     side: THREE.DoubleSide,
     depthWrite: false,
-    depthTest: false,
+    ...depth,
     blending: THREE.AdditiveBlending,
     toneMapped: false,
   });
@@ -252,7 +290,7 @@ function buildCone(
     opacity: 0.05,
     side: THREE.DoubleSide,
     depthWrite: false,
-    depthTest: false,
+    ...depth,
     blending: THREE.AdditiveBlending,
     toneMapped: false,
   });
@@ -272,7 +310,7 @@ function buildCone(
       transparent: true,
       opacity: 0.7,
       depthWrite: false,
-      depthTest: false,
+      ...depth,
       toneMapped: false,
     })
   );
@@ -288,7 +326,7 @@ function buildCone(
     opacity: 0.5,
     side: THREE.DoubleSide,
     depthWrite: false,
-    depthTest: false,
+    ...depth,
     blending: THREE.AdditiveBlending,
     toneMapped: false,
   });

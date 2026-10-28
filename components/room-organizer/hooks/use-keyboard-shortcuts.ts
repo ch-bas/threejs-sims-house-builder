@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isTypingTarget } from '../lib/walk-input';
 import type { FurnitureItem } from '../lib/types';
 
 export interface KeyboardShortcutHandlers {
@@ -274,14 +275,4 @@ function ownsKey(event: KeyboardEvent): boolean {
   if (!(event.target instanceof HTMLSelectElement)) return true;
   const key = event.key.toLowerCase();
   return !((event.ctrlKey || event.metaKey) && (key === 'z' || key === 'y'));
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    target.isContentEditable
-  );
 }

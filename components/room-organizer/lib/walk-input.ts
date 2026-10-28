@@ -64,3 +64,16 @@ export function interacts(event: KeyChord & { repeat: boolean }): boolean {
 export function releasesHeldKeys(event: { key: string }): boolean {
   return event.key === 'Meta';
 }
+
+/**
+ * Whether a key event's target takes typing: an input, a textarea, a select
+ * or anything contentEditable (#558). The one guard every window key
+ * handler uses: the walker (so on a touch walk Escape in the catalogue
+ * search doesn't leave EXPLORE and a `w` typed there doesn't switch the
+ * touch stick off), the editor shortcuts and the placement ghost.
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  const element = target as { tagName?: unknown; isContentEditable?: unknown } | null;
+  if (typeof element?.tagName !== 'string') return false;
+  return element.isContentEditable === true || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName);
+}

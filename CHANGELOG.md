@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A pasted, Surprise or set item with an invalid position is refused instead of making the saved house unreadable, which used to open the default lot on the next visit ([#593](https://github.com/ch-bas/threejs-sims-house-builder/issues/593))
 - An imported or shared house holding an item of type "constructor" (or another built-in name) no longer crashes the editor, and a house that crashes the editor is never saved over the last good one, so a reload opens your house instead of crashing again ([#568](https://github.com/ch-bas/threejs-sims-house-builder/issues/568))
 - Garden items (trees, fences, benches and the like) in an imported file, a share link or a saved library entry that carry no category are recognised as garden items again, instead of turning red for being outside the house and blocking walkers ([#662](https://github.com/ch-bas/threejs-sims-house-builder/issues/662))
+- In EXPLORE you can no longer sit on a seat behind a wall or a partition, or on an indoor sofa from the lawn outside, and a seated walker only turns to a TV in the same room ([#566](https://github.com/ch-bas/threejs-sims-house-builder/issues/566))
+- You and the walkers sit at the same height on the same sofa, chair or bench, and a resized seat raises you both ([#623](https://github.com/ch-bas/threejs-sims-house-builder/issues/623))
+- Camera cones no longer turn red for furniture or walkers behind a wall or a partition ([#590](https://github.com/ch-bas/threejs-sims-house-builder/issues/590))
+- Camera cones on another storey no longer show through floors and ceilings, and while walking they hide with their storey ([#552](https://github.com/ch-bas/threejs-sims-house-builder/issues/552))
+- On a touch walk, typing in a search field no longer leaves EXPLORE on Escape, sits you down on E, or switches off the walking stick ([#558](https://github.com/ch-bas/threejs-sims-house-builder/issues/558))
+- EXPLORE no longer edits the house: the Up/Cut/Down walls pill is switched off (the walls stay up while walking), and Surprise me, Add floor, the side panels' Arrange, Clear floor, Lock all, Import, Templates, Library loads, themes and the Build and Buy tabs are disabled there with a note saying why; the exports, time of day and weather still work ([#643](https://github.com/ch-bas/threejs-sims-house-builder/issues/643))
 
 ## [1.23.0] - 2026-10-25
 

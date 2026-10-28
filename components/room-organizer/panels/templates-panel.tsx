@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
+import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
 
 // A Record, not a list, so a template added to ROOM_TEMPLATES without a label
@@ -29,6 +30,8 @@ export interface TemplatesPanelProps {
 
 export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Element {
   const [status, setStatus] = useState<string | null>(null);
+  // A template replaces the house: not while exploring (#643).
+  const exploring = useExploring();
   const load = (key: RoomTemplateKey) => {
     if (onLoadTemplate(ROOM_TEMPLATES[key])) {
       setStatus(`Loaded the ${TEMPLATE_LABELS[key].replace(/^\S+\s/, '')} template. Undo brings back the house it replaced.`);
@@ -49,6 +52,8 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
           onValueChange={(key) => load(key as RoomTemplateKey)}
           placeholder="Load a template..."
           aria-label="Load a template"
+          disabled={exploring}
+          {...(exploring ? { title: NOT_WHILE_EXPLORING } : {})}
         >
           {TEMPLATE_OPTIONS.map((option) => (
             <option key={option.key} value={option.key}>

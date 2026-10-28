@@ -941,6 +941,8 @@ export function RoomOrganizer(): JSX.Element {
     invalidate,
     threeModuleRef,
     sceneRef,
+    // Cones don't see through walls (#590).
+    building: walkBuilding,
   });
 
   // The roof as camera framing sees it: on screen only with the walls up,

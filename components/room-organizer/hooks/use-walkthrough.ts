@@ -8,7 +8,7 @@ import {
   type WalkCollider,
   type WalkerState,
 } from '../lib/walk-collision';
-import { interacts, releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
+import { interacts, isTypingTarget, releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
 import { findSeat, seatPose } from '../lib/walk-interact';
 import { walkArrival, walkSpawn, type WalkPose } from '../lib/walk-spawn';
 import {
@@ -365,7 +365,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         seat?.category === 'outdoor' && seat.position && world
           ? groundHeightAt(world.terrain, seat.position.z, world.halfDepth)
           : (world?.elevations[walker.floorIndex] ?? 0);
-      const pose = seat ? seatPose(seat, items, floorY) : null;
+      // A TV behind a wall isn't what the sitter faces (#566).
+      const pose = seat
+        ? seatPose(seat, items, floorY, { colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS })
+        : null;
       if (!pose) return;
       session.seated = { x: walker.x, z: walker.z };
       setSeated(true);
@@ -383,6 +386,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     const walking = () => Boolean(controls?.isLocked) || session.touch;
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // Typing in a field is not walking (#558). Key-ups still release.
+      if (isTypingTarget(event.target)) return;
       if (releasesHeldKeys(event)) pressed.clear();
       else if (startsWalking(event)) {
         pressed.add(event.code);
@@ -399,7 +404,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     // lock, so we only act on an Escape received while already unlocked — that
     // second press leaves walkthrough mode entirely (see #67).
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || isTypingTarget(event.target)) return;
       if (controls?.isLocked) return;
       onExitRef.current?.();
     };
@@ -588,7 +593,23 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         if (!session.seated && now - lastSeatLookup > SEAT_LOOKUP_MS) {
           lastSeatLookup = now;
           camera.getWorldDirection(forward);
-          const seat = findSeat(itemsRef.current, walker.x, walker.z, forward.x, forward.z);
+          // Never through a wall, nor across the shell (#566).
+          const seat = findSeat(itemsRef.current, walker.x, walker.z, forward.x, forward.z, {
+            colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS,
+            feetY: walker.y,
+            outside: walker.kind === 'ground',
+            footprint: { width: buildingRef.current.width, depth: buildingRef.current.depth },
+            ...(worldRef.current?.porch
+              ? {
+                  porch: {
+                    x0: worldRef.current.porch.x0,
+                    x1: worldRef.current.porch.x1,
+                    z0: Math.min(worldRef.current.porch.frontZ, worldRef.current.porch.backZ),
+                    z1: Math.max(worldRef.current.porch.frontZ, worldRef.current.porch.backZ),
+                  },
+                }
+              : {}),
+          });
           const id = seat?.id ?? null;
           if (id !== session.seatTargetId) {
             session.seatTargetId = id;

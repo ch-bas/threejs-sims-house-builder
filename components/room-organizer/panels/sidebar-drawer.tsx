@@ -1,10 +1,11 @@
 'use client';
 
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
 import { markLayoutLoaded } from '../hooks/use-achievements';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
+import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { purchasePrice, purchaseRefusal } from '../lib/budget';
@@ -217,6 +218,9 @@ const DrawerBody = memo(function DrawerBody({
 }: DrawerBodyProps): JSX.Element {
   const { layout, activeFloor, activeFloorIndex, actions, history, isReady, playCue } = useRoomEditor();
   const view = useViewSettings('view2D', 'walkthroughMode');
+  // EXPLORE never edits the house (#643): the editing panels sit in a
+  // disabled fieldset there, and a note says why.
+  const exploring = useExploring();
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
   // Stable, so the open drawer's catalog tiles skip layout edits too (#3).
@@ -237,6 +241,12 @@ const DrawerBody = memo(function DrawerBody({
 
   return (
     <>
+      {exploring && (
+        <p role="note" className="text-xs" style={{ margin: 0, opacity: 0.85 }}>
+          {NOT_WHILE_EXPLORING}.
+        </p>
+      )}
+      <EditLock locked={exploring}>
       {allSelectedIds.size >= 2 && (
         <AlignPanel
           selectionCount={allSelectedIds.size}
@@ -325,9 +335,11 @@ const DrawerBody = memo(function DrawerBody({
           />
         </>
       )}
+      </EditLock>
 
       {sidebarTab === 'style' && (
         <>
+          <EditLock locked={exploring}>
           <ThemesPanel
             onApply={(themeKey) => {
               // Re-clicking the active theme changes nothing: no undo step (#598).
@@ -340,13 +352,17 @@ const DrawerBody = memo(function DrawerBody({
             }}
           />
 
+          </EditLock>
+
           <TimeOfDayPanel />
 
           {selectedItem && (
+            <EditLock locked={exploring}>
             <ItemResizePanel
               hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
               onDuplicate={duplicateItem}
             />
+            </EditLock>
           )}
         </>
       )}
@@ -367,6 +383,7 @@ const DrawerBody = memo(function DrawerBody({
             onShareLink={onShareLink}
           />
 
+          <EditLock locked={exploring}>
           <TemplatesPanel
             onLoadTemplate={(template) => {
               if (!confirmReplace(layout, `the ${template.name} template`)) return false;
@@ -395,6 +412,8 @@ const DrawerBody = memo(function DrawerBody({
             }}
           />
 
+          </EditLock>
+
           <StatisticsPanel />
           <AchievementsPanel unlocked={unlockedAchievements} />
           <ShortcutsPanel />
@@ -405,3 +424,16 @@ const DrawerBody = memo(function DrawerBody({
 });
 
 const MemoFurnitureCatalogPanel = memo(FurnitureCatalogPanel);
+
+/**
+ * Turns every control inside off while `locked` (#643): a disabled fieldset
+ * disables its buttons, fields and selects. `display: contents`, so the
+ * panels lay out exactly as without it.
+ */
+function EditLock({ locked, children }: { locked: boolean; children: ReactNode }): JSX.Element {
+  return (
+    <fieldset disabled={locked} style={{ display: 'contents' }}>
+      {children}
+    </fieldset>
+  );
+}

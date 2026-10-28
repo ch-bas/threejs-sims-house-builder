@@ -418,7 +418,9 @@ to respect.
   taller last step. Walking pulls the camera's near plane in to 0.1 m so
   a wide screen can't see through a wall, and on exit the orbit camera
   moves with the target the floor change moved. Sitting eases the camera
-  to the seat and back to where the walker stood; any step stands it up. The orchestrator remembers the mode before
+  to the seat and back to where the walker stood; any step stands it up. A seat or a TV behind a wall
+  doesn't count, and sitting never crosses the shell (#566); the seat height is the walkers' table
+  (`lib/seat-surface`, #623). The orchestrator remembers the mode before
   EXPLORE (a store subscription, no re-render) and leaving returns to it.
 - **The phone dock.** At ≤768 px wide, and at ≤1100 × ≤500 px (landscape
   phones), the HUD docks on the bottom edge (#395, #307). The media queries

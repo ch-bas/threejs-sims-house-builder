@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
@@ -41,6 +42,10 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const hasInteriorWalls = (activeFloor.interiorWalls ?? []).some((wall) => wall.id !== ENTRANCE_WALL_ID);
   const allLocked = hasItems && activeFloor.items.every((item) => item.locked === true);
   const multiStorey = layout.floors.length > 1;
+  // EXPLORE never edits the house (#643): the edits here are off, the
+  // exports stay.
+  const exploring = useExploring();
+  const editHint = exploring ? NOT_WHILE_EXPLORING : undefined;
 
   // Doors/windows/cameras must stay on their walls and outdoor items must stay
   // outside the building — organizing them into the room grid tears openings
@@ -81,13 +86,14 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
       <CardContent className="space-y-3">
         <Section title="Arrange">
           <div className="grid grid-cols-3 gap-1">
-            <Button onClick={() => organize('shelf')} disabled={!hasItems} size="sm" className="text-xs">
+            <Button onClick={() => organize('shelf')} disabled={!hasItems || exploring} title={editHint} size="sm" className="text-xs">
               🎯 Pack
             </Button>
             <Button
               onClick={() => organize('by-category')}
               variant="outline"
-              disabled={!hasItems}
+              disabled={!hasItems || exploring}
+              title={editHint}
               size="sm"
               className="text-xs"
             >
@@ -96,7 +102,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             <Button
               onClick={() => organize('by-size')}
               variant="outline"
-              disabled={!hasItems}
+              disabled={!hasItems || exploring}
+              title={editHint}
               size="sm"
               className="text-xs"
             >
@@ -122,6 +129,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             variant="outline"
             className="w-full text-xs"
             size="sm"
+            disabled={exploring}
+            title={editHint}
           >
             🎁 Surprise me
           </Button>
@@ -134,7 +143,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               variant="outline"
               size="sm"
               className="text-xs"
-              disabled={!hasItems}
+              disabled={!hasItems || exploring}
+              title={editHint}
             >
               {allLocked ? '🔓 Unlock all' : '🔒 Lock all'}
             </Button>
@@ -150,7 +160,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               variant="outline"
               size="sm"
               className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-              disabled={!hasItems}
+              disabled={!hasItems || exploring}
+              title={editHint}
             >
               🗑 Clear floor
             </Button>
@@ -163,7 +174,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             variant="outline"
             size="sm"
             className="w-full text-xs"
-            disabled={!hasInteriorWalls}
+            disabled={!hasInteriorWalls || exploring}
+            title={editHint}
           >
             🧹 Clear interior walls
           </Button>
@@ -179,6 +191,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               variant="outline"
               size="sm"
               className="text-xs"
+              disabled={exploring}
+              title={editHint}
             >
               📂 Import
             </Button>

@@ -22,7 +22,7 @@ import { generateStreet } from '../lib/street-row';
 import { shadowCasterBounds, type ShadowBox } from '../lib/sun-shadow';
 import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from '../lib/walkthrough-view';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
-import { addVisionCones } from '../three/camera-vision';
+import { addVisionCones, visionConesOccludable } from '../three/camera-vision';
 import { buildCeiling, removeCeiling } from '../three/ceiling';
 import { applyCollisionTint, fadeGroup } from '../three/collision-tint';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
@@ -699,6 +699,10 @@ export function useSceneEffects({
     itemsKey, collisionKey, storeyHeightsKey, allFloors, ghostOtherFloors, peopleModelReady,
   ]);
 
+  // The active storey while the others are ghosted, else -1: its cones stay
+  // over the world (#552). One number, so the overlays key on nothing wider.
+  const ghostedActiveStorey = ghostOtherFloors ? activeFloorIndex : -1;
+
   // Wi-Fi rings + camera vision cones. Independently tagged overlays, so
   // toggling them (or editing items) never touches the furniture meshes.
   useEffect(() => {
@@ -711,22 +715,32 @@ export function useSceneEffects({
     removeTagged(scene, ROOM_OBJECT_TAGS.Signal, ROOM_OBJECT_TAGS.CameraVision);
     if (!view.showWiFiSignals && !view.showCameraVision) return;
 
+    // A cone with a storey drawn above it, or seen by the walker, is hidden
+    // by floor plates and walls; the top storey's, and the active one's under
+    // ghosted storeys, paint over the world (#552).
+    const topStorey = furniturePlan.reduce((top, floor) => Math.max(top, floor.index), -1);
     for (const { index, items } of furniturePlan) {
+      const firstChild = scene.children.length;
       const floorY = floorElevation(layout.floors, index);
       if (view.showWiFiSignals) {
         addSignalOverlays(THREE, scene, items, floorY);
       }
       if (view.showCameraVision) {
-        addVisionCones(THREE, scene, items, floorY, index, storeyHeight(layout.floors[index]));
+        addVisionCones(THREE, scene, items, floorY, index, storeyHeight(layout.floors[index]), {
+          occludable: visionConesOccludable(index, topStorey, walkthroughActive, ghostedActiveStorey),
+        });
       }
+      // Hidden with their storey while walking (#552).
+      tagStorey(scene, firstChild, index);
     }
+    applyStoreyRange(scene, storeyRangeRef.current);
     // Keyed on what the overlays read, not `layout.floors` identity (#214)
     // nor every item edit (#409); the plan already follows the active floor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, threeModuleRef, sceneRef,
     overlaysKey, storeyHeightsKey,
-    view.showWiFiSignals, view.showCameraVision,
+    view.showWiFiSignals, view.showCameraVision, walkthroughActive, ghostedActiveStorey,
   ]);
 
   // Lighting. The sun's shadow camera is fitted to everything that casts a

@@ -220,6 +220,8 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           }
         }}
         onSurprise={() => {
+          // Not while exploring: EXPLORE never edits the house (#643).
+          if (gameMode === 'live') return;
           // Surprise replaces the furniture on the floor — never wipe it
           // without asking (#105). Structure and garden stay (#448). It
           // spends what the rest of the building leaves of the budget: the
