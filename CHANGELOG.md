@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-10-28
+
+The **Correctness sweep** milestone: the editor, the walker, the budget and the collision rules now agree, and a house that crashes the editor is never saved.
+
 ### Changed
 - On a floor with zones, Arrange keeps each room's furniture in its zone, and packs what stands outside every zone into the space left over ([#629](https://github.com/ch-bas/threejs-sims-house-builder/issues/629))
 
@@ -725,7 +729,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.23.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.24.0...HEAD
+[1.24.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.20.0...v1.21.0
