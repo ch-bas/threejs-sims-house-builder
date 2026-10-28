@@ -1154,7 +1154,8 @@ function turnsInSelection(item: FurnitureItem): boolean {
 
 /** Whether rotateSelection over `ids` turns anything: if not, R is refused. */
 export function selectionTurns(items: readonly FurnitureItem[], ids: ReadonlySet<string>): boolean {
-  return items.some((item) => ids.has(item.id) && turnsInSelection(item));
+  // rotateSelection pivots on the placed items; with none it turns nothing.
+  return items.some((item) => ids.has(item.id) && turnsInSelection(item) && item.position !== undefined);
 }
 
 function isFinitePosition(position: { x: number; z: number }): boolean {
