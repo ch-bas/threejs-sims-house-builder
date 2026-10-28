@@ -140,6 +140,17 @@ describe('seats and the TV behind walls (#566)', () => {
     expect(findSeat(items, -1.5, -0.2, 0, -1, { ...sight(items), footprint })?.id).toBe('bench-in');
   });
 
+  it('counts a bench on the recessed porch as outdoors (#566)', () => {
+    const porchBench = item({ id: 'porch-bench', type: 'garden-bench', category: 'outdoor', width: 1, depth: 0.4, height: 0.85, position: { x: 0, z: -2.2 } });
+    const footprint = { width: 6, depth: 5 };
+    const porch = { x0: -0.7, x1: 0.7, z0: -2.5, z1: -1.3 };
+    const items = [porchBench];
+    // From the porch, out on the lot: in reach.
+    expect(findSeat(items, 0, -1.6, 0, -1, { ...sight(items, 0, true), footprint, porch })?.id).toBe('porch-bench');
+    // From indoors, through the front door: not.
+    expect(findSeat(items, 0, -1.0, 0, -1, { ...sight(items), footprint, porch })).toBeNull();
+  });
+
   it('does not offer a seat across a partition', () => {
     const items = [EAST_CHAIR];
     expect(findSeat(items, 0.55, -1, 1, 0)?.id).toBe('east-chair');

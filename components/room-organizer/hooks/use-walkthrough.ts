@@ -599,6 +599,16 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
             feetY: walker.y,
             outside: walker.kind === 'ground',
             footprint: { width: buildingRef.current.width, depth: buildingRef.current.depth },
+            ...(worldRef.current?.porch
+              ? {
+                  porch: {
+                    x0: worldRef.current.porch.x0,
+                    x1: worldRef.current.porch.x1,
+                    z0: Math.min(worldRef.current.porch.frontZ, worldRef.current.porch.backZ),
+                    z1: Math.max(worldRef.current.porch.frontZ, worldRef.current.porch.backZ),
+                  },
+                }
+              : {}),
           });
           const id = seat?.id ?? null;
           if (id !== session.seatTargetId) {

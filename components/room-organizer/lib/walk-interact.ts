@@ -61,6 +61,11 @@ export interface SeatSight {
    * category decides.
    */
   footprint?: { width: number; depth: number };
+  /**
+   * The recessed porch's plan rect: inside the footprint but out on the lot,
+   * as the walker counts it, so a bench on the porch is outdoors (#566).
+   */
+  porch?: { x0: number; x1: number; z0: number; z1: number };
 }
 
 /** The point a walker sits on, for a seat standing at `at`: a little forward of the centre, clear of the back. */
@@ -71,8 +76,10 @@ function sitPoint(seat: FurnitureItem, at: Point): Point {
 }
 
 /** Whether a seat standing at `at` is out on the lot. */
-function seatOutdoors(seat: FurnitureItem, at: Point, footprint: SeatSight['footprint']): boolean {
+function seatOutdoors(seat: FurnitureItem, at: Point, sight: SeatSight): boolean {
+  const { footprint, porch } = sight;
   if (!footprint) return seat.category === 'outdoor';
+  if (porch && at.x > porch.x0 && at.x < porch.x1 && at.z > porch.z0 && at.z < porch.z1) return true;
   return Math.abs(at.x) > footprint.width / 2 || Math.abs(at.z) > footprint.depth / 2;
 }
 
@@ -108,7 +115,7 @@ export function findSeat(
     if (score >= bestScore) continue;
     if (sight) {
       // Sitting never crosses the shell: the view stays indoors or out.
-      if (Boolean(sight.outside) !== seatOutdoors(item, at, sight.footprint)) continue;
+      if (Boolean(sight.outside) !== seatOutdoors(item, at, sight)) continue;
       const seatAt = sitPoint(item, at);
       if (sightBlocked(sight.colliders, x, z, seatAt.x, seatAt.z, sight.feetY)) continue;
     }
