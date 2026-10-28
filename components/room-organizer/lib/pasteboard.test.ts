@@ -53,7 +53,7 @@ function makeQuotaStore(capacity: number): VersionHistoryStore & { data: Map<str
 const furnished = (name = 'Beach House') =>
   makeLayout({
     name,
-    floors: [makeFloor({ items: [makeItem({ id: 'sofa', type: 'sofa', price: 900 })] })],
+    floors: [makeFloor({ items: [makeItem({ id: 'sofa', type: 'sofa', category: 'seating', price: 900 })] })],
   });
 
 describe('pasteboard (#190)', () => {

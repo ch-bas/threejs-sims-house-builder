@@ -6,13 +6,20 @@ import {
   isChunkLoadError,
   reloadOnceForChunkError,
 } from '../components/room-organizer/lib/chunk-reload';
-import { downloadRawLayout, readStoredLayoutRaw, resetStoredLayout } from '../components/room-organizer/lib/persistence';
+import {
+  downloadRawLayout,
+  noteEditorCrashed,
+  readStoredLayoutRaw,
+  resetStoredLayout,
+} from '../components/room-organizer/lib/persistence';
 
 // Global error boundary — catches errors thrown in the root layout itself (and
 // in app/error.tsx), so it must render its own <html>/<body>. Starting fresh
 // keeps a copy of the saved house first, like app/error.tsx (#336).
 
 export default function GlobalError({ error }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
+  // Before the crashed editor's cleanup runs (#568), as in app/error.tsx.
+  useState(noteEditorCrashed);
   useEffect(() => {
     // One automatic reload per session via the shared pc-chunk-reload guard —
     // see app/error.tsx: an unguarded reload looped forever on a persistently

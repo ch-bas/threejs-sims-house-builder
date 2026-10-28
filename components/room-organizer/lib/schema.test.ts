@@ -413,6 +413,7 @@ describe('schema caps (#332)', () => {
       color: 'c'.repeat(MAX_COLOR_LENGTH),
       icon: '🪑'.repeat(MAX_ICON_LENGTH / 2),
       groupId: 'g'.repeat(MAX_ID_LENGTH),
+      category: 'seating',
     });
     const clean = withItem({ ...atCap });
     expect(parseStoredLayout(clean)).toBe(clean);
@@ -480,7 +481,7 @@ describe('schema caps (#332)', () => {
 
   it('slices items and interior walls past the per-floor caps, keeping one slot for the porch', () => {
     const items = (count: number) =>
-      Array.from({ length: count }, (_, i) => makeItem({ id: `i${i}`, position: { x: 0, z: 0 } }));
+      Array.from({ length: count }, (_, i) => makeItem({ id: `i${i}`, category: 'seating', position: { x: 0, z: 0 } }));
     const walls = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `w${i}`, x1: 0, z1: 0, x2: 1, z2: i / 10 }));
     // What the reducer can produce — one slot short of the cap — is untouched.
     const full = makeLayout({ floors: [makeFloor({ items: items(MAX_ITEMS_PER_FLOOR - 1) })] });
@@ -498,7 +499,7 @@ describe('schema caps (#332)', () => {
   });
 
   it('never cuts the porch door or back wall from a full floor', () => {
-    const items = Array.from({ length: MAX_ITEMS_PER_FLOOR }, (_, i) => makeItem({ id: `i${i}`, position: { x: 0, z: 0 } }));
+    const items = Array.from({ length: MAX_ITEMS_PER_FLOOR }, (_, i) => makeItem({ id: `i${i}`, category: 'seating', position: { x: 0, z: 0 } }));
     const door = makeItem({ id: ENTRANCE_DOOR_ID, type: 'door', position: { x: 0, z: -4 } });
     const walls = Array.from({ length: MAX_INTERIOR_WALLS_PER_FLOOR }, (_, i) => ({ id: `w${i}`, x1: 0, z1: 0, x2: 1, z2: i / 10 }));
     const back = { id: ENTRANCE_WALL_ID, x1: -0.7, z1: -2.8, x2: 0.7, z2: -2.8 };
@@ -608,7 +609,7 @@ describe('persisted-field whitelist and bounds (#350)', () => {
   });
 
   it('repairs the issue probe: position 1e300 and a negative price', () => {
-    const item = (overrides: Record<string, unknown>) => makeLayout({ floors: [makeFloor({ items: [{ ...makeItem(), ...overrides } as never] })] });
+    const item = (overrides: Record<string, unknown>) => makeLayout({ floors: [makeFloor({ items: [{ ...makeItem({ category: 'seating' }), ...overrides } as never] })] });
     const first = (layout: RoomLayout | null) => layout!.floors[0]!.items[0]!;
     expect(first(parseStoredLayout(item({ position: { x: 1e300, z: 0 } }))).position).toEqual({ x: MAX_COORDINATE, z: 0 });
     expect(first(parseStoredLayout(item({ position: { x: 0, z: -(MAX_COORDINATE + 1) } }))).position).toEqual({
@@ -691,7 +692,7 @@ describe('persisted-field whitelist and bounds (#350)', () => {
     const layout = makeLayout({
       floors: [
         makeFloor({
-          items: [makeItem({ id: 'a' }), makeItem({ id: 'b' })],
+          items: [makeItem({ id: 'a', category: 'seating' }), makeItem({ id: 'b', category: 'seating' })],
           hiddenWalls: ['north'],
           wallColors: { east: '#123456' },
           interiorWalls: [{ id: 'w', x1: 0, z1: 0, x2: 1, z2: 0 }],
@@ -758,7 +759,10 @@ describe('duplicate ids (#338)', () => {
 
   it('leaves ids repeated across floors alone', () => {
     const layout = makeLayout({
-      floors: [makeFloor({ id: 'g', items: [makeItem({ id: 'a' })] }), makeFloor({ id: 'u', items: [makeItem({ id: 'a' })] })],
+      floors: [
+        makeFloor({ id: 'g', items: [makeItem({ id: 'a', category: 'seating' })] }),
+        makeFloor({ id: 'u', items: [makeItem({ id: 'a', category: 'seating' })] }),
+      ],
     });
     expect(parseStoredLayout(layout)).toBe(layout);
   });

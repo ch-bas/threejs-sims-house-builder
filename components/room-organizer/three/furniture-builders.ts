@@ -112,6 +112,8 @@ export function createFurnitureModel(
     opacity: hasCollision ? 0.7 : 1.0,
     ...(storeyHeight !== undefined ? { storeyHeight } : {}),
   };
-  const builder = BUILDERS[item.type] ?? buildFallback;
-  return builder(ctx);
+  // Own keys only: a saved type such as "constructor" would otherwise resolve
+  // an Object.prototype member and crash the editor on every load (#568).
+  const builder = Object.hasOwn(BUILDERS, item.type) ? BUILDERS[item.type] : undefined;
+  return (builder ?? buildFallback)(ctx);
 }

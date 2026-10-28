@@ -449,6 +449,30 @@ export function downloadRawLayout(raw: string, fileName: string): void {
   downloadTextFile(fileName, 'application/json', raw);
 }
 
+/*
+ * Whether the editor went down with an error (#568). The error screen notes it
+ * while it renders, which is before the crashed editor's cleanup runs, so the
+ * editor's unmount flush can tell a crash from an ordinary unmount and keep a
+ * layout that crashed it out of the save. Module state, not storage: it only
+ * has to outlive one commit, and a reload starts over.
+ */
+let editorCrashed = false;
+
+/** Called by the error screens as they render. */
+export function noteEditorCrashed(): void {
+  editorCrashed = true;
+}
+
+/** Whether an error screen has replaced the editor since it last mounted. */
+export function editorHasCrashed(): boolean {
+  return editorCrashed;
+}
+
+/** Called as the editor mounts: a fresh editor has not crashed. */
+export function clearEditorCrashed(): void {
+  editorCrashed = false;
+}
+
 const RELOAD_ATTEMPT_KEY = 'pc-error-reload';
 /** A crash this soon after the error screen's reload means reloading didn't help. */
 export const RELOAD_RETRY_WINDOW_MS = 2 * 60_000;

@@ -30,3 +30,17 @@ describe('the furniture builder registry (#455)', () => {
     expect(buildFallback).toHaveBeenCalledTimes(1);
   });
 });
+
+// A saved or imported item can carry any type string: one that names an
+// Object.prototype member resolved to that member instead of the fallback
+// and crashed the editor on every load (#568).
+describe('the furniture builder registry: inherited keys (#568)', () => {
+  const inherited = Object.getOwnPropertyNames(Object.prototype);
+
+  it.each(inherited)('builds the type "%s" as the fallback box', (type) => {
+    vi.mocked(buildFallback).mockClear();
+    const group = createFurnitureModel(THREE, makeItem({ type }), false);
+    expect(buildFallback).toHaveBeenCalledTimes(1);
+    expect(group.children.length).toBeGreaterThan(0);
+  });
+});

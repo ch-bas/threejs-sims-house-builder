@@ -1,5 +1,5 @@
 import { repairHardBudget } from './budget';
-import { MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
+import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
@@ -13,6 +13,7 @@ import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FurnitureCategory,
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
@@ -503,6 +504,11 @@ function repairVec2(vec: { x: number; z: number }): { x: number; z: number } {
   return x === picked.x && z === picked.z ? picked : { x, z };
 }
 
+const KNOWN_CATEGORIES: ReadonlySet<string> = new Set(CATEGORIES.map(({ key }) => key));
+const CATALOG_CATEGORY: ReadonlyMap<string, FurnitureCategory> = new Map(
+  FURNITURE_CATALOG.map(({ type, category }) => [type, category])
+);
+
 function repairItem(item: FurnitureItem): FurnitureItem {
   const patch: Partial<FurnitureItem> = {
     id: capText(item.id, MAX_ID_LENGTH),
@@ -516,7 +522,17 @@ function repairItem(item: FurnitureItem): FurnitureItem {
   // A negative price turns the budget and every cost total upside down (#350).
   if (item.price !== undefined && item.price < 0) patch.price = 0;
   if (item.position) patch.position = repairVec2(item.position);
-  return rebuild(item, ITEM_KEYS, patch);
+  // The category decides whether an item is garden furniture (collisions,
+  // floor area, walkers), so a catalogue type without one, or with an
+  // unknown one, takes the catalogue's (#662). An unknown category on an
+  // unknown type is dropped: it only ever reaches lookups keyed by it.
+  const knownCategory = item.category !== undefined && KNOWN_CATEGORIES.has(item.category);
+  const catalogCategory = CATALOG_CATEGORY.get(item.type);
+  if (!knownCategory && catalogCategory) patch.category = catalogCategory;
+  const repaired = rebuild(item, ITEM_KEYS, patch);
+  if (knownCategory || catalogCategory || repaired.category === undefined) return repaired;
+  const { category: _unknown, ...rest } = repaired;
+  return rest;
 }
 
 function repairWall(wall: InteriorWall): InteriorWall {

@@ -161,8 +161,9 @@ describe('layoutReducer — item CRUD', () => {
     let state = stateWith([makeItem({ id: 'a', type: 'sofa' })]);
     state = layoutReducer(state, { type: 'setRotation', id: 'a', rotation: 1.23 });
     state = layoutReducer(state, { type: 'setColor', id: 'a', color: '#abc' });
-    state = layoutReducer(state, { type: 'setLocked', id: 'a', locked: true });
+    // The shape before the lock: a locked sofa keeps its shape (#636).
     state = layoutReducer(state, { type: 'setSofaShape', id: 'a', shape: 'L-shape' });
+    state = layoutReducer(state, { type: 'setLocked', id: 'a', locked: true });
     state = layoutReducer(state, { type: 'setSignalRange', id: 'a', range: 4 });
     expect(activeItems(state)[0]).toMatchObject({
       rotation: 1.23,

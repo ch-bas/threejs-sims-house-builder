@@ -103,7 +103,7 @@ describe('useLayoutPersistence — apply-throw must not clobber the save (#206)'
   };
 
   it('takes a restore point of the stored house before applying a shared layout (#298)', async () => {
-    const local = makeLayout({ name: 'Local house', floors: [makeFloor({ items: [makeItem()] })] });
+    const local = makeLayout({ name: 'Local house', floors: [makeFloor({ items: [makeItem({ category: 'seating' })] })] });
     const blob = JSON.stringify(local);
     window.localStorage.setItem(STORAGE_KEY, blob);
     window.location.hash = '#layout=whatever';

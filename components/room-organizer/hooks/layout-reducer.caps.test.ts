@@ -64,7 +64,7 @@ describe('reducer output always reloads unchanged (#332, #350)', () => {
       () => ({
         type: 'addItems',
         items: Array.from({ length: Math.floor(random() * 400) }, () =>
-          makeItem({ id: id('item'), name: random() < 0.2 ? LONG : 'Chair', position: { x: coordinate(), z: coordinate() } })
+          makeItem({ id: id('item'), category: 'seating', name: random() < 0.2 ? LONG : 'Chair', position: { x: coordinate(), z: coordinate() } })
         ),
       }),
       (state) => ({ type: 'moveItem', id: anyItemId(state), x: coordinate(), z: coordinate() }),
@@ -109,7 +109,7 @@ describe('reducer output always reloads unchanged (#332, #350)', () => {
   });
 
   it('clamps a drag far past the lot instead of writing an unreadable position', () => {
-    let state: LayoutState = { layout: makeLayout({ floors: [makeFloor({ items: [makeItem({ id: 'a' })] })] }), activeFloorIndex: 0 };
+    let state: LayoutState = { layout: makeLayout({ floors: [makeFloor({ items: [makeItem({ id: 'a', category: 'seating' })] })] }), activeFloorIndex: 0 };
     state = layoutReducer(state, { type: 'moveItem', id: 'a', x: 1e9, z: -250 });
     expect(state.layout.floors[0]!.items[0]!.position).toEqual({ x: MAX_COORDINATE, z: -250 });
     state = layoutReducer(state, { type: 'bulkSetPositions', positions: new Map([['a', { x: -1e9, z: 1e9 }]]) });
@@ -135,7 +135,7 @@ describe('reducer output always reloads unchanged (#332, #350)', () => {
 
   it('refuses items and walls past the per-floor caps, keeping state identity', () => {
     const items = (count: number, prefix: string): FurnitureItem[] =>
-      Array.from({ length: count }, (_, i) => makeItem({ id: `${prefix}${i}` }));
+      Array.from({ length: count }, (_, i) => makeItem({ id: `${prefix}${i}`, category: 'seating' }));
     let state = start();
     expect(layoutReducer(state, { type: 'addItems', items: items(MAX_ITEMS_PER_FLOOR + 1, 'a') })).toBe(state);
     expect(layoutReducer(state, { type: 'replaceItems', items: items(MAX_ITEMS_PER_FLOOR + 1, 'a') })).toBe(state);

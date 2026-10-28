@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { FURNITURE_CATALOG } from '../lib/constants';
 import { formatMetres } from '../lib/format';
 import { isWallMounted } from '../lib/opening-snap';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
@@ -29,6 +30,16 @@ const DIMENSIONS: readonly DimensionConfig[] = [
   { label: 'Depth', key: 'depth', min: 0.1, max: 5 },
   { label: 'Height', key: 'height', min: 0.1, max: 3 },
 ];
+
+/**
+ * A range input clamps its value to `max`, so a Pine Tree (4.5 m) shown on a
+ * 3 m slider shrank to 3 m on the first nudge (#547). The slider reaches the
+ * item's own size and its catalogue size, whichever is larger.
+ */
+function sliderMax(dimension: DimensionConfig, item: FurnitureItem): number {
+  const catalog = FURNITURE_CATALOG.find((entry) => entry.type === item.type);
+  return Math.max(dimension.max, item[dimension.key], catalog?.[dimension.key] ?? 0);
+}
 
 function randomHexColor(): string {
   const hue = Math.floor(Math.random() * 360);
@@ -100,7 +111,14 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
         />
 
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={() => actions.toggleMirror(item.id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 text-xs"
+            disabled={locked}
+            title={lockedTitle}
+            onClick={() => actions.toggleMirror(item.id)}
+          >
             🪞 {item.mirrored ? 'Unmirror' : 'Mirror'}
           </Button>
           <Button
@@ -147,6 +165,8 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
         {item.type === 'sofa' && (
           <SofaShapeSelect
             value={item.sofaShape ?? 'standard'}
+            disabled={locked}
+            title={lockedTitle}
             onChange={(shape) => actions.setSofaShape(item.id, shape)}
           />
         )}
@@ -350,7 +370,7 @@ function DimensionSlider({ item, dimension, disabled, title, onChange }: Dimensi
         id={inputId}
         type="range"
         min={dimension.min}
-        max={dimension.max}
+        max={sliderMax(dimension, item)}
         step="0.1"
         value={value}
         disabled={disabled}
@@ -364,16 +384,24 @@ function DimensionSlider({ item, dimension, disabled, title, onChange }: Dimensi
 interface SofaShapeSelectProps {
   value: SofaShape;
   onChange(value: SofaShape): void;
+  disabled?: boolean;
+  title?: string | undefined;
 }
 
-function SofaShapeSelect({ value, onChange }: SofaShapeSelectProps): JSX.Element {
+function SofaShapeSelect({ value, onChange, disabled, title }: SofaShapeSelectProps): JSX.Element {
   const id = useId();
   return (
-    <div>
+    <div title={title}>
       <Label htmlFor={id} className="text-xs">
         Sofa Shape
       </Label>
-      <Select id={id} value={value} onValueChange={(next) => onChange(next as SofaShape)} className="w-full text-xs">
+      <Select
+        id={id}
+        value={value}
+        disabled={disabled}
+        onValueChange={(next) => onChange(next as SofaShape)}
+        className="w-full text-xs"
+      >
         <option value="standard">Standard Sofa</option>
         <option value="L-shape">L-Shape Sofa</option>
         <option value="U-shape">U-Shape Sofa</option>

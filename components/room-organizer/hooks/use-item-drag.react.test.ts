@@ -173,3 +173,79 @@ describe('useItemDrag — an aborted drag leaves no tint on a kept group (#404)'
     expect(actions.bulkSetPositions).not.toHaveBeenCalled();
   });
 });
+
+describe('useItemDrag: turning the device mid-drag cancels it (#677)', () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const setup = () => {
+    vi.stubGlobal('innerWidth', 390);
+    vi.stubGlobal('innerHeight', 664);
+    const actions = {
+      moveItem: vi.fn(),
+      bulkSetPositions: vi.fn(),
+      setLocked: vi.fn(),
+      updateItem: vi.fn(),
+    } as unknown as LayoutActions;
+    const floor = makeFloor({ items: [makeItem({ id: 'a', position: { x: 0, z: 0 } })] });
+    const scene = new THREE.Scene();
+    const group = new THREE.Group();
+    group.userData = { type: 'furniture', id: 'a', floorIndex: 0 };
+    scene.add(group);
+    const { result } = renderHook(() =>
+      useItemDrag({
+        activeFloor: floor,
+        activeFloorIndex: 0,
+        roomWidth: 10,
+        roomDepth: 10,
+        keepOut: [],
+        frontGap: null,
+        actions,
+        allSelectedIds: new Set(['a']),
+      })
+    );
+    result.current.sceneBoxRef.current = { current: scene };
+    const rotate = () => {
+      vi.stubGlobal('innerWidth', 750);
+      vi.stubGlobal('innerHeight', 342);
+    };
+    return { actions, result, group, rotate };
+  };
+
+  it('a release after the viewport turned commits nothing and puts the item back', () => {
+    const { actions, result, group, rotate } = setup();
+    result.current.handleDragStart('a');
+    result.current.handleDrag('a', 1, 1);
+    rotate();
+    // The front end keeps moving the primary group under the finger.
+    group.position.set(-7.9, 0, 0.2);
+    result.current.handleDrag('a', -7.9, 0.2);
+    result.current.handleDragEnd('a');
+    expect(actions.bulkSetPositions).not.toHaveBeenCalled();
+    expect(actions.setLocked).not.toHaveBeenCalled();
+    expect(actions.moveItem).not.toHaveBeenCalled();
+    expect(group.position.x).toBe(0);
+    expect(group.position.z).toBe(0);
+    expect(result.current.isDragActive()).toBe(false);
+  });
+
+  it('a release with no move after the turn is cancelled too', () => {
+    const { actions, result, rotate } = setup();
+    result.current.handleDragStart('a');
+    result.current.handleDrag('a', 1, 1);
+    rotate();
+    result.current.handleDragEnd('a');
+    expect(actions.bulkSetPositions).not.toHaveBeenCalled();
+  });
+
+  it('the URL bar changing only the height does not cancel', () => {
+    const { actions, result } = setup();
+    result.current.handleDragStart('a');
+    vi.stubGlobal('innerHeight', 720);
+    result.current.handleDrag('a', 1, 1);
+    result.current.handleDragEnd('a');
+    expect(actions.bulkSetPositions).toHaveBeenCalledTimes(1);
+  });
+});
