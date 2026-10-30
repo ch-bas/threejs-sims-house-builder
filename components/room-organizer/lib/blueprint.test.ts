@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { blueprintCanvasSize, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
+import { ENTRANCE_DOOR_ID } from './street';
 
 // jsdom has no 2D canvas: the render is a no-op (null context) and toDataURL
 // is stubbed. What matters here is the popup / decode / write sequencing.
@@ -191,5 +192,26 @@ describe('openBlueprintPrintWindow escaping (#455)', () => {
     expect(html).not.toContain(ATTR);
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(html).toContain('&quot; onmouseover=&quot;alert(1)');
+  });
+});
+
+describe('openBlueprintPrintWindow cost (#693)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('treats a legacy priced porch door as free, like the header', async () => {
+    let html = '';
+    vi.spyOn(window, 'open').mockReturnValue({
+      document: { write: (m: string) => (html += m), close: () => undefined, readyState: 'loading' },
+      addEventListener: () => undefined,
+    } as unknown as Window);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,STUB');
+    const floor = makeFloor({
+      items: [makeItem({ id: 'sofa', price: 650 }), makeItem({ id: ENTRANCE_DOOR_ID, type: 'door', name: 'Front door', price: 300, position: { x: 0, z: 4 } })],
+    });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
+    expect(html).toContain('Total cost: 650');
+    expect(html).not.toContain('950');
   });
 });

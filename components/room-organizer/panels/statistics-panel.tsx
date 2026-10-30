@@ -4,9 +4,9 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useActiveFloorIndex, useLayout } from '../hooks/use-layout-store';
-import { budgetSpent } from '../lib/budget';
+import { budgetSpent, furnitureSpend } from '../lib/budget';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
-import { footprintArea, itemCountByCategory, totalCost } from '../lib/geometry';
+import { footprintArea, itemCountByCategory } from '../lib/geometry';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { zoneStats } from '../lib/zones';
 
@@ -127,7 +127,8 @@ export function StatisticsPanel(): JSX.Element {
           <div className="pt-2 border-t space-y-1">
             <p className="text-muted-foreground">By floor</p>
             {layout.floors.map((floor) => {
-              const floorCost = totalCost(floor.items);
+              // The porch door is free here too, so the floors add up (#693).
+              const floorCost = furnitureSpend({ floors: [floor] });
               return (
                 <StatRow key={floor.id} label={floor.name}>
                   {floor.items.length} · {CURRENCY_SYMBOL}
