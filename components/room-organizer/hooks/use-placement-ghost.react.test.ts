@@ -181,6 +181,24 @@ describe('usePlacementGhost (#463 d)', () => {
     expect(endGhost).toHaveBeenCalled();
   });
 
+  it('stays in hand when a Shift placement asks first (the soft budget), and is put down without Shift (F4)', () => {
+    const asking = () => {
+      void askConfirm({ title: 'Place it anyway?' });
+      return false;
+    };
+    const { result, endGhost } = setup({ place: vi.fn(asking) });
+    act(() => {
+      result.current.confirm(true);
+    });
+    expect(endGhost).not.toHaveBeenCalled();
+    cancelPendingConfirms();
+    act(() => {
+      result.current.confirm(false);
+    });
+    expect(endGhost).toHaveBeenCalled();
+    cancelPendingConfirms();
+  });
+
   it('leaves Enter and Space on a focused button to that button', () => {
     const { place, endGhost } = setup();
     const cancel = document.createElement('button');

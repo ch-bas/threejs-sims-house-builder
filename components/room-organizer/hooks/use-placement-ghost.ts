@@ -105,6 +105,9 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     const session = sessionRef.current;
     if (!p.ghost || !session || session.ghost !== p.ghost) return;
     const placed = p.place(p.ghost, session.position, session.rotation, keep);
+    // Over the soft budget it asks first (#649): with Shift held the ghost
+    // stays in hand for the next one, whatever the answer.
+    if (!placed && keep && confirmOpen()) return;
     if (placed && keep) {
       // The copy just placed is now in the ghost's way: show it.
       renderRef.current();

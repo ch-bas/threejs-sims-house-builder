@@ -2,7 +2,9 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { autoAnswerConfirms } from '../lib/__testfixtures__/confirm';
 import { makeCatalogItem } from '../lib/__testfixtures__/fixtures';
+import { askConfirm, cancelPendingConfirms } from '../lib/confirm-dialog';
 import { INITIAL_LAYOUT } from './layout-reducer';
 import { useHistory } from './use-history';
 import { armGhostPlacement, armKeyboardPlacement, nextTileIndex, useKeyboardPlacement } from './use-keyboard-placement';
@@ -327,5 +329,92 @@ describe('nextTileIndex — roving focus across a tile grid (#168)', () => {
     expect(nextTileIndex('Enter', 2, 8, 4)).toBeNull();
     expect(nextTileIndex('r', 2, 8, 4)).toBeNull();
     expect(nextTileIndex('Tab', 2, 8, 4)).toBeNull();
+  });
+});
+
+// F1: over the soft budget the add asks first and returns '' at once; on a
+// yes the orchestrator places it and hands it back here, and the keyboard
+// session must start on it as if it had been placed straight away.
+describe('useKeyboardPlacement — an add the soft budget asked about', () => {
+  beforeEach(() => {
+    layoutStore.setState({ layout: { ...INITIAL_LAYOUT, id: 'house-test' }, activeFloorIndex: 0 });
+  });
+  afterEach(() => {
+    cancelPendingConfirms();
+    cleanup();
+  });
+
+  const chair = makeCatalogItem({ name: 'Pricey chair', price: 100 });
+
+  function mountDeferring() {
+    const answered: Promise<boolean>[] = [];
+    const hook = renderHook(() => {
+      const { layout, actions } = useLayoutState();
+      const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+      const history = useHistory(layout, actions.applyLayout);
+      const placement = useKeyboardPlacement({
+        layout,
+        selectedItemId,
+        actions,
+        history,
+        selectOnly: setSelectedItemId,
+        // The soft-budget guard: ask, add nothing yet.
+        placeCatalogItem: () => {
+          answered.push(askConfirm({ title: 'Place it anyway?' }));
+          return '';
+        },
+      });
+      return { ...placement, selectedItemId, setSelectedItemId, actions };
+    });
+    return { ...hook, answered };
+  }
+
+  it('starts the session on the item a yes placed: unlocked, Escape takes it out', async () => {
+    const { result, answered } = mountDeferring();
+    act(() => {
+      armKeyboardPlacement();
+      expect(result.current.placeCatalogItem(chair)).toBe('');
+    });
+    const auto = autoAnswerConfirms(true);
+    await act(async () => {
+      await answered[0];
+    });
+    auto.stop();
+    let adopted = false;
+    act(() => {
+      const id = result.current.actions.addCatalogItem(chair);
+      result.current.setSelectedItemId(id);
+      adopted = result.current.adoptDeferredPlacement(id, chair);
+    });
+    expect(adopted).toBe(true);
+    const id = result.current.placingId!;
+    expect(id).toBeTruthy();
+    expect(activeItems().find((item) => item.id === id)?.locked).toBeFalsy();
+    act(() => {
+      result.current.cancelPlacement();
+    });
+    expect(activeItems().some((item) => item.id === id)).toBe(false);
+  });
+
+  it('adopts nothing the keyboard did not ask about', async () => {
+    const { result, answered } = mountDeferring();
+    act(() => {
+      armKeyboardPlacement();
+      result.current.placeCatalogItem(chair);
+    });
+    const auto = autoAnswerConfirms(false);
+    await act(async () => {
+      await answered[0];
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    auto.stop();
+    // A later yes from elsewhere (the ghost) is not a keyboard session.
+    let adopted = true;
+    act(() => {
+      const id = result.current.actions.addCatalogItem(chair);
+      adopted = result.current.adoptDeferredPlacement(id, chair);
+    });
+    expect(adopted).toBe(false);
+    expect(result.current.placingId).toBeNull();
   });
 });

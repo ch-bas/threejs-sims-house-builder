@@ -41,9 +41,10 @@ export interface UseItemPlacementParams {
    * A soft-budget purchase the player agreed to in the in-app question
    * (#649). The question doesn't block, so `placeCatalogItem` has already
    * returned '' by then: the caller's after-place steps (the cue, the
-   * selection) run here, with the new id ('' if nothing was added).
+   * selection, a keyboard session) run here, with the new id ('' if nothing
+   * was added) and the entry it was asked about.
    */
-  onPlacedAfterConfirm?(id: string): void;
+  onPlacedAfterConfirm?(id: string, catalogItem: CatalogItem): void;
 }
 
 export interface UseItemPlacementResult {
@@ -275,7 +276,7 @@ export function useItemPlacement({
           if (!proceed) return;
           const latest = latestRef.current;
           if (latest.refusePurchase?.(price)) return;
-          latest.onPlacedAfterConfirm?.(latest.placeNow(catalogItem, position, rotation));
+          latest.onPlacedAfterConfirm?.(latest.placeNow(catalogItem, position, rotation), catalogItem);
         });
         return '';
       }

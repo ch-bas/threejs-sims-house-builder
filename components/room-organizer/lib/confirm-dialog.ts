@@ -101,6 +101,16 @@ export function subscribeConfirm(listener: () => void): () => void {
   };
 }
 
+/** The question asked last and not yet answered, or null. */
+export function newestConfirmId(): number | null {
+  return queue[queue.length - 1]?.request.id ?? null;
+}
+
+/** Whether question `id` still waits for an answer. */
+export function isConfirmPending(id: number): boolean {
+  return queue.some((entry) => entry.request.id === id);
+}
+
 /** True while a question waits for an answer: window key handlers stand back. */
 export function confirmOpen(): boolean {
   return queue.length > 0;
