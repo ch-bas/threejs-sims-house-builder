@@ -10,7 +10,8 @@ import {
 } from './version-history';
 import type { RoomLayout, SavedLayoutEntry } from './types';
 
-const LIBRARY_KEY_PREFIX = 'standalone-room-organizer-library:';
+/** Prefix of every library key: the index, one blob per saved house, and the room probe. */
+export const LIBRARY_KEY_PREFIX = 'standalone-room-organizer-library:';
 const LIBRARY_INDEX_KEY = `${LIBRARY_KEY_PREFIX}_index`;
 
 interface LibraryIndex {
@@ -303,6 +304,15 @@ export const AUTOSAVE_HEADROOM_MIN_CHARS = 64 * 1024;
 
 /** Written and removed at once to measure the room left; never read. */
 const PROBE_KEY = `${LIBRARY_KEY_PREFIX}_probe`;
+
+/**
+ * The slot whose house a storage key holds, or null for any other key —
+ * the index and the room probe included (#615).
+ */
+export function libraryHouseSlot(key: string): string | null {
+  if (!key.startsWith(LIBRARY_KEY_PREFIX) || key === LIBRARY_INDEX_KEY || key === PROBE_KEY) return null;
+  return key.slice(LIBRARY_KEY_PREFIX.length);
+}
 
 /** Slack for the index growing by one entry, beyond the entry's own JSON. */
 const INDEX_SLACK_CHARS = 64;

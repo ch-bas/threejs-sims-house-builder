@@ -1,6 +1,7 @@
 import { STORAGE_KEY } from './constants';
 import { importCustomSets, listCustomSets, parseCustomSet, type CustomFurnitureSet } from './custom-sets';
 import {
+  LIBRARY_KEY_PREFIX,
   countUnreadableSavedLayouts,
   deleteNamedLayout,
   layoutSlugExists,
@@ -19,7 +20,6 @@ import {
 } from './persistence';
 import { isUntouched } from './restore-point';
 import { parseStoredLayout } from './schema';
-import { LIBRARY_KEY_PREFIX } from './storage-meter';
 import { MAX_STORAGE_ENTRY_CHARS, VERSION_HISTORY_STORAGE_KEY, importSnapshots } from './version-history';
 import type { RoomLayout } from './types';
 

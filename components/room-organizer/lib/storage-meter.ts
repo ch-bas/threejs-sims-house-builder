@@ -1,5 +1,6 @@
 import { STORAGE_KEY } from './constants';
 import { CUSTOM_SETS_STORAGE_KEY } from './custom-sets';
+import { LIBRARY_KEY_PREFIX, libraryHouseSlot } from './library';
 import { PASTEBOARD_STORAGE_KEY } from './pasteboard';
 import { isRecoveryKey } from './persistence';
 import { MAX_STORAGE_ENTRY_CHARS, VERSION_HISTORY_META_KEY, VERSION_HISTORY_STORAGE_KEY } from './version-history';
@@ -13,15 +14,6 @@ import { MAX_STORAGE_ENTRY_CHARS, VERSION_HISTORY_META_KEY, VERSION_HISTORY_STOR
 
 /** Every key this app writes starts with this. */
 export const APP_KEY_PREFIX = 'standalone-room-organizer-';
-
-/**
- * Prefix of the library's keys: one blob per saved house plus the index.
- * Mirrors `lib/library.ts`, which keeps it private.
- */
-export const LIBRARY_KEY_PREFIX = `${APP_KEY_PREFIX}library:`;
-
-/** The library index key — counted with the library, but not a house. */
-const LIBRARY_INDEX_KEY = `${LIBRARY_KEY_PREFIX}_index`;
 
 /**
  * Who a stored key belongs to. `settings` is any other key of this app
@@ -79,12 +71,6 @@ export function tenantOfKey(key: string): StorageTenant {
   return 'other';
 }
 
-/** The library slot a key holds a house for, or null for any other key (the index included). */
-export function librarySlotOfKey(key: string): string | null {
-  if (!key.startsWith(LIBRARY_KEY_PREFIX) || key === LIBRARY_INDEX_KEY) return null;
-  return key.slice(LIBRARY_KEY_PREFIX.length);
-}
-
 export interface StorageUsage {
   /** Characters per tenant, key plus value. */
   byTenant: Record<StorageTenant, number>;
@@ -113,7 +99,7 @@ export function measureStorage(store: MeteredStore | null): StorageUsage {
       const chars = key.length + (store.getItem(key)?.length ?? 0);
       byTenant[tenantOfKey(key)] += chars;
       total += chars;
-      const slot = librarySlotOfKey(key);
+      const slot = libraryHouseSlot(key);
       if (slot !== null) libraryHouses.push({ slot, chars });
     }
   } catch {

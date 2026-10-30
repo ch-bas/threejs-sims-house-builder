@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { STORAGE_KEY } from './constants';
 import { CUSTOM_SETS_STORAGE_KEY } from './custom-sets';
+import { LIBRARY_KEY_PREFIX } from './library';
 import { PASTEBOARD_STORAGE_KEY } from './pasteboard';
 import { RECOVERY_STORAGE_KEY } from './persistence';
 import {
-  LIBRARY_KEY_PREFIX,
   formatStorageSize,
   measureStorage,
   tenantOfKey,
@@ -45,11 +45,15 @@ describe('storage meter (#615)', () => {
         [`${LIBRARY_KEY_PREFIX}_index`]: 'i'.repeat(10),
         [`${LIBRARY_KEY_PREFIX}small`]: 's'.repeat(5),
         [`${LIBRARY_KEY_PREFIX}big`]: 'b'.repeat(500),
+        // A room probe caught mid-save is the library's, but no house.
+        [`${LIBRARY_KEY_PREFIX}_probe`]: 'p'.repeat(4),
         'another-project': 'o'.repeat(7),
       })
     );
     expect(usage.byTenant.main).toBe(STORAGE_KEY.length + 100);
-    expect(usage.byTenant.library).toBe(3 * LIBRARY_KEY_PREFIX.length + '_index'.length + 10 + 5 + 5 + 3 + 500);
+    expect(usage.byTenant.library).toBe(
+      4 * LIBRARY_KEY_PREFIX.length + '_index'.length + 10 + 5 + 5 + 3 + 500 + '_probe'.length + 4
+    );
     expect(usage.byTenant.other).toBe('another-project'.length + 7);
     expect(usage.byTenant.restorePoints).toBe(0);
     expect(usage.libraryHouses.map((row) => row.slot)).toEqual(['big', 'small']);
