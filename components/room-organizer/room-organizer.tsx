@@ -1284,8 +1284,9 @@ export function RoomOrganizer(): JSX.Element {
         selectionCount={allSelectedIds.size}
         onCopySelection={copySelectionToClipboard}
         selectionGrouped={selectionIsGroup}
-        onGroupSelection={selectionIsGroup ? undefined : groupSelection}
-        onUngroupSelection={selectionHasGroups ? ungroupSelection : undefined}
+        // Grouping edits the house: not while exploring (#699).
+        onGroupSelection={exploring || selectionIsGroup ? undefined : groupSelection}
+        onUngroupSelection={!exploring && selectionHasGroups ? ungroupSelection : undefined}
         onSaveSelectionAsSet={saveSelectionAsSet}
         showMeasurements={view.showMeasurements}
         showMinimap={view.showMinimap}
@@ -1331,6 +1332,7 @@ export function RoomOrganizer(): JSX.Element {
           })()
         }
         onCatalogDrop={(clientX, clientY, key) => {
+          if (exploring) return;
           const item = findCatalogEntry(FURNITURE_CATALOG, key);
           if (!item) return;
           // The 2D plan inverts the renderer's view transform; 3D raycasts (#166).
