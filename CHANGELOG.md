@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Demolish, the remove button in the item list, Delete and Clear floor now show "Removed Sofa" (or how many items went) with an Undo button that takes back just that removal. The notice stays while the pointer or the keyboard focus is on it ([#651](https://github.com/ch-bas/threejs-sims-house-builder/issues/651))
+
 ### Fixed
 - EXPLORE no longer edits the house from the 2D plan: clicks on the plan only select, the editing shortcuts (rotate, nudge, duplicate, copy, paste, delete) are off, and the item panel's editing controls are disabled with a "Not while exploring" hint; undo and redo still work ([#699](https://github.com/ch-bas/threejs-sims-house-builder/issues/699))
 

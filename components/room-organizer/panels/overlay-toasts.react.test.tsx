@@ -79,6 +79,55 @@ describe('compact status notices', () => {
   });
 });
 
+describe('status notices with an action (#651)', () => {
+  it('run the action once from its button and close', () => {
+    render(<StatusToastHost />);
+    const run = vi.fn();
+    act(() => {
+      notify('Removed Sofa', 'info', { action: { label: 'Undo', run } });
+    });
+    const undo = screen.getByRole('button', { name: 'Undo' });
+    act(() => {
+      undo.click();
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(shown('Removed Sofa')).toBe(false);
+  });
+
+  it('wait while the pointer or the focus is on them', () => {
+    compact = false;
+    render(<StatusToastHost />);
+    act(() => {
+      notify('Removed Bed', 'info', { action: { label: 'Undo', run: vi.fn() } });
+    });
+    const toast = screen.getByRole('status');
+    act(() => {
+      toast.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    });
+    advance(20_000);
+    expect(shown('Removed Bed')).toBe(true);
+    act(() => {
+      toast.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }));
+      screen.getByRole('button', { name: 'Undo' }).focus();
+    });
+    advance(20_000);
+    expect(shown('Removed Bed')).toBe(true);
+    act(() => {
+      screen.getByRole('button', { name: 'Undo' }).blur();
+    });
+    advance(7000);
+    expect(shown('Removed Bed')).toBe(false);
+  });
+
+  it('without an action show no extra button', () => {
+    render(<StatusToastHost />);
+    act(() => {
+      notify('Exported');
+    });
+    expect(screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['Dismiss']);
+  });
+});
+
 describe('compact achievements', () => {
   it('resume after a status notice instead of replaying in full', () => {
     render(<Harness initial={[achievement('a'), achievement('b')]} />);
