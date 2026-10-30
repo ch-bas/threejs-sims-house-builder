@@ -3,9 +3,7 @@ import { importCustomSets, listCustomSets, parseCustomSet, type CustomFurnitureS
 import {
   LIBRARY_KEY_PREFIX,
   countUnreadableSavedLayouts,
-  deleteNamedLayout,
   layoutSlugExists,
-  librarySlotId,
   listSavedLayouts,
   loadNamedLayout,
   saveNamedLayout,
@@ -20,7 +18,7 @@ import {
 } from './persistence';
 import { isUntouched } from './restore-point';
 import { parseStoredLayout } from './schema';
-import { MAX_STORAGE_ENTRY_CHARS, VERSION_HISTORY_STORAGE_KEY, importSnapshots } from './version-history';
+import { MAX_STORAGE_ENTRY_CHARS, VERSION_HISTORY_STORAGE_KEY, importSnapshots, listSnapshots } from './version-history';
 import type { RoomLayout } from './types';
 
 /**
@@ -30,11 +28,9 @@ import type { RoomLayout } from './types';
  * origin shared with other projects; clearing site data loses all of it.
  *
  * A file is validated whole before anything is written: every house goes
- * through `parseStoredLayout`, every set through `parseCustomSet`, and a part
- * that is missing, of the wrong shape or holds anything unreadable marks the
- * backup incomplete — then Replace deletes nothing. The open house is never
- * written here: the caller applies it like any other load, so it takes the
- * restore point, the undo step and the achievements rule.
+ * through `parseStoredLayout`, every set through `parseCustomSet`, settings
+ * through an allow-list. Restoring only adds: it never replaces or deletes
+ * anything this browser holds, and never touches the open house.
  */
 
 export const BACKUP_FORMAT = 'house-builder-backup';
@@ -90,7 +86,7 @@ export interface BackupBundle {
   settings: Record<string, string>;
 }
 
-type BackupPart = 'library' | 'restorePoints' | 'recoveryCopies' | 'received' | 'customSets' | 'settings';
+type BackupPart = 'library' | 'restorePoints' | 'recoveryCopies' | 'received' | 'customSets';
 
 /** A file read and validated: what a restore works from. */
 export interface ParsedBackup {
@@ -101,16 +97,11 @@ export interface ParsedBackup {
   /** Entries whose layout passed the schema; `importSnapshots` reads them again. */
   restorePoints: unknown[];
   recoveryCopies: BackupRecoveryCopy[];
-  received: { receivedAt: number; layout: RoomLayout }[];
+  received: { name: string; receivedAt: number; layout: RoomLayout }[];
   customSets: CustomFurnitureSet[];
   settings: Record<string, string>;
-  /** Entries that failed validation and are left out. */
+  /** Entries, or parts of the wrong shape, that failed validation and are left out. */
   invalid: number;
-  /**
-   * Whether every part is present, of the right shape and fully readable.
-   * Only then may Replace delete anything.
-   */
-  complete: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -214,24 +205,21 @@ export function parseBackup(text: string): BackupParseResult {
   if (version === null || version < 1) return { ok: false, reason: 'not-backup' };
   if (version > BACKUP_VERSION) return { ok: false, reason: 'newer-version' };
 
+  // An entry that fails validation, or a part present but of the wrong
+  // shape, is left out and counted; a part the file lacks is just empty.
   let invalid = 0;
-  const malformed = new Set<BackupPart>();
   const part = (name: BackupPart): unknown[] => {
     const value = json[name];
     if (Array.isArray(value)) return value;
-    malformed.add(name);
+    if (value !== undefined && value !== null) invalid += 1;
     return [];
-  };
-  const reject = (name: BackupPart): void => {
-    invalid += 1;
-    malformed.add(name);
   };
 
   const library: ParsedBackup['library'] = [];
   for (const entry of part('library')) {
     const parsed = isRecord(entry) ? parseStoredLayout(entry.layout) : null;
     if (!parsed || !isRecord(entry) || typeof entry.name !== 'string') {
-      reject('library');
+      invalid += 1;
       continue;
     }
     // Validated, and written back as it was stored, like any library blob:
@@ -242,7 +230,7 @@ export function parseBackup(text: string): BackupParseResult {
   const restorePoints: unknown[] = [];
   for (const entry of part('restorePoints')) {
     if (isRecord(entry) && finite(entry.savedAt) !== null && parseStoredLayout(entry.layout)) restorePoints.push(entry);
-    else reject('restorePoints');
+    else invalid += 1;
   }
 
   const recoveryCopies: BackupRecoveryCopy[] = [];
@@ -250,22 +238,26 @@ export function parseBackup(text: string): BackupParseResult {
     if (isRecord(entry) && typeof entry.raw === 'string' && entry.raw.length <= MAX_STORAGE_ENTRY_CHARS) {
       recoveryCopies.push({ savedAt: finite(entry.savedAt), raw: entry.raw });
     } else {
-      reject('recoveryCopies');
+      invalid += 1;
     }
   }
 
   const received: ParsedBackup['received'] = [];
   for (const entry of part('received')) {
     const layout = isRecord(entry) ? parseStoredLayout(entry.layout) : null;
-    if (layout && isRecord(entry)) received.push({ receivedAt: finite(entry.receivedAt) ?? 0, layout });
-    else reject('received');
+    if (layout && isRecord(entry)) {
+      const name = typeof entry.name === 'string' && entry.name.trim() ? entry.name : layout.name;
+      received.push({ name, receivedAt: finite(entry.receivedAt) ?? 0, layout });
+    } else {
+      invalid += 1;
+    }
   }
 
   const customSets: CustomFurnitureSet[] = [];
   for (const entry of part('customSets')) {
     const set = parseCustomSet(entry);
     if (set) customSets.push(set);
-    else reject('customSets');
+    else invalid += 1;
   }
 
   const settings: Record<string, string> = {};
@@ -274,11 +266,11 @@ export function parseBackup(text: string): BackupParseResult {
       if (BACKUP_SETTINGS_KEYS.includes(key) && typeof value === 'string' && value.length <= MAX_SETTING_CHARS) {
         settings[key] = value;
       } else {
-        reject('settings');
+        invalid += 1;
       }
     }
-  } else {
-    malformed.add('settings');
+  } else if (json.settings !== undefined && json.settings !== null) {
+    invalid += 1;
   }
 
   const house = parseStoredLayout(json.main ?? null);
@@ -296,22 +288,19 @@ export function parseBackup(text: string): BackupParseResult {
       customSets,
       settings,
       invalid,
-      complete: malformed.size === 0 && invalid === 0,
     },
   };
 }
 
-/** What a backup holds — only what passed validation — for the confirm before a restore. */
+/** What a backup holds — only what passed validation — for the question before a restore. */
 export interface BackupSummary {
   hasHouse: boolean;
   library: number;
   restorePoints: number;
   received: number;
   customSets: number;
-  /** Entries left out because they couldn't be read. */
+  /** Entries or parts left out because they couldn't be read. */
   invalid: number;
-  /** False when Replace will delete nothing, because part of the file is missing or unreadable. */
-  complete: boolean;
 }
 
 export function summarizeBackup(backup: ParsedBackup): BackupSummary {
@@ -322,56 +311,45 @@ export function summarizeBackup(backup: ParsedBackup): BackupSummary {
     received: backup.received.length,
     customSets: backup.customSets.length,
     invalid: backup.invalid,
-    complete: backup.complete,
   };
 }
 
-/**
- * `merge` adds the backup beside what is stored and replaces nothing: a
- * library house whose name is taken by a different house is saved under a
- * new name, and the backup's open house goes to the library. `replace` makes
- * the open house, library, received houses, custom sets and settings the
- * backup's — deleting what the backup lacks only when the whole file was
- * readable and every write succeeded. Restore points and recovery copies are
- * always merged, and this browser's own are never dropped for them.
- */
-export type RestoreMode = 'merge' | 'replace';
-
+/** What a restore did, part by part. */
 export interface RestoreReport {
-  /** With `replace`: the house the caller must open. Never written here. */
-  house: RoomLayout | null;
-  /**
-   * With `replace`: the backup has a house, but it isn't opened because part
-   * of the restore failed — the open house stays.
-   */
-  houseWithheld: boolean;
   library: number;
   restorePoints: number;
   recoveryCopies: number;
   received: number;
   customSets: number;
   settings: number;
-  /** Entries that failed validation and were left out. */
+  /** Entries or parts of the file that failed validation and were left out. */
   invalid: number;
-  /** Entries left out for lack of room under a cap (restore points, recovery copies, sets). */
-  overLimit: number;
-  /** Writes the browser refused (full or blocked storage). */
-  failed: number;
-  /** With `replace`: deletions were held back because the file wasn't complete or a write failed. */
-  keptExtras: boolean;
+  /** Left out for lack of room under a cap, beside what this browser keeps. */
+  skipped: {
+    restorePoints: number;
+    recoveryCopies: number;
+    customSets: number;
+    /** Names of the received houses the paste-board had no room for. */
+    received: string[];
+  };
+  /** What the browser refused to store (full or blocked storage), in words: `saved layout “A”`. */
+  failed: string[];
   /**
-   * With `replace`: parts the deletion pass had already replaced when a
-   * later write was refused — the notice names them, so "nothing deleted"
-   * is never said of them.
+   * This browser's restore points dropped to make room for what was added:
+   * they are the lowest-priority tenant of storage, so a write that needs
+   * room evicts them, oldest first (#295). Said in the notice.
    */
-  replacedBeforeStop: string[];
+  restorePointsDropped: number;
 }
 
+/** Recovery copies share at most this much room: they never crowd out the library or autosave. */
+const MAX_RECOVERY_RESTORE_CHARS = 1024 * 1024;
+
 /** A library name not in use yet: `name (backup)`, then `(backup 2)`… */
-function freeLibraryName(name: string, free: (candidate: string) => boolean): string {
+function freeLibraryName(name: string): string {
   for (let n = 1; ; n += 1) {
     const candidate = `${name} (backup${n === 1 ? '' : ` ${n}`})`;
-    if (free(candidate)) return candidate;
+    if (!layoutSlugExists(candidate)) return candidate;
   }
 }
 
@@ -388,94 +366,19 @@ function libraryHolds(layout: RoomLayout): boolean {
   });
 }
 
-/** Recovery copies share at most this much room: they never crowd out the library or autosave. */
-const MAX_RECOVERY_RESTORE_CHARS = 1024 * 1024;
-
-/** The stored house a library name maps to, if any, as it opens. */
-function libraryHouseNamed(name: string): { exists: boolean; layout: RoomLayout | null } {
-  if (!layoutSlugExists(name)) return { exists: false, layout: null };
-  const slot = librarySlotId(name);
-  const entry = listSavedLayouts().find((candidate) => candidate.id === slot || librarySlotId(candidate.name) === slot);
-  return { exists: true, layout: entry ? loadNamedLayout(entry.id) : null };
-}
-
-/** The slot a backup library entry is saved under. */
-function entrySlot(entry: ParsedBackup['library'][number]): string {
-  return librarySlotId(entry.name.trim() || entry.layout.name || 'Untitled');
-}
-
-/** What a Replace will delete here, for its confirm. Nothing when the file isn't complete. */
-export interface ReplacePreview {
-  /** Saved layouts deleted outright, plus those overwritten by a different house of the same name. */
-  library: number;
-  received: number;
-  customSets: number;
-}
-
-export function previewReplace(backup: ParsedBackup): ReplacePreview {
-  if (!backup.complete) return { library: 0, received: 0, customSets: 0 };
-  let library = 0;
-  for (const entry of listSavedLayouts()) {
-    const incoming = backup.library.find((candidate) => entrySlot(candidate) === librarySlotId(entry.name));
-    const stored = loadNamedLayout(entry.id);
-    if (!incoming || !(stored && sameLayoutContent(stored, incoming.layout))) library += 1;
-  }
-  const incomingReceived = new Set(
-    backup.received.map(({ layout }) => {
-      const stored: RoomLayout = { ...layout };
-      delete stored.floorPlanImage;
-      return JSON.stringify(stored);
-    })
-  );
-  const received = listReceivedLayouts().filter((entry) => !incomingReceived.has(JSON.stringify(entry.layout))).length;
-  const setIds = new Set(backup.customSets.map((set) => set.id));
-  const customSets = listCustomSets().filter((set) => !setIds.has(set.id)).length;
-  return { library, received, customSets };
-}
-
 /**
- * The question a Replace asks first, naming what it deletes here: how many
- * saved layouts (an empty library in the file deletes them all), received
- * houses and sets — or that it deletes nothing, on a file not wholly read.
+ * Add a validated backup to what this browser holds. A restore adds what is
+ * missing and never replaces or deletes anything: a library house whose name
+ * is taken by a different house is saved as "name (backup)", the backup's
+ * open house goes to the library (unless it is the open house, already in
+ * the library, or untouched), received houses, sets and restore points fill
+ * only the room their caps leave beside this browser's own, and a setting is
+ * written only where none is stored. Recovery copies come last, into what
+ * room is left, so they can't take the room anything else needs. `current`
+ * is the open house.
  */
-export function replaceConfirmText(summary: BackupSummary, preview: ReplacePreview): string {
-  const replaced = [summary.hasHouse ? 'the open house' : null, 'your saved layouts', 'received houses', 'custom sets']
-    .filter((part): part is string => part !== null)
-    .join(', ');
-  let deletes: string;
-  if (!summary.complete) {
-    deletes = 'Part of the backup can’t be read, so nothing here is deleted or overwritten.';
-  } else {
-    const parts = [
-      preview.library > 0 ? plural(preview.library, 'saved layout') : null,
-      preview.received > 0 ? plural(preview.received, 'received house') : null,
-      preview.customSets > 0 ? plural(preview.customSets, 'custom set') : null,
-    ].filter((part): part is string => part !== null);
-    deletes =
-      parts.length > 0
-        ? `This deletes or overwrites ${parts.join(', ')} the backup doesn’t have.`
-        : 'Nothing here is deleted.';
-  }
-  const kept = summary.hasHouse ? ' The open house is kept as a restore point.' : '';
-  return `Replace ${replaced} and settings with the backup’s? ${deletes}${kept} Your restore points are kept.`;
-}
-
-/**
- * Restore a validated backup, in two phases. First every write that removes
- * nothing: new library houses, received houses and sets into free room,
- * settings, then recovery copies and restore points, which take only what
- * room is left. Then — only with `replace`, a complete file and no failed
- * write — one deletion pass: the backup's sets and received houses take the
- * place of this browser's (each one atomic write), same-named library houses
- * are overwritten, and library houses the backup lacks are deleted. An
- * overwrite of different content counts as a deletion. `current` is the
- * open house: with `merge` the backup's house is saved to the library
- * unless it is that house, already in the library, or untouched.
- */
-export function restoreBackup(backup: ParsedBackup, mode: RestoreMode, current: RoomLayout): RestoreReport {
+export function restoreBackup(backup: ParsedBackup, current: RoomLayout): RestoreReport {
   const report: RestoreReport = {
-    house: null,
-    houseWithheld: false,
     library: 0,
     restorePoints: 0,
     recoveryCopies: 0,
@@ -483,143 +386,61 @@ export function restoreBackup(backup: ParsedBackup, mode: RestoreMode, current: 
     customSets: 0,
     settings: 0,
     invalid: backup.invalid,
-    overLimit: 0,
-    failed: 0,
-    keptExtras: false,
-    replacedBeforeStop: [],
+    skipped: { restorePoints: 0, recoveryCopies: 0, customSets: 0, received: [] },
+    failed: [],
+    restorePointsDropped: 0,
   };
-  const replace = mode === 'replace';
-  // Replace deletes only on a whole, readable file (#620 review).
-  const mayDelete = replace && backup.complete;
+  const localPoints = listSnapshots().map((summary) => summary.id);
 
-  // Phase 1: writes that remove nothing.
-  const library = writeLibrary(backup, replace, mayDelete, current, report);
-  if (!mayDelete) {
-    const received = importReceivedLayouts(backup.received);
-    if (received === null) report.failed += 1;
-    else {
-      report.received += received.added;
-      report.overLimit += received.skipped;
-    }
-    const sets = importCustomSets(backup.customSets);
-    if (sets === null) report.failed += 1;
-    else {
-      report.customSets += sets.added;
-      report.overLimit += sets.skipped;
-    }
+  restoreLibrary(backup, current, report);
+
+  const received = importReceivedLayouts(backup.received);
+  if (received === null) report.failed.push('received houses');
+  else {
+    report.received = received.added;
+    report.skipped.received = received.skipped;
   }
-  restoreSettings(backup.settings, replace, report);
-  restoreRecoveryCopies(backup.recoveryCopies, report);
+
+  const sets = importCustomSets(backup.customSets);
+  if (sets === null) report.failed.push('custom sets');
+  else {
+    report.customSets = sets.added;
+    report.skipped.customSets = sets.skipped;
+  }
+
+  restoreSettings(backup.settings, report);
+
   const points = importSnapshots(backup.restorePoints);
   report.restorePoints = points.added;
-  report.overLimit += points.skipped;
+  report.skipped.restorePoints = points.skipped;
 
-  // Phase 2: the one deletion pass.
-  if (replace) {
-    if (mayDelete && report.failed === 0) replaceCollections(backup, library, report);
-    else report.keptExtras = true;
-  }
-
-  if (replace && backup.house) {
-    // Half a restore must not also swap the house: the open one stays, and
-    // the notice says what didn't fit.
-    if (report.failed > 0) report.houseWithheld = true;
-    else report.house = backup.house;
-  }
+  restoreRecoveryCopies(backup.recoveryCopies, report);
+  const kept = new Set(listSnapshots().map((summary) => summary.id));
+  report.restorePointsDropped = localPoints.filter((id) => !kept.has(id)).length;
   return report;
 }
 
-/** Slots the restore wrote, and library houses held back to the deletion pass. */
-interface LibraryWrites {
-  written: Set<string>;
-  /** Each overwrites a different house of the same name: a deletion, so it waits for the gate. */
-  overwrites: { name: string; stored: RoomLayout; savedAt: number }[];
-}
-
-function writeLibrary(
-  backup: ParsedBackup,
-  replace: boolean,
-  mayDelete: boolean,
-  current: RoomLayout,
-  report: RestoreReport
-): LibraryWrites {
-  // No two backup houses may land in one slot, and the deletion pass never
-  // touches a slot this restore wrote.
-  const writes: LibraryWrites = { written: new Set(), overwrites: [] };
-  const claimed = new Set<string>();
-  const free = (candidate: string): boolean => !claimed.has(librarySlotId(candidate)) && !layoutSlugExists(candidate);
+function restoreLibrary(backup: ParsedBackup, current: RoomLayout, report: RestoreReport): void {
   const save = (stored: RoomLayout, name: string, savedAt?: number): void => {
     const outcome = saveNamedLayout(stored, name, savedAt === undefined ? {} : { savedAt });
-    if (outcome.ok) {
-      writes.written.add(outcome.entry.id);
-      report.library += 1;
-    } else {
-      report.failed += 1;
-    }
+    if (outcome.ok) report.library += 1;
+    else report.failed.push(`saved layout “${name}”`);
   };
-
   for (const entry of backup.library) {
-    const { layout } = entry;
-    let name = entry.name.trim() || layout.name || 'Untitled';
-    if (!replace && libraryHolds(layout)) continue;
-    if (claimed.has(librarySlotId(name))) name = freeLibraryName(name, free);
-    const here = libraryHouseNamed(name);
-    if (here.exists && !(here.layout && sameLayoutContent(here.layout, layout))) {
-      if (mayDelete) {
-        claimed.add(librarySlotId(name));
-        writes.overwrites.push({ name, stored: entry.stored, savedAt: entry.savedAt });
-        continue;
-      }
-      name = freeLibraryName(name, free);
-    }
-    claimed.add(librarySlotId(name));
-    save(entry.stored, name, entry.savedAt);
+    if (libraryHolds(entry.layout)) continue;
+    const name = entry.name.trim() || entry.layout.name || 'Untitled';
+    save(entry.stored, layoutSlugExists(name) ? freeLibraryName(name) : name, entry.savedAt);
   }
-
   const house = backup.house;
-  if (!replace && house && !isUntouched(house) && !sameHouseContent(house, current) && !libraryHolds(house)) {
-    const name = freeLibraryName(house.name || 'Untitled', free);
-    claimed.add(librarySlotId(name));
-    save(house, name);
-  }
-  return writes;
-}
-
-/** The deletion pass of a Replace. Stops at the first refused write, deleting nothing more. */
-function replaceCollections(backup: ParsedBackup, library: LibraryWrites, report: RestoreReport): void {
-  const replaced: string[] = [];
-  const refused = (): void => {
-    report.failed += 1;
-    report.keptExtras = true;
-    report.replacedBeforeStop = replaced;
-  };
-  const sets = importCustomSets(backup.customSets, { replace: true });
-  if (sets === null) return refused();
-  replaced.push('custom sets');
-  report.customSets += sets.added;
-  report.overLimit += sets.skipped;
-
-  const received = importReceivedLayouts(backup.received, { replace: true });
-  if (received === null) return refused();
-  replaced.push('received houses');
-  report.received += received.added;
-  report.overLimit += received.skipped;
-
-  for (const { name, stored, savedAt } of library.overwrites) {
-    const outcome = saveNamedLayout(stored, name, { savedAt });
-    if (!outcome.ok) return refused();
-    library.written.add(outcome.entry.id);
-    report.library += 1;
-  }
-  for (const entry of listSavedLayouts()) {
-    if (!library.written.has(entry.id)) deleteNamedLayout(entry.id);
+  if (house && !isUntouched(house) && !sameHouseContent(house, current) && !libraryHolds(house)) {
+    save(house, freeLibraryName(house.name || 'Untitled'));
   }
 }
 
 /**
  * Recovery copies come back only up to `MAX_RECOVERY_COPIES` and
- * `MAX_RECOVERY_RESTORE_CHARS`, after the library, and only into free room:
- * they never evict restore points or anything else.
+ * `MAX_RECOVERY_RESTORE_CHARS`, and only into free room: they never evict
+ * restore points or anything else, and a refused one stops nothing.
  */
 function restoreRecoveryCopies(copies: readonly BackupRecoveryCopy[], report: RestoreReport): void {
   const storage = localStorageOrNull();
@@ -633,7 +454,7 @@ function restoreRecoveryCopies(copies: readonly BackupRecoveryCopy[], report: Re
   for (const copy of ordered) {
     if (held.has(copy.raw)) continue;
     if (count >= MAX_RECOVERY_COPIES || chars + copy.raw.length > MAX_RECOVERY_RESTORE_CHARS) {
-      report.overLimit += 1;
+      report.skipped.recoveryCopies += 1;
       continue;
     }
     const key = `${RECOVERY_STORAGE_KEY}-${copy.savedAt ?? 0}-${Math.random().toString(36).slice(2, 8) || '0'}`;
@@ -644,22 +465,23 @@ function restoreRecoveryCopies(copies: readonly BackupRecoveryCopy[], report: Re
       chars += copy.raw.length;
       report.recoveryCopies += 1;
     } catch {
-      report.failed += 1;
+      report.failed.push('a recovery copy');
     }
   }
 }
 
-function restoreSettings(settings: Record<string, string>, replace: boolean, report: RestoreReport): void {
+/** A setting is written only where this browser has none. */
+function restoreSettings(settings: Record<string, string>, report: RestoreReport): void {
   const storage = localStorageOrNull();
   if (!storage) return;
   for (const [key, value] of Object.entries(settings)) {
     if (!BACKUP_SETTINGS_KEYS.includes(key)) continue;
     try {
-      if (!replace && storage.getItem(key) !== null) continue;
+      if (storage.getItem(key) !== null) continue;
       storage.setItem(key, value);
       report.settings += 1;
     } catch {
-      report.failed += 1;
+      report.failed.push('a setting');
     }
   }
 }
@@ -668,35 +490,47 @@ function plural(count: number, noun: string, nouns = `${noun}s`): string {
   return `${count} ${count === 1 ? noun : nouns}`;
 }
 
-/** One line saying what a restore did, for the notice after it. */
+function quoted(names: readonly string[]): string {
+  return names.map((name) => `“${name}”`).join(', ');
+}
+
+/** What a restore did, in words, for the notice after it. Says only what happened. */
 export function describeRestore(report: RestoreReport): string {
-  const parts: string[] = [];
-  if (report.house) parts.push('the house');
-  if (report.library > 0) parts.push(plural(report.library, 'saved layout'));
-  if (report.restorePoints > 0) parts.push(plural(report.restorePoints, 'restore point'));
-  if (report.recoveryCopies > 0) parts.push(plural(report.recoveryCopies, 'recovery copy', 'recovery copies'));
-  if (report.received > 0) parts.push(plural(report.received, 'received house'));
-  if (report.customSets > 0) parts.push(plural(report.customSets, 'custom set'));
-  if (report.settings > 0) parts.push(plural(report.settings, 'setting'));
-  const lines = [
-    parts.length > 0
-      ? `Restored ${parts.join(', ')}.`
-      : 'Nothing new to restore — this browser already holds everything in the backup.',
-  ];
+  const added: string[] = [];
+  if (report.library > 0) added.push(plural(report.library, 'saved layout'));
+  if (report.restorePoints > 0) added.push(plural(report.restorePoints, 'restore point'));
+  if (report.recoveryCopies > 0) added.push(plural(report.recoveryCopies, 'recovery copy', 'recovery copies'));
+  if (report.received > 0) added.push(plural(report.received, 'received house'));
+  if (report.customSets > 0) added.push(plural(report.customSets, 'custom set'));
+  if (report.settings > 0) added.push(plural(report.settings, 'setting'));
+
+  const { skipped } = report;
+  const left: string[] = [];
+  if (skipped.received.length > 0) {
+    left.push(`${plural(skipped.received.length, 'received house')} (${quoted(skipped.received)}): the board is full`);
+  }
+  if (skipped.customSets > 0) left.push(`${plural(skipped.customSets, 'custom set')}: the sets are full`);
+  if (skipped.restorePoints > 0) left.push(`${plural(skipped.restorePoints, 'restore point')}: no room beside yours`);
+  if (skipped.recoveryCopies > 0) {
+    left.push(`${plural(skipped.recoveryCopies, 'recovery copy', 'recovery copies')}: no room beside yours`);
+  }
+  const nothingMissed = left.length === 0 && report.failed.length === 0 && report.invalid === 0;
+
+  const lines: string[] = [];
+  if (added.length > 0) lines.push(`Added ${added.join(', ')}.`);
+  else if (nothingMissed) lines.push('Nothing new to add — this browser already holds everything in the backup.');
+  else lines.push('Nothing was added.');
+  if (left.length > 0) lines.push(`Not added: ${left.join('; ')}.`);
+  if (report.failed.length > 0) lines.push(`Didn’t fit in browser storage: ${report.failed.join(', ')}.`);
   if (report.invalid > 0) {
     lines.push(`${plural(report.invalid, 'part')} of the file couldn’t be read and ${report.invalid === 1 ? 'was' : 'were'} left out.`);
   }
-  if (report.overLimit > 0) {
-    lines.push(`${plural(report.overLimit, 'restore point, recovery copy or set', 'restore points, recovery copies or sets')} didn’t fit beside yours and ${report.overLimit === 1 ? 'was' : 'were'} skipped.`);
-  }
-  if (report.failed > 0) lines.push(`${plural(report.failed, 'part')} didn’t fit in browser storage.`);
-  if (report.houseWithheld) lines.push('Your open house was kept, since the restore didn’t complete.');
-  if (report.keptExtras) {
+  if (report.restorePointsDropped > 0) {
     lines.push(
-      report.replacedBeforeStop.length > 0
-        ? `The restore stopped after replacing your ${report.replacedBeforeStop.join(' and ')}; no saved layout was deleted.`
-        : 'Nothing here was deleted.'
+      `To make room, ${plural(report.restorePointsDropped, 'older restore point')} ${report.restorePointsDropped === 1 ? 'was' : 'were'} dropped; nothing else here was replaced or deleted.`
     );
+  } else {
+    lines.push('Nothing here was replaced or deleted.');
   }
   return lines.join(' ');
 }

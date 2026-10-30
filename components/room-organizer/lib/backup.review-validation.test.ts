@@ -11,7 +11,7 @@ function house(name: string, n: number): RoomLayout {
 beforeEach(() => localStorage.clear());
 
 describe('review D5 d', () => {
-  it('R10 replace with a backup whose every library house fails validation', () => {
+  it('R10 a backup whose every library house fails validation', () => {
     saveNamedLayout(house('Mine A', 2), 'Mine A');
     saveNamedLayout(house('Mine B', 3), 'Mine B');
     const parsed = parseBackup(JSON.stringify({
@@ -19,17 +19,17 @@ describe('review D5 d', () => {
       library: [{ name: 'Mine A', savedAt: 1, layout: { name: 'Mine A', floors: 'corrupt' } }, { name: 'Other', savedAt: 2, layout: null }],
     }));
     if (!parsed.ok) throw new Error('parse');
-    expect(summarizeBackup(parsed.bundle)).toMatchObject({ library: 0, invalid: 2, complete: false });
-    const report = restoreBackup(parsed.bundle, 'replace', house('Open', 1));
-    expect(report.keptExtras).toBe(true);
-    expect(listSavedLayouts().length).toBe(2);
+    expect(summarizeBackup(parsed.bundle)).toMatchObject({ library: 0, invalid: 2 });
+    const report = restoreBackup(parsed.bundle, house('Open', 1));
+    expect(report.invalid).toBe(2);
+    expect(listSavedLayouts().map((entry) => entry.name).sort()).toEqual(['Incoming (backup)', 'Mine A', 'Mine B']);
   });
-  it('R11 replace with a backup whose library field is the wrong shape', () => {
+  it('R11 a backup whose library field is the wrong shape', () => {
     saveNamedLayout(house('Mine A', 2), 'Mine A');
     const parsed = parseBackup(JSON.stringify({ format: 'house-builder-backup', version: 1, main: house('Incoming', 1), library: { 'Mine A': house('Mine A', 2) } }));
     if (!parsed.ok) throw new Error('parse');
-    const report = restoreBackup(parsed.bundle, 'replace', house('Open', 1));
-    expect(report.keptExtras).toBe(true);
+    const report = restoreBackup(parsed.bundle, house('Open', 1));
+    expect(report.invalid).toBe(1);
     expect(listSavedLayouts().length).toBeGreaterThan(0);
   });
 });

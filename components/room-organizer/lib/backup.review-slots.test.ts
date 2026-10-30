@@ -11,7 +11,7 @@ function house(name: string, itemCount: number, id = `house-${name}`): RoomLayou
 beforeEach(() => localStorage.clear());
 
 describe('review D5 b', () => {
-  it('R1b replace round trip of non-ASCII-named library houses (real clock)', () => {
+  it('R1b round trip of non-ASCII-named library houses (real clock)', () => {
     // Saved one by one in the past (different ms), as a person would.
     const names = ['Дом', 'Дача', '日本の家', 'بيت', 'Σπίτι'];
     for (const n of names) {
@@ -23,17 +23,17 @@ describe('review D5 b', () => {
     localStorage.clear();
     const parsed = parseBackup(text);
     if (!parsed.ok) throw new Error('parse');
-    const report = restoreBackup(parsed.bundle, 'replace', house('Open', 1));
-    expect(report.failed).toBe(0);
+    const report = restoreBackup(parsed.bundle, house('Open', 1));
+    expect(report.failed).toEqual([]);
     expect(listSavedLayouts()).toHaveLength(names.length);
   });
-  it('R1c replace on a browser that already holds them', () => {
+  it('R1c restore on a browser that already holds them', () => {
     const names = ['Дом', 'Дача', '日本の家'];
     for (const n of names) { saveNamedLayout(house(n, 2), n); const t = Date.now(); while (Date.now() === t) { /* */ } }
     const text = JSON.stringify(createBackup(house('Open', 1)));
     const parsed = parseBackup(text);
     if (!parsed.ok) throw new Error('parse');
-    restoreBackup(parsed.bundle, 'replace', house('Open', 1));
+    restoreBackup(parsed.bundle, house('Open', 1));
     expect(listSavedLayouts()).toHaveLength(names.length);
   });
 });

@@ -441,13 +441,6 @@ const DrawerBody = memo(function DrawerBody({
 
           <StoragePanel
             currentLayout={layout}
-            onRestoreHouse={(restored) => {
-              snapshotBeforeReplace(layout);
-              history.commitNow();
-              actions.applyLayout(restored);
-              markLayoutLoaded();
-              selectOnly(null);
-            }}
             onStorageChanged={() => setLibraryRevision((revision) => revision + 1)}
           />
 

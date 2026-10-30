@@ -44,7 +44,7 @@ describe('review D5', () => {
       })
     );
     if (!bundle.ok) throw new Error('parse');
-    const report = restoreBackup(bundle.bundle, 'merge', house('Open', 1));
+    const report = restoreBackup(bundle.bundle, house('Open', 1));
     expect(report.library).toBe(2);
     expect(listSavedLayouts()).toHaveLength(2);
   });
@@ -79,7 +79,7 @@ describe('review D5', () => {
       savedAt: 90_000 + i,
       items: [makeItem({ id: `r${i}`, position: { x: 1, z: 1 } })],
     }));
-    const n = importCustomSets(incoming, { replace: false });
+    const n = importCustomSets(incoming);
     expect(n).toEqual({ added: 0, skipped: 5 });
     const after = new Set(listCustomSets().map((s) => s.id));
     const lost = before.filter((id) => !after.has(id));
@@ -90,7 +90,7 @@ describe('review D5', () => {
     const copies = Array.from({ length: 20 }, (_, i) => ({ savedAt: i + 1, raw: `{"broken":${i}` }));
     const bundle = parseBackup(JSON.stringify({ format: 'house-builder-backup', version: 1, recoveryCopies: copies }));
     if (!bundle.ok) throw new Error('parse');
-    restoreBackup(bundle.bundle, 'merge', house('Open', 1));
+    restoreBackup(bundle.bundle, house('Open', 1));
     expect(readRecoveryCopies().length).toBeLessThanOrEqual(MAX_RECOVERY_COPIES);
   });
 
@@ -106,7 +106,7 @@ describe('review D5', () => {
     );
     const bundle = parseBackup(text);
     if (!bundle.ok) throw new Error('parse');
-    const report = restoreBackup(bundle.bundle, 'merge', house('Open', 1));
+    const report = restoreBackup(bundle.bundle, house('Open', 1));
     expect(report.settings).toBe(0);
     let junk = 0;
     for (let i = 0; i < localStorage.length; i += 1) if (localStorage.key(i)?.includes('junk')) junk += 1;
@@ -128,19 +128,19 @@ describe('review D5', () => {
     vi.setSystemTime(99_000);
     const parsed = parseBackup(text);
     if (!parsed.ok) throw new Error('parse');
-    restoreBackup(parsed.bundle, 'replace', house('Open', 1));
+    restoreBackup(parsed.bundle, house('Open', 1));
     const after = listSavedLayouts().map((e) => [e.name, e.savedAt]);
     expect(after).toEqual(before);
   });
 
-  it('R7 replace: floorPlanImage of a library house survives the round trip', () => {
+  it('R7 floorPlanImage of a library house survives the round trip', () => {
     const withImage = { ...house('Plan', 1), floorPlanImage: 'data:image/png;base64,AAAA' } as RoomLayout;
     saveNamedLayout(withImage, 'Plan');
     const text = JSON.stringify(createBackup(house('Open', 1)));
     localStorage.clear();
     const parsed = parseBackup(text);
     if (!parsed.ok) throw new Error('parse');
-    restoreBackup(parsed.bundle, 'replace', house('Open', 1));
+    restoreBackup(parsed.bundle, house('Open', 1));
     const entry = listSavedLayouts()[0];
     expect(entry && loadNamedLayout(entry.id)?.floorPlanImage).toBe('data:image/png;base64,AAAA');
     expect(localStorage.getItem(`standalone-room-organizer-library:${entry?.id}`)).toBe(
@@ -148,7 +148,7 @@ describe('review D5', () => {
     );
   });
 
-  it('R8 replace with quota failing mid library: nothing deleted, nothing half-written', () => {
+  it('R8 quota failing mid library: nothing deleted, nothing half-written', () => {
     saveNamedLayout(house('Keep A', 1), 'Keep A');
     saveNamedLayout(house('Keep B', 1), 'Keep B');
     const before = listSavedLayouts().map((e) => e.id).sort();
@@ -174,8 +174,8 @@ describe('review D5', () => {
       }
       real.call(this, k, v);
     });
-    const report = restoreBackup(bundle.bundle, 'replace', house('Open', 1));
-    expect(report.keptExtras).toBe(true);
+    const report = restoreBackup(bundle.bundle, house('Open', 1));
+    expect(report.failed.length).toBeGreaterThan(0);
     spy.mockRestore();
     const after = listSavedLayouts().map((e) => e.id).sort();
     // index consistent with blobs

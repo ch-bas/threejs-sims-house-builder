@@ -7,19 +7,17 @@ import {
   createBackup,
   describeRestore,
   parseBackup,
-  previewReplace,
-  replaceConfirmText,
   restoreBackup,
   summarizeBackup,
   type BackupBundle,
   type ParsedBackup,
+  type RestoreReport,
 } from './backup';
 import { STORAGE_KEY } from './constants';
 import { CUSTOM_SETS_STORAGE_KEY, listCustomSets, saveCustomSet } from './custom-sets';
 import { listSavedLayouts, loadNamedLayout, saveNamedLayout } from './library';
 import { addReceivedLayout, listReceivedLayouts } from './pasteboard';
 import { RECOVERY_STORAGE_KEY, readRecoveryCopies } from './persistence';
-import { parseStoredLayout } from './schema';
 import { getSnapshot, listSnapshots, recordSnapshot } from './version-history';
 import type { RoomLayout } from './types';
 
@@ -82,30 +80,32 @@ beforeEach(() => {
 });
 
 describe('backup round trip (#620)', () => {
-  it('export, wipe, import gives back everything the browser held', () => {
+  it('export, wipe, restore gives back everything the browser held, the open house in the library', () => {
     const open = fillBrowser();
-    const before = inventory();
+    const before = inventory() as { library: { name: string }[] };
     const text = JSON.stringify(createBackup(open, 5_000));
 
     localStorage.clear();
     const parsed = parseBackup(text);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const report = restoreBackup(parsed.bundle, 'replace', house('Blank', 0));
+    const report = restoreBackup(parsed.bundle, house('Blank', 0));
 
-    expect(report.house).toEqual(parseStoredLayout(JSON.parse(JSON.stringify(open))));
-    expect(report.failed).toBe(0);
+    expect(report.failed).toEqual([]);
     expect(report.invalid).toBe(0);
-    expect(inventory()).toEqual(before);
+    const after = inventory() as { library: { name: string; layout: RoomLayout | null }[] };
+    expect({ ...after, library: after.library.filter((entry) => entry.name !== 'Open (backup)') }).toEqual(before);
+    const filed = after.library.find((entry) => entry.name === 'Open (backup)');
+    expect(filed?.layout?.id).toBe(open.id);
     // Another site's key is neither backed up nor touched.
     expect(text).not.toContain('some-other-site');
   });
 
-  it('never writes the main save itself — the caller opens the house', () => {
+  it('never writes the main save', () => {
     const open = fillBrowser();
     const bundle = createBackup(open);
     localStorage.clear();
-    restoreBackup(reread(bundle), 'replace', house('Blank', 0));
+    restoreBackup(reread(bundle), house('Blank', 0));
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
@@ -126,7 +126,7 @@ describe('parseBackup', () => {
     });
   });
 
-  it('reads a part of the wrong shape as empty and marks the file incomplete', () => {
+  it('reads a part of the wrong shape as empty and counts it; a missing part is just empty', () => {
     const parsed = parseBackup(JSON.stringify({ format: BACKUP_FORMAT, version: 1, library: 'nope', customSets: 3 }));
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -136,8 +136,7 @@ describe('parseBackup', () => {
       restorePoints: 0,
       received: 0,
       customSets: 0,
-      invalid: 0,
-      complete: false,
+      invalid: 2,
     });
   });
 });
@@ -157,8 +156,7 @@ describe('restore validation', () => {
       })
     );
     if (!parsed.ok) throw new Error('should parse');
-    const report = restoreBackup(parsed.bundle, 'merge', house('Current', 1));
-    expect(report.house).toBeNull();
+    const report = restoreBackup(parsed.bundle, house('Current', 1));
     expect(listSavedLayouts().map((entry) => entry.name)).toEqual(['Good']);
     expect(listReceivedLayouts()).toEqual([]);
     expect(report.invalid).toBe(3);
@@ -179,7 +177,7 @@ describe('restore validation', () => {
       })
     );
     if (!parsed.ok) throw new Error('should parse');
-    const report = restoreBackup(parsed.bundle, 'replace', house('Current', 1));
+    const report = restoreBackup(parsed.bundle, house('Current', 1));
     expect(localStorage.getItem(ACHIEVEMENTS_KEY)).toBe('["x"]');
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(CUSTOM_SETS_STORAGE_KEY)).toBeNull();
@@ -188,8 +186,8 @@ describe('restore validation', () => {
   });
 });
 
-describe('merge replaces nothing', () => {
-  it('keeps a different house under a taken name and files the backup’s open house in the library', () => {
+describe('restore only adds', () => {
+  it('keeps a different house under a taken name, files the backup’s open house, keeps local settings', () => {
     const backupOpen = house('Backed up', 5);
     saveNamedLayout(house('Cottage', 3, 'cottage-old'), 'Cottage');
     const bundle = createBackup(backupOpen);
@@ -199,9 +197,8 @@ describe('merge replaces nothing', () => {
     saveNamedLayout(house('Cottage', 8, 'cottage-new'), 'Cottage');
     localStorage.setItem(ACHIEVEMENTS_KEY, '["mine"]');
     bundle.settings[ACHIEVEMENTS_KEY] = '["theirs"]';
-    const report = restoreBackup(reread(bundle), 'merge', current);
+    restoreBackup(reread(bundle), current);
 
-    expect(report.house).toBeNull();
     const names = listSavedLayouts().map((entry) => entry.name).sort();
     expect(names).toEqual(['Backed up (backup)', 'Cottage', 'Cottage (backup)']);
     const cottage = listSavedLayouts().find((entry) => entry.name === 'Cottage');
@@ -209,22 +206,12 @@ describe('merge replaces nothing', () => {
     expect(localStorage.getItem(ACHIEVEMENTS_KEY)).toBe('["mine"]');
   });
 
-  it('adds nothing the browser already holds', () => {
+  it('adds nothing the browser already holds, and says so', () => {
     const open = fillBrowser();
     const before = inventory();
-    const report = restoreBackup(reread(createBackup(open)), 'merge', open);
+    const report = restoreBackup(reread(createBackup(open)), open);
     expect(inventory()).toEqual(before);
-    expect(describeRestore(report)).toMatch(/^Nothing new to restore/);
-  });
-});
-
-describe('replace', () => {
-  it('drops library houses the backup lacks only after its own are in', () => {
-    saveNamedLayout(house('Kept', 1), 'Kept');
-    const bundle = createBackup(null);
-    saveNamedLayout(house('Extra', 1), 'Extra');
-    restoreBackup(reread(bundle), 'replace', house('Current', 1));
-    expect(listSavedLayouts().map((entry) => entry.name)).toEqual(['Kept']);
+    expect(describeRestore(report)).toMatch(/^Nothing new to add/);
   });
 
   it('keeps the restore points already stored', () => {
@@ -232,64 +219,38 @@ describe('replace', () => {
     const bundle = createBackup(null);
     localStorage.clear();
     recordSnapshot(house('Here', 4), { force: true, now: () => 20 });
-    const report = restoreBackup(reread(bundle), 'replace', house('Current', 1));
+    const report = restoreBackup(reread(bundle), house('Current', 1));
     expect(report.restorePoints).toBe(1);
     expect(listSnapshots().map((summary) => summary.name)).toEqual(['Here', 'Local']);
   });
-
-  it('deletes no received house or set when part of the file can’t be read', () => {
-    addReceivedLayout(house('Friend', 2), { now: () => 10 });
-    saveCustomSet([makeItem({ id: 'a', position: { x: 1, z: 1 } })], 'Mine', { now: () => 20, idTag: 'm' });
-    const parsed = parseBackup(
-      JSON.stringify({
-        format: BACKUP_FORMAT,
-        version: 1,
-        library: [],
-        restorePoints: [],
-        recoveryCopies: [],
-        received: [{ receivedAt: 1, layout: 'corrupt' }],
-        customSets: [],
-        settings: {},
-      })
-    );
-    if (!parsed.ok) throw new Error('should parse');
-    expect(parsed.bundle.complete).toBe(false);
-    const report = restoreBackup(parsed.bundle, 'replace', house('Current', 1));
-    expect(report.keptExtras).toBe(true);
-    expect(listReceivedLayouts()).toHaveLength(1);
-    expect(listCustomSets()).toHaveLength(1);
-  });
 });
 
-describe('the Replace confirm', () => {
-  const file = (library: unknown[]): ParsedBackup => {
-    const parsed = parseBackup(
-      JSON.stringify({ format: BACKUP_FORMAT, version: 1, main: null, library, restorePoints: [], recoveryCopies: [], received: [], customSets: [], settings: {} })
-    );
-    if (!parsed.ok) throw new Error(parsed.reason);
-    return parsed.bundle;
-  };
-
-  it('names how many saved layouts it deletes or overwrites, an empty library included', () => {
-    saveNamedLayout(house('Kept', 1), 'Kept');
-    saveNamedLayout(house('Gone', 1), 'Gone');
-    saveNamedLayout(house('Changed', 1), 'Changed');
-    const backup = file([
-      { name: 'Kept', savedAt: 1, layout: house('Kept', 1) },
-      { name: 'Changed', savedAt: 1, layout: house('Changed', 4) },
-    ]);
-    expect(previewReplace(backup)).toEqual({ library: 2, received: 0, customSets: 0 });
-    expect(replaceConfirmText(summarizeBackup(backup), previewReplace(backup))).toContain('deletes or overwrites 2 saved layouts');
-    expect(previewReplace(file([])).library).toBe(3);
+describe('the restore notice', () => {
+  const empty = (): RestoreReport => ({
+    library: 0,
+    restorePoints: 0,
+    recoveryCopies: 0,
+    received: 0,
+    customSets: 0,
+    settings: 0,
+    invalid: 0,
+    skipped: { restorePoints: 0, recoveryCopies: 0, customSets: 0, received: [] },
+    failed: [],
+    restorePointsDropped: 0,
   });
 
-  it('says nothing is deleted on a file not wholly read', () => {
-    saveNamedLayout(house('Mine', 1), 'Mine');
-    const parsed = parseBackup(JSON.stringify({ format: BACKUP_FORMAT, version: 1, library: [] }));
-    if (!parsed.ok) throw new Error(parsed.reason);
-    expect(previewReplace(parsed.bundle).library).toBe(0);
-    expect(replaceConfirmText(summarizeBackup(parsed.bundle), previewReplace(parsed.bundle))).toContain(
-      'nothing here is deleted or overwritten'
-    );
+  it('never says the browser holds everything when something was left out', () => {
+    const report = { ...empty(), skipped: { ...empty().skipped, received: ['Lake house', 'Loft'] } };
+    const text = describeRestore(report);
+    expect(text).not.toMatch(/already holds everything/);
+    expect(text).toContain('Nothing was added.');
+    expect(text).toContain('2 received houses (“Lake house”, “Loft”): the board is full');
+  });
+
+  it('names what didn’t fit in storage, and never claims a replace or delete', () => {
+    const text = describeRestore({ ...empty(), library: 1, failed: ['saved layout “Big”'] });
+    expect(text).toContain('Added 1 saved layout.');
+    expect(text).toContain('Didn’t fit in browser storage: saved layout “Big”.');
+    expect(text).toContain('Nothing here was replaced or deleted.');
   });
 });

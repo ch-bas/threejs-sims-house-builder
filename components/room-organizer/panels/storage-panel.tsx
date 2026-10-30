@@ -8,17 +8,14 @@ import {
   BACKUP_FAILURE_TEXT,
   backupFileName,
   createBackup,
-  libraryHousesLeftOut,
   describeRestore,
+  libraryHousesLeftOut,
   parseBackup,
-  previewReplace,
-  replaceConfirmText,
   restoreBackup,
   summarizeBackup,
-  type ParsedBackup,
   type BackupSummary,
-  type RestoreMode,
 } from '../lib/backup';
+import { askConfirm } from '../lib/confirm-dialog';
 import { subscribeCustomSets } from '../lib/custom-sets';
 import { notify } from '../lib/editor-notices';
 import { deleteNamedLayout, listSavedLayouts } from '../lib/library';
@@ -38,12 +35,6 @@ import type { RoomLayout } from '../lib/types';
 
 export interface StoragePanelProps {
   currentLayout: RoomLayout;
-  /**
-   * Open the backup's house over the current one. The caller takes the
-   * restore point, the undo step and the achievements rule, as every
-   * whole-house load does.
-   */
-  onRestoreHouse(layout: RoomLayout): void;
   /** The library changed behind the Saved Layouts panel's back. */
   onStorageChanged(): void;
 }
@@ -80,17 +71,11 @@ function describeContents(summary: BackupSummary): string {
   return summary.invalid > 0 ? `${held}; ${plural(summary.invalid, 'part')} can’t be read` : held;
 }
 
-interface PendingRestore {
-  fileName: string;
-  bundle: ParsedBackup;
-}
-
-export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }: StoragePanelProps): JSX.Element {
+export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelProps): JSX.Element {
   const exploring = useExploring();
   const editHint = exploring ? NOT_WHILE_EXPLORING : undefined;
   const [usage, setUsage] = useState<StorageUsage>(() => measureStorage(null));
   const [names, setNames] = useState<Map<string, string>>(new Map());
-  const [pending, setPending] = useState<PendingRestore | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const measure = useCallback(() => {
@@ -121,18 +106,28 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
     onStorageChanged();
   };
 
-  const handleClearRestorePoints = (): void => {
-    // TODO(#649): in-app confirm dialog.
-    if (!window.confirm('Delete every restore point? Saved layouts and the open house are kept.')) return;
+  const handleClearRestorePoints = async (): Promise<void> => {
+    const ok = await askConfirm({
+      title: 'Delete every restore point?',
+      body: 'Saved layouts and the open house are kept.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     clearSnapshots();
     changed();
     notify('Restore points deleted.', 'success');
   };
 
-  const handleDeleteLibraryHouse = (slot: string): void => {
+  const handleDeleteLibraryHouse = async (slot: string): Promise<void> => {
     const name = names.get(slot) ?? slot;
-    // TODO(#649): in-app confirm dialog.
-    if (!window.confirm(`Delete the saved layout “${name}”? This can’t be undone.`)) return;
+    const ok = await askConfirm({
+      title: `Delete the saved layout “${name}”?`,
+      body: 'This can’t be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     if (deleteNamedLayout(slot)) notify(`Deleted “${name}”.`, 'success');
     else notify(`Couldn’t delete “${name}”.`, 'error');
     changed();
@@ -155,38 +150,31 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
     event.target.value = '';
     if (!file) return;
     void file.text().then(
-      (text) => {
+      async (text) => {
         const parsed = parseBackup(text);
         if (!parsed.ok) {
           notify(BACKUP_FAILURE_TEXT[parsed.reason], 'error');
           return;
         }
-        setPending({ fileName: file.name, bundle: parsed.bundle });
+        const ok = await askConfirm({
+          title: `Restore from “${file.name}”?`,
+          body: `It holds ${describeContents(summarizeBackup(parsed.bundle))}. Restoring adds what this browser lacks and never replaces or deletes your houses, sets or settings; the open house stays as it is. Older restore points may give way to make room.`,
+          confirmLabel: 'Restore',
+        });
+        if (!ok) return;
+        const report = restoreBackup(parsed.bundle, currentLayout);
+        changed();
+        const missed = report.invalid > 0 || report.skipped.received.length > 0 ||
+          report.skipped.customSets + report.skipped.restorePoints + report.skipped.recoveryCopies > 0;
+        notify(describeRestore(report), report.failed.length > 0 ? 'error' : missed ? 'info' : 'success');
       },
       () => notify('Couldn’t read that file.', 'error')
     );
   };
 
-  const handleRestore = (mode: RestoreMode): void => {
-    if (!pending) return;
-    const summary = summarizeBackup(pending.bundle);
-    if (mode === 'replace') {
-      // TODO(#649): in-app confirm dialog.
-      const ok = window.confirm(replaceConfirmText(summary, previewReplace(pending.bundle)));
-      if (!ok) return;
-    }
-    const report = restoreBackup(pending.bundle, mode, currentLayout);
-    if (report.house) onRestoreHouse(report.house);
-    setPending(null);
-    changed();
-    const tone = report.failed > 0 ? 'error' : report.invalid > 0 || report.overLimit > 0 ? 'info' : 'success';
-    notify(describeRestore(report), tone);
-  };
-
   const used = usage.total;
   const fill = Math.min(1, used / STORAGE_QUOTA_CHARS);
   const restorePointChars = usage.byTenant.restorePoints;
-  const pendingSummary = pending ? summarizeBackup(pending.bundle) : null;
 
   return (
     <Card>
@@ -250,7 +238,7 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
                     aria-label={`Delete saved layout ${names.get(slot) ?? slot}`}
                     disabled={exploring}
                     title={editHint ?? 'Delete this saved layout…'}
-                    onClick={() => handleDeleteLibraryHouse(slot)}
+                    onClick={() => void handleDeleteLibraryHouse(slot)}
                   >
                     🗑
                   </Button>
@@ -266,7 +254,7 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
           className="w-full text-xs"
           disabled={restorePointChars === 0 || exploring}
           title={editHint}
-          onClick={handleClearRestorePoints}
+          onClick={() => void handleClearRestorePoints()}
         >
           🧹 Delete all restore points{restorePointChars > 0 ? ` (${formatStorageSize(restorePointChars)})` : ''}
         </Button>
@@ -288,41 +276,12 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
               size="sm"
               className="text-xs"
               disabled={exploring}
-              title={editHint ?? 'Bring back everything from a backup file'}
+              title={editHint ?? 'Add what this browser lacks from a backup file'}
               onClick={() => fileInputRef.current?.click()}
             >
               ⬆ Restore…
             </Button>
           </div>
-          {pending && pendingSummary && (
-            <div role="group" aria-label="Restore backup" className="space-y-2 rounded-md border p-2 text-xs">
-              <p>
-                “{pending.fileName}” holds{' '}
-                {describeContents(pendingSummary)}.
-              </p>
-              <p className="text-muted-foreground">
-                Merge adds what this browser lacks and replaces nothing. Replace makes the open house and saved
-                layouts the backup’s.
-              </p>
-              <div className="grid grid-cols-3 gap-1">
-                <Button size="sm" className="text-xs" disabled={exploring} onClick={() => handleRestore('merge')}>
-                  Merge
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs text-red-600"
-                  disabled={exploring}
-                  onClick={() => handleRestore('replace')}
-                >
-                  Replace…
-                </Button>
-                <Button variant="outline" size="sm" className="text-xs" onClick={() => setPending(null)}>
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
 
         <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={handleFile} className="hidden" />
