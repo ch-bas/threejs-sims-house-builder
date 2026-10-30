@@ -54,6 +54,12 @@ export const MAX_INTERIOR_WALLS_PER_FLOOR = 1000;
  */
 export const MAX_COORDINATE = 10 * MAX_ROOM_DIMENSION;
 /**
+ * Wi-Fi signal and camera vision ranges, in metres: ten times the longest
+ * the editor offers (a 100 m camera). `1e300` used to pass and sized ring
+ * and cone geometry, the SVG and the DXF extents with it (#553).
+ */
+export const MAX_RANGE_M = 1000;
+/**
  * Largest layout JSON the app will read, in bytes — a share link's inflated
  * payload or an imported file (#332). The biggest house the editor can save
  * (localStorage holds ~5 M characters, floor plan included) fits with room
@@ -153,7 +159,8 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (v.position !== undefined && !isVec2(v.position)) return false;
   if (v.rotation !== undefined && !isFiniteNumber(v.rotation)) return false;
   // Ranges must be positive: negative signal/vision values invert ring and
-  // cone geometry (#121). FOV additionally caps at a full circle.
+  // cone geometry (#121); too long a range is clamped by the repair (#553).
+  // FOV additionally caps at a full circle.
   if (!isOptionalPositiveNumber(v.signalRange)) return false;
   if (!isOptionalPositiveNumber(v.visionRange)) return false;
   if (v.visionFov !== undefined && (!isPositiveNumber(v.visionFov) || v.visionFov > 360)) return false;
@@ -509,7 +516,12 @@ const CATALOG_CATEGORY: ReadonlyMap<string, FurnitureCategory> = new Map(
   FURNITURE_CATALOG.map(({ type, category }) => [type, category])
 );
 
-function repairItem(item: FurnitureItem): FurnitureItem {
+/**
+ * An item brought within the caps, keeping only the keys the app knows; the
+ * item itself when it already is. Every way an item enters the editor runs
+ * it: a stored house, a custom set and the reducer's incoming items (#553).
+ */
+export function repairItem(item: FurnitureItem): FurnitureItem {
   const patch: Partial<FurnitureItem> = {
     id: capText(item.id, MAX_ID_LENGTH),
     type: capText(item.type, MAX_ID_LENGTH),
@@ -521,6 +533,8 @@ function repairItem(item: FurnitureItem): FurnitureItem {
   if (item.groupId !== undefined) patch.groupId = capText(item.groupId, MAX_ID_LENGTH);
   // A negative price turns the budget and every cost total upside down (#350).
   if (item.price !== undefined && item.price < 0) patch.price = 0;
+  if (item.signalRange !== undefined && item.signalRange > MAX_RANGE_M) patch.signalRange = MAX_RANGE_M;
+  if (item.visionRange !== undefined && item.visionRange > MAX_RANGE_M) patch.visionRange = MAX_RANGE_M;
   if (item.position) patch.position = repairVec2(item.position);
   // The category decides whether an item is garden furniture (collisions,
   // floor area, walkers), so a catalogue type without one, or with an
@@ -760,19 +774,57 @@ function migrateLegacyLayout(legacy: LegacySingleFloorLayout): RoomLayout {
   return layout;
 }
 
-/**
- * How many items, interior walls and zones a stored layout holds, read from
- * raw JSON in either the current or the legacy single-floor shape. Compared
- * before and after parsing, it tells whether the repair cut anything (#332).
- */
-export function storedEntryCount(value: unknown): number {
-  if (!isPlainObject(value)) return 0;
+/** What parsing a stored house left out, by kind (#553). */
+export interface StoredEntryLoss {
+  items: number;
+  walls: number;
+  zones: number;
+  /** Whether a floor held more of something than the editor keeps on one floor. */
+  overFloorCap: boolean;
+}
+
+interface EntryCounts {
+  items: number;
+  walls: number;
+  zones: number;
+  overFloorCap: boolean;
+}
+
+function countEntries(value: unknown): EntryCounts {
+  const counts: EntryCounts = { items: 0, walls: 0, zones: 0, overFloorCap: false };
+  if (!isPlainObject(value)) return counts;
   const length = (list: unknown): number => (Array.isArray(list) ? list.length : 0);
-  if (!Array.isArray(value.floors)) return length(value.items) + length(value.interiorWalls);
-  let count = 0;
-  for (const floor of value.floors as unknown[]) {
+  const floors = Array.isArray(value.floors) ? (value.floors as unknown[]) : [value];
+  for (const floor of floors) {
     if (!isPlainObject(floor)) continue;
-    count += length(floor.items) + length(floor.interiorWalls) + length(floor.zones);
+    const items = length(floor.items);
+    const walls = length(floor.interiorWalls);
+    const zones = length(floor.zones);
+    counts.items += items;
+    counts.walls += walls;
+    counts.zones += zones;
+    if (items >= MAX_ITEMS_PER_FLOOR || walls >= MAX_INTERIOR_WALLS_PER_FLOOR || zones > MAX_ZONES) {
+      counts.overFloorCap = true;
+    }
   }
-  return count;
+  return counts;
+}
+
+/**
+ * What `parsed` lost against the `raw` value it was parsed from, by kind,
+ * or null when nothing was left out. Items are cut by the floor cap or as a
+ * second porch door; walls by the cap, for having no length or as a second
+ * porch back wall; zones by the cap. The notice names the right cause.
+ */
+export function storedEntryLoss(raw: unknown, parsed: RoomLayout): StoredEntryLoss | null {
+  const before = countEntries(raw);
+  const after = countEntries(parsed);
+  const loss: StoredEntryLoss = {
+    items: Math.max(0, before.items - after.items),
+    walls: Math.max(0, before.walls - after.walls),
+    zones: Math.max(0, before.zones - after.zones),
+    overFloorCap: before.overFloorCap,
+  };
+  if (loss.items + loss.walls + loss.zones === 0) return null;
+  return loss;
 }

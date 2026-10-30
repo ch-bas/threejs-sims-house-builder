@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeLayout } from './__testfixtures__/fixtures';
 import { MAX_ROOM_DIMENSION, STORAGE_KEY } from './constants';
+import { subscribeNotices, type Notice } from './editor-notices';
 import { randomId } from './ids';
 import { INITIAL_LAYOUT } from './initial-layout';
 import {
@@ -161,6 +162,32 @@ describe('persistence — a load that trims the house keeps the original (#332)'
     } finally {
       spy.mockRestore();
     }
+  });
+
+  function noticesWhileLoading(raw: unknown): string[] {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+    const shown: Notice[] = [];
+    const stop = subscribeNotices((notice) => shown.push(notice));
+    try {
+      loadLayout();
+    } finally {
+      stop();
+    }
+    return shown.map(({ message }) => message);
+  }
+
+  it('blames the floor cap only when a floor really was over it (#553)', () => {
+    const item = (id: string) => ({ id, type: 'chair', name: 'Chair', width: 0.5, depth: 0.5, height: 0.9, color: '#8B4513', icon: 'c' });
+    const over = { name: 'Big', width: 20, height: 20, floors: [{ id: 'g', name: 'Ground', floorColor: '#fff', items: Array.from({ length: 2100 }, (_, i) => item(`i${i}`)) }] };
+    expect(noticesWhileLoading(over)).toEqual([expect.stringMatching(/more than the editor keeps on one floor, so 101 items were left out/)]);
+  });
+
+  it('says walls, not items, when the repair drops a zero-length wall (#553)', () => {
+    const walls = [{ id: 'a', x1: 0, z1: 0, x2: 2, z2: 0 }, { id: 'b', x1: 1, z1: 1, x2: 1, z2: 1 }];
+    const messages = noticesWhileLoading(makeLayout({ floors: [{ id: 'g', name: 'Ground', floorColor: '#fff', items: [], interiorWalls: walls }] }));
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).not.toMatch(/more than the editor keeps|items/);
+    expect(messages[0]).toMatch(/wall/);
   });
 
   it('takes no backup for a house that loads whole', () => {

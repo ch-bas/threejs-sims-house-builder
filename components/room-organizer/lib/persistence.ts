@@ -2,7 +2,7 @@ import { STORAGE_KEY } from './constants';
 import { notify } from './editor-notices';
 import { downloadTextFile } from './plan-export/download';
 import { isUntouched } from './restore-point';
-import { parseStoredLayout, storedEntryCount } from './schema';
+import { parseStoredLayout, storedEntryLoss, type StoredEntryLoss } from './schema';
 import { classifyStorageError, type StorageErrorKind } from './storage-errors';
 import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout } from './types';
@@ -39,20 +39,38 @@ export function loadLayout(): RoomLayout | null {
     const layout = parseStoredLayout(parsed);
     // Over the caps, the load trims the house; the next autosave would make
     // that permanent. Keep the original first (#332).
-    if (layout && storedEntryCount(layout) < storedEntryCount(parsed)) {
+    const loss = layout && storedEntryLoss(parsed, layout);
+    if (loss) {
       // No room for the copy: treat the save as unopenable, so the caller
       // holds autosave off and the original stays the only thing stored.
       if (!backupStoredLayout()) return null;
-      notify(
-        'This house had more than the editor keeps on one floor, so some items were left out. The original is kept in Manage → Saved Layouts → History.',
-        'info'
-      );
+      notify(trimmedHouseNotice(loss), 'info');
     }
     return layout;
   } catch (error) {
     console.warn('Failed to load saved layout:', error);
     return null;
   }
+}
+
+function counted(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** What a load that left something out says, naming the right cause (#553). */
+export function trimmedHouseNotice(loss: StoredEntryLoss): string {
+  const kept = 'The original is kept in Manage → Saved Layouts → History.';
+  const parts = [
+    loss.items > 0 ? counted(loss.items, 'item') : null,
+    loss.walls > 0 ? counted(loss.walls, 'wall') : null,
+    loss.zones > 0 ? counted(loss.zones, 'zone') : null,
+  ].filter((part): part is string => part !== null);
+  const total = loss.items + loss.walls + loss.zones;
+  const what = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+  if (loss.overFloorCap) {
+    return `This house had more than the editor keeps on one floor, so ${what} ${total === 1 ? 'was' : 'were'} left out. ${kept}`;
+  }
+  return `This house had ${what} the editor can’t use, such as a wall with no length or a second porch door, so ${total === 1 ? 'it was' : 'they were'} left out. ${kept}`;
 }
 
 /**

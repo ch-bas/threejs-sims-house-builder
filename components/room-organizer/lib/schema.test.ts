@@ -10,10 +10,12 @@ import {
   MAX_ITEMS_PER_FLOOR,
   MAX_LAYOUT_JSON_BYTES,
   MAX_NAME_LENGTH,
+  MAX_RANGE_M,
   isFloorLayout,
   isFurnitureItem,
   isRoomLayout,
   parseStoredLayout,
+  storedEntryLoss,
 } from './schema';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from './street';
 import { MAX_STORAGE_ENTRY_CHARS } from './version-history';
@@ -802,5 +804,59 @@ describe('round trips', () => {
     };
     const once = parseStoredLayout(messy)!;
     expect(parseStoredLayout(once)).toBe(once);
+  });
+});
+
+describe('signal and vision ranges are bounded (#553)', () => {
+  it('clamps a huge range instead of letting it reach the geometry', () => {
+    const items = [
+      makeItem({ id: 'ap', signalRange: 1e300 }),
+      makeItem({ id: 'cam', visionRange: Number.MAX_VALUE, visionFov: 90 }),
+    ];
+    const parsed = parseStoredLayout(makeLayout({ floors: [makeFloor({ items })] }))!;
+    expect(parsed.floors[0]!.items.map((item) => [item.signalRange, item.visionRange])).toEqual([
+      [MAX_RANGE_M, undefined],
+      [undefined, MAX_RANGE_M],
+    ]);
+  });
+
+  it('leaves every range the editor offers as it is', () => {
+    const item = makeItem({ category: 'seating', signalRange: 20, visionRange: 100 });
+    const layout = makeLayout({ floors: [makeFloor({ items: [item] })] });
+    expect(parseStoredLayout(layout)).toBe(layout);
+  });
+});
+
+describe('storedEntryLoss names what a repair left out (#553)', () => {
+  const wall = (id: string, x2: number) => ({ id, x1: 0, z1: 0, x2, z2: 0 });
+
+  it('tells items over the floor cap from walls the repair drops', () => {
+    const items = Array.from({ length: MAX_ITEMS_PER_FLOOR + 5 }, (_, i) => makeItem({ id: `i${i}` }));
+    const over = makeLayout({ floors: [makeFloor({ items })] });
+    expect(storedEntryLoss(over, parseStoredLayout(over)!)).toEqual({ overFloorCap: true, items: 6, walls: 0, zones: 0 });
+
+    const zeroLength = makeLayout({ floors: [makeFloor({ interiorWalls: [wall('a', 2), wall('b', 0)] })] });
+    expect(storedEntryLoss(zeroLength, parseStoredLayout(zeroLength)!)).toEqual({
+      overFloorCap: false,
+      items: 0,
+      walls: 1,
+      zones: 0,
+    });
+  });
+
+  it('counts a second porch door as an item dropped, not a cap', () => {
+    const door = makeItem({ id: 'entrance-door', type: 'door' });
+    const twice = makeLayout({ floors: [makeFloor({ items: [door, door] })] });
+    expect(storedEntryLoss(twice, parseStoredLayout(twice)!)).toEqual({
+      overFloorCap: false,
+      items: 1,
+      walls: 0,
+      zones: 0,
+    });
+  });
+
+  it('is null for a house that loads whole', () => {
+    const layout = makeLayout();
+    expect(storedEntryLoss(layout, parseStoredLayout(layout)!)).toBeNull();
   });
 });

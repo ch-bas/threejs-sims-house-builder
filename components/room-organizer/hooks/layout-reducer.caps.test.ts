@@ -5,7 +5,9 @@ import {
   MAX_COORDINATE,
   MAX_INTERIOR_WALLS_PER_FLOOR,
   MAX_ITEMS_PER_FLOOR,
+  MAX_ID_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_RANGE_M,
   parseStoredLayout,
 } from '../lib/schema';
 import { layoutReducer, type LayoutAction, type LayoutState } from './layout-reducer';
@@ -150,6 +152,35 @@ describe('reducer output always reloads unchanged (#332, #350)', () => {
     const walls = Array.from({ length: MAX_INTERIOR_WALLS_PER_FLOOR - 1 }, (_, i) => ({ id: `w${i}`, x1: 0, z1: i / 100, x2: 1, z2: i / 100 }));
     state = layoutReducer(state, { type: 'addInteriorWalls', walls });
     expect(layoutReducer(state, { type: 'addInteriorWall', wall: { id: 'extra', x1: 0, z1: 0, x2: 2, z2: 2 } })).toBe(state);
+    expectReloadsUnchanged(state);
+  });
+});
+
+describe('ranges and incoming items stay within the schema (#553)', () => {
+  const withItem = (item: FurnitureItem): LayoutState => ({
+    layout: makeLayout({ floors: [makeFloor({ items: [item] })] }),
+    activeFloorIndex: 0,
+  });
+
+  it('clamps a huge signal or vision range from any edit', () => {
+    let state = withItem(makeItem({ id: 'ap', category: 'seating', signalRange: 10, visionRange: 30 }));
+    state = layoutReducer(state, { type: 'setSignalRange', id: 'ap', range: 1e300 });
+    state = layoutReducer(state, { type: 'updateItem', id: 'ap', patch: { visionRange: Number.MAX_VALUE } });
+    const [item] = state.layout.floors[0]!.items;
+    expect([item!.signalRange, item!.visionRange]).toEqual([MAX_RANGE_M, MAX_RANGE_M]);
+    expectReloadsUnchanged(state);
+  });
+
+  it('repairs a foreign item on its way in: price, id and unknown keys', () => {
+    const foreign = { ...makeItem({ id: 'x'.repeat(5000), price: -1e9 }), bloat: 'yes' } as FurnitureItem;
+    const state = layoutReducer(withItem(makeItem({ id: 'kept', category: 'seating' })), {
+      type: 'addItems',
+      items: [foreign],
+    });
+    const added = state.layout.floors[0]!.items[1]!;
+    expect(added.price).toBe(0);
+    expect(added.id.length).toBeLessThanOrEqual(MAX_ID_LENGTH);
+    expect('bloat' in added).toBe(false);
     expectReloadsUnchanged(state);
   });
 });
