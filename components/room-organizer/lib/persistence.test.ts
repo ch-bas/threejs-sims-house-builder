@@ -186,8 +186,30 @@ describe('persistence — a load that trims the house keeps the original (#332)'
     const walls = [{ id: 'a', x1: 0, z1: 0, x2: 2, z2: 0 }, { id: 'b', x1: 1, z1: 1, x2: 1, z2: 1 }];
     const messages = noticesWhileLoading(makeLayout({ floors: [{ id: 'g', name: 'Ground', floorColor: '#fff', items: [], interiorWalls: walls }] }));
     expect(messages).toHaveLength(1);
-    expect(messages[0]).not.toMatch(/more than the editor keeps|items/);
-    expect(messages[0]).toMatch(/wall/);
+    expect(messages[0]).not.toMatch(/more than the editor keeps|item|door/);
+    expect(messages[0]).toMatch(/A wall with no length/);
+  });
+
+  it('names each cause on its own when a floor is over the cap and another has a zero-length wall (#553)', () => {
+    const item = (id: string) => ({ id, type: 'chair', name: 'Chair', width: 0.5, depth: 0.5, height: 0.9, color: '#8B4513', icon: 'c' });
+    const walls = [{ id: 'a', x1: 0, z1: 0, x2: 2, z2: 0 }, { id: 'b', x1: 1, z1: 1, x2: 1, z2: 1 }];
+    const house = {
+      name: 'Big', width: 20, height: 20,
+      floors: [
+        { id: 'g', name: 'Ground', floorColor: '#fff', items: Array.from({ length: 2001 }, (_, i) => item(`i${i}`)) },
+        { id: 'u', name: 'Upper', floorColor: '#fff', items: [], interiorWalls: walls },
+      ],
+    };
+    const [message] = noticesWhileLoading(house);
+    expect(message).toMatch(/more than the editor keeps on one floor, so 2 items were left out\. A wall with no length/);
+    expect(message).not.toMatch(/so .*wall.* were left out/);
+  });
+
+  it('calls a second porch door a porch door (#553)', () => {
+    const door = { id: 'entrance-door', type: 'door', name: 'Door', width: 0.9, depth: 0.1, height: 2, color: '#fff', icon: 'd' };
+    const [message] = noticesWhileLoading(makeLayout({ floors: [{ id: 'g', name: 'Ground', floorColor: '#fff', items: [door, door] }] }));
+    expect(message).toMatch(/^A second porch door was left out\./);
+    expect(message).not.toMatch(/wall/);
   });
 
   it('takes no backup for a house that loads whole', () => {

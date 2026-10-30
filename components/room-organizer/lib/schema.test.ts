@@ -830,28 +830,43 @@ describe('signal and vision ranges are bounded (#553)', () => {
 describe('storedEntryLoss names what a repair left out (#553)', () => {
   const wall = (id: string, x2: number) => ({ id, x1: 0, z1: 0, x2, z2: 0 });
 
+  const none = { items: 0, walls: 0, zones: 0 };
+
   it('tells items over the floor cap from walls the repair drops', () => {
     const items = Array.from({ length: MAX_ITEMS_PER_FLOOR + 5 }, (_, i) => makeItem({ id: `i${i}` }));
     const over = makeLayout({ floors: [makeFloor({ items })] });
-    expect(storedEntryLoss(over, parseStoredLayout(over)!)).toEqual({ overFloorCap: true, items: 6, walls: 0, zones: 0 });
+    expect(storedEntryLoss(over, parseStoredLayout(over)!)).toEqual({
+      overCap: { ...none, items: 6 },
+      porchDoors: 0,
+      unusableWalls: 0,
+    });
 
     const zeroLength = makeLayout({ floors: [makeFloor({ interiorWalls: [wall('a', 2), wall('b', 0)] })] });
     expect(storedEntryLoss(zeroLength, parseStoredLayout(zeroLength)!)).toEqual({
-      overFloorCap: false,
-      items: 0,
-      walls: 1,
-      zones: 0,
+      overCap: none,
+      porchDoors: 0,
+      unusableWalls: 1,
     });
   });
 
-  it('counts a second porch door as an item dropped, not a cap', () => {
+  it('counts a second porch door as a porch door, not a cap', () => {
     const door = makeItem({ id: 'entrance-door', type: 'door' });
     const twice = makeLayout({ floors: [makeFloor({ items: [door, door] })] });
-    expect(storedEntryLoss(twice, parseStoredLayout(twice)!)).toEqual({
-      overFloorCap: false,
-      items: 1,
-      walls: 0,
-      zones: 0,
+    expect(storedEntryLoss(twice, parseStoredLayout(twice)!)).toEqual({ overCap: none, porchDoors: 1, unusableWalls: 0 });
+  });
+
+  it('blames the cap only on the floor that was over it', () => {
+    const items = Array.from({ length: MAX_ITEMS_PER_FLOOR + 1 }, (_, i) => makeItem({ id: `i${i}` }));
+    const house = makeLayout({
+      floors: [
+        makeFloor({ id: 'ground', items }),
+        makeFloor({ id: 'upper', interiorWalls: [wall('a', 2), wall('b', 0)] }),
+      ],
+    });
+    expect(storedEntryLoss(house, parseStoredLayout(house)!)).toEqual({
+      overCap: { ...none, items: 2 },
+      porchDoors: 0,
+      unusableWalls: 1,
     });
   });
 

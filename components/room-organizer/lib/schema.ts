@@ -774,57 +774,56 @@ function migrateLegacyLayout(legacy: LegacySingleFloorLayout): RoomLayout {
   return layout;
 }
 
-/** What parsing a stored house left out, by kind (#553). */
+/** What parsing a stored house left out, by cause (#553). */
 export interface StoredEntryLoss {
+  /** Entries cut on floors that held more of them than the editor keeps on one floor. */
+  overCap: { items: number; walls: number; zones: number };
+  /** Repeated porch doors dropped from floors within the item cap. */
+  porchDoors: number;
+  /** Walls with no length, or repeating the porch's back wall, dropped from floors within the wall cap. */
+  unusableWalls: number;
+}
+
+interface FloorCounts {
   items: number;
   walls: number;
   zones: number;
-  /** Whether a floor held more of something than the editor keeps on one floor. */
-  overFloorCap: boolean;
 }
 
-interface EntryCounts {
-  items: number;
-  walls: number;
-  zones: number;
-  overFloorCap: boolean;
-}
-
-function countEntries(value: unknown): EntryCounts {
-  const counts: EntryCounts = { items: 0, walls: 0, zones: 0, overFloorCap: false };
-  if (!isPlainObject(value)) return counts;
+/** Each floor's item, wall and zone counts, in either stored shape. */
+function floorCounts(value: unknown): FloorCounts[] {
+  if (!isPlainObject(value)) return [];
   const length = (list: unknown): number => (Array.isArray(list) ? list.length : 0);
   const floors = Array.isArray(value.floors) ? (value.floors as unknown[]) : [value];
-  for (const floor of floors) {
-    if (!isPlainObject(floor)) continue;
-    const items = length(floor.items);
-    const walls = length(floor.interiorWalls);
-    const zones = length(floor.zones);
-    counts.items += items;
-    counts.walls += walls;
-    counts.zones += zones;
-    if (items >= MAX_ITEMS_PER_FLOOR || walls >= MAX_INTERIOR_WALLS_PER_FLOOR || zones > MAX_ZONES) {
-      counts.overFloorCap = true;
-    }
-  }
-  return counts;
+  return floors.map((floor) =>
+    isPlainObject(floor)
+      ? { items: length(floor.items), walls: length(floor.interiorWalls), zones: length(floor.zones) }
+      : { items: 0, walls: 0, zones: 0 }
+  );
 }
 
 /**
- * What `parsed` lost against the `raw` value it was parsed from, by kind,
- * or null when nothing was left out. Items are cut by the floor cap or as a
- * second porch door; walls by the cap, for having no length or as a second
- * porch back wall; zones by the cap. The notice names the right cause.
+ * What `parsed` lost against the `raw` value it was parsed from, or null
+ * when nothing was left out. Floor by floor, so each loss gets its own cause:
+ * on a floor over a cap, what the cap cut; on any other floor, a repeated
+ * porch door or a wall with no length or repeating the porch's back wall.
+ * Zones are only ever cut by their cap.
  */
 export function storedEntryLoss(raw: unknown, parsed: RoomLayout): StoredEntryLoss | null {
-  const before = countEntries(raw);
-  const after = countEntries(parsed);
-  const loss: StoredEntryLoss = {
-    items: Math.max(0, before.items - after.items),
-    walls: Math.max(0, before.walls - after.walls),
-    zones: Math.max(0, before.zones - after.zones),
-    overFloorCap: before.overFloorCap,
-  };
-  if (loss.items + loss.walls + loss.zones === 0) return null;
-  return loss;
+  const before = floorCounts(raw);
+  const after = floorCounts(parsed);
+  const loss: StoredEntryLoss = { overCap: { items: 0, walls: 0, zones: 0 }, porchDoors: 0, unusableWalls: 0 };
+  before.forEach((floor, index) => {
+    const kept = after[index] ?? { items: 0, walls: 0, zones: 0 };
+    const items = Math.max(0, floor.items - kept.items);
+    const walls = Math.max(0, floor.walls - kept.walls);
+    if (floor.items >= MAX_ITEMS_PER_FLOOR) loss.overCap.items += items;
+    else loss.porchDoors += items;
+    if (floor.walls >= MAX_INTERIOR_WALLS_PER_FLOOR) loss.overCap.walls += walls;
+    else loss.unusableWalls += walls;
+    loss.overCap.zones += Math.max(0, floor.zones - kept.zones);
+  });
+  const { overCap } = loss;
+  const total = overCap.items + overCap.walls + overCap.zones + loss.porchDoors + loss.unusableWalls;
+  return total === 0 ? null : loss;
 }

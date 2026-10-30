@@ -1173,17 +1173,14 @@ function hasFinitePlacement(item: FurnitureItem): boolean {
   return item.rotation === undefined || Number.isFinite(item.rotation);
 }
 
-/** An incoming item (paste, set, Surprise) with its position and name within the caps. */
+/**
+ * An incoming item (paste, set, Surprise, arrange) through the schema's own
+ * repair (#553): name, ids, price and ranges within the caps, the position
+ * clamped and unknown keys dropped, so it reloads exactly as it was placed.
+ * The item itself when it already is.
+ */
 function boundItem(item: FurnitureItem): FurnitureItem {
-  // The schema's own repair first (#553): price, ids, ranges and unknown
-  // keys, so an incoming item reloads exactly as it was placed. It caps the
-  // name and clamps the position too.
-  const repaired = repairItem(item);
-  if (repaired !== item) return repaired;
-  const name = capName(item.name);
-  const position = item.position && clampPosition(item.position);
-  if (name === item.name && position === item.position) return item;
-  return { ...item, name, ...(position ? { position } : {}) };
+  return repairItem(item);
 }
 
 /**

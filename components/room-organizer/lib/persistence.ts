@@ -57,20 +57,34 @@ function counted(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-/** What a load that left something out says, naming the right cause (#553). */
+/** What a load that left something out says, each loss with its own cause (#553). */
 export function trimmedHouseNotice(loss: StoredEntryLoss): string {
-  const kept = 'The original is kept in Manage → Saved Layouts → History.';
-  const parts = [
-    loss.items > 0 ? counted(loss.items, 'item') : null,
-    loss.walls > 0 ? counted(loss.walls, 'wall') : null,
-    loss.zones > 0 ? counted(loss.zones, 'zone') : null,
+  const sentences: string[] = [];
+  const { items, walls, zones } = loss.overCap;
+  const capped = [
+    items > 0 ? counted(items, 'item') : null,
+    walls > 0 ? counted(walls, 'wall') : null,
+    zones > 0 ? counted(zones, 'zone') : null,
   ].filter((part): part is string => part !== null);
-  const total = loss.items + loss.walls + loss.zones;
-  const what = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
-  if (loss.overFloorCap) {
-    return `This house had more than the editor keeps on one floor, so ${what} ${total === 1 ? 'was' : 'were'} left out. ${kept}`;
+  if (capped.length > 0) {
+    const what = capped.length > 1 ? `${capped.slice(0, -1).join(', ')} and ${capped[capped.length - 1]}` : capped[0];
+    const one = items + walls + zones === 1;
+    sentences.push(`This house had more than the editor keeps on one floor, so ${what} ${one ? 'was' : 'were'} left out.`);
   }
-  return `This house had ${what} the editor can’t use, such as a wall with no length or a second porch door, so ${total === 1 ? 'it was' : 'they were'} left out. ${kept}`;
+  if (loss.porchDoors > 0) {
+    sentences.push(
+      loss.porchDoors === 1 ? 'A second porch door was left out.' : `${loss.porchDoors} extra porch doors were left out.`
+    );
+  }
+  if (loss.unusableWalls > 0) {
+    sentences.push(
+      loss.unusableWalls === 1
+        ? 'A wall with no length, or a second porch back wall, was left out.'
+        : `${loss.unusableWalls} walls with no length, or repeating the porch back wall, were left out.`
+    );
+  }
+  sentences.push('The original is kept in Manage → Saved Layouts → History.');
+  return sentences.join(' ');
 }
 
 /**
