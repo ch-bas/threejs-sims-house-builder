@@ -358,11 +358,16 @@ function sameHouseContent(parsed: RoomLayout, layout: RoomLayout): boolean {
   return sameLayoutContent(parsed, parseStoredLayout(JSON.parse(JSON.stringify(layout))) ?? layout);
 }
 
-/** Whether the library already holds this very house under any name. */
+/**
+ * Whether the library already holds this very house under any name. The name
+ * is left out of the comparison: a copy saved as "A (backup)" carries that
+ * name, and restoring the same file again must not add it a second time.
+ */
 function libraryHolds(layout: RoomLayout): boolean {
+  const unnamed = { ...layout, name: '' };
   return listSavedLayouts().some((entry) => {
     const stored = loadNamedLayout(entry.id);
-    return stored !== null && sameLayoutContent(stored, layout);
+    return stored !== null && sameLayoutContent({ ...stored, name: '' }, unnamed);
   });
 }
 

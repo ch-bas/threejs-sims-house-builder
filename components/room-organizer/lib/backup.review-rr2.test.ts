@@ -22,6 +22,16 @@ function leaveRoom(room: number) {
 beforeEach(() => { localStorage.clear(); vi.useRealTimers(); });
 
 describe('re-review D5', () => {
+  it('restoring the same file twice adds a renamed copy only once', () => {
+    saveNamedLayout(house('A', 3, 'local-a'), 'A');
+    const bundle = parse({ library: [{ name: 'A', savedAt: 1, layout: house('A', 1, 'backup-a') }] });
+    const current = house('Open', 2, 'open');
+    expect(restoreBackup(bundle, current).library).toBe(1);
+    expect(listSavedLayouts().map((entry) => entry.name).sort()).toEqual(['A', 'A (backup)']);
+    expect(restoreBackup(bundle, current).library).toBe(0);
+    expect(listSavedLayouts()).toHaveLength(2);
+  });
+
   it('Q3 merge keeps every local received house when the board is at its cap', () => {
     for (let i = 0; i < MAX_RECEIVED_LAYOUTS; i += 1) addReceivedLayout(house(`L${i}`, 1), { now: () => 1000 + i });
     const bundle = parse({ received: [{ name: 'B', receivedAt: 5000, layout: house('B', 2) }] });
