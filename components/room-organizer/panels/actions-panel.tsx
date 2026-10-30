@@ -9,6 +9,7 @@ import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
+import { askConfirm } from '../lib/confirm-dialog';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { notifyWithUndo, removedMessage, removedNames } from '../lib/editor-notices';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
@@ -119,14 +120,15 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               // spends what the rest of the building leaves of the budget: the
               // hard budget refuses before asking, the soft one asks before
               // going over (#136, #581).
-              const replaced = runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
-                confirm: (message) => window.confirm(message),
+              void runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
+                confirm: askConfirm,
                 playCue,
                 replaceItems: (items) => actions.replaceItems(items),
+              }).then((replaced) => {
+                if (!replaced) return;
+                setSelectedItemId(null);
+                setExtraSelectedIds(new Set());
               });
-              if (!replaced) return;
-              setSelectedItemId(null);
-              setExtraSelectedIds(new Set());
             }}
             variant="outline"
             className="w-full text-xs"
@@ -154,17 +156,28 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               onClick={() => {
                 // Same rule as Surprise: never wipe placed furniture without
                 // asking (#105, #223).
-                if (!window.confirm(`Remove every item from this floor?${isHardBudgetOn(layout) ? HARD_BUDGET_SELL_BACK_NOTE : ''}`)) return;
-                // Its own undo step, so the toast's Undo takes back just this (#651).
-                history.commitNow();
-                actions.clearItems();
-                const cleared = layoutStore.getState();
-                const gone = removedNames(activeFloor.items, cleared.layout.floors[cleared.activeFloorIndex]?.items ?? []);
-                if (gone.length > 0) {
-                  notifyWithUndo(removedMessage(gone, activeFloor.name), { current: () => layoutStore.getState().layout, undo: history.undo });
-                }
-                playCue('remove');
-                selectOnly(null);
+                void askConfirm({
+                  title: 'Remove every item from this floor?',
+                  body: `Undo brings them back.${isHardBudgetOn(layout) ? HARD_BUDGET_SELL_BACK_NOTE : ''}`,
+                  confirmLabel: 'Clear floor',
+                  danger: true,
+                }).then((ok) => {
+                  if (!ok) return;
+                  // Read after the answer: another tab's version may have
+                  // been adopted while the question was open.
+                  const before = layoutStore.getState();
+                  const floor = before.layout.floors[before.activeFloorIndex];
+                  // Its own undo step, so the toast's Undo takes back just this (#651).
+                  history.commitNow();
+                  actions.clearItems();
+                  const cleared = layoutStore.getState();
+                  const gone = removedNames(floor?.items ?? [], cleared.layout.floors[cleared.activeFloorIndex]?.items ?? []);
+                  if (gone.length > 0) {
+                    notifyWithUndo(removedMessage(gone, floor?.name), { current: () => layoutStore.getState().layout, undo: history.undo });
+                  }
+                  playCue('remove');
+                  selectOnly(null);
+                });
               }}
               variant="outline"
               size="sm"
@@ -177,8 +190,14 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
           </div>
           <Button
             onClick={() => {
-              if (!window.confirm('Remove every interior wall on this floor?')) return;
-              actions.clearInteriorWalls();
+              void askConfirm({
+                title: 'Remove every interior wall on this floor?',
+                body: 'Undo brings them back.',
+                confirmLabel: 'Clear walls',
+                danger: true,
+              }).then((ok) => {
+                if (ok) actions.clearInteriorWalls();
+              });
             }}
             variant="outline"
             size="sm"

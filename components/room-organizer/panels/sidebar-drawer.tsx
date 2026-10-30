@@ -383,7 +383,7 @@ const DrawerBody = memo(function DrawerBody({
 
           <EditLock locked={exploring}>
           <TemplatesPanel
-            onLoadTemplate={(template) => {
+            onLoadTemplate={async (template) => {
               // The hard budget and its write-off stay the player's; under it
               // a template is a purchase, refused before asking (#691).
               const load = loadTemplateUnderBudget(layout, template, `${template.name} template`);
@@ -391,7 +391,7 @@ const DrawerBody = memo(function DrawerBody({
                 notifyRefused(load.refusal, playCue);
                 return false;
               }
-              if (!confirmReplace(layout, `the ${template.name} template`)) return false;
+              if (!(await confirmReplace(layout, `the ${template.name} template`))) return false;
               snapshotBeforeReplace(layout);
               history.commitNow();
               actions.applyLayout({

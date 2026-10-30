@@ -16,6 +16,11 @@ export interface UseDialogFocusOptions {
   onEscape?: () => void;
   /** Modal: keep Tab / Shift+Tab cycling inside the container. */
   trap?: boolean;
+  /**
+   * Take focus even from another open modal: a confirm asked from inside
+   * the drawer must hold the keyboard until it is answered (#649).
+   */
+  takeFocus?: boolean;
 }
 
 interface OpenDialog {
@@ -58,7 +63,7 @@ function activeDialog(): OpenDialog | undefined {
 export function useDialogFocus(
   open: boolean,
   containerRef: RefObject<HTMLElement>,
-  { initialFocusRef, onEscape, trap = false }: UseDialogFocusOptions = {}
+  { initialFocusRef, onEscape, trap = false, takeFocus = false }: UseDialogFocusOptions = {}
 ): void {
   const onEscapeRef = useRef(onEscape);
   onEscapeRef.current = onEscape;
@@ -80,7 +85,7 @@ export function useDialogFocus(
       const active = document.activeElement;
       if (!container.isConnected || container.contains(active)) return;
       const hostModal = active?.closest('[aria-modal="true"]');
-      if (hostModal && !container.contains(hostModal)) return;
+      if (!takeFocus && hostModal && !container.contains(hostModal)) return;
       (initialFocusRef?.current ?? container).focus({ preventScroll: true });
     }, 0);
 
@@ -126,5 +131,5 @@ export function useDialogFocus(
         previous.focus({ preventScroll: true });
       }
     };
-  }, [open, containerRef, initialFocusRef, trap]);
+  }, [open, containerRef, initialFocusRef, trap, takeFocus]);
 }

@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Demolish, the remove button in the item list, Delete and Clear floor now show "Removed Sofa" (or how many items went) with an Undo button that takes back just that removal. The notice stays while the pointer or the keyboard focus is on it ([#651](https://github.com/ch-bas/threejs-sims-house-builder/issues/651))
 
+### Changed
+- Questions such as deleting a saved layout or set, clearing a floor, removing a floor, replacing your house or going over the budget now open in a dialog inside the editor that matches its look, instead of the browser's own pop-up that froze the scene and the autosave. Enter confirms, Escape cancels, and the keys you press while it is open don't reach the house behind it. A blocked print pop-up and Saved Layouts' errors (no name, storage full, an unreadable save or restore point) show in the editor too ([#649](https://github.com/ch-bas/threejs-sims-house-builder/issues/649))
+
 ### Fixed
 - EXPLORE no longer edits the house from the 2D plan: clicks on the plan only select, the editing shortcuts (rotate, nudge, duplicate, copy, paste, delete) are off, and the item panel's editing controls are disabled with a "Not while exploring" hint; undo and redo still work ([#699](https://github.com/ch-bas/threejs-sims-house-builder/issues/699))
 - With the hard budget on, Clone on a floor whose furniture you can't afford again now plays the refusal sound and says what the copy would cost and how much is left, instead of doing nothing ([#588](https://github.com/ch-bas/threejs-sims-house-builder/issues/588))

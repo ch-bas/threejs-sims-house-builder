@@ -107,7 +107,7 @@ export function useImportExport({
     async (file: File) => {
       try {
         const next = await readLayoutFromFile(file);
-        if (!confirmReplace(layout, `the imported “${next.name}”`)) return false;
+        if (!(await confirmReplace(layout, `the imported “${next.name}”`))) return false;
         snapshotBeforeReplace(layout);
         commitHistoryNow();
         actions.applyLayout(next);

@@ -2,6 +2,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeCatalogItem } from '../lib/__testfixtures__/fixtures';
+import { askConfirm, cancelPendingConfirms } from '../lib/confirm-dialog';
 import { usePlacementGhost, type UsePlacementGhostParams } from './use-placement-ghost';
 import type { CatalogItem } from '../lib/types';
 
@@ -157,6 +158,27 @@ describe('usePlacementGhost (#463 d)', () => {
     expect(endGhost).toHaveBeenCalled();
     expect(page).not.toHaveBeenCalled();
     window.removeEventListener('keydown', page);
+  });
+
+  it('leaves Escape, Enter and R to an open in-app question (#649)', () => {
+    const { place, endGhost } = setup();
+    let answer: boolean | null = null;
+    void askConfirm({ title: 'Place it anyway?' }).then((ok) => {
+      answer = ok;
+    });
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+    });
+    expect(endGhost).not.toHaveBeenCalled();
+    expect(place).not.toHaveBeenCalled();
+    cancelPendingConfirms();
+    expect(answer).toBeNull();
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(endGhost).toHaveBeenCalled();
   });
 
   it('leaves Enter and Space on a focused button to that button', () => {

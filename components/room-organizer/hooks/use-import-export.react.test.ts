@@ -2,6 +2,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { autoAnswerConfirms, type AutoAnswer } from '../lib/__testfixtures__/confirm';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { INITIAL_LAYOUT } from './layout-reducer';
 import { useHistory } from './use-history';
@@ -20,12 +21,14 @@ describe('useImportExport — import keeps a pending edit as its own undo step',
   };
   const imported: RoomLayout = { ...INITIAL_LAYOUT, name: 'Imported house' };
 
+  let confirms: AutoAnswer;
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    confirms = autoAnswerConfirms(true);
     layoutStore.setState({ layout: start, activeFloorIndex: 0 });
   });
   afterEach(() => {
+    confirms.stop();
     cleanup();
     vi.restoreAllMocks();
     vi.useRealTimers();
@@ -64,6 +67,8 @@ describe('useImportExport — import keeps a pending edit as its own undo step',
       replaced = await result.current.io.handleImport(file);
     });
     expect(replaced).toBe(true);
+    // Asked in the app, not with the native confirm (#649).
+    expect(confirms.asked.map((question) => question.title)).toEqual(['Replace your current house with the imported “Imported house”?']);
     expect(layoutStore.getState().layout.name).toBe('Imported house');
     act(() => {
       vi.advanceTimersByTime(2000);
@@ -75,5 +80,35 @@ describe('useImportExport — import keeps a pending edit as its own undo step',
 
     act(() => result.current.history.undo());
     expect(layoutStore.getState().layout.floors[0]?.items[0]?.position).toEqual({ x: 1, z: 1 });
+  });
+
+  it('cancelling the in-app question keeps the house (#649)', async () => {
+    confirms.stop();
+    confirms = autoAnswerConfirms(false);
+    const { result } = renderHook(() => {
+      const { layout, actions } = useLayoutState();
+      const history = useHistory(layout, actions.applyLayout);
+      return useImportExport({
+        layout,
+        activeFloorName: 'Ground',
+        actions,
+        commitHistoryNow: history.commitNow,
+        view2D: false,
+        canvasRef: createRef<HTMLCanvasElement>(),
+        canvas2DRef: createRef<HTMLCanvasElement>(),
+        rendererRef: { current: null },
+        sceneRef: { current: null },
+        cameraRef: { current: null },
+        onImported: () => undefined,
+      });
+    });
+    const file = new File([JSON.stringify(imported)], 'house.json', { type: 'application/json' });
+    let replaced = true;
+    await act(async () => {
+      replaced = await result.current.handleImport(file);
+    });
+    expect(replaced).toBe(false);
+    expect(confirms.asked).toHaveLength(1);
+    expect(layoutStore.getState().layout.name).toBe('Mine');
   });
 });

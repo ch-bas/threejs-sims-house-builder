@@ -7,6 +7,7 @@ import { useEditorViewActions, useViewSettings } from '../contexts';
 import { layoutStore, useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { useRefusal } from '../hooks/use-refusal';
 import { floorCloneRefusal, HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
+import { askConfirm } from '../lib/confirm-dialog';
 import { MAX_FLOORS } from '../lib/constants';
 import { formatMetres } from '../lib/format';
 import { MAX_NAME_LENGTH } from '../lib/schema';
@@ -247,14 +248,18 @@ export function FloorSwitcher(): JSX.Element {
                 variant="ghost"
                 onClick={() => {
                   if (!canRemove) return;
-                  if (
-                    floor.items.length === 0 ||
-                    window.confirm(
-                      `Remove "${floor.name}" and its ${floor.items.length} item(s)?${hardBudget ? HARD_BUDGET_SELL_BACK_NOTE : ''}`
-                    )
-                  ) {
+                  if (floor.items.length === 0) {
                     actions.removeFloor(index);
+                    return;
                   }
+                  void askConfirm({
+                    title: `Remove “${floor.name}” and its ${floor.items.length} item${floor.items.length === 1 ? '' : 's'}?`,
+                    body: `Undo brings the floor back.${hardBudget ? HARD_BUDGET_SELL_BACK_NOTE : ''}`,
+                    confirmLabel: 'Remove floor',
+                    danger: true,
+                  }).then((ok) => {
+                    if (ok) actions.removeFloor(index);
+                  });
                 }}
                 disabled={!canRemove}
                 aria-label={`Remove ${floor.name}`}

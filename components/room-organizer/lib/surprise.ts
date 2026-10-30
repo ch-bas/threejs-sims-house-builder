@@ -15,6 +15,7 @@ import { randomSuffix } from './ids';
 import { isWallMounted, type WallGap } from './opening-snap';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline } from './street';
+import type { ConfirmOptions } from './confirm-dialog';
 import type { SoundCue } from './sounds';
 import type { CatalogItem, FurnitureItem, InteriorWall, RoomLayout } from './types';
 
@@ -187,13 +188,13 @@ export function surpriseFloorItems(layout: RoomLayout, floorIndex: number, budge
  * that goes over asks "Place it anyway?" like a catalogue buy (#136).
  * Returns the floor's new items, a refusal, or null when the player said no.
  */
-export function decideSurprise(
+export async function decideSurprise(
   layout: RoomLayout,
   floorIndex: number,
   budget: number,
-  confirm: (message: string) => boolean,
+  confirm: (question: ConfirmOptions) => Promise<boolean>,
   seed?: number
-): { items: FurnitureItem[] } | { refusal: string } | null {
+): Promise<{ items: FurnitureItem[] } | { refusal: string } | null> {
   const plan = planSurprise(layout, floorIndex, budget, seed);
   if (!plan) return null;
   const { items, price, remaining, hard } = plan;
@@ -206,21 +207,32 @@ export function decideSurprise(
     if (refusal !== null) return { refusal };
   }
   const floor = layout.floors[floorIndex];
-  if (floor && surpriseReplacesFurniture(floor.items) && !confirm('Replace the furniture on this floor with a surprise layout?')) {
+  if (
+    floor &&
+    surpriseReplacesFurniture(floor.items) &&
+    !(await confirm({
+      title: 'Replace the furniture on this floor with a surprise layout?',
+      body: 'Walls, stairs and the garden stay. Undo brings the furniture back.',
+      confirmLabel: 'Surprise me',
+    }))
+  ) {
     return null;
   }
   if (!hard && price > 0 && price > remaining) {
-    const proceed = confirm(
-      `This ${CURRENCY_SYMBOL}${price.toLocaleString()} surprise puts you over the ` +
-        `${CURRENCY_SYMBOL}${budget.toLocaleString()} budget. Place it anyway?`
-    );
+    const proceed = await confirm({
+      title:
+        `This ${CURRENCY_SYMBOL}${price.toLocaleString()} surprise puts you over the ` +
+        `${CURRENCY_SYMBOL}${budget.toLocaleString()} budget. Place it anyway?`,
+      confirmLabel: 'Place it anyway',
+    });
     if (!proceed) return null;
   }
   return { items };
 }
 
 export interface SurpriseEffects {
-  confirm(message: string): boolean;
+  /** The in-app question (`askConfirm`); tests answer it directly. */
+  confirm(question: ConfirmOptions): Promise<boolean>;
   playCue(cue: SoundCue): void;
   replaceItems(items: FurnitureItem[]): void;
 }
@@ -229,10 +241,11 @@ export interface SurpriseEffects {
  * The Surprise button, for every place that shows one (the HUD and Layout
  * actions): `decideSurprise`, then either the refusal (the `refused` cue and
  * the reason as a notice, from here only) or the new floor. True when the
- * floor was replaced, so the caller can clear the selection.
+ * floor was replaced, so the caller can clear the selection. The question
+ * is modal, so the layout it was asked about is still the one on screen.
  */
-export function runSurprise(layout: RoomLayout, floorIndex: number, budget: number, effects: SurpriseEffects): boolean {
-  const outcome = decideSurprise(layout, floorIndex, budget, effects.confirm);
+export async function runSurprise(layout: RoomLayout, floorIndex: number, budget: number, effects: SurpriseEffects): Promise<boolean> {
+  const outcome = await decideSurprise(layout, floorIndex, budget, effects.confirm);
   if (outcome === null) return false;
   if ('refusal' in outcome) {
     effects.playCue('refused');

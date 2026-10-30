@@ -1,4 +1,5 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
+import { askConfirm } from '../lib/confirm-dialog';
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET, GRID_SIZE_METERS } from '../lib/constants';
 import {
   snapToGrid as snapValueToGrid,
@@ -36,6 +37,13 @@ export interface UseItemPlacementParams {
    * wall (`entrancePlanOutline`): openings snap onto the piers beside it (#394).
    */
   frontGap?: WallGap | null;
+  /**
+   * A soft-budget purchase the player agreed to in the in-app question
+   * (#649). The question doesn't block, so `placeCatalogItem` has already
+   * returned '' by then: the caller's after-place steps (the cue, the
+   * selection) run here, with the new id ('' if nothing was added).
+   */
+  onPlacedAfterConfirm?(id: string): void;
 }
 
 export interface UseItemPlacementResult {
@@ -56,6 +64,8 @@ export interface UseItemPlacementResult {
   /**
    * Wall-aware catalog placement (snaps doors/windows/cameras to walls).
    * `rotation` turns anything that isn't wall-mounted (the ghost's R).
+   * '' when nothing was added: refused, or over the soft budget, which asks
+   * first and places through `onPlacedAfterConfirm` on a yes.
    */
   placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string;
 }
@@ -71,6 +81,7 @@ export function useItemPlacement({
   allSelectedIds,
   frontGap,
   refusePurchase,
+  onPlacedAfterConfirm,
 }: UseItemPlacementParams): UseItemPlacementResult {
   // Keyed on the numbers, so a fresh outline object each render doesn't
   // rebuild the callbacks.
@@ -187,20 +198,8 @@ export function useItemPlacement({
    * and a default rotation aligned with that wall is applied — these
    * openings only make sense embedded in a wall.
    */
-  const placeCatalogItem = useCallback(
-    (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number) => {
-      // Budget guard (#136): the budget used to be pure decoration — nothing
-      // in the buy flow consulted it. Going over now asks instead of
-      // silently proceeding (and instead of hard-blocking: it's a sandbox).
-      const price = catalogItem.price ?? 0;
-      if (refusePurchase?.(price)) return '';
-      if (price > 0 && buildingCost + price > DEFAULT_BUDGET && typeof window !== 'undefined') {
-        const proceed = window.confirm(
-          `This ${CURRENCY_SYMBOL}${price.toLocaleString()} purchase puts you over the ` +
-            `${CURRENCY_SYMBOL}${DEFAULT_BUDGET.toLocaleString()} budget. Place it anyway?`
-        );
-        if (!proceed) return '';
-      }
+  const placeNow = useCallback(
+    (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string => {
       if (isOpening(catalogItem.type)) {
         const snapped = snapOpeningToWall({
           position: position ?? { x: 0, z: 0 },
@@ -251,7 +250,38 @@ export function useItemPlacement({
       if (rotation) actions.updateItem(id, { rotation });
       return id;
     },
-    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth, buildingCost, refusePurchase, gap]
+    [actions, activeFloor.interiorWalls, activeFloorY, roomWidth, roomDepth, gap]
+  );
+
+  // The answer comes back after later renders: place with what is current then.
+  const latestRef = useRef({ placeNow, refusePurchase, onPlacedAfterConfirm });
+  latestRef.current = { placeNow, refusePurchase, onPlacedAfterConfirm };
+
+  const placeCatalogItem = useCallback(
+    (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string => {
+      // Budget guard (#136): the budget used to be pure decoration — nothing
+      // in the buy flow consulted it. Going over now asks instead of
+      // silently proceeding (and instead of hard-blocking: it's a sandbox).
+      const price = catalogItem.price ?? 0;
+      if (refusePurchase?.(price)) return '';
+      if (price > 0 && buildingCost + price > DEFAULT_BUDGET) {
+        // Asked in the app (#649): nothing is added until the player agrees.
+        void askConfirm({
+          title:
+            `This ${CURRENCY_SYMBOL}${price.toLocaleString()} purchase puts you over the ` +
+            `${CURRENCY_SYMBOL}${DEFAULT_BUDGET.toLocaleString()} budget. Place it anyway?`,
+          confirmLabel: 'Place it anyway',
+        }).then((proceed) => {
+          if (!proceed) return;
+          const latest = latestRef.current;
+          if (latest.refusePurchase?.(price)) return;
+          latest.onPlacedAfterConfirm?.(latest.placeNow(catalogItem, position, rotation));
+        });
+        return '';
+      }
+      return placeNow(catalogItem, position, rotation);
+    },
+    [buildingCost, refusePurchase, placeNow]
   );
 
   return { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem };

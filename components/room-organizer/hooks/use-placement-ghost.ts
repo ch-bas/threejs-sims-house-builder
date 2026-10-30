@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type MutableRefObject, type RefObject } from 'react';
+import { confirmOpen } from '../lib/confirm-dialog';
 import {
   footprintCorners,
   GHOST_ROTATION_STEP,
@@ -243,6 +244,8 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     // a focused catalog tile's roving keys and the window shortcuts.
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) return;
+      // An open question (#649) owns Enter and Escape until it is answered.
+      if (confirmOpen()) return;
       const key = event.key.toLowerCase();
       if (key !== 'r' && key !== 'enter' && key !== ' ' && key !== 'escape') return;
       // Enter and Space on a focused button (the hint's Cancel, Undo, …) belong

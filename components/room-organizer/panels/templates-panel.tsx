@@ -25,7 +25,8 @@ const TEMPLATE_OPTIONS = (Object.keys(TEMPLATE_LABELS) as RoomTemplateKey[]).map
 
 export interface TemplatesPanelProps {
   /** Resolves false when the user declined replacing the current house. */
-  onLoadTemplate(template: (typeof ROOM_TEMPLATES)[RoomTemplateKey]): boolean;
+  /** Resolves true once the template replaced the house (after the in-app confirm, #649). */
+  onLoadTemplate(template: (typeof ROOM_TEMPLATES)[RoomTemplateKey]): Promise<boolean>;
 }
 
 export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Element {
@@ -33,9 +34,9 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
   // A template replaces the house: not while exploring (#643).
   const exploring = useExploring();
   const load = (key: RoomTemplateKey) => {
-    if (onLoadTemplate(ROOM_TEMPLATES[key])) {
-      setStatus(`Loaded the ${TEMPLATE_LABELS[key].replace(/^\S+\s/, '')} template. Undo brings back the house it replaced.`);
-    }
+    void onLoadTemplate(ROOM_TEMPLATES[key]).then((loaded) => {
+      if (loaded) setStatus(`Loaded the ${TEMPLATE_LABELS[key].replace(/^\S+\s/, '')} template. Undo brings back the house it replaced.`);
+    });
   };
   return (
     <Card>

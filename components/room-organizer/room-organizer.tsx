@@ -52,6 +52,7 @@ import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from '.
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
+import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
@@ -718,6 +719,17 @@ export function RoomOrganizer(): JSX.Element {
     allSelectedIds,
     frontGap,
     refusePurchase: refuseOverBudget,
+    // A soft-budget buy agreed to in the in-app question lands after the
+    // place call returned '' (#649): chime and select it as placeDiscrete would.
+    onPlacedAfterConfirm: (id: string) => {
+      if (!id) return;
+      if (!itemExists(id)) {
+        playCue('refused');
+        return;
+      }
+      playCue('place');
+      selectOnly(id);
+    },
   });
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
@@ -1463,6 +1475,8 @@ export function RoomOrganizer(): JSX.Element {
       {/* Inline zone naming and export/share status (#374) */}
       <ZoneNameChip />
       <StatusToastHost />
+      {/* In-app confirm, instead of window.confirm (#649) */}
+      <ConfirmDialogHost />
 
       {/* Achievement toast */}
       <AchievementToast

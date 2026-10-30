@@ -519,6 +519,17 @@ to respect.
   through the same search, rejects decor spots that fail
   `hasCollisions`, and hangs no art across the recess's span of the
   north wall.
+- **No native dialogs** (#649, #607). `window.confirm` and `alert` froze
+  the render loop and the autosave. Questions go through `askConfirm()`
+  (`lib/confirm-dialog.ts`), which queues them for one modal host and
+  resolves with the answer; outcomes go through `notify()` or a panel's
+  inline status. Callers await the answer, so anything that ran after a
+  sync confirm (surprise, `confirmReplace`, the soft-budget buy) is now
+  async. The host stops every key but Escape and Tab at the dialog, so the
+  window shortcuts can't edit the house a question is about, and the
+  placement ghost stands back while a question is open. A soft-budget buy
+  returns '' at once and places through `onPlacedAfterConfirm` on a yes.
+  A popup print opens its window before anything it awaits.
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure
