@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { askConfirm } from '../lib/confirm-dialog';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
 import { notify } from '../lib/editor-notices';
 import {
@@ -23,6 +24,13 @@ import type { RoomLayout } from '../lib/types';
 export interface UseLayoutPersistenceOptions {
   layout: RoomLayout;
   onHydrate: (layout: RoomLayout) => void;
+  /**
+   * Open a shared house over the player's own (#573), once they said yes:
+   * an ordinary whole-house replacement (restore point, history commit,
+   * `markLayoutLoaded`), so one Ctrl+Z brings their house back. Without it
+   * a share link hydrates over the stored house unasked, as before.
+   */
+  onOpenShared?: (layout: RoomLayout) => void;
   debounceMs?: number;
 }
 
@@ -69,9 +77,13 @@ export interface UseLayoutPersistenceResult {
 export function useLayoutPersistence({
   layout,
   onHydrate,
+  onOpenShared,
   debounceMs = AUTOSAVE_DEBOUNCE_MS,
 }: UseLayoutPersistenceOptions): UseLayoutPersistenceResult {
   const hasHydratedRef = useRef(false);
+  // Read when the player answers, which is after later renders.
+  const onOpenSharedRef = useRef(onOpenShared);
+  onOpenSharedRef.current = onOpenShared;
   // While set, autosave is suppressed until the layout moves past the stored
   // pre-hydration value — i.e. until the hydration dispatch has landed. This
   // stops a freshly opened share link (or a plain reload) from overwriting the
@@ -167,7 +179,8 @@ export function useLayoutPersistence({
       saveStatus.setState({ saveError: outcome });
     };
 
-    const hydrateFromLocalSave = (): void => {
+    /** True when the stored house is the one on screen now. */
+    const hydrateFromLocalSave = (): boolean => {
       const saved = loadLayout();
       if (saved) {
         hydrationBaseRef.current = layoutRef.current;
@@ -175,6 +188,7 @@ export function useLayoutPersistence({
         // white-screen mount.
         try {
           onHydrate(saved);
+          return true;
         } catch (error) {
           console.warn('Failed to apply saved layout:', error);
           // Clearing the baseline resumes autosave, which will overwrite the
@@ -191,10 +205,11 @@ export function useLayoutPersistence({
         // permanent data loss. Stash a copy first (#113).
         keepStoredHouseAside();
       }
+      return false;
     };
 
-    // Share-URL takes precedence over the local auto-save so opening a
-    // shared link always lands you on that layout.
+    // A share link opens the shared house: straight away over nothing worth
+    // keeping, after asking over the player's own work (#573).
     if (typeof window !== 'undefined' && isShareHash(window.location.hash)) {
       const hash = window.location.hash;
       // Refused before decoding, with the local house left as it was: a hash
@@ -210,44 +225,75 @@ export function useLayoutPersistence({
       // the decode is in flight — otherwise the fallback layout could be
       // scheduled to overwrite the local save before hydration lands.
       hydrationBaseRef.current = layoutRef.current;
-      void readShareHash(hash).then((result) => {
-        const shared = result.ok ? result.layout : null;
-        // Clear the hash either way: reloading after edits must not restore
-        // the shared version, nor repeat the broken-link warning.
+      // Clear the hash once the link is dealt with: reloading after edits
+      // must not open the shared version again, nor repeat a warning.
+      const clearHash = (): void => {
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        if (shared) {
-          // Hydration clears undo and the first edit autosaves over the
-          // stored house, so its final state needs a restore point now — the
-          // ring's last cadence snapshot may be minutes stale (#298). Reads
-          // storage only; the hydration baseline below is untouched.
-          const outgoing = loadLayout();
-          snapshotBeforeReplace(outgoing);
-          // An unreadable save has no restore point to fall back on, and the
-          // shared house would autosave over it (#113).
-          if (!outgoing) keepStoredHouseAside();
-          // Re-capture the baseline right before the hydration dispatch.
-          hydrationBaseRef.current = layoutRef.current;
-          // A corrupt-but-parseable layout can still throw while it's applied
-          // to the scene. Guard the dispatch so a bad share link doesn't crash
-          // the whole mount — the error boundary's reset path is the recovery.
-          try {
-            onHydrate(shared);
-          } catch (error) {
-            console.warn('Failed to apply shared layout:', error);
-            // The LOCAL save is healthy and untouched — the failure is the
-            // shared layout's. Nulling the baseline here would let the
-            // fallback layout autosave over the local house ~debounceMs
-            // later (#206). Fall back to the local save instead, same as a
-            // link that failed to decode.
-            hydrateFromLocalSave();
-          }
+      };
+      void readShareHash(hash).then(async (result) => {
+        if (!result.ok) {
+          // Truncated, corrupt or from a newer app: say which, without a
+          // blocking alert, and open the local save (#607).
+          clearHash();
+          notify(`${shareFailureMessage(result.reason)} Your own house is unchanged.`, 'error');
+          hydrateFromLocalSave();
           return;
         }
-        // The hash looks like a share link (`#layout=…`) but didn't open —
-        // truncated, corrupt or from a newer app. Say which, without a
-        // blocking alert, and open the local save (#607).
-        if (!result.ok) notify(`${shareFailureMessage(result.reason)} Your own house is unchanged.`, 'error');
-        hydrateFromLocalSave();
+        const shared = result.layout;
+        // Reads storage only; the hydration baseline is untouched.
+        const outgoing = loadLayout();
+        const openShared = onOpenSharedRef.current;
+        if (outgoing && !isUntouched(outgoing) && openShared && hydrateFromLocalSave()) {
+          // The player's own house is on screen: ask before replacing it
+          // (#573). The hash stays until they answer, so a reload asks again.
+          const open = await askConfirm({
+            title: `Open the shared house “${shared.name}”?`,
+            body: 'Your current house is kept as a restore point, and Undo brings it back.',
+            confirmLabel: 'Open it',
+            cancelLabel: 'Keep mine',
+          });
+          clearHash();
+          if (!open) return;
+          try {
+            onOpenSharedRef.current?.(shared);
+          } catch (error) {
+            // The house on screen is still the player's own (#206).
+            console.warn('Failed to apply shared layout:', error);
+            notify(`${shareFailureMessage('unreadable')} Your own house is unchanged.`, 'error');
+            return;
+          }
+          notify(
+            'Opened the shared house. Undo brings yours back, and it is kept in Manage → Saved Layouts → History.',
+            'success'
+          );
+          return;
+        }
+        clearHash();
+        // Nothing worth asking about (no save, an untouched one) — or the
+        // stored house wouldn't even apply. Hydration clears undo and the
+        // first edit autosaves over the stored house, so its final state
+        // needs a restore point now — the ring's last cadence snapshot may
+        // be minutes stale (#298).
+        snapshotBeforeReplace(outgoing);
+        // An unreadable save has no restore point to fall back on, and the
+        // shared house would autosave over it (#113).
+        if (!outgoing) keepStoredHouseAside();
+        // Re-capture the baseline right before the hydration dispatch.
+        hydrationBaseRef.current = layoutRef.current;
+        // A corrupt-but-parseable layout can still throw while it's applied
+        // to the scene. Guard the dispatch so a bad share link doesn't crash
+        // the whole mount — the error boundary's reset path is the recovery.
+        try {
+          onHydrate(shared);
+        } catch (error) {
+          console.warn('Failed to apply shared layout:', error);
+          // The LOCAL save is healthy and untouched — the failure is the
+          // shared layout's. Nulling the baseline here would let the
+          // fallback layout autosave over the local house ~debounceMs
+          // later (#206). Fall back to the local save instead, same as a
+          // link that failed to decode.
+          hydrateFromLocalSave();
+        }
       });
       return;
     }

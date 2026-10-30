@@ -678,6 +678,18 @@ export function RoomOrganizer(): JSX.Element {
       },
       [actions, clearHistory, clearTransientSelection]
     ),
+    // A share link over the player's own house, once they said yes (#573):
+    // an ordinary replacement, one Ctrl+Z from the house it replaced.
+    onOpenShared: useCallback(
+      (shared: RoomLayout) => {
+        snapshotBeforeReplace(layoutStore.getState().layout);
+        commitHistoryNow();
+        actions.applyLayout(shared);
+        markLayoutLoaded();
+        clearTransientSelection();
+      },
+      [actions, commitHistoryNow, clearTransientSelection]
+    ),
   });
 
   // Adopt the snapshot another tab saved (#123). Deliberately a plain

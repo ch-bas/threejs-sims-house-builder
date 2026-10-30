@@ -530,6 +530,14 @@ to respect.
   placement ghost stands back while a question is open. A soft-budget buy
   returns '' at once and places through `onPlacedAfterConfirm` on a yes.
   A popup print opens its window before anything it awaits.
+- **A share link over your own house asks first** (#573). The stored
+  house hydrates, then the in-app question asks; the link stays in the
+  address bar until it is answered. A yes is an ordinary replacement
+  (`onOpenShared`: restore point, history commit, `markLayoutLoaded`), so
+  Ctrl+Z returns to the house it replaced; over nothing worth keeping the
+  link hydrates unasked, as before. A link that doesn't open names the
+  reason (too large, cut off, from a newer app: a payload version past
+  `SHARE_FORMAT_VERSION`).
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
   theme application, and share-URL codec are all React-free pure
