@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-10-31
+
+The **Data safety & feedback** milestone: questions asked in the app, Undo on removals, a reason for every refusal, safer library saves, and a one-file backup of everything in this browser.
+
 ### Added
 - Demolish, the remove button in the item list, Delete and Clear floor now show "Removed Sofa" (or how many items went) with an Undo button that takes back just that removal. The notice stays while the pointer or the keyboard focus is on it ([#651](https://github.com/ch-bas/threejs-sims-house-builder/issues/651))
 - Manage → Storage & backup shows how much browser storage the open house, saved layouts, restore points, recovery copies, received houses, custom sets, settings and other sites use, and lets you delete a saved layout or every restore point from there ([#615](https://github.com/ch-bas/threejs-sims-house-builder/issues/615))
@@ -751,7 +755,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.24.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.25.0...HEAD
+[1.25.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.21.0...v1.22.0
