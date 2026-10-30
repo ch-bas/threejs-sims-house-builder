@@ -1,8 +1,15 @@
 'use client';
 
-import { useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
-import { answerConfirm, currentConfirm, subscribeConfirm, type ConfirmRequest } from '../lib/confirm-dialog';
+import {
+  CONFIRM_GRACE_MS,
+  answerConfirm,
+  cancelPendingConfirms,
+  currentConfirm,
+  subscribeConfirm,
+  type ConfirmRequest,
+} from '../lib/confirm-dialog';
 import { Icon } from '../plotcraft/icon';
 
 /**
@@ -12,6 +19,8 @@ import { Icon } from '../plotcraft/icon';
  */
 export function ConfirmDialogHost(): JSX.Element | null {
   const request = useSyncExternalStore(subscribeConfirm, currentConfirm, () => null);
+  // A torn-down editor answers nothing: every open question is cancelled.
+  useEffect(() => () => cancelPendingConfirms(), []);
   if (!request) return null;
   // Keyed: the next queued question is a fresh dialog with fresh focus.
   return <ConfirmDialog key={request.id} request={request} />;
@@ -20,12 +29,22 @@ export function ConfirmDialogHost(): JSX.Element | null {
 function ConfirmDialog({ request }: { request: ConfirmRequest }): JSX.Element {
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const openedAtRef = useRef(Date.now());
+  // Whether the current press began on the backdrop itself.
+  const backdropPressRef = useRef(false);
   const answer = (ok: boolean) => answerConfirm(request.id, ok);
+  // Past the opening grace: the gesture that asked can no longer answer.
+  const settled = () => Date.now() - openedAtRef.current >= CONFIRM_GRACE_MS;
+  const press = (ok: boolean) => {
+    if (settled()) answer(ok);
+  };
 
-  // Focus moves to the confirm button, Tab stays inside, Escape cancels and
-  // focus returns to the control that asked once the dialog closes.
+  // Focus moves in (Cancel first for a destructive question), Tab stays
+  // inside, Escape cancels and focus returns to the control that asked once
+  // the dialog closes.
   useDialogFocus(true, dialogRef, {
-    initialFocusRef: confirmRef,
+    initialFocusRef: request.focus === 'cancel' ? cancelRef : confirmRef,
     onEscape: () => answer(false),
     trap: true,
     takeFocus: true,
@@ -37,6 +56,13 @@ function ConfirmDialog({ request }: { request: ConfirmRequest }): JSX.Element {
     // Nothing else reaches the editor's window shortcuts while asking: a
     // Delete or Ctrl+Z behind the question would change what it asks about.
     event.stopPropagation();
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    // A held key, or one still from the gesture that opened the dialog,
+    // presses nothing: not the focused button, not the confirm.
+    if (event.repeat || !settled()) {
+      event.preventDefault();
+      return;
+    }
     // Enter on a focused button presses that button; anywhere else it confirms.
     if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
       event.preventDefault();
@@ -51,7 +77,16 @@ function ConfirmDialog({ request }: { request: ConfirmRequest }): JSX.Element {
   return (
     <div
       data-confirm-dialog=""
-      onClick={() => answer(false)}
+      onPointerDown={(event) => {
+        backdropPressRef.current = event.target === event.currentTarget;
+      }}
+      onClick={(event) => {
+        // Only a whole click on the backdrop: not the release of a press
+        // that began elsewhere, such as the second click of a double-click.
+        const fromBackdrop = backdropPressRef.current && event.target === event.currentTarget;
+        backdropPressRef.current = false;
+        if (fromBackdrop && request.backdropCancels) press(false);
+      }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -106,14 +141,14 @@ function ConfirmDialog({ request }: { request: ConfirmRequest }): JSX.Element {
           </p>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="pc-tile" onClick={() => answer(false)} style={BUTTON}>
+          <button ref={cancelRef} type="button" className="pc-tile" onClick={() => press(false)} style={BUTTON}>
             {request.cancelLabel}
           </button>
           <button
             ref={confirmRef}
             type="button"
             className={request.danger ? 'pc-tile' : 'pc-tile pc-tile--active'}
-            onClick={() => answer(true)}
+            onClick={() => press(true)}
             style={
               request.danger
                 ? { ...BUTTON, color: 'var(--pc-demolish-ink)', borderColor: 'var(--pc-demolish)' }

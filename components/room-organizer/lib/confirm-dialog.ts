@@ -19,9 +19,23 @@ export interface ConfirmOptions {
   confirmLabel?: string;
   /** The cancelling button; defaults to "Cancel". */
   cancelLabel?: string;
-  /** Destructive: the confirming button is drawn as a warning. */
+  /** Destructive: the confirming button is drawn as a warning, and Cancel starts focused. */
   danger?: boolean;
+  /** The button that starts focused; by default Cancel when `danger`, else the confirm. */
+  focus?: 'confirm' | 'cancel';
+  /**
+   * False when the question must be answered with a button or Escape: a
+   * click beside the dialog then does nothing. Defaults to true (cancels).
+   */
+  backdropCancels?: boolean;
 }
+
+/**
+ * How long after opening the dialog ignores Enter, its buttons and its
+ * backdrop: the rest of the gesture that opened it (a held Enter, the second
+ * click of a double-click) must never answer a question nobody has read.
+ */
+export const CONFIRM_GRACE_MS = 300;
 
 export interface ConfirmRequest {
   id: number;
@@ -30,6 +44,8 @@ export interface ConfirmRequest {
   confirmLabel: string;
   cancelLabel: string;
   danger: boolean;
+  focus: 'confirm' | 'cancel';
+  backdropCancels: boolean;
 }
 
 interface Pending {
@@ -55,6 +71,8 @@ export function askConfirm(options: ConfirmOptions): Promise<boolean> {
       confirmLabel: options.confirmLabel ?? 'OK',
       cancelLabel: options.cancelLabel ?? 'Cancel',
       danger: options.danger ?? false,
+      focus: options.focus ?? (options.danger ? 'cancel' : 'confirm'),
+      backdropCancels: options.backdropCancels ?? true,
     };
     queue = [...queue, { request, resolve }];
     emit();
