@@ -83,6 +83,28 @@ export function purchaseRefusal(layout: Pick<RoomLayout, 'floors' | 'budget'>, p
   return budgetBlockedReason(price, budgetRemaining(layout));
 }
 
+/**
+ * What cloning a floor buys (#588): its furniture less the porch door and
+ * the garden, which the copy leaves behind (the reducer's duplicateFloor).
+ */
+export function floorClonePrice(items: readonly Pick<FurnitureItem, 'id' | 'price' | 'category'>[]): number {
+  return purchasePrice(items.filter((item) => item.category !== 'outdoor'));
+}
+
+/**
+ * Why cloning a floor holding `items` is refused under the hard budget, or
+ * null when it is affordable or the budget is off.
+ */
+export function floorCloneRefusal(
+  layout: Pick<RoomLayout, 'floors' | 'budget'>,
+  floorName: string,
+  items: readonly Pick<FurnitureItem, 'id' | 'price' | 'category'>[]
+): string | null {
+  const price = floorClonePrice(items);
+  const refusal = purchaseRefusal(layout, price);
+  return refusal === null ? null : `Cloning ${floorName} buys ${CURRENCY_SYMBOL}${price.toLocaleString()} of furniture. ${refusal}`;
+}
+
 /** What Demolish pays back for an item: whole currency units. */
 export function sellBackRefund(price: number): number {
   return Math.round(Math.max(0, price) * SELL_BACK_RATE);

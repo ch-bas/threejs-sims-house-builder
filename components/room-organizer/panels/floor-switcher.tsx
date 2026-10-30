@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEditorViewActions, useViewSettings } from '../contexts';
-import { useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
-import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
+import { layoutStore, useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
+import { useRefusal } from '../hooks/use-refusal';
+import { floorCloneRefusal, HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { MAX_FLOORS } from '../lib/constants';
 import { formatMetres } from '../lib/format';
 import { MAX_NAME_LENGTH } from '../lib/schema';
@@ -22,6 +23,7 @@ export function FloorSwitcher(): JSX.Element {
   const actions = useLayoutActions();
   const view = useViewSettings('showAllFloors', 'view2D');
   const { toggle } = useEditorViewActions();
+  const refuse = useRefusal();
   const [renaming, setRenaming] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
 
@@ -71,7 +73,17 @@ export function FloorSwitcher(): JSX.Element {
           </button>
           <button
             type="button"
-            onClick={() => actions.duplicateFloor(activeFloorIndex)}
+            onClick={() => {
+              // Hard budget: say why instead of the reducer's silent
+              // refusal (#588).
+              const source = floors[activeFloorIndex];
+              const refusal = source ? floorCloneRefusal(layoutStore.getState().layout, source.name, source.items) : null;
+              if (refusal !== null) {
+                refuse(refusal);
+                return;
+              }
+              actions.duplicateFloor(activeFloorIndex);
+            }}
             disabled={!canAdd}
             className="pc-tile"
             title={canAdd ? 'Duplicate the active floor' : `Maximum ${MAX_FLOORS} floors`}

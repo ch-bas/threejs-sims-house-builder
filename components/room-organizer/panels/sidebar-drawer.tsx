@@ -9,7 +9,7 @@ import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { purchasePrice, purchaseRefusal } from '../lib/budget';
-import { notify } from '../lib/editor-notices';
+import { notify, notifyRefused } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { placeSetInFreeSpace, setForStorey } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
@@ -303,20 +303,17 @@ const DrawerBody = memo(function DrawerBody({
               });
               // Garden pieces stay on the ground floor (#591); an all-garden set says so.
               if (setForStorey(set, activeFloorIndex).items.length === 0) {
-                playCue('refused');
-                notify(`The ${set.label} is all garden items, and garden items go on the ground floor.`, 'error');
+                notifyRefused(`The ${set.label} is all garden items, and garden items go on the ground floor.`, playCue);
                 return;
               }
               if (items.length === 0) {
-                playCue('refused');
-                notify(`No free spot for the ${set.label} — make some room first.`, 'error');
+                notifyRefused(`No free spot for the ${set.label} — make some room first.`, playCue);
                 return;
               }
               // Hard budget (#463e): say why instead of a silent refusal.
               const refusal = purchaseRefusal(layout, purchasePrice(items));
               if (refusal !== null) {
-                playCue('refused');
-                notify(refusal, 'error');
+                notifyRefused(refusal, playCue);
                 return;
               }
               actions.addItems(items);

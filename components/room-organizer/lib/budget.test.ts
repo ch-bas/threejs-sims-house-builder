@@ -6,6 +6,8 @@ import {
   budgetBlockedReason,
   budgetRemaining,
   budgetSpent,
+  floorClonePrice,
+  floorCloneRefusal,
   furnitureSpend,
   purchasePrice,
   purchaseRefusal,
@@ -302,5 +304,27 @@ describe('every removal route sells back under the hard budget (#534)', () => {
     const next = layoutReducer(state, { type: 'clearItems' });
     expect(next.layout.floors[0]!.items).toEqual([door]);
     expect(next.layout.budget).toEqual({ writeOff: 9 });
+  });
+});
+
+describe('floorClonePrice (#588)', () => {
+  it('charges what the reducer copies: no porch door, no garden', () => {
+    const items = [
+      makeItem({ id: 'bed', category: 'beds', price: 800 }),
+      makeItem({ id: ENTRANCE_DOOR_ID, price: 300 }),
+      makeItem({ id: 'tree', category: 'outdoor', price: 120 }),
+    ];
+    const state = stateWith(items);
+    const next = layoutReducer(state, { type: 'duplicateFloor', sourceIndex: 0, newId: 'f2', idSuffix: 'x' });
+    expect(floorClonePrice(items)).toBe(800);
+    expect(furnitureSpend(next.layout) - furnitureSpend(state.layout)).toBe(floorClonePrice(items));
+  });
+
+  it('names the floor and the price when the budget refuses the copy', () => {
+    const beds = Array.from({ length: 18 }, (_, i) => makeItem({ id: `bed-${i}`, category: 'beds', price: 800 }));
+    const layout = makeLayout({ floors: [makeFloor({ items: beds })], budget: { writeOff: 0 } });
+    expect(floorCloneRefusal(layout, 'Ground', beds)).toBe('Cloning Ground buys $14,400 of furniture. Over budget: $10,600 left');
+    expect(floorCloneRefusal({ ...layout, budget: { writeOff: 0, enabled: false } }, 'Ground', beds)).toBeNull();
+    expect(floorCloneRefusal(layout, 'Ground', beds.slice(0, 10))).toBeNull();
   });
 });

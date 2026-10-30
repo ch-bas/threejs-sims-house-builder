@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - EXPLORE no longer edits the house from the 2D plan: clicks on the plan only select, the editing shortcuts (rotate, nudge, duplicate, copy, paste, delete) are off, and the item panel's editing controls are disabled with a "Not while exploring" hint; undo and redo still work ([#699](https://github.com/ch-bas/threejs-sims-house-builder/issues/699))
+- With the hard budget on, Clone on a floor whose furniture you can't afford again now plays the refusal sound and says what the copy would cost and how much is left, instead of doing nothing ([#588](https://github.com/ch-bas/threejs-sims-house-builder/issues/588))
+- A greyed-out catalogue tile now says why when you click it or press Enter ("Over budget: $200 left", or that garden items go on the ground floor), with the refusal sound, instead of doing nothing ([#642](https://github.com/ch-bas/threejs-sims-house-builder/issues/642))
 
 ## [1.24.0] - 2026-10-28
 

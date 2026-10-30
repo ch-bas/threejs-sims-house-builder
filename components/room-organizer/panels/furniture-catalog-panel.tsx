@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useEditorView, useEditorViewActions } from '../contexts';
 import { armGhostPlacement, useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-store';
+import { useRefusal } from '../hooks/use-refusal';
 import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CCTV_MODELS } from '../lib/cctv-models';
@@ -33,6 +34,7 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
   const activeFloorIndex = useActiveFloorIndex();
   // Hard budget (#463e): tiles over what's left grey out; null when off.
   const remaining = useBudgetRemaining();
+  const refuse = useRefusal();
   const [filter, setFilter] = useState<FilterKey>('all');
   // The search lives in the editor view store, shared with the 3D highlight;
   // subscribing here keeps a keystroke from re-rendering the drawer (#148).
@@ -84,7 +86,9 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
               const blockedReason =
                 catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
               const add = () => {
-                if (!blockedReason) onAdd(item);
+                // A greyed tile says why rather than doing nothing (#642).
+                if (blockedReason) refuse(blockedReason);
+                else onAdd(item);
               };
               return (
                 <CatalogTile

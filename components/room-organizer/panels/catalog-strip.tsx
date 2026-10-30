@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { armGhostPlacement, useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { useRefusal } from '../hooks/use-refusal';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
@@ -26,6 +27,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
   const activeFloorIndex = useActiveFloorIndex();
   // Hard budget (#463e): tiles over what's left grey out; null when off.
   const remaining = useBudgetRemaining();
+  const refuse = useRefusal();
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
   // Docked on a phone (#395): one row of every item, scrolled sideways,
@@ -95,7 +97,9 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
             const blockedReason =
               catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
             const add = () => {
-              if (!blockedReason) onAdd(item);
+              // A greyed tile says why rather than doing nothing (#642).
+              if (blockedReason) refuse(blockedReason);
+              else onAdd(item);
             };
             return (
               <CatalogTile
@@ -213,7 +217,9 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
               const blockedReason =
                 catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
               const add = () => {
-                if (!blockedReason) onAdd(item);
+                // A greyed tile says why rather than doing nothing (#642).
+                if (blockedReason) refuse(blockedReason);
+                else onAdd(item);
               };
               return (
                 <CatalogTile
