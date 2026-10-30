@@ -75,6 +75,11 @@ interface PlanFit {
 export interface UseCanvas2DInteractionParams {
   /** Only the visible 2D view listens; the hidden canvas gets no handlers. */
   enabled: boolean;
+  /**
+   * EXPLORE never edits the house (#643, #699): a press selects, nothing
+   * drags and zone drawing is off. Read at press time.
+   */
+  exploring?: boolean;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   layout: RoomLayout;
   activeFloor: FloorLayout;
@@ -343,7 +348,7 @@ export function useCanvas2DInteraction(
       if (!world) return;
       // Zone-draw mode (#155) claims the press: the rectangle starts here
       // and no item is selected or moved underneath it.
-      if (p.view.drawZoneMode) {
+      if (p.view.drawZoneMode && !p.exploring) {
         zoneGesture = {
           pointerId: event.pointerId,
           downClientX: event.clientX,
@@ -379,11 +384,13 @@ export function useCanvas2DInteraction(
       const locked = hit.locked === true;
       // A plain press on a member of a multi-selection keeps it, so the drag
       // moves the whole set (#291) — mirrors the 3D canvas (drag-handlers).
-      const keepSelection = !locked && keepsSelectionOnPress(mode, hit.id, p.allSelectedIds);
+      // In EXPLORE there is no drag to keep it for: the press selects.
+      const keepSelection = !locked && !p.exploring && keepsSelectionOnPress(mode, hit.id, p.allSelectedIds);
       if (!keepSelection) p.onItemSelect(hit.id, mode);
       // Locked items select but never drag; a toggle click is selection
       // surgery, not a move — both mirror the 3D canvas (drag-handlers).
-      if (locked || mode === 'toggle') return;
+      // EXPLORE selects only (#699).
+      if (locked || mode === 'toggle' || p.exploring) return;
       const position = hit.position ?? world;
       gesture = {
         pointerId: event.pointerId,

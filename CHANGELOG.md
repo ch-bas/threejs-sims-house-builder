@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- EXPLORE no longer edits the house from the 2D plan: clicks on the plan only select, the editing shortcuts (rotate, nudge, duplicate, copy, paste, delete) are off, and the item panel's editing controls are disabled with a "Not while exploring" hint; undo and redo still work ([#699](https://github.com/ch-bas/threejs-sims-house-builder/issues/699))
+
 ## [1.24.0] - 2026-10-28
 
 The **Correctness sweep** milestone: the editor, the walker, the budget and the collision rules now agree, and a house that crashes the editor is never saved.

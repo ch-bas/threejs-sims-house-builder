@@ -167,6 +167,9 @@ export function RoomOrganizer(): JSX.Element {
   // has no PointerLockControls. This single signal gates walkthrough-aware
   // behaviour: canvas select/drag/hover, single-key shortcuts and the hook.
   const walkthroughActive = view.walkthroughMode && !view.view2D;
+  // EXPLORE (the game mode) never edits the house, the 2D plan included: the
+  // plan's clicks select only and the edit shortcuts are off (#699).
+  const exploring = useStore(viewStore, (state) => state.gameMode === 'live');
 
   const playCue = useCallback(
     (cue: SoundCue) => {
@@ -745,6 +748,7 @@ export function RoomOrganizer(): JSX.Element {
   // keyboard gate) are identical to a 3D drag.
   const { clientToWorld2D } = useCanvas2DInteraction({
     enabled: view.view2D,
+    exploring,
     canvasRef: canvas2DRef,
     layout,
     activeFloor,
@@ -1185,6 +1189,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedWall,
     hasSignalItems,
     walkthroughActive,
+    exploring,
     isDragActive,
     handlers: shortcutHandlers,
   });
@@ -1279,8 +1284,9 @@ export function RoomOrganizer(): JSX.Element {
         selectionCount={allSelectedIds.size}
         onCopySelection={copySelectionToClipboard}
         selectionGrouped={selectionIsGroup}
-        onGroupSelection={selectionIsGroup ? undefined : groupSelection}
-        onUngroupSelection={selectionHasGroups ? ungroupSelection : undefined}
+        // Grouping edits the house: not while exploring (#699).
+        onGroupSelection={exploring || selectionIsGroup ? undefined : groupSelection}
+        onUngroupSelection={!exploring && selectionHasGroups ? ungroupSelection : undefined}
         onSaveSelectionAsSet={saveSelectionAsSet}
         showMeasurements={view.showMeasurements}
         showMinimap={view.showMinimap}
@@ -1326,6 +1332,7 @@ export function RoomOrganizer(): JSX.Element {
           })()
         }
         onCatalogDrop={(clientX, clientY, key) => {
+          if (exploring) return;
           const item = findCatalogEntry(FURNITURE_CATALOG, key);
           if (!item) return;
           // The 2D plan inverts the renderer's view transform; 3D raycasts (#166).
