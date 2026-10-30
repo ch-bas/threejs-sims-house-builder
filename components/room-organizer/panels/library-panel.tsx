@@ -28,7 +28,7 @@ import {
 } from '../lib/pasteboard';
 import { confirmReplace } from '../lib/restore-point';
 import { MAX_NAME_LENGTH } from '../lib/schema';
-import { decodeShareUrl, isShareHashWithinBudget } from '../lib/share';
+import { isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
 import {
   VERSION_HISTORY_STORAGE_KEY,
   floorPlanFingerprint,
@@ -266,14 +266,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     setPasting(true);
     try {
       // The same hardened decode → schema pipeline the share-link loader uses.
-      const layout = await decodeShareUrl(hash);
-      if (!layout) {
-        setPasteStatus({
-          kind: 'error',
-          text: "This link couldn't be read — it may be truncated, or made by a newer version of the app.",
-        });
+      const decoded = await readShareHash(hash);
+      if (!decoded.ok) {
+        // Says which: cut off, or from a newer app (#607).
+        setPasteStatus({ kind: 'error', text: shareFailureMessage(decoded.reason) });
         return;
       }
+      const layout = decoded.layout;
       const result = addReceivedLayout(layout);
       if (!result) {
         setPasteStatus({

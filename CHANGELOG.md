@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A house named in another script or with accents, such as "東京の家" or "Café", now saves to one slot of its own: saving it again asks to overwrite it instead of adding a duplicate, and "Café" no longer overwrites "Caf". Houses saved under the old slots still load ([#550](https://github.com/ch-bas/threejs-sims-house-builder/issues/550))
 - An edit made just before switching away from the tab is saved straight away, so a phone browser that closes the tab in the background no longer loses it ([#554](https://github.com/ch-bas/threejs-sims-house-builder/issues/554))
 - A Wi-Fi or camera range from a crafted file, link or set is capped at 1 km instead of breaking the plan, the SVG and DXF exports and the 3D view; a saved set with a negative price or other bad values is repaired like a loaded house, so it can't fake the budget; and a house that loads with something left out says what was dropped and why, instead of always blaming the per-floor item limit ([#553](https://github.com/ch-bas/threejs-sims-house-builder/issues/553))
+- A share link that won't open says why, in a notice instead of a blocking pop-up: far too large, cut off when it was copied, or made by a newer version of the app. Pasting such a link into the paste-board says the same ([#607](https://github.com/ch-bas/threejs-sims-house-builder/issues/607))
 
 ## [1.24.0] - 2026-10-28
 

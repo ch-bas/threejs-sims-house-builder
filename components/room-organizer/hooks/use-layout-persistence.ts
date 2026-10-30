@@ -15,7 +15,7 @@ import {
 } from '../lib/persistence';
 import { isUntouched, snapshotBeforeReplace } from '../lib/restore-point';
 import { parseStoredLayout } from '../lib/schema';
-import { decodeShareUrl, isShareHash, isShareHashWithinBudget } from '../lib/share';
+import { isShareHash, isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
 import { recordSnapshot } from '../lib/version-history';
 import type { SaveFailureReason } from '../lib/persistence';
 import type { RoomLayout } from '../lib/types';
@@ -205,12 +205,13 @@ export function useLayoutPersistence({
         hydrateFromLocalSave();
         return;
       }
-      // decodeShareUrl is async (DecompressionStream). Set the hydration
+      // The decode is async (DecompressionStream). Set the hydration
       // baseline synchronously so the autosave effect stays suppressed while
       // the decode is in flight — otherwise the fallback layout could be
       // scheduled to overwrite the local save before hydration lands.
       hydrationBaseRef.current = layoutRef.current;
-      void decodeShareUrl(hash).then((shared) => {
+      void readShareHash(hash).then((result) => {
+        const shared = result.ok ? result.layout : null;
         // Clear the hash either way: reloading after edits must not restore
         // the shared version, nor repeat the broken-link warning.
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -242,12 +243,10 @@ export function useLayoutPersistence({
           }
           return;
         }
-        // The hash looks like a share link (`#layout=…`) but failed to decode
-        // — truncated or corrupted. Surface a visible notice instead of
-        // silently falling back to the local save.
-        window.alert(
-          'This shared layout link is broken or incomplete and could not be opened. Loading your last saved layout instead.'
-        );
+        // The hash looks like a share link (`#layout=…`) but didn't open —
+        // truncated, corrupt or from a newer app. Say which, without a
+        // blocking alert, and open the local save (#607).
+        if (!result.ok) notify(`${shareFailureMessage(result.reason)} Your own house is unchanged.`, 'error');
         hydrateFromLocalSave();
       });
       return;

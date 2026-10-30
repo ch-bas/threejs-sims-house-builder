@@ -12,6 +12,8 @@ const HASH_PREFIX = '#layout=';
  * always emits v2.
  */
 const V2_PREFIX = '2.';
+/** The newest payload version this build reads (and the one it writes). */
+const SHARE_FORMAT_VERSION = 2;
 const MAX_REASONABLE_URL_LENGTH = 12_000;
 /**
  * Longest `#layout=…` hash decoding will touch (#332). The app never makes
@@ -21,8 +23,24 @@ const MAX_REASONABLE_URL_LENGTH = 12_000;
  */
 export const MAX_SHARE_HASH_LENGTH = 64 * 1024;
 
-/** Why a share hash didn't open: far too big to be a house, or not readable as one. */
-export type ShareDecodeFailure = 'too-large' | 'unreadable';
+/**
+ * Why a share hash didn't open: far too big to be a house, made by a newer
+ * version of the app (a payload version this one doesn't know), or not
+ * readable as one — truncated or corrupt.
+ */
+export type ShareDecodeFailure = 'too-large' | 'newer-version' | 'unreadable';
+
+/** What to tell the player about a link that didn't open (#607). */
+export function shareFailureMessage(reason: ShareDecodeFailure): string {
+  switch (reason) {
+    case 'too-large':
+      return 'This link is far larger than any house, so it was not opened.';
+    case 'newer-version':
+      return 'This link was made by a newer version of the app, so it can’t be opened here. Reload the page to get the latest version.';
+    case 'unreadable':
+      return 'This link is broken or incomplete — it may have been cut off when it was copied.';
+  }
+}
 
 export type ShareDecodeResult =
   | { ok: true; layout: RoomLayout }
@@ -164,6 +182,10 @@ export async function readShareHash(hash: string): Promise<ShareDecodeResult> {
   if (!isShareHash(hash)) return { ok: false, reason: 'unreadable' };
   if (!isShareHashWithinBudget(hash)) return { ok: false, reason: 'too-large' };
   const encoded = hash.slice(HASH_PREFIX.length);
+  // base64url has no dot, so `<n>.` is always a payload version: one past
+  // what this build writes comes from a newer app.
+  const version = /^(\d+)\./.exec(encoded)?.[1];
+  if (version !== undefined && Number(version) > SHARE_FORMAT_VERSION) return { ok: false, reason: 'newer-version' };
   try {
     const jsonBytes = encoded.startsWith(V2_PREFIX)
       ? await inflateRawBounded(base64UrlToBytes(encoded.slice(V2_PREFIX.length)), MAX_LAYOUT_JSON_BYTES)
