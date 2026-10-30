@@ -6,9 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
+import { layoutStore } from '../hooks/use-layout-store';
 import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { DEFAULT_BUDGET } from '../lib/constants';
+import { notifyWithUndo, removedMessage, removedNames } from '../lib/editor-notices';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { type AutoOrganizeStrategy } from '../lib/geometry';
@@ -31,7 +33,7 @@ export interface ActionsPanelProps {
 }
 
 export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
-  const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue } = useRoomEditor();
+  const { layout, activeFloor, activeFloorIndex, actions, isReady, playCue, history } = useRoomEditor();
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -153,7 +155,14 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 // Same rule as Surprise: never wipe placed furniture without
                 // asking (#105, #223).
                 if (!window.confirm(`Remove every item from this floor?${isHardBudgetOn(layout) ? HARD_BUDGET_SELL_BACK_NOTE : ''}`)) return;
+                // Its own undo step, so the toast's Undo takes back just this (#651).
+                history.commitNow();
                 actions.clearItems();
+                const cleared = layoutStore.getState();
+                const gone = removedNames(activeFloor.items, cleared.layout.floors[cleared.activeFloorIndex]?.items ?? []);
+                if (gone.length > 0) {
+                  notifyWithUndo(removedMessage(gone, activeFloor.name), { current: () => layoutStore.getState().layout, undo: history.undo });
+                }
                 playCue('remove');
                 selectOnly(null);
               }}

@@ -1,7 +1,8 @@
 import { ensureFloorPlanImageDecoded, render2DTopDown } from '../canvas-2d/render';
+import { furnitureSpend } from './budget';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
 import { floorKeepOut } from './floor-keep-out';
-import { footprintArea, hasCollisions, itemCountByCategory, totalCost } from './geometry';
+import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
 import { distanceOutsideWalls, printWhenLoaded } from './plan-export/print';
@@ -148,7 +149,8 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     items: floor.items.length,
     area: floorArea(layout, floorIndex).toFixed(1),
     footprint: footprintArea(floor.items).toFixed(1),
-    cost: totalCost(floor.items).toLocaleString(),
+    // The porch door is structure, as in the header (#693).
+    cost: furnitureSpend({ floors: [floor] }).toLocaleString(),
   };
   const counts = itemCountByCategory(floor.items);
   const legend = CATEGORIES.filter((category) => counts.has(category.key))

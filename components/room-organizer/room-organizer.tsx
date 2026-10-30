@@ -39,7 +39,7 @@ import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
-import { notify } from './lib/editor-notices';
+import { notify, notifyRefused, notifyWithUndo, removedMessage } from './lib/editor-notices';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { randomSuffix } from './lib/ids';
@@ -575,10 +575,23 @@ export function RoomOrganizer(): JSX.Element {
   const refuseOverBudget = useCallback((price: number): boolean => {
     const refusal = purchaseRefusal(layoutStore.getState().layout, price);
     if (refusal === null) return false;
-    playCue('refused');
-    notify(refusal, 'error');
+    notifyRefused(refusal, playCue);
     return true;
   }, [playCue]);
+
+  // Removal toasts (#651): "Removed Sofa", with an Undo button that steps
+  // back over exactly this removal. Nothing removed, no toast.
+  const undoHistory = history.undo;
+  const offerRemovalUndo = useCallback(
+    (before: RoomLayout, ids: readonly string[]) => {
+      if (layoutStore.getState().layout === before) return;
+      const wanted = new Set(ids);
+      const names = before.floors.flatMap((floor) => floor.items).filter((item) => wanted.has(item.id)).map((item) => item.name);
+      if (names.length === 0) return;
+      notifyWithUndo(removedMessage(names), { current: () => layoutStore.getState().layout, undo: undoHistory });
+    },
+    [undoHistory]
+  );
 
   // Wrap layout actions with the side-effect of clearing the selection when
   // the targeted item disappears. Discrete actions (delete, duplicate, add,
@@ -586,8 +599,10 @@ export function RoomOrganizer(): JSX.Element {
   const removeItem = useCallback(
     (id: string) => {
       commitHistoryNow();
+      const before = layoutStore.getState().layout;
       // Demolish sells back: 80 % refunded under the hard budget (#463e).
       actions.sellItems([id]);
+      offerRemovalUndo(before, [id]);
       playCue('remove');
       setSelectedItemId((current) => (current === id ? null : current));
       setExtraSelectedIds((extras) => {
@@ -597,7 +612,7 @@ export function RoomOrganizer(): JSX.Element {
         return next;
       });
     },
-    [actions, commitHistoryNow, playCue]
+    [actions, commitHistoryNow, offerRemovalUndo, playCue]
   );
 
   const removeSelected = useCallback(() => {
@@ -606,11 +621,13 @@ export function RoomOrganizer(): JSX.Element {
     // placement and drag, so deletion ignores it like Demolish does (#358).
     if (!activeFloor.items.some((item) => allSelectedIds.has(item.id))) return;
     commitHistoryNow();
+    const before = layoutStore.getState().layout;
     actions.sellItems([...allSelectedIds]);
+    offerRemovalUndo(before, [...allSelectedIds]);
     playCue('remove');
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
-  }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds, playCue]);
+  }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds, offerRemovalUndo, playCue]);
 
   // Duplicate the current selection. For a multi-select every selected item is
   // copied (each offset by the reducer) and the copies become the new

@@ -83,6 +83,28 @@ export function purchaseRefusal(layout: Pick<RoomLayout, 'floors' | 'budget'>, p
   return budgetBlockedReason(price, budgetRemaining(layout));
 }
 
+/**
+ * What cloning a floor buys (#588): its furniture less the porch door and
+ * the garden, which the copy leaves behind (the reducer's duplicateFloor).
+ */
+export function floorClonePrice(items: readonly Pick<FurnitureItem, 'id' | 'price' | 'category'>[]): number {
+  return purchasePrice(items.filter((item) => item.category !== 'outdoor'));
+}
+
+/**
+ * Why cloning a floor holding `items` is refused under the hard budget, or
+ * null when it is affordable or the budget is off.
+ */
+export function floorCloneRefusal(
+  layout: Pick<RoomLayout, 'floors' | 'budget'>,
+  floorName: string,
+  items: readonly Pick<FurnitureItem, 'id' | 'price' | 'category'>[]
+): string | null {
+  const price = floorClonePrice(items);
+  const refusal = purchaseRefusal(layout, price);
+  return refusal === null ? null : `Cloning ${floorName} buys ${CURRENCY_SYMBOL}${price.toLocaleString()} of furniture. ${refusal}`;
+}
+
 /** What Demolish pays back for an item: whole currency units. */
 export function sellBackRefund(price: number): number {
   return Math.round(Math.max(0, price) * SELL_BACK_RATE);
@@ -123,6 +145,39 @@ export function bookSale<T extends Pick<RoomLayout, 'budget'>>(
   const loss = hardBudgetLoss(layout, items);
   if (loss === 0 || !layout.budget) return layout;
   return { ...layout, budget: { writeOff: Math.min(MAX_WRITE_OFF, layout.budget.writeOff + loss) } };
+}
+
+/** A template load under the hard budget (#691): the house to apply, or why not. */
+export type TemplateLoad<T> =
+  | { readonly layout: T; readonly refusal: null; readonly writtenOff: number }
+  | { readonly layout: null; readonly refusal: string; readonly writtenOff: 0 };
+
+/**
+ * `template` as it replaces `current` (#691). The budget is the player's, not
+ * the template's: `current.budget` carries over, enabled flag and write-off,
+ * and a house that never had one gets none. Under the hard budget a template
+ * is a purchase like any other: the outgoing furniture sells back at
+ * SELL_BACK_RATE, the same as Clear floor (#534), and a template whose
+ * furniture costs more than is then left is refused. `writtenOff` is what
+ * that sale lost.
+ */
+export function loadTemplateUnderBudget<T extends RoomLayout>(current: RoomLayout, template: T, label: string): TemplateLoad<T> {
+  const { budget: _theirs, ...rest } = template;
+  if (!current.budget) return { layout: rest as T, refusal: null, writtenOff: 0 };
+  const sold = bookSale(current, current.floors.flatMap((floor) => floor.items));
+  const budget = sold.budget ?? current.budget;
+  const layout = { ...rest, budget } as T;
+  if (!isHardBudgetOn(current)) return { layout, refusal: null, writtenOff: 0 };
+  const price = purchasePrice(template.floors.flatMap((floor) => floor.items));
+  const left = DEFAULT_BUDGET - budget.writeOff;
+  if (price > 0 && price > left) {
+    return {
+      layout: null,
+      refusal: `Over budget: the ${label} costs ${CURRENCY_SYMBOL}${price.toLocaleString()}, and ${CURRENCY_SYMBOL}${Math.max(0, left).toLocaleString()} is left once this house sells back`,
+      writtenOff: 0,
+    };
+  }
+  return { layout, refusal: null, writtenOff: budget.writeOff - current.budget.writeOff };
 }
 
 /**

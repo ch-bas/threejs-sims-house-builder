@@ -119,12 +119,23 @@ function StatusToast({
   // Paused while the overlay stack holds toasts back to clear the item
   // sheet, so a notice never expires unseen.
   const heldBack = useSyncExternalStore(toastsHeldBack.subscribe, toastsHeldBack.get, () => false);
-  usePausableTimeout(notice.id, !heldBack, duration, () => onDismiss(notice.id));
+  // A notice with a button waits while the pointer or the focus is on it,
+  // so it never closes under the hand reaching for "Undo" (#651).
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const engaged = notice.action !== undefined && (hovered || focused);
+  usePausableTimeout(notice.id, !heldBack && !engaged, duration, () => onDismiss(notice.id));
 
   return (
     <div
       className="pc-glass pc-glass--dark"
       role={notice.tone === 'error' ? 'alert' : 'status'}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+      }}
       style={{
         pointerEvents: 'auto',
         display: 'flex',
@@ -142,6 +153,33 @@ function StatusToast({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Icon name={tone.icon} size={14} style={{ color: tone.color, flexShrink: 0 }} />
         <span style={{ flex: 1, minWidth: 0 }}>{notice.message}</span>
+        {notice.action !== undefined && (
+          <button
+            type="button"
+            // Several notices can each offer "Undo": say which one (#651).
+            aria-label={`${notice.action.label}: ${notice.message}`}
+            onClick={() => {
+              // Close first: the action may raise a notice of its own.
+              onDismiss(notice.id);
+              notice.action?.run();
+            }}
+            style={{
+              flexShrink: 0,
+              height: 22,
+              padding: '0 10px',
+              borderRadius: 999,
+              border: '1px solid rgba(255, 255, 255, 0.45)',
+              background: 'rgba(255, 255, 255, 0.12)',
+              color: 'var(--pc-paper)',
+              fontFamily: 'var(--pc-font-display)',
+              fontWeight: 700,
+              fontSize: 11,
+              cursor: 'pointer',
+            }}
+          >
+            {notice.action.label}
+          </button>
+        )}
         <button
           type="button"
           aria-label="Dismiss"

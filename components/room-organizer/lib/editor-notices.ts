@@ -19,10 +19,23 @@ export interface Notice {
    * clipboard refused it. A notice that carries one stays until dismissed.
    */
   copyText?: string;
+  /** A button on the notice, such as "Undo" after a removal (#651). */
+  action?: NoticeAction;
+}
+
+/**
+ * The one button a notice may carry. `run` is called once, on the click,
+ * and the notice then closes. It must check that it still applies: the
+ * notice can outlive the state it was raised for.
+ */
+export interface NoticeAction {
+  label: string;
+  run(): void;
 }
 
 export interface NoticeOptions {
   copyText?: string;
+  action?: NoticeAction;
 }
 
 type Listener<T> = (value: T) => void;
@@ -58,6 +71,7 @@ export function notify(message: string, tone: NoticeTone = 'info', options: Noti
     message,
     tone,
     ...(options.copyText !== undefined ? { copyText: options.copyText } : {}),
+    ...(options.action !== undefined ? { action: options.action } : {}),
   };
   notices.emit(notice);
   return notice;
@@ -67,10 +81,65 @@ export function subscribeNotices(listener: Listener<Notice>): () => void {
   return notices.subscribe(listener);
 }
 
-/** How long a notice stays up; errors and copy-by-hand links linger. */
+/**
+ * How long a notice stays up; errors, copy-by-hand links and notices with a
+ * button linger. The host also pauses the countdown while the pointer or the
+ * keyboard focus is on a notice with a button, so it never closes under the
+ * user's hand.
+ */
 export function noticeDuration(notice: Notice): number | null {
   if (notice.copyText !== undefined) return null;
-  return notice.tone === 'error' ? 7000 : 4000;
+  return notice.tone === 'error' || notice.action !== undefined ? 7000 : 4000;
+}
+
+/** Plays a sound cue; the editor's `playCue`, which honours the mute switch. */
+export type RefusedCue = (cue: 'refused') => void;
+
+/**
+ * A refused edit (#588, #642): the `refused` cue and an error notice that
+ * says why. Every refusal a click can meet goes through here, so none is
+ * silent and none plays its cue twice.
+ */
+export function notifyRefused(message: string, playCue: RefusedCue): Notice {
+  playCue('refused');
+  return notify(message, 'error');
+}
+
+/** What a removal toast says: the item's name, or how many went. */
+export function removedMessage(names: readonly string[], from?: string): string {
+  const what = names.length === 1 ? (names[0] ?? 'item') : `${names.length} items`;
+  return from === undefined ? `Removed ${what}` : `Removed ${what} from ${from}`;
+}
+
+/** Names of the items in `before` that `after` no longer holds. */
+export function removedNames(
+  before: readonly { id: string; name: string }[],
+  after: readonly { id: string }[]
+): string[] {
+  const kept = new Set(after.map((item) => item.id));
+  return before.filter((item) => !kept.has(item.id)).map((item) => item.name);
+}
+
+/** Said when a notice's Undo no longer applies: the house moved on. */
+export const UNDO_STALE_MESSAGE = 'The house has changed since. Use Undo in the toolbar (Ctrl+Z) to step back.';
+
+/**
+ * "Removed Sofa · Undo" (#651): an info notice whose button undoes the edit
+ * that raised it. `current` reads the state the edit left; the button only
+ * undoes while that state is still the one on screen, so it can never undo
+ * a later, unrelated edit. Otherwise it points to the toolbar's Undo.
+ */
+export function notifyWithUndo(message: string, history: { current(): unknown; undo(): void }): Notice {
+  const after = history.current();
+  return notify(message, 'info', {
+    action: {
+      label: 'Undo',
+      run() {
+        if (Object.is(history.current(), after)) history.undo();
+        else notify(UNDO_STALE_MESSAGE, 'info');
+      },
+    },
+  });
 }
 
 const zoneNameRequests = createChannel<string>();

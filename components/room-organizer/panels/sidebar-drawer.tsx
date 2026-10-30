@@ -8,8 +8,9 @@ import { useEvent } from '../hooks/use-event';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
-import { purchasePrice, purchaseRefusal } from '../lib/budget';
-import { notify } from '../lib/editor-notices';
+import { loadTemplateUnderBudget, purchasePrice, purchaseRefusal, SELL_BACK_RATE } from '../lib/budget';
+import { CURRENCY_SYMBOL } from '../lib/constants';
+import { notify, notifyRefused } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { placeSetInFreeSpace, setForStorey } from '../lib/furniture-sets';
 import { hasCollisions } from '../lib/geometry';
@@ -303,20 +304,17 @@ const DrawerBody = memo(function DrawerBody({
               });
               // Garden pieces stay on the ground floor (#591); an all-garden set says so.
               if (setForStorey(set, activeFloorIndex).items.length === 0) {
-                playCue('refused');
-                notify(`The ${set.label} is all garden items, and garden items go on the ground floor.`, 'error');
+                notifyRefused(`The ${set.label} is all garden items, and garden items go on the ground floor.`, playCue);
                 return;
               }
               if (items.length === 0) {
-                playCue('refused');
-                notify(`No free spot for the ${set.label} — make some room first.`, 'error');
+                notifyRefused(`No free spot for the ${set.label} — make some room first.`, playCue);
                 return;
               }
               // Hard budget (#463e): say why instead of a silent refusal.
               const refusal = purchaseRefusal(layout, purchasePrice(items));
               if (refusal !== null) {
-                playCue('refused');
-                notify(refusal, 'error');
+                notifyRefused(refusal, playCue);
                 return;
               }
               actions.addItems(items);
@@ -386,14 +384,24 @@ const DrawerBody = memo(function DrawerBody({
           <EditLock locked={exploring}>
           <TemplatesPanel
             onLoadTemplate={(template) => {
+              // The hard budget and its write-off stay the player's; under it
+              // a template is a purchase, refused before asking (#691).
+              const load = loadTemplateUnderBudget(layout, template, `${template.name} template`);
+              if (load.refusal !== null) {
+                notifyRefused(load.refusal, playCue);
+                return false;
+              }
               if (!confirmReplace(layout, `the ${template.name} template`)) return false;
               snapshotBeforeReplace(layout);
               history.commitNow();
               actions.applyLayout({
-                ...template,
-                floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
+                ...load.layout,
+                floors: load.layout.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
               });
               markLayoutLoaded();
+              if (load.writtenOff > 0) {
+                notify(`The furniture it replaced sold back at ${Math.round(SELL_BACK_RATE * 100)}%: ${CURRENCY_SYMBOL}${load.writtenOff.toLocaleString()} written off.`, 'info');
+              }
               selectOnly(null);
               return true;
             }}
