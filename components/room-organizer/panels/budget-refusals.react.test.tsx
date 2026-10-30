@@ -39,7 +39,7 @@ afterEach(() => {
 function seed(spent: number, beds = 18): void {
   const each = spent / beds;
   const items = Array.from({ length: beds }, (_, i) =>
-    makeItem({ id: `bed-${i}`, type: 'bed', name: 'Bed', category: 'beds', price: each, position: { x: 0, z: 0 } })
+    makeItem({ id: `bed-${i}`, type: 'bed', name: 'Bed', category: 'bedroom', price: each, position: { x: 0, z: 0 } })
   );
   layoutStore.setState({
     layout: makeLayout({ id: 'house-test', floors: [makeFloor({ items })], budget: { writeOff: 0 } }),

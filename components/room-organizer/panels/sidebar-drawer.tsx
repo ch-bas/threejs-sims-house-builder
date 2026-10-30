@@ -8,7 +8,8 @@ import { useEvent } from '../hooks/use-event';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { alignSelection, distributeSelection } from '../lib/alignment';
-import { purchasePrice, purchaseRefusal } from '../lib/budget';
+import { loadTemplateUnderBudget, purchasePrice, purchaseRefusal, SELL_BACK_RATE } from '../lib/budget';
+import { CURRENCY_SYMBOL } from '../lib/constants';
 import { notify, notifyRefused } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { placeSetInFreeSpace, setForStorey } from '../lib/furniture-sets';
@@ -383,14 +384,24 @@ const DrawerBody = memo(function DrawerBody({
           <EditLock locked={exploring}>
           <TemplatesPanel
             onLoadTemplate={(template) => {
+              // The hard budget and its write-off stay the player's; under it
+              // a template is a purchase, refused before asking (#691).
+              const load = loadTemplateUnderBudget(layout, template, `${template.name} template`);
+              if (load.refusal !== null) {
+                notifyRefused(load.refusal, playCue);
+                return false;
+              }
               if (!confirmReplace(layout, `the ${template.name} template`)) return false;
               snapshotBeforeReplace(layout);
               history.commitNow();
               actions.applyLayout({
-                ...template,
-                floors: template.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
+                ...load.layout,
+                floors: load.layout.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
               });
               markLayoutLoaded();
+              if (load.writtenOff > 0) {
+                notify(`The furniture it replaced sold back at ${Math.round(SELL_BACK_RATE * 100)}%: ${CURRENCY_SYMBOL}${load.writtenOff.toLocaleString()} written off.`, 'info');
+              }
               selectOnly(null);
               return true;
             }}

@@ -9,13 +9,15 @@ import {
   floorClonePrice,
   floorCloneRefusal,
   furnitureSpend,
+  isHardBudgetOn,
+  loadTemplateUnderBudget,
   purchasePrice,
   purchaseRefusal,
   repairHardBudget,
   sellBackLoss,
   sellBackRefund,
 } from './budget';
-import { DEFAULT_BUDGET } from './constants';
+import { DEFAULT_BUDGET, ROOM_TEMPLATES } from './constants';
 import { parseStoredLayout } from './schema';
 import { decodeShareUrl, encodeShareUrl } from './share';
 import { ENTRANCE_DOOR_ID } from './street';
@@ -310,7 +312,7 @@ describe('every removal route sells back under the hard budget (#534)', () => {
 describe('floorClonePrice (#588)', () => {
   it('charges what the reducer copies: no porch door, no garden', () => {
     const items = [
-      makeItem({ id: 'bed', category: 'beds', price: 800 }),
+      makeItem({ id: 'bed', category: 'bedroom', price: 800 }),
       makeItem({ id: ENTRANCE_DOOR_ID, price: 300 }),
       makeItem({ id: 'tree', category: 'outdoor', price: 120 }),
     ];
@@ -321,10 +323,53 @@ describe('floorClonePrice (#588)', () => {
   });
 
   it('names the floor and the price when the budget refuses the copy', () => {
-    const beds = Array.from({ length: 18 }, (_, i) => makeItem({ id: `bed-${i}`, category: 'beds', price: 800 }));
+    const beds = Array.from({ length: 18 }, (_, i) => makeItem({ id: `bed-${i}`, category: 'bedroom', price: 800 }));
     const layout = makeLayout({ floors: [makeFloor({ items: beds })], budget: { writeOff: 0 } });
     expect(floorCloneRefusal(layout, 'Ground', beds)).toBe('Cloning Ground buys $14,400 of furniture. Over budget: $10,600 left');
     expect(floorCloneRefusal({ ...layout, budget: { writeOff: 0, enabled: false } }, 'Ground', beds)).toBeNull();
     expect(floorCloneRefusal(layout, 'Ground', beds.slice(0, 10))).toBeNull();
+  });
+});
+
+describe('loadTemplateUnderBudget (#691)', () => {
+  const studio = ROOM_TEMPLATES.studio;
+  const studioPrice = purchasePrice(studio.floors.flatMap((floor) => floor.items));
+  const houseWith = (items: FurnitureItem[], budget?: RoomLayout['budget']): RoomLayout =>
+    makeLayout({ floors: [makeFloor({ items })], ...(budget ? { budget } : {}) });
+
+  it('keeps the hard budget on and the write-off of earlier sales', () => {
+    // Repro: a $1,000 sofa demolished under the hard budget wrote off $200.
+    const load = loadTemplateUnderBudget(houseWith([], { writeOff: 200 }), studio, 'Studio template');
+    expect(load.refusal).toBeNull();
+    expect(load.layout!.budget).toEqual({ writeOff: 200 });
+    expect(isHardBudgetOn(load.layout!)).toBe(true);
+    expect(load.layout!.floors).toEqual(studio.floors);
+  });
+
+  it('sells the outgoing furniture back, like Clear floor', () => {
+    const sofa1000 = makeItem({ id: 'sofa', price: 1000 });
+    const load = loadTemplateUnderBudget(houseWith([sofa1000], { writeOff: 0 }), studio, 'Studio template');
+    expect(load.layout!.budget).toEqual({ writeOff: 200 });
+    expect(load.writtenOff).toBe(200);
+  });
+
+  it('keeps a switched-off budget off, write-off and all, and sells nothing', () => {
+    const sofa1000 = makeItem({ id: 'sofa', price: 1000 });
+    const load = loadTemplateUnderBudget(houseWith([sofa1000], { writeOff: 50, enabled: false }), studio, 'Studio template');
+    expect(load.layout!.budget).toEqual({ writeOff: 50, enabled: false });
+    expect(load.writtenOff).toBe(0);
+  });
+
+  it('gives a house that never used the hard budget none, whatever the template carries', () => {
+    const load = loadTemplateUnderBudget(houseWith([]), { ...studio, budget: { writeOff: 9 } }, 'Studio template');
+    expect('budget' in load.layout!).toBe(false);
+  });
+
+  it('refuses a template whose furniture does not fit what is left', () => {
+    const writeOff = DEFAULT_BUDGET - studioPrice + 1;
+    const load = loadTemplateUnderBudget(houseWith([], { writeOff }), studio, 'Studio template');
+    expect(load.layout).toBeNull();
+    expect(load.refusal).toContain('Over budget: the Studio template costs');
+    expect(loadTemplateUnderBudget(houseWith([], { writeOff: writeOff - 1 }), studio, 'Studio template').refusal).toBeNull();
   });
 });
