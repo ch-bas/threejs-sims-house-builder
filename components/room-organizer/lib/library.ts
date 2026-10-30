@@ -370,7 +370,12 @@ function roomShortfall(storage: Storage, growth: number, headroom: number): Libr
  * re-save, is never refused for room. If the index write fails, the blobs
  * are rolled back, and no listed entry is ever left naming another house.
  */
-export function saveNamedLayout(layout: RoomLayout, name: string): LibrarySaveOutcome {
+export function saveNamedLayout(
+  layout: RoomLayout,
+  name: string,
+  /** `savedAt`: when the copy was first saved — a restored backup keeps its dates and order (#620). */
+  opts: { savedAt?: number } = {}
+): LibrarySaveOutcome {
   let storage: Storage;
   try {
     storage = window.localStorage;
@@ -388,7 +393,7 @@ export function saveNamedLayout(layout: RoomLayout, name: string): LibrarySaveOu
   const entry: SavedLayoutEntry = {
     id,
     name: shown,
-    savedAt: Date.now(),
+    savedAt: opts.savedAt ?? Date.now(),
     itemCount: totalItemCount(layout),
     floorCount: layout.floors.length,
   };

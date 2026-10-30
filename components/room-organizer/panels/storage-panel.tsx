@@ -8,11 +8,12 @@ import {
   BACKUP_FAILURE_TEXT,
   backupFileName,
   createBackup,
+  libraryHousesLeftOut,
   describeRestore,
   parseBackup,
   restoreBackup,
   summarizeBackup,
-  type BackupBundle,
+  type ParsedBackup,
   type BackupSummary,
   type RestoreMode,
 } from '../lib/backup';
@@ -73,12 +74,13 @@ function describeContents(summary: BackupSummary): string {
     summary.received > 0 ? plural(summary.received, 'received house') : null,
     summary.customSets > 0 ? plural(summary.customSets, 'custom set') : null,
   ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(', ') : 'only settings';
+  const held = parts.length > 0 ? parts.join(', ') : 'only settings';
+  return summary.invalid > 0 ? `${held}; ${plural(summary.invalid, 'part')} can’t be read` : held;
 }
 
 interface PendingRestore {
   fileName: string;
-  bundle: BackupBundle;
+  bundle: ParsedBackup;
 }
 
 export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }: StoragePanelProps): JSX.Element {
@@ -137,6 +139,13 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
   const handleBackup = (): void => {
     const bundle = createBackup(currentLayout);
     downloadTextFile(backupFileName(), 'application/json', JSON.stringify(bundle));
+    const leftOut = libraryHousesLeftOut();
+    if (leftOut > 0) {
+      notify(
+        `${plural(leftOut, 'saved layout')} couldn’t be read and ${leftOut === 1 ? 'is' : 'are'} not in the backup. ${leftOut === 1 ? 'It stays' : 'They stay'} in this browser.`,
+        'info'
+      );
+    }
   };
 
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -164,9 +173,12 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
         .filter((part): part is string => part !== null)
         .join(', ');
       // TODO(#649): in-app confirm dialog.
+      const deletes = summary.complete
+        ? 'Saved layouts, received houses and sets the backup doesn’t have are deleted. '
+        : 'Part of the backup can’t be read, so nothing here is deleted. ';
       const ok = window.confirm(
-        `Replace ${replaced} and settings with the backup’s? Saved layouts the backup doesn’t have are deleted. ` +
-          `${summary.hasHouse ? 'The open house is kept as a restore point. ' : ''}Restore points are kept.`
+        `Replace ${replaced} and settings with the backup’s? ${deletes}` +
+          `${summary.hasHouse ? 'The open house is kept as a restore point. ' : ''}Your restore points are kept.`
       );
       if (!ok) return;
     }
@@ -174,7 +186,8 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
     if (report.house) onRestoreHouse(report.house);
     setPending(null);
     changed();
-    notify(describeRestore(report), report.failed > 0 ? 'error' : 'success');
+    const tone = report.failed > 0 ? 'error' : report.invalid > 0 || report.overLimit > 0 ? 'info' : 'success';
+    notify(describeRestore(report), tone);
   };
 
   const used = usage.total;
@@ -240,7 +253,7 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-6 px-2 text-xs"
+                    className="h-8 min-w-8 px-2 text-xs"
                     aria-label={`Delete saved layout ${names.get(slot) ?? slot}`}
                     disabled={exploring}
                     title={editHint ?? 'Delete this saved layout…'}

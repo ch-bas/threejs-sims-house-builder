@@ -483,53 +483,74 @@ export function snapshotBelongsTo(summary: HouseFields, layout: RoomLayout): boo
   return sameHouse(summaryRef(summary), { layoutId: layout.id, name: layout.name });
 }
 
+/** What `importSnapshots` did. */
+export interface ImportedSnapshots {
+  added: number;
+  /** Points left out: unreadable, or no room left under the caps or the quota. */
+  skipped: number;
+}
+
 /**
  * Put restore points from a backup file back in the ring (#620), beside the
  * ones already there. Each entry is read as the ring reads its own and its
  * layout validated through the schema; one whose id, or whose house and
- * layout, the ring already holds is skipped. The ring keeps its caps — the
- * oldest go first — and stays the lowest-priority tenant: a full quota drops
- * the oldest points instead of evicting anything else. Returns how many of
- * the imported points the ring now holds.
+ * layout, the ring already holds is skipped as already there. This browser's
+ * own points always stay: imported ones, newest first, fill only the room
+ * the caps leave after them. On a full quota imported points give way, the
+ * oldest first, and nothing else is evicted — restore points stay the
+ * lowest-priority tenant.
  */
-export function importSnapshots(candidates: readonly unknown[], opts: VersionHistoryOptions = {}): number {
+export function importSnapshots(candidates: readonly unknown[], opts: VersionHistoryOptions = {}): ImportedSnapshots {
   const storage = opts.storage ?? defaultStorage();
-  if (!storage) return 0;
+  if (!storage) return { added: 0, skipped: candidates.length };
   const at = (opts.now ?? Date.now)();
-  const slots = readSlots(storage);
-  const ids = new Set(slots.map((slot) => slot.entry.id));
-  const imported = new Set<string>();
-  const incoming = readEntries({ getItem: () => JSON.stringify(candidates), setItem: () => undefined });
-  for (const entry of incoming) {
+  const local = readSlots(storage);
+  const ids = new Set(local.map((slot) => slot.entry.id));
+  const incoming: Slot[] = [];
+  const read = readEntries({ getItem: () => JSON.stringify(candidates), setItem: () => undefined });
+  // Entries the reader drops outright (no time, no layout) can't be restored.
+  let skipped = candidates.length - read.length;
+  for (const entry of read) {
     const layout = parseStoredLayout(entry.layout);
-    if (!layout || ids.has(entry.id)) continue;
+    if (!layout) {
+      skipped += 1;
+      continue;
+    }
+    if (ids.has(entry.id)) continue;
     const stored: RoomLayout = { ...layout };
     delete stored.floorPlanImage;
     const layoutJson = JSON.stringify(stored);
-    const duplicate = slots.some(
+    const held = [...local, ...incoming].some(
       (slot) => sameHouse(slot.entry, entry) && JSON.stringify(slot.entry.layout) === layoutJson
     );
-    if (duplicate) continue;
+    if (held) continue;
     const added: StoredEntry = { ...entry, savedAt: Math.min(entry.savedAt, at), layout: stored };
-    slots.push({ entry: added, json: JSON.stringify(added) });
+    incoming.push({ entry: added, json: JSON.stringify(added) });
     ids.add(entry.id);
-    imported.add(entry.id);
   }
-  if (imported.size === 0) return 0;
-  slots.sort((a, b) => a.entry.savedAt - b.entry.savedAt);
-  while (slots.length > VERSION_HISTORY_LIMIT) slots.shift();
-  while (serialisedLength(slots) > VERSION_HISTORY_MAX_CHARS) slots.shift();
-  while (slots.length > 0) {
+  incoming.sort((a, b) => b.entry.savedAt - a.entry.savedAt);
+  const kept: Slot[] = [];
+  for (const slot of incoming) {
+    const fits =
+      local.length + kept.length < VERSION_HISTORY_LIMIT &&
+      serialisedLength([...local, ...kept, slot]) <= VERSION_HISTORY_MAX_CHARS;
+    if (fits) kept.push(slot);
+    else skipped += 1;
+  }
+  while (kept.length > 0) {
+    const ring = [...local, ...kept].sort((a, b) => a.entry.savedAt - b.entry.savedAt);
     try {
-      storage.setItem(VERSION_HISTORY_STORAGE_KEY, serialiseSlots(slots));
-      writeMeta(storage, slots);
+      storage.setItem(VERSION_HISTORY_STORAGE_KEY, serialiseSlots(ring));
+      writeMeta(storage, ring);
       notify();
-      return slots.filter((slot) => imported.has(slot.entry.id)).length;
+      return { added: kept.length, skipped };
     } catch {
-      slots.shift();
+      // The failed write left the ring as it was; give up the oldest import.
+      kept.pop();
+      skipped += 1;
     }
   }
-  return 0;
+  return { added: 0, skipped };
 }
 
 /** Drop every restore point, freeing the ring's whole share of the quota. */

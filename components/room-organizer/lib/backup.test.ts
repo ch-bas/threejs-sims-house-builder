@@ -9,6 +9,8 @@ import {
   parseBackup,
   restoreBackup,
   summarizeBackup,
+  type BackupBundle,
+  type ParsedBackup,
 } from './backup';
 import { STORAGE_KEY } from './constants';
 import { CUSTOM_SETS_STORAGE_KEY, listCustomSets, saveCustomSet } from './custom-sets';
@@ -66,6 +68,13 @@ function inventory(): unknown {
   };
 }
 
+/** A bundle as a restore sees it: written to a file and read back. */
+function reread(bundle: BackupBundle): ParsedBackup {
+  const parsed = parseBackup(JSON.stringify(bundle));
+  if (!parsed.ok) throw new Error(parsed.reason);
+  return parsed.bundle;
+}
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -84,7 +93,7 @@ describe('backup round trip (#620)', () => {
 
     expect(report.house).toEqual(parseStoredLayout(JSON.parse(JSON.stringify(open))));
     expect(report.failed).toBe(0);
-    expect(report.skipped).toBe(0);
+    expect(report.invalid).toBe(0);
     expect(inventory()).toEqual(before);
     // Another site's key is neither backed up nor touched.
     expect(text).not.toContain('some-other-site');
@@ -94,7 +103,7 @@ describe('backup round trip (#620)', () => {
     const open = fillBrowser();
     const bundle = createBackup(open);
     localStorage.clear();
-    restoreBackup(bundle, 'replace', house('Blank', 0));
+    restoreBackup(reread(bundle), 'replace', house('Blank', 0));
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
@@ -115,7 +124,7 @@ describe('parseBackup', () => {
     });
   });
 
-  it('reads a part of the wrong shape as empty instead of failing the file', () => {
+  it('reads a part of the wrong shape as empty and marks the file incomplete', () => {
     const parsed = parseBackup(JSON.stringify({ format: BACKUP_FORMAT, version: 1, library: 'nope', customSets: 3 }));
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
@@ -125,6 +134,8 @@ describe('parseBackup', () => {
       restorePoints: 0,
       received: 0,
       customSets: 0,
+      invalid: 0,
+      complete: false,
     });
   });
 });
@@ -148,8 +159,8 @@ describe('restore validation', () => {
     expect(report.house).toBeNull();
     expect(listSavedLayouts().map((entry) => entry.name)).toEqual(['Good']);
     expect(listReceivedLayouts()).toEqual([]);
-    expect(report.skipped).toBe(3);
-    expect(describeRestore(report)).toContain('3 parts couldn’t be read');
+    expect(report.invalid).toBe(3);
+    expect(describeRestore(report)).toContain('3 parts of the file couldn’t be read');
   });
 
   it('writes only this app’s settings keys, never the main save or another site’s', () => {
@@ -171,7 +182,7 @@ describe('restore validation', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(CUSTOM_SETS_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem('other-site')).toBeNull();
-    expect(report.skipped).toBe(3);
+    expect(report.invalid).toBe(3);
   });
 });
 
@@ -186,7 +197,7 @@ describe('merge replaces nothing', () => {
     saveNamedLayout(house('Cottage', 8, 'cottage-new'), 'Cottage');
     localStorage.setItem(ACHIEVEMENTS_KEY, '["mine"]');
     bundle.settings[ACHIEVEMENTS_KEY] = '["theirs"]';
-    const report = restoreBackup(bundle, 'merge', current);
+    const report = restoreBackup(reread(bundle), 'merge', current);
 
     expect(report.house).toBeNull();
     const names = listSavedLayouts().map((entry) => entry.name).sort();
@@ -199,7 +210,7 @@ describe('merge replaces nothing', () => {
   it('adds nothing the browser already holds', () => {
     const open = fillBrowser();
     const before = inventory();
-    const report = restoreBackup(createBackup(open), 'merge', open);
+    const report = restoreBackup(reread(createBackup(open)), 'merge', open);
     expect(inventory()).toEqual(before);
     expect(describeRestore(report)).toMatch(/^Nothing new to restore/);
   });
@@ -210,7 +221,7 @@ describe('replace', () => {
     saveNamedLayout(house('Kept', 1), 'Kept');
     const bundle = createBackup(null);
     saveNamedLayout(house('Extra', 1), 'Extra');
-    restoreBackup(bundle, 'replace', house('Current', 1));
+    restoreBackup(reread(bundle), 'replace', house('Current', 1));
     expect(listSavedLayouts().map((entry) => entry.name)).toEqual(['Kept']);
   });
 
@@ -219,8 +230,31 @@ describe('replace', () => {
     const bundle = createBackup(null);
     localStorage.clear();
     recordSnapshot(house('Here', 4), { force: true, now: () => 20 });
-    const report = restoreBackup(bundle, 'replace', house('Current', 1));
+    const report = restoreBackup(reread(bundle), 'replace', house('Current', 1));
     expect(report.restorePoints).toBe(1);
     expect(listSnapshots().map((summary) => summary.name)).toEqual(['Here', 'Local']);
+  });
+
+  it('deletes no received house or set when part of the file can’t be read', () => {
+    addReceivedLayout(house('Friend', 2), { now: () => 10 });
+    saveCustomSet([makeItem({ id: 'a', position: { x: 1, z: 1 } })], 'Mine', { now: () => 20, idTag: 'm' });
+    const parsed = parseBackup(
+      JSON.stringify({
+        format: BACKUP_FORMAT,
+        version: 1,
+        library: [],
+        restorePoints: [],
+        recoveryCopies: [],
+        received: [{ receivedAt: 1, layout: 'corrupt' }],
+        customSets: [],
+        settings: {},
+      })
+    );
+    if (!parsed.ok) throw new Error('should parse');
+    expect(parsed.bundle.complete).toBe(false);
+    const report = restoreBackup(parsed.bundle, 'replace', house('Current', 1));
+    expect(report.keptExtras).toBe(true);
+    expect(listReceivedLayouts()).toHaveLength(1);
+    expect(listCustomSets()).toHaveLength(1);
   });
 });
