@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { layoutStore } from '../hooks/use-layout-store';
 import { budgetSpent } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
 import { CURRENCY_SYMBOL } from '../lib/constants';
@@ -209,7 +210,14 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       return;
     }
     if (!(await confirmReplace(currentLayout, `“${entry.name}”`))) return;
-    onLoad(loaded);
+    // Read again: another tab may have saved over it while it asked.
+    const fresh = loadNamedLayout(entry.id);
+    if (!fresh) {
+      setLoaded({ section: 'saved', text: `Couldn’t open “${entry.name}” — the saved copy can’t be read.`, error: true });
+      refresh();
+      return;
+    }
+    onLoad(fresh);
     setLoaded({ section: 'saved', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
   };
 
@@ -229,11 +237,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     // localStorage quota (#231). The current image is put back only when it
     // is the very image the snapshot was taken with — matching on the house
     // isn't enough, since unrenamed houses all share one name (#296).
+    // The house on screen after the answer, not when it asked.
+    const shown = layoutStore.getState().layout;
     const restored: RoomLayout =
-      currentLayout.floorPlanImage &&
+      shown.floorPlanImage &&
       summary.floorPlanFingerprint !== null &&
-      summary.floorPlanFingerprint === floorPlanFingerprint(currentLayout.floorPlanImage)
-        ? { ...snapshot, floorPlanImage: currentLayout.floorPlanImage }
+      summary.floorPlanFingerprint === floorPlanFingerprint(shown.floorPlanImage)
+        ? { ...snapshot, floorPlanImage: shown.floorPlanImage }
         : snapshot;
     // `onLoad` takes the forced restore point of the house on screen (#298,
     // #352) and applies via the same undoable path as a library/template

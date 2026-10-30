@@ -44,6 +44,12 @@ describe('in-app confirms at the call sites (#649)', () => {
 
   function renderEditor(children: JSX.Element, layout: RoomLayout) {
     const floor = layout.floors[0]!;
+    // The panels read the store again after a question is answered.
+    if (layoutStore.getState().layout !== layout) {
+      act(() => {
+        layoutStore.setState({ layout, activeFloorIndex: 0 });
+      });
+    }
     const actions = { replaceItems: vi.fn(), clearItems: vi.fn(), clearInteriorWalls: vi.fn(), setLockAll: vi.fn() };
     const history = { commitNow: vi.fn(), undo: vi.fn() };
     const editor = { layout, activeFloor: floor, activeFloorIndex: 0, actions, history, isReady: true, playCue: vi.fn() } as unknown as RoomEditorContextValue;
@@ -135,5 +141,23 @@ describe('in-app confirms at the call sites (#649)', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /^Remove / })[0]!);
     await waitFor(() => expect(layoutStore.getState().layout.floors).toHaveLength(1));
     expect(yes.asked).toHaveLength(1);
+  });
+
+  it('removes the floor it asked about, even if the floors moved while asking', async () => {
+    const layout = makeLayout({
+      floors: [makeFloor({ id: 'ground', name: 'Ground' }), makeFloor({ id: 'upper', name: 'Upper', items: [makeItem({ id: 'bed' })] })],
+    });
+    act(() => {
+      layoutStore.setState({ layout, activeFloorIndex: 0 });
+    });
+    confirms = autoAnswerConfirms(() => {
+      // Another tab's version, with a floor more under it, adopted meanwhile.
+      const moved = { ...layout, floors: [makeFloor({ id: 'basement', name: 'Basement', items: [makeItem({ id: 'boiler' })] }), ...layout.floors] };
+      layoutStore.getState().actions.applyLayout(moved);
+      return true;
+    });
+    renderEditor(<FloorSwitcher />, layout);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Upper' }));
+    await waitFor(() => expect(layoutStore.getState().layout.floors.map((floor) => floor.id)).toEqual(['basement', 'ground']));
   });
 });

@@ -88,12 +88,19 @@ export function snapshotBeforeReplace(outgoing: RoomLayout | null | undefined): 
 export function confirmReplace(
   current: RoomLayout,
   incoming: string,
-  ask: (question: ConfirmOptions) => Promise<boolean> = askConfirm
+  {
+    note = '',
+    ask = askConfirm,
+  }: {
+    /** Appended to the question's body: the hard budget's sell-back (#691). */
+    note?: string;
+    ask?: (question: ConfirmOptions) => Promise<boolean>;
+  } = {}
 ): Promise<boolean> {
   if (isUntouched(current)) return Promise.resolve(true);
   return ask({
     title: `Replace your current house with ${incoming}?`,
-    body: 'Undo restores it, and it is kept in Manage → Saved Layouts → History.',
+    body: `Undo restores it, and it is kept in Manage → Saved Layouts → History.${note}`,
     confirmLabel: 'Replace',
   });
 }

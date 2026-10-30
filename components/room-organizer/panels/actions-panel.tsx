@@ -120,10 +120,12 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               // spends what the rest of the building leaves of the budget: the
               // hard budget refuses before asking, the soft one asks before
               // going over (#136, #581).
-              void runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
+              void runSurprise(layoutStore.getState().layout, activeFloorIndex, DEFAULT_BUDGET, {
                 confirm: askConfirm,
                 playCue,
                 replaceItems: (items) => actions.replaceItems(items),
+                // Read again after the question (another tab's version may have landed).
+                current: () => layoutStore.getState().layout,
               }).then((replaced) => {
                 if (!replaced) return;
                 setSelectedItemId(null);

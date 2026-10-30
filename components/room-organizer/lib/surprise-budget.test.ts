@@ -149,3 +149,25 @@ describe('runSurprise: the one place Surprise plays its cue (#581)', () => {
     expect(notices).toEqual([]);
   });
 });
+
+describe('runSurprise reads the house again after asking (#649 review)', () => {
+  it('replaces nothing when the house changed while the question was open', async () => {
+    const layout = houseWithLeft(20_000, false);
+    const replaced: FurnitureItem[][] = [];
+    const notices: Notice[] = [];
+    const stop = subscribeNotices((notice) => notices.push(notice));
+    try {
+      const done = await runSurprise(layout, 0, DEFAULT_BUDGET, {
+        confirm: yes,
+        playCue: () => {},
+        replaceItems: (items) => replaced.push(items),
+        current: () => ({ ...layout, name: 'Adopted from another tab' }),
+      });
+      expect(done).toBe(false);
+    } finally {
+      stop();
+    }
+    expect(replaced).toEqual([]);
+    expect(notices.map((notice) => notice.message)).toEqual([expect.stringMatching(/changed while/) as unknown]);
+  });
+});

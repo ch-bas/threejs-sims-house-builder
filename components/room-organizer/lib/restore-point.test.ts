@@ -100,7 +100,7 @@ describe('untouched means "the initial layout" (#346)', () => {
     snapshotBeforeReplace(layout);
     expect(recordSnapshot).toHaveBeenCalledTimes(1);
     const ask = vi.fn(() => Promise.resolve(false));
-    expect(await confirmReplace(layout, 'x', ask)).toBe(false);
+    expect(await confirmReplace(layout, 'x', { ask: ask })).toBe(false);
   });
 
   it('treats a renamed or reloaded initial layout as untouched', () => {
@@ -134,26 +134,32 @@ describe('confirmReplace (#364)', () => {
 
   it('replaces an untouched house without asking', async () => {
     const ask = vi.fn(() => Promise.resolve(false));
-    expect(await confirmReplace(INITIAL_LAYOUT, 'the Bedroom template', ask)).toBe(true);
+    expect(await confirmReplace(INITIAL_LAYOUT, 'the Bedroom template', { ask: ask })).toBe(true);
     expect(ask).not.toHaveBeenCalled();
   });
 
   it('asks once before replacing a house with work, naming what replaces it', async () => {
     const ask = vi.fn((_question: ConfirmOptions) => Promise.resolve(true));
-    expect(await confirmReplace(furnished(), 'the Bedroom template', ask)).toBe(true);
+    expect(await confirmReplace(furnished(), 'the Bedroom template', { ask: ask })).toBe(true);
     expect(ask).toHaveBeenCalledTimes(1);
     expect(ask.mock.calls[0]![0].title).toBe('Replace your current house with the Bedroom template?');
     expect(ask.mock.calls[0]![0].body).toMatch(/^Undo restores it/);
   });
 
+  it('adds a note to the question, such as the hard budget’s sell-back', async () => {
+    const ask = vi.fn((_question: ConfirmOptions) => Promise.resolve(true));
+    await confirmReplace(furnished(), 'the Bedroom template', { ask, note: ' With the hard budget on, it sells back.' });
+    expect(ask.mock.calls[0]![0].body).toMatch(/Undo restores it.* With the hard budget on, it sells back\.$/);
+  });
+
   it('declining keeps the house', async () => {
-    expect(await confirmReplace(furnished(), '“Cabin”', () => Promise.resolve(false))).toBe(false);
+    expect(await confirmReplace(furnished(), '“Cabin”', { ask: () => Promise.resolve(false) })).toBe(false);
   });
 
   it('treats structure as work too', async () => {
     const ask = vi.fn(() => Promise.resolve(false));
     const walled = makeLayout({ floors: [makeFloor({ interiorWalls: [{ id: 'w', x1: 0, z1: 0, x2: 1, z2: 0 }] })] });
-    expect(await confirmReplace(walled, 'this restore point', ask)).toBe(false);
+    expect(await confirmReplace(walled, 'this restore point', { ask: ask })).toBe(false);
     expect(ask).toHaveBeenCalledTimes(1);
   });
 });

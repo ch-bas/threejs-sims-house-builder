@@ -7,8 +7,9 @@ import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
+import { layoutStore } from '../hooks/use-layout-store';
 import { alignSelection, distributeSelection } from '../lib/alignment';
-import { loadTemplateUnderBudget, purchasePrice, purchaseRefusal, SELL_BACK_RATE } from '../lib/budget';
+import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn, loadTemplateUnderBudget, purchasePrice, purchaseRefusal, SELL_BACK_RATE } from '../lib/budget';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { notify, notifyRefused } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
@@ -386,13 +387,23 @@ const DrawerBody = memo(function DrawerBody({
             onLoadTemplate={async (template) => {
               // The hard budget and its write-off stay the player's; under it
               // a template is a purchase, refused before asking (#691).
-              const load = loadTemplateUnderBudget(layout, template, `${template.name} template`);
+              const label = `${template.name} template`;
+              const asked = loadTemplateUnderBudget(layout, template, label);
+              if (asked.refusal !== null) {
+                notifyRefused(asked.refusal, playCue);
+                return false;
+              }
+              const note = isHardBudgetOn(layout) ? HARD_BUDGET_SELL_BACK_NOTE : '';
+              if (!(await confirmReplace(layout, `the ${label}`, { note }))) return false;
+              // Read again after the answer: another tab's version may have
+              // been adopted while it asked, and its budget is what counts.
+              const current = layoutStore.getState().layout;
+              const load = loadTemplateUnderBudget(current, template, label);
               if (load.refusal !== null) {
                 notifyRefused(load.refusal, playCue);
                 return false;
               }
-              if (!(await confirmReplace(layout, `the ${template.name} template`))) return false;
-              snapshotBeforeReplace(layout);
+              snapshotBeforeReplace(current);
               history.commitNow();
               actions.applyLayout({
                 ...load.layout,
@@ -411,8 +422,9 @@ const DrawerBody = memo(function DrawerBody({
             currentLayout={layout}
             onLoad={(loaded) => {
               // No history.clear(): like a template load, this must stay
-              // one Ctrl+Z away from the design it replaced (#222).
-              snapshotBeforeReplace(layout);
+              // one Ctrl+Z away from the design it replaced (#222). The house
+              // on screen now: the load asked first, and asking takes time.
+              snapshotBeforeReplace(layoutStore.getState().layout);
               history.commitNow();
               actions.applyLayout(loaded);
               markLayoutLoaded();

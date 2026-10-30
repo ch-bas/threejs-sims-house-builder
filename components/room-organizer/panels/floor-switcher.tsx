@@ -258,7 +258,10 @@ export function FloorSwitcher(): JSX.Element {
                     confirmLabel: 'Remove floor',
                     danger: true,
                   }).then((ok) => {
-                    if (ok) actions.removeFloor(index);
+                    if (!ok) return;
+                    // By id: the floors may have moved while it asked.
+                    const now = layoutStore.getState().layout.floors.findIndex((entry) => entry.id === floor.id);
+                    if (now !== -1) actions.removeFloor(now);
                   });
                 }}
                 disabled={!canRemove}

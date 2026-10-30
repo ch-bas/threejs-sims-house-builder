@@ -235,6 +235,12 @@ export interface SurpriseEffects {
   confirm(question: ConfirmOptions): Promise<boolean>;
   playCue(cue: SoundCue): void;
   replaceItems(items: FurnitureItem[]): void;
+  /**
+   * The house on screen now. Read again after the question: if another
+   * tab's version was adopted meanwhile, the surprise built for the old
+   * house is dropped rather than applied to the new one.
+   */
+  current?(): RoomLayout;
 }
 
 /**
@@ -247,6 +253,10 @@ export interface SurpriseEffects {
 export async function runSurprise(layout: RoomLayout, floorIndex: number, budget: number, effects: SurpriseEffects): Promise<boolean> {
   const outcome = await decideSurprise(layout, floorIndex, budget, effects.confirm);
   if (outcome === null) return false;
+  if (effects.current && effects.current() !== layout) {
+    notify('The house changed while you were asked, so nothing was replaced. Try Surprise me again.', 'info');
+    return false;
+  }
   if ('refusal' in outcome) {
     effects.playCue('refused');
     notify(outcome.refusal, 'error');
