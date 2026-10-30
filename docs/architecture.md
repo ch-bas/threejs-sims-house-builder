@@ -67,6 +67,8 @@ components/
     │   ├── budget.ts                    Hard budget (#463e): spend, funds left, 80 % sell-back, purchase refusal, over-budget tile reason, schema repair
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
+    │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)
+    │   ├── backup.ts                    One-file backup of everything stored in this browser; versioned bundle, an add-only restore through the schema (#620)
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── hud-layout.ts                Phone-dock and sheet media queries, catalog page size, scroll cue, touch welcome tips
@@ -231,6 +233,7 @@ components/
         ├── recovery-entry.tsx           History rows for kept recovery copies: restore, download, delete
         ├── sets-panel.tsx
         ├── statistics-panel.tsx
+        ├── storage-panel.tsx            Manage card: storage meter, delete restore points / saved layouts, back up and restore everything (#615, #620)
         ├── header-stats.tsx
         ├── time-of-day-panel.tsx
         ├── camera-presets-panel.tsx

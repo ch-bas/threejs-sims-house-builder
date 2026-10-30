@@ -38,6 +38,7 @@ import { ShortcutsPanel } from './shortcuts-panel';
 import { SIDE_PANELS_ID, SIDE_TABPANEL_ID, SidebarTabs, sideTabId, type SidebarTab } from './sidebar-tabs';
 import { SitePanel } from './site-panel';
 import { StatisticsPanel } from './statistics-panel';
+import { StoragePanel } from './storage-panel';
 import { TemplatesPanel } from './templates-panel';
 import { ThemesPanel } from './themes-panel';
 import { TimeOfDayPanel } from './time-of-day-panel';
@@ -225,6 +226,9 @@ const DrawerBody = memo(function DrawerBody({
   const exploring = useExploring();
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
+  // Bumped when the storage card deletes or restores saved layouts, so the
+  // Saved Layouts panel re-reads its list (#615, #620).
+  const [libraryRevision, setLibraryRevision] = useState(0);
   // Stable, so the open drawer's catalog tiles skip layout edits too (#3).
   const addFromCatalog = useEvent((catalogItem: CatalogItem) => {
     const id = placeCatalogItem(catalogItem);
@@ -419,6 +423,7 @@ const DrawerBody = memo(function DrawerBody({
           />
 
           <LibraryPanel
+            key={libraryRevision}
             currentLayout={layout}
             onLoad={(loaded) => {
               // No history.clear(): like a template load, this must stay
@@ -433,6 +438,11 @@ const DrawerBody = memo(function DrawerBody({
           />
 
           </EditLock>
+
+          <StoragePanel
+            currentLayout={layout}
+            onStorageChanged={() => setLibraryRevision((revision) => revision + 1)}
+          />
 
           <StatisticsPanel />
           <AchievementsPanel unlocked={unlockedAchievements} />

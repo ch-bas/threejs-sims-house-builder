@@ -251,6 +251,49 @@ export function deleteCustomSet(id: string, opts: CustomSetsOptions = {}): boole
   return true;
 }
 
+/** What `importCustomSets` did. */
+export interface ImportedCustomSets {
+  added: number;
+  /** Sets left out: unreadable, or past `MAX_CUSTOM_SETS`. */
+  skipped: number;
+}
+
+/**
+ * Add custom sets from a backup file (#620). Each goes through
+ * `parseCustomSet`. Every set stored now stays; the backup's, newest first,
+ * are added only while under `MAX_CUSTOM_SETS`, and one whose id is already
+ * stored is already there. Unreadable stored values are kept (#340). Null
+ * when the store refused the write.
+ */
+export function importCustomSets(candidates: readonly unknown[], opts: CustomSetsOptions = {}): ImportedCustomSets | null {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return null;
+  const stored = readSets(storage);
+  const ids = new Set(stored.sets.map((set) => set.id));
+  const incoming: CustomFurnitureSet[] = [];
+  let skipped = 0;
+  for (const candidate of candidates) {
+    const set = parseCustomSet(candidate);
+    if (!set) skipped += 1;
+    else if (!ids.has(set.id)) {
+      ids.add(set.id);
+      incoming.push(set);
+    }
+  }
+  incoming.sort((a, b) => b.savedAt - a.savedAt);
+  const added = incoming.slice(0, Math.max(0, MAX_CUSTOM_SETS - stored.sets.length));
+  skipped += incoming.length - added.length;
+  if (added.length === 0) return { added: 0, skipped };
+  const sets = [...stored.sets, ...added].sort((a, b) => b.savedAt - a.savedAt);
+  try {
+    writeSets(storage, { ...stored, sets });
+  } catch {
+    return null;
+  }
+  notify();
+  return { added: added.length, skipped };
+}
+
 function customSetKey(id: string): string {
   return `${CUSTOM_KEY_PREFIX}${id}`;
 }

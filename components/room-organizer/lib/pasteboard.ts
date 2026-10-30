@@ -274,3 +274,55 @@ export function removeReceivedLayout(id: string, opts: PasteboardOptions = {}): 
   }
   return true;
 }
+
+/** What `importReceivedLayouts` did. */
+export interface ImportedReceived {
+  added: number;
+  /** Names of the houses left out for lack of room under `MAX_RECEIVED_LAYOUTS`. */
+  skipped: string[];
+}
+
+/**
+ * Add received houses from a backup file (#620), in one write. Every card on
+ * the board stays: the backup's houses (newest first; one already on the
+ * board counts as there) go only into free room under `MAX_RECEIVED_LAYOUTS`,
+ * so a backup never pushes a local card out. Null when the write was
+ * refused: the board is then as it was.
+ */
+export function importReceivedLayouts(
+  houses: readonly { name: string; layout: RoomLayout; receivedAt: number }[],
+  opts: PasteboardOptions = {}
+): ImportedReceived | null {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return null;
+  const board = readBoard(storage);
+  const seen = new Set(board.entries.map((entry) => JSON.stringify(entry.layout)));
+  const entries = [...board.entries];
+  const skipped: string[] = [];
+  let added = 0;
+  for (const { name, layout, receivedAt } of [...houses].sort((a, b) => b.receivedAt - a.receivedAt)) {
+    const stored: RoomLayout = { ...layout };
+    delete stored.floorPlanImage;
+    const json = JSON.stringify(stored);
+    if (seen.has(json)) continue;
+    if (entries.length >= MAX_RECEIVED_LAYOUTS) {
+      skipped.push(name.trim() || 'Untitled');
+      continue;
+    }
+    seen.add(json);
+    entries.push({
+      id: `${receivedAt.toString(36)}-${shortHash(json)}`,
+      name: name.trim() || stored.name.trim() || 'Untitled',
+      receivedAt,
+      layout: stored,
+    });
+    added += 1;
+  }
+  if (added === 0) return { added, skipped };
+  try {
+    writeBoard(storage, { entries: entries.sort((a, b) => a.receivedAt - b.receivedAt), unreadable: board.unreadable });
+  } catch {
+    return null;
+  }
+  return { added, skipped };
+}

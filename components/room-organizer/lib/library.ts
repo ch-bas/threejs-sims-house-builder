@@ -10,7 +10,8 @@ import {
 } from './version-history';
 import type { RoomLayout, SavedLayoutEntry } from './types';
 
-const LIBRARY_KEY_PREFIX = 'standalone-room-organizer-library:';
+/** Prefix of every library key: the index, one blob per saved house, and the room probe. */
+export const LIBRARY_KEY_PREFIX = 'standalone-room-organizer-library:';
 const LIBRARY_INDEX_KEY = `${LIBRARY_KEY_PREFIX}_index`;
 
 interface LibraryIndex {
@@ -304,6 +305,15 @@ export const AUTOSAVE_HEADROOM_MIN_CHARS = 64 * 1024;
 /** Written and removed at once to measure the room left; never read. */
 const PROBE_KEY = `${LIBRARY_KEY_PREFIX}_probe`;
 
+/**
+ * The slot whose house a storage key holds, or null for any other key —
+ * the index and the room probe included (#615).
+ */
+export function libraryHouseSlot(key: string): string | null {
+  if (!key.startsWith(LIBRARY_KEY_PREFIX) || key === LIBRARY_INDEX_KEY || key === PROBE_KEY) return null;
+  return key.slice(LIBRARY_KEY_PREFIX.length);
+}
+
 /** Slack for the index growing by one entry, beyond the entry's own JSON. */
 const INDEX_SLACK_CHARS = 64;
 
@@ -370,7 +380,12 @@ function roomShortfall(storage: Storage, growth: number, headroom: number): Libr
  * re-save, is never refused for room. If the index write fails, the blobs
  * are rolled back, and no listed entry is ever left naming another house.
  */
-export function saveNamedLayout(layout: RoomLayout, name: string): LibrarySaveOutcome {
+export function saveNamedLayout(
+  layout: RoomLayout,
+  name: string,
+  /** `savedAt`: when the copy was first saved — a restored backup keeps its dates and order (#620). */
+  opts: { savedAt?: number } = {}
+): LibrarySaveOutcome {
   let storage: Storage;
   try {
     storage = window.localStorage;
@@ -388,7 +403,7 @@ export function saveNamedLayout(layout: RoomLayout, name: string): LibrarySaveOu
   const entry: SavedLayoutEntry = {
     id,
     name: shown,
-    savedAt: Date.now(),
+    savedAt: opts.savedAt ?? Date.now(),
     itemCount: totalItemCount(layout),
     floorCount: layout.floors.length,
   };
