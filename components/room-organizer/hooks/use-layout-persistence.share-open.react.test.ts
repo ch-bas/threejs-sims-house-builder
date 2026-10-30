@@ -63,13 +63,16 @@ describe('useLayoutPersistence — opening a share link', () => {
       const { hydrated, opened } = mount();
       await waitFor(() => expect(currentConfirm()?.title).toBe('Open the shared house “Shared House”?'));
       expect(currentConfirm()?.body).toMatch(/kept as a restore point/);
+      // Keep mine starts focused, and a click beside the dialog answers nothing.
+      expect(currentConfirm()?.focus).toBe('cancel');
+      expect(currentConfirm()?.backdropCancels).toBe(false);
       expect(hydrated).toEqual(['Local House']);
       expect(opened).toEqual([]);
       // A reload now would ask again.
       expect(window.location.hash).toMatch(/^#layout=/);
     });
 
-    it('a yes opens it as an ordinary, undoable replacement, with a notice', async () => {
+    it('a yes opens it through onOpenShared, an ordinary undoable replacement', async () => {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
       window.location.hash = shareHash(shared);
       confirms = autoAnswerConfirms(true);
@@ -78,9 +81,8 @@ describe('useLayoutPersistence — opening a share link', () => {
       // Never hydrated over: hydration would have cleared undo.
       expect(hydrated).toEqual(['Local House']);
       expect(window.location.hash).toBe('');
-      expect(notices.map((notice) => [notice.tone, notice.message])).toEqual([
-        ['success', expect.stringMatching(/Opened the shared house\. Undo brings yours back/) as unknown],
-      ]);
+      // The notice, with its Undo, is the orchestrator's (onOpenShared).
+      expect(notices).toEqual([]);
     });
 
     it('a no keeps the player’s house and drops the link', async () => {

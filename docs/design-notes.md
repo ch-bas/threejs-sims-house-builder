@@ -529,12 +529,19 @@ to respect.
   window shortcuts can't edit the house a question is about, and the
   placement ghost stands back while a question is open. A soft-budget buy
   returns '' at once and places through `onPlacedAfterConfirm` on a yes.
-  A popup print opens its window before anything it awaits.
+  A popup print opens its window before anything it awaits. For
+  `CONFIRM_GRACE_MS` after opening the dialog ignores Enter, its buttons
+  and its backdrop, a held Enter never answers, a destructive question
+  starts on Cancel, and a backdrop click counts only when the press began
+  there: the gesture that asked can't answer. Handlers read `layoutStore`
+  again after the answer (remove a floor by id, not index). A keyboard add
+  that asked starts its session through `adoptDeferredPlacement`.
 - **A share link over your own house asks first** (#573). The stored
   house hydrates, then the in-app question asks; the link stays in the
   address bar until it is answered. A yes is an ordinary replacement
-  (`onOpenShared`: restore point, history commit, `markLayoutLoaded`), so
-  Ctrl+Z returns to the house it replaced; over nothing worth keeping the
+  (`onOpenShared`: restore point, history commit, `markLayoutLoaded`, a
+  notice with Undo), so Ctrl+Z returns to the house it replaced. Keep
+  mine starts focused and the backdrop is inert for that question; over nothing worth keeping the
   link hydrates unasked, as before. A link that doesn't open names the
   reason (too large, cut off, from a newer app: a payload version past
   `SHARE_FORMAT_VERSION`).

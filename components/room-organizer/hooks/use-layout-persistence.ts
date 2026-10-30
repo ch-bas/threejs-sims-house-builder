@@ -251,6 +251,10 @@ export function useLayoutPersistence({
             body: 'Your current house is kept as a restore point, and Undo brings it back.',
             confirmLabel: 'Open it',
             cancelLabel: 'Keep mine',
+            // Keeping the player's house is the safe default, and a stray
+            // click beside the dialog answers nothing.
+            focus: 'cancel',
+            backdropCancels: false,
           });
           clearHash();
           if (!open) return;
@@ -260,12 +264,8 @@ export function useLayoutPersistence({
             // The house on screen is still the player's own (#206).
             console.warn('Failed to apply shared layout:', error);
             notify(`${shareFailureMessage('unreadable')} Your own house is unchanged.`, 'error');
-            return;
           }
-          notify(
-            'Opened the shared house. Undo brings yours back, and it is kept in Manage → Saved Layouts → History.',
-            'success'
-          );
+          // onOpenShared says it opened, with an Undo button.
           return;
         }
         clearHash();

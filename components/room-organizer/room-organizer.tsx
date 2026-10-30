@@ -687,8 +687,12 @@ export function RoomOrganizer(): JSX.Element {
         actions.applyLayout(shared);
         markLayoutLoaded();
         clearTransientSelection();
+        notifyWithUndo('Opened the shared house. Undo brings yours back; it is also kept in Manage → Saved Layouts → History.', {
+          current: () => layoutStore.getState().layout,
+          undo: history.undo,
+        });
       },
-      [actions, commitHistoryNow, clearTransientSelection]
+      [actions, commitHistoryNow, clearTransientSelection, history.undo]
     ),
   });
 
