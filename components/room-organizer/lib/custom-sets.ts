@@ -251,6 +251,40 @@ export function deleteCustomSet(id: string, opts: CustomSetsOptions = {}): boole
   return true;
 }
 
+/**
+ * Put custom sets from a backup file back (#620). Each goes through
+ * `parseCustomSet`; with `replace` the readable sets stored now give way to
+ * the backup's, otherwise a set whose id is already stored is skipped.
+ * Unreadable stored values are kept either way (#340). Returns how many sets
+ * were written, or null when the store refused the write.
+ */
+export function importCustomSets(
+  candidates: readonly unknown[],
+  opts: CustomSetsOptions & { replace?: boolean } = {}
+): number | null {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return null;
+  const stored = readSets(storage);
+  const kept = opts.replace ? [] : stored.sets;
+  const ids = new Set(kept.map((set) => set.id));
+  const added: CustomFurnitureSet[] = [];
+  for (const candidate of candidates) {
+    const set = parseCustomSet(candidate);
+    if (!set || ids.has(set.id)) continue;
+    ids.add(set.id);
+    added.push(set);
+  }
+  if (added.length === 0 && (!opts.replace || stored.sets.length === 0)) return 0;
+  const sets = [...kept, ...added].sort((a, b) => b.savedAt - a.savedAt).slice(0, MAX_CUSTOM_SETS);
+  try {
+    writeSets(storage, { ...stored, sets });
+  } catch {
+    return null;
+  }
+  notify();
+  return added.filter((set) => sets.includes(set)).length;
+}
+
 function customSetKey(id: string): string {
   return `${CUSTOM_KEY_PREFIX}${id}`;
 }

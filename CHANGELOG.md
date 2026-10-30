@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Demolish, the remove button in the item list, Delete and Clear floor now show "Removed Sofa" (or how many items went) with an Undo button that takes back just that removal. The notice stays while the pointer or the keyboard focus is on it ([#651](https://github.com/ch-bas/threejs-sims-house-builder/issues/651))
+- Manage → Storage & backup shows how much browser storage the open house, saved layouts, restore points, recovery copies, received houses, custom sets, settings and other sites use, and lets you delete a saved layout or every restore point from there ([#615](https://github.com/ch-bas/threejs-sims-house-builder/issues/615))
+- Back up everything this browser keeps for the editor (the house, saved layouts, restore points, recovery copies, received houses, custom sets and settings) to one file, and restore it on any browser: Merge adds what is missing and replaces nothing, Replace asks first and keeps your open house as a restore point ([#620](https://github.com/ch-bas/threejs-sims-house-builder/issues/620))
 
 ### Changed
 - Questions such as deleting a saved layout or set, clearing a floor, removing a floor, replacing your house or going over the budget now open in a dialog inside the editor that matches its look, instead of the browser's own pop-up that froze the scene and the autosave. Enter confirms, Escape cancels, and the keys you press while it is open don't reach the house behind it. A blocked print pop-up and Saved Layouts' errors (no name, storage full, an unreadable save or restore point) show in the editor too ([#649](https://github.com/ch-bas/threejs-sims-house-builder/issues/649))

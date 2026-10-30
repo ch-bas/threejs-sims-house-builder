@@ -483,6 +483,55 @@ export function snapshotBelongsTo(summary: HouseFields, layout: RoomLayout): boo
   return sameHouse(summaryRef(summary), { layoutId: layout.id, name: layout.name });
 }
 
+/**
+ * Put restore points from a backup file back in the ring (#620), beside the
+ * ones already there. Each entry is read as the ring reads its own and its
+ * layout validated through the schema; one whose id, or whose house and
+ * layout, the ring already holds is skipped. The ring keeps its caps — the
+ * oldest go first — and stays the lowest-priority tenant: a full quota drops
+ * the oldest points instead of evicting anything else. Returns how many of
+ * the imported points the ring now holds.
+ */
+export function importSnapshots(candidates: readonly unknown[], opts: VersionHistoryOptions = {}): number {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return 0;
+  const at = (opts.now ?? Date.now)();
+  const slots = readSlots(storage);
+  const ids = new Set(slots.map((slot) => slot.entry.id));
+  const imported = new Set<string>();
+  const incoming = readEntries({ getItem: () => JSON.stringify(candidates), setItem: () => undefined });
+  for (const entry of incoming) {
+    const layout = parseStoredLayout(entry.layout);
+    if (!layout || ids.has(entry.id)) continue;
+    const stored: RoomLayout = { ...layout };
+    delete stored.floorPlanImage;
+    const layoutJson = JSON.stringify(stored);
+    const duplicate = slots.some(
+      (slot) => sameHouse(slot.entry, entry) && JSON.stringify(slot.entry.layout) === layoutJson
+    );
+    if (duplicate) continue;
+    const added: StoredEntry = { ...entry, savedAt: Math.min(entry.savedAt, at), layout: stored };
+    slots.push({ entry: added, json: JSON.stringify(added) });
+    ids.add(entry.id);
+    imported.add(entry.id);
+  }
+  if (imported.size === 0) return 0;
+  slots.sort((a, b) => a.entry.savedAt - b.entry.savedAt);
+  while (slots.length > VERSION_HISTORY_LIMIT) slots.shift();
+  while (serialisedLength(slots) > VERSION_HISTORY_MAX_CHARS) slots.shift();
+  while (slots.length > 0) {
+    try {
+      storage.setItem(VERSION_HISTORY_STORAGE_KEY, serialiseSlots(slots));
+      writeMeta(storage, slots);
+      notify();
+      return slots.filter((slot) => imported.has(slot.entry.id)).length;
+    } catch {
+      slots.shift();
+    }
+  }
+  return 0;
+}
+
 /** Drop every restore point, freeing the ring's whole share of the quota. */
 export function clearSnapshots(opts: VersionHistoryOptions = {}): void {
   const storage = opts.storage ?? defaultStorage();
