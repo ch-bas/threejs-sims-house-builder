@@ -310,28 +310,52 @@ export function useLayoutPersistence({
     return () => window.clearTimeout(handle);
   }, [layout]);
 
-  // Flush a still-debouncing save when the editor unmounts or the page goes
-  // away — without this, edits made in the last debounceMs are silently lost
-  // on tab close. After a crash only a settled layout is flushed (#568).
+  // Flush a still-debouncing save when the editor unmounts, the page goes
+  // away or the tab goes to the background — without this, edits made in the
+  // last debounceMs are silently lost on tab close. After a crash only a
+  // settled layout is flushed (#568).
   useEffect(() => {
     clearEditorCrashed();
-    const flush = (layout: RoomLayout | null) => {
-      if (!pendingRef.current || mainSaveHeldRef.current || layout === null) return;
-      pendingRef.current = false;
-      const result = saveLayout(layout);
-      if (result.ok) lastSavedJsonRef.current = result.json;
-      // The page is going away — capture a restore point regardless of the
-      // ring's 5-minute cadence (#231).
-      if (!isUntouched(layout)) recordSnapshot(layout, { force: true });
+    // A flush when the tab was hidden owes the page-away restore point to
+    // the pagehide or unmount that may follow.
+    let pointOwed = false;
+    const flush = (layout: RoomLayout | null, leaving: boolean) => {
+      if (mainSaveHeldRef.current || layout === null) return;
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        const result = saveLayout(layout);
+        if (result.ok) lastSavedJsonRef.current = result.json;
+        pointOwed = true;
+      }
+      if (!pointOwed || isUntouched(layout)) return;
+      if (leaving) {
+        // The page is going away — capture a restore point regardless of
+        // the ring's 5-minute cadence (#231).
+        recordSnapshot(layout, { force: true });
+        pointOwed = false;
+      } else {
+        // Hidden may be followed by nothing at all (a discarded tab) or by
+        // a return: a point within the cadence, so that switching tabs
+        // after every edit can't push the older points out of the ring.
+        recordSnapshot(layout);
+      }
     };
-    // A crash has already removed this listener: pagehide is never a crash.
-    const onPageHide = () => flush(layoutRef.current);
+    // A crash has already removed these listeners: pagehide is never a crash.
+    const onPageHide = () => flush(layoutRef.current, true);
+    // Mobile browsers discard a background tab without firing pagehide;
+    // hidden is the last signal they reliably send (#554). The save is
+    // idempotent with a pagehide that follows, through `pendingRef`.
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flush(layoutRef.current, false);
+    };
     window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       // A crash before any layout settled saves nothing: the stored house
       // is the last one that opened.
-      flush(editorHasCrashed() ? settledRef.current : layoutRef.current);
+      flush(editorHasCrashed() ? settledRef.current : layoutRef.current, true);
     };
   }, []);
 

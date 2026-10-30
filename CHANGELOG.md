@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - In EXPLORE the Hard budget switch is off, with the "Not while exploring" hint, like every other change to the house ([#700](https://github.com/ch-bas/threejs-sims-house-builder/issues/700))
 - Saving a copy to Saved Layouts can no longer take the last of the browser's storage: a copy that would leave the house you are editing no room to autosave is refused with a message that says so, and any restore points it had to clear to find out are put back ([#565](https://github.com/ch-bas/threejs-sims-house-builder/issues/565))
 - A house named in another script or with accents, such as "東京の家" or "Café", now saves to one slot of its own: saving it again asks to overwrite it instead of adding a duplicate, and "Café" no longer overwrites "Caf". Houses saved under the old slots still load ([#550](https://github.com/ch-bas/threejs-sims-house-builder/issues/550))
+- An edit made just before switching away from the tab is saved straight away, so a phone browser that closes the tab in the background no longer loses it ([#554](https://github.com/ch-bas/threejs-sims-house-builder/issues/554))
 
 ## [1.24.0] - 2026-10-28
 
