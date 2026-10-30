@@ -156,6 +156,8 @@ function StatusToast({
         {notice.action !== undefined && (
           <button
             type="button"
+            // Several notices can each offer "Undo": say which one (#651).
+            aria-label={`${notice.action.label}: ${notice.message}`}
             onClick={() => {
               // Close first: the action may raise a notice of its own.
               onDismiss(notice.id);

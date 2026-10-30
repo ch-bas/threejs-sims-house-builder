@@ -86,7 +86,7 @@ describe('status notices with an action (#651)', () => {
     act(() => {
       notify('Removed Sofa', 'info', { action: { label: 'Undo', run } });
     });
-    const undo = screen.getByRole('button', { name: 'Undo' });
+    const undo = screen.getByRole('button', { name: /^Undo/ });
     act(() => {
       undo.click();
     });
@@ -108,12 +108,12 @@ describe('status notices with an action (#651)', () => {
     expect(shown('Removed Bed')).toBe(true);
     act(() => {
       toast.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }));
-      screen.getByRole('button', { name: 'Undo' }).focus();
+      screen.getByRole('button', { name: /^Undo/ }).focus();
     });
     advance(20_000);
     expect(shown('Removed Bed')).toBe(true);
     act(() => {
-      screen.getByRole('button', { name: 'Undo' }).blur();
+      screen.getByRole('button', { name: /^Undo/ }).blur();
     });
     advance(7000);
     expect(shown('Removed Bed')).toBe(false);

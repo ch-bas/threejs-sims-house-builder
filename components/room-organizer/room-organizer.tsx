@@ -39,7 +39,7 @@ import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
-import { notify, notifyWithUndo, removedMessage } from './lib/editor-notices';
+import { notify, notifyRefused, notifyWithUndo, removedMessage } from './lib/editor-notices';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { randomSuffix } from './lib/ids';
@@ -575,8 +575,7 @@ export function RoomOrganizer(): JSX.Element {
   const refuseOverBudget = useCallback((price: number): boolean => {
     const refusal = purchaseRefusal(layoutStore.getState().layout, price);
     if (refusal === null) return false;
-    playCue('refused');
-    notify(refusal, 'error');
+    notifyRefused(refusal, playCue);
     return true;
   }, [playCue]);
 
