@@ -52,6 +52,7 @@ import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from '.
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
+import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
@@ -677,6 +678,22 @@ export function RoomOrganizer(): JSX.Element {
       },
       [actions, clearHistory, clearTransientSelection]
     ),
+    // A share link over the player's own house, once they said yes (#573):
+    // an ordinary replacement, one Ctrl+Z from the house it replaced.
+    onOpenShared: useCallback(
+      (shared: RoomLayout) => {
+        snapshotBeforeReplace(layoutStore.getState().layout);
+        commitHistoryNow();
+        actions.applyLayout(shared);
+        markLayoutLoaded();
+        clearTransientSelection();
+        notifyWithUndo('Opened the shared house. Undo brings yours back; it is also kept in Manage → Saved Layouts → History.', {
+          current: () => layoutStore.getState().layout,
+          undo: history.undo,
+        });
+      },
+      [actions, commitHistoryNow, clearTransientSelection, history.undo]
+    ),
   });
 
   // Adopt the snapshot another tab saved (#123). Deliberately a plain
@@ -707,6 +724,23 @@ export function RoomOrganizer(): JSX.Element {
   // confirm reads it, so the hard budget's write-off doesn't matter here.
   const buildingCost = useMemo(() => furnitureSpend({ floors: layout.floors }), [layout.floors]);
 
+  // Every catalog add chimes once (#460): 'place' for an item that landed,
+  // 'refused' when the reducer refused it (a full floor). '' = not added.
+  const chimePlacement = useCallback(
+    (id: string): string => {
+      if (!id) return id;
+      if (!itemExists(id)) {
+        playCue('refused');
+        return '';
+      }
+      playCue('place');
+      return id;
+    },
+    [playCue]
+  );
+  // Set once the keyboard placement and the ghost exist, below.
+  const placedAfterConfirmRef = useRef<(id: string, catalogItem: CatalogItem) => void>(() => {});
+
   const { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
     activeFloor,
     activeFloorY,
@@ -718,6 +752,9 @@ export function RoomOrganizer(): JSX.Element {
     allSelectedIds,
     frontGap,
     refusePurchase: refuseOverBudget,
+    // A soft-budget buy agreed to in the in-app question lands after the
+    // place call returned '' (#649).
+    onPlacedAfterConfirm: (id: string, catalogItem: CatalogItem) => placedAfterConfirmRef.current(id, catalogItem),
   });
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
@@ -727,17 +764,9 @@ export function RoomOrganizer(): JSX.Element {
   const placeDiscrete = useCallback(
     (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string => {
       commitHistoryNow();
-      const id = placeCatalogItem(catalogItem, position, rotation);
-      if (!id) return id;
-      // The reducer refuses an add on a full floor.
-      if (!itemExists(id)) {
-        playCue('refused');
-        return '';
-      }
-      playCue('place');
-      return id;
+      return chimePlacement(placeCatalogItem(catalogItem, position, rotation));
     },
-    [commitHistoryNow, placeCatalogItem, playCue]
+    [commitHistoryNow, placeCatalogItem, chimePlacement]
   );
 
   // Keyboard placement (#168): Enter on a catalog tile places through the
@@ -749,6 +778,7 @@ export function RoomOrganizer(): JSX.Element {
     cancelPlacement,
     ghost,
     endGhost,
+    adoptDeferredPlacement,
   } = useKeyboardPlacement({
     layout,
     selectedItemId,
@@ -759,6 +789,17 @@ export function RoomOrganizer(): JSX.Element {
     // The drawer's backdrop would take the click meant to place it.
     onGhostPickUp: useCallback(() => setSidebarCollapsed(true), []),
   });
+
+  // The soft-budget yes, placed after the place call returned: the same
+  // chime and selection as placeDiscrete, the keyboard session if a tile's
+  // Enter asked, and no selection while a Shift-held ghost stays in hand.
+  placedAfterConfirmRef.current = (id, catalogItem) => {
+    const placed = chimePlacement(id);
+    if (!placed) return;
+    if (ghost) return;
+    selectOnly(placed);
+    adoptDeferredPlacement(placed, catalogItem);
+  };
 
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
@@ -1463,6 +1504,8 @@ export function RoomOrganizer(): JSX.Element {
       {/* Inline zone naming and export/share status (#374) */}
       <ZoneNameChip />
       <StatusToastHost />
+      {/* In-app confirm, instead of window.confirm (#649) */}
+      <ConfirmDialogHost />
 
       {/* Achievement toast */}
       <AchievementToast

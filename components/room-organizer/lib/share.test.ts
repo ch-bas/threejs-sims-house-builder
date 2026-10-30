@@ -228,6 +228,10 @@ describe('untrusted share hashes (#332)', () => {
     const { url } = await encodeShareUrl(layout, ORIGIN);
     expect(await readShareHash(hashOf(url))).toEqual({ ok: true, layout: roundLayoutForShare(layout) });
     expect(await readShareHash(`${PREFIX}2.@@@`)).toEqual({ ok: false, reason: 'unreadable' });
+    // A payload version past this build's: a newer app made it (#607).
+    expect(await readShareHash(`${PREFIX}3.AAAA`)).toEqual({ ok: false, reason: 'newer-version' });
+    expect(await readShareHash(`${PREFIX}12.AAAA`)).toEqual({ ok: false, reason: 'newer-version' });
+    expect(await readShareHash(`${PREFIX}1.AAAA`)).toEqual({ ok: false, reason: 'unreadable' });
     expect(await readShareHash('#other')).toEqual({ ok: false, reason: 'unreadable' });
   });
 });

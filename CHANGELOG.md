@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Demolish, the remove button in the item list, Delete and Clear floor now show "Removed Sofa" (or how many items went) with an Undo button that takes back just that removal. The notice stays while the pointer or the keyboard focus is on it ([#651](https://github.com/ch-bas/threejs-sims-house-builder/issues/651))
 
+### Changed
+- Questions such as deleting a saved layout or set, clearing a floor, removing a floor, replacing your house or going over the budget now open in a dialog inside the editor that matches its look, instead of the browser's own pop-up that froze the scene and the autosave. Enter confirms, Escape cancels, and the keys you press while it is open don't reach the house behind it. A blocked print pop-up and Saved Layouts' errors (no name, storage full, an unreadable save or restore point) show in the editor too ([#649](https://github.com/ch-bas/threejs-sims-house-builder/issues/649))
+
 ### Fixed
 - EXPLORE no longer edits the house from the 2D plan: clicks on the plan only select, the editing shortcuts (rotate, nudge, duplicate, copy, paste, delete) are off, and the item panel's editing controls are disabled with a "Not while exploring" hint; undo and redo still work ([#699](https://github.com/ch-bas/threejs-sims-house-builder/issues/699))
 - With the hard budget on, Clone on a floor whose furniture you can't afford again now plays the refusal sound and says what the copy would cost and how much is left, instead of doing nothing ([#588](https://github.com/ch-bas/threejs-sims-house-builder/issues/588))
@@ -20,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A house named in another script or with accents, such as "東京の家" or "Café", now saves to one slot of its own: saving it again asks to overwrite it instead of adding a duplicate, and "Café" no longer overwrites "Caf". Houses saved under the old slots still load ([#550](https://github.com/ch-bas/threejs-sims-house-builder/issues/550))
 - An edit made just before switching away from the tab is saved straight away, so a phone browser that closes the tab in the background no longer loses it ([#554](https://github.com/ch-bas/threejs-sims-house-builder/issues/554))
 - A Wi-Fi or camera range from a crafted file, link or set is capped at 1 km instead of breaking the plan, the SVG and DXF exports and the 3D view; a saved set with a negative price or other bad values is repaired like a loaded house, so it can't fake the budget; and a house that loads with something left out says what was dropped and why, instead of always blaming the per-floor item limit ([#553](https://github.com/ch-bas/threejs-sims-house-builder/issues/553))
+- Opening a share link over a house you've worked on no longer replaces it without a word: your house opens first and you're asked whether to open the shared one. Keep mine is the default. If you open it, yours is kept as a restore point and the notice's Undo button (or Ctrl+Z) brings it back; if you don't, nothing changes ([#573](https://github.com/ch-bas/threejs-sims-house-builder/issues/573))
+- A share link that won't open says why, in a notice instead of a blocking pop-up: far too large, cut off when it was copied, or made by a newer version of the app. Pasting such a link into the paste-board says the same ([#607](https://github.com/ch-bas/threejs-sims-house-builder/issues/607))
 
 ## [1.24.0] - 2026-10-28
 

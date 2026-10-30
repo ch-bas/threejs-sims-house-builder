@@ -1,5 +1,7 @@
+import { askConfirm } from './confirm-dialog';
 import { INITIAL_LAYOUT } from './initial-layout';
 import { recordSnapshot } from './version-history';
+import type { ConfirmOptions } from './confirm-dialog';
 import type { RoomLayout } from './types';
 
 /**
@@ -80,13 +82,25 @@ export function snapshotBeforeReplace(outgoing: RoomLayout | null | undefined): 
  * template, library, paste-board, History restore, JSON import (#364).
  * `incoming` names what replaces the house ("the Bedroom template"). Asks
  * only when the current house holds work; an untouched one is replaced
- * silently. Returns whether to go ahead.
+ * silently. Resolves with whether to go ahead; the in-app question is modal
+ * (#649), so the house it asked about is still the one on screen.
  */
 export function confirmReplace(
   current: RoomLayout,
   incoming: string,
-  ask: (message: string) => boolean = (message) => window.confirm(message)
-): boolean {
-  if (isUntouched(current)) return true;
-  return ask(`Replace your current house with ${incoming}? Undo restores it.`);
+  {
+    note = '',
+    ask = askConfirm,
+  }: {
+    /** Appended to the question's body: the hard budget's sell-back (#691). */
+    note?: string;
+    ask?: (question: ConfirmOptions) => Promise<boolean>;
+  } = {}
+): Promise<boolean> {
+  if (isUntouched(current)) return Promise.resolve(true);
+  return ask({
+    title: `Replace your current house with ${incoming}?`,
+    body: `Undo restores it, and it is kept in Manage → Saved Layouts → History.${note}`,
+    confirmLabel: 'Replace',
+  });
 }

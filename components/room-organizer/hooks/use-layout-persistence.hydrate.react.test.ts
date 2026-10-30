@@ -5,20 +5,26 @@ import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixture
 import { STORAGE_KEY } from '../lib/constants';
 import { INITIAL_LAYOUT } from '../lib/initial-layout';
 import { readRecoveryCopies } from '../lib/persistence';
-import { decodeShareUrl } from '../lib/share';
+import { readShareHash } from '../lib/share';
 import { VERSION_HISTORY_STORAGE_KEY } from '../lib/version-history';
 import { useLayoutPersistence } from './use-layout-persistence';
 import type { RoomLayout } from '../lib/types';
 
 // The decode itself is covered by share.test.ts — here it's mocked so the
 // hydration control flow can be driven without CompressionStream.
-vi.mock('../lib/share', () => ({
+vi.mock('../lib/share', async (importOriginal) => ({
   isShareHash: (hash: string) => hash.startsWith('#layout='),
   isShareHashWithinBudget: () => true,
-  decodeShareUrl: vi.fn(),
+  readShareHash: vi.fn(),
+  shareFailureMessage: (await importOriginal<typeof import('../lib/share')>()).shareFailureMessage,
 }));
 
-const mockedDecode = vi.mocked(decodeShareUrl);
+const mockedRead = vi.mocked(readShareHash);
+/** The decode resolving to `layout`, as the hook reads it. */
+const mockedDecode = {
+  mockResolvedValue: (layout: RoomLayout) => mockedRead.mockResolvedValue({ ok: true, layout }),
+  mockReset: () => mockedRead.mockReset(),
+};
 
 const keptRaws = (): string[] => readRecoveryCopies().map(({ raw }) => raw);
 

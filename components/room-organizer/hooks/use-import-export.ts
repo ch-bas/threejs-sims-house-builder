@@ -9,6 +9,7 @@ import { exportFileName } from '../lib/plan-export/download';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
 import { markLayoutLoaded } from './use-achievements';
+import { layoutStore } from './use-layout-store';
 import type { LayoutActions } from './use-layout-state';
 import type { RoomLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -107,8 +108,9 @@ export function useImportExport({
     async (file: File) => {
       try {
         const next = await readLayoutFromFile(file);
-        if (!confirmReplace(layout, `the imported “${next.name}”`)) return false;
-        snapshotBeforeReplace(layout);
+        if (!(await confirmReplace(layout, `the imported “${next.name}”`))) return false;
+        // The house on screen after the answer, not when it asked.
+        snapshotBeforeReplace(layoutStore.getState().layout);
         commitHistoryNow();
         actions.applyLayout(next);
         markLayoutLoaded();

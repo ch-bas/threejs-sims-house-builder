@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { askConfirm } from '../lib/confirm-dialog';
 import {
   discardRecoveryCopy,
   downloadRawLayout,
@@ -50,27 +51,42 @@ export function RecoveryEntry({ currentLayout, onLoad }: RecoveryEntryProps): JS
 
   if (copies.length === 0 && !status) return null;
 
-  const handleRestore = (shown: RecoveryCopy) => {
+  // The copy as shown, read again: null (with the reason on screen) when it
+  // is gone, unreadable, or another tab replaced it since this list was
+  // drawn — never apply a house other than the one the user is looking at.
+  const readShown = (shown: RecoveryCopy): RoomLayout | null => {
     const fresh = readRecoveryCopy(shown.key);
     if (!fresh?.layout) {
       setStatus('That recovered copy is gone or can no longer be read.');
       refresh();
-      return;
+      return null;
     }
-    // Another tab may have replaced it since this list was drawn: never apply
-    // a house other than the one the user is looking at.
     if (fresh.raw !== shown.raw) {
       setStatus('That recovered copy changed since it was shown — check it and restore again.');
       refresh();
-      return;
+      return null;
     }
-    if (!confirmReplace(currentLayout, 'the recovered copy')) return;
-    onLoad(fresh.layout);
+    return fresh.layout;
+  };
+
+  const handleRestore = async (shown: RecoveryCopy) => {
+    if (!readShown(shown)) return;
+    if (!(await confirmReplace(currentLayout, 'the recovered copy'))) return;
+    // Read once more: the question gave another tab time to change it.
+    const layout = readShown(shown);
+    if (!layout) return;
+    onLoad(layout);
     setStatus('Restored the recovered copy. Undo brings back the house it replaced.');
   };
 
-  const handleDiscard = (copy: RecoveryCopy) => {
-    if (!window.confirm('Delete this recovered copy for good? Download it first if you might want it.')) return;
+  const handleDiscard = async (copy: RecoveryCopy) => {
+    const ok = await askConfirm({
+      title: 'Delete this recovered copy for good?',
+      body: 'Download it first if you might want it.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     if (!discardRecoveryCopy(copy.key)) {
       setStatus('Couldn’t delete the recovered copy — storage is blocked.');
       return;
@@ -90,8 +106,8 @@ export function RecoveryEntry({ currentLayout, onLoad }: RecoveryEntryProps): JS
         <RecoveryCopyRow
           key={copy.key}
           copy={copy}
-          onRestore={() => handleRestore(copy)}
-          onDiscard={() => handleDiscard(copy)}
+          onRestore={() => void handleRestore(copy)}
+          onDiscard={() => void handleDiscard(copy)}
         />
       ))}
     </div>

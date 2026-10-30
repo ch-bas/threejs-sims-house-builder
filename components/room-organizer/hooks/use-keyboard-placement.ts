@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isConfirmPending, newestConfirmId, subscribeConfirm } from '../lib/confirm-dialog';
 import type { UseHistoryResult } from './use-history';
 import type { LayoutActions } from './use-layout-state';
 import type { CatalogItem, RoomLayout } from '../lib/types';
@@ -163,6 +164,12 @@ export interface UseKeyboardPlacementResult {
   ghost: CatalogItem | null;
   /** Put the ghost down without placing it (placed, cancelled or abandoned). */
   endGhost(): void;
+  /**
+   * A keyboard add that asked first (the soft budget, #649) returned '' and
+   * placed `id` on a yes: start its session as if it had been placed at
+   * once. False (nothing done) when this add was not the keyboard's.
+   */
+  adoptDeferredPlacement(id: string, catalogItem: CatalogItem): boolean;
 }
 
 function withoutItem(layout: RoomLayout, id: string): RoomLayout {
@@ -198,6 +205,10 @@ export function useKeyboardPlacement({
   const [ghost, setGhost] = useState<CatalogItem | null>(null);
   const endGhost = useCallback(() => setGhost(null), []);
 
+  // A keyboard add waiting on its question: what it was for and where its
+  // session would start. Dropped once the question is gone and no yes took it.
+  const deferredRef = useRef<{ catalogItem: CatalogItem; start: RoomLayout } | null>(null);
+
   const placeTracked = useCallback(
     (catalogItem: CatalogItem, position?: { x: number; z: number }): string => {
       // A click on a tile picks the entry up instead of placing it: the
@@ -215,6 +226,20 @@ export function useKeyboardPlacement({
       // to truncate back to.
       if (armed) commitNow();
       const id = placeCatalogItem(catalogItem, position);
+      const asked = !id && armed ? newestConfirmId() : null;
+      if (asked !== null) {
+        // It asked first: the session starts if a yes places it.
+        const pending = { catalogItem, start: layout };
+        deferredRef.current = pending;
+        const stop = subscribeConfirm(() => {
+          if (isConfirmPending(asked)) return;
+          stop();
+          // After the yes's own continuation (a microtask) had its chance.
+          window.setTimeout(() => {
+            if (deferredRef.current === pending) deferredRef.current = null;
+          }, 0);
+        });
+      }
       if (!id || !armed) return id;
       // Catalog items are born locked (#11); a locked item ignores the arrow
       // nudges and R, so the pending item has to be unlocked for the session.
@@ -233,6 +258,19 @@ export function useKeyboardPlacement({
     if (placingId === null) return;
     if (selectedItemId !== placingId || !hasItem(layout, placingId)) setPlacingId(null);
   }, [placingId, selectedItemId, layout]);
+
+  const adoptDeferredPlacement = useCallback(
+    (id: string, catalogItem: CatalogItem): boolean => {
+      const pending = deferredRef.current;
+      if (!pending || pending.catalogItem !== catalogItem) return false;
+      deferredRef.current = null;
+      actions.setLocked(id, false);
+      sessionStartRef.current = pending.start;
+      setPlacingId(id);
+      return true;
+    },
+    [actions]
+  );
 
   const confirmPlacement = useCallback(() => {
     if (placingId === null) return;
@@ -263,7 +301,8 @@ export function useKeyboardPlacement({
       cancelPlacement,
       ghost,
       endGhost,
+      adoptDeferredPlacement,
     }),
-    [placingId, placeTracked, confirmPlacement, cancelPlacement, ghost, endGhost]
+    [placingId, placeTracked, confirmPlacement, cancelPlacement, ghost, endGhost, adoptDeferredPlacement]
   );
 }

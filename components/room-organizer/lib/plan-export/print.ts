@@ -12,6 +12,7 @@
  */
 
 import { CURRENCY_SYMBOL } from '../constants';
+import { notify } from '../editor-notices';
 import { escapeHtml } from '../html-escape';
 import { isWallMounted } from '../opening-snap';
 import { itemSchedule, planFrameBounds, unionBounds, type ScheduleRow } from './plan-geometry';
@@ -270,7 +271,7 @@ export function openPlanPrintWindow(layout: RoomLayout, floor: FloorLayout, opti
   // Popup pattern shared with lib/blueprint.ts openBlueprintPrintWindow.
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
-    window.alert('Pop-ups are blocked — allow pop-ups to print the plan.');
+    notify('Pop-ups are blocked — allow pop-ups for this site to print the plan.', 'error');
     return;
   }
   // The popup only needs the opener's handle on it, not the reverse (#455).

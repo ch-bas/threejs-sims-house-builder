@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { autoAnswerConfirms } from '../lib/__testfixtures__/confirm';
 import { makeCatalogItem, makeFloor, makeItem } from '../lib/__testfixtures__/fixtures';
+import { DEFAULT_BUDGET } from '../lib/constants';
 import { snapOpeningToWall, snapWallMountedItem } from '../lib/opening-snap';
 import { INITIAL_LAYOUT } from './layout-reducer';
 import { useItemPlacement } from './use-item-placement';
@@ -102,6 +104,63 @@ describe('useItemPlacement — wall-aligned catalog placement', () => {
     expect(result.current.placeCatalogItem(makeCatalogItem({ price: 100 }), { x: 0, z: 0 })).toBe('');
     expect(layoutStore.getState().layout).toBe(before);
     expect(result.current.placeCatalogItem(makeCatalogItem({ price: 40 }), { x: 0, z: 0 })).not.toBe('');
+  });
+
+  describe('over the soft budget (#136), asked in the app (#649)', () => {
+    const mountOver = (onPlacedAfterConfirm: (id: string) => void) => {
+      const { layout, activeFloorIndex, actions } = layoutStore.getState();
+      return renderHook(() =>
+        useItemPlacement({
+          activeFloor: layout.floors[activeFloorIndex]!,
+          activeFloorY: 0,
+          roomWidth: layout.width,
+          roomDepth: layout.height,
+          buildingCost: DEFAULT_BUDGET - 10,
+          actions,
+          view: { snapToGrid: false, snapToWall: false, snapToItems: false },
+          onPlacedAfterConfirm,
+        })
+      );
+    };
+
+    it('asks without the native confirm and adds nothing until the answer', async () => {
+      const native = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const placed = vi.fn<(id: string) => void>();
+      const { result } = mountOver(placed);
+      const before = layoutStore.getState().layout;
+      let pending = '';
+      let asked: string[] = [];
+      await act(async () => {
+        const auto = autoAnswerConfirms(true);
+        pending = result.current.placeCatalogItem(makeCatalogItem({ name: 'Pricey', price: 100 }), { x: 0, z: 0 });
+        // Nothing yet: the place call returned before the answer.
+        expect(layoutStore.getState().layout).toBe(before);
+        await Promise.resolve();
+        asked = auto.asked.map((question) => question.title);
+        auto.stop();
+      });
+      expect(pending).toBe('');
+      expect(native).not.toHaveBeenCalled();
+      expect(asked).toEqual([expect.stringMatching(/puts you over the .* budget\. Place it anyway\?/) as unknown]);
+      expect(placed).toHaveBeenCalledOnce();
+      const id = placed.mock.calls[0]![0];
+      expect(activeItem(id).name).toBe('Pricey');
+      native.mockRestore();
+    });
+
+    it('a no adds nothing', async () => {
+      const placed = vi.fn<(id: string) => void>();
+      const { result } = mountOver(placed);
+      const before = layoutStore.getState().layout;
+      await act(async () => {
+        const auto = autoAnswerConfirms(false);
+        result.current.placeCatalogItem(makeCatalogItem({ price: 100 }), { x: 0, z: 0 });
+        await Promise.resolve();
+        auto.stop();
+      });
+      expect(placed).not.toHaveBeenCalled();
+      expect(layoutStore.getState().layout).toBe(before);
+    });
   });
 
   it('previews a catalogue door on its wall, facing the room (#463 d)', () => {

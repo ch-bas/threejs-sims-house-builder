@@ -25,7 +25,7 @@ function setup(mode: GameMode) {
   const selection = { selectOnly: vi.fn(), setSelectedItemId: vi.fn(), setExtraSelectedIds: vi.fn() } as unknown as SelectionContextValue;
   const store = createEditorViewStore(makeViewSettings());
   store.getState().actions.setGameMode(mode);
-  const onLoadTemplate = vi.fn(() => true);
+  const onLoadTemplate = vi.fn(() => Promise.resolve(true));
   render(
     <EditorViewProvider store={store}>
       <RoomEditorProvider value={editor}>

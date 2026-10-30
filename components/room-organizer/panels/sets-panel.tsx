@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
+import { askConfirm } from '../lib/confirm-dialog';
 import {
   countUnreadableCustomSets,
   customSetToFurnitureSet,
@@ -110,8 +111,14 @@ export function SetsPanel({ onAddSet }: SetsPanelProps): JSX.Element {
             <div className="grid grid-cols-1 gap-2">
               {customTiles.map(({ custom, set }) =>
                 renderTile(set, () => {
-                  if (!window.confirm(`Delete set "${custom.name}"?`)) return;
-                  deleteCustomSet(custom.id);
+                  void askConfirm({
+                    title: `Delete set “${custom.name}”?`,
+                    body: 'Saved sets are kept in this browser only, so this can’t be undone.',
+                    confirmLabel: 'Delete',
+                    danger: true,
+                  }).then((ok) => {
+                    if (ok) deleteCustomSet(custom.id);
+                  });
                 })
               )}
             </div>

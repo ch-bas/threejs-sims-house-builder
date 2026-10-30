@@ -5,8 +5,10 @@ import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } f
 import { useSelection } from '../contexts';
 import { useEdgeVar } from '../hooks/use-edge-var';
 import { useEvent } from '../hooks/use-event';
+import { layoutStore } from '../hooks/use-layout-store';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { useSheetInset } from '../hooks/use-sheet-inset';
+import { askConfirm } from '../lib/confirm-dialog';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
 import { generateRoomShape } from '../lib/room-shapes';
@@ -227,14 +229,17 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           // spends what the rest of the building leaves of the budget: the
           // hard budget refuses before asking, the soft one asks before
           // going over (#136, #581).
-          const replaced = runSurprise(layout, activeFloorIndex, DEFAULT_BUDGET, {
-            confirm: (message) => window.confirm(message),
+          void runSurprise(layoutStore.getState().layout, activeFloorIndex, DEFAULT_BUDGET, {
+            confirm: askConfirm,
             playCue,
             replaceItems: (items) => actions.replaceItems(items),
+            // Read again after the question (another tab's version may have landed).
+            current: () => layoutStore.getState().layout,
+          }).then((replaced) => {
+            if (!replaced) return;
+            setSelectedItemId(null);
+            setExtraSelectedIds(new Set());
           });
-          if (!replaced) return;
-          setSelectedItemId(null);
-          setExtraSelectedIds(new Set());
         }}
       />
     </div>

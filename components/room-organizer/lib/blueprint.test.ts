@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { blueprintCanvasSize, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
+import { subscribeNotices, type Notice } from './editor-notices';
 import { ENTRANCE_DOOR_ID } from './street';
 
 // jsdom has no 2D canvas: the render is a no-op (null context) and toDataURL
@@ -78,6 +79,23 @@ describe('openBlueprintPrintWindow (#288)', () => {
     await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
     expect(decodeCalls).toEqual([]);
     expect(events).toEqual(['open', 'write:plan', 'close', 'listen:load']);
+  });
+
+  it('says so in an in-app notice, not an alert, when pop-ups are blocked (#649)', async () => {
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    const alert = vi.fn();
+    vi.stubGlobal('alert', alert);
+    const notices: Notice[] = [];
+    const stop = subscribeNotices((notice) => notices.push(notice));
+    try {
+      const floor = makeFloor({ items: [makeItem()] });
+      await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
+    } finally {
+      stop();
+      vi.unstubAllGlobals();
+    }
+    expect(alert).not.toHaveBeenCalled();
+    expect(notices.map((notice) => [notice.tone, notice.message])).toEqual([['error', expect.stringMatching(/Pop-ups are blocked/) as unknown]]);
   });
 });
 

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout, makeUnplacedItem } from '../__testfixtures__/fixtures';
+import { subscribeNotices, type Notice } from '../editor-notices';
 import {
   buildPrintDocument,
   distanceOutsideWalls,
@@ -339,12 +340,21 @@ describe('openPlanPrintWindow', () => {
     expect(print).toHaveBeenCalledOnce();
   });
 
-  it('alerts instead of throwing when pop-ups are blocked', () => {
+  it('says so in an in-app notice, not an alert, when pop-ups are blocked (#649)', () => {
     const floor = makeFloor();
     vi.spyOn(window, 'open').mockReturnValue(null);
-    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
-    openPlanPrintWindow(makeLayout({ floors: [floor] }), floor);
-    expect(alert).toHaveBeenCalledOnce();
+    const alert = vi.fn();
+    vi.stubGlobal('alert', alert);
+    const notices: Notice[] = [];
+    const stop = subscribeNotices((notice) => notices.push(notice));
+    try {
+      openPlanPrintWindow(makeLayout({ floors: [floor] }), floor);
+    } finally {
+      stop();
+      vi.unstubAllGlobals();
+    }
+    expect(alert).not.toHaveBeenCalled();
+    expect(notices.map((notice) => [notice.tone, notice.message])).toEqual([['error', expect.stringMatching(/Pop-ups are blocked/) as unknown]]);
   });
 });
 

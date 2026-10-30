@@ -4,7 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { layoutStore } from '../hooks/use-layout-store';
 import { budgetSpent } from '../lib/budget';
+import { askConfirm } from '../lib/confirm-dialog';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { formatAge } from '../lib/format';
 import {
@@ -27,7 +29,7 @@ import {
 } from '../lib/pasteboard';
 import { confirmReplace } from '../lib/restore-point';
 import { MAX_NAME_LENGTH } from '../lib/schema';
-import { decodeShareUrl, isShareHashWithinBudget } from '../lib/share';
+import { isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
 import {
   VERSION_HISTORY_STORAGE_KEY,
   floorPlanFingerprint,
@@ -92,16 +94,20 @@ interface PasteStatus {
 
 type LoadSection = 'saved' | 'received' | 'history';
 
-/** What the last load from this panel put on screen (#364). */
+/**
+ * What the last load from this panel put on screen (#364), or why a save,
+ * load or restore failed: inline, never a blocking alert (#607).
+ */
 interface LoadedNote {
   section: LoadSection;
   text: string;
+  error?: true;
 }
 
 function LoadedStatus({ note, section }: { note: LoadedNote | null; section: LoadSection }): JSX.Element | null {
   if (note?.section !== section) return null;
   return (
-    <p role="status" className="text-xs text-muted-foreground">
+    <p role={note.error ? 'alert' : 'status'} className={`text-xs ${note.error ? 'text-destructive' : 'text-muted-foreground'}`}>
       {note.text}
     </p>
   );
@@ -157,46 +163,73 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     setName(currentLayout.name);
   }, [currentLayout.name]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      window.alert('Please enter a name for this layout.');
+      setLoaded({ section: 'saved', text: 'Enter a name for this layout first.', error: true });
       return;
     }
-    if (layoutSlugExists(trimmed) && !window.confirm(`Overwrite the existing layout "${trimmed}"?`)) {
+    if (
+      layoutSlugExists(trimmed) &&
+      !(await askConfirm({
+        title: `Overwrite the saved layout “${trimmed}”?`,
+        body: 'The copy saved under that name is replaced by the house on screen.',
+        confirmLabel: 'Overwrite',
+        danger: true,
+      }))
+    ) {
       return;
     }
     const result = saveNamedLayout(currentLayout, trimmed);
     if (!result.ok) {
-      window.alert(librarySaveFailureMessage(result.reason));
+      setLoaded({ section: 'saved', text: librarySaveFailureMessage(result.reason), error: true });
       return;
     }
+    // A save that worked clears the reason an earlier one failed.
+    setLoaded((note) => (note?.error ? null : note));
     refresh();
   };
 
-  const handleDelete = (entry: SavedLayoutEntry) => {
-    if (!window.confirm(`Delete layout "${entry.name}"?`)) return;
+  const handleDelete = async (entry: SavedLayoutEntry) => {
+    const ok = await askConfirm({
+      title: `Delete the saved layout “${entry.name}”?`,
+      body: 'Saved layouts live in this browser only, so this can’t be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     deleteNamedLayout(entry.id);
     refresh();
   };
 
-  const handleLoad = (entry: SavedLayoutEntry) => {
+  const handleLoad = async (entry: SavedLayoutEntry) => {
     const loaded = loadNamedLayout(entry.id);
     if (!loaded) {
-      window.alert('Failed to load layout — the entry may be corrupted.');
+      setLoaded({ section: 'saved', text: `Couldn’t open “${entry.name}” — the saved copy can’t be read.`, error: true });
       refresh();
       return;
     }
-    if (!confirmReplace(currentLayout, `“${entry.name}”`)) return;
-    onLoad(loaded);
+    if (!(await confirmReplace(currentLayout, `“${entry.name}”`))) return;
+    // Read again: another tab may have saved over it while it asked.
+    const fresh = loadNamedLayout(entry.id);
+    if (!fresh) {
+      setLoaded({ section: 'saved', text: `Couldn’t open “${entry.name}” — the saved copy can’t be read.`, error: true });
+      refresh();
+      return;
+    }
+    onLoad(fresh);
     setLoaded({ section: 'saved', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
   };
 
-  const handleRestore = (summary: VersionSummary) => {
-    if (!confirmReplace(currentLayout, `the restore point from ${formatAge(Date.now() - summary.savedAt)}`)) return;
+  const handleRestore = async (summary: VersionSummary) => {
+    if (!(await confirmReplace(currentLayout, `the restore point from ${formatAge(Date.now() - summary.savedAt)}`))) return;
     const snapshot = getSnapshot(summary.id);
     if (!snapshot) {
-      window.alert('Failed to restore this version — it may have been evicted or corrupted.');
+      setLoaded({
+        section: 'history',
+        text: 'Couldn’t restore this version — it was cleared to make room, or can’t be read.',
+        error: true,
+      });
       refresh();
       return;
     }
@@ -204,11 +237,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     // localStorage quota (#231). The current image is put back only when it
     // is the very image the snapshot was taken with — matching on the house
     // isn't enough, since unrenamed houses all share one name (#296).
+    // The house on screen after the answer, not when it asked.
+    const shown = layoutStore.getState().layout;
     const restored: RoomLayout =
-      currentLayout.floorPlanImage &&
+      shown.floorPlanImage &&
       summary.floorPlanFingerprint !== null &&
-      summary.floorPlanFingerprint === floorPlanFingerprint(currentLayout.floorPlanImage)
-        ? { ...snapshot, floorPlanImage: currentLayout.floorPlanImage }
+      summary.floorPlanFingerprint === floorPlanFingerprint(shown.floorPlanImage)
+        ? { ...snapshot, floorPlanImage: shown.floorPlanImage }
         : snapshot;
     // `onLoad` takes the forced restore point of the house on screen (#298,
     // #352) and applies via the same undoable path as a library/template
@@ -241,14 +276,13 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     setPasting(true);
     try {
       // The same hardened decode → schema pipeline the share-link loader uses.
-      const layout = await decodeShareUrl(hash);
-      if (!layout) {
-        setPasteStatus({
-          kind: 'error',
-          text: "This link couldn't be read — it may be truncated, or made by a newer version of the app.",
-        });
+      const decoded = await readShareHash(hash);
+      if (!decoded.ok) {
+        // Says which: cut off, or from a newer app (#607).
+        setPasteStatus({ kind: 'error', text: shareFailureMessage(decoded.reason) });
         return;
       }
+      const layout = decoded.layout;
       const result = addReceivedLayout(layout);
       if (!result) {
         setPasteStatus({
@@ -275,16 +309,22 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     }
   };
 
-  const handleLoadReceived = (entry: PasteboardEntry) => {
-    if (!confirmReplace(currentLayout, `“${entry.name}”`)) return;
+  const handleLoadReceived = async (entry: PasteboardEntry) => {
+    if (!(await confirmReplace(currentLayout, `“${entry.name}”`))) return;
     // Same undoable path as a library load; `onLoad` takes the restore point
     // (#298, #352). The board keeps its copy, so this can be tried freely.
     onLoad(entry.layout);
     setLoaded({ section: 'received', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
   };
 
-  const handleRemoveReceived = (entry: PasteboardEntry) => {
-    if (!window.confirm(`Remove “${entry.name}” from the paste-board?`)) return;
+  const handleRemoveReceived = async (entry: PasteboardEntry) => {
+    const ok = await askConfirm({
+      title: `Remove “${entry.name}” from the paste-board?`,
+      body: 'The link it came from still opens it.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
     removeReceivedLayout(entry.id);
     refresh();
   };
@@ -304,7 +344,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
             placeholder="Layout name"
             className="text-xs"
           />
-          <Button onClick={handleSave} size="sm">
+          <Button onClick={() => void handleSave()} size="sm">
             💾 Save
           </Button>
         </div>
@@ -324,8 +364,8 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
                 // thumbnail reloads the new blob.
                 key={`${entry.id}:${entry.savedAt}`}
                 entry={entry}
-                onLoad={() => handleLoad(entry)}
-                onDelete={() => handleDelete(entry)}
+                onLoad={() => void handleLoad(entry)}
+                onDelete={() => void handleDelete(entry)}
               />
             ))}
           </ul>
@@ -399,7 +439,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
                         size="sm"
                         variant="secondary"
                         className="h-6 px-2"
-                        onClick={() => handleLoadReceived(entry)}
+                        onClick={() => void handleLoadReceived(entry)}
                         aria-label={`Load ${entry.name}`}
                       >
                         Load
@@ -408,7 +448,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
                         size="sm"
                         variant="ghost"
                         className="h-6 px-2"
-                        onClick={() => handleRemoveReceived(entry)}
+                        onClick={() => void handleRemoveReceived(entry)}
                         aria-label={`Remove ${entry.name}`}
                       >
                         Remove
@@ -437,7 +477,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
                   summary={summary}
                   // Newest first, so the row below is the older neighbour.
                   change={describeChange(summary, snapshots[index + 1])}
-                  onRestore={() => handleRestore(summary)}
+                  onRestore={() => void handleRestore(summary)}
                 />
               ))}
             </ul>

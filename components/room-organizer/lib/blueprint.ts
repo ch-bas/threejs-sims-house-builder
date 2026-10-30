@@ -1,6 +1,7 @@
 import { ensureFloorPlanImageDecoded, render2DTopDown } from '../canvas-2d/render';
 import { furnitureSpend } from './budget';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
+import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
 import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
@@ -104,7 +105,7 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
   // allow window.open() during the user gesture, and the decode below yields.
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
-    window.alert('Pop-ups are blocked — allow pop-ups to print the blueprint.');
+    notify('Pop-ups are blocked — allow pop-ups for this site to print the blueprint.', 'error');
     return;
   }
   // The popup only needs the opener's handle on it, not the reverse (#455).
