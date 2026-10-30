@@ -11,6 +11,7 @@ import {
   countUnreadableSavedLayouts,
   deleteNamedLayout,
   layoutSlugExists,
+  librarySaveFailureMessage,
   listSavedLayouts,
   loadNamedLayout,
   saveNamedLayout,
@@ -166,10 +167,8 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       return;
     }
     const result = saveNamedLayout(currentLayout, trimmed);
-    if (!result) {
-      window.alert(
-        'Could not save the layout — browser storage is full. Delete some saved layouts or remove the floor-plan image and try again.'
-      );
+    if (!result.ok) {
+      window.alert(librarySaveFailureMessage(result.reason));
       return;
     }
     refresh();

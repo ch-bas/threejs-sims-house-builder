@@ -16,8 +16,10 @@ import {
   MAX_INTERIOR_WALLS_PER_FLOOR,
   MAX_ITEMS_PER_FLOOR,
   MAX_NAME_LENGTH,
+  MAX_RANGE_M,
   capText,
   clampCoordinate,
+  repairItem,
 } from '../lib/schema';
 import { clampTerrainY, isStreetSeed } from '../lib/site';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
@@ -1084,6 +1086,9 @@ function sanitizeItemPatch(item: FurnitureItem, fields: ItemPatch | null): ItemP
     const value = next[key];
     if (value !== undefined && !(Number.isFinite(value) && value > 0)) return null;
   }
+  // Clamped like the schema clamps them, so the save reloads unchanged (#553).
+  if (next.signalRange !== undefined) next.signalRange = Math.min(MAX_RANGE_M, next.signalRange);
+  if (next.visionRange !== undefined) next.visionRange = Math.min(MAX_RANGE_M, next.visionRange);
   if (next.visionFov !== undefined) {
     if (!(Number.isFinite(next.visionFov) && next.visionFov > 0)) return null;
     next.visionFov = Math.min(360, next.visionFov);
@@ -1168,12 +1173,14 @@ function hasFinitePlacement(item: FurnitureItem): boolean {
   return item.rotation === undefined || Number.isFinite(item.rotation);
 }
 
-/** An incoming item (paste, set, Surprise) with its position and name within the caps. */
+/**
+ * An incoming item (paste, set, Surprise, arrange) through the schema's own
+ * repair (#553): name, ids, price and ranges within the caps, the position
+ * clamped and unknown keys dropped, so it reloads exactly as it was placed.
+ * The item itself when it already is.
+ */
 function boundItem(item: FurnitureItem): FurnitureItem {
-  const name = capName(item.name);
-  const position = item.position && clampPosition(item.position);
-  if (name === item.name && position === item.position) return item;
-  return { ...item, name, ...(position ? { position } : {}) };
+  return repairItem(item);
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   subscribeCustomSets,
 } from './custom-sets';
 import { buildFurnitureSet } from './furniture-sets';
+import { MAX_ID_LENGTH, MAX_RANGE_M } from './schema';
 import { VERSION_HISTORY_STORAGE_KEY, listSnapshots, recordSnapshot } from './version-history';
 import type { VersionHistoryStore } from './version-history';
 
@@ -127,7 +128,8 @@ describe('custom sets — save / list / delete round-trip (#302)', () => {
 
 describe('custom sets — corrupt data (#302)', () => {
   it('parseCustomSet rejects malformed entries', () => {
-    const good = { id: 's1', name: 'Dining', savedAt: 1, items: [makeItem()] };
+    // A catalogue chair already in its category: nothing for the repair to do.
+    const good = { id: 's1', name: 'Dining', savedAt: 1, items: [makeItem({ category: 'seating' })] };
     expect(parseCustomSet(good)).toEqual(good);
     expect(parseCustomSet(null)).toBeNull();
     expect(parseCustomSet([])).toBeNull();
@@ -160,7 +162,7 @@ describe('custom sets — corrupt data (#302)', () => {
 });
 
 describe('custom sets — unreadable entries survive every rewrite (#340)', () => {
-  const good = { id: 's1', name: 'Dining', savedAt: 1, items: [makeItem()] };
+  const good = { id: 's1', name: 'Dining', savedAt: 1, items: [makeItem({ category: 'seating' })] };
   const tooBig = { id: 's2', name: 'Huge', savedAt: 2, items: [makeItem({ width: 1e12 })] };
 
   function seeded() {
@@ -297,5 +299,22 @@ describe('custom sets place through buildFurnitureSet (#302)', () => {
     )!;
     const placed = buildFurnitureSet(customSetToFurnitureSet(saved), { idPrefix: 's', roomWidth: 8, roomDepth: 8 });
     expect(placed.map((item) => item.type)).toEqual(['retired-thing', 'chair']);
+  });
+});
+
+describe('custom-set items go through the schema repair (#553)', () => {
+  it('clamps the price, caps the id and drops unknown keys, like a loaded house', () => {
+    const item = { ...makeItem({ id: 'i'.repeat(5000), price: -1e9, signalRange: 1e300 }), bloat: 'x' };
+    const set = parseCustomSet({ id: 'set-1', name: 'Crafted', savedAt: 1, items: [item] })!;
+    const [parsed] = set.items;
+    expect(parsed!.price).toBe(0);
+    expect(parsed!.id.length).toBeLessThanOrEqual(MAX_ID_LENGTH);
+    expect(parsed!.signalRange).toBe(MAX_RANGE_M);
+    expect('bloat' in parsed!).toBe(false);
+  });
+
+  it('keeps a clean set as it was stored', () => {
+    const item = makeItem({ price: 120, category: 'seating' });
+    expect(parseCustomSet({ id: 'set-1', name: 'Clean', savedAt: 1, items: [item] })!.items[0]).toBe(item);
   });
 });

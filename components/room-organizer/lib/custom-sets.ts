@@ -9,7 +9,7 @@
  */
 
 import { arrangeAroundCentroid } from './clipboard';
-import { isFurnitureItem } from './schema';
+import { isFurnitureItem, repairItem } from './schema';
 import { setItemEvictingSnapshots, type VersionHistoryStore } from './version-history';
 import type { FurnitureSet } from './furniture-sets';
 import type { FurnitureItem } from './types';
@@ -68,7 +68,9 @@ export function parseCustomSet(value: unknown): CustomFurnitureSet | null {
   const items: FurnitureItem[] = [];
   for (const item of v.items) {
     if (!isFurnitureItem(item) || !item.position) return null;
-    items.push(item);
+    // The caps a loaded house gets: a crafted price or id must not reach the
+    // budget or the reducer (#553).
+    items.push(repairItem(item));
   }
   return { id: v.id, name: v.name, savedAt: v.savedAt, items };
 }

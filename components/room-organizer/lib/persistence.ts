@@ -2,7 +2,7 @@ import { STORAGE_KEY } from './constants';
 import { notify } from './editor-notices';
 import { downloadTextFile } from './plan-export/download';
 import { isUntouched } from './restore-point';
-import { parseStoredLayout, storedEntryCount } from './schema';
+import { parseStoredLayout, storedEntryLoss, type StoredEntryLoss } from './schema';
 import { classifyStorageError, type StorageErrorKind } from './storage-errors';
 import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout } from './types';
@@ -39,20 +39,52 @@ export function loadLayout(): RoomLayout | null {
     const layout = parseStoredLayout(parsed);
     // Over the caps, the load trims the house; the next autosave would make
     // that permanent. Keep the original first (#332).
-    if (layout && storedEntryCount(layout) < storedEntryCount(parsed)) {
+    const loss = layout && storedEntryLoss(parsed, layout);
+    if (loss) {
       // No room for the copy: treat the save as unopenable, so the caller
       // holds autosave off and the original stays the only thing stored.
       if (!backupStoredLayout()) return null;
-      notify(
-        'This house had more than the editor keeps on one floor, so some items were left out. The original is kept in Manage → Saved Layouts → History.',
-        'info'
-      );
+      notify(trimmedHouseNotice(loss), 'info');
     }
     return layout;
   } catch (error) {
     console.warn('Failed to load saved layout:', error);
     return null;
   }
+}
+
+function counted(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** What a load that left something out says, each loss with its own cause (#553). */
+export function trimmedHouseNotice(loss: StoredEntryLoss): string {
+  const sentences: string[] = [];
+  const { items, walls, zones } = loss.overCap;
+  const capped = [
+    items > 0 ? counted(items, 'item') : null,
+    walls > 0 ? counted(walls, 'wall') : null,
+    zones > 0 ? counted(zones, 'zone') : null,
+  ].filter((part): part is string => part !== null);
+  if (capped.length > 0) {
+    const what = capped.length > 1 ? `${capped.slice(0, -1).join(', ')} and ${capped[capped.length - 1]}` : capped[0];
+    const one = items + walls + zones === 1;
+    sentences.push(`This house had more than the editor keeps on one floor, so ${what} ${one ? 'was' : 'were'} left out.`);
+  }
+  if (loss.porchDoors > 0) {
+    sentences.push(
+      loss.porchDoors === 1 ? 'A second porch door was left out.' : `${loss.porchDoors} extra porch doors were left out.`
+    );
+  }
+  if (loss.unusableWalls > 0) {
+    sentences.push(
+      loss.unusableWalls === 1
+        ? 'A wall with no length, or a second porch back wall, was left out.'
+        : `${loss.unusableWalls} walls with no length, or repeating the porch back wall, were left out.`
+    );
+  }
+  sentences.push('The original is kept in Manage → Saved Layouts → History.');
+  return sentences.join(' ');
 }
 
 /**

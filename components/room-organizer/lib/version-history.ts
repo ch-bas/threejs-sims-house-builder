@@ -521,6 +521,21 @@ export function evictOldestSnapshot(opts: VersionHistoryOptions = {}): boolean {
   return true;
 }
 
+/** The restore-point ring exactly as stored. */
+export interface StoredSnapshots {
+  ring: string | null;
+  meta: string | null;
+}
+
+/** Read the ring as stored: what a library save counts as reclaimable room (#565). */
+export function readStoredSnapshots(storage: VersionHistoryStore): StoredSnapshots {
+  try {
+    return { ring: storage.getItem(VERSION_HISTORY_STORAGE_KEY), meta: storage.getItem(VERSION_HISTORY_META_KEY) };
+  } catch {
+    return { ring: null, meta: null };
+  }
+}
+
 /**
  * The most localStorage any major browser gives one origin, in UTF-16 code
  * units of key plus value (Chromium: 10 MiB of UTF-16; Firefox and Safari:
