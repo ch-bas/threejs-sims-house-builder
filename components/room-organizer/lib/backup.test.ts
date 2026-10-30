@@ -7,6 +7,8 @@ import {
   createBackup,
   describeRestore,
   parseBackup,
+  previewReplace,
+  replaceConfirmText,
   restoreBackup,
   summarizeBackup,
   type BackupBundle,
@@ -256,5 +258,38 @@ describe('replace', () => {
     expect(report.keptExtras).toBe(true);
     expect(listReceivedLayouts()).toHaveLength(1);
     expect(listCustomSets()).toHaveLength(1);
+  });
+});
+
+describe('the Replace confirm', () => {
+  const file = (library: unknown[]): ParsedBackup => {
+    const parsed = parseBackup(
+      JSON.stringify({ format: BACKUP_FORMAT, version: 1, main: null, library, restorePoints: [], recoveryCopies: [], received: [], customSets: [], settings: {} })
+    );
+    if (!parsed.ok) throw new Error(parsed.reason);
+    return parsed.bundle;
+  };
+
+  it('names how many saved layouts it deletes or overwrites, an empty library included', () => {
+    saveNamedLayout(house('Kept', 1), 'Kept');
+    saveNamedLayout(house('Gone', 1), 'Gone');
+    saveNamedLayout(house('Changed', 1), 'Changed');
+    const backup = file([
+      { name: 'Kept', savedAt: 1, layout: house('Kept', 1) },
+      { name: 'Changed', savedAt: 1, layout: house('Changed', 4) },
+    ]);
+    expect(previewReplace(backup)).toEqual({ library: 2, received: 0, customSets: 0 });
+    expect(replaceConfirmText(summarizeBackup(backup), previewReplace(backup))).toContain('deletes or overwrites 2 saved layouts');
+    expect(previewReplace(file([])).library).toBe(3);
+  });
+
+  it('says nothing is deleted on a file not wholly read', () => {
+    saveNamedLayout(house('Mine', 1), 'Mine');
+    const parsed = parseBackup(JSON.stringify({ format: BACKUP_FORMAT, version: 1, library: [] }));
+    if (!parsed.ok) throw new Error(parsed.reason);
+    expect(previewReplace(parsed.bundle).library).toBe(0);
+    expect(replaceConfirmText(summarizeBackup(parsed.bundle), previewReplace(parsed.bundle))).toContain(
+      'nothing here is deleted or overwritten'
+    );
   });
 });

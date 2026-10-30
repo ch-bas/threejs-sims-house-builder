@@ -274,3 +274,70 @@ export function removeReceivedLayout(id: string, opts: PasteboardOptions = {}): 
   }
   return true;
 }
+
+/** What `importReceivedLayouts` did. */
+export interface ImportedReceived {
+  added: number;
+  /** Houses left out for lack of room under `MAX_RECEIVED_LAYOUTS`. */
+  skipped: number;
+}
+
+/**
+ * Put received houses from a backup file back (#620), in one write. Merging
+ * keeps every card on the board and adds the backup's houses (newest first;
+ * one already on the board counts as there) only into free room under
+ * `MAX_RECEIVED_LAYOUTS` — a backup never pushes a local card out. With
+ * `replace` the readable cards become the backup's; a card holding the very
+ * same house keeps its id. Unreadable values are kept either way (#340).
+ * Null when the write was refused: the board is then as it was.
+ */
+export function importReceivedLayouts(
+  houses: readonly { layout: RoomLayout; receivedAt: number }[],
+  opts: PasteboardOptions & { replace?: boolean } = {}
+): ImportedReceived | null {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return null;
+  const board = readBoard(storage);
+  const onBoard = new Map(board.entries.map((entry) => [JSON.stringify(entry.layout), entry]));
+  const kept = opts.replace ? [] : [...board.entries];
+  const ids = new Set(kept.map((entry) => entry.id));
+  const seen = new Set(opts.replace ? [] : onBoard.keys());
+  let added = 0;
+  let skipped = 0;
+  for (const { layout, receivedAt } of [...houses].sort((a, b) => b.receivedAt - a.receivedAt)) {
+    const stored: RoomLayout = { ...layout };
+    delete stored.floorPlanImage;
+    const json = JSON.stringify(stored);
+    if (seen.has(json)) continue;
+    if (kept.length >= MAX_RECEIVED_LAYOUTS) {
+      skipped += 1;
+      continue;
+    }
+    seen.add(json);
+    const existing = onBoard.get(json);
+    const entry: PasteboardEntry = existing ?? {
+      id: `${receivedAt.toString(36)}-${shortHash(json)}`,
+      name: stored.name.trim() || 'Untitled',
+      receivedAt,
+      layout: stored,
+    };
+    if (ids.has(entry.id)) continue;
+    ids.add(entry.id);
+    kept.push(entry);
+    if (!existing) added += 1;
+  }
+  const changed = opts.replace ? kept.length !== board.entries.length || added > 0 : added > 0;
+  if (!changed) return { added, skipped };
+  // A replaced card's hidden same-id copy goes with it, as on a removal.
+  const removed = new Set(board.entries.filter((entry) => !ids.has(entry.id)).map((entry) => entry.id));
+  const unreadable = board.unreadable.filter((value) => {
+    const id = storedId(value);
+    return id === null || !removed.has(id);
+  });
+  try {
+    writeBoard(storage, { entries: kept.sort((a, b) => a.receivedAt - b.receivedAt), unreadable });
+  } catch {
+    return null;
+  }
+  return { added, skipped };
+}

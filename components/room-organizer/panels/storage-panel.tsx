@@ -11,6 +11,8 @@ import {
   libraryHousesLeftOut,
   describeRestore,
   parseBackup,
+  previewReplace,
+  replaceConfirmText,
   restoreBackup,
   summarizeBackup,
   type ParsedBackup,
@@ -169,17 +171,8 @@ export function StoragePanel({ currentLayout, onRestoreHouse, onStorageChanged }
     if (!pending) return;
     const summary = summarizeBackup(pending.bundle);
     if (mode === 'replace') {
-      const replaced = [summary.hasHouse ? 'the open house' : null, 'your saved layouts', 'received houses', 'custom sets']
-        .filter((part): part is string => part !== null)
-        .join(', ');
       // TODO(#649): in-app confirm dialog.
-      const deletes = summary.complete
-        ? 'Saved layouts, received houses and sets the backup doesn’t have are deleted. '
-        : 'Part of the backup can’t be read, so nothing here is deleted. ';
-      const ok = window.confirm(
-        `Replace ${replaced} and settings with the backup’s? ${deletes}` +
-          `${summary.hasHouse ? 'The open house is kept as a restore point. ' : ''}Your restore points are kept.`
-      );
+      const ok = window.confirm(replaceConfirmText(summary, previewReplace(pending.bundle)));
       if (!ok) return;
     }
     const report = restoreBackup(pending.bundle, mode, currentLayout);

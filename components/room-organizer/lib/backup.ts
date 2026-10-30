@@ -10,7 +10,7 @@ import {
   loadNamedLayout,
   saveNamedLayout,
 } from './library';
-import { addReceivedLayout, listReceivedLayouts, removeReceivedLayout } from './pasteboard';
+import { importReceivedLayouts, listReceivedLayouts } from './pasteboard';
 import {
   MAX_RECOVERY_COPIES,
   RECOVERY_STORAGE_KEY,
@@ -359,6 +359,12 @@ export interface RestoreReport {
   failed: number;
   /** With `replace`: deletions were held back because the file wasn't complete or a write failed. */
   keptExtras: boolean;
+  /**
+   * With `replace`: parts the deletion pass had already replaced when a
+   * later write was refused — the notice names them, so "nothing deleted"
+   * is never said of them.
+   */
+  replacedBeforeStop: string[];
 }
 
 /** A library name not in use yet: `name (backup)`, then `(backup 2)`… */
@@ -382,10 +388,89 @@ function libraryHolds(layout: RoomLayout): boolean {
   });
 }
 
+/** Recovery copies share at most this much room: they never crowd out the library or autosave. */
+const MAX_RECOVERY_RESTORE_CHARS = 1024 * 1024;
+
+/** The stored house a library name maps to, if any, as it opens. */
+function libraryHouseNamed(name: string): { exists: boolean; layout: RoomLayout | null } {
+  if (!layoutSlugExists(name)) return { exists: false, layout: null };
+  const slot = librarySlotId(name);
+  const entry = listSavedLayouts().find((candidate) => candidate.id === slot || librarySlotId(candidate.name) === slot);
+  return { exists: true, layout: entry ? loadNamedLayout(entry.id) : null };
+}
+
+/** The slot a backup library entry is saved under. */
+function entrySlot(entry: ParsedBackup['library'][number]): string {
+  return librarySlotId(entry.name.trim() || entry.layout.name || 'Untitled');
+}
+
+/** What a Replace will delete here, for its confirm. Nothing when the file isn't complete. */
+export interface ReplacePreview {
+  /** Saved layouts deleted outright, plus those overwritten by a different house of the same name. */
+  library: number;
+  received: number;
+  customSets: number;
+}
+
+export function previewReplace(backup: ParsedBackup): ReplacePreview {
+  if (!backup.complete) return { library: 0, received: 0, customSets: 0 };
+  let library = 0;
+  for (const entry of listSavedLayouts()) {
+    const incoming = backup.library.find((candidate) => entrySlot(candidate) === librarySlotId(entry.name));
+    const stored = loadNamedLayout(entry.id);
+    if (!incoming || !(stored && sameLayoutContent(stored, incoming.layout))) library += 1;
+  }
+  const incomingReceived = new Set(
+    backup.received.map(({ layout }) => {
+      const stored: RoomLayout = { ...layout };
+      delete stored.floorPlanImage;
+      return JSON.stringify(stored);
+    })
+  );
+  const received = listReceivedLayouts().filter((entry) => !incomingReceived.has(JSON.stringify(entry.layout))).length;
+  const setIds = new Set(backup.customSets.map((set) => set.id));
+  const customSets = listCustomSets().filter((set) => !setIds.has(set.id)).length;
+  return { library, received, customSets };
+}
+
 /**
- * Restore a validated backup. `current` is the open house: with `merge` the
- * backup's house is saved to the library unless it is that house, already
- * in the library, or untouched.
+ * The question a Replace asks first, naming what it deletes here: how many
+ * saved layouts (an empty library in the file deletes them all), received
+ * houses and sets — or that it deletes nothing, on a file not wholly read.
+ */
+export function replaceConfirmText(summary: BackupSummary, preview: ReplacePreview): string {
+  const replaced = [summary.hasHouse ? 'the open house' : null, 'your saved layouts', 'received houses', 'custom sets']
+    .filter((part): part is string => part !== null)
+    .join(', ');
+  let deletes: string;
+  if (!summary.complete) {
+    deletes = 'Part of the backup can’t be read, so nothing here is deleted or overwritten.';
+  } else {
+    const parts = [
+      preview.library > 0 ? plural(preview.library, 'saved layout') : null,
+      preview.received > 0 ? plural(preview.received, 'received house') : null,
+      preview.customSets > 0 ? plural(preview.customSets, 'custom set') : null,
+    ].filter((part): part is string => part !== null);
+    deletes =
+      parts.length > 0
+        ? `This deletes or overwrites ${parts.join(', ')} the backup doesn’t have.`
+        : 'Nothing here is deleted.';
+  }
+  const kept = summary.hasHouse ? ' The open house is kept as a restore point.' : '';
+  return `Replace ${replaced} and settings with the backup’s? ${deletes}${kept} Your restore points are kept.`;
+}
+
+/**
+ * Restore a validated backup, in two phases. First every write that removes
+ * nothing: new library houses, received houses and sets into free room,
+ * settings, then recovery copies and restore points, which take only what
+ * room is left. Then — only with `replace`, a complete file and no failed
+ * write — one deletion pass: the backup's sets and received houses take the
+ * place of this browser's (each one atomic write), same-named library houses
+ * are overwritten, and library houses the backup lacks are deleted. An
+ * overwrite of different content counts as a deletion. `current` is the
+ * open house: with `merge` the backup's house is saved to the library
+ * unless it is that house, already in the library, or untouched.
  */
 export function restoreBackup(backup: ParsedBackup, mode: RestoreMode, current: RoomLayout): RestoreReport {
   const report: RestoreReport = {
@@ -401,27 +486,39 @@ export function restoreBackup(backup: ParsedBackup, mode: RestoreMode, current: 
     overLimit: 0,
     failed: 0,
     keptExtras: false,
+    replacedBeforeStop: [],
   };
   const replace = mode === 'replace';
   // Replace deletes only on a whole, readable file (#620 review).
   const mayDelete = replace && backup.complete;
-  if (replace && !backup.complete) report.keptExtras = true;
 
+  // Phase 1: writes that remove nothing.
+  const library = writeLibrary(backup, replace, mayDelete, current, report);
+  if (!mayDelete) {
+    const received = importReceivedLayouts(backup.received);
+    if (received === null) report.failed += 1;
+    else {
+      report.received += received.added;
+      report.overLimit += received.skipped;
+    }
+    const sets = importCustomSets(backup.customSets);
+    if (sets === null) report.failed += 1;
+    else {
+      report.customSets += sets.added;
+      report.overLimit += sets.skipped;
+    }
+  }
+  restoreSettings(backup.settings, replace, report);
+  restoreRecoveryCopies(backup.recoveryCopies, report);
   const points = importSnapshots(backup.restorePoints);
   report.restorePoints = points.added;
   report.overLimit += points.skipped;
-  restoreRecoveryCopies(backup.recoveryCopies, report);
-  restoreLibrary(backup, replace, mayDelete, current, report);
-  restoreReceived(backup.received, replace, mayDelete, report);
 
-  const sets = importCustomSets(backup.customSets, { replace: mayDelete });
-  if (sets === null) report.failed += 1;
-  else {
-    report.customSets = sets.added;
-    report.overLimit += sets.skipped;
+  // Phase 2: the one deletion pass.
+  if (replace) {
+    if (mayDelete && report.failed === 0) replaceCollections(backup, library, report);
+    else report.keptExtras = true;
   }
-
-  restoreSettings(backup.settings, replace, report);
 
   if (replace && backup.house) {
     // Half a restore must not also swap the house: the open one stays, and
@@ -432,26 +529,32 @@ export function restoreBackup(backup: ParsedBackup, mode: RestoreMode, current: 
   return report;
 }
 
-function restoreLibrary(
+/** Slots the restore wrote, and library houses held back to the deletion pass. */
+interface LibraryWrites {
+  written: Set<string>;
+  /** Each overwrites a different house of the same name: a deletion, so it waits for the gate. */
+  overwrites: { name: string; stored: RoomLayout; savedAt: number }[];
+}
+
+function writeLibrary(
   backup: ParsedBackup,
   replace: boolean,
   mayDelete: boolean,
   current: RoomLayout,
   report: RestoreReport
-): void {
-  // Slots this restore wrote: no two backup houses may land in one, and the
-  // deletion pass never touches them.
-  const written = new Set<string>();
-  const free = (candidate: string): boolean =>
-    replace ? !written.has(librarySlotId(candidate)) : !layoutSlugExists(candidate);
-  let failed = 0;
-  const save = (layout: RoomLayout, name: string, savedAt?: number): void => {
-    const outcome = saveNamedLayout(layout, name, savedAt === undefined ? {} : { savedAt });
+): LibraryWrites {
+  // No two backup houses may land in one slot, and the deletion pass never
+  // touches a slot this restore wrote.
+  const writes: LibraryWrites = { written: new Set(), overwrites: [] };
+  const claimed = new Set<string>();
+  const free = (candidate: string): boolean => !claimed.has(librarySlotId(candidate)) && !layoutSlugExists(candidate);
+  const save = (stored: RoomLayout, name: string, savedAt?: number): void => {
+    const outcome = saveNamedLayout(stored, name, savedAt === undefined ? {} : { savedAt });
     if (outcome.ok) {
-      written.add(outcome.entry.id);
+      writes.written.add(outcome.entry.id);
       report.library += 1;
     } else {
-      failed += 1;
+      report.failed += 1;
     }
   };
 
@@ -459,29 +562,64 @@ function restoreLibrary(
     const { layout } = entry;
     let name = entry.name.trim() || layout.name || 'Untitled';
     if (!replace && libraryHolds(layout)) continue;
-    if (!free(name)) name = freeLibraryName(name, free);
+    if (claimed.has(librarySlotId(name))) name = freeLibraryName(name, free);
+    const here = libraryHouseNamed(name);
+    if (here.exists && !(here.layout && sameLayoutContent(here.layout, layout))) {
+      if (mayDelete) {
+        claimed.add(librarySlotId(name));
+        writes.overwrites.push({ name, stored: entry.stored, savedAt: entry.savedAt });
+        continue;
+      }
+      name = freeLibraryName(name, free);
+    }
+    claimed.add(librarySlotId(name));
     save(entry.stored, name, entry.savedAt);
   }
 
   const house = backup.house;
   if (!replace && house && !isUntouched(house) && !sameHouseContent(house, current) && !libraryHolds(house)) {
-    save(house, freeLibraryName(house.name || 'Untitled', free));
+    const name = freeLibraryName(house.name || 'Untitled', free);
+    claimed.add(librarySlotId(name));
+    save(house, name);
   }
+  return writes;
+}
 
-  report.failed += failed;
-  if (!replace) return;
-  if (!mayDelete || failed > 0) {
+/** The deletion pass of a Replace. Stops at the first refused write, deleting nothing more. */
+function replaceCollections(backup: ParsedBackup, library: LibraryWrites, report: RestoreReport): void {
+  const replaced: string[] = [];
+  const refused = (): void => {
+    report.failed += 1;
     report.keptExtras = true;
-    return;
+    report.replacedBeforeStop = replaced;
+  };
+  const sets = importCustomSets(backup.customSets, { replace: true });
+  if (sets === null) return refused();
+  replaced.push('custom sets');
+  report.customSets += sets.added;
+  report.overLimit += sets.skipped;
+
+  const received = importReceivedLayouts(backup.received, { replace: true });
+  if (received === null) return refused();
+  replaced.push('received houses');
+  report.received += received.added;
+  report.overLimit += received.skipped;
+
+  for (const { name, stored, savedAt } of library.overwrites) {
+    const outcome = saveNamedLayout(stored, name, { savedAt });
+    if (!outcome.ok) return refused();
+    library.written.add(outcome.entry.id);
+    report.library += 1;
   }
   for (const entry of listSavedLayouts()) {
-    if (!written.has(entry.id)) deleteNamedLayout(entry.id);
+    if (!library.written.has(entry.id)) deleteNamedLayout(entry.id);
   }
 }
 
 /**
- * Recovery copies come back only up to `MAX_RECOVERY_COPIES`, and only into
- * free room: they never evict restore points or anything else.
+ * Recovery copies come back only up to `MAX_RECOVERY_COPIES` and
+ * `MAX_RECOVERY_RESTORE_CHARS`, after the library, and only into free room:
+ * they never evict restore points or anything else.
  */
 function restoreRecoveryCopies(copies: readonly BackupRecoveryCopy[], report: RestoreReport): void {
   const storage = localStorageOrNull();
@@ -489,11 +627,12 @@ function restoreRecoveryCopies(copies: readonly BackupRecoveryCopy[], report: Re
   const stored = readRecoveryCopies();
   const held = new Set(stored.map((copy) => copy.raw));
   let count = stored.length;
+  let chars = 0;
   // Newest first, as the copies are ranked when kept.
   const ordered = [...copies].sort((a, b) => (b.savedAt ?? -1) - (a.savedAt ?? -1));
   for (const copy of ordered) {
     if (held.has(copy.raw)) continue;
-    if (count >= MAX_RECOVERY_COPIES) {
+    if (count >= MAX_RECOVERY_COPIES || chars + copy.raw.length > MAX_RECOVERY_RESTORE_CHARS) {
       report.overLimit += 1;
       continue;
     }
@@ -502,40 +641,12 @@ function restoreRecoveryCopies(copies: readonly BackupRecoveryCopy[], report: Re
       storage.setItem(key, copy.raw);
       held.add(copy.raw);
       count += 1;
+      chars += copy.raw.length;
       report.recoveryCopies += 1;
     } catch {
       report.failed += 1;
     }
   }
-}
-
-function restoreReceived(
-  entries: ParsedBackup['received'],
-  replace: boolean,
-  mayDelete: boolean,
-  report: RestoreReport
-): void {
-  const before = listReceivedLayouts().map((entry) => entry.id);
-  const kept = new Set<string>();
-  let failed = 0;
-  // Oldest first, so the board's cap drops the oldest, as a paste would.
-  for (const { layout, receivedAt } of [...entries].sort((a, b) => a.receivedAt - b.receivedAt)) {
-    const added = addReceivedLayout(layout, { now: () => receivedAt });
-    if (!added) {
-      failed += 1;
-      continue;
-    }
-    kept.add(added.entry.id);
-    if (!added.duplicate) report.received += 1;
-  }
-  report.failed += failed;
-  if (!replace) return;
-  // The houses the backup doesn't have go only once all of its own are in.
-  if (!mayDelete || failed > 0) {
-    report.keptExtras = true;
-    return;
-  }
-  for (const id of before) if (!kept.has(id)) removeReceivedLayout(id);
 }
 
 function restoreSettings(settings: Record<string, string>, replace: boolean, report: RestoreReport): void {
@@ -580,6 +691,12 @@ export function describeRestore(report: RestoreReport): string {
   }
   if (report.failed > 0) lines.push(`${plural(report.failed, 'part')} didn’t fit in browser storage.`);
   if (report.houseWithheld) lines.push('Your open house was kept, since the restore didn’t complete.');
-  if (report.keptExtras) lines.push('Nothing here was deleted.');
+  if (report.keptExtras) {
+    lines.push(
+      report.replacedBeforeStop.length > 0
+        ? `The restore stopped after replacing your ${report.replacedBeforeStop.join(' and ')}; no saved layout was deleted.`
+        : 'Nothing here was deleted.'
+    );
+  }
   return lines.join(' ');
 }
