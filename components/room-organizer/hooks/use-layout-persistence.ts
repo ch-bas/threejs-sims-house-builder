@@ -322,9 +322,13 @@ export function useLayoutPersistence({
     const flush = (layout: RoomLayout | null, leaving: boolean) => {
       if (mainSaveHeldRef.current || layout === null) return;
       if (pendingRef.current) {
-        pendingRef.current = false;
         const result = saveLayout(layout);
-        if (result.ok) lastSavedJsonRef.current = result.json;
+        // Still pending after a failure: a later flush, or the debounced
+        // save, retries once storage has room again.
+        if (result.ok) {
+          pendingRef.current = false;
+          lastSavedJsonRef.current = result.json;
+        }
         pointOwed = true;
       }
       if (!pointOwed || isUntouched(layout)) return;
