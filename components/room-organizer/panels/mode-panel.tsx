@@ -3,11 +3,13 @@
 import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useEdgeVar } from '../hooks/use-edge-var';
+import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useBudgetRemaining, useLayoutActions } from '../hooks/use-layout-store';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { ViewOptionsMenu } from './view-options';
+import { DISABLED_TILE } from './wall-display-pill';
 import type { GameMode } from '../lib/types';
 
 export type { GameMode };
@@ -36,6 +38,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   const view = useViewSettings('showCameraVision', 'showMinimap', 'showNpcs', 'snapToGrid', 'soundsEnabled', 'view2D');
   const { setAutoCycleLighting, toggle } = useEditorViewActions();
   const gameMode = useEditorView((state) => state.gameMode);
+  const exploring = useExploring();
   /** A 3D-only control's label, which says so while the plan is shown. */
   const in3D = (label: string): string => (view.view2D ? `${label} — switch back to 3D view` : label);
   const autoCycleLighting = useEditorView((state) => state.autoCycleLighting);
@@ -110,9 +113,13 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           role="switch"
           aria-checked={remaining !== null}
           aria-label="Hard budget"
-          title="Hard budget: can't buy past the budget, Demolish refunds 80%"
+          // Switching it writes `layout.budget`: a house edit, so not while
+          // exploring (#700).
+          disabled={exploring}
+          title={exploring ? NOT_WHILE_EXPLORING : "Hard budget: can't buy past the budget, Demolish refunds 80%"}
           className="pc-budget-switch"
           onClick={() => setHardBudget(remaining === null)}
+          {...(exploring ? { style: DISABLED_TILE } : {})}
         >
           <span aria-hidden className="pc-budget-switch__track">
             <span className="pc-budget-switch__knob" />

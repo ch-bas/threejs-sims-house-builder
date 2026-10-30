@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A greyed-out catalogue tile now says why when you click it or press Enter ("Over budget: $200 left", or that garden items go on the ground floor), with the refusal sound, instead of doing nothing ([#642](https://github.com/ch-bas/threejs-sims-house-builder/issues/642))
 - Loading a template keeps your hard budget switch and what earlier sales wrote off. With the hard budget on, the furniture the template replaces sells back at 80% like Clear floor, and a template you can't afford is refused with the refusal sound and a message saying what it costs and what is left ([#691](https://github.com/ch-bas/threejs-sims-house-builder/issues/691))
 - The per-floor costs in Statistics and on the printed blueprint no longer count the porch door of older saves, so they add up to the header's spending ([#693](https://github.com/ch-bas/threejs-sims-house-builder/issues/693))
+- In EXPLORE the Hard budget switch is off, with the "Not while exploring" hint, like every other change to the house ([#700](https://github.com/ch-bas/threejs-sims-house-builder/issues/700))
 
 ## [1.24.0] - 2026-10-28
 
