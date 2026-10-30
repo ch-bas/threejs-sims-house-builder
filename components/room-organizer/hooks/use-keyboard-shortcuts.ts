@@ -46,6 +46,12 @@ export interface UseKeyboardShortcutsOptions {
    * `[`/`]` (time of day) and PageUp/PageDown (floor) stay live (#463c, #446).
    */
   walkthroughActive?: boolean;
+  /**
+   * EXPLORE (the game mode, not the 3D walk): nothing edits the house, the
+   * 2D plan included (#643, #699). Duplicate, copy, paste, delete, rotate and
+   * the arrow nudge are off; undo/redo (#339) and the view keys stay.
+   */
+  exploring?: boolean;
   /** Whether an item drag is in progress; read at keypress time. */
   isDragActive?: () => boolean;
   handlers: KeyboardShortcutHandlers;
@@ -85,6 +91,7 @@ export function useKeyboardShortcuts({
   selectedWall,
   hasSignalItems,
   walkthroughActive = false,
+  exploring = false,
   isDragActive,
   handlers,
 }: UseKeyboardShortcutsOptions): void {
@@ -115,9 +122,10 @@ export function useKeyboardShortcuts({
       }
 
       // Duplicate / copy / paste edit the house, so they are off while the
-      // walkthrough owns the keyboard, like the bare keys below; undo/redo
-      // above stay available (#339).
-      if (ctrlOrCmd && key === 'd' && selectedItem && !walkthroughActive) {
+      // walkthrough owns the keyboard, like the bare keys below, and in
+      // EXPLORE on the 2D plan too (#699); undo/redo above stay (#339).
+      const editsOff = walkthroughActive || exploring;
+      if (ctrlOrCmd && key === 'd' && selectedItem && !editsOff) {
         event.preventDefault();
         handlers.duplicateItem(selectedItem.id);
         return;
@@ -126,11 +134,11 @@ export function useKeyboardShortcuts({
       // Furniture clipboard (#153). Ctrl+C only engages while furniture is
       // selected, so copying text elsewhere in the page keeps working; Ctrl+V
       // engages only when the clipboard actually has furniture.
-      if (ctrlOrCmd && key === 'c' && selectedItem && !walkthroughActive) {
+      if (ctrlOrCmd && key === 'c' && selectedItem && !editsOff) {
         if (handlers.copySelection()) event.preventDefault();
         return;
       }
-      if (ctrlOrCmd && key === 'v' && !walkthroughActive) {
+      if (ctrlOrCmd && key === 'v' && !editsOff) {
         if (handlers.pasteClipboard()) event.preventDefault();
         return;
       }
@@ -185,7 +193,12 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedItem) {
+      // EXPLORE on the 2D plan: the view keys (f, 2, m, g, w, p) work, the
+      // keys that change the house below do not (#699).
+      const deleteKey = event.key === 'Delete' || event.key === 'Backspace';
+      if (exploring && (deleteKey || key === 'r' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
+
+      if (deleteKey && selectedItem) {
         event.preventDefault();
         // Lock enforcement lives in the handler: it must see the whole
         // selection, not just the primary — gating on the primary's lock here
@@ -194,7 +207,7 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedWall) {
+      if (deleteKey && selectedWall) {
         event.preventDefault();
         if (selectedWall.kind === 'interior') {
           handlers.removeInteriorWall(selectedWall.id);
@@ -260,7 +273,7 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, isDragActive, handlers]);
+  }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, exploring, isDragActive, handlers]);
 }
 
 /**

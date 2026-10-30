@@ -16,7 +16,7 @@ function pointer(type: string, clientX: number, clientY: number, pointerType = '
   return event;
 }
 
-function setup(selected: string[]) {
+function setup(selected: string[], overrides: Partial<UseCanvas2DInteractionParams> = {}) {
   const floor = makeFloor({
     items: [
       makeItem({ id: 'a', width: 2, depth: 1, position: { x: 0, z: 0 } }),
@@ -49,6 +49,7 @@ function setup(selected: string[]) {
     onItemDrag: vi.fn(),
     onItemDragEnd: vi.fn(),
     onItemDragCancel: vi.fn(),
+    ...overrides,
   };
   renderHook(() => useCanvas2DInteraction(params));
   const fire = (type: string, x: number, z: number, pointerType = 'mouse') => {
@@ -129,6 +130,58 @@ describe('useCanvas2DInteraction gestures (#291, #292)', () => {
     fire('pointerdown', 0, 0);
     fire('pointermove', sixPx, 0);
     expect(params.onItemDragStart).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useCanvas2DInteraction in EXPLORE (#699)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    document.documentElement.removeAttribute(PLAN_GESTURE_ATTR);
+  });
+
+  it('a press selects, a drag never moves the item', () => {
+    const { params, fire } = setup([], { exploring: true });
+    fire('pointerdown', 0, 0);
+    expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    fire('pointermove', 1.5, 0);
+    fire('pointerup', 1.5, 0);
+    expect(params.onItemDragStart).not.toHaveBeenCalled();
+    expect(params.onItemDrag).not.toHaveBeenCalled();
+    expect(params.onItemDragEnd).not.toHaveBeenCalled();
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
+  });
+
+  it('a press on a member of a multi-selection selects it: there is no group drag to keep it for', () => {
+    const { params, fire } = setup(['a', 'b'], { exploring: true });
+    fire('pointerdown', 0, 0);
+    expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    fire('pointermove', 1.5, 0);
+    fire('pointerup', 1.5, 0);
+    expect(params.onItemDragStart).not.toHaveBeenCalled();
+    expect(params.onItemDragEnd).not.toHaveBeenCalled();
+  });
+
+  it('zone drawing adds no zone; the press selects instead', () => {
+    const { params, fire } = setup([], {
+      exploring: true,
+      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, drawZoneMode: true },
+    });
+    fire('pointerdown', 0, 0);
+    fire('pointermove', 2, 1);
+    fire('pointerup', 2, 1);
+    expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    expect(params.onItemDragStart).not.toHaveBeenCalled();
+  });
+
+  it('empty plan still deselects', () => {
+    const { params, fire } = setup(['a'], { exploring: true });
+    fire('pointerdown', -3.5, -2.5);
+    expect(params.onDeselect).toHaveBeenCalledTimes(1);
   });
 });
 

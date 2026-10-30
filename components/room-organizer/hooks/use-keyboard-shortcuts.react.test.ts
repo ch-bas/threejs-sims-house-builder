@@ -38,7 +38,17 @@ function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
 const setup = (
   dragging: boolean,
   placing = false,
-  { walkthroughActive = false, hasSignalItems = false } = {}
+  {
+    walkthroughActive = false,
+    exploring = false,
+    hasSignalItems = false,
+    selectedWall = null,
+  }: {
+    walkthroughActive?: boolean;
+    exploring?: boolean;
+    hasSignalItems?: boolean;
+    selectedWall?: { id: string; kind: 'exterior' | 'interior' } | null;
+  } = {}
 ) => {
   const handlers = {
     ...makeHandlers(),
@@ -47,9 +57,10 @@ const setup = (
   renderHook(() =>
     useKeyboardShortcuts({
       selectedItem: makeItem({ id: 'chair', position: { x: 0, z: 0 }, locked: false }),
-      selectedWall: null,
+      selectedWall,
       hasSignalItems,
       walkthroughActive,
+      exploring,
       isDragActive: () => dragging,
       handlers: handlers as unknown as KeyboardShortcutHandlers,
     })
@@ -225,6 +236,69 @@ describe('useKeyboardShortcuts — walkthrough gate (#339)', () => {
     const { calls } = setup(false, false, { walkthroughActive: true, hasSignalItems: true });
     press(key);
     expect(calls()).toEqual([]);
+  });
+});
+
+describe('useKeyboardShortcuts — EXPLORE never edits, in 2D too (#699)', () => {
+  afterEach(cleanup);
+
+  it.each([
+    ['Ctrl+D (duplicate)', 'd', { ctrlKey: true }],
+    ['Ctrl+C (copy)', 'c', { ctrlKey: true }],
+    ['Ctrl+V (paste)', 'v', { ctrlKey: true }],
+    ['Cmd+V (paste)', 'v', { metaKey: true }],
+    ['Delete', 'Delete', {}],
+    ['Backspace', 'Backspace', {}],
+    ['R (rotate)', 'r', {}],
+    ['Shift+R (fine rotate)', 'R', { shiftKey: true }],
+    ['ArrowUp (nudge)', 'ArrowUp', {}],
+    ['ArrowDown (nudge)', 'ArrowDown', {}],
+    ['ArrowLeft (nudge)', 'ArrowLeft', {}],
+    ['Shift+ArrowRight (big nudge)', 'ArrowRight', { shiftKey: true }],
+  ] as const)('ignores %s on the 2D plan while exploring', (_label, key, init) => {
+    const { calls } = setup(false, false, { exploring: true });
+    const event = press(key, init);
+    expect(calls()).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it.each(['interior', 'exterior'] as const)('ignores Delete on a selected %s wall while exploring', (kind) => {
+    const { calls } = setup(false, false, { exploring: true, selectedWall: { id: 'w', kind } });
+    press('Delete');
+    press('Backspace');
+    expect(calls()).toEqual([]);
+  });
+
+  it('keeps undo and redo while exploring (#339)', () => {
+    const { calls } = setup(false, false, { exploring: true });
+    press('z', { ctrlKey: true });
+    press('y', { ctrlKey: true });
+    expect(calls()).toEqual(['undo', 'redo']);
+  });
+
+  it.each([
+    ['f (focus)', 'f', 'focusOnSelection'],
+    ['2 (2D view)', '2', 'toggle2D'],
+    ['m (measurements)', 'm', 'toggleMeasurements'],
+    ['g (snap)', 'g', 'toggleSnap'],
+    ['w (WiFi)', 'w', 'toggleSignals'],
+    ['p (panel)', 'p', 'toggleSidebar'],
+    ['] (time)', ']', 'advanceTime'],
+    ['PageUp (floor)', 'PageUp', 'changeFloor'],
+    ['Escape (deselect)', 'Escape', 'deselect'],
+  ] as const)('keeps the view key %s while exploring', (_label, key, handler) => {
+    const { calls } = setup(false, false, { exploring: true, hasSignalItems: true });
+    press(key);
+    expect(calls()).toEqual([handler]);
+  });
+
+  it('edits again outside EXPLORE', () => {
+    const { calls } = setup(false, false, { exploring: false });
+    press('d', { ctrlKey: true });
+    press('r');
+    press('ArrowUp');
+    press('Delete');
+    expect(calls()).toEqual(['removeItem', 'duplicateItem', 'rotateItem', 'moveItem']);
   });
 });
 

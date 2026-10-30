@@ -1,15 +1,32 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { EditorViewProvider } from '../contexts/editor-view-context';
 import { RoomEditorProvider, type RoomEditorContextValue } from '../contexts/room-editor-context';
 import { SelectionProvider, type SelectionContextValue } from '../contexts/selection-context';
-import { makeItem } from '../lib/__testfixtures__/fixtures';
+import { createEditorViewStore } from '../hooks/editor-view-store';
+import { NOT_WHILE_EXPLORING } from '../hooks/use-exploring';
+import { makeItem, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { ItemContextPopover } from './item-context-popover';
 import { ItemResizePanel } from './item-resize-panel';
-import type { FurnitureItem } from '../lib/types';
+import type { FurnitureItem, GameMode } from '../lib/types';
 
-function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem) {
-  const actions = { toggleMirror: vi.fn(), setSofaShape: vi.fn(), resizeItem: vi.fn() };
+function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: GameMode = 'build') {
+  const actions = {
+    toggleMirror: vi.fn(),
+    setSofaShape: vi.fn(),
+    resizeItem: vi.fn(),
+    setLocked: vi.fn(),
+    moveItem: vi.fn(),
+    setColor: vi.fn(),
+    updateItem: vi.fn(),
+    setSignalRange: vi.fn(),
+    setStairsShape: vi.fn(),
+    setSillHeight: vi.fn(),
+  };
+  const callbacks = { onRemove: vi.fn(), onDuplicate: vi.fn(), onRotate: vi.fn(), onToggleCameraBracket: vi.fn(), onClose: vi.fn() };
+  const store = createEditorViewStore(makeViewSettings());
+  store.getState().actions.setGameMode(mode);
   const editorValue = { actions, recentColors: [], pushColor: () => {} } as unknown as RoomEditorContextValue;
   const selection = {
     selectedItemId: item.id,
@@ -21,24 +38,19 @@ function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem) {
     selectOnly: () => {},
   } as SelectionContextValue;
   render(
+    <EditorViewProvider store={store}>
     <RoomEditorProvider value={editorValue}>
       <SelectionProvider value={selection}>
         {editor === 'popover' ? (
-          <ItemContextPopover
-            hasCollision={false}
-            onRemove={() => {}}
-            onDuplicate={() => {}}
-            onRotate={() => {}}
-            onToggleCameraBracket={() => {}}
-            onClose={() => {}}
-          />
+          <ItemContextPopover hasCollision={false} {...callbacks} />
         ) : (
           <ItemResizePanel hasCollision={false} onDuplicate={() => {}} />
         )}
       </SelectionProvider>
     </RoomEditorProvider>
+    </EditorViewProvider>
   );
-  return actions;
+  return Object.assign(actions, callbacks);
 }
 
 beforeEach(() => {
@@ -106,5 +118,52 @@ describe('item editors: the size sliders reach tall catalogue items (#547)', () 
     renderEditor('panel', { ...pine, height: 2 });
     const sliders = screen.getAllByRole('slider') as HTMLInputElement[];
     expect(sliders.some((slider) => slider.max === '4.5')).toBe(true);
+  });
+});
+
+describe('item popover in EXPLORE (#699)', () => {
+  const editable = (): HTMLElement[] =>
+    [...screen.getByRole('dialog').querySelectorAll<HTMLElement>('button, input, select')].filter(
+      (el) => !['Close', 'Show all options', 'Show fewer options'].includes(el.getAttribute('aria-label') ?? '')
+    );
+
+  it.each([
+    ['a sofa', makeItem({ id: 's', type: 'sofa', name: 'Sofa', sofaShape: 'standard' })],
+    ['stairs', makeItem({ id: 't', type: 'stairs', name: 'Stairs', stairsShape: 'winder' })],
+    ['a window', makeItem({ id: 'w', type: 'window', name: 'Window' })],
+    ['a camera', makeItem({ id: 'c', type: 'security-camera', name: 'Camera', isCCTV: true })],
+    ['an access point', makeItem({ id: 'ap', type: 'wifi', name: 'Wi-Fi AP', isWiFiAccessPoint: true })],
+  ])('turns off every control that edits %s, with the hint', (_label, item) => {
+    const calls = renderEditor('popover', item, 'live');
+    expect(screen.getByRole('note').textContent).toContain(NOT_WHILE_EXPLORING);
+    const controls = editable();
+    expect(controls.length).toBeGreaterThan(8);
+    for (const control of controls) {
+      expect(control.matches(':disabled'), control.getAttribute('aria-label') ?? control.textContent ?? '').toBe(true);
+      // A browser sends no input to a disabled control; clicks are the
+      // event jsdom would still deliver, so they must do nothing either.
+      fireEvent.click(control);
+    }
+    for (const [name, fn] of Object.entries(calls)) {
+      if (name === 'onClose') continue;
+      expect(fn, name).not.toHaveBeenCalled();
+    }
+    // Close and the sheet handle stay: looking around isn't editing.
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveProperty('disabled', false);
+  });
+
+  it('names EXPLORE, not the lock, as the reason', () => {
+    renderEditor('popover', makeItem({ id: 's', type: 'sofa', name: 'Sofa', locked: true }), 'live');
+    expect(screen.getByRole('button', { name: 'Rotate' }).getAttribute('title')).toBe(NOT_WHILE_EXPLORING);
+    expect(screen.getByRole('button', { name: 'Unlock' }).getAttribute('title')).toBe(NOT_WHILE_EXPLORING);
+  });
+
+  it('leaves the controls on in FURNISH', () => {
+    const calls = renderEditor('popover', makeItem({ id: 's', type: 'sofa', name: 'Sofa' }), 'buy');
+    expect(screen.queryByRole('note')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Demolish' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(calls.onRemove).toHaveBeenCalledWith('s');
+    expect(calls.onDuplicate).toHaveBeenCalledWith('s');
   });
 });

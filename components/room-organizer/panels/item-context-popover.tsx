@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
@@ -53,6 +54,10 @@ export interface ItemContextPopoverProps {
 export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element {
   const { actions, recentColors, pushColor } = useRoomEditor();
   const { selectedItem: item } = useSelection();
+  // EXPLORE never edits the house, the 2D plan included (#643, #699): the
+  // item can still be selected and inspected, but every control that would
+  // change it is off, with the reason as its hint.
+  const exploring = useExploring();
   const dialogRef = useRef<HTMLDivElement>(null);
   // Non-modal: move focus in so screen readers land in the dialog, and hand it
   // back when it closes (Close / Demolish / deselect) instead of dropping it
@@ -81,6 +86,27 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   if (!item) return <></>;
   const { onClose } = props;
   const setExpanded = (next: boolean) => setExpandedFor(next ? item.id : null);
+  // Why a control is off: exploring first, then the item's lock.
+  const offHint = (lockedHint: string): string | undefined =>
+    exploring ? NOT_WHILE_EXPLORING : item.locked ? lockedHint : undefined;
+  const lockedOff = exploring || item.locked === true;
+  const colorPicker = (
+    <ColorSwatchPicker
+      variant="glass"
+      value={item.color}
+      swatches={COLOR_SWATCHES.slice(0, 8)}
+      recent={recentColors.slice(0, 6)}
+      // Guarded too: a disabled fieldset stops the browser's clicks, not a
+      // dispatched event.
+      onChange={(color) => {
+        if (!exploring) actions.setColor(item.id, color);
+      }}
+      onCommit={(color) => {
+        if (!exploring) pushColor(color);
+      }}
+    />
+  );
+  const exploreHint = exploring ? NOT_WHILE_EXPLORING : undefined;
   return (
     <div
       ref={dialogRef}
@@ -193,6 +219,12 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         className="pc-item-popover__body"
         style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}
       >
+        {exploring && (
+          <p role="note" className="pc-body" style={{ margin: 0, fontSize: 11, opacity: 0.85 }}>
+            {NOT_WHILE_EXPLORING}.
+          </p>
+        )}
+
         {props.hasCollision && (
           <div
             className="pc-body"
@@ -214,6 +246,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         <div className="pc-sheet-more">
           {item.type === 'security-camera' && (
             <CameraModelCard
+              disabled={exploring}
               modelId={item.cctvModelId ?? ''}
               fov={item.visionFov ?? DEFAULT_VISION_FOV_DEG}
               range={item.visionRange ?? DEFAULT_VISION_RANGE_M}
@@ -239,8 +272,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               type="button"
               onClick={() => props.onToggleCameraBracket(item.id)}
               aria-pressed={item.cameraBracket === true}
-              disabled={item.locked}
-              title={item.locked ? 'Locked — unlock to change the mount' : undefined}
+              disabled={lockedOff}
+              title={offHint('Locked — unlock to change the mount')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -248,8 +281,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 gap: 8,
                 padding: '8px 10px',
                 borderRadius: 8,
-                cursor: item.locked ? 'not-allowed' : 'pointer',
-                opacity: item.locked ? 0.5 : 1,
+                cursor: lockedOff ? 'not-allowed' : 'pointer',
+                opacity: lockedOff ? 0.5 : 1,
                 border: '1px solid rgba(255,255,255,0.12)',
                 background: item.cameraBracket ? 'rgba(56,189,248,0.18)' : 'rgba(255,255,255,0.04)',
                 color: 'inherit',
@@ -277,35 +310,45 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           <ActionTile
             icon="rotate"
             label="Rotate"
-            disabled={item.locked}
-            title={item.locked ? 'Locked — unlock to rotate' : undefined}
+            disabled={lockedOff}
+            title={offHint('Locked — unlock to rotate')}
             onClick={() => props.onRotate(item.id)}
           />
           <ActionTile
             icon="mirror"
             label="Mirror"
             active={item.mirrored}
-            disabled={item.locked}
-            title={item.locked ? 'Locked — unlock to mirror' : undefined}
+            disabled={lockedOff}
+            title={offHint('Locked — unlock to mirror')}
             onClick={() => actions.toggleMirror(item.id)}
           />
           <ActionTile
             icon={item.locked ? 'lock' : 'unlock'}
             label={item.locked ? 'Unlock' : 'Lock'}
             active={item.locked}
+            disabled={exploring}
+            title={exploreHint}
             onClick={() => actions.setLocked(item.id, !item.locked)}
           />
-          <ActionTile icon="copy" label="Copy" onClick={() => props.onDuplicate(item.id)} />
+          <ActionTile
+            icon="copy"
+            label="Copy"
+            disabled={exploring}
+            title={exploreHint}
+            onClick={() => props.onDuplicate(item.id)}
+          />
           <ActionTile
             icon="target"
             label="Centre"
-            disabled={isWallMounted(item.type) || item.locked}
+            disabled={isWallMounted(item.type) || lockedOff}
             title={
-              isWallMounted(item.type)
-                ? 'Wall-mounted — drag along the wall instead'
-                : item.locked
-                  ? 'Locked — unlock to move'
-                  : undefined
+              exploring
+                ? NOT_WHILE_EXPLORING
+                : isWallMounted(item.type)
+                  ? 'Wall-mounted — drag along the wall instead'
+                  : item.locked
+                    ? 'Locked — unlock to move'
+                    : undefined
             }
             onClick={() => actions.moveItem(item.id, 0, 0)}
           />
@@ -325,8 +368,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
                 labelWidth={14}
                 uppercaseLabel={false}
-                disabled={item.locked}
-                title={item.locked ? 'Locked — unlock to resize' : undefined}
+                disabled={lockedOff}
+                title={offHint('Locked — unlock to resize')}
               />
             ))}
           </div>
@@ -334,8 +377,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           {item.type === 'sofa' && (
             <SofaShapeSegmented
               value={item.sofaShape ?? 'standard'}
-              disabled={item.locked}
-              title={item.locked ? 'Locked — unlock to reshape' : undefined}
+              disabled={lockedOff}
+              title={offHint('Locked — unlock to reshape')}
               onChange={(shape) => actions.setSofaShape(item.id, shape)}
             />
           )}
@@ -349,8 +392,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 value={item.stairsShape ?? 'straight'}
                 options={STAIRS_SHAPES}
                 labelWidth={TYPE_LABEL_WIDTH}
-                disabled={item.locked}
-                title={item.locked ? 'Locked — unlock to reshape' : undefined}
+                disabled={lockedOff}
+                title={offHint('Locked — unlock to reshape')}
                 onChange={(shape) => actions.setStairsShape(item.id, shape)}
               />
               {item.stairsShape === 'winder' && (
@@ -363,8 +406,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                   format={(v) => `${v} ${v === 1 ? 'step' : 'steps'}`}
                   onChange={(value) => actions.setStairsShape(item.id, 'winder', value)}
                   labelWidth={TYPE_LABEL_WIDTH}
-                  disabled={item.locked}
-                  title={item.locked ? 'Locked — unlock to reshape' : undefined}
+                  disabled={lockedOff}
+                  title={offHint('Locked — unlock to reshape')}
                 />
               )}
             </>
@@ -380,8 +423,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               format={(v) => `${v.toFixed(2)} m`}
               onChange={(value) => actions.setSillHeight(item.id, value)}
               labelWidth={TYPE_LABEL_WIDTH}
-              disabled={item.locked}
-              title={item.locked ? 'Locked — unlock to move the sill' : undefined}
+              disabled={lockedOff}
+              title={offHint('Locked — unlock to move the sill')}
             />
           )}
 
@@ -394,23 +437,29 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               step={0.5}
               format={(v) => `${v.toFixed(1)} m`}
               onChange={(value) => actions.setSignalRange(item.id, value)}
+              disabled={exploring}
+              title={exploreHint}
             />
           )}
 
-          <ColorSwatchPicker
-            variant="glass"
-            value={item.color}
-            swatches={COLOR_SWATCHES.slice(0, 8)}
-            recent={recentColors.slice(0, 6)}
-            onChange={(color) => actions.setColor(item.id, color)}
-            onCommit={(color) => pushColor(color)}
-          />
+          {exploring ? (
+            // The picker has no disabled state of its own; a disabled
+            // fieldset turns off its colour input and swatches.
+            <fieldset disabled title={NOT_WHILE_EXPLORING} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, opacity: 0.45 }}>
+              {colorPicker}
+            </fieldset>
+          ) : (
+            colorPicker
+          )}
 
           <button
             type="button"
             onClick={() => props.onRemove(item.id)}
+            disabled={exploring}
+            {...(exploring ? { title: NOT_WHILE_EXPLORING } : {})}
             className="pc-tile"
             style={{
+              ...(exploring ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
               width: '100%',
               height: 34,
               borderRadius: 10,
@@ -623,6 +672,8 @@ function SegmentedRow<T extends string>({ label, value, options, onChange, label
 }
 
 interface CameraModelCardProps {
+  /** Off while exploring (#699). */
+  disabled: boolean;
   modelId: string;
   fov: number;
   range: number;
@@ -631,7 +682,8 @@ interface CameraModelCardProps {
   onSetRange(value: number): void;
 }
 
-function CameraModelCard({ modelId, fov, range, onPickModel, onSetFov, onSetRange }: CameraModelCardProps): JSX.Element {
+function CameraModelCard({ disabled, modelId, fov, range, onPickModel, onSetFov, onSetRange }: CameraModelCardProps): JSX.Element {
+  const hint = disabled ? NOT_WHILE_EXPLORING : undefined;
   return (
     <div
       style={{
@@ -660,7 +712,7 @@ function CameraModelCard({ modelId, fov, range, onPickModel, onSetFov, onSetRang
           Choose a real camera
         </span>
       </div>
-      <CctvModelRow value={modelId} onChange={onPickModel} />
+      <CctvModelRow value={modelId} onChange={onPickModel} disabled={disabled} />
       <SliderRow
         label="FOV"
         value={fov}
@@ -669,6 +721,8 @@ function CameraModelCard({ modelId, fov, range, onPickModel, onSetFov, onSetRang
         step={1}
         format={(v) => `${Math.round(v)}°`}
         onChange={onSetFov}
+        disabled={disabled}
+        title={hint}
       />
       <SliderRow
         label="Range"
@@ -678,6 +732,8 @@ function CameraModelCard({ modelId, fov, range, onPickModel, onSetFov, onSetRang
         step={0.5}
         format={(v) => `${v.toFixed(1)} m`}
         onChange={onSetRange}
+        disabled={disabled}
+        title={hint}
       />
     </div>
   );
@@ -688,9 +744,10 @@ const CCTV_TYPES = ['Dome', 'Bullet', 'PTZ', 'Indoor', 'Battery'] as const;
 interface CctvModelRowProps {
   value: string;
   onChange(modelId: string): void;
+  disabled: boolean;
 }
 
-function CctvModelRow({ value, onChange }: CctvModelRowProps): JSX.Element {
+function CctvModelRow({ value, onChange, disabled }: CctvModelRowProps): JSX.Element {
   const id = useId();
   const selected = getCctvModel(value);
   const spec = selected
@@ -715,7 +772,10 @@ function CctvModelRow({ value, onChange }: CctvModelRowProps): JSX.Element {
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        {...(disabled ? { title: NOT_WHILE_EXPLORING } : {})}
         style={{
+          ...(disabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
           width: '100%',
           padding: '6px 8px',
           borderRadius: 8,
