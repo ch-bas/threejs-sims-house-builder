@@ -90,12 +90,15 @@ describe('saveNamedLayout — restore points give way on a full quota (#295)', (
   }
 
   it('evicts the ring and saves instead of reporting storage full', () => {
-    const items = Array.from({ length: 20 }, (_, i) => makeItem({ id: `item-${i}` }));
+    // A ring bigger than the copy plus the autosave's headroom (#565), which
+    // counts as free room: the copy fits only once the ring gives way.
+    const items = Array.from({ length: 800 }, (_, i) => makeItem({ id: `item-${i}` }));
     expect(recordSnapshot(makeLayout({ name: 'Snapshotted', floors: [makeFloor({ items })] }))).toBe(true);
     expect(listSnapshots()).toHaveLength(1);
-    // Room for the autosave's headroom (#565), but not for the copy as well
-    // until the ring gives way.
-    limitQuota(usage() + 50 + AUTOSAVE_HEADROOM_MIN_CHARS);
+    expect(window.localStorage.getItem('standalone-room-organizer-layout-versions')!.length).toBeGreaterThan(
+      AUTOSAVE_HEADROOM_MIN_CHARS + 1_000
+    );
+    limitQuota(usage() + 50);
 
     const result = saveNamedLayout(makeLayout(), 'Beach House');
     expect(result).toMatchObject({ ok: true, entry: { id: 'beach-house' } });
@@ -272,7 +275,13 @@ describe('saveNamedLayout — the open house keeps room to autosave (#565)', () 
     expect(librarySaveFailureMessage('quota')).toMatch(/full/i);
   });
 
-  it('puts back the restore points it evicted while finding out a copy would not fit', () => {
+  it('offers deleting saved layouts only when there are some', () => {
+    expect(librarySaveFailureMessage('autosave-room')).not.toMatch(/Delete some saved layouts/);
+    expect(saveNamedLayout(makeLayout(), 'One').ok).toBe(true);
+    expect(librarySaveFailureMessage('autosave-room')).toMatch(/Delete some saved layouts/);
+  });
+
+  it('evicts no restore point while finding out a copy would not fit', () => {
     const house = makeLayout({ name: 'Ringed' });
     expect(saveLayout(house).ok).toBe(true);
     expect(recordSnapshot(makeLayout({ name: 'Snapshotted', floorPlanImage: plan }))).toBe(true);

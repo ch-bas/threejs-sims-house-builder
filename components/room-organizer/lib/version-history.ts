@@ -521,42 +521,19 @@ export function evictOldestSnapshot(opts: VersionHistoryOptions = {}): boolean {
   return true;
 }
 
-/** The restore-point ring exactly as stored, to put back with `putBackSnapshots`. */
+/** The restore-point ring exactly as stored. */
 export interface StoredSnapshots {
   ring: string | null;
   meta: string | null;
 }
 
-/** Read the ring as stored, before a write that may evict it (#565). */
+/** Read the ring as stored: what a library save counts as reclaimable room (#565). */
 export function readStoredSnapshots(storage: VersionHistoryStore): StoredSnapshots {
   try {
     return { ring: storage.getItem(VERSION_HISTORY_STORAGE_KEY), meta: storage.getItem(VERSION_HISTORY_META_KEY) };
   } catch {
     return { ring: null, meta: null };
   }
-}
-
-/**
- * Put back restore points evicted for a write that was then abandoned (#565):
- * nothing was gained for them. Best effort, in the room they left.
- */
-export function putBackSnapshots(storage: VersionHistoryStore, saved: StoredSnapshots): void {
-  if (saved.ring === null) return;
-  try {
-    if (storage.getItem(VERSION_HISTORY_STORAGE_KEY) === saved.ring) return;
-    storage.setItem(VERSION_HISTORY_STORAGE_KEY, saved.ring);
-  } catch {
-    return;
-  }
-  if (saved.meta !== null) {
-    try {
-      storage.setItem(VERSION_HISTORY_META_KEY, saved.meta);
-    } catch {
-      // A stale sidecar only costs one ring read; a missing one is rebuilt.
-      removeKey(storage, VERSION_HISTORY_META_KEY);
-    }
-  }
-  notify();
 }
 
 /**

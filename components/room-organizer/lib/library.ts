@@ -1,10 +1,10 @@
-import { STORAGE_KEY } from './constants';
 import { safeGetItem, safeRemoveItem } from './safe-storage';
 import { MAX_NAME_LENGTH, capText, parseStoredLayout } from './schema';
 import { classifyStorageError, type StorageErrorKind } from './storage-errors';
 import {
   MAX_STORAGE_ENTRY_CHARS,
-  putBackSnapshots,
+  VERSION_HISTORY_META_KEY,
+  VERSION_HISTORY_STORAGE_KEY,
   readStoredSnapshots,
   setItemEvictingSnapshots,
 } from './version-history';
@@ -270,13 +270,20 @@ export type LibrarySaveFailure = StorageErrorKind | 'autosave-room';
 
 export type LibrarySaveOutcome = ({ ok: true } & SaveResult) | { ok: false; reason: LibrarySaveFailure };
 
-/** What to tell the user about a library save that didn't happen. */
+/**
+ * What to tell the user about a library save that didn't happen. Deleting
+ * saved layouts is only offered when there are some.
+ */
 export function librarySaveFailureMessage(reason: LibrarySaveFailure): string {
+  const remedy =
+    readIndex().entries.length > 0
+      ? 'Delete some saved layouts or remove the floor-plan image and try again.'
+      : 'Remove the floor-plan image to free space and try again.';
   switch (reason) {
     case 'autosave-room':
-      return 'This copy was not saved: it would leave no room for autosave, so the house you are editing would stop saving. Delete some saved layouts or remove the floor-plan image and try again.';
+      return `This copy was not saved: it would leave no room for autosave, so the house you are editing would stop saving. ${remedy}`;
     case 'quota':
-      return 'Could not save the layout — browser storage is full. Delete some saved layouts or remove the floor-plan image and try again.';
+      return `Could not save the layout — browser storage is full. ${remedy}`;
     case 'blocked':
       return 'Could not save the layout — this browser is blocking site storage.';
     case 'unknown':
@@ -290,8 +297,7 @@ function totalItemCount(layout: RoomLayout): number {
 
 /**
  * The least room, in characters, a library save leaves for the open house's
- * autosave (#565). Above it the room kept is the house's own size, so it can
- * double before autosave runs out.
+ * autosave to grow into (#565).
  */
 export const AUTOSAVE_HEADROOM_MIN_CHARS = 64 * 1024;
 
@@ -301,25 +307,36 @@ const PROBE_KEY = `${LIBRARY_KEY_PREFIX}_probe`;
 /** Slack for the index growing by one entry, beyond the entry's own JSON. */
 const INDEX_SLACK_CHARS = 64;
 
-function autosaveHeadroom(storage: Storage, houseJson: string): number {
-  let stored = 0;
-  try {
-    stored = storage.getItem(STORAGE_KEY)?.length ?? 0;
-  } catch {
-    /* unreadable: the house being saved stands in for it */
-  }
-  return Math.max(AUTOSAVE_HEADROOM_MIN_CHARS, stored, houseJson.length);
+/**
+ * Room the autosave needs to grow into: the house without its floor-plan
+ * image, so its furniture and walls can double, and never less than the
+ * minimum. The image is rewritten at the same size, so it needs no room.
+ */
+function autosaveHeadroom(layout: RoomLayout): number {
+  const withoutImage: Partial<RoomLayout> = { ...layout };
+  delete withoutImage.floorPlanImage;
+  return Math.max(AUTOSAVE_HEADROOM_MIN_CHARS, JSON.stringify(withoutImage).length);
+}
+
+/** Characters the restore points hold: room any save may take back from them (#295). */
+function reclaimableChars(storage: Storage): number {
+  const { ring, meta } = readStoredSnapshots(storage);
+  return (
+    (ring === null ? 0 : VERSION_HISTORY_STORAGE_KEY.length + ring.length) +
+    (meta === null ? 0 : VERSION_HISTORY_META_KEY.length + meta.length)
+  );
 }
 
 /**
  * Whether `chars` more characters fit, found by writing a probe that size and
- * removing it: localStorage has no way to ask. Restore points give way to it
- * as to any library write; the caller puts them back if it then gives up.
+ * removing it: localStorage has no way to ask. A plain write: the probe never
+ * evicts a restore point.
  */
 function probeRoom(storage: Storage, chars: number): StorageErrorKind | null {
+  if (chars <= 0) return null;
   if (chars > MAX_STORAGE_ENTRY_CHARS) return 'quota';
   try {
-    setItemEvictingSnapshots(storage, PROBE_KEY, 'x'.repeat(Math.max(0, chars - PROBE_KEY.length)));
+    storage.setItem(PROBE_KEY, 'x'.repeat(Math.max(0, chars - PROBE_KEY.length)));
     return null;
   } catch (error) {
     return classifyStorageError(error);
@@ -329,13 +346,29 @@ function probeRoom(storage: Storage, chars: number): StorageErrorKind | null {
 }
 
 /**
+ * Why a save that adds `growth` characters can't go ahead, or null: it must
+ * fit and leave the autosave its `headroom`. Restore points count as free
+ * room, since they give way to the save and to the autosave alike, and the
+ * check evicts none of them.
+ */
+function roomShortfall(storage: Storage, growth: number, headroom: number): LibrarySaveFailure | null {
+  if (growth <= 0) return null;
+  const reclaimable = reclaimableChars(storage);
+  const shortfall = probeRoom(storage, growth + headroom - reclaimable);
+  if (shortfall === null) return null;
+  if (shortfall !== 'quota') return shortfall;
+  return probeRoom(storage, growth - reclaimable) === null ? 'autosave-room' : 'quota';
+}
+
+/**
  * Save a named copy of `layout`. Library entries embed the base64 floor-plan
  * image, so running out of the quota is realistic. The open house outranks
- * the library (#565): a copy that would leave its autosave less room than
- * `autosaveHeadroom` is refused up front with `'autosave-room'`, and any
- * restore points evicted while finding that out are put back. Restore points
- * give way to a copy that does fit (#295). The layout blob and the index are
- * kept consistent: if the index write fails, the blob is rolled back.
+ * the library (#565): a copy that would leave its autosave less room to grow
+ * than `autosaveHeadroom` is refused up front with `'autosave-room'`. The
+ * check evicts nothing; the save itself evicts the restore points it needs,
+ * oldest first (#295). A save that adds nothing, such as an identical
+ * re-save, is never refused for room. If the index write fails, the blobs
+ * are rolled back, and no listed entry is ever left naming another house.
  */
 export function saveNamedLayout(layout: RoomLayout, name: string): LibrarySaveOutcome {
   let storage: Storage;
@@ -348,9 +381,9 @@ export function saveNamedLayout(layout: RoomLayout, name: string): LibrarySaveOu
   // The slot comes from the full name, as it always has; the stored name is
   // capped like the schema caps it, so the saved house parses unchanged.
   const shown = capText(trimmed, MAX_NAME_LENGTH);
-  const index = readIndex();
+  let index = readIndex();
   const plan = planSlot(index, trimmed);
-  const { id } = plan;
+  const { id, move, legacy } = plan;
 
   const entry: SavedLayoutEntry = {
     id,
@@ -365,67 +398,108 @@ export function saveNamedLayout(layout: RoomLayout, name: string): LibrarySaveOu
   const layoutCopy: RoomLayout = { ...layout, name: shown };
   const json = JSON.stringify(layoutCopy);
   const previousBlob = safeGetItem(layoutKey(id));
-  const move = plan.move;
   const movedBlob = move ? previousBlob : null;
+  const legacyBlob = legacy ? safeGetItem(layoutKey(legacy.id)) : null;
 
-  // What the save adds to storage, measured with the autosave's room on top.
+  // What storage holds once the save is done, against now: net, so a re-save
+  // that adds nothing is never refused.
   const growth =
-    Math.max(0, json.length - (previousBlob?.length ?? 0)) +
-    layoutKey(id).length +
-    (move && movedBlob !== null ? layoutKey(move.to).length + movedBlob.length : 0) +
-    JSON.stringify(entry).length +
-    INDEX_SLACK_CHARS;
-  const ring = readStoredSnapshots(storage);
-  const shortfall = probeRoom(storage, growth + autosaveHeadroom(storage, json));
-  if (shortfall !== null) {
-    const reason: LibrarySaveFailure =
-      shortfall === 'quota' && probeRoom(storage, growth) === null ? 'autosave-room' : shortfall;
-    putBackSnapshots(storage, ring);
-    return { ok: false, reason };
-  }
+    json.length -
+    (previousBlob === null ? -layoutKey(id).length : previousBlob.length) +
+    (move && movedBlob !== null ? layoutKey(move.to).length + movedBlob.length : 0) -
+    (legacy && legacyBlob !== null ? layoutKey(legacy.id).length + legacyBlob.length : 0) +
+    (plan.at >= 0 || legacy ? 0 : JSON.stringify(entry).length + INDEX_SLACK_CHARS);
+  const refusal = roomShortfall(storage, growth, autosaveHeadroom(layout));
+  if (refusal !== null) return { ok: false, reason: refusal };
 
-  const dropMovedCopy = (): void => {
-    if (move && movedBlob !== null) safeRemoveItem(layoutKey(move.to));
+  // A house of another name in this slot moves out first, as a step of its
+  // own: once it is listed under its new slot, nothing that fails later can
+  // leave an entry naming a blob that holds another house.
+  let beforeMove: LibraryIndex | null = null;
+  if (move && movedBlob !== null) {
+    const outcome = moveEntry(storage, index, move, movedBlob);
+    if (!outcome.ok) return outcome;
+    beforeMove = index;
+    index = outcome.index;
+  }
+  // Lists the moved house in its old slot again, for a save that gave up
+  // while that slot still holds it.
+  const undoMove = (): void => {
+    if (!beforeMove || !move) return;
+    try {
+      writeIndex(beforeMove);
+    } catch {
+      return; // still listed under its new slot, which holds it
+    }
+    safeRemoveItem(layoutKey(move.to));
   };
+
   try {
-    if (move && movedBlob !== null) setItemEvictingSnapshots(storage, layoutKey(move.to), movedBlob);
     setItemEvictingSnapshots(storage, layoutKey(id), json);
   } catch (error) {
-    dropMovedCopy();
+    undoMove();
     return { ok: false, reason: classifyStorageError(error) };
   }
 
-  const entries = [...index.entries];
-  const raw = new Map(index.raw);
-  if (move) {
-    entries[entries.indexOf(move.entry)] = { ...move.entry, id: move.to };
-    const stored = raw.get(id);
-    if (stored) raw.set(move.to, stored);
-    raw.delete(id);
-  }
-  const listed = plan.legacy ? entries.filter((candidate) => candidate !== plan.legacy) : entries;
-  if (plan.at >= 0) listed[plan.at] = entry;
+  const listed = legacy ? index.entries.filter((candidate) => candidate.id !== legacy.id) : [...index.entries];
+  const at = listed.findIndex((candidate) => candidate.id === id);
+  if (at >= 0) listed[at] = entry;
   else listed.push(entry);
   // An unreadable entry naming this slot described the blob just replaced.
   const unreadable = index.unreadable.filter((value) => unreadableId(value) !== id);
   try {
-    writeIndex({ ...index, entries: listed, unreadable, raw });
+    writeIndex({ ...index, entries: listed, unreadable });
   } catch (error) {
     // Best-effort rollback: restoring the blob can ITSELF hit the quota that
     // just failed the index write — never let that escape the save call (#122).
+    let restored = true;
     try {
       if (previousBlob === null) storage.removeItem(layoutKey(id));
       else storage.setItem(layoutKey(id), previousBlob);
-      dropMovedCopy();
     } catch {
-      /* quota still exhausted — the stale blob stays but the index is intact */
+      // The slot keeps the new blob, unlisted; a moved house stays listed
+      // under its new slot, which holds it.
+      restored = false;
     }
+    if (restored) undoMove();
     return { ok: false, reason: classifyStorageError(error) };
   }
   // The older save of this name is now listed under its new slot.
-  if (plan.legacy) safeRemoveItem(layoutKey(plan.legacy.id));
+  if (legacy) safeRemoveItem(layoutKey(legacy.id));
 
-  return { ok: true, entry, overwrote: plan.at >= 0 || plan.legacy !== null };
+  return { ok: true, entry, overwrote: plan.at >= 0 || legacy !== null };
+}
+
+/**
+ * Copy a misplaced house to its own slot and list it there (#550). Its old
+ * blob stays, unlisted, until the caller overwrites it. On failure the copy
+ * is removed and nothing else has changed.
+ */
+function moveEntry(
+  storage: Storage,
+  index: LibraryIndex,
+  move: { entry: SavedLayoutEntry; to: string },
+  blob: string
+): { ok: true; index: LibraryIndex } | { ok: false; reason: LibrarySaveFailure } {
+  try {
+    setItemEvictingSnapshots(storage, layoutKey(move.to), blob);
+  } catch (error) {
+    return { ok: false, reason: classifyStorageError(error) };
+  }
+  const from = move.entry.id;
+  const entries = index.entries.map((candidate) => (candidate === move.entry ? { ...move.entry, id: move.to } : candidate));
+  const raw = new Map(index.raw);
+  const stored = raw.get(from);
+  if (stored) raw.set(move.to, stored);
+  raw.delete(from);
+  const next: LibraryIndex = { ...index, entries, raw };
+  try {
+    writeIndex(next);
+  } catch (error) {
+    safeRemoveItem(layoutKey(move.to));
+    return { ok: false, reason: classifyStorageError(error) };
+  }
+  return { ok: true, index: next };
 }
 
 export function loadNamedLayout(id: string): RoomLayout | null {
