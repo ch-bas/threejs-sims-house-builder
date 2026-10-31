@@ -255,7 +255,8 @@ export function useKeyboardShortcuts({
 
       if (key === 'u' && selectedItem) {
         event.preventDefault();
-        handlers.toggleLock(selectedItem.id);
+        // Once per press: a held key would flip it on every repeat.
+        if (!event.repeat) handlers.toggleLock(selectedItem.id);
         return;
       }
 

@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- The U key locks and unlocks the selected item. An arrow key, R or a drag that meets a locked item now says why nothing moved and how to unlock it, and the item popover and the phone sheet say why Rotate and Centre are off ([#635](https://github.com/ch-bas/threejs-sims-house-builder/issues/635))
+- The U key locks and unlocks the selected item. An arrow key, R or a drag on the 2D plan that meets a locked item now says why nothing moved and how to unlock it, and the item popover and the phone sheet say why Rotate and Centre are off ([#635](https://github.com/ch-bas/threejs-sims-house-builder/issues/635))
 - The item popover and the Style tab say why an item shows red: which item it overlaps, or that it stands outside the room, in the porch, over the stairwell or inside an interior wall ([#627](https://github.com/ch-bas/threejs-sims-house-builder/issues/627))
 - The Undo and Redo tooltips name the step they take, such as "Undo: move Sofa on Ground" or "Undo: remove floor “Attic”" ([#625](https://github.com/ch-bas/threejs-sims-house-builder/issues/625))
 

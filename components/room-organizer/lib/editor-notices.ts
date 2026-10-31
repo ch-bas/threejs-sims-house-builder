@@ -105,6 +105,24 @@ export function notifyRefused(message: string, playCue: RefusedCue): Notice {
   return notify(message, 'error');
 }
 
+/** How long a refusal's notice is up (`noticeDuration`): a repeat inside it stacks a copy. */
+const REFUSAL_SHOWN_MS = 7000;
+
+let lastRefusal: { message: string; at: number } | null = null;
+
+/**
+ * `notifyRefused` for what can repeat, a held key or a run of tries (#635):
+ * every try gets the cue, and no copy of a notice still on screen is raised.
+ */
+export function notifyRefusedOnce(message: string, playCue: RefusedCue, now: number = performance.now()): void {
+  if (lastRefusal?.message === message && now - lastRefusal.at < REFUSAL_SHOWN_MS) {
+    playCue('refused');
+    return;
+  }
+  lastRefusal = { message, at: now };
+  notifyRefused(message, playCue);
+}
+
 /** How to free a locked item, by input: a phone has no U key (#635). */
 function unlockHint(touch: boolean): string {
   return touch ? 'Tap Unlock' : 'Press U or Unlock';

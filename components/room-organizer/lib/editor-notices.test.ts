@@ -6,6 +6,7 @@ import {
   noticeDuration,
   notify,
   notifyRefused,
+  notifyRefusedOnce,
   notifyWithUndo,
   removedMessage,
   removedNames,
@@ -156,5 +157,34 @@ describe('locked item wording (#635)', () => {
 
   it('counts a selection', () => {
     expect(lockedMessage(3, false)).toBe('These 3 items are locked. Press U or Unlock to move or turn them.');
+  });
+});
+
+describe('notifyRefusedOnce (#635)', () => {
+  const seenFor = () => {
+    const seen: string[] = [];
+    const stop = subscribeNotices((notice) => seen.push(notice.message));
+    return { seen, stop };
+  };
+
+  it('plays the cue each time, and stacks no copy of a notice still showing', () => {
+    const { seen, stop } = seenFor();
+    const cue = vi.fn();
+    notifyRefusedOnce('Held', cue, 1000);
+    notifyRefusedOnce('Held', cue, 3000);
+    notifyRefusedOnce('Held', cue, 6000);
+    expect(seen).toEqual(['Held']);
+    expect(cue).toHaveBeenCalledTimes(3);
+    notifyRefusedOnce('Held', cue, 8001);
+    expect(seen).toEqual(['Held', 'Held']);
+    stop();
+  });
+
+  it('shows a different refusal straight away', () => {
+    const { seen, stop } = seenFor();
+    notifyRefusedOnce('Sofa', vi.fn(), 20000);
+    notifyRefusedOnce('Chair', vi.fn(), 20001);
+    expect(seen).toEqual(['Sofa', 'Chair']);
+    stop();
   });
 });

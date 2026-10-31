@@ -458,6 +458,14 @@ describe('useKeyboardShortcuts — locked items (#635)', () => {
     expect(handlers.toggleLock).toHaveBeenCalledTimes(2);
   });
 
+  it('holding U toggles once', () => {
+    const handlers = renderWith(true);
+    press('u');
+    press('u', { repeat: true });
+    press('u', { repeat: true });
+    expect(handlers.toggleLock).toHaveBeenCalledTimes(1);
+  });
+
   it('U does nothing in EXPLORE or mid-drag', () => {
     const exploring = renderWith(true, { exploring: true });
     press('u');

@@ -40,7 +40,7 @@ import { collisionMessage } from './lib/collision-reason';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
-import { lockedMessage, notify, notifyRefused, notifyWithUndo, removedMessage } from './lib/editor-notices';
+import { lockedMessage, notify, notifyRefused, notifyRefusedOnce, notifyWithUndo, removedMessage } from './lib/editor-notices';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { describeLayoutChange } from './lib/history-label';
@@ -142,9 +142,6 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
 function itemExists(id: string): boolean {
   return layoutStore.getState().layout.floors.some((floor) => floor.items.some((item) => item.id === id));
 }
-
-/** A refused key or drag on a locked item repeats its notice no sooner than this. */
-const LOCKED_NOTICE_GAP_MS = 2500;
 
 export function RoomOrganizer(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -492,19 +489,11 @@ export function RoomOrganizer(): JSX.Element {
     [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
   );
 
-  // A key or drag that met a lock (#635): says why, the way a budget refusal
-  // does, since the cue alone is off by default. A second try straight after
-  // gets the cue only, so a held key or a run of tries doesn't stack notices.
-  const lastLockedNotice = useRef(-Infinity);
+  // A key or plan drag that met a lock (#635): says why, the way a budget
+  // refusal does, since the cue alone is off by default.
   const refuseLocked = useCallback(
     (subject: string | number) => {
-      const now = performance.now();
-      if (now - lastLockedNotice.current < LOCKED_NOTICE_GAP_MS) {
-        playCue('refused');
-        return;
-      }
-      lastLockedNotice.current = now;
-      notifyRefused(lockedMessage(subject, window.matchMedia(COARSE_POINTER_QUERY).matches), playCue);
+      notifyRefusedOnce(lockedMessage(subject, window.matchMedia(COARSE_POINTER_QUERY).matches), playCue);
     },
     [playCue]
   );
@@ -828,7 +817,8 @@ export function RoomOrganizer(): JSX.Element {
     adoptDeferredPlacement(placed, catalogItem);
   };
 
-  // Drags don't reach use-item-drag on a locked item, so the refusal is here.
+  // A plan drag doesn't reach use-item-drag on a locked item, so the refusal
+  // is here. In 3D the same press orbits the camera, which is no refusal.
   const handleLockedDrag = useEvent((id: string) => {
     const item = activeFloor.items.find((entry) => entry.id === id);
     if (item?.locked && !exploring) refuseLocked(item.name);
@@ -869,7 +859,6 @@ export function RoomOrganizer(): JSX.Element {
       onItemDrag: handleDrag,
       onItemDragEnd: handleDragEnd,
       onItemDragCancel: handleDragCancel,
-      onLockedDrag: handleLockedDrag,
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
       onWallSelect: ({ wallId, kind }) => {
