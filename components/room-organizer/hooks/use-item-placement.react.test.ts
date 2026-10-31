@@ -216,6 +216,15 @@ describe('useItemPlacement — snapPosition', () => {
       })
     );
 
+  // The drop turns an opening onto its new wall; the drag must show the same (#601).
+  it('returns the rotation a window needs on a perpendicular wall, as the drop settles it', () => {
+    const { result } = mount();
+    const onSouth = result.current.snapPosition('w', 0, 3.9);
+    expect(onSouth).toEqual({ x: 0, z: 4 });
+    const onEast = result.current.snapPosition('w', 3.9, 1);
+    expect(onEast).toEqual({ x: 4, z: 1, rotation: expect.closeTo(-Math.PI / 2, 5) as number });
+  });
+
   it('does not snap a group drag to its own members’ stale positions (#380)', () => {
     // Alone, a snaps its right edge to b's left edge.
     expect(mount().result.current.snapPosition('a', 0.1, 0).x).toBeCloseTo(0.05, 10);

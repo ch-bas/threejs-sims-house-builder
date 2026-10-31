@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canvasToWorld, get2DViewTransform, type View2DTransform } from '../canvas-2d/render';
 import { makeItem, makeLayout, makeUnplacedItem } from '../lib/__testfixtures__/fixtures';
-import { hitTest2DItems } from './use-canvas-2d-interaction';
+import { hitTest2DItems, overlayGhostPlacements } from './use-canvas-2d-interaction';
 
 // Forward mapping exactly as render2DTopDown draws item centres.
 function worldToCanvas(
@@ -147,5 +147,22 @@ describe('hitTest2DItems layer order + hit slop (#286)', () => {
     // 0.035 m past the edge — inside a 0.05 m slop; 0.2 m is not.
     expect(hitTest2DItems([cam], 0, 0.16, 0.05)?.id).toBe('cam');
     expect(hitTest2DItems([cam], 0, 0.2, 0.05)).toBeNull();
+  });
+});
+
+describe('overlayGhostPlacements (#601)', () => {
+  const door = makeItem({ id: 'door', type: 'door', position: { x: 0, z: 4 }, rotation: 0 });
+  const sofa = makeItem({ id: 'sofa', position: { x: 1, z: 1 }, rotation: 0.5 });
+
+  it('shows a door at the rotation the drop will give it', () => {
+    const [held] = overlayGhostPlacements([door], new Map([['door', { x: 5, z: 2, rotation: -Math.PI / 2 }]]));
+    expect(held).toMatchObject({ position: { x: 5, z: 2 }, rotation: -Math.PI / 2 });
+  });
+
+  it('keeps the rotation when the drag does not turn the item, and leaves other items alone', () => {
+    const [heldDoor, heldSofa] = overlayGhostPlacements([door, sofa], new Map([['sofa', { x: 2, z: 2 }]]));
+    expect(heldDoor).toBe(door);
+    expect(heldSofa).toMatchObject({ position: { x: 2, z: 2 }, rotation: 0.5 });
+    expect(heldSofa!.position).toEqual({ x: 2, z: 2 });
   });
 });
