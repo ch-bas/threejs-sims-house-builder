@@ -494,7 +494,7 @@ to respect.
   tables, the layout blocks and the OBJECTS dictionaries — checked by a
   structural validator in `dxf.test.ts` and, during development, by
   ezdxf's audit (zero fixes). Its layers: WALLS, INTERIOR, OPENINGS,
-  FURNITURE, LABELS, STAIRWELL, COVERAGE, DIMENSIONS; `buildingToDxf`
+  FURNITURE, LABELS, STAIRWELL, COVERAGE, DIMENSIONS, ZONES; `buildingToDxf`
   lays the floors out side by side on those same layers.
 - **Placement ghost** (#463 d). A click or tap on a catalog tile arms a
   one-shot flag (`armGhostPlacement`, the pointer twin of the keyboard
