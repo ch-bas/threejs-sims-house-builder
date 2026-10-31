@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useScrollCue } from '../hooks/use-scroll-cue';
+import { ENTRANCE_WALL_ID } from '../lib/street';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
 import type {
@@ -311,6 +312,22 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
               }
             }}
           />
+
+          {selectedInteriorId && selectedInteriorId !== ENTRANCE_WALL_ID && (
+            <button
+              type="button"
+              className="pc-remove-wall"
+              onClick={(event) => {
+                // A keyboard click (detail 0) keeps the panel, as Apply To does.
+                onHoldOpen?.(event.detail === 0);
+                actions.removeInteriorWall(selectedInteriorId);
+                props.onSelectedWallChange(null);
+              }}
+            >
+              <Icon name="demolish" size={12} />
+              Demolish wall
+            </button>
+          )}
 
           <SectionLabel>Wall Visibility</SectionLabel>
           <WallVisibilityToggle

@@ -82,9 +82,8 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   const buildTool = resolveToolForMode(gameMode, buildToolCategory);
   const selectBuildTool = useEvent((tool: BuildToolCategory) => {
     setBuildToolCategory(tool);
-    if (tool === 'walls') {
-      if (!view.drawWallMode) toggle('drawWallMode');
-    } else if (view.drawWallMode) {
+    // Walls again ends the tool: a phone has no Esc, and the hint says to tap it.
+    if (tool === 'walls' || view.drawWallMode) {
       toggle('drawWallMode');
     }
   });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
+import { hitInteriorWall } from '../canvas-2d/plan-edit';
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
@@ -25,6 +26,9 @@ import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../li
 const HIT_SLOP_PX = 6;
 /** Items whose shorter side is under this (m) get the slop. */
 const SMALL_ITEM_MAX_SIDE_M = 0.3;
+/** Extra hit margin (CSS px) around an interior wall: a thin target, thinner still under a finger. */
+const WALL_HIT_SLOP_PX = 6;
+const WALL_HIT_SLOP_TOUCH_PX = 14;
 
 /**
  * Topmost item under a world-space point, by exact rotated-rect containment.
@@ -109,7 +113,9 @@ export interface UseCanvas2DInteractionParams {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   layout: RoomLayout;
   activeFloor: FloorLayout;
-  view: Pick<ViewSettings, 'showMeasurements' | 'showWiFiSignals' | 'showHeatmap' | 'showFloorBelow' | 'drawZoneMode'>;
+  view: Pick<ViewSettings, 'showMeasurements' | 'showWiFiSignals' | 'showHeatmap' | 'showFloorBelow' | 'drawZoneMode'> & {
+    drawWallMode?: boolean;
+  };
   selectedItemId: string | null;
   extraSelectedIds: ReadonlySet<string>;
   allSelectedIds: ReadonlySet<string>;
@@ -127,6 +133,13 @@ export interface UseCanvas2DInteractionParams {
   onLockedDrag?(id: string): void;
   /** A zone drawn wholly on the porch: say why nothing was added (#582). */
   onZoneRefused?(message: string): void;
+  /** The wall tool placed a point on the plan (#564). Snapping is the handler's. */
+  onWallPoint?(x: number, z: number): void;
+  /** The pointer moved over the plan with the wall tool on. */
+  onWallPointerMove?(x: number, z: number): void;
+  onWallPointerLeave?(): void;
+  /** A press picked an interior wall, or something else (null). Not in EXPLORE. */
+  onInteriorWallSelect?(id: string | null): void;
 }
 
 export interface UseCanvas2DInteractionResult {
@@ -154,6 +167,12 @@ export interface UseCanvas2DInteractionResult {
  * drags out a rectangle instead of selecting — the same ghost repaint shows
  * it snapped and sized — and the release names it and adds it to the active
  * floor through the store, so the mode needs no wiring from the orchestrator.
+ *
+ * Wall drawing (#564): while `view.drawWallMode` is on, every release on the
+ * plan is a wall point, as a click is on the 3D floor. Items don't claim it.
+ * The draft lives in the orchestrator's state, which also feeds the 3D view,
+ * so this hook only reports the pointer. There is no threshold: a finger that
+ * slides before lifting places the point where it lifts.
  */
 export function useCanvas2DInteraction(
   params: UseCanvas2DInteractionParams
@@ -193,12 +212,12 @@ export function useCanvas2DInteraction(
     [toWorld, measureFit]
   );
 
-  /** HIT_SLOP_PX in world metres at the plan's current scale (#286). */
-  const hitSlopWorld = useCallback((fit: PlanFit): number => {
+  /** A hit margin in world metres at the plan's current scale (#286). */
+  const hitSlopWorld = useCallback((fit: PlanFit, slopPx = HIT_SLOP_PX): number => {
     const canvas = paramsRef.current.canvasRef.current;
     if (!canvas) return 0;
     const { scale } = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, paramsRef.current.layout, fit.padding, fit.insets, fit.bounds);
-    return Number.isFinite(scale) && scale > 0 ? HIT_SLOP_PX / scale : 0;
+    return Number.isFinite(scale) && scale > 0 ? slopPx / scale : 0;
   }, []);
 
   useEffect(() => {
@@ -240,6 +259,8 @@ export function useCanvas2DInteraction(
       latest: { x: number; z: number };
     }
     let zoneGesture: ZoneGesture | null = null;
+    /** The press of a wall point, placed on release (#564). */
+    let wallPress: { pointerId: number } | null = null;
     // The fit, measured at each press: the gesture maps the pointer and
     // repaints with the transform the plan was painted with, so dragging an
     // item past the walls doesn't rescale the plan under the pointer; the
@@ -347,6 +368,10 @@ export function useCanvas2DInteraction(
         cancelAnimationFrame(rafId);
         rafId = null;
       }
+      if (wallPress) {
+        releaseCapture(wallPress.pointerId);
+        wallPress = null;
+      }
       if (zoneGesture) {
         const zone = zoneGesture;
         zoneGesture = null;
@@ -366,7 +391,7 @@ export function useCanvas2DInteraction(
       // A second finger while one is on the plan is a two-finger gesture,
       // not a drag: drop the drag (the item goes back) or the zone draft,
       // as the 3D canvas does.
-      const held = gesture ?? zoneGesture;
+      const held = gesture ?? zoneGesture ?? wallPress;
       if (held) {
         if (event.pointerId !== held.pointerId) abortGesture(true);
         return;
@@ -377,6 +402,19 @@ export function useCanvas2DInteraction(
       fit = measureFit(canvas);
       const world = worldAt(event);
       if (!world) return;
+      // The Walls tool claims the press, as on the 3D floor (#349). It comes
+      // before zones: arming zones parks it, so if both are on it is the
+      // later pick.
+      if (p.view.drawWallMode && !p.exploring) {
+        wallPress = { pointerId: event.pointerId };
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // Capture can throw if the pointer is already gone; safe to ignore.
+        }
+        p.onWallPointerMove?.(world.x, world.z);
+        return;
+      }
       // Zone-draw mode (#155) claims the press: the rectangle starts here
       // and no item is selected or moved underneath it.
       if (p.view.drawZoneMode && !p.exploring) {
@@ -402,6 +440,7 @@ export function useCanvas2DInteraction(
           event.clientY - rect.top
         );
         if (marker) {
+          p.onInteriorWallSelect?.(null);
           p.onItemSelect(marker.item.id, 'replace');
           return;
         }
@@ -409,8 +448,12 @@ export function useCanvas2DInteraction(
       const hit = hitTest2DItems(p.activeFloor.items, world.x, world.z, hitSlopWorld(fit));
       if (!hit) {
         p.onDeselect();
+        const slop = hitSlopWorld(fit, event.pointerType === 'touch' ? WALL_HIT_SLOP_TOUCH_PX : WALL_HIT_SLOP_PX);
+        const wall = p.exploring ? null : hitInteriorWall(p.activeFloor.interiorWalls ?? [], world.x, world.z, slop);
+        p.onInteriorWallSelect?.(wall?.id ?? null);
         return;
       }
+      p.onInteriorWallSelect?.(null);
       const mode = event.altKey ? 'single' : event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
       const locked = hit.locked === true;
       // A plain press on a member of a multi-selection keeps it, so the drag
@@ -441,6 +484,13 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerMove = (event: PointerEvent): void => {
+      if (wallPress ? event.pointerId === wallPress.pointerId : paramsRef.current.view.drawWallMode && !paramsRef.current.exploring) {
+        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+        // Between presses nothing measured the fit: read it now.
+        const world = wallPress ? worldAt(event) : toWorld(event.clientX, event.clientY, measureFit(canvas));
+        if (world) paramsRef.current.onWallPointerMove?.(world.x, world.z);
+        return;
+      }
       const zone = zoneGesture;
       if (zone && event.pointerId === zone.pointerId) {
         if (!zone.started) {
@@ -513,6 +563,15 @@ export function useCanvas2DInteraction(
 
     const endGesture = (event: PointerEvent): void => {
       lockedPress = null;
+      if (wallPress && event.pointerId === wallPress.pointerId) {
+        wallPress = null;
+        releaseCapture(event.pointerId);
+        // Released over the HUD: no place on the floor, so no point (#511).
+        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+        const world = worldAt(event);
+        if (world && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPoint?.(world.x, world.z);
+        return;
+      }
       const zone = zoneGesture;
       if (zone && event.pointerId === zone.pointerId) {
         if (rafId !== null) {
@@ -551,6 +610,10 @@ export function useCanvas2DInteraction(
 
     const onPointerCancel = (event: PointerEvent): void => {
       lockedPress = null;
+      if (wallPress && event.pointerId === wallPress.pointerId) {
+        abortGesture();
+        return;
+      }
       // A zone draft is discarded by endGesture (it checks the event type).
       if (zoneGesture && event.pointerId === zoneGesture.pointerId) {
         endGesture(event);
@@ -567,13 +630,14 @@ export function useCanvas2DInteraction(
       // only an armed-but-unstarted gesture is abandoned here.
       if (gesture && !gesture.started) gesture = null;
       if (zoneGesture && !zoneGesture.started) zoneGesture = null;
+      if (!wallPress && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPointerLeave?.();
     };
 
     // The gesture flag (no text selection, frozen insets; PLAN_GESTURE_ATTR)
     // follows the gesture state after every event.
     const root = document.documentElement;
     const syncGestureFlag = (): void => {
-      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null);
+      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null || wallPress !== null);
     };
     const synced = (handler: (event: PointerEvent) => void) => (event: PointerEvent): void => {
       handler(event);
@@ -590,12 +654,12 @@ export function useCanvas2DInteraction(
     // capture was taken away) must not leave the gesture armed: page-wide
     // text selection would stay off and the fit frozen. Undo the drag.
     const onLost = (): void => {
-      if (gesture === null && zoneGesture === null) return;
+      if (gesture === null && zoneGesture === null && wallPress === null) return;
       abortGesture(true);
       syncGestureFlag();
     };
     const onLostCapture = (event: PointerEvent): void => {
-      const held = gesture ?? zoneGesture;
+      const held = gesture ?? zoneGesture ?? wallPress;
       if (held && held.pointerId === event.pointerId) onLost();
     };
 

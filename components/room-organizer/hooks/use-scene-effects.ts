@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type RefObject, type MutableRefObject } from 'react';
-import { addFloorPlanRepaintHandler, render2DTopDown } from '../canvas-2d/render';
+import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import {
@@ -298,7 +298,10 @@ export function useSceneEffects({
     [layout.floors, litStorey, litAllFloors]
   );
 
-  // Wall preview during draw mode
+  // Wall preview during draw mode. On the plan it is the plan's to draw: the
+  // tip stays out of the key there, so a pointer move doesn't redraw the
+  // hidden 3D scene (#564). Back in 3D the key changes and it rebuilds.
+  const wallPreviewTip = view.view2D ? null : wallSnapResult;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -306,16 +309,16 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
 
-    if (!view.drawWallMode || !wallDraft || !wallSnapResult) {
+    if (!view.drawWallMode || !wallDraft || !wallPreviewTip) {
       clearWallPreview(scene);
       return;
     }
     renderInteriorWallPreview(
-      THREE, scene, wallDraft, wallSnapResult.point, activeFloorY, interiorWallHeight(activeFloor)
+      THREE, scene, wallDraft, wallPreviewTip.point, activeFloorY, interiorWallHeight(activeFloor)
     );
     // activeFloor is read for its storey height only; storeyHeightsKey covers it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallSnapResult, activeFloorY, storeyHeightsKey]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallPreviewTip, activeFloorY, storeyHeightsKey]);
 
   // Build floor + walls
   useEffect(() => {
@@ -1134,6 +1137,23 @@ export function useSceneEffects({
   // layer order.
   // The latest plan paint, for the occluder observer below.
   const paint2DRef = useRef<(() => void) | null>(null);
+  // The wall tool's draft follows the pointer: a repaint, with no teardown of
+  // the paint effect's observers per move (#564).
+  const wallAnchor = view.drawWallMode ? wallDraft : null;
+  const wallTip = view.drawWallMode ? wallSnapResult : null;
+  const selectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'wallPreview'>>({});
+  planEditRef.current = {
+    selectedWallId,
+    wallPreview: view.drawWallMode
+      ? { anchor: wallAnchor, tip: wallTip?.point ?? null, snapped: wallTip !== null && wallTip.kind !== 'none' }
+      : null,
+  };
+  useEffect(() => {
+    // Once a frame, however many moves arrive in it.
+    const frame = requestAnimationFrame(() => paint2DRef.current?.());
+    return () => cancelAnimationFrame(frame);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;
@@ -1165,6 +1185,7 @@ export function useSceneEffects({
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
         showFloorBelow: view.showFloorBelow,
+        ...planEditRef.current,
         hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
         // The plan fits the room and the items outside it, in the part of
         // the canvas the HUD leaves free (#381); the pointer handlers read

@@ -3,13 +3,14 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RoomEditorProvider, type RoomEditorContextValue } from '../contexts/room-editor-context';
 import { makeFloor } from '../lib/__testfixtures__/fixtures';
+import { ENTRANCE_WALL_ID } from '../lib/street';
 import { WallPaintPanel } from './wall-paint-panel';
 import type { FloorLayout } from '../lib/types';
 
 type Wall = { id: string; kind: 'exterior' | 'interior' } | null;
 
 function setup(floor: FloorLayout, selectedWall: Wall) {
-  const actions = { setWallColor: vi.fn(), setInteriorWallColor: vi.fn(), toggleExteriorWall: vi.fn() };
+  const actions = { setWallColor: vi.fn(), setInteriorWallColor: vi.fn(), toggleExteriorWall: vi.fn(), removeInteriorWall: vi.fn() };
   const value = { activeFloor: floor, actions } as unknown as RoomEditorContextValue;
   render(
     <RoomEditorProvider value={value}>
@@ -271,5 +272,27 @@ describe('WallPaintPanel — keyboard on Apply To stays in the panel', () => {
     const { onHoldOpen, view } = setupHold();
     view.unmount();
     expect(onHoldOpen).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('WallPaintPanel — Demolish wall (#564)', () => {
+  afterEach(cleanup);
+
+  it('demolishes the selected interior wall', () => {
+    const floor = makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0 }] });
+    const { actions } = setup(floor, { id: 'iw-1', kind: 'interior' });
+    fireEvent.click(screen.getByRole('button', { name: 'Demolish wall' }));
+    expect(actions.removeInteriorWall).toHaveBeenCalledWith('iw-1');
+  });
+
+  it('offers nothing for the porch back wall, which the reducer refuses', () => {
+    const floor = makeFloor({ interiorWalls: [{ id: ENTRANCE_WALL_ID, x1: 0, z1: 0, x2: 2, z2: 0 }] });
+    setup(floor, { id: ENTRANCE_WALL_ID, kind: 'interior' });
+    expect(screen.queryByRole('button', { name: 'Demolish wall' })).toBeNull();
+  });
+
+  it('offers nothing for an exterior wall', () => {
+    setup(makeFloor(), { id: 'south', kind: 'exterior' });
+    expect(screen.queryByRole('button', { name: 'Demolish wall' })).toBeNull();
   });
 });
