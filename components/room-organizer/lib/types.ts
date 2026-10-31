@@ -381,6 +381,8 @@ export interface ViewSettings {
   drawZoneMode: boolean;
   /** When true, the 2D view overlays a price-density heatmap. */
   showHeatmap: boolean;
+  /** When true, the 2D plan of an upper storey shows the floor below faintly (#624). */
+  showFloorBelow: boolean;
   /** When true, every placed item has a name label hovering above it in 3D. */
   showItemLabels: boolean;
   /** When true, animated NPCs wander the active floor. */

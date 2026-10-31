@@ -9,6 +9,7 @@ import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
+import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
@@ -32,6 +33,8 @@ export interface Render2DOptions {
   showMeasurements: boolean;
   showWiFiSignals: boolean;
   showHeatmap?: boolean;
+  /** Paint the storey below faintly under the grid (#624). Only the full-size plan passes it. */
+  showFloorBelow?: boolean;
   /** The zone rectangle being dragged out, drawn over everything as a dashed outline (#155). */
   zoneDraft?: ZoneRect | null;
   hasCollision: (item: FurnitureItem) => boolean;
@@ -196,6 +199,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
+  if (options.showFloorBelow) drawFloorBelow(ctx, layout, planFloorIndex(layout.floors, floor), offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
   // The stairwell the floor below cuts through this slab (#290), under everything placed over it.
   drawStairwellHoles(ctx, layout, planFloorIndex(layout.floors, floor), { scale, offsetX, offsetY });
@@ -497,6 +501,39 @@ function drawFloor(
     ctx.fillStyle = floor.floorColor;
     ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
   }
+}
+
+/** How strongly the storey below shows through (#624): a guide, not part of this floor. */
+const FLOOR_BELOW_ALPHA = 0.15;
+
+/** The floor below's interior walls and stairs, to line up on. Nothing on the ground floor. */
+function drawFloorBelow(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floorIndex: number,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const { walls, stairs } = floorBelowUnderlay(layout, floorIndex);
+  if (walls.length === 0 && stairs.length === 0) return;
+  const stroke = (segments: readonly PlanSegment[]): void => {
+    ctx.beginPath();
+    for (const { from, to } of segments) {
+      ctx.moveTo(offsetX + (from.x + layout.width / 2) * scale, offsetY + (from.z + layout.height / 2) * scale);
+      ctx.lineTo(offsetX + (to.x + layout.width / 2) * scale, offsetY + (to.z + layout.height / 2) * scale);
+    }
+    ctx.stroke();
+  };
+  ctx.save();
+  ctx.globalAlpha = FLOOR_BELOW_ALPHA;
+  ctx.strokeStyle = '#000';
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS * scale);
+  stroke(walls);
+  ctx.lineWidth = 1;
+  stroke(stairs);
+  ctx.restore();
 }
 
 function drawGrid(
