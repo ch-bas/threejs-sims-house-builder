@@ -8,11 +8,12 @@ import {
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
-import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
+import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
+import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
@@ -203,6 +204,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
+  drawOpeningGaps(ctx, layout, floor, offsetX, offsetY, scale, viewWidth, viewHeight);
   drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true);
 
   const heatmapPeak = options.showHeatmap ? drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale) : 0;
@@ -607,6 +609,44 @@ function drawInteriorWalls(
   ctx.restore();
 }
 
+/**
+ * Cut the doors and windows out of the walls (#576): inside each opening's
+ * strip, wipe the wall and put back what lies under it, the floor, grid,
+ * stairwell and zone tints inside the walls and the bare canvas outside.
+ * Under the furniture, so what stands against a wall stays whole.
+ */
+function drawOpeningGaps(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  viewWidth: number,
+  viewHeight: number
+): void {
+  const openings = floor.items.filter((item) => item.position && isOpening(item.type));
+  if (openings.length === 0) return;
+  const floorIndex = planFloorIndex(layout.floors, floor);
+  ctx.save();
+  ctx.beginPath();
+  traceOpeningGaps(ctx, openings, layout, { scale, offsetX, offsetY });
+  ctx.clip();
+  ctx.clearRect(0, 0, viewWidth, viewHeight);
+  drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
+  drawGrid(ctx, layout, offsetX, offsetY, scale);
+  drawStairwellHoles(ctx, layout, floorIndex, { scale, offsetX, offsetY });
+  drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
+  // The recessed entrance is outside, as drawRoomOutline leaves it.
+  const recess = entrancePlanOutline(layout, floorIndex);
+  if (recess) {
+    const x0 = offsetX + (recess.x0 + layout.width / 2) * scale;
+    const x1 = offsetX + (recess.x1 + layout.width / 2) * scale;
+    ctx.clearRect(x0, offsetY, x1 - x0, (recess.backZ + layout.height / 2) * scale);
+  }
+  ctx.restore();
+}
+
 function drawSignalRings(
   ctx: CanvasRenderingContext2D,
   items: readonly FurnitureItem[],
@@ -693,6 +733,10 @@ function drawFurniture(
     const cy = offsetY + (item.position.z + options.layout.height / 2) * scale;
     const w = item.width * scale;
     const d = item.depth * scale;
+    // Doors and windows are symbols in the wall (#576); their footprint is
+    // painted only to mark a state, and stays the hit target either way.
+    const opening = isOpening(item.type);
+    if (opening) drawOpeningSymbol(ctx, item, options.floor.floorColor, options.layout, { scale, offsetX, offsetY });
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -700,8 +744,10 @@ function drawFurniture(
     // 2D footprint matches the 3D scene's orientation.
     ctx.rotate(-(item.rotation ?? 0));
 
-    ctx.fillStyle = collision ? 'rgba(255, 0, 0, 0.7)' : item.color;
-    ctx.fillRect(-w / 2, -d / 2, w, d);
+    if (!opening || collision) {
+      ctx.fillStyle = collision ? 'rgba(255, 0, 0, 0.7)' : item.color;
+      ctx.fillRect(-w / 2, -d / 2, w, d);
+    }
 
     if (options.selectedItemId === item.id) {
       ctx.strokeStyle = collision ? '#ff6666' : '#00ff00';
@@ -717,7 +763,8 @@ function drawFurniture(
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 1;
     }
-    ctx.strokeRect(-w / 2, -d / 2, w, d);
+    const marked = collision || options.selectedItemId === item.id || options.extraSelectedIds?.has(item.id) === true;
+    if (!opening || marked) ctx.strokeRect(-w / 2, -d / 2, w, d);
 
     ctx.font = `${Math.min(w, d) * 0.6}px Arial`;
     ctx.fillStyle = '#fff';
@@ -725,7 +772,7 @@ function drawFurniture(
     ctx.textBaseline = 'middle';
     // Stairs draw their treads and climb arrow in place of the icon (#290),
     // in world space once the item's rotated frame is restored.
-    if (item.type !== 'stairs') ctx.fillText(item.icon, 0, 0);
+    if (item.type !== 'stairs' && !opening) ctx.fillText(item.icon, 0, 0);
     ctx.restore();
     if (item.type === 'stairs') drawStairsSymbol(ctx, item, options.layout, { scale, offsetX, offsetY });
 

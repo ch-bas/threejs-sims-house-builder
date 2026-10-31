@@ -291,9 +291,9 @@ describe('layoutToSvg', () => {
     const mirroredFloor = makeFloor({ items: [{ ...door, mirrored: true }] });
     const plain = layoutToSvg(makeLayout({ floors: [plainFloor] }), plainFloor);
     const mirrored = layoutToSvg(makeLayout({ floors: [mirroredFloor] }), mirroredFloor);
-    expect(plain).toContain('transform="translate(60 385) rotate(-90)"');
-    // The symbol is flipped about the opening's centre, moving the leaf to the +X jamb.
-    expect(mirrored).toContain('transform="translate(60 385) rotate(-90) scale(-1 1)"');
+    // West wall: the leaf stands out from the hinge jamb, 45 px into the room.
+    expect(plain).toContain('<line x1="60" y1="407.5" x2="105" y2="407.5"');
+    expect(mirrored).toContain('<line x1="60" y1="362.5" x2="105" y2="362.5"');
     // A window is symmetric, but mirroring it changes nothing else.
     expect(count(mirrored, 'class="opening"')).toBe(1);
   });

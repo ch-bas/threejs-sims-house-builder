@@ -4,6 +4,7 @@ import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { hasCollisions } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
+import { isOnDoorLeaf, type PlacedItem } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, hitOffPlanMarker, offPlanMarkers, PLAN_PADDING_PX, planViewFit, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
@@ -59,6 +60,13 @@ export function hitTest2DItems(
     if (Math.abs(alongWidth) <= item.width / 2 + margin && Math.abs(alongDepth) <= item.depth / 2 + margin) {
       return item;
     }
+  }
+  // Nothing's footprint is there: a door's open leaf, drawn out into the room
+  // (#576). After every footprint, so it never takes a click from what it
+  // swings over.
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const item = ordered[i]!;
+    if (item.type === 'door' && item.position && isOnDoorLeaf(item as PlacedItem, worldX, worldZ, slop)) return item;
   }
   return null;
 }

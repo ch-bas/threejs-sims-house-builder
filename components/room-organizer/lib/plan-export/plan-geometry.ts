@@ -84,6 +84,68 @@ export function openingAxes(item: PlacedItem): {
   };
 }
 
+/** A door's plan symbol, in world metres (#576). */
+export interface DoorSwing {
+  /** The jamb the leaf turns on: local −X, or +X on a mirrored door (#386). */
+  hinge: { x: number; z: number };
+  /** The other jamb: where the leaf's tip rests when it is shut. */
+  strike: { x: number; z: number };
+  /** The leaf's tip when it stands open, square to the wall, into the room. */
+  leafTip: { x: number; z: number };
+}
+
+/**
+ * The swing the SVG (`renderOpening`) and DXF (`emitOpening`) draw and the 2D
+ * plan shares: a leaf as wide as the opening, hinged at one jamb, opened into
+ * the room, with the arc its tip sweeps from `strike` to `leafTip`.
+ */
+export function doorSwing(item: PlacedItem): DoorSwing {
+  const { along, into } = openingAxes(item);
+  const side = item.mirrored ? 1 : -1;
+  const half = item.width / 2;
+  const hinge = { x: item.position.x + side * along.x * half, z: item.position.z + side * along.z * half };
+  return {
+    hinge,
+    strike: { x: item.position.x - side * along.x * half, z: item.position.z - side * along.z * half },
+    leafTip: { x: hinge.x + into.x * item.width, z: hinge.z + into.z * item.width },
+  };
+}
+
+/**
+ * True when (x, z) is within `reach` of an open door's leaf (#576): the line
+ * the plan draws out into the room, which the footprint in the wall doesn't
+ * cover.
+ */
+export function isOnDoorLeaf(item: PlacedItem, x: number, z: number, reach: number): boolean {
+  const { hinge, leafTip } = doorSwing(item);
+  const dx = leafTip.x - hinge.x;
+  const dz = leafTip.z - hinge.z;
+  const length2 = dx * dx + dz * dz;
+  if (length2 === 0) return false;
+  const t = Math.max(0, Math.min(1, ((x - hinge.x) * dx + (z - hinge.z) * dz) / length2));
+  return Math.hypot(x - (hinge.x + t * dx), z - (hinge.z + t * dz)) <= reach;
+}
+
+/**
+ * The strip of wall an opening takes out, as four world corners: as wide as
+ * the opening, `thickness` across the wall, centred on the opening.
+ */
+export function openingGap(item: PlacedItem, thickness: number): Array<{ x: number; z: number }> {
+  const { along, into } = openingAxes(item);
+  const hw = item.width / 2;
+  const ht = thickness / 2;
+  const signs: ReadonlyArray<readonly [number, number]> = [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ];
+  return signs.map(([sa, si]) => ({
+    x: item.position.x + sa * hw * along.x + si * ht * into.x,
+    z: item.position.z + sa * hw * along.z + si * ht * into.z,
+  }));
+}
+
 /**
  * World coordinates of the grid lines, anchored to the world centre so the
  * cells line up with `snapToGrid` — duplicated from canvas-2d/render.ts

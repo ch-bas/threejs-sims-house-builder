@@ -44,6 +44,7 @@ import {
   coverageRings,
   interiorWallDimensions,
   itemWorldCorners,
+  doorSwing,
   openingAxes,
   planContentBounds,
   planFrameBounds,
@@ -628,15 +629,12 @@ function emitOpening(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: num
   }
 
   if (item.type === 'door') {
-    // Swing: leaf hinged at one jamb, opened perpendicular into the room,
-    // plus the quarter arc from the closed to the open position. The 3D
-    // door's handle is at local +X, so it hinges at endA (local −X); a
-    // mirrored door flips local X and hinges at endB (#386). In CAD coords
-    // `along` sits at angle θ and `into` at θ − 90°: from endA the closed
-    // leaf points along θ and the CCW arc runs θ−90 → θ; from endB it points
-    // back along θ+180 and the arc runs θ+180 → θ+270.
-    const hinge = item.mirrored ? endB : endA;
-    const leafTip = { x: hinge.x + into.x * item.width, z: hinge.z + into.z * item.width };
+    // Swing: `doorSwing`'s leaf, plus the quarter arc from the closed to the
+    // open position. In CAD coords `along` sits at angle θ and `into` at
+    // θ − 90°: from the −X jamb the closed leaf points along θ and the CCW
+    // arc runs θ−90 → θ; from the +X jamb of a mirrored door it points back
+    // along θ+180 and the arc runs θ+180 → θ+270.
+    const { hinge, leafTip } = doorSwing(item);
     doc.line('OPENINGS', cad(hinge.x, hinge.z), cad(leafTip.x, leafTip.z));
     const thetaDeg = ((item.rotation ?? 0) * 180) / Math.PI;
     const [start, end] = item.mirrored ? [thetaDeg + 180, thetaDeg + 270] : [thetaDeg - 90, thetaDeg];
