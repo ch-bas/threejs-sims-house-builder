@@ -4,6 +4,8 @@ import type { FurnitureItem } from '../lib/types';
 
 export interface KeyboardShortcutHandlers {
   removeItem(id: string): void;
+  /** One Placed Items row, never the selection around it (#634). */
+  removeRow(id: string): void;
   removeInteriorWall(id: string): void; 
   toggleExteriorWall(id: string): void;
   duplicateItem(id: string): void;
@@ -199,11 +201,12 @@ export function useKeyboardShortcuts({
       if (exploring && (deleteKey || key === 'r' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
 
       // A focused Placed Items row means that row, whatever is selected: the
-      // drawer covers the scene, so nothing else shows what went (#634).
+      // drawer covers the scene, so nothing else shows what went (#634). Focus
+      // moves on to the next row, so a held key must not walk down the list.
       const rowItemId = deleteKey ? focusedRowItemId(event.target) : null;
       if (rowItemId !== null) {
         event.preventDefault();
-        handlers.removeItem(rowItemId);
+        if (!event.repeat) handlers.removeRow(rowItemId);
         return;
       }
 

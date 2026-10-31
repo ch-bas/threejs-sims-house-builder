@@ -1104,6 +1104,7 @@ export function RoomOrganizer(): JSX.Element {
         }
         removeItem(id);
       },
+      removeRow: removeItem,
       duplicateItem: duplicateSelected,
       copySelection: copySelectionToClipboard,
       pasteClipboard: pasteFromClipboard,

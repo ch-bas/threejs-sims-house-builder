@@ -7,6 +7,7 @@ import { useKeyboardShortcuts, type KeyboardShortcutHandlers } from './use-keybo
 function makeHandlers(): { [K in keyof KeyboardShortcutHandlers]: ReturnType<typeof vi.fn> } {
   return {
     removeItem: vi.fn(),
+    removeRow: vi.fn(),
     removeInteriorWall: vi.fn(),
     toggleExteriorWall: vi.fn(),
     duplicateItem: vi.fn(),
@@ -370,8 +371,21 @@ describe('useKeyboardShortcuts — Delete on a Placed Items row (#634)', () => {
   it.each(['Delete', 'Backspace'])('%s removes the focused row, not the selection', (key) => {
     const { handlers } = setup(false);
     press(rowButton('sofa'), key);
-    expect(handlers.removeItem).toHaveBeenCalledTimes(1);
-    expect(handlers.removeItem).toHaveBeenCalledWith('sofa');
+    expect(handlers.removeRow).toHaveBeenCalledTimes(1);
+    expect(handlers.removeRow).toHaveBeenCalledWith('sofa');
+    // Never the selection-wide path.
+    expect(handlers.removeItem).not.toHaveBeenCalled();
+  });
+
+  it('a held Delete takes one row, and its repeats touch nothing else', () => {
+    const { handlers } = setup(false);
+    const row = rowButton('sofa');
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', cancelable: true, bubbles: true }));
+    const repeat = new KeyboardEvent('keydown', { key: 'Delete', repeat: true, cancelable: true, bubbles: true });
+    rowButton('tv').dispatchEvent(repeat);
+    expect(handlers.removeRow).toHaveBeenCalledTimes(1);
+    expect(handlers.removeItem).not.toHaveBeenCalled();
+    expect(repeat.defaultPrevented).toBe(true);
   });
 
   it('another key on a row still acts on the selection', () => {
@@ -383,6 +397,7 @@ describe('useKeyboardShortcuts — Delete on a Placed Items row (#634)', () => {
   it('is off in EXPLORE, like any other removal', () => {
     const { handlers } = setup(false, false, { exploring: true });
     press(rowButton('sofa'), 'Delete');
+    expect(handlers.removeRow).not.toHaveBeenCalled();
     expect(handlers.removeItem).not.toHaveBeenCalled();
   });
 });
