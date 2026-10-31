@@ -1648,3 +1648,27 @@ html[data-plan-gesture] * {
     max-height: min(284px, 60vh, calc(100vh - 240px)) !important;
   }
 }
+
+/* Notices on a touch screen: 44px tap areas without changing how the small
+   buttons look, and the wider gap keeps those areas from overlapping. A link
+   to copy by hand has the room for its 16px text (#704, #685). */
+@media (pointer: coarse) {
+  .pc-status-toast > div:first-child {
+    gap: 16px !important;
+  }
+  .pc-status-toast button {
+    position: relative;
+  }
+  .pc-status-toast button::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  .pc-status-toast input {
+    height: 36px !important;
+  }
+}

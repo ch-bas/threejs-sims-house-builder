@@ -21,6 +21,8 @@ export interface Notice {
   copyText?: string;
   /** A button on the notice, such as "Undo" after a removal (#651). */
   action?: NoticeAction;
+  /** A single-slot host keeps only the newest notice of a slot (#704). */
+  slot?: string;
 }
 
 /**
@@ -36,6 +38,7 @@ export interface NoticeAction {
 export interface NoticeOptions {
   copyText?: string;
   action?: NoticeAction;
+  slot?: string;
 }
 
 type Listener<T> = (value: T) => void;
@@ -72,6 +75,7 @@ export function notify(message: string, tone: NoticeTone = 'info', options: Noti
     tone,
     ...(options.copyText !== undefined ? { copyText: options.copyText } : {}),
     ...(options.action !== undefined ? { action: options.action } : {}),
+    ...(options.slot !== undefined ? { slot: options.slot } : {}),
   };
   notices.emit(notice);
   return notice;
@@ -157,6 +161,9 @@ export function removedNames(
 /** Said when a notice's Undo no longer applies: the house moved on. */
 export const UNDO_STALE_MESSAGE = 'The house has changed since. Use Undo in the toolbar (Ctrl+Z) to step back.';
 
+/** Each Undo notice makes the one before it stale (#704). */
+const UNDO_NOTICE_SLOT = 'undo';
+
 /**
  * "Removed Sofa · Undo" (#651): an info notice whose button undoes the edit
  * that raised it. `current` reads the state the edit left; the button only
@@ -166,6 +173,7 @@ export const UNDO_STALE_MESSAGE = 'The house has changed since. Use Undo in the 
 export function notifyWithUndo(message: string, history: { current(): unknown; undo(): void }): Notice {
   const after = history.current();
   return notify(message, 'info', {
+    slot: UNDO_NOTICE_SLOT,
     action: {
       label: 'Undo',
       run() {

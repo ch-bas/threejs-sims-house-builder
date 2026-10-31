@@ -6,6 +6,7 @@ import {
   fitAboveFloor,
   overlayStackTop,
   queueHead,
+  replaceInSlot,
   STACK_GAP,
   stackFloor,
 } from './overlay-queue';
@@ -112,5 +113,24 @@ describe('createFlagStore', () => {
     store.set(false);
     expect(listener).toHaveBeenCalledTimes(1);
     expect(store.get()).toBe(false);
+  });
+});
+
+describe('replaceInSlot (#704)', () => {
+  const n = (id: number, slot?: string) => ({ id, ...(slot ? { slot } : {}) });
+
+  it('is null when the notice has no slot or nothing shares it', () => {
+    expect(replaceInSlot([n(1)], n(2))).toBeNull();
+    expect(replaceInSlot([n(1), n(2, 'other')], n(3, 'undo'))).toBeNull();
+  });
+
+  it('takes the place of the oldest entry in the slot and drops the rest', () => {
+    // Newest first: 4 waits behind the undo notices, 1 is on screen.
+    const list = [n(4), n(3, 'undo'), n(2, 'undo'), n(1)];
+    expect(replaceInSlot(list, n(5, 'undo'))?.map((entry) => entry.id)).toEqual([4, 5, 1]);
+  });
+
+  it('replaces the notice on screen too', () => {
+    expect(replaceInSlot([n(1, 'undo')], n(2, 'undo'))?.map((entry) => entry.id)).toEqual([2]);
   });
 });
