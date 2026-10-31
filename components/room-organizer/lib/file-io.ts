@@ -94,11 +94,11 @@ function csvLine(cells: readonly CsvCell[]): string {
 
 function csvField(value: string): string {
   // Neutralize spreadsheet formula injection: a value beginning with =, +, -,
-  // @, or a tab is interpreted as a formula by Excel/Sheets, so an imported
+  // @, a tab or a CR is interpreted as a formula by Excel/Sheets, so an imported
   // layout with an item named `=HYPERLINK(...)` would execute on export.
   // Prefix a single quote to force it to a literal string. Numbers we write
   // ourselves (a negative coordinate) are CsvCell numbers and bypass this.
-  const safe = /^[=+\-@\t]/.test(value) ? `'${value}` : value;
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
   if (/[",\n\r]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
   return safe;
 }

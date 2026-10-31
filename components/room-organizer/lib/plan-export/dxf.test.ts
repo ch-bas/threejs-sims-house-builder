@@ -354,6 +354,12 @@ describe('layoutToDxf', () => {
     expect(dxf).toMatch(/^[\x00-\x7e]*$/);
   });
 
+  it('drops lone surrogates and non-characters rather than escaping them (#549)', () => {
+    const floor = makeFloor({ items: [makeItem({ name: 'Sofa\ud83d￿', position: { x: 0, z: 0 } })] });
+    const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+    expect(dxf).toContain('1\nSofa\n');
+  });
+
   it('escapes % so names cannot be read as TEXT control codes (#288)', () => {
     const floor = makeFloor({
       items: [makeItem({ name: '%%u', position: { x: 0, z: 0 } })],
