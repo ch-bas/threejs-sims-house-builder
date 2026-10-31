@@ -63,6 +63,22 @@ export function hitTest2DItems(
   return null;
 }
 
+/** Where a drag is holding an item: its rotation only when the wall turns it (#601). */
+export type GhostPlacement = { x: number; z: number; rotation?: number };
+
+/** The floor's items with a drag's in-flight placements overlaid, for the ghost repaint. */
+export function overlayGhostPlacements(
+  items: readonly FurnitureItem[],
+  latest: ReadonlyMap<string, GhostPlacement>
+): FurnitureItem[] {
+  return items.map((item) => {
+    const held = latest.get(item.id);
+    if (!held) return item;
+    const { rotation, ...position } = held;
+    return { ...item, position, ...(rotation === undefined ? {} : { rotation }) };
+  });
+}
+
 /** What a plan paint fits, and where (`get2DViewTransform`'s bounds, insets and padding). */
 interface PlanFit {
   bounds: PlanBounds | undefined;
@@ -92,7 +108,7 @@ export interface UseCanvas2DInteractionParams {
   /** Pointer went down on empty plan space — clear the selection (#219). */
   onDeselect(): void;
   /** The same snap pipeline the 3D drag applies per move (use-item-placement). */
-  snapPosition(id: string, x: number, z: number): { x: number; z: number };
+  snapPosition(id: string, x: number, z: number): GhostPlacement;
   onItemDragStart(id: string): void;
   onItemDrag(id: string, x: number, z: number): void;
   onItemDragEnd(id: string): void;
@@ -193,8 +209,8 @@ export function useCanvas2DInteraction(
       started: boolean;
       /** Overlay members' start positions — mirrors use-item-drag's session. */
       origins: Map<string, { x: number; z: number }>;
-      /** In-flight positions for the ghost repaint. */
-      latest: Map<string, { x: number; z: number }>;
+      /** In-flight placements for the ghost repaint. */
+      latest: Map<string, GhostPlacement>;
     }
     let gesture: Gesture | null = null;
     /** A press on a locked item, watched only to explain the drag it can't start (#635). */
@@ -223,12 +239,7 @@ export function useCanvas2DInteraction(
       rafId = null;
       const { layout, activeFloor, view, selectedItemId, extraSelectedIds } = paramsRef.current;
       const session = gesture?.started ? gesture : null;
-      const items = session
-        ? activeFloor.items.map((item) => {
-            const moved = session.latest.get(item.id);
-            return moved ? { ...item, position: moved } : item;
-          })
-        : activeFloor.items;
+      const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : activeFloor.items;
       const keepOut = floorKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
       const draft = zoneGesture?.started
         ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height)

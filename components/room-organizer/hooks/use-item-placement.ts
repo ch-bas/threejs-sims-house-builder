@@ -6,7 +6,7 @@ import {
   snapToNeighbors,
   snapToWall as snapPositionToWall,
 } from '../lib/geometry';
-import { isOpening, snapOpeningToWall, snapWallMountedItem, type WallGap } from '../lib/opening-snap';
+import { isOpening, settleWallMountedItem, snapOpeningToWall, snapWallMountedItem, type WallGap } from '../lib/opening-snap';
 import { ghostItem } from '../lib/placement-ghost';
 import type { LayoutActions } from './use-layout-state';
 import type { CatalogItem, FloorLayout, FurnitureItem, ViewSettings } from '../lib/types';
@@ -48,8 +48,12 @@ export interface UseItemPlacementParams {
 }
 
 export interface UseItemPlacementResult {
-  /** Adjust a candidate drop position before it's applied (snap-to-grid/-wall/-items). */
-  snapPosition(itemId: string, x: number, z: number): { x: number; z: number };
+  /**
+   * Adjust a candidate drop position before it's applied (snap-to-grid/-wall/
+   * -items). `rotation` is present when an opening has to turn to sit on the
+   * wall it snapped to, as the drop will settle it (#601).
+   */
+  snapPosition(itemId: string, x: number, z: number): { x: number; z: number; rotation?: number };
   getDragPlaneY(): number;
   /**
    * Where a catalogue entry dropped at x/z would land, for the placement
@@ -132,15 +136,10 @@ export function useItemPlacement({
       // Doors and windows have to live on a wall — there's no such thing as
       // a "free-floating" opening. Force-snap them regardless of the toggle.
       if (item && isOpening(item.type)) {
-        const snapped = snapOpeningToWall({
-          position: result,
-          itemWidth: item.width,
-          roomWidth,
-          roomDepth,
-          interiorWalls: activeFloor.interiorWalls ?? [],
-          ...gap,
-        });
-        return snapped.position;
+        const settled = settleWallMountedItem(item, result, roomWidth, roomDepth, activeFloor.interiorWalls ?? [], gap.frontGap);
+        if (settled) {
+          return { ...settled.position, ...(settled.rotation === undefined ? {} : { rotation: settled.rotation }) };
+        }
       }
 
       // Security cameras follow the cursor freely while dragging (no per-frame
