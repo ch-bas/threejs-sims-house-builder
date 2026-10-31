@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isConfirmPending, newestConfirmId, subscribeConfirm } from '../lib/confirm-dialog';
+import { holdFocusReturn } from './use-dialog-focus';
 import type { UseHistoryResult } from './use-history';
 import type { LayoutActions } from './use-layout-state';
 import type { CatalogItem, RoomLayout } from '../lib/types';
@@ -116,7 +117,9 @@ export function useRovingTiles(count: number, columns: number): UseRovingTilesRe
           armKeyboardPlacement();
           activate();
           // Hand the keyboard to the pending item: with the tile still focused
-          // the arrows would keep roving the grid instead of nudging it.
+          // the arrows would keep roving the grid instead of nudging it. The
+          // tile gets focus back when the item's popover closes (#638).
+          holdFocusReturn(event.currentTarget);
           event.currentTarget.blur();
           return;
         }
