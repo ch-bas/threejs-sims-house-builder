@@ -368,14 +368,14 @@ describe('useKeyboardShortcuts — Delete on a Placed Items row (#634)', () => {
   };
 
   it.each(['Delete', 'Backspace'])('%s removes the focused row, not the selection', (key) => {
-    const { handlers } = setup();
+    const { handlers } = setup(false);
     press(rowButton('sofa'), key);
     expect(handlers.removeItem).toHaveBeenCalledTimes(1);
     expect(handlers.removeItem).toHaveBeenCalledWith('sofa');
   });
 
   it('another key on a row still acts on the selection', () => {
-    const { handlers } = setup();
+    const { handlers } = setup(false);
     press(rowButton('sofa'), 'r');
     expect(handlers.rotateItem).toHaveBeenCalledWith('chair');
   });
