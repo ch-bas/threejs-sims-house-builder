@@ -19,6 +19,7 @@ const GROUPS: ReadonlyArray<{ title: string; options: readonly ViewOption[] }> =
       { key: 'measurementMode', label: 'Distance tool', hint: 'Click two floor points in 3D', icon: 'ruler' },
       { key: 'showItemLabels', label: 'Item labels', hint: 'Names above items in 3D', icon: 'tag' },
       { key: 'showHeatmap', label: 'Cost heatmap', hint: 'Tints the 2D plan by price', icon: 'coin' },
+      { key: 'showFloorBelow', label: 'Floor below', hint: 'Faint guide upstairs in 2D', icon: 'stairs' },
       { key: 'showOutdoor', label: 'Outdoor scenery', hint: 'Garden, trees and street', icon: 'tree' },
     ],
   },

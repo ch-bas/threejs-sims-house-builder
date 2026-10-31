@@ -140,6 +140,14 @@ export function planInsets(
 export interface PlanFitInsets {
   insets: Insets | undefined;
   padding: number;
+  /** The HUD panels over the canvas, in canvas CSS px: what a plan legend keeps clear of (#567). */
+  hudRects: readonly Rect[];
+}
+
+/** `planOccluderRects` in the canvas's own CSS px. */
+function canvasHudRects(canvas: HTMLCanvasElement): Rect[] {
+  const { left, top } = canvas.getBoundingClientRect();
+  return planOccluderRects().map((r) => ({ left: r.left - left, top: r.top - top, right: r.right - left, bottom: r.bottom - top }));
 }
 
 /**
@@ -150,7 +158,7 @@ export interface PlanFitInsets {
 export function planFit(canvas: HTMLCanvasElement, content: { width: number; height: number }): PlanFitInsets {
   const insets = planInsets(canvas, content);
   const desktop = !isCompactViewport(window.innerWidth, window.innerHeight);
-  return { insets, padding: desktop && insets ? PLAN_INSET_PADDING_PX : PLAN_PADDING_PX };
+  return { insets, padding: desktop && insets ? PLAN_INSET_PADDING_PX : PLAN_PADDING_PX, hudRects: canvasHudRects(canvas) };
 }
 
 const WATCHED_SELECTOR = `${OCCLUDER_SELECTOR}, ${PLAN_OCCLUDER_SELECTOR}`;

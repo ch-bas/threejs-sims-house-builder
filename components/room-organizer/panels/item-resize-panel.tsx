@@ -14,6 +14,7 @@ import { isWallMounted } from '../lib/opening-snap';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
+import { StairHeadroomNote } from './stair-headroom-note';
 import type { FurnitureItem, SofaShape } from '../lib/types';
 
 type ResizableDimension = 'width' | 'depth' | 'height';
@@ -174,6 +175,7 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
 
         {item.type === 'stairs' && (
           <div className="space-y-2">
+            <StairHeadroomNote item={item} />
             <div className="grid grid-cols-2 gap-2" role="group" aria-label="Stairs shape">
               {(['straight', 'winder'] as const).map((shape) => {
                 const active = (item.stairsShape ?? 'straight') === shape;

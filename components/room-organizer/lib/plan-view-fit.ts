@@ -244,6 +244,52 @@ function overlaps(a: Rect, b: Rect): boolean {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
 
+/** Gap (CSS px) between a plan legend and the plan: clears the room dimensions drawn beside the walls. */
+const LEGEND_PLAN_GAP_PX = 24;
+/** Gap (CSS px) kept from the canvas edge, and between a legend and the walls when it sits inside the plan. */
+const LEGEND_EDGE_GAP_PX = 8;
+/** Step (CSS px) of the climb up the side of the plan for a free spot. */
+const LEGEND_SEARCH_STEP_PX = 12;
+
+/**
+ * Where a legend of `size` goes on the plan's canvas (#567): beside the plan,
+ * on the right, then the left, as low as the HUD panels leave free, then
+ * below or above it, so it neither covers the plan nor sits under a panel.
+ * With no room around the plan, inside its bottom-right corner: the plan is
+ * fitted clear of the HUD, so that spot is always on show. `plan` is what
+ * the plan draws, on the canvas; `hud` the panels over it, all in canvas CSS
+ * px.
+ */
+export function planLegendSpot(
+  canvas: { width: number; height: number },
+  plan: Rect,
+  hud: readonly Rect[],
+  size: { width: number; height: number }
+): { x: number; y: number } {
+  const edge = LEGEND_EDGE_GAP_PX;
+  const free = (x: number, y: number): boolean => {
+    const box = { left: x, top: y, right: x + size.width, bottom: y + size.height };
+    return (
+      box.left >= edge &&
+      box.top >= edge &&
+      box.right <= canvas.width - edge &&
+      box.bottom <= canvas.height - edge &&
+      !hud.some((panel) => overlaps(box, panel))
+    );
+  };
+  const lowest = Math.min(plan.bottom, canvas.height - edge) - size.height;
+  for (const x of [plan.right + LEGEND_PLAN_GAP_PX, plan.left - LEGEND_PLAN_GAP_PX - size.width]) {
+    for (let y = lowest; y >= plan.top; y -= LEGEND_SEARCH_STEP_PX) {
+      if (free(x, y)) return { x, y };
+    }
+  }
+  const x = Math.max(edge, Math.min(plan.right, canvas.width) - edge - size.width);
+  for (const y of [plan.bottom + LEGEND_PLAN_GAP_PX, plan.top - LEGEND_PLAN_GAP_PX - size.height]) {
+    if (free(x, y)) return { x, y };
+  }
+  return { x, y: Math.max(edge, lowest - edge) };
+}
+
 /**
  * A region up to this share smaller than the biggest may win when it is
  * markedly more central (`PLAN_REGION_CENTRE_GAIN`, #381 review): a side

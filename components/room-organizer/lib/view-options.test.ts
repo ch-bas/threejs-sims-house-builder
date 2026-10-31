@@ -28,6 +28,12 @@ describe('toggleViewOption (#341)', () => {
     expect(off).toMatchObject({ showHeatmap: false, view2D: true });
   });
 
+  it('switching the floor underlay on shows the 2D plan; off keeps the current view (#624)', () => {
+    expect(toggleViewOption(makeView(), 'showFloorBelow')).toMatchObject({ showFloorBelow: true, view2D: true });
+    const off = toggleViewOption(makeView({ showFloorBelow: true, view2D: true }), 'showFloorBelow');
+    expect(off).toMatchObject({ showFloorBelow: false, view2D: true });
+  });
+
   it('leaves the view alone for the plain display and snapping switches', () => {
     for (const key of ['showItemLabels', 'showOutdoor', 'snapToWall', 'snapToItems'] as const) {
       const before = makeView({ view2D: true, drawWallMode: true });

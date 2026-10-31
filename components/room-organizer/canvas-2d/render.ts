@@ -8,13 +8,16 @@ import {
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
-import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
+import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
+import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
-import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
+import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
-import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
-import type { Insets } from '../lib/scene-insets';
+import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
+import { drawSelectedWall, drawWallPreview, drawZoneHandles, type WallPreview } from './plan-edit';
+import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
@@ -31,8 +34,16 @@ export interface Render2DOptions {
   showMeasurements: boolean;
   showWiFiSignals: boolean;
   showHeatmap?: boolean;
+  /** Paint the storey below faintly under the grid (#624). Only the full-size plan passes it. */
+  showFloorBelow?: boolean;
   /** The zone rectangle being dragged out, drawn over everything as a dashed outline (#155). */
   zoneDraft?: ZoneRect | null;
+  /** The interior wall selected on the plan (#564). */
+  selectedWallId?: string | null | undefined;
+  /** The zone with resize handles (#628). */
+  selectedZoneId?: string | null | undefined;
+  /** The wall tool's draft, drawn over everything (#564). */
+  wallPreview?: WallPreview | null | undefined;
   hasCollision: (item: FurnitureItem) => boolean;
   /**
    * Margin (CSS px) around the room. The default suits the full-screen 2D
@@ -41,10 +52,17 @@ export interface Render2DOptions {
    */
   padding?: number;
   /**
+   * Backing pixels per logical px for a canvas that isn't in the page, which
+   * has no CSS size to derive it from: the printed blueprint (#619).
+   */
+  pixelRatio?: number;
+  /**
    * Canvas edges covered by the HUD (`get2DViewTransform`). Only the
    * full-screen plan on a compact viewport passes them; undefined is none.
    */
   insets?: Insets | undefined;
+  /** The HUD panels over the canvas (CSS px), which the heatmap legend keeps clear of (#567). */
+  hudRects?: readonly Rect[] | undefined;
   /**
    * Fit this world rectangle (metres, room-centred) instead of the room
    * (`get2DViewTransform`'s `bounds`). The on-screen plan and the minimap
@@ -178,7 +196,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   // CSS-pixel (logical) coordinates. Reset the transform to a DPR scale so 1
   // logical unit maps to `dpr` device pixels — that keeps strokes and text
   // crisp on retina while the layout maths stays resolution-independent.
-  const dpr = canvas.width / Math.max(1, canvas.clientWidth || canvas.width);
+  const dpr = options.pixelRatio ?? canvas.width / Math.max(1, canvas.clientWidth || canvas.width);
   const viewWidth = canvas.width / dpr;
   const viewHeight = canvas.height / dpr;
 
@@ -188,6 +206,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
+  if (options.showFloorBelow) drawFloorBelow(ctx, layout, planFloorIndex(layout.floors, floor), offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
   // The stairwell the floor below cuts through this slab (#290), under everything placed over it.
   drawStairwellHoles(ctx, layout, planFloorIndex(layout.floors, floor), { scale, offsetX, offsetY });
@@ -196,11 +215,10 @@ export function render2DTopDown(options: Render2DOptions): void {
   drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
+  drawOpeningGaps(ctx, layout, floor, offsetX, offsetY, scale, viewWidth, viewHeight);
   drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true);
 
-  if (options.showHeatmap) {
-    drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale, viewWidth, viewHeight);
-  }
+  const heatmapPeak = options.showHeatmap ? drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale) : 0;
 
   if (options.showWiFiSignals) {
     drawSignalRings(ctx, floor.items, offsetX, offsetY, scale, layout, 'wifi');
@@ -214,6 +232,17 @@ export function render2DTopDown(options: Render2DOptions): void {
     drawRoomDimensions(ctx, layout, offsetX, offsetY, scale);
   }
 
+  if (heatmapPeak > 0) {
+    const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
+    const plan: Rect = {
+      left: offsetX + (fit.minX + layout.width / 2) * scale,
+      top: offsetY + (fit.minZ + layout.height / 2) * scale,
+      right: offsetX + (fit.maxX + layout.width / 2) * scale,
+      bottom: offsetY + (fit.maxZ + layout.height / 2) * scale,
+    };
+    drawHeatmapLegend(ctx, heatmapPeak, planLegendSpot({ width: viewWidth, height: viewHeight }, plan, options.hudRects ?? [], HEATMAP_LEGEND_SIZE));
+  }
+
   if (options.offPlan && options.offPlan.length > 0) {
     const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
     const markers = offPlanMarkers({ scale, offsetX, offsetY }, layout, fit, options.offPlan, options.thumbnail ? THUMB_MARKER_SPACING_PX : undefined);
@@ -223,6 +252,12 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.zoneDraft) {
     drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale);
   }
+
+  const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
+  if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale);
+  const selectedZone = options.selectedZoneId ? floor.zones?.find((zone) => zone.id === options.selectedZoneId) : null;
+  if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
+  if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);
 }
 
 /** A thumbnail's off-plan arrows are bare dots: fan them closer. */
@@ -357,6 +392,7 @@ function drawZoneLabels(
 ): void {
   const zones = floor.zones ?? [];
   if (zones.length === 0 || (thumbnail && scale < ZONE_LABEL_MIN_SCALE)) return;
+  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -371,7 +407,7 @@ function drawZoneLabels(
     // Along the top edge rather than the centre: the centre of a room is
     // where its bed or table sits, and the furniture paints over labels.
     const cx = x + w / 2;
-    const area = showArea ? `${zoneArea(zone).toFixed(1)} m²` : null;
+    const area = showArea ? `${zoneArea(zone, recess).toFixed(1)} m²` : null;
     ctx.font = 'bold 12px Arial';
     // A name wider than its zone would spill over the neighbouring rooms.
     if (ctx.measureText(zone.name).width > w - 4) continue;
@@ -478,6 +514,39 @@ function drawFloor(
     ctx.fillStyle = floor.floorColor;
     ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
   }
+}
+
+/** How strongly the storey below shows through (#624): a guide, not part of this floor. */
+const FLOOR_BELOW_ALPHA = 0.15;
+
+/** The floor below's interior walls and stairs, to line up on. Nothing on the ground floor. */
+function drawFloorBelow(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floorIndex: number,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const { walls, stairs } = floorBelowUnderlay(layout, floorIndex);
+  if (walls.length === 0 && stairs.length === 0) return;
+  const stroke = (segments: readonly PlanSegment[]): void => {
+    ctx.beginPath();
+    for (const { from, to } of segments) {
+      ctx.moveTo(offsetX + (from.x + layout.width / 2) * scale, offsetY + (from.z + layout.height / 2) * scale);
+      ctx.lineTo(offsetX + (to.x + layout.width / 2) * scale, offsetY + (to.z + layout.height / 2) * scale);
+    }
+    ctx.stroke();
+  };
+  ctx.save();
+  ctx.globalAlpha = FLOOR_BELOW_ALPHA;
+  ctx.strokeStyle = '#000';
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS * scale);
+  stroke(walls);
+  ctx.lineWidth = 1;
+  stroke(stairs);
+  ctx.restore();
 }
 
 function drawGrid(
@@ -590,6 +659,44 @@ function drawInteriorWalls(
   ctx.restore();
 }
 
+/**
+ * Cut the doors and windows out of the walls (#576): inside each opening's
+ * strip, wipe the wall and put back what lies under it, the floor, grid,
+ * stairwell and zone tints inside the walls and the bare canvas outside.
+ * Under the furniture, so what stands against a wall stays whole.
+ */
+function drawOpeningGaps(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  viewWidth: number,
+  viewHeight: number
+): void {
+  const openings = floor.items.filter((item) => item.position && isOpening(item.type));
+  if (openings.length === 0) return;
+  const floorIndex = planFloorIndex(layout.floors, floor);
+  ctx.save();
+  ctx.beginPath();
+  traceOpeningGaps(ctx, openings, layout, { scale, offsetX, offsetY });
+  ctx.clip();
+  ctx.clearRect(0, 0, viewWidth, viewHeight);
+  drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
+  drawGrid(ctx, layout, offsetX, offsetY, scale);
+  drawStairwellHoles(ctx, layout, floorIndex, { scale, offsetX, offsetY });
+  drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
+  // The recessed entrance is outside, as drawRoomOutline leaves it.
+  const recess = entrancePlanOutline(layout, floorIndex);
+  if (recess) {
+    const x0 = offsetX + (recess.x0 + layout.width / 2) * scale;
+    const x1 = offsetX + (recess.x1 + layout.width / 2) * scale;
+    ctx.clearRect(x0, offsetY, x1 - x0, (recess.backZ + layout.height / 2) * scale);
+  }
+  ctx.restore();
+}
+
 function drawSignalRings(
   ctx: CanvasRenderingContext2D,
   items: readonly FurnitureItem[],
@@ -676,6 +783,10 @@ function drawFurniture(
     const cy = offsetY + (item.position.z + options.layout.height / 2) * scale;
     const w = item.width * scale;
     const d = item.depth * scale;
+    // Doors and windows are symbols in the wall (#576); their footprint is
+    // painted only to mark a state, and stays the hit target either way.
+    const opening = isOpening(item.type);
+    if (opening) drawOpeningSymbol(ctx, item, options.floor.floorColor, options.layout, { scale, offsetX, offsetY });
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -683,8 +794,10 @@ function drawFurniture(
     // 2D footprint matches the 3D scene's orientation.
     ctx.rotate(-(item.rotation ?? 0));
 
-    ctx.fillStyle = collision ? 'rgba(255, 0, 0, 0.7)' : item.color;
-    ctx.fillRect(-w / 2, -d / 2, w, d);
+    if (!opening || collision) {
+      ctx.fillStyle = collision ? 'rgba(255, 0, 0, 0.7)' : item.color;
+      ctx.fillRect(-w / 2, -d / 2, w, d);
+    }
 
     if (options.selectedItemId === item.id) {
       ctx.strokeStyle = collision ? '#ff6666' : '#00ff00';
@@ -700,7 +813,8 @@ function drawFurniture(
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 1;
     }
-    ctx.strokeRect(-w / 2, -d / 2, w, d);
+    const marked = collision || options.selectedItemId === item.id || options.extraSelectedIds?.has(item.id) === true;
+    if (!opening || marked) ctx.strokeRect(-w / 2, -d / 2, w, d);
 
     ctx.font = `${Math.min(w, d) * 0.6}px Arial`;
     ctx.fillStyle = '#fff';
@@ -708,7 +822,7 @@ function drawFurniture(
     ctx.textBaseline = 'middle';
     // Stairs draw their treads and climb arrow in place of the icon (#290),
     // in world space once the item's rotated frame is restored.
-    if (item.type !== 'stairs') ctx.fillText(item.icon, 0, 0);
+    if (item.type !== 'stairs' && !opening) ctx.fillText(item.icon, 0, 0);
     ctx.restore();
     if (item.type === 'stairs') drawStairsSymbol(ctx, item, options.layout, { scale, offsetX, offsetY });
 
@@ -724,6 +838,7 @@ function drawFurniture(
       ctx.restore();
     }
   }
+  drawStairCutHatch(ctx, options.layout, options.floor, { scale, offsetX, offsetY });
   drawSelectionOutlines(ctx, options, offsetX, offsetY, scale);
 }
 
@@ -841,8 +956,8 @@ export function computeHeatmapCells(
  * Paint a price-per-area heatmap onto the 2D canvas. The floor is bucketed
  * into a 20×20 grid; each cell aggregates the price of any item whose
  * footprint overlaps the cell (weighted by intersection area), then
- * colour-maps the density. Also draws a compact legend showing the
- * per-square-metre value range.
+ * colour-maps the density. Returns the densest cell's value per square
+ * metre, for the legend (0 when nothing is priced).
  */
 function drawHeatmap(
   ctx: CanvasRenderingContext2D,
@@ -850,21 +965,19 @@ function drawHeatmap(
   items: readonly FurnitureItem[],
   offsetX: number,
   offsetY: number,
-  scale: number,
-  viewWidth: number,
-  viewHeight: number
-): void {
+  scale: number
+): number {
   const COLS = HEATMAP_COLS;
   const ROWS = HEATMAP_ROWS;
   const cellWidth = layout.width / COLS;
   const cellDepth = layout.height / ROWS;
   const cellArea = cellWidth * cellDepth;
-  if (cellArea <= 0) return;
+  if (cellArea <= 0) return 0;
 
   const grid = computeHeatmapCells(items, layout.width, layout.height, COLS, ROWS);
 
   const max = Math.max(...grid);
-  if (max <= 0) return;
+  if (max <= 0) return 0;
 
   // Cells.
   ctx.save();
@@ -884,34 +997,29 @@ function drawHeatmap(
   }
   ctx.restore();
 
-  drawHeatmapLegend(ctx, max / cellArea, viewWidth, viewHeight);
+  return max / cellArea;
 }
 
+const HEATMAP_LEGEND_BAR = { width: 140, height: 12 };
+/** The legend's box: the bar, with its caption above and scale below. */
+const HEATMAP_LEGEND_SIZE = { width: HEATMAP_LEGEND_BAR.width + 16, height: HEATMAP_LEGEND_BAR.height + 36 };
+
+/** The legend's box at `spot` (logical CSS px, `planLegendSpot`), over the plan and its furniture. */
 function drawHeatmapLegend(
   ctx: CanvasRenderingContext2D,
   maxPricePerSqM: number,
-  viewWidth: number,
-  viewHeight: number
+  spot: { x: number; y: number }
 ): void {
-  const padding = 12;
-  const barWidth = 140;
-  const barHeight = 12;
-  // Position in logical (CSS-pixel) space — ctx is DPR-scaled, so using the raw
-  // backing-store size (ctx.canvas.width) would push the legend off-screen on
-  // retina.
-  const x = viewWidth - barWidth - padding;
-  const y = viewHeight - barHeight - padding - 18;
+  const { width: barWidth, height: barHeight } = HEATMAP_LEGEND_BAR;
+  const x = spot.x + 8;
+  const y = spot.y + 14;
 
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.strokeStyle = 'rgba(0,0,0,0.2)';
   ctx.lineWidth = 1;
-  const boxX = x - 8;
-  const boxY = y - 14;
-  const boxW = barWidth + 16;
-  const boxH = barHeight + 36;
-  ctx.fillRect(boxX, boxY, boxW, boxH);
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
+  ctx.fillRect(spot.x, spot.y, HEATMAP_LEGEND_SIZE.width, HEATMAP_LEGEND_SIZE.height);
+  ctx.strokeRect(spot.x, spot.y, HEATMAP_LEGEND_SIZE.width, HEATMAP_LEGEND_SIZE.height);
 
   // Gradient bar.
   const gradient = ctx.createLinearGradient(x, 0, x + barWidth, 0);

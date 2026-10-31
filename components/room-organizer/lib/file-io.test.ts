@@ -119,6 +119,7 @@ describe('the CSV formula guard (#455)', () => {
     ['-2+3', "'-2+3"],
     ['@SUM(A1:A9)', "'@SUM(A1:A9)"],
     ['\t=cmd()', "'\t=cmd()"],
+    ['\r=1+1', `"'\r=1+1"`],
   ])('neutralises a name starting a formula: %j', (name, cell) => {
     expect(nameCell(name)).toBe(cell);
   });

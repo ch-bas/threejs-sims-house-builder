@@ -26,20 +26,18 @@ import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { clampStoreyHeight, storeyHeight } from '../lib/storeys';
 import {
   ENTRANCE_DOOR_ID,
-  ENTRANCE_LIMITS,
   ENTRANCE_WALL_ID,
   MAX_SILL_HEIGHT,
   MIN_SILL_HEIGHT,
   clampEntrance,
   clipWallToPorch,
   entranceBackWall,
-  entranceFloorIndex,
   entranceGeometry,
   entrancePlanOutline,
+  entranceWithinStorey,
   sameEntrance,
-  streetLevel,
 } from '../lib/street';
-import { MAX_ZONES, clampZoneRect, sameZone } from '../lib/zones';
+import { MAX_ZONES, clampZoneRect, sameZone, zoneInPorch } from '../lib/zones';
 import type {
   CatalogItem,
   EntranceSpec,
@@ -955,7 +953,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         const zones = floor.zones ?? [];
         if (zones.length >= MAX_ZONES || zones.some((zone) => zone.id === action.zone.id)) return floor;
         const rect = clampZoneRect(action.zone, state.layout.width, state.layout.height);
-        if (!rect) return floor;
+        if (!rect || zoneInPorch(rect, entrancePlanOutline(state.layout, state.activeFloorIndex))) return floor;
         return { ...floor, zones: [...zones, { ...action.zone, ...rect, name: capName(action.zone.name) }] };
       });
 
@@ -967,6 +965,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         merged.name = capName(merged.name);
         const rect = clampZoneRect(merged, state.layout.width, state.layout.height);
         if (!rect) return floor;
+        // A zone can't move onto the porch; one a later porch swallowed can still be renamed.
+        const recess = entrancePlanOutline(state.layout, state.activeFloorIndex);
+        const before = clampZoneRect(current, state.layout.width, state.layout.height) ?? current;
+        if (zoneInPorch(rect, recess) && !zoneInPorch(before, recess)) return floor;
         const next: RoomZone = { ...merged, ...rect };
         // Re-typing a name or re-picking a colour keeps identity: no undo
         // entry, no autosave.
@@ -1396,18 +1398,13 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previo
     const { entrance: _old, ...rest } = layout;
     return { ...rest, floors: layout.floors.map((floor) => syncEntranceFloor(floor, null, null)) };
   }
-  const entrance = clampEntrance(requested);
+  const clamped = clampEntrance(requested);
   // The deleted-door flag is the reducer's own record: a panel re-sending
   // the spec without it must not resurrect the door.
-  if (layout.entrance?.door === false) entrance.door = false;
-  const streetIndex = entranceFloorIndex(layout.floors, streetLevel(layout.terrain, layout.height));
-  // The back wall exists on the street storey only, so a porch must not
-  // reach into the storey above it (#275) — the spec is clamped, not just
-  // the geometry, so the value survives saves and share links.
-  if (entrance.height !== undefined && streetIndex !== null) {
-    const storey = storeyHeight(layout.floors[streetIndex]);
-    entrance.height = Math.max(ENTRANCE_LIMITS.height[0], Math.min(entrance.height, storey));
-  }
+  if (layout.entrance?.door === false) clamped.door = false;
+  // The spec is clamped, not just the geometry, so the value survives saves
+  // and share links.
+  const entrance = entranceWithinStorey(clamped, layout);
 
   const geometry = entranceGeometry(entrance, {
     width: layout.width,

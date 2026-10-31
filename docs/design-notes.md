@@ -494,8 +494,15 @@ to respect.
   tables, the layout blocks and the OBJECTS dictionaries — checked by a
   structural validator in `dxf.test.ts` and, during development, by
   ezdxf's audit (zero fixes). Its layers: WALLS, INTERIOR, OPENINGS,
-  FURNITURE, LABELS, STAIRWELL, COVERAGE, DIMENSIONS; `buildingToDxf`
+  FURNITURE, LABELS, STAIRWELL, COVERAGE, DIMENSIONS, ZONES; `buildingToDxf`
   lays the floors out side by side on those same layers.
+- **Opening chains** (#630). `wallOpeningDimensions` gives one chain per
+  exterior wall with an opening, corner to corner, for the SVG and DXF
+  downloads. Opt-in (`openingDimensions`) like the schedule: on an SVG sheet
+  they take an extra band next to the plan and the room dimensions step out,
+  which the print route's fixed margin has no room for. A label takes the
+  first row where it clears the one before it, and the band fits the busiest
+  storey on every sheet, so a whole-building SVG's storeys still line up.
 - **Placement ghost** (#463 d). A click or tap on a catalog tile arms a
   one-shot flag (`armGhostPlacement`, the pointer twin of the keyboard
   placement's), and the wrapped `placeCatalogItem` picks the entry up

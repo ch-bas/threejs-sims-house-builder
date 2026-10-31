@@ -82,6 +82,7 @@ export function makeViewSettings(overrides: Partial<ViewSettings> = {}): ViewSet
     drawWallMode: false,
     drawZoneMode: false,
     showHeatmap: false,
+    showFloorBelow: false,
     showItemLabels: false,
     showNpcs: false,
     showCameraVision: true,

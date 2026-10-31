@@ -20,18 +20,24 @@
  * - Openings are LINE jamb ticks + a centre line, doors add the swing ARC,
  *   hinged on the jamb the 3D door is (mirroring swaps it, #386).
  * - Labels are horizontal TEXT (rotating text helps nobody in CAD).
+ * - STAIR-CUT carries the hatch over the treads under a stairwell (#631).
+ * - ZONES carries each room zone as a closed LWPOLYLINE with its name and area
+ *   as TEXT along the top edge, where the SVG puts them (#571).
  * - COVERAGE carries Wi-Fi/CCTV rings as CIRCLEs and camera wedges as an
  *   ARC plus two LINEs (#420), trimmed to the frame the SVG clips to (the
  *   plan content plus at most 5 m of coverage), so the two formats agree and
  *   a 30 m lens can't swamp the drawing extents; DIMENSIONS carries LINE + TEXT dimension
- *   strings (true DIMENSION entities need anonymous blocks); the north arrow
+ *   strings (true DIMENSION entities need anonymous blocks), and with
+ *   `openingDimensions` a chain per exterior wall (#630); the north arrow
  *   sits on LABELS (#424).
  * - `buildingToDxf` lays every floor out side by side, ground floor first,
  *   on the same layers at the same 1:1 scale, each with its own title (#405).
  */
 
+import { stripXmlIllegal } from '../html-escape';
 import { planDrawOrder } from '../plan-order';
-import { entrancePlanOutline, planFloorIndex } from '../street';
+import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
+import { zoneArea } from '../zones';
 import {
   buildingFrameBounds,
   clipArc,
@@ -39,16 +45,20 @@ import {
   coverageRings,
   interiorWallDimensions,
   itemWorldCorners,
+  doorSwing,
   openingAxes,
   planContentBounds,
   planFrameBounds,
   polarPoint,
   splitPlanItems,
   stairArrow,
+  stairCutHatch,
   stairTreadSegments,
   stairwellOutlines,
   visionWedges,
+  wallOpeningDimensions,
   type CoverageMode,
+  type OpeningChain,
   type PlacedItem,
   type PlanBounds,
   type PlanPoint,
@@ -64,11 +74,13 @@ export const DXF_LAYERS = [
   'STAIRWELL',
   'COVERAGE',
   'DIMENSIONS',
+  'ZONES',
+  'STAIR-CUT',
 ] as const;
 
 export type DxfLayer = (typeof DXF_LAYERS)[number];
 
-/** ACI colour per layer (7 white, 8 grey, 5 blue, 3 green, 2 yellow, 1 red, 4 cyan, 6 magenta). */
+/** ACI colour per layer (7 white, 8 grey, 5 blue, 3 green, 2 yellow, 1 red, 4 cyan, 6 magenta, 30 orange). */
 const LAYER_COLOURS: Record<DxfLayer, number> = {
   WALLS: 7,
   INTERIOR: 8,
@@ -78,6 +90,8 @@ const LAYER_COLOURS: Record<DxfLayer, number> = {
   STAIRWELL: 1,
   COVERAGE: 4,
   DIMENSIONS: 6,
+  ZONES: 30,
+  'STAIR-CUT': 8,
 };
 
 export interface DxfExportOptions {
@@ -90,6 +104,8 @@ export interface DxfExportOptions {
   coverage?: boolean | 'full';
   /** Room and interior-wall dimension strings on the DIMENSIONS layer (default on, #424). */
   dimensions?: boolean;
+  /** A chain of dimensions along each exterior wall with an opening, on DIMENSIONS (default off, #630); needs `dimensions`. */
+  openingDimensions?: boolean;
 }
 
 /** Perpendicular jamb-tick length at each end of an opening, in metres. */
@@ -98,12 +114,19 @@ const OPENING_TICK_M = 0.25;
 const LABEL_TEXT_HEIGHT = 0.18;
 const TITLE_TEXT_HEIGHT = 0.35;
 const DIMENSION_TEXT_HEIGHT = 0.15;
+/** Below a zone's top edge: its name's baseline and its area's, metres (the SVG's two lines at 50 px/m). */
+const ZONE_NAME_DROP_M = 0.3;
+const ZONE_AREA_DROP_M = 0.54;
 /** Gap between the plan content and a room dimension line, metres. */
 const DIMENSION_OFFSET_M = 0.4;
 /** Offset of an interior wall's dimension line off its centreline, metres. */
 const WALL_DIMENSION_OFFSET_M = 0.2;
 /** Half-length of a dimension tick, metres. */
 const DIMENSION_TICK_M = 0.08;
+/** Band the opening chains add between the plan content and what stood there, metres, for two label rows (#630). */
+const OPENING_CHAIN_BAND_M = 0.6;
+/** Further out per label row of an opening chain, metres. */
+const OPENING_CHAIN_ROW_M = 0.2;
 /** Clear space between two floors laid side by side, metres (#405). */
 const FLOOR_GAP_M = 3;
 
@@ -500,6 +523,8 @@ function emitFloor(
   const cad = (x: number, z: number): CadPoint => [x + layout.width / 2 + offsetX, layout.height / 2 - z];
   const content = planContentBounds(layout, floor);
 
+  emitZones(doc, floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), cad);
+
   // Room outline: one closed polyline around the footprint. Hidden walls stay
   // in the export — the footprint is real even when the 2D view fades a wall.
   // A recessed entrance (#285) notches the north edge: the polyline goes in
@@ -544,14 +569,37 @@ function emitFloor(
     doc.text('LABELS', cad(item.position.x, item.position.z), LABEL_TEXT_HEIGHT, item.name, 'centre');
     if (item.type === 'stairs') emitStairs(doc, item, cad);
   }
+  // The treads under the hole (#631): their own layer, so CAD users can hide the hatch.
+  for (const { from, to } of stairCutHatch(layout, floor)) {
+    doc.line('STAIR-CUT', cad(from.x, from.z), cad(to.x, to.z));
+  }
 
-  if (options.dimensions !== false) emitDimensions(doc, layout, floor, content, cad);
-  emitNorthArrow(doc, cad(content.maxX, content.minZ));
+  const showChains = options.dimensions !== false && options.openingDimensions === true;
+  const chains = showChains ? wallOpeningDimensions(layout, floor) : [];
+  const topRow = Math.max(0, ...chains.flatMap((chain) => chain.segments.map((segment) => segment.labelRow)));
+  const chainBand = showChains ? OPENING_CHAIN_BAND_M + OPENING_CHAIN_ROW_M * Math.max(0, topRow - 1) : 0;
+  if (options.dimensions !== false) emitDimensions(doc, layout, floor, content, cad, chainBand);
+  for (const chain of chains) emitOpeningChain(doc, chain, content, cad);
+  const [northEastX, northEastY] = cad(content.maxX, content.minZ);
+  emitNorthArrow(doc, [northEastX + chainBand, northEastY]);
 
   // Floor title above the plan content (the north wall, unless something stands beyond it).
   const [titleX] = cad(-hw, 0);
-  const [, titleY] = cad(0, content.minZ);
-  doc.text('LABELS', [titleX, titleY + 0.5], TITLE_TEXT_HEIGHT, `${layout.name} - ${floor.name}`);
+  doc.text('LABELS', [titleX, northEastY + 0.5 + chainBand], TITLE_TEXT_HEIGHT, `${layout.name} - ${floor.name}`);
+}
+
+/** Room zones (#571): the outline, then name and area on two lines, like the SVG's `renderZones`. */
+function emitZones(doc: DxfDocument, floor: FloorLayout, recess: EntrancePlanOutline | null, cad: (x: number, z: number) => CadPoint): void {
+  for (const zone of floor.zones ?? []) {
+    const left = zone.x;
+    const right = zone.x + zone.w;
+    const top = zone.z;
+    const bottom = zone.z + zone.d;
+    doc.polyline('ZONES', [cad(left, top), cad(right, top), cad(right, bottom), cad(left, bottom)], true);
+    const centre = zone.x + zone.w / 2;
+    doc.text('ZONES', cad(centre, top + ZONE_NAME_DROP_M), LABEL_TEXT_HEIGHT, zone.name, 'centre');
+    doc.text('ZONES', cad(centre, top + ZONE_AREA_DROP_M), DIMENSION_TEXT_HEIGHT, `${zoneArea(zone, recess).toFixed(1)} m²`, 'centre');
+  }
 }
 
 /**
@@ -589,15 +637,12 @@ function emitOpening(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: num
   }
 
   if (item.type === 'door') {
-    // Swing: leaf hinged at one jamb, opened perpendicular into the room,
-    // plus the quarter arc from the closed to the open position. The 3D
-    // door's handle is at local +X, so it hinges at endA (local −X); a
-    // mirrored door flips local X and hinges at endB (#386). In CAD coords
-    // `along` sits at angle θ and `into` at θ − 90°: from endA the closed
-    // leaf points along θ and the CCW arc runs θ−90 → θ; from endB it points
-    // back along θ+180 and the arc runs θ+180 → θ+270.
-    const hinge = item.mirrored ? endB : endA;
-    const leafTip = { x: hinge.x + into.x * item.width, z: hinge.z + into.z * item.width };
+    // Swing: `doorSwing`'s leaf, plus the quarter arc from the closed to the
+    // open position. In CAD coords `along` sits at angle θ and `into` at
+    // θ − 90°: from the −X jamb the closed leaf points along θ and the CCW
+    // arc runs θ−90 → θ; from the +X jamb of a mirrored door it points back
+    // along θ+180 and the arc runs θ+180 → θ+270.
+    const { hinge, leafTip } = doorSwing(item);
     doc.line('OPENINGS', cad(hinge.x, hinge.z), cad(leafTip.x, leafTip.z));
     const thetaDeg = ((item.rotation ?? 0) * 180) / Math.PI;
     const [start, end] = item.mirrored ? [thetaDeg + 180, thetaDeg + 270] : [thetaDeg - 90, thetaDeg];
@@ -652,7 +697,8 @@ function emitDimensions(
   layout: RoomLayout,
   floor: FloorLayout,
   content: PlanBounds,
-  cad: (x: number, z: number) => CadPoint
+  cad: (x: number, z: number) => CadPoint,
+  chainBand: number
 ): void {
   const [x0, y0] = cad(-layout.width / 2, layout.height / 2);
   const [x1, y1] = cad(layout.width / 2, -layout.height / 2);
@@ -660,13 +706,13 @@ function emitDimensions(
   const tick = DIMENSION_TICK_M;
 
   // Width, along the bottom.
-  const wy = contentBottom - DIMENSION_OFFSET_M;
+  const wy = contentBottom - DIMENSION_OFFSET_M - chainBand;
   doc.line('DIMENSIONS', [x0, y0], [x0, wy - tick]);
   doc.line('DIMENSIONS', [x1, y0], [x1, wy - tick]);
   dimension(doc, [x0, wy], [x1, wy], layout.width, [0, -1]);
 
   // Depth, up the left side.
-  const dx = contentLeft - DIMENSION_OFFSET_M;
+  const dx = contentLeft - DIMENSION_OFFSET_M - chainBand;
   doc.line('DIMENSIONS', [x0, y0], [dx - tick, y0]);
   doc.line('DIMENSIONS', [x0, y1], [dx - tick, y1]);
   dimension(doc, [dx, y0], [dx, y1], layout.height, [-1, 0]);
@@ -678,15 +724,44 @@ function emitDimensions(
     const outward: CadPoint = [dim.normal.x, -dim.normal.z];
     const nx = outward[0] * WALL_DIMENSION_OFFSET_M;
     const ny = outward[1] * WALL_DIMENSION_OFFSET_M;
-    dimension(doc, [from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], dim.lengthM, outward);
+    dimension(doc, [from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], dim.lengthM, outward, dim.labelShiftM);
+  }
+}
+
+/** One wall's opening chain (#630), as the SVG draws it: just past the content, extension lines back to the wall. */
+function emitOpeningChain(doc: DxfDocument, chain: OpeningChain, content: PlanBounds, cad: (x: number, z: number) => CadPoint): void {
+  const { outward: world, segments } = chain;
+  const horizontal = world.x === 0;
+  const edge = horizontal ? (world.z < 0 ? content.minZ : content.maxZ) : world.x < 0 ? content.minX : content.maxX;
+  const outward: CadPoint = [world.x, -world.z];
+  const onLine = (p: PlanPoint, by = 0): CadPoint => {
+    const step = DIMENSION_OFFSET_M + by;
+    const point = horizontal ? cad(p.x, edge) : cad(edge, p.z);
+    return [point[0] + outward[0] * step, point[1] + outward[1] * step];
+  };
+  for (const stop of [segments[0]!.from, ...segments.map((segment) => segment.to)]) {
+    doc.line('DIMENSIONS', cad(stop.x, stop.z), onLine(stop, DIMENSION_TICK_M));
+  }
+  for (const segment of segments) {
+    const gap = DIMENSION_TEXT_HEIGHT + segment.labelRow * OPENING_CHAIN_ROW_M;
+    dimension(doc, onLine(segment.from), onLine(segment.to), segment.lengthM, outward, 0, gap);
   }
 }
 
 /**
  * One dimension line with perpendicular end ticks and its length as TEXT
- * beside it on the `outward` side (a CAD unit vector), kept upright.
+ * `labelGap` beside it on the `outward` side (a CAD unit vector), kept
+ * upright, slid `labelShiftM` off centre towards `to`.
  */
-function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: number, outward: CadPoint): void {
+function dimension(
+  doc: DxfDocument,
+  from: CadPoint,
+  to: CadPoint,
+  lengthM: number,
+  outward: CadPoint,
+  labelShiftM = 0,
+  labelGap = DIMENSION_TEXT_HEIGHT
+): void {
   const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
   if (len === 0) return;
   const ux = (to[0] - from[0]) / len;
@@ -700,8 +775,10 @@ function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: numb
   // Readable from the bottom or the right of the sheet.
   if (rotation > 90 + 1e-6) rotation -= 180;
   else if (rotation <= -90 + 1e-6) rotation += 180;
-  const gap = DIMENSION_TEXT_HEIGHT;
-  const label: CadPoint = [(from[0] + to[0]) / 2 + outward[0] * gap, (from[1] + to[1]) / 2 + outward[1] * gap];
+  const label: CadPoint = [
+    (from[0] + to[0]) / 2 + outward[0] * labelGap + ux * labelShiftM,
+    (from[1] + to[1]) / 2 + outward[1] * labelGap + uy * labelShiftM,
+  ];
   const metres = (Math.round(lengthM * 100) / 100).toFixed(2);
   doc.text('DIMENSIONS', label, DIMENSION_TEXT_HEIGHT, `${metres} m`, 'middle', rotation);
 }
@@ -735,6 +812,7 @@ function fmt(value: number): string {
 /**
  * Make a string safe as a DXF TEXT value:
  * - control characters (incl. newlines) would corrupt the group pairs → space;
+ * - lone surrogates and U+FFFE/F are not text, so no `\\U+` escape for them (#549);
  * - AC1015 is read with the ANSI code page, so raw UTF-8 above ASCII garbles
  *   ("Maison d'été" → "Maison d'Ã©tÃ©"): every code point above 0x7E goes
  *   out as the `\U+XXXX` escape CAD readers expand; astral characters have
@@ -746,7 +824,7 @@ function fmt(value: number): string {
 function sanitizeText(value: string): string {
   let out = '';
   // eslint-disable-next-line no-control-regex
-  for (const char of value.replace(/[\r\n\u0000-\u001f]/g, ' ')) {
+  for (const char of stripXmlIllegal(value.replace(/[\r\n\u0000-\u001f]/g, ' '))) {
     const code = char.codePointAt(0) ?? 0x3f;
     if (char === '%') out += '%%%';
     else if (code <= 0x7e) out += char;

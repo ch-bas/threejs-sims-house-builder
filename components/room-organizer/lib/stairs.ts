@@ -1,5 +1,5 @@
 import { stairRise, storeyHeight } from './storeys';
-import type { FloorLayout, FurnitureItem, StairsShape } from './types';
+import type { FloorLayout, FurnitureItem, RoomLayout, StairsShape } from './types';
 
 /**
  * Stair layout (#205), shared by the stair builder and the stairwell cut so
@@ -240,6 +240,62 @@ const rectBounds = (part: StairwellRect) => ({
   z0: part.centerZ - part.depth / 2,
   z1: part.centerZ + part.depth / 2,
 });
+
+/** What a stair has over it (#631). */
+export interface StairHeadroom {
+  /** Indices into `stairSteps` of the treads under the stairwell, in climbing order. */
+  underHole: number[];
+  /** The least clear height (m) on the flight, from the floor at its foot to its top tread. */
+  clearance: number;
+}
+
+/**
+ * The headroom of a stair with a floor above it (#631). A tread lies under
+ * the hole when its centre is inside `stairwellParts`, so a winder's whole
+ * cut quarter counts, as it does in the slab. A tread under the hole clears
+ * the ceiling of the storey above (`ceiling + ceilingAbove`), any other the
+ * floor above (`ceiling`), and the foot of the flight is under the slab
+ * whatever the treads do, which is what catches a storey too short to stand
+ * in: its hole starts at the first tread.
+ */
+export function stairHeadroom(item: StairItem, rise: number, ceiling: number, ceilingAbove: number): StairHeadroom {
+  const parts = stairwellParts(item, rise, ceiling).map(rectBounds);
+  const underHole: number[] = [];
+  let clearance = ceiling;
+  stairSteps(item, rise).forEach((step, index) => {
+    const n = step.outline.length;
+    const cx = step.outline.reduce((sum, [x]) => sum + x / n, 0);
+    const cz = step.outline.reduce((sum, [, z]) => sum + z / n, 0);
+    const cut = parts.some((p) => cx >= p.x0 && cx <= p.x1 && cz >= p.z0 && cz <= p.z1);
+    if (cut) underHole.push(index);
+    clearance = Math.min(clearance, (cut ? ceiling + ceilingAbove : ceiling) - step.top);
+  });
+  return { underHole, clearance };
+}
+
+/**
+ * `stairHeadroom` on storey `floorIndex`, or null on the top storey: no floor
+ * above, no hole. Under the top storey the flight clears that storey's
+ * ceiling only when it has one: a flat roof. A pitched roof rises from the
+ * top of the walls, so a loft's knee wall is no limit, and with no roof
+ * nothing is overhead.
+ */
+export function floorStairHeadroom(
+  item: StairItem & { height: number },
+  layout: Pick<RoomLayout, 'floors' | 'roof'>,
+  floorIndex: number
+): StairHeadroom | null {
+  const floor = layout.floors[floorIndex];
+  const floorAbove = layout.floors[floorIndex + 1];
+  if (!floor || !floorAbove) return null;
+  const ceilinged = floorIndex + 2 < layout.floors.length || layout.roof?.style === 'flat';
+  return stairHeadroom(item, stairRise(item, floor), storeyHeight(floor), ceilinged ? storeyHeight(floorAbove) : Infinity);
+}
+
+/** Whether a flight's clearance falls short, as shown: to the centimetre, so float noise can't warn "2 m". */
+export function isHeadroomShort(clearance: number): boolean {
+  return Math.round(clearance * 100) / 100 < STAIR_HEADROOM;
+}
 
 /**
  * The stairwell as one local rectangle around `stairwellParts`, or null when

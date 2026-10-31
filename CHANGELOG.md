@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-10-31
+
+The **Plan parity II** milestone: the 2D plan is a real editor now, with walls and zones you can edit in place, proper door and window symbols, and exports that say more.
+
+### Added
+- You can now draw, select and demolish interior walls on the 2D plan, by mouse or by touch ([#564](https://github.com/ch-bas/threejs-sims-house-builder/issues/564))
+- Zones can be moved and resized directly on the 2D plan, with handles sized for fingers, instead of being deleted and redrawn ([#628](https://github.com/ch-bas/threejs-sims-house-builder/issues/628))
+- New View option: see the floor below as a faint guide while planning an upper storey in 2D ([#624](https://github.com/ch-bas/threejs-sims-house-builder/issues/624))
+- Stairs show which treads sit under the stairwell, on the plan and in exports, and warn when headroom is under 2 m ([#631](https://github.com/ch-bas/threejs-sims-house-builder/issues/631))
+- SVG and DXF downloads show where each door and window sits along the exterior walls ([#630](https://github.com/ch-bas/threejs-sims-house-builder/issues/630))
+- DXF exports include room zones with their names and areas ([#571](https://github.com/ch-bas/threejs-sims-house-builder/issues/571))
+
+### Changed
+- Doors and windows appear on the 2D plan, minimap and printed blueprint as proper symbols with wall gaps and door swings ([#576](https://github.com/ch-bas/threejs-sims-house-builder/issues/576))
+- Printed blueprints are much sharper, and a failed print no longer leaves a blank tab ([#619](https://github.com/ch-bas/threejs-sims-house-builder/issues/619))
+- Each wall segment is its own undo step, in 2D and 3D; tapping Walls again ends the tool; Escape also clears a selected wall ([#564](https://github.com/ch-bas/threejs-sims-house-builder/issues/564))
+
+### Fixed
+- SVG exports open again when a house, floor, zone or item name contains a stray control character ([#549](https://github.com/ch-bas/threejs-sims-house-builder/issues/549))
+- Interior wall lengths on exported plans no longer print over door swings ([#592](https://github.com/ch-bas/threejs-sims-house-builder/issues/592))
+- Dragging a door or window to another wall on the 2D plan shows it turned to that wall before you let go ([#601](https://github.com/ch-bas/threejs-sims-house-builder/issues/601))
+- The cost heatmap legend is no longer hidden behind the mode panel ([#567](https://github.com/ch-bas/threejs-sims-house-builder/issues/567))
+- Zone areas no longer count the recessed porch, and a zone can't be drawn or dragged onto the porch ([#582](https://github.com/ch-bas/threejs-sims-house-builder/issues/582))
+- A porch taller than its storey in an imported house no longer opens the floor above to the street, and a storey too low for a porch no longer keeps a stray door and wall ([#587](https://github.com/ch-bas/threejs-sims-house-builder/issues/587))
+- The blueprint shows the cost with its currency, and item schedules list sizes to the centimetre ([#596](https://github.com/ch-bas/threejs-sims-house-builder/issues/596))
+
 ## [1.26.0] - 2026-10-31
 
 The first wave of **Polish: desktop & mobile**: touch tablets can walk and tap, phones get finger-sized panels, the keyboard reaches everything, and items explain themselves.
@@ -803,7 +829,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.26.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.27.0...HEAD
+[1.27.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.23.0...v1.24.0

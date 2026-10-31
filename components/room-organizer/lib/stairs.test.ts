@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem } from './__testfixtures__/fixtures';
+import { formatMetres } from './format';
 import {
   MAX_STAIRS_LEAD_IN,
   MIN_WINDER_TREAD,
@@ -8,8 +9,11 @@ import {
   WINDER_TREADS,
   computeFloorOpenings,
   floorOpeningOutline,
+  floorStairHeadroom,
+  isHeadroomShort,
   isStairsLeadIn,
   isStairsShape,
+  stairHeadroom,
   stairPlanSymbol,
   stairSteps,
   stairToWorld,
@@ -20,6 +24,7 @@ import {
   winderLayout,
   winderStairwellOutline,
 } from './stairs';
+import type { RoofStyle } from './types';
 
 type Outline = Array<[number, number]>;
 
@@ -383,5 +388,88 @@ describe('stairwell openings and plan symbol (#290)', () => {
     expect(lines).toHaveLength(14 * 4 - 13);
     const keys = lines.map(([a, b]) => [a, b].map(([x, z]) => `${x.toFixed(5)},${z.toFixed(5)}`).sort().join('|'));
     expect(new Set(keys).size).toBe(lines.length);
+  });
+});
+
+describe('stair headroom (#631)', () => {
+  const straight = { width: 1, depth: 2.8 };
+  const winder = { width: 2, depth: 2.6, stairsShape: 'winder' as const };
+
+  it('marks the treads within the headroom of the floor above as under the hole', () => {
+    // 14 × 0.2 m rise under a 2.8 m storey: tops over 0.8 m are the 4th tread on.
+    const { underHole, clearance } = stairHeadroom(straight, 2.8, 2.8, 2.8);
+    expect(underHole).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    // The tightest spot: the last covered tread (0.6 m top) under the slab, 2.2 m.
+    expect(clearance).toBeCloseTo(2.2, 9);
+  });
+
+  it('reads the storey above over the top tread', () => {
+    expect(stairHeadroom(straight, 2.8, 2.8, 1.5).clearance).toBeCloseTo(1.5, 9);
+  });
+
+  it('counts the foot of the flight, so a storey too short to stand in is caught', () => {
+    const { underHole, clearance } = stairHeadroom(straight, 1.9, 1.9, 2.8);
+    expect(underHole).toHaveLength(STAIR_STEP_COUNT);
+    expect(clearance).toBeCloseTo(1.9, 9);
+  });
+
+  it('cuts nothing under a tall storey, and clears the top tread under the slab', () => {
+    const { underHole, clearance } = stairHeadroom(straight, 1.4, 4, 2.8);
+    expect(underHole).toEqual([]);
+    expect(clearance).toBeCloseTo(2.6, 9);
+  });
+
+  it('agrees with the hole: every tread it names is inside a stairwell part, on a winder too', () => {
+    for (const ceiling of [2.4, 2.8, 3.2, 3.6]) {
+      const steps = stairSteps(winder, 2.8);
+      const { underHole } = stairHeadroom(winder, 2.8, ceiling, 2.8);
+      const first = steps.findIndex((step) => step.top > ceiling - STAIR_HEADROOM);
+      expect(underHole.length).toBeGreaterThanOrEqual(steps.length - first);
+      for (let i = first; i < steps.length; i++) expect(underHole).toContain(i);
+    }
+  });
+
+  it('is null on the top storey, which has no slab to cut', () => {
+    const stairs = makeItem({ id: 's', type: 'stairs', ...straight, height: 2.8 });
+    expect(floorStairHeadroom(stairs, { floors: [makeFloor({ height: 2.8 })] }, 0)).toBeNull();
+  });
+
+  describe('under the top storey', () => {
+    const stairs = makeItem({ id: 's', type: 'stairs', ...straight, height: 2.7 });
+    const floors = [makeFloor({ id: 'a', height: 2.7 }), makeFloor({ id: 'loft', height: 1.1 })];
+    const clearanceUnder = (style?: RoofStyle) =>
+      floorStairHeadroom(stairs, { floors, ...(style ? { roof: { style, color: '#888888' } } : {}) }, 0)!.clearance;
+
+    it('a flat roof caps the flight at the loft wall', () => {
+      expect(clearanceUnder('flat')).toBeCloseTo(1.1, 9);
+    });
+
+    it('a pitched roof rises over the knee wall, so the loft wall is no limit', () => {
+      expect(clearanceUnder('gable')).toBeGreaterThanOrEqual(STAIR_HEADROOM);
+      expect(clearanceUnder('hipped')).toBeGreaterThanOrEqual(STAIR_HEADROOM);
+    });
+
+    it('nothing overhead caps nothing', () => {
+      expect(clearanceUnder('none')).toBeGreaterThanOrEqual(STAIR_HEADROOM);
+      expect(clearanceUnder()).toBeGreaterThanOrEqual(STAIR_HEADROOM);
+    });
+
+    it('a storey below the top keeps its height, whatever the roof', () => {
+      const three = { floors: [floors[0]!, makeFloor({ id: 'low', height: 1.1 }), makeFloor({ id: 'top', height: 2.7 })], roof: { style: 'gable' as const, color: '#888888' } };
+      expect(floorStairHeadroom(stairs, three, 0)!.clearance).toBeCloseTo(1.1, 9);
+    });
+  });
+
+  it('never warns about float noise: short means short as the figure reads', () => {
+    expect(isHeadroomShort(1.9999999999999996)).toBe(false);
+    expect(isHeadroomShort(1.99)).toBe(true);
+    for (let cm = 100; cm <= 600; cm++) {
+      for (const above of [1.5, 2, 2.4, 2.7, 3]) {
+        const floors = [makeFloor({ id: 'a', height: cm / 100 }), makeFloor({ id: 'b', height: above })];
+        const stairs = makeItem({ id: 's', type: 'stairs', ...straight, height: cm / 100 });
+        const { clearance } = floorStairHeadroom(stairs, { floors, roof: { style: 'flat', color: '#888888' } }, 0)!;
+        if (isHeadroomShort(clearance)) expect(formatMetres(clearance)).not.toBe(formatMetres(STAIR_HEADROOM));
+      }
+    }
   });
 });

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { blueprintCanvasSize, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
+import { BLUEPRINT_PIXEL_RATIO, blueprintCanvasSize, blueprintPixelRatio, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
+import { CURRENCY_SYMBOL } from './constants';
 import { subscribeNotices, type Notice } from './editor-notices';
+import { planContentBounds } from './plan-export/plan-geometry';
 import { ENTRANCE_DOOR_ID } from './street';
 
 // jsdom has no 2D canvas: the render is a no-op (null context) and toDataURL
@@ -25,15 +27,20 @@ vi.mock('../canvas-2d/render', async (importOriginal) => {
 
 describe('openBlueprintPrintWindow (#288)', () => {
   const events: string[] = [];
+  let written = '';
   const fakeWindow = {
     document: {
-      write: (html: string) => events.push(`write:${html.includes('data:image/png;base64,STUB') ? 'plan' : 'other'}`),
+      write: (html: string) => {
+        written = html;
+        events.push(`write:${html.includes('data:image/png;base64,STUB') ? 'plan' : 'other'}`);
+      },
       close: () => events.push('close'),
       readyState: 'loading',
     },
     // Printing is armed from the opener after the write (#445).
     addEventListener: (type: string) => events.push(`listen:${type}`),
     opener: null as unknown,
+    close: () => events.push('popup-closed'),
   };
 
   beforeEach(() => {
@@ -79,6 +86,118 @@ describe('openBlueprintPrintWindow (#288)', () => {
     await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
     expect(decodeCalls).toEqual([]);
     expect(events).toEqual(['open', 'write:plan', 'close', 'listen:load']);
+  });
+
+  it('prints the cost with its currency, under the name the rest of the app uses (#596)', async () => {
+    const floor = makeFloor({ items: [makeItem({ price: 1899 })] });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
+    expect(written).toContain(`<li>Cost: ${CURRENCY_SYMBOL}1,899</li>`);
+    expect(written).toContain(`· ${CURRENCY_SYMBOL}1,899</p>`);
+    expect(written).not.toContain('Total cost');
+    expect(written).not.toContain(`${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}`);
+  });
+
+  it('takes the porch off the zone list, as off the floor area (#582)', async () => {
+    const floor = makeFloor({ zones: [{ id: 'z', name: 'Hall', color: '#3b82f6', x: -3, z: -4, w: 6, d: 2 }] });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2 } }), floor);
+    expect(written).toContain('10.3 m²</li>');
+  });
+
+  it('prints a canvas of several backing pixels per CSS px, at the same layout size (#619)', async () => {
+    const floor = makeFloor({ items: [makeItem()] });
+    const layout = makeLayout({ floors: [floor] });
+    let captured: { width: number; height: number } | null = null;
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(function (this: HTMLCanvasElement) {
+      captured = { width: this.width, height: this.height };
+      return 'data:image/png;base64,STUB';
+    });
+    await openBlueprintPrintWindow(layout, floor);
+    const size = blueprintCanvasSize(planContentBounds(layout, floor));
+    expect(BLUEPRINT_PIXEL_RATIO).toBeGreaterThanOrEqual(2);
+    expect(captured).toEqual({ width: size.width * BLUEPRINT_PIXEL_RATIO, height: size.height * BLUEPRINT_PIXEL_RATIO });
+    expect(written).toContain(`width="${size.width}" height="${size.height}"`);
+  });
+
+  describe('when the large canvas fails (#619)', () => {
+    const fail = (result: (width: number) => string) => {
+      const widths: number[] = [];
+      vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(function (this: HTMLCanvasElement) {
+        widths.push(this.width);
+        return result(this.width);
+      });
+      return widths;
+    };
+    const run = async () => {
+      const floor = makeFloor({ items: [makeItem()] });
+      const layout = makeLayout({ floors: [floor] });
+      const notices: Notice[] = [];
+      const stop = subscribeNotices((notice) => notices.push(notice));
+      try {
+        await openBlueprintPrintWindow(layout, floor);
+      } finally {
+        stop();
+      }
+      return { notices, size: blueprintCanvasSize(planContentBounds(layout, floor)) };
+    };
+    const OK = 'data:image/png;base64,STUB';
+
+    it('retries at 1× when the browser hands back an empty image', async () => {
+      const widths = fail((width) => (width > 1200 ? 'data:,' : OK));
+      const { notices, size } = await run();
+      expect(widths).toEqual([size.width * BLUEPRINT_PIXEL_RATIO, size.width]);
+      expect(events).toEqual(['open', 'write:plan', 'close', 'listen:load']);
+      expect(notices).toEqual([]);
+      expect(written).toContain(`width="${size.width}" height="${size.height}"`);
+    });
+
+    it('retries at 1× when the encode throws', async () => {
+      fail((width) => {
+        if (width > 1200) throw new DOMException('out of memory', 'OperationError');
+        return OK;
+      });
+      await run();
+      expect(events).toEqual(['open', 'write:plan', 'close', 'listen:load']);
+    });
+
+    it('closes the popup and says so when 1× fails too, leaving no blank tab', async () => {
+      fail(() => 'data:,');
+      const { notices } = await run();
+      expect(events).toEqual(['open', 'popup-closed']);
+      expect(notices.map((notice) => [notice.tone, notice.message])).toEqual([['error', expect.stringMatching(/couldn.t be drawn/) as unknown]]);
+    });
+
+    it('closes the popup when anything else throws after it opened', async () => {
+      const floor = makeFloor({ items: [makeItem()] });
+      const layout = makeLayout({ floors: [floor] });
+      Object.defineProperty(layout, 'name', {
+        get: () => {
+          throw new Error('boom');
+        },
+      });
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await openBlueprintPrintWindow(layout, floor);
+      expect(events).toEqual(['open', 'popup-closed']);
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('frees the canvas before the sheet is written', async () => {
+      const canvases: HTMLCanvasElement[] = [];
+      vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(function (this: HTMLCanvasElement) {
+        canvases.push(this);
+        return OK;
+      });
+      await run();
+      expect(canvases[0]!.width).toBe(0);
+      expect(canvases[0]!.height).toBe(0);
+    });
+  });
+
+  it('draws at 2× on a touch-first or small device, 3× otherwise (#619)', () => {
+    expect(blueprintPixelRatio({ coarsePointer: false, deviceMemory: 8 })).toBe(3);
+    expect(blueprintPixelRatio({ coarsePointer: false })).toBe(3);
+    expect(blueprintPixelRatio({ coarsePointer: true, deviceMemory: 8 })).toBe(2);
+    expect(blueprintPixelRatio({ coarsePointer: false, deviceMemory: 4 })).toBe(2);
+    expect(blueprintPixelRatio({ coarsePointer: false, deviceMemory: 2 })).toBe(2);
   });
 
   it('says so in an in-app notice, not an alert, when pop-ups are blocked (#649)', async () => {
@@ -141,7 +260,7 @@ describe('openBlueprintPrintWindow content fit (#377)', () => {
     const tree = makeItem({ id: 'tree', type: 'tree', name: 'Oak Tree', width: 1.4, depth: 1.4, position: { x: 7.5, z: 3 } });
     const floor = makeFloor({ items: [makeItem(), tree] });
     await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
-    expect(sizes).toEqual([[1200, 828]]);
+    expect(sizes).toEqual([[1200 * BLUEPRINT_PIXEL_RATIO, 828 * BLUEPRINT_PIXEL_RATIO]]);
   });
 });
 
@@ -229,7 +348,7 @@ describe('openBlueprintPrintWindow cost (#693)', () => {
       items: [makeItem({ id: 'sofa', price: 650 }), makeItem({ id: ENTRANCE_DOOR_ID, type: 'door', name: 'Front door', price: 300, position: { x: 0, z: 4 } })],
     });
     await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
-    expect(html).toContain('Total cost: 650');
+    expect(html).toContain('Cost: $650');
     expect(html).not.toContain('950');
   });
 });

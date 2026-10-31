@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { CURRENCY_SYMBOL } from '../lib/constants';
+import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { MAX_ZONES, zoneStats } from '../lib/zones';
 import type { RoomZone } from '../lib/types';
 
@@ -25,10 +26,11 @@ export interface ZonesPanelProps {
  * parks the 3D floor-click modes it would otherwise sit beside.
  */
 export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
-  const { activeFloor, actions } = useRoomEditor();
+  const { layout, activeFloor, actions } = useRoomEditor();
   const view = useViewSettings('drawZoneMode');
   const { setView } = useEditorViewActions();
   const zones = activeFloor.zones ?? [];
+  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, activeFloor));
   const drawing = view.drawZoneMode;
 
   const toggleDrawing = () => {
@@ -85,7 +87,7 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
         {zones.length > 0 && (
           <ul className="space-y-1 border-t pt-2" aria-label="Zones on this floor">
             {zones.map((zone) => {
-              const stats = zoneStats(zone, activeFloor.items);
+              const stats = zoneStats(zone, activeFloor.items, recess);
               return (
                 <li key={zone.id} className="flex items-center gap-2 text-xs">
                   <Input

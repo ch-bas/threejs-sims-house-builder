@@ -117,6 +117,10 @@
    gaps too, not just over a panel. */
 .pc-hud-left[data-scrollable] {
   pointer-events: auto;
+  /* Only as wide as its panels: a grid row stretches it across the plan,
+     where it would take the presses meant for the plan. */
+  width: fit-content;
+  justify-self: start;
 }
 /* The build tools stay pinned at its foot while the panels above scroll,
    casting a shadow up over them while there is more to see. */
@@ -1712,5 +1716,34 @@ html[data-plan-gesture] * {
   }
   .pc-status-toast input {
     height: 36px !important;
+  }
+}
+
+/* L1 (plan parity) */
+.pc-remove-wall {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  margin-top: 8px;
+  border: 1px solid var(--pc-demolish);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pc-demolish-ink);
+  font-family: var(--pc-font-display);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pc-remove-wall:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (pointer: coarse) {
+  .pc-remove-wall {
+    min-height: 44px;
   }
 }

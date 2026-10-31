@@ -104,7 +104,7 @@ components/
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
-    │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats
+    │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats (porch left out, #582)
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
@@ -167,6 +167,8 @@ components/
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
     │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
+    ├── canvas-2d/opening-symbol.ts      Door swings and window double lines on the plan, minimap and blueprint
+    ├── canvas-2d/plan-edit.ts           What only the on-screen plan draws while editing: wall draft, selected wall, zone handles, and their hit tests and drag maths
     ├── canvas-2d/stairs-symbol.ts       Stair treads + climb arrow, stairwell voids on the floor above
     ├── plotcraft/icon.tsx               PlotCraft SVG icon set for UI panels (no icon library)
     ├── plotcraft/tokens.css             PlotCraft design tokens (colours, type, spacing, glass) and HUD classes
@@ -230,6 +232,7 @@ components/
         ├── furniture-catalog-panel.tsx
         ├── placed-items-panel.tsx
         ├── item-resize-panel.tsx
+        ├── stair-headroom-note.tsx      Warning in the stairs controls when a flight is short of headroom
         ├── align-panel.tsx
         ├── templates-panel.tsx
         ├── themes-panel.tsx

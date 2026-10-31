@@ -4,7 +4,7 @@ import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
-import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, isEntranceSpec, isSillHeight } from './street';
+import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entranceProblem, entranceWithinStorey, isEntranceSpec, isSillHeight } from './street';
 import { MAX_ZONES, isRoomZone } from './zones';
 import type {
   DormerOpening,
@@ -620,6 +620,14 @@ function repairRoof(roof: RoofSpec): RoofSpec {
   return rebuild(roof, ROOF_KEYS, patch);
 }
 
+/** The floor without the porch's door and back wall; `floor` itself when it has neither. */
+function withoutPorchParts(floor: FloorLayout): FloorLayout {
+  const items = floor.items.filter((item) => item.id !== ENTRANCE_DOOR_ID);
+  const walls = floor.interiorWalls?.filter((wall) => wall.id !== ENTRANCE_WALL_ID);
+  if (items.length === floor.items.length && walls?.length === floor.interiorWalls?.length) return floor;
+  return { ...floor, items, ...(walls ? { interiorWalls: walls } : {}) };
+}
+
 /** Whitelist every object (#350) and bring every field within the caps above. */
 function repairLayout(layout: RoomLayout): RoomLayout {
   const patch: Partial<RoomLayout> = {
@@ -629,7 +637,16 @@ function repairLayout(layout: RoomLayout): RoomLayout {
   if (layout.id !== undefined) patch.id = capText(layout.id, MAX_ID_LENGTH);
   if (layout.roof) patch.roof = repairRoof(layout.roof);
   if (layout.terrain) patch.terrain = pick(layout.terrain, TERRAIN_KEYS);
-  if (layout.entrance) patch.entrance = pick(layout.entrance, ENTRANCE_KEYS);
+  // A share link or a file can carry a porch taller than its storey (#587).
+  if (layout.entrance) {
+    const entrance = entranceWithinStorey(pick(layout.entrance, ENTRANCE_KEYS), layout);
+    patch.entrance = entrance;
+    // A porch the street storey is too low for isn't built, so neither are its
+    // door and back wall, as on the reducer's re-fit. `door` stays unset: raising
+    // the storey brings both back.
+    const context = { width: layout.width, depth: layout.height, floors: layout.floors, ...(layout.terrain ? { terrain: layout.terrain } : {}) };
+    if (entranceProblem(entrance, context) === 'too-low') patch.floors = mapSame(patch.floors ?? layout.floors, withoutPorchParts);
+  }
   // The hard budget (#463e) is repaired, never refused: anything that isn't
   // an object switches it off rather than costing the user their house.
   if (layout.budget !== undefined) {

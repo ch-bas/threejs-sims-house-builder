@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
 import { buildingToDxf, DXF_LAYERS, layoutToDxf } from './dxf';
-import { buildingFrameBounds, interiorWallDimensions } from './plan-geometry';
+import { buildingFrameBounds, interiorWallDimensions, stairCutHatch } from './plan-geometry';
 import { layoutToSvg } from './svg';
 
 function count(haystack: string, needle: string): number {
@@ -224,13 +224,52 @@ describe('layoutToDxf', () => {
   });
 
   it('keeps the plan layers and adds COVERAGE and DIMENSIONS', () => {
-    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS']);
+    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS', 'ZONES', 'STAIR-CUT']);
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);
     for (const layer of ['0', ...DXF_LAYERS]) {
       expect(dxf).toContain(`0\nLAYER\n`);
       expect(dxf).toMatch(new RegExp(`AcDbLayerTableRecord\\n2\\n${layer}\\n`));
     }
+  });
+
+  it('draws each zone as a closed outline with its name and area at the top edge (#571)', () => {
+    const zone = { id: 'z', name: 'Séjour', color: '#60a5fa', x: -3, z: -2, w: 5, d: 4.5 };
+    const floor = makeFloor({ zones: [zone, { ...zone, id: 'y', name: 'Hall', x: 1, z: 2, w: 2, d: 1 }] });
+    const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+    expectValidR2000(dxf);
+    const outlines = entities(dxf, 'LWPOLYLINE', 'ZONES');
+    expect(outlines).toHaveLength(2);
+    expect(tag(outlines[0]!, 70)).toBe('1');
+    // World (−3, −2) → (2, 2.5) in an 8 × 8 room: CAD x 1…6, y 1.5…6.
+    const vertices = (code: number): string[] => outlines[0]!.tags.filter(([c]) => c === code).map(([, v]) => v);
+    expect(vertices(10)).toEqual(['1.000', '6.000', '6.000', '1.000']);
+    expect(vertices(20)).toEqual(['6.000', '6.000', '1.500', '1.500']);
+    const texts = entities(dxf, 'TEXT', 'ZONES');
+    expect(texts.map((t) => tag(t, 1))).toEqual(['S\\U+00E9jour', '22.5 m\\U+00B2', 'Hall', '2.0 m\\U+00B2']);
+    // Centred on the zone, under the top edge, area below the name, as the SVG.
+    const [name, area] = texts;
+    expect(Number(tag(name!, 11))).toBeCloseTo(3.5, 3);
+    expect(Number(tag(name!, 21))).toBeLessThan(6);
+    expect(Number(tag(area!, 21))).toBeLessThan(Number(tag(name!, 21)));
+  });
+
+  it('leaves the porch out of a zone\'s area, as the SVG and blueprint do (#582)', () => {
+    const floor = makeFloor({ zones: [{ id: 'z', name: 'Hall', color: '#60a5fa', x: -3, z: -4, w: 6, d: 2 }] });
+    const dxf = layoutToDxf(makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2 } }), floor);
+    expect(dxf).toContain('10.3 m');
+    expect(dxf).not.toContain('12.0 m');
+  });
+
+  it('draws no zone entities on a floor without zones, and each floor’s own on a building (#571)', () => {
+    const { layout, floor } = makeFixture();
+    expect(entities(layoutToDxf(layout, floor), undefined, 'ZONES')).toHaveLength(0);
+    const zone = { id: 'z', name: 'Hall', color: '#60a5fa', x: 0, z: 0, w: 2, d: 2 };
+    const zoned = { ...floor, zones: [zone] };
+    const building = makeLayout({ floors: [zoned, makeFloor({ id: 'f', zones: [{ ...zone, id: 'y' }] })] });
+    const outlines = entities(buildingToDxf(building), 'LWPOLYLINE', 'ZONES');
+    expect(outlines).toHaveLength(2);
+    expect(Number(tag(outlines[1]!, 10))).toBeGreaterThan(Number(tag(outlines[0]!, 10)) + 8);
   });
 
   it('emits closed LWPOLYLINEs for the room outline and each furniture footprint', () => {
@@ -354,6 +393,12 @@ describe('layoutToDxf', () => {
     expect(dxf).toMatch(/^[\x00-\x7e]*$/);
   });
 
+  it('drops lone surrogates and non-characters rather than escaping them (#549)', () => {
+    const floor = makeFloor({ items: [makeItem({ name: 'Sofa\ud83d￿', position: { x: 0, z: 0 } })] });
+    const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+    expect(dxf).toContain('1\nSofa\n');
+  });
+
   it('escapes % so names cannot be read as TEXT control codes (#288)', () => {
     const floor = makeFloor({
       items: [makeItem({ name: '%%u', position: { x: 0, z: 0 } })],
@@ -388,6 +433,9 @@ describe('layoutToDxf', () => {
     const groundDxf = layoutToDxf(layout, ground);
     // 43 tread segments + 2 arrow barbs; the footprint plus the open arrow shaft.
     expect(entities(groundDxf, 'LINE', 'FURNITURE')).toHaveLength(14 * 4 - 13 + 2);
+    // The hatch over the cut treads has its own layer (#631).
+    expect(entities(groundDxf, 'LINE', 'STAIR-CUT')).toHaveLength(stairCutHatch(layout, ground).length);
+    expect(stairCutHatch(layout, ground).length).toBeGreaterThan(0);
     const polylines = entities(groundDxf, 'LWPOLYLINE', 'FURNITURE');
     expect(polylines).toHaveLength(2);
     expect(polylines.filter((p) => tag(p, 90) === '14' && tag(p, 70) === '0')).toHaveLength(1);
@@ -506,7 +554,75 @@ describe('coverage frame (#420)', () => {
   });
 });
 
+describe('opening chains (#630)', () => {
+  const texts = (dxf: string): string[] => entities(dxf, 'TEXT', 'DIMENSIONS').map((t) => tag(t, 1) ?? '');
+
+  it('are off by default', () => {
+    const { layout, floor } = makeFixture();
+    expect(texts(layoutToDxf(layout, floor))).not.toContain('3.55 m');
+  });
+
+  it('match the SVG’s runs on the DIMENSIONS layer, and the document stays valid', () => {
+    const { layout, floor } = makeFixture();
+    const dxf = layoutToDxf(layout, floor, { openingDimensions: true });
+    expectValidR2000(dxf);
+    expect(texts(dxf).filter((t) => t === '3.55 m')).toHaveLength(4);
+    expect(texts(dxf).filter((t) => t === '0.90 m')).toHaveLength(2);
+  });
+
+  it('sit past the content, with the room dimensions, title and arrow stepped out', () => {
+    const { layout, floor } = makeFixture();
+    const off = layoutToDxf(layout, floor);
+    const on = layoutToDxf(layout, floor, { openingDimensions: true });
+    const y = (dxf: string, text: string): number => Number(tag(entities(dxf, 'TEXT').find((t) => tag(t, 1) === text)!, 20));
+    const room = (dxf: string): number => Number(tag(entities(dxf, 'TEXT', 'DIMENSIONS').find((t) => tag(t, 1) === '8.00 m' && tag(t, 50) === undefined)!, 21));
+    expect(room(off) - room(on)).toBeCloseTo(0.6, 3);
+    expect(y(on, 'My Home - Ground Floor') - y(off, 'My Home - Ground Floor')).toBeCloseTo(0.6, 3);
+    // The north chain runs 0.4 m past the wall at CAD y 8, on the room's width.
+    const north = entities(on, 'TEXT', 'DIMENSIONS').filter((t) => tag(t, 1) === '3.55 m' && tag(t, 50) === undefined);
+    expect(north).toHaveLength(2);
+    expect(Number(tag(north[0]!, 21))).toBeCloseTo(8.55, 3);
+  });
+
+  it('step the room dimensions past a third row of labels', () => {
+    const window = (id: string, x: number) => makeItem({ id, type: 'window', width: 0.1, depth: 0.1, position: { x, z: 4 }, rotation: Math.PI });
+    const floor = makeFloor({ items: [window('a', 0), window('b', 0.2), window('c', 0.4), window('d', 0.6)] });
+    const layout = makeLayout({ floors: [floor] });
+    const room = (dxf: string): number => Number(tag(entities(dxf, 'TEXT', 'DIMENSIONS').find((t) => tag(t, 1) === '8.00 m' && tag(t, 50) === undefined)!, 21));
+    const dxf = layoutToDxf(layout, floor, { openingDimensions: true });
+    const lowestChainLabel = Math.min(...entities(dxf, 'TEXT', 'DIMENSIONS').filter((t) => tag(t, 1) !== '8.00 m' && tag(t, 50) === undefined).map((t) => Number(tag(t, 21))));
+    expect(room(dxf)).toBeLessThan(lowestChainLabel - 0.15);
+  });
+
+  it('need the dimensions layer', () => {
+    const { layout, floor } = makeFixture();
+    expect(entities(layoutToDxf(layout, floor, { openingDimensions: true, dimensions: false }), undefined, 'DIMENSIONS')).toHaveLength(0);
+  });
+
+  it('follow each floor on a whole-building file', () => {
+    const building = makeRichBuilding();
+    expectValidR2000(buildingToDxf(building, { openingDimensions: true }));
+    expect(entities(buildingToDxf(building, { openingDimensions: true }), undefined, 'DIMENSIONS').length).toBeGreaterThan(
+      entities(buildingToDxf(building), undefined, 'DIMENSIONS').length
+    );
+  });
+});
+
 describe('interior wall dimensions', () => {
+  it('slide the label the same way in both formats when a door swing and a desk crowd the wall (#592)', () => {
+    const door = makeItem({ id: 'door', type: 'door', width: 0.9, depth: 0.1, position: { x: 0, z: 0 }, rotation: -Math.PI / 2 });
+    const desk = makeItem({ id: 'desk', name: 'Desk', width: 0.8, depth: 0.8, position: { x: 0.5, z: 0 } });
+    const floor = makeFloor({ items: [door, desk], interiorWalls: [{ id: 'iw', x1: 0, z1: -3, x2: 0, z2: 3 }] });
+    const layout = makeLayout({ floors: [floor] });
+    const [dim] = interiorWallDimensions(floor);
+    expect(dim!.labelShiftM).not.toBe(0);
+    // The wall's middle is CAD y 4 and sheet y 260; the wall runs south, so down both.
+    const label = entities(layoutToDxf(layout, floor), 'TEXT', 'DIMENSIONS').find((t) => tag(t, 1) === '6.00 m')!;
+    expect(Number(tag(label, 21))).toBeCloseTo(4 - dim!.labelShiftM, 3);
+    const svgLabel = /class="wall-dimension".*?translate\(([\d.]+) ([\d.]+)\)/.exec(layoutToSvg(layout, floor));
+    expect(Number(svgLabel![2])).toBeCloseTo(260 + dim!.labelShiftM * 50, 1);
+  });
+
   it('sit on the same side of the wall as in the SVG, clear of an item label', () => {
     // Wall running south at x = −1.5 with a desk against its west face.
     const desk = makeItem({ id: 'd', type: 'desk', name: 'Desk 45', width: 1.2, depth: 0.5, position: { x: -2.3, z: -2 }, rotation: Math.PI / 4 });
