@@ -1494,3 +1494,19 @@ html[data-plan-gesture] * {
     background-clip: padding-box;
   }
 }
+
+/* A folded wall panel is one big toggle: the whole bar opens it, not just its
+   label (#681). */
+.pc-dock-folded {
+  position: relative;
+}
+.pc-dock-folded .pc-dock-fold-toggle {
+  flex: 1;
+  justify-content: space-between;
+  width: 100%;
+}
+.pc-dock-folded .pc-dock-fold-toggle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}

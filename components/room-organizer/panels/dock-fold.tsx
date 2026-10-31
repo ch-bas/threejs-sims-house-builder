@@ -42,7 +42,7 @@ export function DockFoldButton({ label, icon, open, onToggle }: DockFoldButtonPr
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className="pc-hud-header"
+      className="pc-hud-header pc-dock-fold-toggle"
       style={{
         fontSize: 11,
         display: 'flex',
