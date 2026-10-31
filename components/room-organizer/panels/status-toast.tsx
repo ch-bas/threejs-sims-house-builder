@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { usePausableTimeout } from '../hooks/use-pausable-timeout';
@@ -15,8 +15,13 @@ import {
   statusToastInSlot,
   toastsHeldBack,
 } from '../lib/overlay-queue';
+import { isTypingTarget } from '../lib/walk-input';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { OverlayStackPortal } from './overlay-stack';
+
+/** When each notice was raised; one shown later than this waited in the queue. */
+const raisedAt = new WeakMap<Notice, number>();
+const ANSWERS_THE_ASKER_MS = 500;
 
 /** The newest few stay visible; older ones drop off the end. */
 const MAX_VISIBLE = 3;
@@ -49,6 +54,7 @@ export function StatusToastHost(): JSX.Element | null {
   useEffect(
     () =>
       subscribeNotices((notice) => {
+        raisedAt.set(notice, Date.now());
         // A single slot never drops the notice on screen (the oldest).
         setNotices((current) =>
           compactRef.current
@@ -135,15 +141,21 @@ function StatusToast({
   // Any other notice closing under the focus (Undo, Dismiss) hands it back to
   // where it came from, not to <body> (#638).
   const focusCameFrom = useRef<HTMLElement | null>(null);
-  useEffect(
-    () => () => {
-      const active = document.activeElement;
-      if (active && active !== document.body) return;
-      if (focusCameFrom.current?.isConnected) focusCameFrom.current.focus({ preventScroll: true });
-    },
-    []
-  );
-  useDialogFocus(notice.copyText !== undefined, toastRef, {
+  // A layout effect runs while the notice is still in the document, so it can
+  // tell whether focus is really inside. A text field stays put on touch: its
+  // keyboard would pop up.
+  useLayoutEffect(() => {
+    const toast = toastRef.current;
+    return () => {
+      const from = focusCameFrom.current;
+      if (!from?.isConnected || !toast?.contains(document.activeElement)) return;
+      if (isTypingTarget(from) && window.matchMedia('(pointer: coarse)').matches) return;
+      from.focus({ preventScroll: true });
+    };
+  }, []);
+  // One that waited in the queue has no asker left to answer: Tab reaches it.
+  const [justAsked] = useState(() => Date.now() - (raisedAt.get(notice) ?? 0) < ANSWERS_THE_ASKER_MS);
+  useDialogFocus(notice.copyText !== undefined && justAsked, toastRef, {
     initialFocusRef: copyFieldRef,
     onEscape: () => onDismiss(notice.id),
     takeFocus: true,
