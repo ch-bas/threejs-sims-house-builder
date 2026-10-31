@@ -275,7 +275,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 downloadTextFile(
                   planExportFileName(layout, activeFloor, 'svg'),
                   'image/svg+xml',
-                  layoutToSvg(layout, activeFloor, { schedule: true })
+                  layoutToSvg(layout, activeFloor, { schedule: true, openingDimensions: true })
                 )
               }
               variant="outline"
@@ -290,7 +290,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 downloadTextFile(
                   planExportFileName(layout, activeFloor, 'dxf'),
                   'application/dxf',
-                  layoutToDxf(layout, activeFloor)
+                  layoutToDxf(layout, activeFloor, { openingDimensions: true })
                 )
               }
               variant="outline"
@@ -309,7 +309,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                     downloadTextFile(
                       buildingExportFileName(layout, 'svg'),
                       'image/svg+xml',
-                      buildingToSvg(layout, { schedule: true })
+                      buildingToSvg(layout, { schedule: true, openingDimensions: true })
                     )
                   }
                   variant="outline"
@@ -324,7 +324,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                     downloadTextFile(
                       buildingExportFileName(layout, 'dxf'),
                       'application/dxf',
-                      buildingToDxf(layout)
+                      buildingToDxf(layout, { openingDimensions: true })
                     )
                   }
                   variant="outline"

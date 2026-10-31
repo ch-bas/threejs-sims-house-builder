@@ -26,7 +26,8 @@
  *   ARC plus two LINEs (#420), trimmed to the frame the SVG clips to (the
  *   plan content plus at most 5 m of coverage), so the two formats agree and
  *   a 30 m lens can't swamp the drawing extents; DIMENSIONS carries LINE + TEXT dimension
- *   strings (true DIMENSION entities need anonymous blocks); the north arrow
+ *   strings (true DIMENSION entities need anonymous blocks), and with
+ *   `openingDimensions` a chain per exterior wall (#630); the north arrow
  *   sits on LABELS (#424).
  * - `buildingToDxf` lays every floor out side by side, ground floor first,
  *   on the same layers at the same 1:1 scale, each with its own title (#405).
@@ -52,7 +53,9 @@ import {
   stairTreadSegments,
   stairwellOutlines,
   visionWedges,
+  wallOpeningDimensions,
   type CoverageMode,
+  type OpeningChain,
   type PlacedItem,
   type PlanBounds,
   type PlanPoint,
@@ -96,6 +99,8 @@ export interface DxfExportOptions {
   coverage?: boolean | 'full';
   /** Room and interior-wall dimension strings on the DIMENSIONS layer (default on, #424). */
   dimensions?: boolean;
+  /** A chain of dimensions along each exterior wall with an opening, on DIMENSIONS (default off, #630); needs `dimensions`. */
+  openingDimensions?: boolean;
 }
 
 /** Perpendicular jamb-tick length at each end of an opening, in metres. */
@@ -113,6 +118,10 @@ const DIMENSION_OFFSET_M = 0.4;
 const WALL_DIMENSION_OFFSET_M = 0.2;
 /** Half-length of a dimension tick, metres. */
 const DIMENSION_TICK_M = 0.08;
+/** Band the opening chains add between the plan content and what stood there, metres, for two label rows (#630). */
+const OPENING_CHAIN_BAND_M = 0.6;
+/** Further out per label row of an opening chain, metres. */
+const OPENING_CHAIN_ROW_M = 0.2;
 /** Clear space between two floors laid side by side, metres (#405). */
 const FLOOR_GAP_M = 3;
 
@@ -556,13 +565,18 @@ function emitFloor(
     if (item.type === 'stairs') emitStairs(doc, item, cad);
   }
 
-  if (options.dimensions !== false) emitDimensions(doc, layout, floor, content, cad);
-  emitNorthArrow(doc, cad(content.maxX, content.minZ));
+  const showChains = options.dimensions !== false && options.openingDimensions === true;
+  const chains = showChains ? wallOpeningDimensions(layout, floor) : [];
+  const topRow = Math.max(0, ...chains.flatMap((chain) => chain.segments.map((segment) => segment.labelRow)));
+  const chainBand = showChains ? OPENING_CHAIN_BAND_M + OPENING_CHAIN_ROW_M * Math.max(0, topRow - 1) : 0;
+  if (options.dimensions !== false) emitDimensions(doc, layout, floor, content, cad, chainBand);
+  for (const chain of chains) emitOpeningChain(doc, chain, content, cad);
+  const [northEastX, northEastY] = cad(content.maxX, content.minZ);
+  emitNorthArrow(doc, [northEastX + chainBand, northEastY]);
 
   // Floor title above the plan content (the north wall, unless something stands beyond it).
   const [titleX] = cad(-hw, 0);
-  const [, titleY] = cad(0, content.minZ);
-  doc.text('LABELS', [titleX, titleY + 0.5], TITLE_TEXT_HEIGHT, `${layout.name} - ${floor.name}`);
+  doc.text('LABELS', [titleX, northEastY + 0.5 + chainBand], TITLE_TEXT_HEIGHT, `${layout.name} - ${floor.name}`);
 }
 
 /** Room zones (#571): the outline, then name and area on two lines, like the SVG's `renderZones`. */
@@ -677,7 +691,8 @@ function emitDimensions(
   layout: RoomLayout,
   floor: FloorLayout,
   content: PlanBounds,
-  cad: (x: number, z: number) => CadPoint
+  cad: (x: number, z: number) => CadPoint,
+  chainBand: number
 ): void {
   const [x0, y0] = cad(-layout.width / 2, layout.height / 2);
   const [x1, y1] = cad(layout.width / 2, -layout.height / 2);
@@ -685,13 +700,13 @@ function emitDimensions(
   const tick = DIMENSION_TICK_M;
 
   // Width, along the bottom.
-  const wy = contentBottom - DIMENSION_OFFSET_M;
+  const wy = contentBottom - DIMENSION_OFFSET_M - chainBand;
   doc.line('DIMENSIONS', [x0, y0], [x0, wy - tick]);
   doc.line('DIMENSIONS', [x1, y0], [x1, wy - tick]);
   dimension(doc, [x0, wy], [x1, wy], layout.width, [0, -1]);
 
   // Depth, up the left side.
-  const dx = contentLeft - DIMENSION_OFFSET_M;
+  const dx = contentLeft - DIMENSION_OFFSET_M - chainBand;
   doc.line('DIMENSIONS', [x0, y0], [dx - tick, y0]);
   doc.line('DIMENSIONS', [x0, y1], [dx - tick, y1]);
   dimension(doc, [dx, y0], [dx, y1], layout.height, [-1, 0]);
@@ -707,12 +722,40 @@ function emitDimensions(
   }
 }
 
+/** One wall's opening chain (#630), as the SVG draws it: just past the content, extension lines back to the wall. */
+function emitOpeningChain(doc: DxfDocument, chain: OpeningChain, content: PlanBounds, cad: (x: number, z: number) => CadPoint): void {
+  const { outward: world, segments } = chain;
+  const horizontal = world.x === 0;
+  const edge = horizontal ? (world.z < 0 ? content.minZ : content.maxZ) : world.x < 0 ? content.minX : content.maxX;
+  const outward: CadPoint = [world.x, -world.z];
+  const onLine = (p: PlanPoint, by = 0): CadPoint => {
+    const step = DIMENSION_OFFSET_M + by;
+    const point = horizontal ? cad(p.x, edge) : cad(edge, p.z);
+    return [point[0] + outward[0] * step, point[1] + outward[1] * step];
+  };
+  for (const stop of [segments[0]!.from, ...segments.map((segment) => segment.to)]) {
+    doc.line('DIMENSIONS', cad(stop.x, stop.z), onLine(stop, DIMENSION_TICK_M));
+  }
+  for (const segment of segments) {
+    const gap = DIMENSION_TEXT_HEIGHT + segment.labelRow * OPENING_CHAIN_ROW_M;
+    dimension(doc, onLine(segment.from), onLine(segment.to), segment.lengthM, outward, 0, gap);
+  }
+}
+
 /**
  * One dimension line with perpendicular end ticks and its length as TEXT
- * beside it on the `outward` side (a CAD unit vector), kept upright, slid
- * `labelShiftM` off centre towards `to`.
+ * `labelGap` beside it on the `outward` side (a CAD unit vector), kept
+ * upright, slid `labelShiftM` off centre towards `to`.
  */
-function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: number, outward: CadPoint, labelShiftM = 0): void {
+function dimension(
+  doc: DxfDocument,
+  from: CadPoint,
+  to: CadPoint,
+  lengthM: number,
+  outward: CadPoint,
+  labelShiftM = 0,
+  labelGap = DIMENSION_TEXT_HEIGHT
+): void {
   const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
   if (len === 0) return;
   const ux = (to[0] - from[0]) / len;
@@ -726,10 +769,9 @@ function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: numb
   // Readable from the bottom or the right of the sheet.
   if (rotation > 90 + 1e-6) rotation -= 180;
   else if (rotation <= -90 + 1e-6) rotation += 180;
-  const gap = DIMENSION_TEXT_HEIGHT;
   const label: CadPoint = [
-    (from[0] + to[0]) / 2 + outward[0] * gap + ux * labelShiftM,
-    (from[1] + to[1]) / 2 + outward[1] * gap + uy * labelShiftM,
+    (from[0] + to[0]) / 2 + outward[0] * labelGap + ux * labelShiftM,
+    (from[1] + to[1]) / 2 + outward[1] * labelGap + uy * labelShiftM,
   ];
   const metres = (Math.round(lengthM * 100) / 100).toFixed(2);
   doc.text('DIMENSIONS', label, DIMENSION_TEXT_HEIGHT, `${metres} m`, 'middle', rotation);

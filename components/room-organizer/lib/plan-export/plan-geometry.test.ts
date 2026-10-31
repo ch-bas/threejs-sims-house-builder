@@ -18,6 +18,7 @@ import {
   polarPoint,
   roomDimensions,
   visionWedges,
+  wallOpeningDimensions,
 } from './plan-geometry';
 
 describe('planContentBounds', () => {
@@ -230,6 +231,129 @@ describe('dimensions (#424)', () => {
       const [dim] = interiorWallDimensions(makeFloor({ interiorWalls: [short], items: [wide, desk] }));
       expect(dim!.labelShiftM).toBe(0);
     });
+  });
+});
+
+describe('wallOpeningDimensions (#630)', () => {
+  const opening = (id: string, type: string, width: number, x: number, z: number, rotation: number) =>
+    makeItem({ id, type, width, depth: 0.1, position: { x, z }, rotation });
+  const NORTH = 0;
+  const SOUTH = Math.PI;
+  const EAST = -Math.PI / 2;
+  const WEST = Math.PI / 2;
+  const chains = (items: ReturnType<typeof opening>[], extra: Partial<Parameters<typeof makeLayout>[0]> = {}) => {
+    const floor = makeFloor({ items });
+    return wallOpeningDimensions(makeLayout({ width: 8, height: 8, floors: [floor], ...extra }), floor);
+  };
+  const runs = (chain: { segments: Array<{ label: string }> }): string[] => chain.segments.map((s) => s.label);
+
+  it('has no chain for a wall without an opening', () => {
+    expect(chains([])).toEqual([]);
+  });
+
+  it('chains corner, opening and opening along the wall, and the runs add up to it', () => {
+    const [north, ...others] = chains([opening('b', 'window', 1, 2, -4, NORTH), opening('a', 'door', 0.9, -1, -4, NORTH)]);
+    expect(others).toEqual([]);
+    expect(north!.wall).toBe('north');
+    expect(north!.outward).toEqual({ x: 0, z: -1 });
+    expect(runs(north!)).toEqual(['2.55 m', '0.90 m', '2.05 m', '1.00 m', '1.50 m']);
+    expect(north!.segments.reduce((sum, s) => sum + s.lengthM, 0)).toBeCloseTo(8, 9);
+    expect(north!.segments[0]!.from).toEqual({ x: -4, z: -4 });
+    expect(north!.segments[4]!.to).toEqual({ x: 4, z: -4 });
+  });
+
+  it('finds the wall of each side from the opening’s rotation and position', () => {
+    const all = chains([
+      opening('n', 'door', 1, 0, -4, NORTH),
+      opening('s', 'door', 1, 1, 4, SOUTH),
+      opening('e', 'window', 1, 4, -1, EAST),
+      opening('w', 'window', 1, -4, 2, WEST),
+    ]);
+    expect(all.map((chain) => [chain.wall, runs(chain)[0]])).toEqual([
+      ['north', '3.50 m'],
+      ['east', '2.50 m'],
+      ['south', '4.50 m'],
+      ['west', '5.50 m'],
+    ]);
+  });
+
+  it('leaves out an opening in an interior wall', () => {
+    expect(chains([opening('i', 'door', 0.9, 0, 1, NORTH)])).toEqual([]);
+  });
+
+  it('drops the empty run of an opening flush with a corner, and survives overlapping ones', () => {
+    const [flush] = chains([opening('a', 'window', 1, -3.5, -4, NORTH)]);
+    expect(runs(flush!)).toEqual(['1.00 m', '7.00 m']);
+    const [overlap] = chains([opening('a', 'window', 2, 0, -4, NORTH), opening('b', 'window', 2, 1, -4, NORTH)]);
+    expect(runs(overlap!)).toEqual(['3.00 m', '2.00 m', '1.00 m', '2.00 m']);
+  });
+
+  it('always ends on the corner, even when the last stop is a hair short of it', () => {
+    // The window ends 2 mm short of the east corner, under the minimum run.
+    const [chain] = chains([opening('a', 'window', 1, 3.498, -4, NORTH)]);
+    expect(chain!.segments[chain!.segments.length - 1]!.to).toEqual({ x: 4, z: -4 });
+    expect(chain!.segments.reduce((sum, s) => sum + s.lengthM, 0)).toBeCloseTo(8, 9);
+  });
+
+  it('adds no chain for an opening wholly past the corner', () => {
+    expect(chains([opening('a', 'window', 1, 6, -4, NORTH)])).toEqual([]);
+    expect(chains([opening('a', 'window', 1, -4.5, -4, NORTH)])).toEqual([]);
+    const [partly] = chains([opening('a', 'window', 1, 4, -4, NORTH)]);
+    expect(runs(partly!)).toEqual(['7.50 m', '0.50 m']);
+  });
+
+  it('lifts a label by the real spacing, not by its own run: window, pier, window', () => {
+    const [chain] = chains([opening('a', 'window', 0.5, 0, -4, NORTH), opening('b', 'window', 0.8, 0.85, -4, NORTH)]);
+    expect(chain!.segments.map((s) => [s.label, s.labelRow])).toEqual([
+      ['3.75 m', 0],
+      ['0.50 m', 0],
+      ['0.20 m', 1],
+      ['0.80 m', 0],
+      ['2.75 m', 0],
+    ]);
+  });
+
+  it('never overlaps two labels on a row, on any spread of openings', () => {
+    // A seeded generator: the same walls on every run.
+    let seed = 20261031;
+    const random = (): number => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const labelWidthM = (label: string): number => (label.length * 10 * 0.56) / 50;
+    for (let round = 0; round < 500; round++) {
+      const items = Array.from({ length: 1 + Math.floor(random() * 9) }, (_, i) =>
+        opening(`o${i}`, 'window', 0.1 + random() * 1.4, -4 + random() * 8, -4, NORTH)
+      );
+      for (const chain of chains(items)) {
+        const lastOnRow = new Map<number, { centre: number; label: string }>();
+        for (const segment of chain.segments) {
+          const centre = (segment.from.x + segment.to.x) / 2;
+          const previous = lastOnRow.get(segment.labelRow);
+          if (previous) {
+            const needed = (labelWidthM(previous.label) + labelWidthM(segment.label)) / 2;
+            expect(centre - previous.centre, `round ${round}: ${previous.label} / ${segment.label}`).toBeGreaterThanOrEqual(needed);
+          }
+          lastOnRow.set(segment.labelRow, { centre, label: segment.label });
+        }
+      }
+    }
+  });
+
+  it('spaces the labels wider on a sheet of a smaller scale', () => {
+    const items = [opening('a', 'window', 1, 0, -4, NORTH)];
+    const floor = makeFloor({ items });
+    const layout = makeLayout({ width: 8, height: 8, floors: [floor] });
+    const rows = (spacing: number): number[] => wallOpeningDimensions(layout, floor, spacing)[0]!.segments.map((s) => s.labelRow);
+    expect(rows(0.7)).toEqual([0, 0, 0]);
+    expect(rows(3)).toEqual([0, 1, 0]);
+  });
+
+  it('breaks the north wall at the recessed entrance, which also draws a chain alone', () => {
+    const [north] = chains([], { entrance: { width: 1.4, depth: 1.2 } });
+    expect(north!.wall).toBe('north');
+    expect(north!.segments).toHaveLength(3);
+    expect(north!.segments[1]!.lengthM).toBeCloseTo(1.4, 6);
   });
 });
 
