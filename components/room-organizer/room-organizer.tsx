@@ -275,6 +275,12 @@ export function RoomOrganizer(): JSX.Element {
     setPointerWorld(null);
   }, []);
 
+  // The zone with handles on the plan (#628). The handles are zone mode's.
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!view.drawZoneMode) setSelectedZoneId(null);
+  }, [view.drawZoneMode]);
+
   const handleInteriorWallSelect = useCallback((id: string | null) => {
     setSelectedWall(id === null ? null : { id, kind: 'interior' });
   }, []);
@@ -837,6 +843,9 @@ export function RoomOrganizer(): JSX.Element {
 
   const refuseZone = useCallback((message: string) => notifyRefused(message, playCue), [playCue]);
 
+  // EXPLORE edits nothing, so it shows no handles either.
+  const planZoneId = exploring ? null : selectedZoneId;
+
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
   // keyboard gate) are identical to a 3D drag.
@@ -863,6 +872,8 @@ export function RoomOrganizer(): JSX.Element {
     onWallPointerMove: handleFloorPointerMove,
     onWallPointerLeave: handleFloorPointerLeave,
     onInteriorWallSelect: handleInteriorWallSelect,
+    selectedZoneId: planZoneId,
+    onZoneSelect: setSelectedZoneId,
   });
 
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
@@ -1009,6 +1020,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedItemId,
     extraSelectedIds,
     selectedWall,
+    selectedZoneId: planZoneId,
     wallDraft,
     wallSnapResult,
     measurementPoints,

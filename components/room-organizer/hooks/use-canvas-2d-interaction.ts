@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
-import { hitInteriorWall } from '../canvas-2d/plan-edit';
+import { draggedZoneRect, hitInteriorWall, ZONE_GRIP_CURSORS, zoneAt, zoneGripAt, type ZoneGrip } from '../canvas-2d/plan-edit';
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
@@ -10,12 +10,13 @@ import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, hitOffPlanMarker, offPlanMarkers, PLAN_PADDING_PX, planViewFit, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
-import { defaultZoneName, nextZoneColor, zoneFromCorners, zoneInPorch } from '../lib/zones';
+import { defaultZoneName, nextZoneColor, zoneFromCorners, zoneInPorch, type ZoneRect } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
 import type { DragCancelOptions } from './use-item-drag';
 import type { Insets, Rect } from '../lib/scene-insets';
+import type { EntrancePlanOutline } from '../lib/street';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 
 /**
@@ -29,6 +30,10 @@ const SMALL_ITEM_MAX_SIDE_M = 0.3;
 /** Extra hit margin (CSS px) around an interior wall: a thin target, thinner still under a finger. */
 const WALL_HIT_SLOP_PX = 6;
 const WALL_HIT_SLOP_TOUCH_PX = 14;
+/** How far a zone's edges reach, and its handles under a finger: a 44 px target (CSS px). */
+const ZONE_GRIP_SLOP_PX = 8;
+const ZONE_ON_PORCH = 'The porch is outside the house, so it can’t be a zone.';
+const ZONE_MARK_SLOP_TOUCH_PX = 22;
 
 /**
  * Topmost item under a world-space point, by exact rotated-rect containment.
@@ -140,6 +145,9 @@ export interface UseCanvas2DInteractionParams {
   onWallPointerLeave?(): void;
   /** A press picked an interior wall, or something else (null). Not in EXPLORE. */
   onInteriorWallSelect?(id: string | null): void;
+  /** The zone showing handles (#628): zone mode only, the orchestrator clears it. */
+  selectedZoneId?: string | null;
+  onZoneSelect?(id: string | null): void;
 }
 
 export interface UseCanvas2DInteractionResult {
@@ -173,6 +181,11 @@ export interface UseCanvas2DInteractionResult {
  * The draft lives in the orchestrator's state, which also feeds the 3D view,
  * so this hook only reports the pointer. There is no threshold: a finger that
  * slides before lifting places the point where it lifts.
+ *
+ * Zone editing (#628): in zone mode a tap on a zone selects it, and a press on
+ * the selected zone's edges, corners or body resizes or moves it; a drag
+ * anywhere else still draws, even inside another zone. Like an item drag it
+ * repaints the ghost per frame and dispatches once, on release.
  */
 export function useCanvas2DInteraction(
   params: UseCanvas2DInteractionParams
@@ -257,8 +270,28 @@ export function useCanvas2DInteraction(
       started: boolean;
       start: { x: number; z: number };
       latest: { x: number; z: number };
+      /** The zone a tap here selects, or null to clear the selection (#628). */
+      tapZoneId: string | null;
     }
     let zoneGesture: ZoneGesture | null = null;
+    /** The selected zone being moved or resized (#628). */
+    interface ZoneEdit {
+      pointerId: number;
+      zoneId: string;
+      grip: ZoneGrip;
+      downClientX: number;
+      downClientY: number;
+      threshold: number;
+      started: boolean;
+      grabbedAt: { x: number; z: number };
+      origin: ZoneRect;
+      latest: ZoneRect;
+      /** The storey's porch, read at the press. */
+      recess: EntrancePlanOutline | null;
+      /** The pointer is where the zone would be on the porch: the ghost holds. */
+      overPorch: boolean;
+    }
+    let zoneEdit: ZoneEdit | null = null;
     /** The press of a wall point, placed on release (#564). */
     let wallPress: { pointerId: number } | null = null;
     // The fit, measured at each press: the gesture maps the pointer and
@@ -270,17 +303,21 @@ export function useCanvas2DInteraction(
 
     const paintGhost = (): void => {
       rafId = null;
-      const { layout, activeFloor, view, selectedItemId, extraSelectedIds } = paramsRef.current;
+      const { layout, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId } = paramsRef.current;
       const session = gesture?.started ? gesture : null;
       const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : activeFloor.items;
       const keepOut = floorKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
       const draft = zoneGesture?.started
         ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height)
         : null;
+      const edit = zoneEdit?.started ? zoneEdit : null;
+      const zones = edit
+        ? { zones: (activeFloor.zones ?? []).map((zone) => (zone.id === edit.zoneId ? { ...zone, ...edit.latest } : zone)) }
+        : {};
       render2DTopDown({
         canvas,
         layout,
-        floor: session ? { ...activeFloor, items } : activeFloor,
+        floor: session || edit ? { ...activeFloor, items, ...zones } : activeFloor,
         selectedItemId,
         extraSelectedIds,
         showMeasurements: view.showMeasurements,
@@ -288,6 +325,7 @@ export function useCanvas2DInteraction(
         showHeatmap: view.showHeatmap,
         showFloorBelow: view.showFloorBelow,
         zoneDraft: draft,
+        selectedZoneId,
         fitBounds: fit.bounds,
         offPlan: fit.offPlan,
         insets: fit.insets,
@@ -309,6 +347,13 @@ export function useCanvas2DInteraction(
       }
     };
 
+    /** A selected zone takes the item selection's place, or Delete would sell the item. */
+    const selectZone = (id: string | null): void => {
+      const p = paramsRef.current;
+      if (id !== null) p.onDeselect();
+      p.onZoneSelect?.(id);
+    };
+
     /**
      * Release of a zone drag: add the rectangle under a default name and ask
      * for a better one inline (#374). A too-small rectangle adds nothing, so
@@ -317,18 +362,46 @@ export function useCanvas2DInteraction(
      */
     const finishZone = (session: ZoneGesture, commit: boolean): void => {
       zoneGesture = null;
-      if (!session.started) return;
+      const p = paramsRef.current;
+      if (!session.started) {
+        if (commit) selectZone(session.tapZoneId);
+        return;
+      }
       releaseCapture(session.pointerId);
-      const { layout, activeFloor, onZoneRefused } = paramsRef.current;
+      const { layout, activeFloor, onZoneRefused } = p;
       const rect = commit ? zoneFromCorners(session.start, session.latest, layout.width, layout.height) : null;
       const onPorch = rect !== null && zoneInPorch(rect, entrancePlanOutline(layout, planFloorIndex(layout.floors, activeFloor)));
-      if (onPorch) onZoneRefused?.('The porch is outside the house, so it can’t be a zone.');
+      if (onPorch) onZoneRefused?.(ZONE_ON_PORCH);
       if (rect && !onPorch) {
         const zones = activeFloor.zones ?? [];
         const fallback = defaultZoneName(zones);
-        requestZoneName(layoutActions.addZone({ name: fallback, color: nextZoneColor(zones), ...rect }));
+        const id = layoutActions.addZone({ name: fallback, color: nextZoneColor(zones), ...rect });
+        requestZoneName(id);
+        // Not selected: the next room usually starts at this one's corner,
+        // where a handle would take the press.
         return;
       }
+      schedulePaint();
+    };
+
+    /** Release of a zone move or resize: one dispatch, or nothing if it was called off. */
+    const finishZoneEdit = (edit: ZoneEdit, commit: boolean): void => {
+      zoneEdit = null;
+      if (!edit.started) {
+        // A tap on the selected zone's body steps down to the zone under it,
+        // then off, so an overlapped zone can be reached.
+        if (commit && edit.grip === 'move') {
+          const zones = paramsRef.current.activeFloor.zones ?? [];
+          selectZone(zoneAt(zones, edit.grabbedAt.x, edit.grabbedAt.z, edit.zoneId)?.id ?? null);
+        }
+        return;
+      }
+      releaseCapture(edit.pointerId);
+      // The reducer refuses this silently (#582): say why, and the zone goes back.
+      const onPorch = edit.overPorch || (zoneInPorch(edit.latest, edit.recess) && !zoneInPorch(edit.origin, edit.recess));
+      if (commit && onPorch) paramsRef.current.onZoneRefused?.(ZONE_ON_PORCH);
+      else if (commit) layoutActions.updateZone(edit.zoneId, edit.latest);
+      // Called off, or fitted back to where it was: no state change repaints.
       schedulePaint();
     };
 
@@ -372,6 +445,7 @@ export function useCanvas2DInteraction(
         releaseCapture(wallPress.pointerId);
         wallPress = null;
       }
+      if (zoneEdit) finishZoneEdit(zoneEdit, false);
       if (zoneGesture) {
         const zone = zoneGesture;
         zoneGesture = null;
@@ -391,7 +465,7 @@ export function useCanvas2DInteraction(
       // A second finger while one is on the plan is a two-finger gesture,
       // not a drag: drop the drag (the item goes back) or the zone draft,
       // as the 3D canvas does.
-      const held = gesture ?? zoneGesture ?? wallPress;
+      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit;
       if (held) {
         if (event.pointerId !== held.pointerId) abortGesture(true);
         return;
@@ -418,15 +492,26 @@ export function useCanvas2DInteraction(
       // Zone-draw mode (#155) claims the press: the rectangle starts here
       // and no item is selected or moved underneath it.
       if (p.view.drawZoneMode && !p.exploring) {
-        zoneGesture = {
+        p.onInteriorWallSelect?.(null);
+        const press = {
           pointerId: event.pointerId,
           downClientX: event.clientX,
           downClientY: event.clientY,
           threshold: dragThresholdPx(event.pointerType),
           started: false,
-          start: world,
-          latest: world,
         };
+        const zones = p.activeFloor.zones ?? [];
+        const selected = zones.find((zone) => zone.id === p.selectedZoneId);
+        const slop = hitSlopWorld(fit, ZONE_GRIP_SLOP_PX);
+        const markSlop = event.pointerType === 'touch' ? hitSlopWorld(fit, ZONE_MARK_SLOP_TOUCH_PX) : slop;
+        const grip = selected ? zoneGripAt(selected, world.x, world.z, slop, markSlop) : null;
+        if (selected && grip) {
+          const origin = { x: selected.x, z: selected.z, w: selected.w, d: selected.d };
+          const recess = entrancePlanOutline(p.layout, planFloorIndex(p.layout.floors, p.activeFloor));
+          zoneEdit = { ...press, zoneId: selected.id, grip, grabbedAt: world, origin, latest: origin, recess, overPorch: false };
+          return;
+        }
+        zoneGesture = { ...press, start: world, latest: world, tapZoneId: zoneAt(zones, world.x, world.z)?.id ?? null };
         return;
       }
       // An off-plan marker selects the far item it points to (#381): its
@@ -483,12 +568,54 @@ export function useCanvas2DInteraction(
       };
     };
 
+    // Tracked here: the placement ghost owns the canvas cursor outside zone mode.
+    let zoneCursor = '';
+    const setZoneCursor = (cursor: string): void => {
+      if (cursor === zoneCursor) return;
+      zoneCursor = cursor;
+      canvas.style.cursor = cursor;
+    };
+
+    /** A mouse over the selected zone shows what a press there would do. */
+    const showZoneCursor = (event: PointerEvent): void => {
+      const p = paramsRef.current;
+      const selected = p.view.drawZoneMode ? p.activeFloor.zones?.find((zone) => zone.id === p.selectedZoneId) : undefined;
+      const hoverFit = selected ? measureFit(canvas) : null;
+      const world = hoverFit && toWorld(event.clientX, event.clientY, hoverFit);
+      const grip = selected && hoverFit && world ? zoneGripAt(selected, world.x, world.z, hitSlopWorld(hoverFit, ZONE_GRIP_SLOP_PX)) : null;
+      setZoneCursor(grip ? ZONE_GRIP_CURSORS[grip] : '');
+    };
+
     const onPointerMove = (event: PointerEvent): void => {
       if (wallPress ? event.pointerId === wallPress.pointerId : paramsRef.current.view.drawWallMode && !paramsRef.current.exploring) {
         if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
         // Between presses nothing measured the fit: read it now.
         const world = wallPress ? worldAt(event) : toWorld(event.clientX, event.clientY, measureFit(canvas));
         if (world) paramsRef.current.onWallPointerMove?.(world.x, world.z);
+        return;
+      }
+      const edit = zoneEdit;
+      if (edit && event.pointerId === edit.pointerId) {
+        if (!edit.started) {
+          const dx = event.clientX - edit.downClientX;
+          const dy = event.clientY - edit.downClientY;
+          if (dx * dx + dy * dy < edit.threshold * edit.threshold) return;
+          edit.started = true;
+          try {
+            canvas.setPointerCapture(event.pointerId);
+          } catch {
+            // Capture can throw if the pointer is already gone; safe to ignore.
+          }
+        }
+        // Over the HUD the zone holds; a release there calls it off (#511).
+        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+        const world = worldAt(event);
+        if (!world) return;
+        const { layout } = paramsRef.current;
+        const rect = draggedZoneRect(edit.origin, edit.grip, world.x - edit.grabbedAt.x, world.z - edit.grabbedAt.z, layout.width, layout.height, edit.recess);
+        edit.overPorch = rect === null && edit.recess !== null;
+        if (rect) edit.latest = rect;
+        schedulePaint();
         return;
       }
       const zone = zoneGesture;
@@ -521,6 +648,7 @@ export function useCanvas2DInteraction(
         return;
       }
       const session = gesture;
+      if (!session) showZoneCursor(event);
       if (!session || event.pointerId !== session.pointerId) return;
       if (!session.started) {
         const dx = event.clientX - session.downClientX;
@@ -572,6 +700,13 @@ export function useCanvas2DInteraction(
         if (world && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPoint?.(world.x, world.z);
         return;
       }
+      if (zoneEdit && event.pointerId === zoneEdit.pointerId) {
+        const edit = zoneEdit;
+        // A release over the HUD, or after Esc left zone mode, changes nothing.
+        const onPlan = pointerOnCanvas(canvas, event.clientX, event.clientY);
+        finishZoneEdit(edit, event.type === 'pointerup' && onPlan && paramsRef.current.view.drawZoneMode);
+        return;
+      }
       const zone = zoneGesture;
       if (zone && event.pointerId === zone.pointerId) {
         if (rafId !== null) {
@@ -614,8 +749,8 @@ export function useCanvas2DInteraction(
         abortGesture();
         return;
       }
-      // A zone draft is discarded by endGesture (it checks the event type).
-      if (zoneGesture && event.pointerId === zoneGesture.pointerId) {
+      // A zone draft or edit is discarded by endGesture (it checks the event type).
+      if ((zoneGesture ?? zoneEdit)?.pointerId === event.pointerId) {
         endGesture(event);
         return;
       }
@@ -630,6 +765,8 @@ export function useCanvas2DInteraction(
       // only an armed-but-unstarted gesture is abandoned here.
       if (gesture && !gesture.started) gesture = null;
       if (zoneGesture && !zoneGesture.started) zoneGesture = null;
+      if (zoneEdit && !zoneEdit.started) zoneEdit = null;
+      if (!zoneEdit?.started) setZoneCursor('');
       if (!wallPress && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPointerLeave?.();
     };
 
@@ -637,7 +774,7 @@ export function useCanvas2DInteraction(
     // follows the gesture state after every event.
     const root = document.documentElement;
     const syncGestureFlag = (): void => {
-      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null || wallPress !== null);
+      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null || wallPress !== null || zoneEdit !== null);
     };
     const synced = (handler: (event: PointerEvent) => void) => (event: PointerEvent): void => {
       handler(event);
@@ -654,12 +791,12 @@ export function useCanvas2DInteraction(
     // capture was taken away) must not leave the gesture armed: page-wide
     // text selection would stay off and the fit frozen. Undo the drag.
     const onLost = (): void => {
-      if (gesture === null && zoneGesture === null && wallPress === null) return;
+      if (gesture === null && zoneGesture === null && wallPress === null && zoneEdit === null) return;
       abortGesture(true);
       syncGestureFlag();
     };
     const onLostCapture = (event: PointerEvent): void => {
-      const held = gesture ?? zoneGesture ?? wallPress;
+      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit;
       if (held && held.pointerId === event.pointerId) onLost();
     };
 
@@ -682,6 +819,7 @@ export function useCanvas2DInteraction(
       // Disabled (view switch) or unmounted mid-drag: discard the session so
       // nothing stale is committed on a later pointerup.
       abortGesture();
+      setZoneCursor('');
       syncGestureFlag();
     };
   }, [params.enabled, params.canvasRef, toWorld, measureFit, hitSlopWorld, layoutActions]);

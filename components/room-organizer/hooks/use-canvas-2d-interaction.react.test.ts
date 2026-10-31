@@ -4,8 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get2DViewTransform } from '../canvas-2d/render';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { doorSwing, type PlacedItem } from '../lib/plan-export/plan-geometry';
+import { entrancePlanOutline } from '../lib/street';
+import { INITIAL_LAYOUT } from './layout-reducer';
 import { PLAN_GESTURE_ATTR } from './scene-occluders';
 import { useCanvas2DInteraction, type UseCanvas2DInteractionParams } from './use-canvas-2d-interaction';
+import { layoutStore } from './use-layout-store';
 
 const W = 800;
 const H = 600;
@@ -535,5 +538,203 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       fire('pointerdown', 1, 0.05);
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
     });
+  });
+});
+
+describe('useCanvas2DInteraction zone editing (#628)', () => {
+  const raf = vi.fn(() => 1);
+  beforeEach(() => {
+    raf.mockClear();
+    vi.stubGlobal('requestAnimationFrame', raf);
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    layoutStore.setState({ layout: INITIAL_LAYOUT, activeFloorIndex: 0 });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const zoneMode = { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, showFloorBelow: false, drawZoneMode: true };
+  const zone = { id: 'z1', name: 'Hall', color: '#3b82f6', x: -2, z: -2, w: 2, d: 2 };
+
+  const edit = (overrides: Partial<UseCanvas2DInteractionParams> = {}) => {
+    const updateZone = vi.spyOn(layoutStore.getState().actions, 'updateZone').mockImplementation(() => {});
+    const addZone = vi.spyOn(layoutStore.getState().actions, 'addZone').mockImplementation(() => 'new');
+    const onZoneSelect = vi.fn();
+    const floor = makeFloor({ zones: [zone], items: [makeItem({ id: 'a', position: { x: 3, z: 3 } })] });
+    return {
+      updateZone,
+      addZone,
+      onZoneSelect,
+      ...setup([], { activeFloor: floor, view: zoneMode, selectedZoneId: 'z1', onZoneSelect, ...overrides }),
+    };
+  };
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('a drag on the body moves the selected zone with one dispatch, on release', () => {
+    const { updateZone, fire } = edit();
+    fire('pointerdown', -1, -1);
+    fire('pointermove', 0, -1);
+    fire('pointermove', 1, 0);
+    expect(updateZone).not.toHaveBeenCalled();
+    fire('pointerup', 1, 0);
+    expect(updateZone).toHaveBeenCalledTimes(1);
+    const [id, rect] = updateZone.mock.lastCall!;
+    expect(id).toBe('z1');
+    expect(rect).toMatchObject({ x: 0, z: -1, w: 2, d: 2 });
+  });
+
+  it('a drag on an edge resizes it', () => {
+    const { updateZone, fire } = edit();
+    fire('pointerdown', 0, -1);
+    fire('pointermove', 1, -1);
+    fire('pointerup', 1, -1);
+    expect(updateZone.mock.lastCall![1]).toMatchObject({ x: -2, z: -2, w: 3, d: 2 });
+  });
+
+  it('a finger reaches a handle a mouse would miss', () => {
+    const { updateZone, fire, scale } = edit();
+    const off = 15 / scale;
+    fire('pointerdown', off, -1, 'touch');
+    fire('pointermove', 1 + off, -1, 'touch');
+    fire('pointerup', 1 + off, -1, 'touch');
+    expect(updateZone.mock.lastCall![1]).toMatchObject({ w: 3 });
+  });
+
+  it('a press without a drag changes no zone', () => {
+    const { updateZone, addZone, fire } = edit();
+    fire('pointerdown', -1, -1);
+    fire('pointerup', -1, -1);
+    expect(updateZone).not.toHaveBeenCalled();
+    expect(addZone).not.toHaveBeenCalled();
+  });
+
+  it('a tap on the selected zone deselects it, or steps to the zone under it', () => {
+    const over = { ...zone, id: 'z2', x: -1.5, z: -1.5, w: 1, d: 1 };
+    const floor = makeFloor({ zones: [zone, over] });
+    const { onZoneSelect, fire } = edit({ activeFloor: floor, selectedZoneId: 'z2' });
+    fire('pointerdown', -1, -1);
+    fire('pointerup', -1, -1);
+    expect(onZoneSelect).toHaveBeenLastCalledWith('z1');
+  });
+
+  it('a tap on the only zone there deselects it', () => {
+    const { onZoneSelect, fire } = edit();
+    fire('pointerdown', -1, -1);
+    fire('pointerup', -1, -1);
+    expect(onZoneSelect).toHaveBeenLastCalledWith(null);
+  });
+
+  it('selecting a zone clears the item selection, so Delete cannot sell an item', () => {
+    const { params, fire } = edit({ selectedZoneId: null });
+    fire('pointerdown', -1, -1);
+    fire('pointerup', -1, -1);
+    expect(params.onDeselect).toHaveBeenCalled();
+  });
+
+  it('a finger beside an edge, away from its handles, draws a new zone', () => {
+    const { updateZone, addZone, fire, scale } = edit();
+    const off = 15 / scale;
+    fire('pointerdown', off, -0.5, 'touch');
+    fire('pointermove', 2, 1, 'touch');
+    fire('pointerup', 2, 1, 'touch');
+    expect(updateZone).not.toHaveBeenCalled();
+    expect(addZone).toHaveBeenCalledTimes(1);
+  });
+
+  describe('and the porch (#582)', () => {
+    const porched = (onZoneRefused: (message: string) => void) => {
+      const entrance = { width: 2, depth: 1.5, offset: 0 };
+      const probe = makeLayout({ entrance });
+      const recess = entrancePlanOutline(probe, 0)!;
+      const room = { ...zone, x: recess.x0, z: recess.backZ, w: recess.x1 - recess.x0, d: recess.backZ - recess.frontZ };
+      const floor = makeFloor({ zones: [room] });
+      const layout = makeLayout({ entrance, floors: [floor] });
+      return { recess, ...edit({ layout, activeFloor: floor, onZoneRefused }) };
+    };
+
+    it('refuses a drag that ends on the porch, and says why', () => {
+      const onZoneRefused = vi.fn();
+      const { updateZone, fire, recess } = porched(onZoneRefused);
+      const x = (recess.x0 + recess.x1) / 2;
+      const grab = recess.backZ + (recess.backZ - recess.frontZ) / 2;
+      fire('pointerdown', x, grab);
+      fire('pointermove', x, grab - (recess.backZ - recess.frontZ));
+      fire('pointerup', x, grab - (recess.backZ - recess.frontZ));
+      expect(updateZone).not.toHaveBeenCalled();
+      expect(onZoneRefused).toHaveBeenCalledTimes(1);
+    });
+
+    it('commits a drag that came back off the porch', () => {
+      const onZoneRefused = vi.fn();
+      const { updateZone, fire, recess } = porched(onZoneRefused);
+      const x = (recess.x0 + recess.x1) / 2;
+      const grab = recess.backZ + (recess.backZ - recess.frontZ) / 2;
+      fire('pointerdown', x, grab);
+      fire('pointermove', x, grab - (recess.backZ - recess.frontZ));
+      fire('pointermove', x, grab + 1);
+      fire('pointerup', x, grab + 1);
+      expect(updateZone).toHaveBeenCalledTimes(1);
+      expect(onZoneRefused).not.toHaveBeenCalled();
+    });
+  });
+
+  it('a pointercancel calls the edit off', () => {
+    const { updateZone, fire } = edit();
+    fire('pointerdown', -1, -1);
+    fire('pointermove', 1, 0);
+    fire('pointercancel', 1, 0);
+    fire('pointerup', 1, 0);
+    expect(updateZone).not.toHaveBeenCalled();
+  });
+
+  it('a tap on another zone selects it, and a tap on empty floor clears it', () => {
+    const { onZoneSelect, fire } = edit({ selectedZoneId: null });
+    fire('pointerdown', -1, -1);
+    fire('pointerup', -1, -1);
+    expect(onZoneSelect).toHaveBeenLastCalledWith('z1');
+    fire('pointerdown', 3, 0);
+    fire('pointerup', 3, 0);
+    expect(onZoneSelect).toHaveBeenLastCalledWith(null);
+  });
+
+  it('a drag inside an unselected zone still draws, and leaves it unselected for the next', () => {
+    const { addZone, onZoneSelect, updateZone, fire } = edit({ selectedZoneId: null });
+    fire('pointerdown', -1.5, -1.5);
+    fire('pointermove', -0.5, -0.5);
+    fire('pointerup', -0.5, -0.5);
+    expect(addZone).toHaveBeenCalledTimes(1);
+    expect(updateZone).not.toHaveBeenCalled();
+    expect(onZoneSelect).not.toHaveBeenCalled();
+  });
+
+  it('EXPLORE edits nothing', () => {
+    const { updateZone, addZone, onZoneSelect, fire } = edit({ exploring: true });
+    fire('pointerdown', -1, -1);
+    fire('pointermove', 1, 0);
+    fire('pointerup', 1, 0);
+    expect(updateZone).not.toHaveBeenCalled();
+    expect(addZone).not.toHaveBeenCalled();
+    expect(onZoneSelect).not.toHaveBeenCalled();
+  });
+
+  it('a release after zone mode ended (Esc) commits nothing', () => {
+    const view = { ...zoneMode };
+    const { updateZone, fire } = edit({ view });
+    fire('pointerdown', -1, -1);
+    fire('pointermove', 1, 0);
+    view.drawZoneMode = false;
+    fire('pointerup', 1, 0);
+    expect(updateZone).not.toHaveBeenCalled();
+  });
+
+  it('marks the gesture so the plan keeps its fit under it', () => {
+    const { fire } = edit();
+    fire('pointerdown', -1, -1);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(true);
+    fire('pointerup', -1, -1);
+    expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
   });
 });

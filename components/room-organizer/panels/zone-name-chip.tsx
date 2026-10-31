@@ -34,7 +34,7 @@ export function ZoneNameChip(): JSX.Element | null {
       <div className="pc-top-chip" style={CHIP_SLOT} role="status">
         <div className="pc-glass pc-glass--dark" style={{ ...CHIP_BODY, color: 'var(--pc-sky)' }}>
           <Icon name="tag" size={14} />
-          {touch ? 'Drag on the plan to add a zone' : 'Drag a rectangle to add a zone · Esc to stop'}
+          {touch ? 'Drag to add, tap to adjust' : 'Drag to add a zone · click one to adjust · Esc to stop'}
           <ChipButton title="Stop drawing zones" onClick={() => setView((v) => ({ ...v, drawZoneMode: false }))}>
             Done
           </ChipButton>
