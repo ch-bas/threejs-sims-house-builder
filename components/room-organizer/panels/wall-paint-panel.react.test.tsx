@@ -235,6 +235,22 @@ describe('WallPaintPanel — keyboard on Apply To stays in the panel', () => {
     expect(onHoldOpen).not.toHaveBeenCalledWith(true);
   });
 
+  it('lets go when a later choice is a mouse click, on All or a wall', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.keyDown(chip('W'), { key: 'ArrowRight' });
+    expect(onHoldOpen).toHaveBeenLastCalledWith(true);
+    fireEvent.click(chip('All'), { detail: 1 });
+    expect(onHoldOpen).toHaveBeenLastCalledWith(false);
+  });
+
+  it('keeps holding when the whole window loses focus', () => {
+    const { onHoldOpen } = setupHold();
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    fireEvent.focusOut(chip('W'));
+    expect(onHoldOpen).not.toHaveBeenCalled();
+    hasFocus.mockRestore();
+  });
+
   it('lets go when the focus leaves the panel, not when it moves inside', () => {
     const { onHoldOpen } = setupHold();
     fireEvent.focusOut(chip('W'), { relatedTarget: chip('All') });

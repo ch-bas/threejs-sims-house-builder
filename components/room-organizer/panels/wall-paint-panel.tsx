@@ -231,6 +231,8 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       data-scene-occluder=""
       style={{ width: 280, padding: '10px 12px' }}
       onBlur={(event) => {
+        // Switching windows or opening the native colour picker is not leaving.
+        if (!document.hasFocus()) return;
         if (!event.currentTarget.contains(event.relatedTarget)) onHoldOpen?.(false);
       }}
     >
@@ -300,8 +302,9 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
           <ApplyToggle
             value={applyTo}
             onChange={(v, fromKeyboard) => {
+              // Only the keyboard holds: a mouse click on All closes as ever.
+              onHoldOpen?.(v === 'all' && fromKeyboard);
               if (v === 'all') {
-                if (fromKeyboard) onHoldOpen?.(true);
                 props.onSelectedWallChange(null);
               } else {
                 props.onSelectedWallChange({ id: v, kind: 'exterior' });
