@@ -321,7 +321,7 @@ export function FloorSwitcher(): JSX.Element {
         className="pc-blurb"
         style={{ fontSize: 10, margin: 0 }}
       >
-        {touch ? 'Tap ✎ to rename a floor.' : 'Double-click a name to rename.'} Each floor stacks its storey height above the one below —{' '}
+        {`${touch ? 'Tap ✎ to rename a floor.' : 'Double-click a name to rename.'} Each floor stacks its storey height above the one below — `}
         {formatMetres(buildingHeight(floors))} to the eaves.
       </p>
     </div>

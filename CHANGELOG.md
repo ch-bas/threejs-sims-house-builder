@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - FURNISH calls its panel and strip "Furniture" instead of "Build Tools" ([#641](https://github.com/ch-bas/threejs-sims-house-builder/issues/641))
 - The Restore question in History names the house and the time. History no longer lists a restore point that is the house on screen ([#647](https://github.com/ch-bas/threejs-sims-house-builder/issues/647))
 - The welcome tips say that items lock once placed ([#635](https://github.com/ch-bas/threejs-sims-house-builder/issues/635))
+- On a phone, Demolish is now one of the item sheet's actions, one tap away, instead of at the bottom of the expanded sheet ([#675](https://github.com/ch-bas/threejs-sims-house-builder/issues/675))
+- On a phone, unfolding Paint or Room Stamp in portrait folds the catalogue row away, as landscape already did, so more of the house stays in view ([#674](https://github.com/ch-bas/threejs-sims-house-builder/issues/674))
+- Share link opens the phone's share sheet on touch screens that have one. If the browser refuses it, the copy field offers a Share button ([#685](https://github.com/ch-bas/threejs-sims-house-builder/issues/685))
 
 ### Fixed
 - On touch tablets a catalogue category that fits one page, such as Openings, no longer shows empty slots and Previous and Next buttons that do nothing: the strip stays the same size, so the tools above it never move ([#684](https://github.com/ch-bas/threejs-sims-house-builder/issues/684))
@@ -39,6 +42,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The Buy tab's hint describes what clicking an item does: it picks the item up to place ([#644](https://github.com/ch-bas/threejs-sims-house-builder/issues/644))
 - A "Loaded …" note clears when another house replaces the one it named ([#647](https://github.com/ch-bas/threejs-sims-house-builder/issues/647))
 - The rotation field keeps what you type: -90 no longer turns into 351 on the way to 270, and 400 shows as 40 when you leave the field or press Enter ([#548](https://github.com/ch-bas/threejs-sims-house-builder/issues/548))
+- The phone Paint and Room Stamp panels have finger-sized buttons, swatches and sliders in portrait as well as in landscape ([#674](https://github.com/ch-bas/threejs-sims-house-builder/issues/674))
+- The phone item sheet's Close button, handle, colour controls and sliders are finger-sized, and so are the same controls in the item panel on touch tablets ([#675](https://github.com/ch-bas/threejs-sims-house-builder/issues/675))
+- The side drawer and the item sheet stay clear of the notch and the status bar ([#676](https://github.com/ch-bas/threejs-sims-house-builder/issues/676))
+- On touch screens the floor list's buttons are finger-sized and the hint says to tap the pencil instead of double-clicking. The other buttons in the side panels, on every tab, get 44 px rows ([#680](https://github.com/ch-bas/threejs-sims-house-builder/issues/680))
+- A tap anywhere on a folded Paint or Room Stamp bar opens it, not just on its label ([#681](https://github.com/ch-bas/threejs-sims-house-builder/issues/681))
+- On a phone a new Undo notice replaces the earlier ones, so the Undo on screen is always the one that works and it gets its full time. Closing a notice from the keyboard puts the focus back where it was, and notice buttons have larger tap areas ([#704](https://github.com/ch-bas/threejs-sims-house-builder/issues/704))
+- Share link copies straight away on Safari, where it used to fall back to the copy field ([#685](https://github.com/ch-bas/threejs-sims-house-builder/issues/685))
 
 ## [1.25.0] - 2026-10-31
 
