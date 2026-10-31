@@ -139,6 +139,7 @@ describe('LibraryPanel: History wording (#647)', () => {
 
   it('clears the note about a load when another house replaces it', async () => {
     saveNamedLayout(older, 'Saved one');
+    confirms = autoAnswerConfirms(true);
     render(<LibraryPanel currentLayout={makeLayout()} onLoad={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^Saved one/ }));
     await screen.findByText(/Undo brings back/);

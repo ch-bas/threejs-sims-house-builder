@@ -99,6 +99,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   const offHint = (lockedHint: string): string | undefined =>
     exploring ? NOT_WHILE_EXPLORING : item.locked ? lockedHint : undefined;
   const lockedOff = exploring || item.locked === true;
+  const lockedHere = item.locked === true && !exploring;
   const colorPicker = (
     <ColorSwatchPicker
       variant="glass"
@@ -180,7 +181,13 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             >
               {item.name}
             </p>
-            {item.type === 'security-camera' ? (
+            {sheet && lockedHere ? (
+              // On the sheet the note takes this line, so a locked item
+              // doesn't cost the scene a row (#635).
+              <p role="note" className="pc-blurb" style={{ margin: 0, fontSize: 10 }}>
+                {lockedNote(touch)}
+              </p>
+            ) : item.type === 'security-camera' ? (
               <p
                 className="pc-blurb"
                 style={{ margin: 0, fontSize: 10, color: 'var(--pc-cyan-glow)' }}
@@ -251,9 +258,8 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           </div>
         )}
 
-        {/* Nothing else says why Rotate and Centre are off on a phone, which has
-            no tooltip (#635), so it stays in the collapsed sheet too. */}
-        {item.locked && !exploring && (
+        {/* Says why Rotate and Centre are off, which no tooltip does on touch (#635). */}
+        {lockedHere && !sheet && (
           <p role="note" className="pc-body" style={{ margin: 0, fontSize: 11 }}>
             {lockedNote(touch)}
           </p>

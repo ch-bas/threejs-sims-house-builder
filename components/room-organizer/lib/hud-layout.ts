@@ -66,7 +66,7 @@ const POINTER_TIPS: readonly WelcomeTip[] = [
 // what a finger can do.
 const TOUCH_TIPS: readonly WelcomeTip[] = [
   { title: 'Tap to add', body: 'Tap a catalogue tile to drop the item on the lot.' },
-  { title: 'Drag to move', body: 'Items lock once placed: tap one, tap Unlock, then drag it with one finger. The same sheet rotates, copies and deletes.' },
+  { title: 'Drag to move', body: 'Items lock once placed: tap one, tap Unlock, then drag it. The same sheet rotates, copies and deletes.' },
   { title: 'Look around', body: 'One finger orbits, pinch zooms, two fingers pan. Pan makes one finger pan; Fit frames the house.' },
   { title: 'Grid snap', body: 'The grid button (under ⋯ on a phone, beside the 2D plan switch) snaps items to 0.5 m. Doors and windows snap to walls on their own.' },
   { title: 'Themes & sets', body: 'Open the panels button for one-click templates, and the Library to save named layouts.' },

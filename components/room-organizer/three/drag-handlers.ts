@@ -233,6 +233,8 @@ export function attachDragHandlers({
     if (handlersRef.current.walkthroughActive) return;
     // The synthetic press below, replaying the first finger to the controls.
     if (replaying) return;
+    // Also ends a watched press: a second finger means a pinch.
+    lockedPress = null;
     // A second finger while the first one is on an item is a pinch, not a
     // drag: hand both fingers to the camera.
     if (activePointerId !== null) {
