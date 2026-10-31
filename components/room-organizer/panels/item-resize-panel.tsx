@@ -326,8 +326,18 @@ interface RotationInputProps {
   onChange(value: number): void;
 }
 
+/** Degrees in 0–359, as the field shows them; 359.6 rounds round to 0. */
+function wholeDegrees(degrees: number): number {
+  return ((Math.round(degrees) % 360) + 360) % 360;
+}
+
 function RotationInput({ value, disabled, title, onChange }: RotationInputProps): JSX.Element {
   const id = useId();
+  // The raw text while typing, as in PositionInputs (#122): writing the
+  // normalised value back on each keystroke turned "-90" into 270 by way of
+  // 351 (#548). `sent` is the value this text gave the store, so a rotation
+  // that comes from elsewhere replaces the draft instead of hiding behind it.
+  const [draft, setDraft] = useState<{ text: string; sent: number } | null>(null);
   return (
     <div title={title} className={disabled ? 'opacity-50' : undefined}>
       <Label htmlFor={id} className="text-xs">
@@ -340,10 +350,16 @@ function RotationInput({ value, disabled, title, onChange }: RotationInputProps)
         max={359}
         step={5}
         disabled={disabled}
-        value={value}
+        value={draft?.sent === value ? draft.text : value}
         onChange={(event) => {
           const parsed = parseFloat(event.target.value);
-          if (Number.isFinite(parsed)) onChange(((parsed % 360) + 360) % 360);
+          const finite = Number.isFinite(parsed);
+          setDraft({ text: event.target.value, sent: finite ? wholeDegrees(parsed) : value });
+          if (finite) onChange(((parsed % 360) + 360) % 360);
+        }}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') setDraft(null);
         }}
       />
     </div>
