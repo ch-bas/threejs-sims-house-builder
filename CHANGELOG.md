@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- On a landscape phone the camera buttons follow the sidebar button when the screen's notch area changes, so they can't end up on top of it ([#683](https://github.com/ch-bas/threejs-sims-house-builder/issues/683))
 - Add floor shows a plus instead of a plus-minus sign, on the floor pill and in the drawer ([#686](https://github.com/ch-bas/threejs-sims-house-builder/issues/686))
 - The camera pad's zoom buttons are full size instead of thin slivers either side of the slider ([#639](https://github.com/ch-bas/threejs-sims-house-builder/issues/639))
 

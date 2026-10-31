@@ -72,6 +72,22 @@ const PILLS_SELECTOR = '.pc-top-right';
 const SLOT_GAP = 8;
 
 /**
+ * An invisible box sized by the top bar's safe-area insets, so a
+ * ResizeObserver sees them change. Left and right weigh differently: a turn
+ * of the phone swaps them, which must still change its width.
+ */
+function safeAreaProbe(): HTMLElement {
+  const probe = document.createElement('div');
+  probe.setAttribute('aria-hidden', 'true');
+  probe.style.cssText =
+    'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;' +
+    'width:calc(env(safe-area-inset-left, 0px) + 2 * env(safe-area-inset-right, 0px));' +
+    'height:env(safe-area-inset-top, 0px);';
+  document.body.appendChild(probe);
+  return probe;
+}
+
+/**
  * Places a row (`ref`, the touch buttons on short screens) in the top bar's
  * free strip, between the title badge and the pills, through custom
  * properties on <html> (viewport px): `--pc-top-slot-start` and
@@ -118,9 +134,14 @@ export function useTopBarSlot(ref: RefObject<HTMLElement>, active: boolean): voi
       if (element) observer?.observe(element);
     }
     observer?.observe(row);
+    // The safe area moves the badge and the pills without resizing them, and
+    // can change with no window resize at all (#683).
+    const insets = safeAreaProbe();
+    observer?.observe(insets);
     window.addEventListener('resize', update);
     return () => {
       observer?.disconnect();
+      insets.remove();
       window.removeEventListener('resize', update);
       for (const property of written.keys()) root.style.removeProperty(property);
     };
