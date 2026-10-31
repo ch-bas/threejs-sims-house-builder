@@ -111,6 +111,39 @@ describe('Disabled Button (#640)', () => {
   });
 });
 
+describe('Disabled toggles keep their selected look (#640)', () => {
+  afterEach(cleanup);
+
+  const SELECTED = '[aria-checked=true]';
+
+  it.each([
+    ['aria-pressed', { 'aria-pressed': true }],
+    ['aria-checked', { role: 'radio', 'aria-checked': true }],
+    ['data-selected', { 'data-selected': true }],
+  ] as const)('tints a selected default button (%s)', (_, attrs) => {
+    render(<Button disabled {...attrs}>Rain</Button>);
+    const button = screen.getByText('Rain');
+    expect(button.className).toContain(SELECTED);
+    expect(button.className).toMatch(/\]:bg-primary\/\d+/);
+    expect(button.className).toMatch(/\]:text-foreground/);
+    // A grey tint would be no tint: the filter must lift too.
+    expect(button.className).toMatch(/\]:grayscale-0/);
+  });
+
+  it('the unselected outline stays muted, with no tint', () => {
+    render(<Button variant="outline" disabled aria-pressed={false}>Winder</Button>);
+    const { className } = screen.getByRole('button', { name: 'Winder' });
+    expect(className).toContain('disabled:text-muted-foreground');
+    expect(className).not.toContain('bg-primary');
+  });
+
+  it('a disabled Pack with no state stays neutral', () => {
+    // The tint applies only to the three selected states, never bare.
+    render(<Button disabled>Pack</Button>);
+    expect(screen.getByRole('button', { name: 'Pack' }).matches('[aria-pressed=true],[aria-checked=true],[data-selected]')).toBe(false);
+  });
+});
+
 describe('Reduced motion (#557)', () => {
   it.each(['achievement-toast.tsx', 'header-stats.tsx'])('%s pulses through the guarded class', (file) => {
     const text = source(file);
@@ -177,6 +210,24 @@ describe('Toggles and floors have real names (#645)', () => {
     const field = screen.getByRole('textbox', { name: 'Floor name' });
     expect(field.closest('button')).toBeNull();
     expect(screen.queryByRole('button', { name: /^Loft/ })).toBeNull();
+  });
+
+  it('the rename row stays current, and its padding still picks the floor', () => {
+    layoutStore.getState().actions.applyLayout(twoFloors());
+    layoutStore.getState().actions.setActiveFloorIndex(1);
+    editorTree(<FloorSwitcher />);
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Loft' }));
+    const field = screen.getByRole('textbox', { name: 'Floor name' });
+    expect(field.parentElement?.getAttribute('aria-current')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Ground Floor' }));
+    const other = screen.getByRole('textbox', { name: 'Floor name' });
+    expect(other.parentElement?.getAttribute('aria-current')).toBeNull();
+    fireEvent.mouseDown(other);
+    expect(layoutStore.getState().activeFloorIndex).toBe(1);
+    // The field blurs on this press and the row turns back into a button,
+    // so the pick can't wait for the click.
+    fireEvent.mouseDown(other.parentElement as HTMLElement);
+    expect(layoutStore.getState().activeFloorIndex).toBe(0);
   });
 });
 

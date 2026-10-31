@@ -71,6 +71,7 @@ export function TimeOfDayPanel(): JSX.Element {
         <Button
           size="sm"
           variant={autoCycleLighting ? 'default' : 'outline'}
+          data-selected={autoCycleLighting || undefined}
           onClick={() => setAutoCycleLighting((cur) => !cur)}
           disabled={disabled}
           className="w-full text-xs"

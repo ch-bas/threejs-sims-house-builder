@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - On touch tablets the floor and wall tiles, the mode panel's buttons, the build tools, the catalogue arrows, the sidebar button and the Hard budget switch are easy to tap. Pinch replaces the camera pad's zoom row there; computers with a mouse look the same as before ([#673](https://github.com/ch-bas/threejs-sims-house-builder/issues/673))
 - On touch tablets the build tools carry their names, and the wall pill says "Walls", with "3D only" or "Walking" when its buttons are off ([#679](https://github.com/ch-bas/threejs-sims-house-builder/issues/679))
+- The Up/Cut/Down wall switch, Paint's tabs and Apply To, and the Weather buttons are one stop for the Tab key: the arrow keys move between their options, and Paint's tab rows now have names a screen reader can read ([#646](https://github.com/ch-bas/threejs-sims-house-builder/issues/646), [#557](https://github.com/ch-bas/threejs-sims-house-builder/issues/557))
+- Locked achievements stay readable: the lock icon and dashed border mark them instead of fading the whole row. Disabled buttons turn neutral and outlined, so a disabled Pack no longer looks like the main action, while a selected option keeps a tint. On a locked item, the W/D/H values and the stairs shape stay at full strength; only the sliders dim ([#640](https://github.com/ch-bas/threejs-sims-house-builder/issues/640))
 
 ### Fixed
 - On touch tablets a catalogue category that fits one page, such as Openings, no longer shows empty slots and Previous and Next buttons that do nothing: the strip stays the same size, so the tools above it never move ([#684](https://github.com/ch-bas/threejs-sims-house-builder/issues/684))

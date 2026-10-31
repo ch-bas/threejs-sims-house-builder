@@ -3,8 +3,18 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-/** A disabled filled button goes neutral, or it still reads as the main action (#640). */
-const DISABLED_FILL = 'disabled:bg-transparent disabled:ring-1 disabled:ring-inset disabled:ring-input';
+/**
+ * A disabled filled button goes neutral, or it still reads as the main action
+ * (#640). A selected toggle keeps a tint instead, so the choice stays visible
+ * and stronger than its neighbours: `aria-pressed`, `aria-checked`, or
+ * `data-selected` where the label already names the state.
+ */
+const DISABLED_FILL =
+  'disabled:bg-transparent disabled:ring-1 disabled:ring-inset disabled:ring-input ' +
+  'disabled:[&:is([aria-pressed=true],[aria-checked=true],[data-selected])]:bg-primary/20 ' +
+  'disabled:[&:is([aria-pressed=true],[aria-checked=true],[data-selected])]:ring-primary/70 ' +
+  'disabled:[&:is([aria-pressed=true],[aria-checked=true],[data-selected])]:text-foreground ' +
+  'disabled:[&:is([aria-pressed=true],[aria-checked=true],[data-selected])]:grayscale-0';
 
 const buttonVariants = cva(
   'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:text-muted-foreground disabled:grayscale',
