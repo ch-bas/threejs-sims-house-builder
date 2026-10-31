@@ -91,6 +91,7 @@ function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchP
                 key={swatch}
                 type="button"
                 aria-label={`Use colour ${swatch}`}
+                aria-pressed={selected}
                 onClick={() => onChange(swatch)}
                 style={{
                   height: 16,
@@ -119,6 +120,7 @@ function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchP
                 key={swatch}
                 type="button"
                 aria-label={`Reuse colour ${swatch}`}
+                aria-pressed={selected}
                 onClick={() => onChange(swatch)}
                 style={{
                   height: 14,
@@ -162,6 +164,7 @@ function CardSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPi
               key={swatch}
               type="button"
               aria-label={`Use colour ${swatch}`}
+              aria-pressed={isSelected(value, swatch)}
               onClick={() => onChange(swatch)}
               className={`h-5 w-5 rounded-full border ${
                 isSelected(value, swatch) ? 'ring-2 ring-primary' : ''
@@ -180,6 +183,7 @@ function CardSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPi
                 key={swatch}
                 type="button"
                 aria-label={`Reuse colour ${swatch}`}
+                aria-pressed={isSelected(value, swatch)}
                 onClick={() => onChange(swatch)}
                 className={`h-5 w-5 rounded border ${
                   isSelected(value, swatch) ? 'ring-2 ring-primary' : ''

@@ -79,7 +79,7 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          {item.locked && <span aria-label="Locked">🔒</span>}
+          {item.locked && <span role="img" aria-label="Locked">🔒</span>}
           Edit: {item.name}
         </CardTitle>
       </CardHeader>

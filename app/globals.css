@@ -1406,3 +1406,14 @@ html[data-plan-gesture] * {
   background-color: var(--pc-ink);
   background-image: linear-gradient(var(--pc-glass-tint-dark), var(--pc-glass-tint-dark));
 }
+
+/* P4 (polish sprint) */
+/* The colour input is invisible, so its well shows the keyboard focus (#557). */
+.pc-colour-well:has(input:focus-visible) {
+  outline: 2px solid var(--pc-cyan-glow);
+  outline-offset: 2px;
+}
+.pc-chip-name:focus-visible {
+  outline: 2px solid var(--pc-cyan-glow);
+  outline-offset: 1px;
+}
