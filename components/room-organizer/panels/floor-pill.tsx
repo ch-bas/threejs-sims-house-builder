@@ -72,6 +72,7 @@ export function FloorPill(): JSX.Element {
               type="button"
               onClick={() => actions.setActiveFloorIndex(index)}
               title={`${floor.name} · ${floor.items.length} item${floor.items.length === 1 ? '' : 's'}`}
+              aria-label={`${index + 1}: ${floor.name}`}
               aria-current={isActive ? 'true' : undefined}
               className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
               style={{
