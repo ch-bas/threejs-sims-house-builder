@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-10-31
+
+The first wave of **Polish: desktop & mobile**: touch tablets can walk and tap, phones get finger-sized panels, the keyboard reaches everything, and items explain themselves.
+
 ### Added
 - The U key locks and unlocks the selected item. An arrow key, R or a drag on the 2D plan that meets a locked item now says why nothing moved and how to unlock it, and the item popover and the phone sheet say why Rotate and Centre are off ([#635](https://github.com/ch-bas/threejs-sims-house-builder/issues/635))
 - The item popover and the Style tab say why an item shows red: which item it overlaps, or that it stands outside the room, in the porch, over the stairwell or inside an interior wall ([#627](https://github.com/ch-bas/threejs-sims-house-builder/issues/627))
@@ -799,7 +803,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.25.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.26.0...HEAD
+[1.26.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.22.0...v1.23.0
