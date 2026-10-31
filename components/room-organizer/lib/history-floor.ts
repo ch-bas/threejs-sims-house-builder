@@ -20,7 +20,7 @@ import type { FloorLayout, RoomLayout } from './types';
  * keeping its fields, so identity alone would see every storey as changed on
  * the next undo.
  */
-function sameFloor(a: FloorLayout, b: FloorLayout): boolean {
+export function sameFloor(a: FloorLayout, b: FloorLayout): boolean {
   if (a === b) return true;
   const keys = Object.keys(a) as (keyof FloorLayout)[];
   if (keys.length !== Object.keys(b).length) return false;

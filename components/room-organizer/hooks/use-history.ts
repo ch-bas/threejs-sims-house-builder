@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-export interface UseHistoryOptions {
+export interface UseHistoryOptions<T = unknown> {
   /** Debounce window for committing a snapshot, in milliseconds. */
   debounceMs?: number;
   /** Maximum number of snapshots to retain. */
   maxEntries?: number;
+  /** What the step from one value to the next did, for undoLabel and redoLabel (#625). */
+  describe?: (before: T, after: T) => string | null;
 }
 
 export interface UseHistoryResult<T = unknown> {
   canUndo: boolean;
   canRedo: boolean;
+  /** What undo would take back, from `describe`; null without one or with nothing to undo. */
+  undoLabel: string | null;
+  /** What redo would bring back; null likewise. */
+  redoLabel: string | null;
   undo(): void;
   redo(): void;
   /**
@@ -50,8 +56,8 @@ interface HistoryStacks<T> {
  * outside the setState updater — StrictMode double-invokes updaters, so side
  * effects inside them (apply, ref writes) would corrupt the stacks in dev.
  */
-export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: UseHistoryOptions = {}): UseHistoryResult<T> {
-  const { debounceMs = 600, maxEntries = 50 } = options;
+export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: UseHistoryOptions<T> = {}): UseHistoryResult<T> {
+  const { debounceMs = 600, maxEntries = 50, describe } = options;
 
   const [stacks, setStacks] = useState<HistoryStacks<T>>({ past: [], future: [] });
   // The source of truth, so event handlers read the current stacks without
@@ -216,9 +222,17 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
   // Symmetric to redo()'s guard: a pending edit invalidates the (stale) future
   // stack, so redo must report disabled until that edit commits.
   const canRedo = stacks.future.length > 0 && !pendingEdit;
+  // The step each would take, seen from the last committed snapshot; undo
+  // takes a pending edit back first, as undo() does.
+  const committed = lastCommittedRef.current;
+  const previous = pendingEdit ? committed : stacks.past.at(-1);
+  const undoTo = pendingEdit ? value : committed;
+  const next = stacks.future.at(-1);
+  const undoLabel = describe && previous !== undefined ? describe(previous, undoTo) : null;
+  const redoLabel = describe && canRedo && next !== undefined ? describe(committed, next) : null;
 
   return useMemo(
-    () => ({ canUndo, canRedo, undo, redo, clear, commitNow, truncateTo }),
-    [canUndo, canRedo, undo, redo, clear, commitNow, truncateTo]
+    () => ({ canUndo, canRedo, undoLabel, redoLabel, undo, redo, clear, commitNow, truncateTo }),
+    [canUndo, canRedo, undoLabel, redoLabel, undo, redo, clear, commitNow, truncateTo]
   );
 }

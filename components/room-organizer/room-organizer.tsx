@@ -43,6 +43,7 @@ import { ROOF_EAVE_OVERHANG } from './lib/dormers';
 import { notify, notifyRefused, notifyWithUndo, removedMessage } from './lib/editor-notices';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
+import { describeLayoutChange } from './lib/history-label';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { snapshotBeforeReplace } from './lib/restore-point';
@@ -564,7 +565,7 @@ export function RoomOrganizer(): JSX.Element {
       markLayoutLoaded();
     },
     [actions]
-  ));
+  ), { describe: describeLayoutChange });
   // The stable callbacks, so the wrappers below don't change identity every
   // time canUndo/canRedo flips.
   const { commitNow: commitHistoryNow, clear: clearHistory } = history;
