@@ -7,8 +7,8 @@ import { isWallMounted } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, hitOffPlanMarker, offPlanMarkers, PLAN_PADDING_PX, planViewFit, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
-import { planFloorIndex } from '../lib/street';
-import { defaultZoneName, nextZoneColor, zoneFromCorners } from '../lib/zones';
+import { entrancePlanOutline, planFloorIndex } from '../lib/street';
+import { defaultZoneName, nextZoneColor, zoneFromCorners, zoneInPorch } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
@@ -115,6 +115,8 @@ export interface UseCanvas2DInteractionParams {
   onItemDragCancel(id: string, options?: DragCancelOptions): void;
   /** A drag began on a locked item: say why it stays put (#635). */
   onLockedDrag?(id: string): void;
+  /** A zone drawn wholly on the porch: say why nothing was added (#582). */
+  onZoneRefused?(message: string): void;
 }
 
 export interface UseCanvas2DInteractionResult {
@@ -284,9 +286,11 @@ export function useCanvas2DInteraction(
       zoneGesture = null;
       if (!session.started) return;
       releaseCapture(session.pointerId);
-      const { layout, activeFloor } = paramsRef.current;
+      const { layout, activeFloor, onZoneRefused } = paramsRef.current;
       const rect = commit ? zoneFromCorners(session.start, session.latest, layout.width, layout.height) : null;
-      if (rect) {
+      const onPorch = rect !== null && zoneInPorch(rect, entrancePlanOutline(layout, planFloorIndex(layout.floors, activeFloor)));
+      if (onPorch) onZoneRefused?.('The porch is outside the house, so it can’t be a zone.');
+      if (rect && !onPorch) {
         const zones = activeFloor.zones ?? [];
         const fallback = defaultZoneName(zones);
         requestZoneName(layoutActions.addZone({ name: fallback, color: nextZoneColor(zones), ...rect }));

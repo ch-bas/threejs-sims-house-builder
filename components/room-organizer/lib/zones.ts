@@ -1,5 +1,6 @@
 import { MAX_ROOM_DIMENSION } from './constants';
 import { autoOrganize, type AutoOrganizeStrategy, type CollisionContext, totalCost } from './geometry';
+import type { EntrancePlanOutline } from './street';
 import type { FurnitureItem, RoomZone, Vec2 } from './types';
 
 /**
@@ -37,7 +38,7 @@ export interface ZoneStats {
   itemCount: number;
   /** Sum of the prices of the items inside, in §. */
   cost: number;
-  /** w × d, in m². */
+  /** w × d less any part over the porch, in m². */
   area: number;
 }
 
@@ -128,13 +129,36 @@ export function itemsInZone(zone: ZoneRect, items: readonly FurnitureItem[]): Fu
   return items.filter((item) => item.position !== undefined && zoneContains(zone, item.position.x, item.position.z));
 }
 
-export function zoneArea(zone: ZoneRect): number {
-  return zone.w * zone.d;
+/**
+ * The part of a zone that lies over the storey's recessed porch, or null. A
+ * zone stays a rectangle, so one drawn across the front of the house keeps
+ * its shape, but the porch is outside (#285): the plan clears it over the
+ * tint, and the area leaves it out (#582).
+ */
+function zonePorchOverlap(zone: ZoneRect, recess: EntrancePlanOutline | null): ZoneRect | null {
+  if (!recess) return null;
+  const x0 = Math.max(zone.x, recess.x0);
+  const x1 = Math.min(zone.x + zone.w, recess.x1);
+  const z0 = Math.max(zone.z, recess.frontZ);
+  const z1 = Math.min(zone.z + zone.d, recess.backZ);
+  return x1 > x0 && z1 > z0 ? { x: x0, z: z0, w: x1 - x0, d: z1 - z0 } : null;
 }
 
-export function zoneStats(zone: ZoneRect, items: readonly FurnitureItem[]): ZoneStats {
+/** The room floor a zone covers, in m²: its rectangle less the porch. */
+export function zoneArea(zone: ZoneRect, recess: EntrancePlanOutline | null): number {
+  const porch = zonePorchOverlap(zone, recess);
+  // Float noise must not print a zone that is all porch as "-0.0 m²".
+  return Math.max(0, zone.w * zone.d - (porch ? porch.w * porch.d : 0));
+}
+
+/** Whether all a zone would hold is porch: less room left than the smallest zone drawn (#582). */
+export function zoneInPorch(zone: ZoneRect, recess: EntrancePlanOutline | null): boolean {
+  return zonePorchOverlap(zone, recess) !== null && zoneArea(zone, recess) < MIN_ZONE_SIZE * MIN_ZONE_SIZE;
+}
+
+export function zoneStats(zone: ZoneRect, items: readonly FurnitureItem[], recess: EntrancePlanOutline | null): ZoneStats {
   const inside = itemsInZone(zone, items);
-  return { itemCount: inside.length, cost: totalCost(inside), area: zoneArea(zone) };
+  return { itemCount: inside.length, cost: totalCost(inside), area: zoneArea(zone, recess) };
 }
 
 /** The first palette colour no zone uses yet, cycling once they're all taken. */

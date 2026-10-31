@@ -1118,6 +1118,39 @@ describe('layoutReducer — room zones (#155)', () => {
   const withZone = () => layoutReducer(stateWith([]), { type: 'addZone', zone: bedroom });
   const activeZones = (state: LayoutState) => state.layout.floors[state.activeFloorIndex]!.zones;
 
+  it('refuses a zone that would be all porch, on the storey the porch is on (#582)', () => {
+    const entrance = { width: 1.4, depth: 1.2 };
+    const onPorch = { ...bedroom, x: -0.5, z: -3.9, w: 1, d: 1 };
+    const ground = layoutReducer(stateWith([], 2), { type: 'setEntrance', entrance });
+    expect(layoutReducer(ground, { type: 'addZone', zone: onPorch })).toBe(ground);
+    // A zone across the front of the house stays, and the storey above has no porch.
+    expect(activeZones(layoutReducer(ground, { type: 'addZone', zone: { ...onPorch, x: -3, w: 6 } }))).toHaveLength(1);
+    const upper = layoutReducer(ground, { type: 'setActiveFloorIndex', index: 1 });
+    expect(activeZones(layoutReducer(upper, { type: 'addZone', zone: onPorch }))).toHaveLength(1);
+
+    const placed = layoutReducer(ground, { type: 'addZone', zone: bedroom });
+    expect(layoutReducer(placed, { type: 'updateZone', id: bedroom.id, patch: { x: -0.5, z: -3.9, w: 1, d: 1 } })).toBe(placed);
+  });
+
+  it('still renames a swallowed zone that hangs past a wall (#582)', () => {
+    // Stored past the north wall: only once clamped is it all porch.
+    const past = { ...bedroom, x: -0.5, z: -4.5, w: 1, d: 1.5 };
+    const floor = makeFloor({ zones: [past] });
+    const state: LayoutState = { layout: makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2 } }), activeFloorIndex: 0 };
+    const renamed = layoutReducer(state, { type: 'updateZone', id: past.id, patch: { name: 'Hall' } });
+    expect(activeZones(renamed)![0]!.name).toBe('Hall');
+  });
+
+  it('still renames a zone a later porch swallowed (#582)', () => {
+    const onPorch = { ...bedroom, x: -0.5, z: -3.9, w: 1, d: 1 };
+    const state = layoutReducer(layoutReducer(stateWith([]), { type: 'addZone', zone: onPorch }), {
+      type: 'setEntrance',
+      entrance: { width: 1.4, depth: 1.2 },
+    });
+    const renamed = layoutReducer(state, { type: 'updateZone', id: bedroom.id, patch: { name: 'Hall' } });
+    expect(activeZones(renamed)![0]!.name).toBe('Hall');
+  });
+
   it('addZone appends to the active floor only', () => {
     const state = layoutReducer(stateWith([], 2, 1), { type: 'addZone', zone: bedroom });
     expect(state.layout.floors[1]!.zones).toEqual([bedroom]);

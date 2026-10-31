@@ -254,6 +254,13 @@ describe('layoutToDxf', () => {
     expect(Number(tag(area!, 21))).toBeLessThan(Number(tag(name!, 21)));
   });
 
+  it('leaves the porch out of a zone\'s area, as the SVG and blueprint do (#582)', () => {
+    const floor = makeFloor({ zones: [{ id: 'z', name: 'Hall', color: '#60a5fa', x: -3, z: -4, w: 6, d: 2 }] });
+    const dxf = layoutToDxf(makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2 } }), floor);
+    expect(dxf).toContain('10.3 m');
+    expect(dxf).not.toContain('12.0 m');
+  });
+
   it('draws no zone entities on a floor without zones, and each floor’s own on a building (#571)', () => {
     const { layout, floor } = makeFixture();
     expect(entities(layoutToDxf(layout, floor), undefined, 'ZONES')).toHaveLength(0);

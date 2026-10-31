@@ -357,6 +357,7 @@ function drawZoneLabels(
 ): void {
   const zones = floor.zones ?? [];
   if (zones.length === 0 || (thumbnail && scale < ZONE_LABEL_MIN_SCALE)) return;
+  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -371,7 +372,7 @@ function drawZoneLabels(
     // Along the top edge rather than the centre: the centre of a room is
     // where its bed or table sits, and the furniture paints over labels.
     const cx = x + w / 2;
-    const area = showArea ? `${zoneArea(zone).toFixed(1)} m²` : null;
+    const area = showArea ? `${zoneArea(zone, recess).toFixed(1)} m²` : null;
     ctx.font = 'bold 12px Arial';
     // A name wider than its zone would spill over the neighbouring rooms.
     if (ctx.measureText(zone.name).width > w - 4) continue;
