@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeLayout } from './__testfixtures__/fixtures';
 import {
+  planLegendSpot,
   bestPlanRegion,
   boundsSize,
   classicPlanRect,
@@ -196,5 +197,55 @@ describe('planViewFit: per-axis drops and fanned markers (#381 re-review)', () =
     }
     // The nearest keeps its true bearing, on the centre row; the others fan out.
     expect(Math.abs(markers.find((m) => m.item.id === 'a')!.y - 300)).toBeLessThan(2);
+  });
+});
+
+describe('planLegendSpot (#567)', () => {
+  // The issue's 1400×900 window: the plan with the mode panel at the bottom right.
+  const canvas = { width: 1400, height: 900 };
+  const plan = { left: 316, top: 80, right: 1052, bottom: 668 };
+  const modePanel = { left: 1137, top: 636, right: 1384, bottom: 884 };
+  const size = { width: 156, height: 48 };
+  const clears = (spot: { x: number; y: number }, r: { left: number; top: number; right: number; bottom: number }) =>
+    spot.x >= r.right || spot.x + size.width <= r.left || spot.y >= r.bottom || spot.y + size.height <= r.top;
+
+  it('sits beside the plan, clear of the panel at the corner the old legend used', () => {
+    const spot = planLegendSpot(canvas, plan, [modePanel], size);
+    expect(spot.x).toBeGreaterThanOrEqual(plan.right);
+    expect(clears(spot, modePanel)).toBe(true);
+    expect(clears(spot, plan)).toBe(true);
+  });
+
+  it('takes the left of the plan when the right is covered from top to bottom', () => {
+    const column = { left: 1060, top: 0, right: 1400, bottom: 900 };
+    const spot = planLegendSpot(canvas, plan, [column], size);
+    expect(spot.x + size.width).toBeLessThanOrEqual(plan.left);
+    expect(clears(spot, column)).toBe(true);
+  });
+
+  it('takes the band under a phone plan, which has no room at its sides', () => {
+    const spot = planLegendSpot({ width: 390, height: 844 }, { left: 16, top: 200, right: 374, bottom: 600 }, [], size);
+    expect(spot.y).toBeGreaterThanOrEqual(600);
+  });
+
+  it('goes inside the bottom-right corner of the plan when nothing around it is free', () => {
+    const phone = { width: 390, height: 844 };
+    const phonePlan = { left: 16, top: 200, right: 374, bottom: 600 };
+    const bands = [
+      { left: 0, top: 0, right: 390, bottom: 190 },
+      { left: 0, top: 610, right: 390, bottom: 844 },
+    ];
+    const spot = planLegendSpot(phone, phonePlan, bands, size);
+    expect(spot.x + size.width).toBeLessThanOrEqual(phonePlan.right);
+    expect(spot.y + size.height).toBeLessThanOrEqual(phonePlan.bottom);
+    expect(spot.x).toBeGreaterThanOrEqual(phonePlan.left);
+    expect(spot.y).toBeGreaterThanOrEqual(phonePlan.top);
+  });
+
+  it('stays on the canvas when the fitted plan runs past it', () => {
+    const spot = planLegendSpot({ width: 300, height: 200 }, { left: -50, top: -50, right: 400, bottom: 300 }, [], size);
+    expect(spot.x).toBeGreaterThanOrEqual(0);
+    expect(spot.x + size.width).toBeLessThanOrEqual(300);
+    expect(spot.y + size.height).toBeLessThanOrEqual(200);
   });
 });

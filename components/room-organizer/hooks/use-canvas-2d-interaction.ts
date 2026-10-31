@@ -13,7 +13,7 @@ import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../thre
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
 import type { DragCancelOptions } from './use-item-drag';
-import type { Insets } from '../lib/scene-insets';
+import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 
 /**
@@ -86,6 +86,8 @@ interface PlanFit {
   offPlan: readonly OffPlanItem[];
   insets: Insets | undefined;
   padding: number;
+  /** The HUD panels over the canvas (`planFit`). */
+  hudRects: readonly Rect[];
 }
 
 export interface UseCanvas2DInteractionParams {
@@ -234,7 +236,7 @@ export function useCanvas2DInteraction(
     // repaints with the transform the plan was painted with, so dragging an
     // item past the walls doesn't rescale the plan under the pointer; the
     // committed drop refits it (#381).
-    let fit: PlanFit = { bounds: undefined, offPlan: [], insets: undefined, padding: PLAN_PADDING_PX };
+    let fit: PlanFit = { bounds: undefined, offPlan: [], insets: undefined, padding: PLAN_PADDING_PX, hudRects: [] };
     const worldAt = (event: PointerEvent) => toWorld(event.clientX, event.clientY, fit);
 
     const paintGhost = (): void => {
@@ -260,6 +262,7 @@ export function useCanvas2DInteraction(
         offPlan: fit.offPlan,
         insets: fit.insets,
         padding: fit.padding,
+        hudRects: fit.hudRects,
         hasCollision: (item) =>
           hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
       });

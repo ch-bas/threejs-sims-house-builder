@@ -94,7 +94,7 @@ describe('planInsets on a desktop window (#381)', () => {
     panel({ current: rectOf(16, 16, 272, 70) });
     expect(planInsets(desktopCanvas())).toBeUndefined();
     expect(planInsets(desktopCanvas(), square)).toBeUndefined();
-    expect(planFit(desktopCanvas(), square)).toEqual({ insets: undefined, padding: PLAN_PADDING_PX });
+    expect(planFit(desktopCanvas(), square)).toMatchObject({ insets: undefined, padding: PLAN_PADDING_PX });
   });
 
   /** Where the room's content lands for a fit (canvas px). */

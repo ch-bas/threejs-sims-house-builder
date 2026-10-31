@@ -10,11 +10,11 @@ import { rotatedHalfExtents } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { planDrawOrder } from '../lib/plan-order';
-import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
+import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
-import type { Insets } from '../lib/scene-insets';
+import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
@@ -50,6 +50,8 @@ export interface Render2DOptions {
    * full-screen plan on a compact viewport passes them; undefined is none.
    */
   insets?: Insets | undefined;
+  /** The HUD panels over the canvas (CSS px), which the heatmap legend keeps clear of (#567). */
+  hudRects?: readonly Rect[] | undefined;
   /**
    * Fit this world rectangle (metres, room-centred) instead of the room
    * (`get2DViewTransform`'s `bounds`). The on-screen plan and the minimap
@@ -203,9 +205,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
   drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true);
 
-  if (options.showHeatmap) {
-    drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale, viewWidth, viewHeight);
-  }
+  const heatmapPeak = options.showHeatmap ? drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale) : 0;
 
   if (options.showWiFiSignals) {
     drawSignalRings(ctx, floor.items, offsetX, offsetY, scale, layout, 'wifi');
@@ -217,6 +217,17 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   if (options.showMeasurements) {
     drawRoomDimensions(ctx, layout, offsetX, offsetY, scale);
+  }
+
+  if (heatmapPeak > 0) {
+    const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
+    const plan: Rect = {
+      left: offsetX + (fit.minX + layout.width / 2) * scale,
+      top: offsetY + (fit.minZ + layout.height / 2) * scale,
+      right: offsetX + (fit.maxX + layout.width / 2) * scale,
+      bottom: offsetY + (fit.maxZ + layout.height / 2) * scale,
+    };
+    drawHeatmapLegend(ctx, heatmapPeak, planLegendSpot({ width: viewWidth, height: viewHeight }, plan, options.hudRects ?? [], HEATMAP_LEGEND_SIZE));
   }
 
   if (options.offPlan && options.offPlan.length > 0) {
@@ -847,8 +858,8 @@ export function computeHeatmapCells(
  * Paint a price-per-area heatmap onto the 2D canvas. The floor is bucketed
  * into a 20×20 grid; each cell aggregates the price of any item whose
  * footprint overlaps the cell (weighted by intersection area), then
- * colour-maps the density. Also draws a compact legend showing the
- * per-square-metre value range.
+ * colour-maps the density. Returns the densest cell's value per square
+ * metre, for the legend (0 when nothing is priced).
  */
 function drawHeatmap(
   ctx: CanvasRenderingContext2D,
@@ -856,21 +867,19 @@ function drawHeatmap(
   items: readonly FurnitureItem[],
   offsetX: number,
   offsetY: number,
-  scale: number,
-  viewWidth: number,
-  viewHeight: number
-): void {
+  scale: number
+): number {
   const COLS = HEATMAP_COLS;
   const ROWS = HEATMAP_ROWS;
   const cellWidth = layout.width / COLS;
   const cellDepth = layout.height / ROWS;
   const cellArea = cellWidth * cellDepth;
-  if (cellArea <= 0) return;
+  if (cellArea <= 0) return 0;
 
   const grid = computeHeatmapCells(items, layout.width, layout.height, COLS, ROWS);
 
   const max = Math.max(...grid);
-  if (max <= 0) return;
+  if (max <= 0) return 0;
 
   // Cells.
   ctx.save();
@@ -890,34 +899,29 @@ function drawHeatmap(
   }
   ctx.restore();
 
-  drawHeatmapLegend(ctx, max / cellArea, viewWidth, viewHeight);
+  return max / cellArea;
 }
 
+const HEATMAP_LEGEND_BAR = { width: 140, height: 12 };
+/** The legend's box: the bar, with its caption above and scale below. */
+const HEATMAP_LEGEND_SIZE = { width: HEATMAP_LEGEND_BAR.width + 16, height: HEATMAP_LEGEND_BAR.height + 36 };
+
+/** The legend's box at `spot` (logical CSS px, `planLegendSpot`), over the plan and its furniture. */
 function drawHeatmapLegend(
   ctx: CanvasRenderingContext2D,
   maxPricePerSqM: number,
-  viewWidth: number,
-  viewHeight: number
+  spot: { x: number; y: number }
 ): void {
-  const padding = 12;
-  const barWidth = 140;
-  const barHeight = 12;
-  // Position in logical (CSS-pixel) space — ctx is DPR-scaled, so using the raw
-  // backing-store size (ctx.canvas.width) would push the legend off-screen on
-  // retina.
-  const x = viewWidth - barWidth - padding;
-  const y = viewHeight - barHeight - padding - 18;
+  const { width: barWidth, height: barHeight } = HEATMAP_LEGEND_BAR;
+  const x = spot.x + 8;
+  const y = spot.y + 14;
 
   ctx.save();
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.strokeStyle = 'rgba(0,0,0,0.2)';
   ctx.lineWidth = 1;
-  const boxX = x - 8;
-  const boxY = y - 14;
-  const boxW = barWidth + 16;
-  const boxH = barHeight + 36;
-  ctx.fillRect(boxX, boxY, boxW, boxH);
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
+  ctx.fillRect(spot.x, spot.y, HEATMAP_LEGEND_SIZE.width, HEATMAP_LEGEND_SIZE.height);
+  ctx.strokeRect(spot.x, spot.y, HEATMAP_LEGEND_SIZE.width, HEATMAP_LEGEND_SIZE.height);
 
   // Gradient bar.
   const gradient = ctx.createLinearGradient(x, 0, x + barWidth, 0);
