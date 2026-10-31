@@ -15,7 +15,7 @@ import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitS
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
-import { drawSelectedWall, drawWallPreview, type WallPreview } from './plan-edit';
+import { drawSelectedWall, drawWallPreview, drawZoneHandles, type WallPreview } from './plan-edit';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
@@ -40,6 +40,8 @@ export interface Render2DOptions {
   zoneDraft?: ZoneRect | null;
   /** The interior wall selected on the plan (#564). */
   selectedWallId?: string | null | undefined;
+  /** The zone with resize handles (#628). */
+  selectedZoneId?: string | null | undefined;
   /** The wall tool's draft, drawn over everything (#564). */
   wallPreview?: WallPreview | null | undefined;
   hasCollision: (item: FurnitureItem) => boolean;
@@ -253,6 +255,8 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
   if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale);
+  const selectedZone = options.selectedZoneId ? floor.zones?.find((zone) => zone.id === options.selectedZoneId) : null;
+  if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);
 }
 

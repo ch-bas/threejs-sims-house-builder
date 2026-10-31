@@ -132,6 +132,8 @@ export interface UseSceneEffectsParams {
   extraSelectedIds: ReadonlySet<string>;
   highlightedIds: ReadonlySet<string>;
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
+  /** The zone showing handles on the plan (#628). */
+  selectedZoneId: string | null;
   wallDraft: { x: number; z: number } | null;
   wallSnapResult: { point: { x: number; z: number }; kind: string } | null;
   measurementPoints: ReadonlyArray<{ x: number; z: number }>;
@@ -170,6 +172,7 @@ export function useSceneEffects({
   extraSelectedIds,
   highlightedIds,
   selectedWall,
+  selectedZoneId,
   wallDraft,
   wallSnapResult,
   measurementPoints,
@@ -1142,9 +1145,10 @@ export function useSceneEffects({
   const wallAnchor = view.drawWallMode ? wallDraft : null;
   const wallTip = view.drawWallMode ? wallSnapResult : null;
   const selectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
-  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'wallPreview'>>({});
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedZoneId' | 'wallPreview'>>({});
   planEditRef.current = {
     selectedWallId,
+    selectedZoneId,
     wallPreview: view.drawWallMode
       ? { anchor: wallAnchor, tip: wallTip?.point ?? null, snapped: wallTip !== null && wallTip.kind !== 'none' }
       : null,
@@ -1153,7 +1157,7 @@ export function useSceneEffects({
     // Once a frame, however many moves arrive in it.
     const frame = requestAnimationFrame(() => paint2DRef.current?.());
     return () => cancelAnimationFrame(frame);
-  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId]);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedZoneId]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;
