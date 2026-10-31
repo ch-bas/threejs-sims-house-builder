@@ -270,7 +270,7 @@
   .pc-floor-pill,
   .pc-wall-pill {
     padding: 3px !important;
-    gap: 3px !important;
+    gap: 4px !important;
   }
   .pc-floor-pill > div,
   .pc-wall-pill > div {
@@ -1291,14 +1291,23 @@ html[data-plan-gesture] * {
     }
   }
 
+  /* The camera menu is as tall as a page of tiles: a category tap must not
+     move the tools above the strip, or reframe the scene (#684). */
+  .pc-catalog-strip--menu {
+    display: flex;
+    flex-direction: column;
+    min-height: 211px;
+  }
+
   /* Pinch zooms; the row is too small to tap. */
   .pc-camera-zoom {
     display: none !important;
   }
 
-  /* Beside the stats bar (287px of room) four floors can't have it all: the
-     caption keeps its icon, and the tiles fill their 41px pitch. */
-  @media (min-width: 1101px) {
+  /* Beside the stats bar (287px of room), or the longest house name on the
+     narrowest tablets, four floors can't have it all: the caption keeps its
+     icon, and the tiles fill their 41px pitch. */
+  @media (min-width: 1101px), (max-width: 800px) {
     .pc-floor-pill {
       gap: 4px !important;
       padding: 6px 4px !important;
@@ -1322,10 +1331,11 @@ html[data-plan-gesture] * {
      the tiles' glyphs, so the pill stays the width the stats bar allows. */
   .pc-wall-pill {
     gap: 3px !important;
+    padding: 6px 2px !important;
   }
   .pc-wall-caption {
     display: block;
-    min-width: 42px;
+    min-width: 52px;
     font-size: 10px;
     line-height: 1.1;
     letter-spacing: 0.02em;
@@ -1333,8 +1343,8 @@ html[data-plan-gesture] * {
   }
   .pc-wall-caption__why {
     display: block;
-    font-size: 9px;
     font-weight: 700;
+    letter-spacing: 0;
   }
   .pc-wall-pill [role='radio'] {
     justify-content: center;

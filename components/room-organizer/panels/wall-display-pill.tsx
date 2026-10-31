@@ -58,7 +58,7 @@ export function WallDisplayPill(): JSX.Element {
           the pill keeps its width beside the stats bar. */}
       <span className="pc-hud-header pc-wall-caption">
         Walls
-        {off && <span className="pc-wall-caption__why">{walking ? 'Stay up' : '3D only'}</span>}
+        {off && <span className="pc-wall-caption__why">{walking ? 'Walking' : '3D only'}</span>}
       </span>
 
       <div
