@@ -11,7 +11,7 @@
 
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from '../constants';
 import { isOpening, isWallMounted } from '../opening-snap';
-import { computeFloorOpenings, floorOpeningOutline, stairPlanSymbol, stairTreadLines } from '../stairs';
+import { computeFloorOpenings, floorOpeningOutline, floorStairHeadroom, stairPlanSymbol, stairTreadLines } from '../stairs';
 import { entrancePlanOutline, planFloorIndex } from '../street';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../types';
 
@@ -186,6 +186,61 @@ export function stairTreadSegments(item: PlacedItem): PlanSegment[] {
     from: { x: from[0], z: from[1] },
     to: { x: to[0], z: to[1] },
   }));
+}
+
+/** Spacing of the hatch on cut treads, in metres. */
+export const STAIR_HATCH_SPACING_M = 0.12;
+
+/**
+ * The treads a stair's hole is cut over, as closed world outlines (#631).
+ * Empty on the top storey, which has no slab to cut.
+ */
+export function stairCutTreads(item: PlacedItem, layout: Pick<RoomLayout, 'floors' | 'roof'>, floorIndex: number): PlanPoint[][] {
+  const headroom = floorStairHeadroom(item, layout, floorIndex);
+  if (!headroom) return [];
+  const { treads } = stairPlanSymbol(item);
+  return headroom.underHole.map((index) => treads[index]!.map(([x, z]) => ({ x, z })));
+}
+
+/**
+ * 45° hatch lines across a convex outline, on a grid anchored at the world
+ * origin, so they run on unbroken from one tread to the next.
+ */
+function hatchConvex(outline: readonly PlanPoint[]): PlanSegment[] {
+  const along = (p: PlanPoint): number => (p.x + p.z) / Math.SQRT2;
+  const heights = outline.map(along);
+  const lines: PlanSegment[] = [];
+  const first = Math.ceil(Math.min(...heights) / STAIR_HATCH_SPACING_M);
+  const last = Math.floor(Math.max(...heights) / STAIR_HATCH_SPACING_M);
+  for (let k = first; k <= last; k++) {
+    const level = k * STAIR_HATCH_SPACING_M;
+    const hits: PlanPoint[] = [];
+    outline.forEach((a, i) => {
+      const b = outline[(i + 1) % outline.length]!;
+      const da = along(a) - level;
+      const db = along(b) - level;
+      // Half-open, so a line through a corner meets it once.
+      if (da < 0 === db < 0) return;
+      const t = da / (da - db);
+      hits.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+    });
+    if (hits.length === 2) lines.push({ from: hits[0]!, to: hits[1]! });
+  }
+  return lines;
+}
+
+/**
+ * The hatch over every cut tread on a floor (#631), one set of lines for the
+ * plan, the SVG and the DXF.
+ */
+export function stairCutHatch(layout: Pick<RoomLayout, 'floors'>, floor: FloorLayout): PlanSegment[] {
+  const index = layout.floors.findIndex((candidate) => candidate === floor || candidate.id === floor.id);
+  // The floor as given: a drag repaint passes a copy with its items moved.
+  const floors = index >= 0 ? layout.floors.map((candidate, i) => (i === index ? floor : candidate)) : [];
+  return splitPlanItems(floor.items)
+    .furniture.filter((item) => item.type === 'stairs')
+    .flatMap((item) => stairCutTreads(item, { floors }, index))
+    .flatMap(hatchConvex);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
 import { buildingToDxf, DXF_LAYERS, layoutToDxf } from './dxf';
-import { buildingFrameBounds, interiorWallDimensions } from './plan-geometry';
+import { buildingFrameBounds, interiorWallDimensions, stairCutHatch } from './plan-geometry';
 import { layoutToSvg } from './svg';
 
 function count(haystack: string, needle: string): number {
@@ -224,7 +224,7 @@ describe('layoutToDxf', () => {
   });
 
   it('keeps the plan layers and adds COVERAGE and DIMENSIONS', () => {
-    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS', 'ZONES']);
+    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS', 'ZONES', 'STAIR-CUT']);
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);
     for (const layer of ['0', ...DXF_LAYERS]) {
@@ -433,6 +433,9 @@ describe('layoutToDxf', () => {
     const groundDxf = layoutToDxf(layout, ground);
     // 43 tread segments + 2 arrow barbs; the footprint plus the open arrow shaft.
     expect(entities(groundDxf, 'LINE', 'FURNITURE')).toHaveLength(14 * 4 - 13 + 2);
+    // The hatch over the cut treads has its own layer (#631).
+    expect(entities(groundDxf, 'LINE', 'STAIR-CUT')).toHaveLength(stairCutHatch(layout, ground).length);
+    expect(stairCutHatch(layout, ground).length).toBeGreaterThan(0);
     const polylines = entities(groundDxf, 'LWPOLYLINE', 'FURNITURE');
     expect(polylines).toHaveLength(2);
     expect(polylines.filter((p) => tag(p, 90) === '14' && tag(p, 70) === '0')).toHaveLength(1);

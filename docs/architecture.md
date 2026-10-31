@@ -231,6 +231,7 @@ components/
         ├── furniture-catalog-panel.tsx
         ├── placed-items-panel.tsx
         ├── item-resize-panel.tsx
+        ├── stair-headroom-note.tsx      Warning in the stairs controls when a flight is short of headroom
         ├── align-panel.tsx
         ├── templates-panel.tsx
         ├── themes-panel.tsx

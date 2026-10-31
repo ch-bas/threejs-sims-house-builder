@@ -15,7 +15,7 @@ import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitS
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
-import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
@@ -825,6 +825,7 @@ function drawFurniture(
       ctx.restore();
     }
   }
+  drawStairCutHatch(ctx, options.layout, options.floor, { scale, offsetX, offsetY });
   drawSelectionOutlines(ctx, options, offsetX, offsetY, scale);
 }
 

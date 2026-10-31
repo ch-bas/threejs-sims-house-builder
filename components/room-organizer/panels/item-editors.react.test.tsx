@@ -6,13 +6,13 @@ import { RoomEditorProvider, type RoomEditorContextValue } from '../contexts/roo
 import { SelectionProvider, type SelectionContextValue } from '../contexts/selection-context';
 import { createEditorViewStore } from '../hooks/editor-view-store';
 import { NOT_WHILE_EXPLORING } from '../hooks/use-exploring';
-import { makeItem, makeViewSettings } from '../lib/__testfixtures__/fixtures';
+import { makeFloor, makeItem, makeLayout, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { ItemContextPopover } from './item-context-popover';
 import { ItemResizePanel } from './item-resize-panel';
 import type { FurnitureItem, GameMode } from '../lib/types';
 
-function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: GameMode = 'build') {
+function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: GameMode = 'build', floorAboveHeight = 2.8) {
   const actions = {
     toggleMirror: vi.fn(),
     setSofaShape: vi.fn(),
@@ -28,7 +28,9 @@ function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: Ga
   const callbacks = { onRemove: vi.fn(), onDuplicate: vi.fn(), onRotate: vi.fn(), onToggleCameraBracket: vi.fn(), onClose: vi.fn() };
   const store = createEditorViewStore(makeViewSettings());
   store.getState().actions.setGameMode(mode);
-  const editorValue = { actions, recentColors: [], pushColor: () => {} } as unknown as RoomEditorContextValue;
+  const lower = makeFloor({ id: 'lower', height: 2.8, items: [item] });
+  const layout = makeLayout({ floors: [lower, makeFloor({ id: 'upper', height: floorAboveHeight })], roof: { style: 'flat', color: '#888888' } });
+  const editorValue = { actions, recentColors: [], pushColor: () => {}, layout, activeFloor: lower, activeFloorIndex: 0 } as unknown as RoomEditorContextValue;
   const selection = {
     selectedItemId: item.id,
     setSelectedItemId: () => {},
@@ -166,6 +168,20 @@ describe('item popover in EXPLORE (#699)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(calls.onRemove).toHaveBeenCalledWith('s');
     expect(calls.onDuplicate).toHaveBeenCalledWith('s');
+  });
+});
+
+describe('the stair headroom warning (#631)', () => {
+  const stairs = makeItem({ id: 't', type: 'stairs', name: 'Stairs', width: 1, depth: 2.8, height: 2.8 });
+
+  it.each(['popover', 'panel'] as const)('warns in the %s when the storey above is too low', (editor) => {
+    renderEditor(editor, stairs, 'build', 1.5);
+    expect(screen.getByRole('status').textContent).toContain('Only 1.5 m of headroom');
+  });
+
+  it.each(['popover', 'panel'] as const)('stays quiet in the %s with enough headroom', (editor) => {
+    renderEditor(editor, stairs, 'build', 2.8);
+    expect(screen.queryByText(/of headroom/)).toBeNull();
   });
 });
 

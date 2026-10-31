@@ -1,6 +1,6 @@
-import { stairArrow, stairTreadSegments, stairwellOutlines, type PlacedItem, type PlanPoint } from '../lib/plan-export/plan-geometry';
+import { STAIR_HATCH_SPACING_M, stairArrow, stairCutHatch, stairTreadSegments, stairwellOutlines, type PlacedItem, type PlanPoint } from '../lib/plan-export/plan-geometry';
 import type { View2DTransform } from './render';
-import type { FurnitureItem, RoomLayout } from '../lib/types';
+import type { FloorLayout, FurnitureItem, RoomLayout } from '../lib/types';
 
 /**
  * The stair symbol of the 2D plan (#290): tread lines and an up-arrow from
@@ -76,6 +76,32 @@ export function drawStairsSymbol(
   ctx.beginPath();
   ctx.arc(fx, fy, ctx.lineWidth, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Hatch the treads a floor's stairs have cut over them (#631), from the same
+ * lines the exports draw. Left off when they would pack into a smear, as on
+ * the minimap.
+ */
+export function drawStairCutHatch(
+  ctx: CanvasRenderingContext2D,
+  layout: Pick<RoomLayout, 'floors' | 'width' | 'height'>,
+  floor: FloorLayout,
+  view: View2DTransform
+): void {
+  if (STAIR_HATCH_SPACING_M * view.scale < MIN_TREAD_SPACING_PX) return;
+  const lines = stairCutHatch(layout, floor);
+  if (lines.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const { from, to } of lines) {
+    ctx.moveTo(...toCanvas(from, layout, view));
+    ctx.lineTo(...toCanvas(to, layout, view));
+  }
+  ctx.stroke();
   ctx.restore();
 }
 
