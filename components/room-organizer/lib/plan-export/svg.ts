@@ -36,6 +36,7 @@ import {
   scheduleSizeText,
   splitPlanItems,
   stairArrow,
+  stairCutHatch,
   stairTreadSegments,
   stairwellOutlines,
   visionWedges,
@@ -367,6 +368,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     options.coverage === false ? '' : renderCoverage(floor, px, py, scale, frame, theme, idPrefix),
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
     ...furniture.map((item) => renderFurniture(item, px, py, scale, theme)),
+    renderStairCutHatch(layout, floor, px, py, theme),
     options.dimensions === false ? '' : renderDimensions(layout, floor, px, py, content, theme, openingChains(layout, floor, options, scale), chainBand),
     `</g>`,
     // Annotations sit in the margin band around the content — the content
@@ -633,6 +635,20 @@ function isUpsideDown(degrees: number): boolean {
   const EPS = 1e-6;
   const sheet = ((((degrees + 180) % 360) + 360) % 360) - 180;
   return sheet >= 90 - EPS || sheet < -90 - EPS;
+}
+
+/** The hatch over the treads a stair has cut over them (#631). */
+function renderStairCutHatch(
+  layout: RoomLayout,
+  floor: FloorLayout,
+  px: (x: number) => string,
+  py: (z: number) => string,
+  theme: SvgPlanTheme
+): string {
+  const lines = stairCutHatch(layout, floor);
+  if (lines.length === 0) return '';
+  const d = lines.map(({ from, to }) => `M ${px(from.x)} ${py(from.z)} L ${px(to.x)} ${py(to.z)}`).join(' ');
+  return `<path class="stair-cut" d="${d}" stroke="${theme.furnitureStroke}" stroke-opacity="0.85" stroke-width="1" fill="none"/>`;
 }
 
 /**

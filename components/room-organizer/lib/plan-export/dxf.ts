@@ -20,6 +20,7 @@
  * - Openings are LINE jamb ticks + a centre line, doors add the swing ARC,
  *   hinged on the jamb the 3D door is (mirroring swaps it, #386).
  * - Labels are horizontal TEXT (rotating text helps nobody in CAD).
+ * - STAIR-CUT carries the hatch over the treads under a stairwell (#631).
  * - ZONES carries each room zone as a closed LWPOLYLINE with its name and area
  *   as TEXT along the top edge, where the SVG puts them (#571).
  * - COVERAGE carries Wi-Fi/CCTV rings as CIRCLEs and camera wedges as an
@@ -51,6 +52,7 @@ import {
   polarPoint,
   splitPlanItems,
   stairArrow,
+  stairCutHatch,
   stairTreadSegments,
   stairwellOutlines,
   visionWedges,
@@ -73,6 +75,7 @@ export const DXF_LAYERS = [
   'COVERAGE',
   'DIMENSIONS',
   'ZONES',
+  'STAIR-CUT',
 ] as const;
 
 export type DxfLayer = (typeof DXF_LAYERS)[number];
@@ -88,6 +91,7 @@ const LAYER_COLOURS: Record<DxfLayer, number> = {
   COVERAGE: 4,
   DIMENSIONS: 6,
   ZONES: 30,
+  'STAIR-CUT': 8,
 };
 
 export interface DxfExportOptions {
@@ -564,6 +568,10 @@ function emitFloor(
     );
     doc.text('LABELS', cad(item.position.x, item.position.z), LABEL_TEXT_HEIGHT, item.name, 'centre');
     if (item.type === 'stairs') emitStairs(doc, item, cad);
+  }
+  // The treads under the hole (#631): their own layer, so CAD users can hide the hatch.
+  for (const { from, to } of stairCutHatch(layout, floor)) {
+    doc.line('STAIR-CUT', cad(from.x, from.z), cad(to.x, to.z));
   }
 
   const showChains = options.dimensions !== false && options.openingDimensions === true;

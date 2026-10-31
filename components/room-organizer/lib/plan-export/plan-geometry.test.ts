@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout, makeUnplacedItem } from '../__testfixtures__/fixtures';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M } from '../constants';
+import { layoutToDxf } from './dxf';
 import {
   buildingContentBounds,
   buildingFrameBounds,
@@ -18,9 +19,13 @@ import {
   planFrameBounds,
   polarPoint,
   roomDimensions,
+  stairCutHatch,
+  stairCutTreads,
   visionWedges,
   wallOpeningDimensions,
+  type PlacedItem,
 } from './plan-geometry';
+import { layoutToSvg } from './svg';
 
 describe('planContentBounds', () => {
   it('ignores wall-mounted items — openings and cameras (#401)', () => {
@@ -402,5 +407,45 @@ describe('floorBelowUnderlay (#624)', () => {
     expect(floorBelowUnderlay(layout, 0)).toEqual({ walls: [], stairs: [] });
     expect(floorBelowUnderlay(layout, 7)).toEqual({ walls: [], stairs: [] });
     expect(floorBelowUnderlay(layout, -1)).toEqual({ walls: [], stairs: [] });
+  });
+});
+
+describe('stairCutHatch (#631)', () => {
+  const stairs = makeItem({ id: 's', type: 'stairs', width: 1, depth: 2.8, height: 2.8, rotation: 0.4, mirrored: true, position: { x: 1, z: 1 } });
+  const winder = makeItem({ id: 'w', type: 'stairs', width: 2, depth: 2.6, height: 2.8, stairsShape: 'winder', position: { x: -1, z: 0 } });
+  const lower = makeFloor({ id: 'g', height: 2.8, items: [stairs, winder] });
+  const upper = makeFloor({ id: 'u', height: 2.8 });
+  const layout = makeLayout({ floors: [lower, upper] });
+
+  it('hatches on a storey with a floor above, not on the top storey', () => {
+    expect(stairCutHatch(layout, lower).length).toBeGreaterThan(20);
+    expect(stairCutHatch(makeLayout({ floors: [lower] }), lower)).toEqual([]);
+    expect(stairCutHatch(layout, upper)).toEqual([]);
+  });
+
+  it('stays on the cut treads', () => {
+    const cut = stairCutTreads(stairs as PlacedItem, layout, 0);
+    expect(cut).toHaveLength(11);
+    const hw = 0.5;
+    const hd = 1.4;
+    const cos = Math.cos(0.4);
+    const sin = Math.sin(0.4);
+    for (const { from, to } of stairCutHatch(makeLayout({ floors: [{ ...lower, items: [stairs] }, upper] }), { ...lower, items: [stairs] })) {
+      for (const p of [from, to]) {
+        const dx = p.x - 1;
+        const dz = p.z - 1;
+        expect(Math.abs(dx * cos - dz * sin)).toBeLessThanOrEqual(hw + 1e-9);
+        expect(dx * sin + dz * cos).toBeGreaterThanOrEqual(-hd + 0.6 - 1e-9);
+        expect(dx * sin + dz * cos).toBeLessThanOrEqual(hd + 1e-9);
+      }
+    }
+  });
+
+  it('reaches the SVG and the DXF', () => {
+    const svg = layoutToSvg(layout, lower);
+    expect(svg).toContain('class="stair-cut"');
+    expect(layoutToSvg(layout, upper)).not.toContain('class="stair-cut"');
+    const lines = (dxf: string) => dxf.split('\n').filter((row) => row.trim() === 'LINE').length;
+    expect(lines(layoutToDxf(layout, lower))).toBeGreaterThan(lines(layoutToDxf(makeLayout({ floors: [lower] }), lower)));
   });
 });

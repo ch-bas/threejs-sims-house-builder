@@ -18,6 +18,7 @@ import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import { DRAWER_FULL_SCREEN_QUERY } from './sidebar-tabs';
 import { SliderRow } from './slider-row';
+import { StairHeadroomNote } from './stair-headroom-note';
 import type { FurnitureItem, SofaShape, StairsShape } from '../lib/types';
 
 type ResizableDimension = 'width' | 'depth' | 'height';
@@ -423,6 +424,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               look first (#458). Locked like W/D/H: they reshape the item. */}
           {item.type === 'stairs' && (
             <>
+              <StairHeadroomNote item={item} />
               <SegmentedRow
                 label="Stairs"
                 value={item.stairsShape ?? 'straight'}
