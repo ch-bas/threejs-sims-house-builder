@@ -156,7 +156,13 @@ export function FloorSwitcher(): JSX.Element {
               {isRenaming ? (
                 <div
                   className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
+                  aria-current={isActive ? 'true' : undefined}
                   style={ROW_STYLE}
+                  // On press, not click: the field's blur swaps this row for
+                  // the button before the release.
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) actions.setActiveFloorIndex(index);
+                  }}
                 >
                   <Input
                     autoFocus

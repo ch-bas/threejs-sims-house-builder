@@ -7,7 +7,8 @@ import type { KeyboardEvent } from 'react';
  * the `tablist` or `radiogroup` around the focused item.
  */
 export function onRovingKeyDown(event: KeyboardEvent<HTMLElement>, activate: (index: number) => void): void {
-  // Alt+Left is the browser's Back; leave modified keys alone.
+  // Alt+Left is the browser's Back; leave modified keys alone. Not Shift:
+  // Shift+arrow reaching the window would nudge the selection by a metre.
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   const role = event.currentTarget.getAttribute('role');
   const group = event.currentTarget.closest('[role="tablist"], [role="radiogroup"]');

@@ -71,6 +71,16 @@ describe('WallDisplayPill', () => {
     expect(onWindow).not.toHaveBeenCalled();
   });
 
+  it('Shift+arrow roves too: let through, it would nudge the selection by a metre (#646)', () => {
+    const { latest } = setup({ wallDisplay: 'up' });
+    const onWindow = vi.fn();
+    window.addEventListener('keydown', onWindow);
+    fireEvent.keyDown(radio('Up'), { key: 'ArrowRight', shiftKey: true });
+    window.removeEventListener('keydown', onWindow);
+    expect(latest().wallDisplay).toBe('cutaway');
+    expect(onWindow).not.toHaveBeenCalled();
+  });
+
   it('is off while walking: the walls stay up and say so (#643)', () => {
     const { latest } = setup({ wallDisplay: 'down', walkthroughMode: true });
     for (const name of ['Up', 'Cut', 'Down']) {

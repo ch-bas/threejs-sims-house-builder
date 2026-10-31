@@ -45,7 +45,9 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
   const hudRef = useRef<HTMLDivElement>(null);
   const leftColumnRef = useRef<HTMLDivElement>(null);
-  const showPaint = view.drawWallMode || selectedWall !== null;
+  // Held: Apply To moved to All from the keyboard, focus still in the panel.
+  const [paintHeld, setPaintHeld] = useState(false);
+  const showPaint = view.drawWallMode || selectedWall !== null || paintHeld;
   // On a phone the wall panels open folded, one at a time (#395); a tapped
   // wall opens Paint, since that is what the tap asks for. Off the dock
   // both always show in full.
@@ -136,6 +138,7 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
             <WallPaintPanel
               selectedWall={selectedWall}
               onSelectedWallChange={onSelectedWallChange}
+              onHoldOpen={setPaintHeld}
               fold={{ open: paintUnfolded, onToggle: () => toggleFold('paint') }}
             />
           )}

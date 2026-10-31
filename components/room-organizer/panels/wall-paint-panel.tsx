@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useScrollCue } from '../hooks/use-scroll-cue';
@@ -140,6 +140,12 @@ export interface WallPaintPanelProps {
   onSelectedWallChange(wall: { id: string; kind: 'exterior' | 'interior' } | null): void;
   /** Folded or not in the phone dock; the HUD unfolds one wall panel at a time. */
   fold?: PanelFold;
+  /**
+   * Keep the panel up with no wall selected. Clearing the wall from the
+   * keyboard would otherwise close it under the focus; the hold ends when the
+   * focus leaves the panel.
+   */
+  onHoldOpen?(held: boolean): void;
 }
 
 /**
@@ -152,6 +158,19 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
   const { activeFloor: floor, actions } = useRoomEditor();
   const fold = useDockFold(props.fold);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { onHoldOpen } = props;
+  useEffect(() => {
+    if (!onHoldOpen) return undefined;
+    // A press on the scene moves no focus, so the panel's blur can't end it.
+    const onPress = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) onHoldOpen(false);
+    };
+    document.addEventListener('pointerdown', onPress, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPress, true);
+      onHoldOpen(false);
+    };
+  }, [onHoldOpen]);
   // Unfolded in the dock the panel scrolls on its own: say so.
   useScrollCue(rootRef, `${fold.open}`);
 
@@ -211,6 +230,9 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       className={`pointer-events-auto pc-glass pc-wall-paint${fold.open ? '' : ' pc-dock-folded'}`}
       data-scene-occluder=""
       style={{ width: 280, padding: '10px 12px' }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onHoldOpen?.(false);
+      }}
     >
       {/* Title + Surface toggle */}
       <div
@@ -277,8 +299,9 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
           </SectionLabel>
           <ApplyToggle
             value={applyTo}
-            onChange={(v) => {
+            onChange={(v, fromKeyboard) => {
               if (v === 'all') {
+                if (fromKeyboard) onHoldOpen?.(true);
                 props.onSelectedWallChange(null);
               } else {
                 props.onSelectedWallChange({ id: v, kind: 'exterior' });
@@ -414,7 +437,7 @@ function SurfaceTabs({ surface, onChange, baseId }: SurfaceTabsProps): JSX.Eleme
 interface ApplyToggleProps {
   /** null: nothing checked (an interior wall is the target). */
   value: WallId | 'all' | null;
-  onChange(v: WallId | 'all'): void;
+  onChange(v: WallId | 'all', fromKeyboard: boolean): void;
 }
 
 function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
@@ -438,10 +461,11 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
             aria-checked={active}
             // Nothing checked (an interior wall): the first stays reachable.
             tabIndex={active || (value === null && index === 0) ? 0 : -1}
-            onClick={() => onChange(target.id)}
+            // Space on a radio is a click with no pointer: detail 0.
+            onClick={(event) => onChange(target.id, event.detail === 0)}
             onKeyDown={(event) => onRovingKeyDown(event, (next) => {
               const landed = APPLY_TARGETS[next];
-              if (landed) onChange(landed.id);
+              if (landed) onChange(landed.id, true);
             })}
             title={target.id === 'all' ? 'Apply to every exterior wall' : `Apply to ${target.id} wall only`}
             className={`pc-tile${active ? ' pc-tile--active' : ''}`}

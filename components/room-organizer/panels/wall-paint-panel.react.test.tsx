@@ -192,3 +192,68 @@ describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
     expect(input?.closest('label')?.className).toContain('pc-colour-well');
   });
 });
+
+describe('WallPaintPanel — keyboard on Apply To stays in the panel', () => {
+  afterEach(cleanup);
+
+  function setupHold() {
+    const onSelectedWallChange = vi.fn();
+    const onHoldOpen = vi.fn();
+    const value = { activeFloor: makeFloor(), actions: {} } as unknown as RoomEditorContextValue;
+    const view = render(
+      <RoomEditorProvider value={value}>
+        <button type="button">elsewhere</button>
+        <WallPaintPanel
+          selectedWall={{ id: 'west', kind: 'exterior' }}
+          onSelectedWallChange={onSelectedWallChange}
+          onHoldOpen={onHoldOpen}
+        />
+      </RoomEditorProvider>
+    );
+    return { onSelectedWallChange, onHoldOpen, view };
+  }
+  const chip = (name: string) => screen.getByRole('radio', { name });
+
+  it('holds the panel before an arrow lands on All clears the wall', () => {
+    const { onSelectedWallChange, onHoldOpen } = setupHold();
+    fireEvent.keyDown(chip('W'), { key: 'ArrowRight' });
+    expect(onSelectedWallChange).toHaveBeenCalledWith(null);
+    expect(onHoldOpen).toHaveBeenCalledWith(true);
+    expect(onHoldOpen.mock.invocationCallOrder[0]).toBeLessThan(onSelectedWallChange.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it('holds it for Space on All too (a click with no pointer)', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.click(chip('All'), { detail: 0 });
+    expect(onHoldOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('a mouse click on All still closes, as it always has', () => {
+    const { onSelectedWallChange, onHoldOpen } = setupHold();
+    fireEvent.click(chip('All'), { detail: 1 });
+    expect(onSelectedWallChange).toHaveBeenCalledWith(null);
+    expect(onHoldOpen).not.toHaveBeenCalledWith(true);
+  });
+
+  it('lets go when the focus leaves the panel, not when it moves inside', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.focusOut(chip('W'), { relatedTarget: chip('All') });
+    expect(onHoldOpen).not.toHaveBeenCalled();
+    fireEvent.focusOut(chip('All'), { relatedTarget: screen.getByRole('button', { name: 'elsewhere' }) });
+    expect(onHoldOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('lets go on a press outside: the canvas takes no focus, so no blur comes', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.pointerDown(chip('All'));
+    expect(onHoldOpen).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'elsewhere' }));
+    expect(onHoldOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('lets go when it unmounts', () => {
+    const { onHoldOpen, view } = setupHold();
+    view.unmount();
+    expect(onHoldOpen).toHaveBeenCalledWith(false);
+  });
+});
