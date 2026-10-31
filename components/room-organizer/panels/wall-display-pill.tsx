@@ -1,6 +1,7 @@
 'use client';
 
 import { useEditorViewActions, useViewSettings } from '../contexts';
+import { onRovingKeyDown } from '../hooks/roving-keys';
 import { sceneWallDisplay } from '../lib/walkthrough-view';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { PlanViewToggle } from './view-options';
@@ -82,7 +83,12 @@ export function WallDisplayPill(): JSX.Element {
               type="button"
               role="radio"
               aria-checked={isActive}
+              tabIndex={isActive ? 0 : -1}
               onClick={() => setView((v) => ({ ...v, wallDisplay: entry.key }))}
+              onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+                const next = MODES[index];
+                if (next) setView((v) => ({ ...v, wallDisplay: next.key }));
+              })}
               disabled={off}
               title={walking ? `${entry.hint} — walls stay up while walking` : off ? `${entry.hint} — switch back to 3D view` : entry.hint}
               className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}

@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
+import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
@@ -171,6 +172,8 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       actions.setWallColor(target, color);
     }
   };
+  const surfaceId = useId();
+  const paletteId = useId();
   const [surface, setSurface] = useState<Surface>('walls');
   const [wallGroup, setWallGroup] = useState<string>('pastel');
   const [floorGroup, setFloorGroup] = useState<string>('wood');
@@ -236,10 +239,12 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
           Paint
         </div>
         )}
-        {fold.open && <SurfaceTabs surface={surface} onChange={setSurface} />}
+        {fold.open && <SurfaceTabs surface={surface} onChange={setSurface} baseId={surfaceId} />}
       </div>
 
-      {!fold.open ? null : surface === 'walls' ? (
+      {fold.open && (
+        <div role="tabpanel" id={panelId(surfaceId)} aria-labelledby={tabId(surfaceId, surface)}>
+      {surface === 'walls' ? (
         <>
           <SectionLabel>Wall Pattern</SectionLabel>
           <PatternGrid>
@@ -292,8 +297,11 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
             groups={WALL_PALETTES}
             active={wallGroup}
             onChange={setWallGroup}
+            label="Wall colour palette"
+            baseId={paletteId}
           />
           <SwatchGrid
+            tabpanelOf={{ id: panelId(paletteId), tab: tabId(paletteId, wallGroup) }}
             swatches={activeWallPalette.colors}
             value={currentWallColor}
             onChange={(color) => applyWallColor(applyTo ?? 'all', color)}
@@ -320,14 +328,19 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
             groups={FLOOR_PALETTES}
             active={floorGroup}
             onChange={setFloorGroup}
+            label="Floor colour palette"
+            baseId={paletteId}
           />
           <SwatchGrid
+            tabpanelOf={{ id: panelId(paletteId), tab: tabId(paletteId, floorGroup) }}
             swatches={activeFloorPalette.colors}
             value={floor.floorColor}
             onChange={(color) => actions.setFloorColor(color)}
             onCustomChange={(color) => actions.setFloorColor(color)}
           />
         </>
+      )}
+        </div>
       )}
     </div>
   );
@@ -337,12 +350,17 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
 // Helpers
 // ============================================================================
 
+const tabId = (baseId: string, tab: string): string => `${baseId}-tab-${tab}`;
+const panelId = (baseId: string): string => `${baseId}-panel`;
+
 interface SurfaceTabsProps {
   surface: Surface;
   onChange(surface: Surface): void;
+  /** Ties the tabs to the panel below them. */
+  baseId: string;
 }
 
-function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
+function SurfaceTabs({ surface, onChange, baseId }: SurfaceTabsProps): JSX.Element {
   const tabs: ReadonlyArray<{ id: Surface; label: string }> = [
     { id: 'walls', label: 'Walls' },
     { id: 'floor', label: 'Floor' },
@@ -350,6 +368,7 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
   return (
     <div
       role="tablist"
+      aria-label="Paint surface"
       className="pc-glass--inset pc-paint-tabs"
       style={{
         display: 'inline-flex',
@@ -363,8 +382,15 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
             key={t.id}
             type="button"
             role="tab"
+            id={tabId(baseId, t.id)}
             aria-selected={active}
+            aria-controls={panelId(baseId)}
+            tabIndex={active ? 0 : -1}
             onClick={() => onChange(t.id)}
+            onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+              const next = tabs[index];
+              if (next) onChange(next.id);
+            })}
             className={`pc-tile${active ? ' pc-tile--active' : ''}`}
             style={{
               padding: '4px 10px',
@@ -402,7 +428,7 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
         gap: 3,
       }}
     >
-      {APPLY_TARGETS.map((target) => {
+      {APPLY_TARGETS.map((target, index) => {
         const active = value === target.id;
         return (
           <button
@@ -410,7 +436,13 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
             type="button"
             role="radio"
             aria-checked={active}
+            // Nothing checked (an interior wall): the first stays reachable.
+            tabIndex={active || (value === null && index === 0) ? 0 : -1}
             onClick={() => onChange(target.id)}
+            onKeyDown={(event) => onRovingKeyDown(event, (next) => {
+              const landed = APPLY_TARGETS[next];
+              if (landed) onChange(landed.id);
+            })}
             title={target.id === 'all' ? 'Apply to every exterior wall' : `Apply to ${target.id} wall only`}
             className={`pc-tile${active ? ' pc-tile--active' : ''}`}
             style={{
@@ -490,12 +522,16 @@ interface GroupTabsProps {
   groups: readonly SwatchGroup[];
   active: string;
   onChange(id: string): void;
+  label: string;
+  /** Ties the tabs to the swatch grid. */
+  baseId: string;
 }
 
-function GroupTabs({ groups, active, onChange }: GroupTabsProps): JSX.Element {
+function GroupTabs({ groups, active, onChange, label, baseId }: GroupTabsProps): JSX.Element {
   return (
     <div
       role="tablist"
+      aria-label={label}
       className="pc-paint-row"
       style={{
         display: 'flex',
@@ -510,8 +546,15 @@ function GroupTabs({ groups, active, onChange }: GroupTabsProps): JSX.Element {
             key={g.id}
             type="button"
             role="tab"
+            id={tabId(baseId, g.id)}
             aria-selected={isActive}
+            aria-controls={panelId(baseId)}
+            tabIndex={isActive ? 0 : -1}
             onClick={() => onChange(g.id)}
+            onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+              const next = groups[index];
+              if (next) onChange(next.id);
+            })}
             className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
             style={{
               flex: 1,
@@ -702,12 +745,17 @@ interface SwatchGridProps {
   value: string | undefined;
   onChange(color: string): void;
   onCustomChange?(color: string): void;
+  /** The grid is the panel of the palette tabs above it. */
+  tabpanelOf: { id: string; tab: string };
 }
 
-function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridProps): JSX.Element {
+function SwatchGrid({ swatches, value, onChange, onCustomChange, tabpanelOf }: SwatchGridProps): JSX.Element {
   const normalized = (value ?? '').toLowerCase();
   return (
     <div
+      role="tabpanel"
+      id={tabpanelOf.id}
+      aria-labelledby={tabpanelOf.tab}
       className="pc-glass--inset pc-paint-swatches"
       style={{
         borderRadius: 10,
@@ -742,6 +790,7 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
       })}
       {onCustomChange && (
         <label
+          className="pc-colour-well"
           title="Pick a custom colour"
           style={{
             height: 22,

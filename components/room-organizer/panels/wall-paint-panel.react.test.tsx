@@ -70,3 +70,125 @@ describe('WallPaintPanel — Apply-to truthfulness (#221)', () => {
     expect(setup(makeFloor(), null).ringedSwatches()).toEqual(['Use colour #e8dcc4']);
   });
 });
+
+describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
+  afterEach(cleanup);
+
+  it('names both tablists', () => {
+    setup(makeFloor(), null);
+    expect(screen.getByRole('tablist', { name: 'Paint surface' })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: 'Wall colour palette' })).toBeTruthy();
+  });
+
+  it('ties each tablist to its panel', () => {
+    setup(makeFloor(), null);
+    for (const name of ['Walls', 'Pastels']) {
+      const tab = screen.getByRole('tab', { name });
+      const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '');
+      expect(panel?.getAttribute('role')).toBe('tabpanel');
+      expect(panel?.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+  });
+
+  it('keeps one tab stop per tablist and radio group', () => {
+    setup(makeFloor(), null);
+    const stops = (role: 'tab' | 'radio') => screen.getAllByRole(role).filter((el) => el.tabIndex === 0);
+    expect(stops('tab').map((el) => el.textContent)).toEqual(['Walls', 'Pastels']);
+    expect(stops('radio').map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('keeps Apply-to reachable when nothing is checked', () => {
+    setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, color: '#ffffff' }] }), { id: 'iw-1', kind: 'interior' });
+    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('arrows, Home and End move between tabs and open the one they land on', () => {
+    setup(makeFloor(), null);
+    const pastels = screen.getByRole('tab', { name: 'Pastels' });
+    pastels.focus();
+    fireEvent.keyDown(pastels, { key: 'ArrowRight' });
+    const warm = screen.getByRole('tab', { name: 'Warm' });
+    expect(warm.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(warm);
+    fireEvent.keyDown(warm, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Neutral' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Neutral' }), { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Pastels' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tabpanel', { name: 'Pastels' })).toBeTruthy();
+  });
+
+  it('switches the surface from the keyboard and names the floor palette', () => {
+    setup(makeFloor(), null);
+    const walls = screen.getByRole('tab', { name: 'Walls' });
+    fireEvent.keyDown(walls, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Floor' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tablist', { name: 'Floor colour palette' })).toBeTruthy();
+  });
+
+  it('marks the custom colour well for its focus ring', () => {
+    setup(makeFloor(), null);
+    const input = screen.getAllByLabelText('Custom colour')[0];
+    expect(input?.closest('label')?.className).toContain('pc-colour-well');
+  });
+});
+
+describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
+  afterEach(cleanup);
+
+  it('names both tablists', () => {
+    setup(makeFloor(), null);
+    expect(screen.getByRole('tablist', { name: 'Paint surface' })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: 'Wall colour palette' })).toBeTruthy();
+  });
+
+  it('ties each tablist to its panel', () => {
+    setup(makeFloor(), null);
+    for (const name of ['Walls', 'Pastels']) {
+      const tab = screen.getByRole('tab', { name });
+      const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '');
+      expect(panel?.getAttribute('role')).toBe('tabpanel');
+      expect(panel?.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+  });
+
+  it('keeps one tab stop per tablist and radio group', () => {
+    setup(makeFloor(), null);
+    const stops = (role: 'tab' | 'radio') => screen.getAllByRole(role).filter((el) => el.tabIndex === 0);
+    expect(stops('tab').map((el) => el.textContent)).toEqual(['Walls', 'Pastels']);
+    expect(stops('radio').map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('keeps Apply-to reachable when nothing is checked', () => {
+    setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, color: '#ffffff' }] }), { id: 'iw-1', kind: 'interior' });
+    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('arrows, Home and End move between tabs and open the one they land on', () => {
+    setup(makeFloor(), null);
+    const pastels = screen.getByRole('tab', { name: 'Pastels' });
+    pastels.focus();
+    fireEvent.keyDown(pastels, { key: 'ArrowRight' });
+    const warm = screen.getByRole('tab', { name: 'Warm' });
+    expect(warm.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(warm);
+    fireEvent.keyDown(warm, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Neutral' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Neutral' }), { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Pastels' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tabpanel', { name: 'Pastels' })).toBeTruthy();
+  });
+
+  it('switches the surface from the keyboard and names the floor palette', () => {
+    setup(makeFloor(), null);
+    const walls = screen.getByRole('tab', { name: 'Walls' });
+    fireEvent.keyDown(walls, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Floor' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tablist', { name: 'Floor colour palette' })).toBeTruthy();
+  });
+
+  it('marks the custom colour well for its focus ring', () => {
+    setup(makeFloor(), null);
+    const input = screen.getAllByLabelText('Custom colour')[0];
+    expect(input?.closest('label')?.className).toContain('pc-colour-well');
+  });
+});

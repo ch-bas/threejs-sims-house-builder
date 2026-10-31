@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useEditorView, useEditorViewActions, useViewSettings } from '../contexts';
+import { onRovingKeyDown } from '../hooks/roving-keys';
 import { TIME_PRESETS, type TimePresetKey } from '../three/lighting';
 import type { Weather } from '../lib/types';
 
@@ -86,8 +87,13 @@ export function TimeOfDayPanel(): JSX.Element {
                 variant={active ? 'default' : 'outline'}
                 role="radio"
                 aria-checked={active}
+                tabIndex={active ? 0 : -1}
                 disabled={disabled}
                 onClick={() => setView((v) => ({ ...v, weather: option.key }))}
+                onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+                  const next = WEATHERS[index];
+                  if (next) setView((v) => ({ ...v, weather: next.key }));
+                })}
                 className="text-[10px] h-8 px-1 flex flex-col"
               >
                 <span>{option.icon}</span>
