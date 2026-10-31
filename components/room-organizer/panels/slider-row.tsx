@@ -17,7 +17,7 @@ export interface SliderRowProps {
    * used by the compact dimension rows.
    */
   uppercaseLabel?: boolean;
-  /** Greys the row out and ignores input; pair with `title` to say why. */
+  /** Greys the track and ignores input; pair with `title` to say why. */
   disabled?: boolean | undefined;
   title?: string | undefined;
 }
@@ -44,7 +44,7 @@ export function SliderRow(props: SliderRowProps): JSX.Element {
   return (
     <div
       title={title}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: disabled ? 0.45 : 1 }}
+      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
     >
       <label
         htmlFor={id}
@@ -73,7 +73,8 @@ export function SliderRow(props: SliderRowProps): JSX.Element {
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(parseFloat(event.target.value))}
-        style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)' }}
+        // Only the track dims: the label and value are information (#640).
+        style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)', ...(disabled ? { opacity: 0.45 } : {}) }}
       />
       <span
         style={{

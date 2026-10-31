@@ -23,12 +23,16 @@ export function AchievementsPanel({ unlocked }: AchievementsPanelProps): JSX.Ele
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full bg-emerald-500 transition-all"
-            style={{ width: `${progress}%` }}
-            aria-label={`${unlockedCount} of ${total} achievements unlocked`}
-          />
+        <div
+          role="progressbar"
+          aria-label="Achievements unlocked"
+          aria-valuemin={0}
+          aria-valuemax={total}
+          aria-valuenow={unlockedCount}
+          aria-valuetext={`${unlockedCount} of ${total}`}
+          className="h-1.5 w-full bg-muted rounded-full overflow-hidden"
+        >
+          <div className="h-full bg-emerald-500 transition-all" style={{ width: `${progress}%` }} />
         </div>
         <ul className="space-y-1.5 max-h-56 overflow-y-auto">
           {ACHIEVEMENTS.map((achievement) => {
@@ -37,11 +41,10 @@ export function AchievementsPanel({ unlocked }: AchievementsPanelProps): JSX.Ele
               <li
                 key={achievement.id}
                 className={`flex items-start gap-2 text-xs p-2 rounded border ${
-                  isUnlocked ? 'border-border bg-card' : 'border-dashed border-border opacity-60'
+                  isUnlocked ? 'border-border bg-card' : 'border-dashed border-border'
                 }`}
-                title={isUnlocked ? 'Unlocked' : 'Locked'}
               >
-                <span className={`text-base ${isUnlocked ? '' : 'grayscale'}`} aria-hidden>
+                <span role="img" aria-label={isUnlocked ? 'Unlocked' : 'Locked'} className={`text-base ${isUnlocked ? '' : 'grayscale opacity-60'}`}>
                   {isUnlocked ? achievement.icon : '🔒'}
                 </span>
                 <div className="flex-1">
