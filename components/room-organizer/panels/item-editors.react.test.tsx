@@ -7,6 +7,7 @@ import { SelectionProvider, type SelectionContextValue } from '../contexts/selec
 import { createEditorViewStore } from '../hooks/editor-view-store';
 import { NOT_WHILE_EXPLORING } from '../hooks/use-exploring';
 import { makeItem, makeViewSettings } from '../lib/__testfixtures__/fixtures';
+import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { ItemContextPopover } from './item-context-popover';
 import { ItemResizePanel } from './item-resize-panel';
 import type { FurnitureItem, GameMode } from '../lib/types';
@@ -180,5 +181,18 @@ describe('the locked note in the popover (#635)', () => {
   it('gives way to the EXPLORE note', () => {
     renderEditor('popover', makeItem({ id: 'a', locked: true }), 'live');
     expect(screen.getByRole('note').textContent).toContain(NOT_WHILE_EXPLORING);
+  });
+});
+
+describe('the bottom sheet (#675)', () => {
+  it('offers Demolish among the actions, once', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) =>
+        ({ media: query, matches: query === COMPACT_OVERLAY_QUERY, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList
+    );
+    const calls = renderEditor('popover', makeItem({ id: 's', type: 'sofa', name: 'Sofa', locked: true }), 'buy');
+    fireEvent.click(screen.getByRole('button', { name: 'Demolish' }));
+    expect(calls.onRemove).toHaveBeenCalledWith('s');
   });
 });

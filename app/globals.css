@@ -1582,3 +1582,69 @@ html[data-plan-gesture] * {
     min-height: 44px;
   }
 }
+
+/* The item editor on a touch screen (#675). Demolish joins the sheet's action
+   row, so it no longer takes an expand and a scroll. */
+@media (max-width: 768px), (max-height: 500px) {
+  .pc-item-actions > .pc-tile {
+    padding-right: 1px !important;
+    padding-left: 1px !important;
+  }
+  .pc-item-actions > .pc-tile > span {
+    letter-spacing: 0 !important;
+  }
+  .pc-sheet-demolish {
+    border-color: rgba(228, 82, 72, 0.5) !important;
+    background: rgba(228, 82, 72, 0.1) !important;
+    color: var(--pc-demolish-ink) !important;
+  }
+  .pc-sheet-demolish > span {
+    color: var(--pc-demolish-ink) !important;
+  }
+}
+@media (pointer: coarse) {
+  /* Stays out of the header's height: the sheet keeps its size. */
+  .pc-item-popover > header .pc-tile {
+    width: 44px !important;
+    height: 44px !important;
+    margin: -6px -6px -6px 0;
+  }
+  .pc-item-popover__body .pc-tile,
+  .pc-item-popover__body select {
+    min-height: 44px;
+  }
+  .pc-item-popover input[type='color'] {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .pc-item-popover button[aria-label^='Use colour'],
+  .pc-item-popover button[aria-label^='Reuse colour'] {
+    width: 36px !important;
+    height: 36px !important;
+    margin: 2px;
+  }
+}
+/* A 44px grab strip that reaches over the header, whose empty parts let the
+   touch through to it. */
+@media (pointer: coarse) and (max-width: 768px), (pointer: coarse) and (max-height: 500px) {
+  .pc-sheet-handle {
+    align-items: flex-start;
+    height: 44px;
+    margin-bottom: -22px;
+    padding-top: 9px;
+  }
+  .pc-item-popover > header {
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
+  }
+  .pc-item-popover > header button {
+    pointer-events: auto;
+  }
+}
+/* Bigger controls, the same bite of the scene: the expanded sheet scrolls. */
+@media (pointer: coarse) and (max-width: 768px) and (min-height: 501px) {
+  .pc-item-popover[data-sheet='expanded'] {
+    max-height: min(284px, 60vh, calc(100vh - 240px)) !important;
+  }
+}
