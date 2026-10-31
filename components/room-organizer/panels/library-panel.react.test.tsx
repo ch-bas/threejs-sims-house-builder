@@ -130,6 +130,13 @@ describe('LibraryPanel: History wording (#647)', () => {
     expect(screen.getByRole('button', { name: /Restore Cottage/ })).toBeTruthy();
   });
 
+  it('does not claim there are no restore points when the only one is the house on screen', () => {
+    recordSnapshot(live);
+    render(<LibraryPanel currentLayout={live} onLoad={vi.fn()} />);
+    expect(screen.queryByText('No restore points yet.')).toBeNull();
+    expect(screen.getByText('Nothing older than the house on screen yet.')).toBeTruthy();
+  });
+
   it('lists it again once the house moves on', () => {
     recordSnapshot(live);
     const edited = { ...live, floors: [{ ...live.floors[0]!, floorColor: '#123456' }] };

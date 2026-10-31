@@ -487,7 +487,9 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
           <LoadedStatus note={loaded} section="history" />
           <RecoveryEntry currentLayout={currentLayout} onLoad={onLoad} />
           {snapshots.every((summary) => summary.id === liveSnapshotId) ? (
-            <p className="text-xs text-muted-foreground py-2 text-center">No restore points yet.</p>
+            <p className="text-xs text-muted-foreground py-2 text-center">
+              {snapshots.length === 0 ? 'No restore points yet.' : 'Nothing older than the house on screen yet.'}
+            </p>
           ) : (
             <ul className="space-y-1 max-h-64 overflow-y-auto">
               {snapshots.map((summary, index) =>
