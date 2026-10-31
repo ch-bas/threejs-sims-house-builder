@@ -327,9 +327,12 @@ interface RotationInputProps {
   onChange(value: number): void;
 }
 
-/** Degrees in 0–359, as the field shows them; 359.6 rounds round to 0. */
-function wholeDegrees(degrees: number): number {
-  return ((Math.round(degrees) % 360) + 360) % 360;
+/**
+ * Whether the field's whole degrees can be `sent` as the store rounded it:
+ * 5.5° comes back as 5 or 6 through radians, and 359.6° as 0.
+ */
+function showsSent(value: number, sent: number): boolean {
+  return Math.abs(((sent - value + 540) % 360) - 180) <= 0.51;
 }
 
 function RotationInput({ value, disabled, title, onChange }: RotationInputProps): JSX.Element {
@@ -351,12 +354,13 @@ function RotationInput({ value, disabled, title, onChange }: RotationInputProps)
         max={359}
         step={5}
         disabled={disabled}
-        value={draft?.sent === value ? draft.text : value}
+        value={draft && showsSent(value, draft.sent) ? draft.text : value}
         onChange={(event) => {
           const parsed = parseFloat(event.target.value);
           const finite = Number.isFinite(parsed);
-          setDraft({ text: event.target.value, sent: finite ? wholeDegrees(parsed) : value });
-          if (finite) onChange(((parsed % 360) + 360) % 360);
+          const degrees = ((parsed % 360) + 360) % 360;
+          setDraft({ text: event.target.value, sent: finite ? degrees : value });
+          if (finite) onChange(degrees);
         }}
         onBlur={() => setDraft(null)}
         onKeyDown={(event) => {

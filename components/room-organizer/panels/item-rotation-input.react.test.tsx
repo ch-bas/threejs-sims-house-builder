@@ -94,6 +94,15 @@ describe('the rotation field keeps what is typed (#548)', () => {
     expect(field().value).toBe('45.5');
   });
 
+  it('keeps every half degree, whichever way it rounds in the store', () => {
+    setup(0);
+    fireEvent.focus(field());
+    for (let degrees = 0.5; degrees < 360; degrees += 1) {
+      type(String(degrees));
+      expect(field().value).toBe(String(degrees));
+    }
+  });
+
   it('gives way to a rotation that came from elsewhere', () => {
     setup(0);
     fireEvent.focus(field());
