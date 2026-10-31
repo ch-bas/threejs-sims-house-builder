@@ -16,6 +16,17 @@ export const COMPACT_DOCK_QUERY = `${PHONE_DOCK_QUERY}, ${SHORT_DOCK_QUERY}`;
 /** Touch-first devices get touch wording (#429). */
 export const COARSE_POINTER_QUERY = '(pointer: coarse)';
 
+/**
+ * Where the paged catalog costs scene: tablets, whatever the pointer, and
+ * every touch screen with the desktop HUD. A mouse desktop keeps its fixed grid.
+ */
+export const SNUG_CATALOG_QUERY = `(min-width: 769px) and (max-width: 1100px), ${COARSE_POINTER_QUERY}`;
+
+/** A category that fits one page drops the empty slots and the dead pager (#684). */
+export function catalogFitsItsTiles(pages: number, snug: boolean): boolean {
+  return snug && pages === 1;
+}
+
 /** The catalog strip's tiles per page: every item on one scrolling row when docked. */
 export function catalogPageSize(itemCount: number, compact: boolean, desktopPageSize: number): number {
   return compact ? Math.max(1, itemCount) : desktopPageSize;

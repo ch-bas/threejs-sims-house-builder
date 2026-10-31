@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- On tablets and touch screens a catalogue category that fits one page, such as Openings, no longer shows empty slots and Previous and Next buttons that do nothing: the strip shrinks to its tiles and leaves more of the house in view ([#684](https://github.com/ch-bas/threejs-sims-house-builder/issues/684))
 - On touch tablets the walkthrough thumb stick and the Sit and Stand button are on screen, so you can walk: they were drawn above the top of the screen. The stick sits in the bottom-left corner on tablets ([#672](https://github.com/ch-bas/threejs-sims-house-builder/issues/672))
 - On a landscape phone the walkthrough thumb stick sits in the bottom-left corner, in reach of your thumb, instead of the middle of the left edge ([#682](https://github.com/ch-bas/threejs-sims-house-builder/issues/682))
 - On a landscape phone the camera buttons follow the sidebar button when the screen's notch area changes, so they can't end up on top of it ([#683](https://github.com/ch-bas/threejs-sims-house-builder/issues/683))
