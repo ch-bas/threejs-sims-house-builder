@@ -544,6 +544,60 @@ describe('coverage frame (#420)', () => {
   });
 });
 
+describe('opening chains (#630)', () => {
+  const texts = (dxf: string): string[] => entities(dxf, 'TEXT', 'DIMENSIONS').map((t) => tag(t, 1) ?? '');
+
+  it('are off by default', () => {
+    const { layout, floor } = makeFixture();
+    expect(texts(layoutToDxf(layout, floor))).not.toContain('3.55 m');
+  });
+
+  it('match the SVG’s runs on the DIMENSIONS layer, and the document stays valid', () => {
+    const { layout, floor } = makeFixture();
+    const dxf = layoutToDxf(layout, floor, { openingDimensions: true });
+    expectValidR2000(dxf);
+    expect(texts(dxf).filter((t) => t === '3.55 m')).toHaveLength(4);
+    expect(texts(dxf).filter((t) => t === '0.90 m')).toHaveLength(2);
+  });
+
+  it('sit past the content, with the room dimensions, title and arrow stepped out', () => {
+    const { layout, floor } = makeFixture();
+    const off = layoutToDxf(layout, floor);
+    const on = layoutToDxf(layout, floor, { openingDimensions: true });
+    const y = (dxf: string, text: string): number => Number(tag(entities(dxf, 'TEXT').find((t) => tag(t, 1) === text)!, 20));
+    const room = (dxf: string): number => Number(tag(entities(dxf, 'TEXT', 'DIMENSIONS').find((t) => tag(t, 1) === '8.00 m' && tag(t, 50) === undefined)!, 21));
+    expect(room(off) - room(on)).toBeCloseTo(0.6, 3);
+    expect(y(on, 'My Home - Ground Floor') - y(off, 'My Home - Ground Floor')).toBeCloseTo(0.6, 3);
+    // The north chain runs 0.4 m past the wall at CAD y 8, on the room's width.
+    const north = entities(on, 'TEXT', 'DIMENSIONS').filter((t) => tag(t, 1) === '3.55 m' && tag(t, 50) === undefined);
+    expect(north).toHaveLength(2);
+    expect(Number(tag(north[0]!, 21))).toBeCloseTo(8.55, 3);
+  });
+
+  it('step the room dimensions past a third row of labels', () => {
+    const window = (id: string, x: number) => makeItem({ id, type: 'window', width: 0.1, depth: 0.1, position: { x, z: 4 }, rotation: Math.PI });
+    const floor = makeFloor({ items: [window('a', 0), window('b', 0.2), window('c', 0.4), window('d', 0.6)] });
+    const layout = makeLayout({ floors: [floor] });
+    const room = (dxf: string): number => Number(tag(entities(dxf, 'TEXT', 'DIMENSIONS').find((t) => tag(t, 1) === '8.00 m' && tag(t, 50) === undefined)!, 21));
+    const dxf = layoutToDxf(layout, floor, { openingDimensions: true });
+    const lowestChainLabel = Math.min(...entities(dxf, 'TEXT', 'DIMENSIONS').filter((t) => tag(t, 1) !== '8.00 m' && tag(t, 50) === undefined).map((t) => Number(tag(t, 21))));
+    expect(room(dxf)).toBeLessThan(lowestChainLabel - 0.15);
+  });
+
+  it('need the dimensions layer', () => {
+    const { layout, floor } = makeFixture();
+    expect(entities(layoutToDxf(layout, floor, { openingDimensions: true, dimensions: false }), undefined, 'DIMENSIONS')).toHaveLength(0);
+  });
+
+  it('follow each floor on a whole-building file', () => {
+    const building = makeRichBuilding();
+    expectValidR2000(buildingToDxf(building, { openingDimensions: true }));
+    expect(entities(buildingToDxf(building, { openingDimensions: true }), undefined, 'DIMENSIONS').length).toBeGreaterThan(
+      entities(buildingToDxf(building), undefined, 'DIMENSIONS').length
+    );
+  });
+});
+
 describe('interior wall dimensions', () => {
   it('slide the label the same way in both formats when a door swing and a desk crowd the wall (#592)', () => {
     const door = makeItem({ id: 'door', type: 'door', width: 0.9, depth: 0.1, position: { x: 0, z: 0 }, rotation: -Math.PI / 2 });

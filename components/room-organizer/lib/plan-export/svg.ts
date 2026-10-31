@@ -35,7 +35,9 @@ import {
   stairTreadSegments,
   stairwellOutlines,
   visionWedges,
+  wallOpeningDimensions,
   type CoverageMode,
+  type OpeningChain,
   type PlacedItem,
   type PlanBounds,
   type PlanDimension,
@@ -80,6 +82,12 @@ export interface SvgExportOptions {
   coverage?: boolean | 'full';
   /** Room and interior-wall dimension strings (default on, #424). */
   dimensions?: boolean;
+  /**
+   * A chain of dimensions along each exterior wall with an opening (default
+   * off, #630): needs `dimensions`, and adds a band around the plan on every
+   * sheet, so the print route's fixed margin leaves it out.
+   */
+  openingDimensions?: boolean;
   /**
    * An item schedule table under the plan; lengthens the sheet (default off,
    * #424). A floor with no placed items gets no table.
@@ -161,6 +169,12 @@ const WALL_DIMENSION_OFFSET_PX = 10;
 const DIMENSION_TICK_PX = 4;
 /** Distance from a dimension line to the centre of its label, px. */
 const DIMENSION_LABEL_GAP_PX = 8;
+/** Band the opening chains add between the plan content and the room dimensions, px, for two label rows (#630). */
+const OPENING_CHAIN_BAND_PX = 30;
+/** Further out per label row of an opening chain, px. */
+const OPENING_CHAIN_ROW_PX = 10;
+/** Centre to centre of two chain labels on one row, px: "0.90 m" at 10 px and a little air. */
+const OPENING_CHAIN_LABEL_SPACING_PX = 36;
 
 /** Item schedule table width and row pitch, px (#424). */
 const SCHEDULE_WIDTH_PX = 400;
@@ -235,9 +249,27 @@ function svgOpen(widthPx: number, heightPx: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(widthPx)} ${fmt(heightPx)}" width="${fmt(widthPx)}" height="${fmt(heightPx)}" font-family="Helvetica, Arial, sans-serif">`;
 }
 
+function openingChains(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions, scale: number): OpeningChain[] {
+  if (options.openingDimensions !== true || options.dimensions === false) return [];
+  return wallOpeningDimensions(layout, floor, OPENING_CHAIN_LABEL_SPACING_PX / scale);
+}
+
+/**
+ * The band around the plan for the opening chains, px; 0 without them. It
+ * fits the busiest storey and every sheet takes it, so storeys stacked on one
+ * sheet line up, as they do with no chains.
+ */
+function openingChainBand(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions, scale: number): number {
+  if (options.openingDimensions !== true || options.dimensions === false) return 0;
+  const rows = [floor, ...layout.floors].flatMap((candidate) => openingChains(layout, candidate, options, scale).flatMap((chain) => chain.segments.map((segment) => segment.labelRow)));
+  return OPENING_CHAIN_BAND_PX + OPENING_CHAIN_ROW_PX * Math.max(0, Math.max(0, ...rows) - 1);
+}
+
 interface SheetLayout {
   scale: number;
   margin: number;
+  /** The extra band around the plan for the opening chains, px; 0 without them. */
+  chainBand: number;
   /** Plan content grown by the margin band, in world metres. */
   bounds: PlanBounds;
   /** The plan part of the sheet (content + margin band), px. */
@@ -253,7 +285,8 @@ function sheetLayout(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
   const scale = options.pxPerMetre ?? DEFAULT_SVG_PX_PER_METRE;
   const margin = options.margin ?? DEFAULT_SVG_MARGIN;
   const frame = options.bounds ?? planFrameBounds(layout, floor, svgCoverageMode(options));
-  const bounds = growBounds(frame, margin / scale);
+  const chainBand = openingChainBand(layout, floor, options, scale);
+  const bounds = growBounds(frame, (margin + chainBand) / scale);
   const planWidthPx = (bounds.maxX - bounds.minX) * scale;
   const planHeightPx = (bounds.maxZ - bounds.minZ) * scale;
   // A floor with nothing placed has nothing to list: no empty table.
@@ -264,6 +297,7 @@ function sheetLayout(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
   return {
     scale,
     margin,
+    chainBand,
     bounds,
     planWidthPx,
     planHeightPx,
@@ -283,7 +317,7 @@ interface SvgSheet {
 /** One floor's sheet; `idPrefix` keeps element ids unique when sheets share a document. */
 function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions, idPrefix: string): SvgSheet {
   const sheet = sheetLayout(layout, floor, options);
-  const { scale, margin, bounds } = sheet;
+  const { scale, margin, bounds, chainBand } = sheet;
   const theme: SvgPlanTheme = { ...DEFAULT_THEME, ...options.theme };
 
   const roomW = layout.width * scale;
@@ -304,7 +338,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
   // The framed rectangle (content, grown for coverage): the sheet less its
   // margin band. Coverage is clipped to it; the room dimensions hug the
   // plan content itself.
-  const marginM = margin / scale;
+  const marginM = (margin + chainBand) / scale;
   const frame: PlanBounds = {
     minX: bounds.minX + marginM,
     minZ: bounds.minZ + marginM,
@@ -329,7 +363,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     options.coverage === false ? '' : renderCoverage(floor, px, py, scale, frame, theme, idPrefix),
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
     ...furniture.map((item) => renderFurniture(item, px, py, scale, theme)),
-    options.dimensions === false ? '' : renderDimensions(layout, floor, px, py, content, theme),
+    options.dimensions === false ? '' : renderDimensions(layout, floor, px, py, content, theme, openingChains(layout, floor, options, scale), chainBand),
     `</g>`,
     // Annotations sit in the margin band around the content — the content
     // spans (margin, margin) → (totalW − margin, totalH − margin) on the
@@ -647,7 +681,8 @@ function renderStairwellHoles(
  * Dimension strings (#424): the room's width in the bottom margin band and
  * its depth in the left one — offset past the plan content, with light
  * extension lines back to the walls — and one string per interior wall,
- * offset to one side of its centreline.
+ * offset to one side of its centreline. With opening chains the room
+ * dimensions step out by `chainBand` and the chains sit next to the plan.
  */
 function renderDimensions(
   layout: RoomLayout,
@@ -655,12 +690,15 @@ function renderDimensions(
   px: (x: number) => string,
   py: (z: number) => string,
   content: PlanBounds,
-  theme: SvgPlanTheme
+  theme: SvgPlanTheme,
+  chains: readonly OpeningChain[],
+  chainBand: number
 ): string {
   const parts: string[] = [`<g class="dimensions" stroke="${theme.dimension}" fill="${theme.dimension}" font-size="10">`];
   const { width, depth } = roomDimensions(layout);
+  const roomOffset = DIMENSION_OFFSET_PX + chainBand;
 
-  const wy = Number(py(content.maxZ)) + DIMENSION_OFFSET_PX;
+  const wy = Number(py(content.maxZ)) + roomOffset;
   const wx0 = Number(px(width.from.x));
   const wx1 = Number(px(width.to.x));
   const southY = Number(py(width.from.z));
@@ -670,7 +708,7 @@ function renderDimensions(
     dimensionLine(wx0, wy, wx1, wy, width, { x: 0, z: 1 }, 'room-dimension')
   );
 
-  const dx = Number(px(content.minX)) - DIMENSION_OFFSET_PX;
+  const dx = Number(px(content.minX)) - roomOffset;
   const dy0 = Number(py(depth.from.z));
   const dy1 = Number(py(depth.to.z));
   const westX = Number(px(depth.from.x));
@@ -694,6 +732,38 @@ function renderDimensions(
     const labelShiftPx = (dim.labelShiftM / dim.lengthM) * len;
     parts.push(dimensionLine(x0 + nx, y0 + ny, x1 + nx, y1 + ny, dim, dim.normal, 'wall-dimension', labelShiftPx));
   }
+  for (const chain of chains) parts.push(renderOpeningChain(chain, px, py, content, theme));
+  parts.push(`</g>`);
+  return parts.join('');
+}
+
+/**
+ * One wall's opening chain (#630): just past the plan content on that side,
+ * with an extension line back to the wall from every stop.
+ */
+function renderOpeningChain(
+  chain: OpeningChain,
+  px: (x: number) => string,
+  py: (z: number) => string,
+  content: PlanBounds,
+  theme: SvgPlanTheme
+): string {
+  const { outward, segments } = chain;
+  const horizontal = outward.x === 0;
+  const contentEdge = horizontal ? Number(py(outward.z < 0 ? content.minZ : content.maxZ)) : Number(px(outward.x < 0 ? content.minX : content.maxX));
+  const line = contentEdge + (horizontal ? outward.z : outward.x) * DIMENSION_OFFSET_PX;
+  const onLine = (p: PlanPoint, by = 0): [number, number] => (horizontal ? [Number(px(p.x)), line + outward.z * by] : [line + outward.x * by, Number(py(p.z))]);
+  const parts: string[] = [`<g class="opening-chain" data-wall="${chain.wall}">`];
+  for (const stop of [segments[0]!.from, ...segments.map((segment) => segment.to)]) {
+    const [ex, ey] = onLine(stop, DIMENSION_TICK_PX);
+    parts.push(extensionLine(Number(px(stop.x)), Number(py(stop.z)), ex, ey, theme));
+  }
+  for (const segment of segments) {
+    const [x0, y0] = onLine(segment.from);
+    const [x1, y1] = onLine(segment.to);
+    const gap = DIMENSION_LABEL_GAP_PX + segment.labelRow * OPENING_CHAIN_ROW_PX;
+    parts.push(dimensionLine(x0, y0, x1, y1, segment, outward, 'opening-dimension', 0, gap));
+  }
   parts.push(`</g>`);
   return parts.join('');
 }
@@ -716,7 +786,8 @@ function dimensionLine(
   dim: PlanDimension,
   outward: PlanPoint,
   className: string,
-  labelShiftPx = 0
+  labelShiftPx = 0,
+  labelGapPx = DIMENSION_LABEL_GAP_PX
 ): string {
   const len = Math.hypot(x1 - x0, y1 - y0);
   const ux = len === 0 ? 1 : (x1 - x0) / len;
@@ -725,8 +796,8 @@ function dimensionLine(
   const ty = ux * DIMENSION_TICK_PX;
   const raw = (Math.atan2(uy, ux) * 180) / Math.PI;
   const degrees = isUpsideDown(raw) ? raw - 180 : raw;
-  const lx = (x0 + x1) / 2 + outward.x * DIMENSION_LABEL_GAP_PX + ux * labelShiftPx;
-  const ly = (y0 + y1) / 2 + outward.z * DIMENSION_LABEL_GAP_PX + uy * labelShiftPx;
+  const lx = (x0 + x1) / 2 + outward.x * labelGapPx + ux * labelShiftPx;
+  const ly = (y0 + y1) / 2 + outward.z * labelGapPx + uy * labelShiftPx;
   return [
     `<g class="${className}">`,
     `<line x1="${fmt(x0)}" y1="${fmt(y0)}" x2="${fmt(x1)}" y2="${fmt(y1)}" stroke-width="0.75"/>`,

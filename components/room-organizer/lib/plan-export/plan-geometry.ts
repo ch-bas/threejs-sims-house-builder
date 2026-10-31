@@ -12,7 +12,8 @@
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from '../constants';
 import { isOpening, isWallMounted } from '../opening-snap';
 import { computeFloorOpenings, floorOpeningOutline, stairPlanSymbol, stairTreadLines } from '../stairs';
-import type { FloorLayout, FurnitureItem, RoomLayout } from '../types';
+import { entrancePlanOutline, planFloorIndex } from '../street';
+import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../types';
 
 /** A placed item: `position` narrowed to non-optional. */
 export type PlacedItem = FurnitureItem & { position: NonNullable<FurnitureItem['position']> };
@@ -426,6 +427,98 @@ export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls' 
     });
   }
   return dims;
+}
+
+/** One run of an opening chain: wall-to-opening, opening width or opening-to-opening. */
+export interface ChainSegment extends PlanDimension {
+  /** 0 beside the line; each row above is one further out, to clear the label before it. */
+  labelRow: number;
+}
+
+/** The chained dimension along one exterior wall (#630), measured on the wall line. */
+export interface OpeningChain {
+  wall: WallId;
+  /** Unit world-space normal (x right, z down) pointing away from the room. */
+  outward: PlanPoint;
+  segments: ChainSegment[];
+}
+
+/** An opening further than this off a wall line is not in that wall, metres. */
+const CHAIN_WALL_TOLERANCE_M = 0.1;
+/** Runs shorter than this are not drawn: two stations a builder would call the same. */
+const CHAIN_MIN_RUN_M = 0.005;
+/** Centre to centre of two labels such as "0.90 m" on one row, metres: at the 50 px/m default and the DXF's text height. */
+const CHAIN_LABEL_SPACING_M = 0.72;
+
+/**
+ * Where each exterior opening sits along its wall (#630): one chain per wall
+ * with an opening, corner to corner, so the runs add up to the wall — corner
+ * to opening, the opening's width, opening to opening. The recessed entrance
+ * is a break in the north wall like any other, and a door in its back wall is
+ * not on the exterior line. An opening wholly past a corner measures nothing.
+ * Interior walls carry no chain. Each label takes the first row where it
+ * stands `labelSpacingM` clear of the label before it.
+ */
+export function wallOpeningDimensions(layout: RoomLayout, floor: FloorLayout, labelSpacingM = CHAIN_LABEL_SPACING_M): OpeningChain[] {
+  const hw = layout.width / 2;
+  const hd = layout.height / 2;
+  const spans: Record<WallId, Array<[number, number]>> = { north: [], east: [], south: [], west: [] };
+  for (const item of splitPlanItems(floor.items).openings) {
+    const { along } = openingAxes(item);
+    const horizontal = Math.abs(along.x) >= Math.abs(along.z);
+    const offWall = horizontal ? Math.abs(Math.abs(item.position.z) - hd) : Math.abs(Math.abs(item.position.x) - hw);
+    if (offWall > CHAIN_WALL_TOLERANCE_M) continue;
+    const wall: WallId = horizontal ? (item.position.z < 0 ? 'north' : 'south') : item.position.x > 0 ? 'east' : 'west';
+    const centre = horizontal ? item.position.x + hw : item.position.z + hd;
+    const [from, to] = [centre - item.width / 2, centre + item.width / 2];
+    if (to > 0 && from < (horizontal ? layout.width : layout.height)) spans[wall].push([from, to]);
+  }
+  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
+  if (recess) spans.north.push([recess.x0 + hw, recess.x1 + hw]);
+
+  const walls: Array<{ wall: WallId; outward: PlanPoint; start: PlanPoint; along: PlanPoint; length: number }> = [
+    { wall: 'north', outward: { x: 0, z: -1 }, start: { x: -hw, z: -hd }, along: { x: 1, z: 0 }, length: layout.width },
+    { wall: 'east', outward: { x: 1, z: 0 }, start: { x: hw, z: -hd }, along: { x: 0, z: 1 }, length: layout.height },
+    { wall: 'south', outward: { x: 0, z: 1 }, start: { x: -hw, z: hd }, along: { x: 1, z: 0 }, length: layout.width },
+    { wall: 'west', outward: { x: -1, z: 0 }, start: { x: -hw, z: -hd }, along: { x: 0, z: 1 }, length: layout.height },
+  ];
+  const chains: OpeningChain[] = [];
+  for (const { wall, outward, start, along, length } of walls) {
+    const wallSpans = spans[wall];
+    if (wallSpans.length === 0) continue;
+    const stations = chainStations(wallSpans, length);
+    const at = (t: number): PlanPoint => ({ x: start.x + along.x * t, z: start.z + along.z * t });
+    const segments: ChainSegment[] = [];
+    // The centre of the last label on each row.
+    const rows: number[] = [];
+    for (let i = 0; i + 1 < stations.length; i++) {
+      const lengthM = stations[i + 1]! - stations[i]!;
+      const centre = stations[i]! + lengthM / 2;
+      const free = rows.findIndex((last) => centre - last >= labelSpacingM);
+      const labelRow = free === -1 ? rows.length : free;
+      rows[labelRow] = centre;
+      segments.push({ from: at(stations[i]!), to: at(stations[i + 1]!), lengthM, label: formatDimension(lengthM), labelRow });
+    }
+    chains.push({ wall, outward, segments });
+  }
+  return chains;
+}
+
+/** The chain's stops along a wall, ascending from corner to corner: each span's ends, clamped to the wall. */
+function chainStations(spans: ReadonlyArray<readonly [number, number]>, length: number): number[] {
+  const stations = [0];
+  const stop = (t: number): void => {
+    const clamped = Math.min(length, Math.max(stations[stations.length - 1]!, t));
+    if (clamped - stations[stations.length - 1]! >= CHAIN_MIN_RUN_M) stations.push(clamped);
+  };
+  for (const [from, to] of [...spans].sort((a, b) => a[0] - b[0])) {
+    stop(from);
+    stop(to);
+  }
+  // Always the corner: a stop a hair short of it gives way, so the runs add up to the wall.
+  if (stations.length > 1 && length - stations[stations.length - 1]! < CHAIN_MIN_RUN_M) stations.pop();
+  stations.push(length);
+  return stations;
 }
 
 /**
