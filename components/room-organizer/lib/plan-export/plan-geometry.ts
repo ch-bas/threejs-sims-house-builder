@@ -336,46 +336,93 @@ export function roomDimensions(layout: Pick<RoomLayout, 'width' | 'height'>): { 
 export interface WallDimension extends PlanDimension {
   /** Unit world-space normal (x right, z down) pointing to the side the dimension line and label sit on. */
   normal: PlanPoint;
+  /** Metres the label slides off the wall's midpoint towards `to` (negative: towards `from`) to clear what stands there. */
+  labelShiftM: number;
 }
 
 /** How far off a wall's centreline its dimension label sits, metres — for choosing a side. */
 const WALL_LABEL_PROBE_M = 0.36;
 /** Clearance around an item footprint a dimension label should keep, metres. */
 const LABEL_CLEARANCE_M = 0.25;
+/** Half the printed length of a label such as "5.00 m", metres: how near a wall's end its centre may slide. */
+const WALL_LABEL_HALF_WIDTH_M = 0.35;
+/** How far a crowded label moves along its wall per try, metres. */
+const WALL_LABEL_SHIFT_STEP_M = 0.25;
+
+/** The bounding box of a door's swing: the `width × width` square on its `into` side (#592). */
+function doorSwingBounds(door: PlacedItem): PlanBounds {
+  const { along, into } = openingAxes(door);
+  const half = door.width / 2;
+  const jambs = [-half, half].map((t) => ({ x: door.position.x + along.x * t, z: door.position.z + along.z * t }));
+  const corners = [...jambs, ...jambs.map((j) => ({ x: j.x + into.x * door.width, z: j.z + into.z * door.width }))];
+  return {
+    minX: Math.min(...corners.map((c) => c.x)),
+    maxX: Math.max(...corners.map((c) => c.x)),
+    minZ: Math.min(...corners.map((c) => c.z)),
+    maxZ: Math.max(...corners.map((c) => c.z)),
+  };
+}
+
+/** The nearest clear spot along a wall, within `reach` of its middle, trying the preferred side first. */
+function clearLabelSpot(probe: (side: number, shift: number) => number, preferred: number, reach: number): { side: number; shift: number } | null {
+  for (let step = WALL_LABEL_SHIFT_STEP_M; step <= reach; step += WALL_LABEL_SHIFT_STEP_M) {
+    for (const shift of [step, -step]) {
+      for (const side of [preferred, -preferred]) {
+        if (probe(side, shift) === 0) return { side, shift };
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * One dimension per interior wall at least `MIN_DIMENSIONED_WALL_M` long
  * (#424), each on one side of the wall in world space so the SVG and the DXF
  * agree: the wall's left-hand normal (x right, z down) unless the label
- * there would land on more item footprints than on the other side.
+ * there would land on more item footprints and door swings (#592) than on the
+ * other side. When both sides are crowded the label slides along the wall to
+ * the nearest clear spot, and stays at the middle if there is none.
  */
 export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls' | 'items'>): WallDimension[] {
-  const footprints = splitPlanItems(floor.items).furniture.map((item) => {
-    const corners = itemWorldCorners(item);
-    return {
-      minX: Math.min(...corners.map((c) => c.x)) - LABEL_CLEARANCE_M,
-      maxX: Math.max(...corners.map((c) => c.x)) + LABEL_CLEARANCE_M,
-      minZ: Math.min(...corners.map((c) => c.z)) - LABEL_CLEARANCE_M,
-      maxZ: Math.max(...corners.map((c) => c.z)) + LABEL_CLEARANCE_M,
-    };
-  });
-  const crowding = (p: PlanPoint): number =>
-    footprints.filter((b) => p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ).length;
+  const { openings, furniture } = splitPlanItems(floor.items);
+  const footprints = [
+    ...furniture.map((item) => {
+      const corners = itemWorldCorners(item);
+      return {
+        minX: Math.min(...corners.map((c) => c.x)),
+        maxX: Math.max(...corners.map((c) => c.x)),
+        minZ: Math.min(...corners.map((c) => c.z)),
+        maxZ: Math.max(...corners.map((c) => c.z)),
+      };
+    }),
+    ...openings.filter((item) => item.type === 'door').map(doorSwingBounds),
+  ].map((b) => growBounds(b, LABEL_CLEARANCE_M));
   const dims: WallDimension[] = [];
   for (const wall of floor.interiorWalls ?? []) {
     const lengthM = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
     if (lengthM < MIN_DIMENSIONED_WALL_M) continue;
-    const left = { x: -(wall.z2 - wall.z1) / lengthM, z: (wall.x2 - wall.x1) / lengthM };
+    const along = { x: (wall.x2 - wall.x1) / lengthM, z: (wall.z2 - wall.z1) / lengthM };
+    const left = { x: -along.z, z: along.x };
     const mid = { x: (wall.x1 + wall.x2) / 2, z: (wall.z1 + wall.z2) / 2 };
-    const probe = (sign: number): number =>
-      crowding({ x: mid.x + left.x * WALL_LABEL_PROBE_M * sign, z: mid.z + left.z * WALL_LABEL_PROBE_M * sign });
-    const sign = probe(-1) < probe(1) ? -1 : 1;
+    // How many footprints the label would touch, end to end, off this side of the wall.
+    const probe = (side: number, shift = 0): number => {
+      const centre = {
+        x: mid.x + left.x * WALL_LABEL_PROBE_M * side + along.x * shift,
+        z: mid.z + left.z * WALL_LABEL_PROBE_M * side + along.z * shift,
+      };
+      const span = [-WALL_LABEL_HALF_WIDTH_M, 0, WALL_LABEL_HALF_WIDTH_M].map((t) => ({ x: centre.x + along.x * t, z: centre.z + along.z * t }));
+      return footprints.filter((b) => span.some((p) => p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ)).length;
+    };
+    const preferred = probe(-1) < probe(1) ? -1 : 1;
+    const slid = probe(preferred) > 0 ? clearLabelSpot(probe, preferred, lengthM / 2 - WALL_LABEL_HALF_WIDTH_M) : null;
+    const sign = slid?.side ?? preferred;
     dims.push({
       from: { x: wall.x1, z: wall.z1 },
       to: { x: wall.x2, z: wall.z2 },
       lengthM,
       label: formatDimension(lengthM),
       normal: { x: left.x * sign + 0, z: left.z * sign + 0 },
+      labelShiftM: slid?.shift ?? 0,
     });
   }
   return dims;

@@ -703,15 +703,16 @@ function emitDimensions(
     const outward: CadPoint = [dim.normal.x, -dim.normal.z];
     const nx = outward[0] * WALL_DIMENSION_OFFSET_M;
     const ny = outward[1] * WALL_DIMENSION_OFFSET_M;
-    dimension(doc, [from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], dim.lengthM, outward);
+    dimension(doc, [from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], dim.lengthM, outward, dim.labelShiftM);
   }
 }
 
 /**
  * One dimension line with perpendicular end ticks and its length as TEXT
- * beside it on the `outward` side (a CAD unit vector), kept upright.
+ * beside it on the `outward` side (a CAD unit vector), kept upright, slid
+ * `labelShiftM` off centre towards `to`.
  */
-function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: number, outward: CadPoint): void {
+function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: number, outward: CadPoint, labelShiftM = 0): void {
   const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
   if (len === 0) return;
   const ux = (to[0] - from[0]) / len;
@@ -726,7 +727,10 @@ function dimension(doc: DxfDocument, from: CadPoint, to: CadPoint, lengthM: numb
   if (rotation > 90 + 1e-6) rotation -= 180;
   else if (rotation <= -90 + 1e-6) rotation += 180;
   const gap = DIMENSION_TEXT_HEIGHT;
-  const label: CadPoint = [(from[0] + to[0]) / 2 + outward[0] * gap, (from[1] + to[1]) / 2 + outward[1] * gap];
+  const label: CadPoint = [
+    (from[0] + to[0]) / 2 + outward[0] * gap + ux * labelShiftM,
+    (from[1] + to[1]) / 2 + outward[1] * gap + uy * labelShiftM,
+  ];
   const metres = (Math.round(lengthM * 100) / 100).toFixed(2);
   doc.text('DIMENSIONS', label, DIMENSION_TEXT_HEIGHT, `${metres} m`, 'middle', rotation);
 }

@@ -691,7 +691,8 @@ function renderDimensions(
     // the 0.16 m wall. Sheet axes run like world axes (x right, z down).
     const nx = dim.normal.x * WALL_DIMENSION_OFFSET_PX;
     const ny = dim.normal.z * WALL_DIMENSION_OFFSET_PX;
-    parts.push(dimensionLine(x0 + nx, y0 + ny, x1 + nx, y1 + ny, dim, dim.normal, 'wall-dimension'));
+    const labelShiftPx = (dim.labelShiftM / dim.lengthM) * len;
+    parts.push(dimensionLine(x0 + nx, y0 + ny, x1 + nx, y1 + ny, dim, dim.normal, 'wall-dimension', labelShiftPx));
   }
   parts.push(`</g>`);
   return parts.join('');
@@ -704,7 +705,8 @@ function extensionLine(x1: number, y1: number, x2: number, y2: number, theme: Sv
 /**
  * A dimension line with perpendicular end ticks and its length centred
  * beside it on the `outward` side (a unit vector on the sheet), away from
- * what it measures; the label is kept upright like item labels.
+ * what it measures, `labelShiftPx` off centre towards the end; the label is
+ * kept upright like item labels.
  */
 function dimensionLine(
   x0: number,
@@ -713,7 +715,8 @@ function dimensionLine(
   y1: number,
   dim: PlanDimension,
   outward: PlanPoint,
-  className: string
+  className: string,
+  labelShiftPx = 0
 ): string {
   const len = Math.hypot(x1 - x0, y1 - y0);
   const ux = len === 0 ? 1 : (x1 - x0) / len;
@@ -722,8 +725,8 @@ function dimensionLine(
   const ty = ux * DIMENSION_TICK_PX;
   const raw = (Math.atan2(uy, ux) * 180) / Math.PI;
   const degrees = isUpsideDown(raw) ? raw - 180 : raw;
-  const lx = (x0 + x1) / 2 + outward.x * DIMENSION_LABEL_GAP_PX;
-  const ly = (y0 + y1) / 2 + outward.z * DIMENSION_LABEL_GAP_PX;
+  const lx = (x0 + x1) / 2 + outward.x * DIMENSION_LABEL_GAP_PX + ux * labelShiftPx;
+  const ly = (y0 + y1) / 2 + outward.z * DIMENSION_LABEL_GAP_PX + uy * labelShiftPx;
   return [
     `<g class="${className}">`,
     `<line x1="${fmt(x0)}" y1="${fmt(y0)}" x2="${fmt(x1)}" y2="${fmt(y1)}" stroke-width="0.75"/>`,
