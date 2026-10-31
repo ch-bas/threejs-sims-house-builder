@@ -15,7 +15,7 @@ import { CURRENCY_SYMBOL } from '../constants';
 import { notify } from '../editor-notices';
 import { escapeHtml } from '../html-escape';
 import { isWallMounted } from '../opening-snap';
-import { itemSchedule, planFrameBounds, unionBounds, type ScheduleRow } from './plan-geometry';
+import { itemSchedule, planFrameBounds, scheduleSizeText, unionBounds, type ScheduleRow } from './plan-geometry';
 import { DEFAULT_SVG_MARGIN, layoutToSvg, planSheetSize } from './svg';
 import type { FloorLayout, RoomLayout } from '../types';
 
@@ -399,13 +399,12 @@ const SCHEDULE_LEAD_ROWS = 3;
 function renderScheduleTable(rows: readonly ScheduleRow[]): string {
   if (rows.length === 0) return '';
   const price = (value: number): string => `${CURRENCY_SYMBOL}${Math.round(value).toLocaleString('en-US')}`;
-  const metres = (value: number): string => String(Math.round(value * 100) / 100);
   const count = rows.reduce((sum, row) => sum + row.count, 0);
   const total = rows.reduce((sum, row) => sum + row.totalPrice, 0);
   const lines = [
     ...rows.map(
       (row) =>
-        `<tr><td>${escapeHtml(row.name)}</td><td>${metres(row.width)} × ${metres(row.depth)} × ${metres(row.height)}</td>` +
+        `<tr><td>${escapeHtml(row.name)}</td><td>${scheduleSizeText(row)}</td>` +
         `<td class="n">${row.count}</td><td class="n">${row.totalPrice > 0 ? price(row.totalPrice) : '—'}</td></tr>`
     ),
     `<tr class="total"><td>Total</td><td></td><td class="n">${count}</td><td class="n">${price(total)}</td></tr>`,

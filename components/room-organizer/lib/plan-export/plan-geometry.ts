@@ -694,6 +694,11 @@ export interface ScheduleRow {
   totalPrice: number;
 }
 
+/** A schedule row's W × D × H in metres, always to the centimetre, as the CSV writes them (#596). */
+export function scheduleSizeText(row: Pick<ScheduleRow, 'width' | 'depth' | 'height'>): string {
+  return [row.width, row.depth, row.height].map((value) => value.toFixed(2)).join(' × ');
+}
+
 /**
  * The floor's item schedule (#424): every placed item, grouped by name,
  * type, size and price, sorted by name — a parts list for the builder or the
