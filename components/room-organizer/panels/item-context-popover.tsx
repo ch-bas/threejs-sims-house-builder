@@ -84,8 +84,9 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // can't trigger an action by accident. Escape is left to the global
   // shortcut (deselect), which also cancels an in-progress wall draft first.
   // After the effect above: closing unhides the dock, which may hold the tile
-  // that focus returns to (#638).
-  useDialogFocus(item !== null, dialogRef);
+  // that focus returns to (#638). Selected on the scene there is nothing to
+  // return to, so a keyboard close goes to the panels toggle.
+  useDialogFocus(item !== null, dialogRef, { returnHome: 'keyboard' });
   const underDrawer = useMediaQuery(DRAWER_FULL_SCREEN_QUERY);
   if (!item) return <></>;
   const { onClose } = props;

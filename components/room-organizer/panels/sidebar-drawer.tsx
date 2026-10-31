@@ -3,7 +3,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
 import { markLayoutLoaded } from '../hooks/use-achievements';
-import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { useDialogFocus, useFocusBeside } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
@@ -100,6 +100,7 @@ export const SidebarDrawer = memo(function SidebarDrawer({
   // A full-screen drawer covers the popover, so it stays out of that.
   const coversPopover = useMediaQuery(DRAWER_FULL_SCREEN_QUERY);
   const popoverBeside = !drawing && !coversPopover ? dismissItemPopover : null;
+  const focusBeside = useFocusBeside(!collapsed);
   useDialogFocus(!collapsed, drawerRef, {
     trap: !drawing,
     companions: true,
@@ -155,8 +156,8 @@ export const SidebarDrawer = memo(function SidebarDrawer({
         ref={drawerRef}
         id={SIDE_PANELS_ID}
         role="dialog"
-        // Not modal to a screen reader either while the popover is a part of it.
-        aria-modal={drawing || popoverBeside ? undefined : 'true'}
+        // Not modal to a screen reader either while an overlay is a part of it.
+        aria-modal={drawing || popoverBeside || focusBeside ? undefined : 'true'}
         tabIndex={-1}
         aria-label="Side panels"
         className="pc-glass pc-glass--dark pc-sidebar"

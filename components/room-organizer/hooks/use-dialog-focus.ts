@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 
 // Tab stops only: a roving-tabindex widget (the drawer's tabs, #434) parks its
 // inactive items at tabindex -1, and wrapping onto one would skip the widget.
@@ -29,9 +29,11 @@ export interface UseDialogFocusOptions {
   companions?: boolean;
   /**
    * With nothing to go back to (opened by a shortcut, focus on <body>), hand
-   * focus to the `[data-focus-home]` control when closing (#638).
+   * focus to the `[data-focus-home]` control when closing (#638). `'keyboard'`
+   * does so only if a key pressed inside closed it: a mouse user's click on the
+   * scene or on a button must not move focus anywhere.
    */
-  returnHome?: boolean;
+  returnHome?: boolean | 'keyboard';
 }
 
 interface OpenDialog {
@@ -189,6 +191,12 @@ export function useDialogFocus(
       previous: takeHeldReturn() ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null),
     };
     openDialogs.push(self);
+    let keyedInside = false;
+    const noteInput = (event: Event) => {
+      keyedInside = event.type === 'keydown' && container.contains(document.activeElement);
+    };
+    document.addEventListener('keydown', noteInput, true);
+    document.addEventListener('pointerdown', noteInput, true);
 
     // Deferred past the current input event: an overlay opened from a canvas
     // pointerdown would otherwise lose focus again to that same click's
@@ -222,6 +230,8 @@ export function useDialogFocus(
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', noteInput, true);
+      document.removeEventListener('pointerdown', noteInput, true);
       const index = openDialogs.indexOf(self);
       if (index !== -1) openDialogs.splice(index, 1);
       // Restore only if focus is still ours to give back: inside the closing
@@ -237,9 +247,29 @@ export function useDialogFocus(
       }
       // Its opener is gone or hidden (a row in the closed drawer). Inside a
       // modal that is still open, what comes next is that modal's business.
-      if (!hadOne && !returnHome) return;
+      if (!hadOne && (returnHome === 'keyboard' ? !keyedInside : !returnHome)) return;
       if (openDialogs.some((dialog) => dialog.trap)) return;
       focusHome()?.focus({ preventScroll: true });
     };
   }, [open, containerRef, initialFocusRef, trap, takeFocus, companions, returnHome]);
+}
+
+/**
+ * Whether focus sits in a `[data-focus-companion]` overlay. A modal's
+ * `aria-modal` would hide that overlay from a screen reader (#632).
+ */
+export function useFocusBeside(active: boolean): boolean {
+  const [beside, setBeside] = useState(false);
+  useEffect(() => {
+    if (!active) return undefined;
+    const sync = () => setBeside(document.activeElement?.closest('[data-focus-companion]') != null);
+    document.addEventListener('focusin', sync);
+    document.addEventListener('focusout', sync);
+    return () => {
+      document.removeEventListener('focusin', sync);
+      document.removeEventListener('focusout', sync);
+      setBeside(false);
+    };
+  }, [active]);
+  return beside;
 }
