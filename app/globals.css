@@ -1532,3 +1532,53 @@ html[data-plan-gesture] * {
     padding-left: env(safe-area-inset-left, 0px) !important;
   }
 }
+
+/* Floor rows and actions on a touch screen (#680): four buttons 40px wide
+   and 44px tall, on one line with the name in the full-width drawer. */
+@media (pointer: coarse) {
+  .pc-floor-head .pc-tile {
+    height: 44px !important;
+  }
+  .pc-floor-row {
+    align-items: stretch !important;
+  }
+  .pc-floor-row > button {
+    width: 40px !important;
+    height: 44px !important;
+  }
+  .pc-floor-row > button.pc-tile {
+    width: auto !important;
+    min-width: 0;
+  }
+  .pc-floor-move {
+    flex-direction: row !important;
+    gap: 4px;
+  }
+  .pc-floor-move > button {
+    width: 40px !important;
+    height: 44px !important;
+  }
+  .pc-floor-row input {
+    height: 32px !important;
+  }
+}
+/* The 320px floating drawer has no line for all of it: the name goes first. */
+@media (pointer: coarse) and (min-width: 769px) {
+  .pc-floor-row {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .pc-floor-row > button.pc-tile {
+    flex: 1 1 100% !important;
+  }
+}
+
+/* The rest of the drawer's buttons and fields, every tab: a 44px row on a touch
+   screen. Colour chips and switches keep their shape. */
+@media (pointer: coarse) {
+  .pc-sidebar [role='tabpanel'] button:not([role='switch']):not([aria-label*='colour']),
+  .pc-sidebar [role='tabpanel'] select,
+  .pc-sidebar [role='tabpanel'] input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']) {
+    min-height: 44px;
+  }
+}
