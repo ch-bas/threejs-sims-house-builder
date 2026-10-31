@@ -244,6 +244,7 @@ function StatusBar({ floorName, hint, onExit }: { floorName: string; hint?: stri
             type="button"
             onClick={onExit}
             aria-label="Leave the walkthrough"
+            className="pc-walk-exit"
             style={{
               pointerEvents: 'auto',
               marginLeft: 2,

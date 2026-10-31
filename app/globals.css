@@ -270,7 +270,7 @@
   .pc-floor-pill,
   .pc-wall-pill {
     padding: 3px !important;
-    gap: 4px !important;
+    gap: 3px !important;
   }
   .pc-floor-pill > div,
   .pc-wall-pill > div {
@@ -1230,5 +1230,157 @@ html[data-plan-gesture] * {
 @media (max-width: 768px) and (min-height: 501px) {
   .pc-walk-stick {
     bottom: calc(100% - var(--pc-mode-top, 100%) + 16px);
+  }
+}
+
+/* Touch tablets keep the desktop HUD, sized here for a finger (#673). Only a
+   coarse primary pointer matches: never a mouse, touch laptops included.
+   Landscape phones have the compact dock. Tiles keep their painted height,
+   since growing them would cost scene and move everything measured from the
+   pills: the `::after` gives them the 44px tap. */
+.pc-wall-caption {
+  display: none;
+}
+@media (pointer: coarse) and (min-width: 769px) and (min-height: 501px) {
+  .pc-lot-badge > button,
+  .pc-floor-pill .pc-tile,
+  .pc-wall-pill .pc-tile,
+  .pc-mode-actions .pc-tile,
+  .pc-camera-fit,
+  .pc-walk-exit,
+  .pc-build-tools-header button,
+  .pc-catalog-strip button.pc-hud-header {
+    position: relative;
+  }
+  .pc-lot-badge > button::after,
+  .pc-floor-pill .pc-tile::after,
+  .pc-wall-pill .pc-tile::after,
+  .pc-camera-pad .pc-tile::after,
+  .pc-walk-exit::after,
+  .pc-budget-switch::after,
+  .pc-build-tools-header button::after,
+  .pc-catalog-strip button.pc-hud-header::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  /* Ten buttons in two rows: their pitch (42 × 40) is the most they can have
+     without the panel growing over the scene. */
+  .pc-mode-actions .pc-tile::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+  }
+
+  /* Floor tiles and the pager are as wide as a finger. */
+  .pc-floor-pill .pc-tile {
+    width: 44px !important;
+  }
+  .pc-catalog-pager:has(> button) {
+    grid-template-columns: 44px 1fr 44px !important;
+  }
+
+  /* Top-centre chips clear the pills, whose tap areas reach further now. */
+  @media (max-width: 1100px) {
+    .pc-top-chip {
+      top: calc(var(--pc-top-pills-bottom, 132px) + 8px) !important;
+    }
+  }
+
+  /* Pinch zooms; the row is too small to tap. */
+  .pc-camera-zoom {
+    display: none !important;
+  }
+
+  /* Beside the stats bar (287px of room) four floors can't have it all: the
+     caption keeps its icon, and the tiles fill their 41px pitch. */
+  @media (min-width: 1101px) {
+    .pc-floor-pill {
+      gap: 4px !important;
+      padding: 6px 4px !important;
+    }
+    .pc-floor-pill .pc-pill-label {
+      padding: 0 !important;
+      font-size: 0 !important;
+    }
+    .pc-floor-pill .pc-tile {
+      width: 38px !important;
+    }
+    .pc-floor-pill > .pc-tile {
+      width: 40px !important;
+    }
+    .pc-floor-pill .pc-tile::after {
+      width: 41px;
+    }
+  }
+
+  /* The pill says what it controls (#679): the caption takes the room of
+     the tiles' glyphs, so the pill stays the width the stats bar allows. */
+  .pc-wall-pill {
+    gap: 3px !important;
+  }
+  .pc-wall-caption {
+    display: block;
+    min-width: 42px;
+    font-size: 10px;
+    line-height: 1.1;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .pc-wall-caption__why {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .pc-wall-pill [role='radio'] {
+    justify-content: center;
+    min-width: 44px;
+    padding: 4px !important;
+  }
+  .pc-wall-pill [role='radio'] svg {
+    display: none;
+  }
+
+  /* The tablet tool strip: labelled chips like the phone dock's, fading at
+     an edge when the row scrolls (#673, #679). */
+  @media (max-width: 1100px) {
+    .pc-build-tools {
+      padding: 4px !important;
+    }
+    .pc-build-tools-grid {
+      padding: 0 !important;
+      background: none !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      gap: 4px !important;
+    }
+    .pc-build-tools-grid .pc-tile {
+      width: 72px !important;
+      min-width: 72px !important;
+      height: 44px !important;
+      padding: 3px 2px !important;
+      gap: 2px !important;
+    }
+    .pc-build-tools-label {
+      display: block !important;
+      font-size: 10px !important;
+      letter-spacing: 0.02em !important;
+    }
+    .pc-build-tools-grid {
+      --pc-fade-start: 0px;
+      --pc-fade-end: 0px;
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--pc-fade-start), #000 calc(100% - var(--pc-fade-end)), transparent);
+      mask-image: linear-gradient(to right, transparent, #000 var(--pc-fade-start), #000 calc(100% - var(--pc-fade-end)), transparent);
+    }
+    .pc-build-tools-grid[data-more-before] {
+      --pc-fade-start: 32px;
+    }
+    .pc-build-tools-grid[data-more-after] {
+      --pc-fade-end: 32px;
+    }
   }
 }

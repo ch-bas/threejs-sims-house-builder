@@ -454,6 +454,15 @@ to respect.
   controls wrap to the column at 40 px or more, it scrolls on its own, and
   the rest of the screen stays scene, so the framing puts the house there.
   Desktop (≥1101 × ≥701) is untouched where nothing overflows.
+  Touch tablets keep the desktop HUD, sized in one block of `globals.css`
+  under `(pointer: coarse) and (min-width: 769px) and (min-height: 501px)`:
+  the primary pointer, not `any-pointer`, so a touch laptop's mouse layout
+  never moves. Tiles keep their painted height and take the 44 px tap from
+  an `::after` (the pills and everything measured from them stay put); the
+  ten mode buttons and, beside the stats bar, the floor tiles stop at their
+  pitch, 40 px or more. The walk stick has the bottom-left corner except
+  above the portrait dock, and Sit rides on `--pc-mode-top`: `--pc-dock-top`
+  is the HUD box, which reaches near the top of a tablet (#672).
 - **Vector plan exports** (`lib/plan-export/`). The SVG and DXF emitters
   are pure string builders drawing from floor data, with shared maths in
   `plan-geometry.ts`: footprint corners, opening axes, stairs, the

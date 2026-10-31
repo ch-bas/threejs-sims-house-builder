@@ -53,6 +53,14 @@ export function WallDisplayPill(): JSX.Element {
         <PlanViewToggle />
       </div>
 
+      {/* Touch tablets only: no tooltip there to say what these tiles do, or
+          why they are off (#679). It takes the room of the tiles' glyphs, so
+          the pill keeps its width beside the stats bar. */}
+      <span className="pc-hud-header pc-wall-caption">
+        Walls
+        {off && <span className="pc-wall-caption__why">{walking ? 'Stay up' : '3D only'}</span>}
+      </span>
+
       <div
         role="radiogroup"
         aria-label="Wall display"

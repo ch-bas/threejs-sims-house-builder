@@ -175,7 +175,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
             onClick={props.onFit}
             title="Fit room"
             aria-label="Fit room"
-            className="pc-tile"
+            className="pc-tile pc-camera-fit"
             style={{
               pointerEvents: 'auto',
               width: 36,
@@ -197,6 +197,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
 
       {/* Zoom row */}
       <div
+        className="pc-camera-zoom"
         style={{
           display: 'flex',
           alignItems: 'center',
