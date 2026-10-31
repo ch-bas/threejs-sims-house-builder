@@ -43,10 +43,8 @@ export function PlacedItemsPanel({
     if (removedAt === -1 || (active && active !== document.body)) return;
     const panel = panelRef.current;
     const rows = panel?.querySelectorAll<HTMLElement>('[data-placed-item-id] > button');
-    const next =
-      rows?.[Math.min(removedAt, rows.length - 1)] ??
-      panel?.querySelector<HTMLElement>('input') ??
-      panel?.querySelector<HTMLElement>('h3');
+    // Not the filter field: focusing it would pop up a phone's keyboard.
+    const next = rows?.[Math.min(removedAt, rows.length - 1)] ?? panel?.querySelector<HTMLElement>('h3');
     next?.focus();
   }, [activeFloor.id, filtered, items]);
   const trackListFocus = (event: FocusEvent<HTMLDivElement>) => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { PlacedItemsPanel } from './placed-items-panel';
@@ -43,6 +43,14 @@ describe('PlacedItemsPanel focus after a removal (#634, #638)', () => {
     const { rerender } = render(panel(['a']));
     row('Remove a').focus();
     rerender(panel([]));
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: /Placed Items/ }));
+  });
+
+  it('skips the filter field when a filtered list empties: no phone keyboard pops up', () => {
+    const { rerender } = render(panel(['a', 'b', 'c', 'd', 'zed']));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Filter placed items' }), { target: { value: 'zed' } });
+    row('Remove zed').focus();
+    rerender(panel(['a', 'b', 'c', 'd']));
     expect(document.activeElement).toBe(screen.getByRole('heading', { name: /Placed Items/ }));
   });
 
