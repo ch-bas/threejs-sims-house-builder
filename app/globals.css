@@ -1510,3 +1510,25 @@ html[data-plan-gesture] * {
   position: absolute;
   inset: 0;
 }
+
+/* The drawer and the item sheet stay clear of a notch and the status bar
+   (#676). Viewport-covering in portrait and on the small landscape phones;
+   floating on the wider ones, where only its offsets need the insets. */
+@media (max-width: 768px) {
+  .pc-sidebar {
+    max-width: 100% !important;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px)) !important;
+  }
+}
+@media (min-width: 769px) and (max-width: 1100px) and (max-height: 500px) {
+  .pc-sidebar {
+    left: calc(16px + env(safe-area-inset-left, 0px)) !important;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+@media (max-width: 768px), (max-height: 500px) {
+  .pc-item-popover {
+    padding-right: env(safe-area-inset-right, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+  }
+}
