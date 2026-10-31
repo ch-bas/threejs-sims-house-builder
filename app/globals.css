@@ -1393,4 +1393,14 @@ html[data-plan-gesture] * {
       --pc-fade-end: 32px;
     }
   }
+/* P3 (polish sprint) */
+/* The View menu opens above the item popover (36), not behind it: the HUD's
+   stacking context traps the menu's own z-index (#633). Below the drawer (40). */
+.pc-bottom-hud:has(.pc-view-menu) {
+  z-index: 37 !important;
+}
+/* Solid behind its glass tint: whatever it now covers must not read through. */
+.pc-bottom-hud .pc-view-menu {
+  background-color: var(--pc-ink);
+  background-image: linear-gradient(var(--pc-glass-tint-dark), var(--pc-glass-tint-dark));
 }
