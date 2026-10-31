@@ -12,6 +12,7 @@ import {
   entranceProblem,
   entranceSteps,
   entranceWallCut,
+  entranceWithinStorey,
   isEntranceSpec,
   isSillHeight,
   planFloorIndex,
@@ -100,14 +101,16 @@ describe('recessed entrance (#204)', () => {
     expect(entranceGeometry({ width: 1.4, depth: 1 }, { ...flat, width: 1.2 })).toBeNull();
   });
 
-  it('cuts the front wall of each storey it crosses, never splitting a wall in two', () => {
+  it('cuts the street storey only, never splitting its wall in two (#587)', () => {
     const tall = entranceGeometry({ width: 1.4, depth: 1.2, height: 4 }, flat)!;
+    expect(tall.topY).toBe(3);
     const ground = entranceWallCut(tall, flat.floors, 0)!;
-    const upper = entranceWallCut(tall, flat.floors, 1)!;
     expect(ground).toMatchObject({ bottomFromFloor: 0 });
     expect(ground.height).toBeCloseTo(2.99);
-    expect(upper.bottomFromFloor).toBe(0);
-    expect(upper.height).toBeCloseTo(1);
+    expect(entranceWallCut(tall, flat.floors, 1)).toBeNull();
+    // The default height over a low storey stops at its ceiling too.
+    const under = { ...flat, floors: [{ height: 2.2 }, {}] };
+    expect(entranceWallCut(entranceGeometry({ width: 1.4, depth: 1.2 }, under)!, under.floors, 1)).toBeNull();
     const low = entranceGeometry({ width: 1.4, depth: 1.2 }, flat)!;
     expect(entranceWallCut(low, flat.floors, 1)).toBeNull();
   });
@@ -157,10 +160,22 @@ describe('entrance on the plan (#285)', () => {
     expect(entrancePlanOutline(building, 2)).toBeNull();
   });
 
-  it('notches every storey the porch crosses — exactly the walls 3D cuts', () => {
+  it('notches the street storey only, however tall the porch (#587)', () => {
     const tall = { ...building, entrance: { ...building.entrance, height: 4 } };
     expect(entrancePlanOutline(tall, 0)).not.toBeNull();
-    expect(entrancePlanOutline(tall, 1)).toEqual(entrancePlanOutline(tall, 0));
+    expect(entrancePlanOutline(tall, 1)).toBeNull();
+  });
+
+  it('brings the spec under the street storey, within the range the schema accepts (#587)', () => {
+    const spec = { width: 1.4, depth: 1.2, height: 4 };
+    expect(entranceWithinStorey(spec, building)).toEqual({ ...spec, height: 3 });
+    const fits = { ...spec, height: 2.5 };
+    expect(entranceWithinStorey(fits, building)).toBe(fits);
+    const noHeight = { width: 1.4, depth: 1.2 };
+    expect(entranceWithinStorey(noHeight, building)).toBe(noHeight);
+    expect(entranceWithinStorey(spec, { ...building, floors: [{ height: 1.5 }, {}] }).height).toBe(2);
+    // No street storey: nothing to measure against.
+    expect(entranceWithinStorey(spec, { ...building, floors: [{ height: 3 }], terrain: { frontY: 3, backY: 0 } })).toBe(spec);
   });
 
   it('draws nothing for a house without an entrance, or one that can’t be built', () => {

@@ -26,18 +26,16 @@ import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { clampStoreyHeight, storeyHeight } from '../lib/storeys';
 import {
   ENTRANCE_DOOR_ID,
-  ENTRANCE_LIMITS,
   ENTRANCE_WALL_ID,
   MAX_SILL_HEIGHT,
   MIN_SILL_HEIGHT,
   clampEntrance,
   clipWallToPorch,
   entranceBackWall,
-  entranceFloorIndex,
   entranceGeometry,
   entrancePlanOutline,
+  entranceWithinStorey,
   sameEntrance,
-  streetLevel,
 } from '../lib/street';
 import { MAX_ZONES, clampZoneRect, sameZone, zoneInPorch } from '../lib/zones';
 import type {
@@ -1400,18 +1398,13 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previo
     const { entrance: _old, ...rest } = layout;
     return { ...rest, floors: layout.floors.map((floor) => syncEntranceFloor(floor, null, null)) };
   }
-  const entrance = clampEntrance(requested);
+  const clamped = clampEntrance(requested);
   // The deleted-door flag is the reducer's own record: a panel re-sending
   // the spec without it must not resurrect the door.
-  if (layout.entrance?.door === false) entrance.door = false;
-  const streetIndex = entranceFloorIndex(layout.floors, streetLevel(layout.terrain, layout.height));
-  // The back wall exists on the street storey only, so a porch must not
-  // reach into the storey above it (#275) — the spec is clamped, not just
-  // the geometry, so the value survives saves and share links.
-  if (entrance.height !== undefined && streetIndex !== null) {
-    const storey = storeyHeight(layout.floors[streetIndex]);
-    entrance.height = Math.max(ENTRANCE_LIMITS.height[0], Math.min(entrance.height, storey));
-  }
+  if (layout.entrance?.door === false) clamped.door = false;
+  // The spec is clamped, not just the geometry, so the value survives saves
+  // and share links.
+  const entrance = entranceWithinStorey(clamped, layout);
 
   const geometry = entranceGeometry(entrance, {
     width: layout.width,
