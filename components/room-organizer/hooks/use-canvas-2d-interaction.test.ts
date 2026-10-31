@@ -92,6 +92,16 @@ describe('hitTest2DItems (#219)', () => {
     expect(hitTest2DItems([item], 0.9 * Math.SQRT1_2, -0.9 * Math.SQRT1_2)?.id).toBe(item.id);
   });
 
+  it('takes a click on an open door leaf, but not from what it swings over (#576)', () => {
+    // North-wall door: hinged at x = −0.45, its leaf runs 0.9 m towards +z.
+    const door = makeItem({ id: 'door', type: 'door', width: 0.9, depth: 0.12, position: { x: 0, z: -3.94 } });
+    expect(hitTest2DItems([door], -0.45, -3.4, 0.05)?.id).toBe('door');
+    expect(hitTest2DItems([{ ...door, mirrored: true }], 0.45, -3.4, 0.05)?.id).toBe('door');
+    expect(hitTest2DItems([door], 0.45, -3.4, 0.05)).toBeNull();
+    const chair = makeItem({ id: 'chair', position: { x: -0.45, z: -3.4 } });
+    expect(hitTest2DItems([chair, door], -0.45, -3.4, 0.05)?.id).toBe('chair');
+  });
+
   it('returns the topmost item (last in draw order) on overlap', () => {
     const below = makeItem({ id: 'below', position: { x: 0, z: 0 } });
     const above = makeItem({ id: 'above', position: { x: 0.2, z: 0 } });

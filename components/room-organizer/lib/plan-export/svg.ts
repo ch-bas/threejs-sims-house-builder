@@ -22,10 +22,13 @@ import {
   buildingFrameBounds,
   coverageRings,
   gridLinePositions,
+  doorSwing,
   growBounds,
   interiorWallDimensions,
   isWallHidden,
   itemSchedule,
+  openingAxes,
+  openingGap,
   planContentBounds,
   planFrameBounds,
   polarPoint,
@@ -547,6 +550,9 @@ function renderCoverage(
   ].join('\n');
 }
 
+/** Width of an opening's gap across the wall, in metres. */
+const OPENING_GAP_M = 0.2;
+
 /**
  * Door: a gap punched through the wall line plus the conventional quarter-arc
  * swing (leaf hinged at one jamb, opening into the room — for wall-snapped
@@ -561,25 +567,26 @@ function renderOpening(
   theme: SvgPlanTheme
 ): string {
   const w = item.width * scale;
-  const hw = w / 2;
-  const gap = 0.2 * scale;
-  // The 3D door's handle is at local +X, so its hinge is at −X; mirroring
-  // flips the group's local X and moves the hinge to the other jamb (#386).
-  const mirror = item.mirrored ? ' scale(-1 1)' : '';
-  const transform = `translate(${px(item.position.x)} ${py(item.position.z)}) rotate(${fmt(-((item.rotation ?? 0) * 180) / Math.PI)})${mirror}`;
-  const parts: string[] = [`<g class="opening" data-type="${escapeHtml(item.type)}" transform="${transform}">`];
-  parts.push(
-    `<rect x="${fmt(-hw)}" y="${fmt(-gap / 2)}" width="${fmt(w)}" height="${fmt(gap)}" fill="${theme.background}"/>`
-  );
+  const gapPoints = openingGap(item, OPENING_GAP_M)
+    .map((p) => `${px(p.x)},${py(p.z)}`)
+    .join(' ');
+  const parts: string[] = [`<g class="opening" data-type="${escapeHtml(item.type)}">`];
+  parts.push(`<polygon points="${gapPoints}" fill="${theme.background}"/>`);
   if (item.type === 'door') {
+    // World points, shared with the plan and the DXF: mirroring moves the hinge (#386).
+    const { hinge, strike, leafTip } = doorSwing(item);
+    const sweep = (strike.x - hinge.x) * (leafTip.z - hinge.z) - (strike.z - hinge.z) * (leafTip.x - hinge.x) > 0 ? 1 : 0;
     parts.push(
-      `<line x1="${fmt(-hw)}" y1="0" x2="${fmt(-hw)}" y2="${fmt(w)}" stroke="${theme.opening}" stroke-width="1.5"/>`,
-      `<path d="M ${fmt(hw)} 0 A ${fmt(w)} ${fmt(w)} 0 0 1 ${fmt(-hw)} ${fmt(w)}" stroke="${theme.opening}" stroke-width="1" fill="none"/>`
+      `<line x1="${px(hinge.x)}" y1="${py(hinge.z)}" x2="${px(leafTip.x)}" y2="${py(leafTip.z)}" stroke="${theme.opening}" stroke-width="1.5"/>`,
+      `<path d="M ${px(strike.x)} ${py(strike.z)} A ${fmt(w)} ${fmt(w)} 0 0 ${sweep} ${px(leafTip.x)} ${py(leafTip.z)}" stroke="${theme.opening}" stroke-width="1" fill="none"/>`
     );
   } else {
+    const { along } = openingAxes(item);
+    const half = item.width / 2;
+    const { x, z } = item.position;
     parts.push(
-      `<rect x="${fmt(-hw)}" y="${fmt(-gap / 2)}" width="${fmt(w)}" height="${fmt(gap)}" fill="none" stroke="${theme.opening}" stroke-width="1"/>`,
-      `<line x1="${fmt(-hw)}" y1="0" x2="${fmt(hw)}" y2="0" stroke="${theme.opening}" stroke-width="1"/>`
+      `<polygon points="${gapPoints}" fill="none" stroke="${theme.opening}" stroke-width="1"/>`,
+      `<line x1="${px(x - along.x * half)}" y1="${py(z - along.z * half)}" x2="${px(x + along.x * half)}" y2="${py(z + along.z * half)}" stroke="${theme.opening}" stroke-width="1"/>`
     );
   }
   parts.push(`</g>`);
