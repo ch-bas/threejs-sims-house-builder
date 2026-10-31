@@ -17,7 +17,7 @@ import {
   parseStoredLayout,
   storedEntryLoss,
 } from './schema';
-import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from './street';
+import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entrancePlanOutline } from './street';
 import { MAX_STORAGE_ENTRY_CHARS } from './version-history';
 import { MAX_ZONES } from './zones';
 import type { FurnitureItem, RoomLayout } from './types';
@@ -515,6 +515,35 @@ describe('schema caps (#332)', () => {
     // And the repaired floor is stable.
     const again = parseStoredLayout(JSON.parse(JSON.stringify(makeLayout({ floors: [floor] }))));
     expect(only(again).items).toHaveLength(MAX_ITEMS_PER_FLOOR);
+  });
+
+  it('brings an imported porch under its storey, so the floor above keeps its wall (#587)', () => {
+    const floors = [makeFloor({ id: 'a' }), makeFloor({ id: 'b' })];
+    const parsed = parseStoredLayout(makeLayout({ floors, entrance: { width: 1.4, depth: 1.2, height: 4 } }))!;
+    expect(parsed.entrance?.height).toBe(3);
+    expect(entrancePlanOutline(parsed, 0)).not.toBeNull();
+    expect(entrancePlanOutline(parsed, 1)).toBeNull();
+    // A fitting porch comes back as it went in.
+    const fits = makeLayout({ floors, entrance: { width: 1.4, depth: 1.2, height: 2.6 } });
+    expect(parseStoredLayout(fits)).toBe(fits);
+  });
+
+  it('drops the door and back wall of a porch its storey is too low for, and can bring them back (#587)', () => {
+    const door = makeItem({ id: ENTRANCE_DOOR_ID, position: { x: 0, z: -2.8 } });
+    const wall = { id: ENTRANCE_WALL_ID, x1: -0.7, z1: -2.8, x2: 0.7, z2: -2.8 };
+    const other = { id: 'w', x1: 0, z1: 0, x2: 2, z2: 0 };
+    const floors = [makeFloor({ id: 'a', height: 1.5, items: [door, makeItem({ id: 'sofa' })], interiorWalls: [other, wall] }), makeFloor({ id: 'b' })];
+    const parsed = parseStoredLayout(makeLayout({ floors, entrance: { width: 1.4, depth: 1.2 } }))!;
+    expect(parsed.floors[0]!.items.map((item) => item.id)).toEqual(['sofa']);
+    expect(parsed.floors[0]!.interiorWalls).toEqual([other]);
+    // The spec stays, with no "door deleted" flag: raising the storey refits both.
+    expect(parsed.entrance).toEqual({ width: 1.4, depth: 1.2 });
+    expect(parseStoredLayout(parsed)).toBe(parsed);
+    // A storey that can host the porch keeps them.
+    const tall = makeLayout({ floors: [{ ...floors[0]!, height: 2.5 }, floors[1]!], entrance: { width: 1.4, depth: 1.2 } });
+    const kept = parseStoredLayout(tall)!.floors[0]!;
+    expect(kept.items.map((item) => item.id)).toContain(ENTRANCE_DOOR_ID);
+    expect(kept.interiorWalls?.map((entry) => entry.id)).toContain(ENTRANCE_WALL_ID);
   });
 
   it('slices zones past MAX_ZONES instead of refusing the floor, and de-duplicates dormer ids', () => {

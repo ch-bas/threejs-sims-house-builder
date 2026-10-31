@@ -89,6 +89,25 @@ export function clampEntrance(entrance: EntranceSpec): EntranceSpec {
   return next;
 }
 
+/**
+ * The spec with its height brought under the street storey's (#275), within
+ * the range `isEntranceSpec` accepts: the reducer on every edit, the schema on
+ * every load (#587). That range stops at 2 m, so over a lower storey the spec
+ * can read more than is built: the geometry stops at the ceiling regardless,
+ * and under MIN_PORCH_HEIGHT no porch is built. Returns the spec itself when
+ * there is nothing to change.
+ */
+export function entranceWithinStorey(
+  entrance: EntranceSpec,
+  building: Pick<EntranceBuilding, 'height' | 'floors' | 'terrain'>
+): EntranceSpec {
+  if (entrance.height === undefined) return entrance;
+  const streetIndex = entranceFloorIndex(building.floors, streetLevel(building.terrain, building.height));
+  if (streetIndex === null) return entrance;
+  const height = Math.max(ENTRANCE_LIMITS.height[0], Math.min(entrance.height, storeyHeight(building.floors[streetIndex])));
+  return height === entrance.height ? entrance : { ...entrance, height };
+}
+
 /** Field-by-field equality, so a re-typed value can keep state identity (#279). */
 export function sameEntrance(a: EntranceSpec, b: EntranceSpec): boolean {
   return a.width === b.width && a.depth === b.depth && a.offset === b.offset && a.height === b.height && a.door === b.door;
@@ -190,7 +209,10 @@ function fitEntrance(
   if (floorIndex === null) return { geometry: null, problem: 'no-street-storey' };
   const bottomY = floorElevation(ctx.floors, floorIndex);
   const eaves = floorElevation(ctx.floors, ctx.floors.length);
-  const topY = Math.min(bottomY + (entrance.height ?? DEFAULT_ENTRANCE_HEIGHT), eaves - 0.05);
+  // The back wall exists on the street storey only, so the porch stops at its
+  // ceiling: past it the upper room would stand open to the street (#275, #587).
+  const ceiling = bottomY + storeyHeight(ctx.floors[floorIndex]);
+  const topY = Math.min(bottomY + (entrance.height ?? DEFAULT_ENTRANCE_HEIGHT), ceiling, eaves - 0.05);
   if (topY - bottomY < MIN_PORCH_HEIGHT) return { geometry: null, problem: 'too-low' };
 
   const frontZ = -ctx.depth / 2;
@@ -218,7 +240,7 @@ export function entranceProblem(entrance: EntranceSpec, ctx: EntranceContext): E
 /**
  * The hole the recess cuts in one storey's front (north) wall, in that wall's
  * local frame (north wall local +x is world +x) — or null when the recess
- * doesn't cross the storey. A tall porch cuts every storey it spans.
+ * doesn't cross the storey, which is every storey but the street one.
  */
 export function entranceWallCut(
   geometry: EntranceGeometry,
