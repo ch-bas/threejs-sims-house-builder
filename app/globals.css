@@ -765,34 +765,15 @@
     min-height: 0;
     max-height: none;
   }
-  /* Its controls wrap to the column and are finger-sized. */
+  /* Its controls wrap to the column. Their sizes are in "Phone panels". */
   .pc-hud-left .pc-paint-head {
     flex-wrap: wrap;
-  }
-  .pc-hud-left .pc-paint-tabs .pc-tile,
-  .pc-hud-left .pc-paint-row > .pc-tile,
-  .pc-hud-left .pc-stamp-go {
-    height: 40px !important;
   }
   .pc-hud-left .pc-paint-row {
     flex-wrap: wrap;
   }
-  .pc-hud-left .pc-paint-row > .pc-tile {
-    min-width: 40px;
-    padding: 0 6px !important;
-  }
   .pc-hud-left .pc-paint-patterns {
     grid-template-columns: repeat(3, 1fr) !important;
-  }
-  .pc-hud-left .pc-paint-patterns > .pc-tile,
-  .pc-hud-left .pc-stamp-shapes > .pc-tile {
-    height: 44px !important;
-  }
-  .pc-hud-left .pc-paint-swatches {
-    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)) !important;
-  }
-  .pc-hud-left .pc-paint-swatches > * {
-    height: 40px !important;
   }
   /* The chip row only as wide as its chips: the scene shows beside it. */
   .pc-hud-left > .pc-build-tools {
@@ -1416,4 +1397,100 @@ html[data-plan-gesture] * {
 .pc-chip-name:focus-visible {
   outline: 2px solid var(--pc-cyan-glow);
   outline-offset: 1px;
+}
+
+/* Phone panels (polish sprint) */
+/* The wall panels in the compact dock, portrait and landscape: finger-sized
+   controls, and labels of at least 9px (#674). */
+@media (max-width: 768px), (max-width: 1100px) and (max-height: 500px) {
+  .pc-hud-left .pc-paint-tabs .pc-tile,
+  .pc-hud-left .pc-paint-row > .pc-tile,
+  .pc-hud-left .pc-stamp-go {
+    height: 44px !important;
+    font-size: 10px !important;
+  }
+  .pc-hud-left .pc-paint-tabs .pc-tile {
+    padding: 4px 8px !important;
+  }
+  .pc-hud-left .pc-paint-row > .pc-tile {
+    min-width: 40px;
+    padding: 0 6px !important;
+  }
+  .pc-hud-left .pc-paint-patterns > .pc-tile,
+  .pc-hud-left .pc-stamp-shapes > .pc-tile {
+    height: 44px !important;
+  }
+  .pc-hud-left .pc-paint-patterns > .pc-tile > span {
+    font-size: 9px !important;
+    letter-spacing: 0 !important;
+  }
+  .pc-hud-left .pc-paint-swatches {
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)) !important;
+  }
+  .pc-hud-left .pc-paint-swatches > * {
+    height: 44px !important;
+  }
+  .pc-hud-left .pc-glass > p.pc-hud-header {
+    font-size: 10px !important;
+  }
+}
+/* An unfolded wall panel is for painting or stamping: in portrait the catalog
+   row folds away, as it does in landscape, and leaves the room to the scene. */
+@media (max-width: 768px) {
+  .pc-bottom-hud:has(> .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) .pc-catalog-strip {
+    display: none !important;
+  }
+}
+/* The tablet-width dock has room for the room shapes on one row. */
+@media (min-width: 600px) and (max-width: 768px) {
+  .pc-hud-left .pc-stamp-shapes {
+    grid-template-columns: repeat(7, 1fr) !important;
+  }
+}
+/* Sliders in the dock and the item editor: a 44px thumb on a touch screen. Its
+   border is see-through, so it draws at 28px. WebKit only moves a range input
+   from its thumb, so a taller input alone would not help there. */
+@media (pointer: coarse) {
+  .pc-room-stamp input[type='range'],
+  .pc-item-popover input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 44px;
+    margin: 0;
+    background: transparent;
+  }
+  .pc-room-stamp input[type='range']::-webkit-slider-runnable-track,
+  .pc-item-popover input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .pc-room-stamp input[type='range']::-moz-range-track,
+  .pc-item-popover input[type='range']::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .pc-room-stamp input[type='range']::-webkit-slider-thumb,
+  .pc-item-popover input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    margin-top: -20px;
+    border: 8px solid transparent;
+    border-radius: 50%;
+    background: var(--pc-cyan-glow);
+    background-clip: padding-box;
+  }
+  .pc-room-stamp input[type='range']::-moz-range-thumb,
+  .pc-item-popover input[type='range']::-moz-range-thumb {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    border: 8px solid transparent;
+    border-radius: 50%;
+    background: var(--pc-cyan-glow);
+    background-clip: padding-box;
+  }
 }
