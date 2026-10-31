@@ -8,6 +8,8 @@ import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
+import { lockedNote } from '../lib/editor-notices';
+import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { isWallMounted } from '../lib/opening-snap';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
@@ -44,7 +46,8 @@ function sliderMax(dimension: DimensionConfig, item: FurnitureItem): number {
 }
 
 export interface ItemContextPopoverProps {
-  hasCollision: boolean;
+  /** Why the item shows red, as a sentence; null when it stands clear (#627). */
+  collision: string | null;
   onRemove(id: string): void;
   onDuplicate(id: string): void;
   onRotate(id: string): void;
@@ -65,6 +68,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // item stays in view above it, expanded on demand, and collapsed again for
   // each new selection.
   const sheet = useMediaQuery(COMPACT_OVERLAY_QUERY);
+  const touch = useMediaQuery(COARSE_POINTER_QUERY);
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const expanded = item !== null && expandedFor === item.id;
   const sheetOpen = sheet && item !== null;
@@ -95,6 +99,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   const offHint = (lockedHint: string): string | undefined =>
     exploring ? NOT_WHILE_EXPLORING : item.locked ? lockedHint : undefined;
   const lockedOff = exploring || item.locked === true;
+  const lockedHere = item.locked === true && !exploring;
   const colorPicker = (
     <ColorSwatchPicker
       variant="glass"
@@ -176,7 +181,13 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             >
               {item.name}
             </p>
-            {item.type === 'security-camera' ? (
+            {sheet && lockedHere ? (
+              // On the sheet the note takes this line, so a locked item
+              // doesn't cost the scene a row (#635).
+              <p role="note" className="pc-blurb" style={{ margin: 0, fontSize: 10 }}>
+                {lockedNote(touch)}
+              </p>
+            ) : item.type === 'security-camera' ? (
               <p
                 className="pc-blurb"
                 style={{ margin: 0, fontSize: 10, color: 'var(--pc-cyan-glow)' }}
@@ -231,7 +242,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           </p>
         )}
 
-        {props.hasCollision && (
+        {props.collision !== null && (
           <div
             className="pc-body"
             style={{
@@ -243,8 +254,15 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               padding: '6px 8px',
             }}
           >
-            Overlaps another item or escapes the room.
+            {props.collision}
           </div>
+        )}
+
+        {/* Says why Rotate and Centre are off, which no tooltip does on touch (#635). */}
+        {lockedHere && !sheet && (
+          <p role="note" className="pc-body" style={{ margin: 0, fontSize: 11 }}>
+            {lockedNote(touch)}
+          </p>
         )}
 
         {/* A collapsed sheet shows only the warning and the action row; the

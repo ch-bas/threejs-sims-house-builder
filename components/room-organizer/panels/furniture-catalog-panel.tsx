@@ -104,7 +104,7 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
           </div>
         )}
         <p className="text-[10px] text-muted-foreground mt-3 text-center">
-          Click to drop at centre · drag onto the 3D view to place precisely · Enter to place and position with the keyboard
+          Click to pick up, then click to place · drag onto the view · Enter to place with the keyboard
         </p>
       </CardContent>
     </Card>

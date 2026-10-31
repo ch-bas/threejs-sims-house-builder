@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createChannel,
+  lockedMessage,
+  lockedNote,
   noticeDuration,
   notify,
   notifyRefused,
+  notifyRefusedOnce,
   notifyWithUndo,
   removedMessage,
   removedNames,
@@ -142,5 +145,46 @@ describe('notifyRefused (#588, #642)', () => {
     expect(playCue.mock.calls).toEqual([['refused']]);
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ message: 'Over budget: $200 left', tone: 'error' });
+  });
+});
+
+describe('locked item wording (#635)', () => {
+  it('points at U with a keyboard, at the Unlock tile on touch', () => {
+    expect(lockedMessage('Sofa', false)).toBe('Sofa is locked. Press U or Unlock to move or turn it.');
+    expect(lockedMessage('Sofa', true)).toBe('Sofa is locked. Tap Unlock to move or turn it.');
+    expect(lockedNote(true)).toBe('Locked in place. Tap Unlock to move or turn it.');
+  });
+
+  it('counts a selection', () => {
+    expect(lockedMessage(3, false)).toBe('These 3 items are locked. Press U or Unlock to move or turn them.');
+  });
+});
+
+describe('notifyRefusedOnce (#635)', () => {
+  const seenFor = () => {
+    const seen: string[] = [];
+    const stop = subscribeNotices((notice) => seen.push(notice.message));
+    return { seen, stop };
+  };
+
+  it('plays the cue each time, and stacks no copy of a notice still showing', () => {
+    const { seen, stop } = seenFor();
+    const cue = vi.fn();
+    notifyRefusedOnce('Held', cue, 1000);
+    notifyRefusedOnce('Held', cue, 3000);
+    notifyRefusedOnce('Held', cue, 6000);
+    expect(seen).toEqual(['Held']);
+    expect(cue).toHaveBeenCalledTimes(3);
+    notifyRefusedOnce('Held', cue, 8001);
+    expect(seen).toEqual(['Held', 'Held']);
+    stop();
+  });
+
+  it('shows a different refusal straight away', () => {
+    const { seen, stop } = seenFor();
+    notifyRefusedOnce('Sofa', vi.fn(), 20000);
+    notifyRefusedOnce('Chair', vi.fn(), 20001);
+    expect(seen).toEqual(['Sofa', 'Chair']);
+    stop();
   });
 });

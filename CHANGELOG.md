@@ -6,11 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- The U key locks and unlocks the selected item. An arrow key, R or a drag on the 2D plan that meets a locked item now says why nothing moved and how to unlock it, and the item popover and the phone sheet say why Rotate and Centre are off ([#635](https://github.com/ch-bas/threejs-sims-house-builder/issues/635))
+- The item popover and the Style tab say why an item shows red: which item it overlaps, or that it stands outside the room, in the porch, over the stairwell or inside an interior wall ([#627](https://github.com/ch-bas/threejs-sims-house-builder/issues/627))
+- The Undo and Redo tooltips name the step they take, such as "Undo: move Sofa on Ground" or "Undo: remove floor “Attic”" ([#625](https://github.com/ch-bas/threejs-sims-house-builder/issues/625))
+
 ### Changed
 - On touch tablets the floor and wall tiles, the mode panel's buttons, the build tools, the catalogue arrows, the sidebar button and the Hard budget switch are easy to tap. Pinch replaces the camera pad's zoom row there; computers with a mouse look the same as before ([#673](https://github.com/ch-bas/threejs-sims-house-builder/issues/673))
 - On touch tablets the build tools carry their names, and the wall pill says "Walls", with "3D only" or "Walking" when its buttons are off ([#679](https://github.com/ch-bas/threejs-sims-house-builder/issues/679))
 - The Up/Cut/Down wall switch, Paint's tabs and Apply To, and the Weather buttons are one stop for the Tab key: the arrow keys move between their options, and Paint's tab rows now have names a screen reader can read ([#646](https://github.com/ch-bas/threejs-sims-house-builder/issues/646), [#557](https://github.com/ch-bas/threejs-sims-house-builder/issues/557))
 - Locked achievements stay readable: the lock icon and dashed border mark them instead of fading the whole row. Disabled buttons turn neutral and outlined, so a disabled Pack no longer looks like the main action, while a selected option keeps a tint. On a locked item, the W/D/H values and the stairs shape stay at full strength; only the sliders dim ([#640](https://github.com/ch-bas/threejs-sims-house-builder/issues/640))
+- FURNISH calls its panel and strip "Furniture" instead of "Build Tools" ([#641](https://github.com/ch-bas/threejs-sims-house-builder/issues/641))
+- The Restore question in History names the house and the time. History no longer lists a restore point that is the house on screen ([#647](https://github.com/ch-bas/threejs-sims-house-builder/issues/647))
+- The welcome tips say that items lock once placed ([#635](https://github.com/ch-bas/threejs-sims-house-builder/issues/635))
 
 ### Fixed
 - On touch tablets a catalogue category that fits one page, such as Openings, no longer shows empty slots and Previous and Next buttons that do nothing: the strip stays the same size, so the tools above it never move ([#684](https://github.com/ch-bas/threejs-sims-house-builder/issues/684))
@@ -28,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Locked achievements stay readable: the lock icon and dashed border mark them instead of fading the whole row. Disabled buttons turn neutral and outlined, so a disabled Pack no longer looks like the main action. On a locked item, the W/D/H values and the stairs shape stay at full strength; only the sliders dim ([#640](https://github.com/ch-bas/threejs-sims-house-builder/issues/640))
 - Screen readers now hear what things are: catalogue tiles say the item's name as well as its price ([#637](https://github.com/ch-bas/threejs-sims-house-builder/issues/637)), Sloped site and Recessed entrance are switches named after their label, the drawer's All button says whether it's on, and the floor buttons say the floor's name ([#645](https://github.com/ch-bas/threejs-sims-house-builder/issues/645)). Each achievement says Locked or Unlocked, and the bar reads as a progress bar ([#648](https://github.com/ch-bas/threejs-sims-house-builder/issues/648))
 - With "reduce motion" on, the achievement notice and the saving icon no longer pulse. Selected item colours are announced as selected, the custom colour well and the set and zone name fields show a keyboard focus ring, and renaming a floor works in a proper field instead of one inside a button ([#557](https://github.com/ch-bas/threejs-sims-house-builder/issues/557))
+- The Buy tab's hint describes what clicking an item does: it picks the item up to place ([#644](https://github.com/ch-bas/threejs-sims-house-builder/issues/644))
+- A "Loaded …" note clears when another house replaces the one it named ([#647](https://github.com/ch-bas/threejs-sims-house-builder/issues/647))
+- The rotation field keeps what you type: -90 no longer turns into 351 on the way to 270, and 400 shows as 40 when you leave the field or press Enter ([#548](https://github.com/ch-bas/threejs-sims-house-builder/issues/548))
 
 ## [1.25.0] - 2026-10-31
 

@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useEditorView } from '../contexts';
 import { useScrollCue } from '../hooks/use-scroll-cue';
-import { buildToolLabel, categoriesForMode, type BuildToolKey } from '../lib/modes';
+import { buildToolLabel, buildToolsTitle, categoriesForMode, type BuildToolKey } from '../lib/modes';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
 export type BuildToolCategory = BuildToolKey;
@@ -42,6 +42,7 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
   // DESIGN lists the structure tools, FURNISH the furniture ones — the mode
   // pill is the way to the other half, not a longer grid (#151).
   const tools = categoriesForMode(gameMode);
+  const heading = buildToolsTitle(gameMode);
   // In the phone dock the chips scroll sideways; the edges fade while they do.
   const gridRef = useRef<HTMLDivElement>(null);
   useScrollCue(gridRef, `${gameMode}:${collapsed}`, 'x');
@@ -57,7 +58,7 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
           type="button"
           onClick={() => setCollapsed((c) => !c)}
           aria-expanded={!collapsed}
-          title={collapsed ? 'Show build tools' : 'Hide build tools'}
+          title={`${collapsed ? 'Show' : 'Hide'} ${heading.toLowerCase()}`}
           className="pc-hud-header"
           style={{
             fontSize: 11,
@@ -73,7 +74,7 @@ export function BuildToolsPanel(props: BuildToolsPanelProps): JSX.Element {
             color: 'inherit',
           }}
         >
-          <span>Build Tools</span>
+          <span>{heading}</span>
           <span
             aria-hidden
             className="pc-tile"

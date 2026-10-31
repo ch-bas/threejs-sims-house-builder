@@ -476,6 +476,21 @@ export function snapshotsShareHouse(a: HouseFields, b: HouseFields): boolean {
 }
 
 /**
+ * Whether the restore point holds exactly `layout`, so restoring it would
+ * change nothing (#647). The same comparison `recordSnapshot` skips a
+ * repeat with: the stored JSON, which never has the floor-plan image.
+ */
+export function snapshotIsLayout(id: string, layout: RoomLayout, opts: VersionHistoryOptions = {}): boolean {
+  const storage = opts.storage ?? defaultStorage();
+  if (!storage) return false;
+  const stored = readSlots(storage).find((slot) => slot.entry.id === id);
+  if (!stored) return false;
+  const shown: RoomLayout = { ...layout };
+  delete shown.floorPlanImage;
+  return JSON.stringify(stored.entry.layout) === JSON.stringify(shown);
+}
+
+/**
  * Whether a restore point was taken from `layout`'s house (#296, #342): the
  * same id, or — when either side predates ids — the same name.
  */

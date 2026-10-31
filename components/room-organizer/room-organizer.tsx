@@ -36,12 +36,15 @@ import { furnitureSpend, purchasePrice, purchaseRefusal } from './lib/budget';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
+import { collisionMessage } from './lib/collision-reason';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
-import { notify, notifyRefused, notifyWithUndo, removedMessage } from './lib/editor-notices';
+import { lockedMessage, notify, notifyRefused, notifyRefusedOnce, notifyWithUndo, removedMessage } from './lib/editor-notices';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
+import { describeLayoutChange } from './lib/history-label';
+import { COARSE_POINTER_QUERY } from './lib/hud-layout';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { snapshotBeforeReplace } from './lib/restore-point';
@@ -486,6 +489,15 @@ export function RoomOrganizer(): JSX.Element {
     [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
   );
 
+  // A key or plan drag that met a lock (#635): says why, the way a budget
+  // refusal does, since the cue alone is off by default.
+  const refuseLocked = useCallback(
+    (subject: string | number) => {
+      notifyRefusedOnce(lockedMessage(subject, window.matchMedia(COARSE_POINTER_QUERY).matches), playCue);
+    },
+    [playCue]
+  );
+
   // Locked items are immune to rotation — group rotates orbit items around
   // the centroid, so rotating a set containing a locked item would move it
   // (#115). The unlocked subset still rotates about its own centroid.
@@ -503,6 +515,10 @@ export function RoomOrganizer(): JSX.Element {
         const unlocked = unlockedSelectedIds();
         // Doors and windows stay on their walls (#583): a selection of only
         // those turns nothing, so the cue must not say it did.
+        if (unlocked.size === 0) {
+          refuseLocked(allSelectedIds.size);
+          return false;
+        }
         if (!selectionTurns(activeFloor.items, unlocked)) {
           playCue('refused');
           return false;
@@ -514,7 +530,7 @@ export function RoomOrganizer(): JSX.Element {
       const item = activeFloor.items.find((entry) => entry.id === id);
       if (!item) return false;
       if (item.locked) {
-        playCue('refused');
+        refuseLocked(item.name);
         return false;
       }
       if (item.type === 'security-camera') {
@@ -532,7 +548,7 @@ export function RoomOrganizer(): JSX.Element {
       playCue('rotate');
       return true;
     },
-    [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera, playCue]
+    [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera, playCue, refuseLocked]
   );
 
   // Toggle a camera's stand-off bracket. Enabling it keeps the current facing
@@ -563,7 +579,7 @@ export function RoomOrganizer(): JSX.Element {
       markLayoutLoaded();
     },
     [actions]
-  ));
+  ), { describe: describeLayoutChange });
   // The stable callbacks, so the wrappers below don't change identity every
   // time canUndo/canRedo flips.
   const { commitNow: commitHistoryNow, clear: clearHistory } = history;
@@ -801,6 +817,13 @@ export function RoomOrganizer(): JSX.Element {
     adoptDeferredPlacement(placed, catalogItem);
   };
 
+  // A plan drag doesn't reach use-item-drag on a locked item, so the refusal
+  // is here. In 3D the same press orbits the camera, which is no refusal.
+  const handleLockedDrag = useEvent((id: string) => {
+    const item = activeFloor.items.find((entry) => entry.id === id);
+    if (item?.locked && !exploring) refuseLocked(item.name);
+  });
+
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
   // keyboard gate) are identical to a 3D drag.
@@ -821,6 +844,7 @@ export function RoomOrganizer(): JSX.Element {
     onItemDrag: handleDrag,
     onItemDragEnd: handleDragEnd,
     onItemDragCancel: handleDragCancel,
+    onLockedDrag: handleLockedDrag,
   });
 
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
@@ -1112,6 +1136,10 @@ export function RoomOrganizer(): JSX.Element {
       rotateItemBy: (id: string, radians: number) => {
         if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
           const unlocked = unlockedSelectedIds();
+          if (unlocked.size === 0) {
+            refuseLocked(allSelectedIds.size);
+            return;
+          }
           if (!selectionTurns(activeFloor.items, unlocked)) {
             playCue('refused');
             return;
@@ -1123,7 +1151,7 @@ export function RoomOrganizer(): JSX.Element {
         const item = activeFloor.items.find((entry) => entry.id === id);
         if (!item) return;
         if (item.locked) {
-          playCue('refused');
+          refuseLocked(item.name);
           return;
         }
         const next = ((item.rotation ?? 0) + radians) % (Math.PI * 2);
@@ -1148,6 +1176,17 @@ export function RoomOrganizer(): JSX.Element {
           : null;
         if (settled) actions.updateItem(id, settled);
         else actions.moveItem(id, x, z);
+      },
+      toggleLock: (id: string) => {
+        const item = activeFloor.items.find((entry) => entry.id === id);
+        if (!item) return;
+        // The selection follows the primary item, as the Lock tile reads.
+        const ids = allSelectedIds.size > 1 && allSelectedIds.has(id) ? allSelectedIds : [id];
+        for (const member of ids) actions.setLocked(member, !item.locked);
+      },
+      refuseLocked: (id: string) => {
+        const item = activeFloor.items.find((entry) => entry.id === id);
+        if (item) refuseLocked(item.name);
       },
       toggle2D: () => toggle('view2D'),
       toggleMeasurements: () => toggle('showMeasurements'),
@@ -1236,6 +1275,7 @@ export function RoomOrganizer(): JSX.Element {
       rotateItemHandler,
       reseatCamera,
       playCue,
+      refuseLocked,
       wallDraft,
       view.drawWallMode,
       view.measurementMode,
@@ -1467,7 +1507,7 @@ export function RoomOrganizer(): JSX.Element {
       {/* Selection popover lives on the right edge */}
       {selectedItem && (
         <ItemContextPopover
-          hasCollision={hasCollisions(
+          collision={collisionMessage(
             selectedItem,
             activeFloor.items,
             layout.width,

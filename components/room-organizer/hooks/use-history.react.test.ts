@@ -370,3 +370,47 @@ describe('useHistory — undo lands on the right floor', () => {
     expect(activeId()).toBe('fc');
   });
 });
+
+describe('useHistory — labels (#625)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const describeStep = (before: Doc, after: Doc): string => `${before.name} to ${after.name}`;
+  const setup = () =>
+    renderHook(({ value }) => useHistory<Doc>(value, vi.fn(), { debounceMs: 10, describe: describeStep }), {
+      initialProps: { value: { name: 'a' } as Doc },
+    });
+  const settle = () => act(() => void vi.advanceTimersByTime(20));
+
+  it('has none with nothing to undo', () => {
+    const { result } = setup();
+    expect(result.current.undoLabel).toBeNull();
+    expect(result.current.redoLabel).toBeNull();
+  });
+
+  it('names a pending edit, then the same edit once committed', () => {
+    const { result, rerender } = setup();
+    rerender({ value: { name: 'b' } });
+    expect(result.current.undoLabel).toBe('a to b');
+    settle();
+    expect(result.current.undoLabel).toBe('a to b');
+  });
+
+  it('names the step redo brings back, and the one undo now takes', () => {
+    const { result, rerender } = setup();
+    rerender({ value: { name: 'b' } });
+    settle();
+    rerender({ value: { name: 'c' } });
+    settle();
+    expect(result.current.undoLabel).toBe('b to c');
+    act(() => result.current.undo());
+    rerender({ value: { name: 'b' } });
+    expect(result.current.redoLabel).toBe('b to c');
+    expect(result.current.undoLabel).toBe('a to b');
+  });
+});

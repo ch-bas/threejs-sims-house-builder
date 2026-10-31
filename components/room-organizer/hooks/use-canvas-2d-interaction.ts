@@ -97,6 +97,8 @@ export interface UseCanvas2DInteractionParams {
   onItemDrag(id: string, x: number, z: number): void;
   onItemDragEnd(id: string): void;
   onItemDragCancel(id: string, options?: DragCancelOptions): void;
+  /** A drag began on a locked item: say why it stays put (#635). */
+  onLockedDrag?(id: string): void;
 }
 
 export interface UseCanvas2DInteractionResult {
@@ -195,6 +197,8 @@ export function useCanvas2DInteraction(
       latest: Map<string, { x: number; z: number }>;
     }
     let gesture: Gesture | null = null;
+    /** A press on a locked item, watched only to explain the drag it can't start (#635). */
+    let lockedPress: { id: string; pointerId: number; x: number; y: number; threshold: number } | null = null;
     let rafId: number | null = null;
 
     /** A zone rectangle being dragged out (#155); world corners, room-centred. */
@@ -390,6 +394,9 @@ export function useCanvas2DInteraction(
       // Locked items select but never drag; a toggle click is selection
       // surgery, not a move — both mirror the 3D canvas (drag-handlers).
       // EXPLORE selects only (#699).
+      if (locked && mode === 'replace' && !p.exploring) {
+        lockedPress = { id: hit.id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, threshold: dragThresholdPx(event.pointerType) };
+      }
       if (locked || mode === 'toggle' || p.exploring) return;
       const position = hit.position ?? world;
       gesture = {
@@ -424,6 +431,16 @@ export function useCanvas2DInteraction(
         if (!world) return;
         zone.latest = world;
         schedulePaint();
+        return;
+      }
+      if (lockedPress?.pointerId === event.pointerId) {
+        const { id, x, y, threshold } = lockedPress;
+        const dx = event.clientX - x;
+        const dy = event.clientY - y;
+        if (dx * dx + dy * dy >= threshold * threshold) {
+          lockedPress = null;
+          paramsRef.current.onLockedDrag?.(id);
+        }
         return;
       }
       const session = gesture;
@@ -468,6 +485,7 @@ export function useCanvas2DInteraction(
     };
 
     const endGesture = (event: PointerEvent): void => {
+      lockedPress = null;
       const zone = zoneGesture;
       if (zone && event.pointerId === zone.pointerId) {
         if (rafId !== null) {
@@ -505,6 +523,7 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerCancel = (event: PointerEvent): void => {
+      lockedPress = null;
       // A zone draft is discarded by endGesture (it checks the event type).
       if (zoneGesture && event.pointerId === zoneGesture.pointerId) {
         endGesture(event);
@@ -516,6 +535,7 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerLeave = (): void => {
+      lockedPress = null;
       // A started drag holds pointer capture and stays alive off-canvas;
       // only an armed-but-unstarted gesture is abandoned here.
       if (gesture && !gesture.started) gesture = null;

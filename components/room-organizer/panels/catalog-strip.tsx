@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useEditorView } from '../contexts';
 import { armGhostPlacement, useRovingTiles, type RovingTileProps } from '../hooks/use-keyboard-placement';
 import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
@@ -10,7 +11,7 @@ import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { catalogFitsItsTiles, catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
-import { buildToolLabel } from '../lib/modes';
+import { buildToolLabel, buildToolsTitle } from '../lib/modes';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { CctvMenu } from './cctv-menu';
 import type { CatalogItem, FurnitureCategory } from '../lib/types';
@@ -25,6 +26,7 @@ export interface CatalogStripProps {
 
 export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Element {
   const activeFloorIndex = useActiveFloorIndex();
+  const gameMode = useEditorView((state) => state.gameMode);
   // Hard budget (#463e): tiles over what's left grey out; null when off.
   const remaining = useBudgetRemaining();
   const refuse = useRefusal();
@@ -142,7 +144,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         }}
       >
         <StripToggle
-          label={`Build Tools: ${categoryLabel}`}
+          label={`${buildToolsTitle(gameMode)}: ${categoryLabel}`}
           collapsed={collapsed}
           onToggle={() => setCollapsed((c) => !c)}
         />

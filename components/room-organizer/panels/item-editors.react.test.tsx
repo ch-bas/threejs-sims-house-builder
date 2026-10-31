@@ -42,9 +42,9 @@ function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: Ga
     <RoomEditorProvider value={editorValue}>
       <SelectionProvider value={selection}>
         {editor === 'popover' ? (
-          <ItemContextPopover hasCollision={false} {...callbacks} />
+          <ItemContextPopover collision={null} {...callbacks} />
         ) : (
-          <ItemResizePanel hasCollision={false} onDuplicate={() => {}} />
+          <ItemResizePanel collision={null} onDuplicate={() => {}} />
         )}
       </SelectionProvider>
     </RoomEditorProvider>
@@ -165,5 +165,20 @@ describe('item popover in EXPLORE (#699)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(calls.onRemove).toHaveBeenCalledWith('s');
     expect(calls.onDuplicate).toHaveBeenCalledWith('s');
+  });
+});
+
+describe('the locked note in the popover (#635)', () => {
+  it('says why the actions are off, for a locked item only', () => {
+    renderEditor('popover', makeItem({ id: 'a', locked: true }));
+    expect(screen.getByRole('note').textContent).toContain('Press U or Unlock');
+    cleanup();
+    renderEditor('popover', makeItem({ id: 'b' }));
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('gives way to the EXPLORE note', () => {
+    renderEditor('popover', makeItem({ id: 'a', locked: true }), 'live');
+    expect(screen.getByRole('note').textContent).toContain(NOT_WHILE_EXPLORING);
   });
 });

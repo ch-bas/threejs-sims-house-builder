@@ -16,6 +16,8 @@ function makeHandlers(): { [K in keyof KeyboardShortcutHandlers]: ReturnType<typ
     rotateItem: vi.fn(),
     rotateItemBy: vi.fn(),
     moveItem: vi.fn(),
+    toggleLock: vi.fn(),
+    refuseLocked: vi.fn(),
     toggle2D: vi.fn(),
     toggleMeasurements: vi.fn(),
     toggleSnap: vi.fn(),
@@ -410,5 +412,69 @@ describe('useKeyboardShortcuts — Delete on a Placed Items row (#634)', () => {
     press(rowButton('sofa'), 'Delete');
     expect(handlers.removeRow).not.toHaveBeenCalled();
     expect(handlers.removeItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('useKeyboardShortcuts — locked items (#635)', () => {
+  afterEach(cleanup);
+
+  const renderWith = (locked: boolean, options: { exploring?: boolean; dragging?: boolean } = {}) => {
+    const handlers = makeHandlers();
+    const selectedItem = makeItem({ id: 'a', locked, position: { x: 1, z: 1 } });
+    renderHook(() =>
+      useKeyboardShortcuts({
+        selectedItem,
+        selectedWall: null,
+        hasSignalItems: false,
+        exploring: options.exploring ?? false,
+        isDragActive: () => options.dragging ?? false,
+        handlers: handlers as unknown as KeyboardShortcutHandlers,
+      })
+    );
+    return handlers;
+  };
+
+  it('says why an arrow nudge did nothing, once per press', () => {
+    const handlers = renderWith(true);
+    const first = press('ArrowLeft');
+    press('ArrowLeft', { repeat: true });
+    expect(first.defaultPrevented).toBe(true);
+    expect(handlers.refuseLocked).toHaveBeenCalledTimes(1);
+    expect(handlers.refuseLocked).toHaveBeenCalledWith('a');
+    expect(handlers.moveItem).not.toHaveBeenCalled();
+  });
+
+  it('nudges an unlocked item with no refusal', () => {
+    const handlers = renderWith(false);
+    press('ArrowLeft');
+    expect(handlers.moveItem).toHaveBeenCalledTimes(1);
+    expect(handlers.refuseLocked).not.toHaveBeenCalled();
+  });
+
+  it('U toggles the lock, in either case', () => {
+    const handlers = renderWith(true);
+    press('u');
+    press('U');
+    expect(handlers.toggleLock).toHaveBeenCalledTimes(2);
+  });
+
+  it('holding U toggles once', () => {
+    const handlers = renderWith(true);
+    press('u');
+    press('u', { repeat: true });
+    press('u', { repeat: true });
+    expect(handlers.toggleLock).toHaveBeenCalledTimes(1);
+  });
+
+  it('U does nothing in EXPLORE or mid-drag', () => {
+    const exploring = renderWith(true, { exploring: true });
+    press('u');
+    press('ArrowLeft');
+    expect(exploring.toggleLock).not.toHaveBeenCalled();
+    expect(exploring.refuseLocked).not.toHaveBeenCalled();
+    cleanup();
+    const dragging = renderWith(false, { dragging: true });
+    press('u');
+    expect(dragging.toggleLock).not.toHaveBeenCalled();
   });
 });

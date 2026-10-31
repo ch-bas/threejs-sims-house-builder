@@ -192,13 +192,13 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
             except in the phone dock, which lays them out apart. */}
         <div className="pc-mode-actions-primary" style={{ display: 'contents' }}>
         <ActionButton
-          label="Undo"
+          label={history.undoLabel ? `Undo: ${history.undoLabel}` : 'Undo'}
           icon="undo"
           disabled={!history.canUndo}
           onClick={history.undo}
         />
         <ActionButton
-          label="Redo"
+          label={history.redoLabel ? `Redo: ${history.redoLabel}` : 'Redo'}
           icon="undo"
           mirrorIcon
           disabled={!history.canRedo}

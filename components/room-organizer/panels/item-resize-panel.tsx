@@ -59,7 +59,8 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 export interface ItemResizePanelProps {
-  hasCollision: boolean;
+  /** Why the item shows red, as a sentence; null when it stands clear (#627). */
+  collision: string | null;
   onDuplicate(id: string): void;
 }
 
@@ -241,8 +242,8 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
           />
         )}
 
-        {props.hasCollision && (
-          <div className="text-xs text-red-600 bg-red-50 p-2 rounded">⚠️ Item overlaps or is out of bounds!</div>
+        {props.collision !== null && (
+          <div className="text-xs text-red-600 bg-red-50 p-2 rounded">⚠️ {props.collision}</div>
         )}
 
         <div className="pt-2 border-t">
@@ -326,8 +327,21 @@ interface RotationInputProps {
   onChange(value: number): void;
 }
 
+/**
+ * Whether the field's whole degrees can be `sent` as the store rounded it:
+ * 5.5° comes back as 5 or 6 through radians, and 359.6° as 0.
+ */
+function showsSent(value: number, sent: number): boolean {
+  return Math.abs(((sent - value + 540) % 360) - 180) <= 0.51;
+}
+
 function RotationInput({ value, disabled, title, onChange }: RotationInputProps): JSX.Element {
   const id = useId();
+  // The raw text while typing, as in PositionInputs (#122): writing the
+  // normalised value back on each keystroke turned "-90" into 270 by way of
+  // 351 (#548). `sent` is the value this text gave the store, so a rotation
+  // that comes from elsewhere replaces the draft instead of hiding behind it.
+  const [draft, setDraft] = useState<{ text: string; sent: number } | null>(null);
   return (
     <div title={title} className={disabled ? 'opacity-50' : undefined}>
       <Label htmlFor={id} className="text-xs">
@@ -340,10 +354,17 @@ function RotationInput({ value, disabled, title, onChange }: RotationInputProps)
         max={359}
         step={5}
         disabled={disabled}
-        value={value}
+        value={draft && showsSent(value, draft.sent) ? draft.text : value}
         onChange={(event) => {
           const parsed = parseFloat(event.target.value);
-          if (Number.isFinite(parsed)) onChange(((parsed % 360) + 360) % 360);
+          const finite = Number.isFinite(parsed);
+          const degrees = ((parsed % 360) + 360) % 360;
+          setDraft({ text: event.target.value, sent: finite ? degrees : value });
+          if (finite) onChange(degrees);
+        }}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') setDraft(null);
         }}
       />
     </div>
