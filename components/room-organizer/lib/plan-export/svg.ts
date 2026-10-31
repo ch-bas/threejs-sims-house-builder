@@ -30,6 +30,7 @@ import {
   planFrameBounds,
   polarPoint,
   roomDimensions,
+  scheduleSizeText,
   splitPlanItems,
   stairArrow,
   stairTreadSegments,
@@ -920,7 +921,7 @@ function renderSchedule(rows: readonly ScheduleRow[], margin: number, planHeight
     parts.push(
       `<g class="schedule-row">`,
       cell(left, y, name, 'start'),
-      cell(sizeX, y, `${fmt(row.width)} × ${fmt(row.depth)} × ${fmt(row.height)}`, 'start'),
+      cell(sizeX, y, scheduleSizeText(row), 'start'),
       cell(qtyX, y, String(row.count), 'end'),
       cell(right, y, row.totalPrice > 0 ? price(row.totalPrice) : '—', 'end'),
       `</g>`

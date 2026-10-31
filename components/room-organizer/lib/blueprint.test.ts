@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { blueprintCanvasSize, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
+import { CURRENCY_SYMBOL } from './constants';
 import { subscribeNotices, type Notice } from './editor-notices';
 import { ENTRANCE_DOOR_ID } from './street';
 
@@ -25,9 +26,13 @@ vi.mock('../canvas-2d/render', async (importOriginal) => {
 
 describe('openBlueprintPrintWindow (#288)', () => {
   const events: string[] = [];
+  let written = '';
   const fakeWindow = {
     document: {
-      write: (html: string) => events.push(`write:${html.includes('data:image/png;base64,STUB') ? 'plan' : 'other'}`),
+      write: (html: string) => {
+        written = html;
+        events.push(`write:${html.includes('data:image/png;base64,STUB') ? 'plan' : 'other'}`);
+      },
       close: () => events.push('close'),
       readyState: 'loading',
     },
@@ -79,6 +84,15 @@ describe('openBlueprintPrintWindow (#288)', () => {
     await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
     expect(decodeCalls).toEqual([]);
     expect(events).toEqual(['open', 'write:plan', 'close', 'listen:load']);
+  });
+
+  it('prints the cost with its currency, under the name the rest of the app uses (#596)', async () => {
+    const floor = makeFloor({ items: [makeItem({ price: 1899 })] });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
+    expect(written).toContain(`<li>Cost: ${CURRENCY_SYMBOL}1,899</li>`);
+    expect(written).toContain(`· ${CURRENCY_SYMBOL}1,899</p>`);
+    expect(written).not.toContain('Total cost');
+    expect(written).not.toContain(`${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}`);
   });
 
   it('says so in an in-app notice, not an alert, when pop-ups are blocked (#649)', async () => {
@@ -229,7 +243,7 @@ describe('openBlueprintPrintWindow cost (#693)', () => {
       items: [makeItem({ id: 'sofa', price: 650 }), makeItem({ id: ENTRANCE_DOOR_ID, type: 'door', name: 'Front door', price: 300, position: { x: 0, z: 4 } })],
     });
     await openBlueprintPrintWindow(makeLayout({ floors: [floor] }), floor);
-    expect(html).toContain('Total cost: 650');
+    expect(html).toContain('Cost: $650');
     expect(html).not.toContain('950');
   });
 });

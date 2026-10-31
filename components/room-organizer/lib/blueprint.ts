@@ -151,7 +151,7 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     area: floorArea(layout, floorIndex).toFixed(1),
     footprint: footprintArea(floor.items).toFixed(1),
     // The porch door is structure, as in the header (#693).
-    cost: furnitureSpend({ floors: [floor] }).toLocaleString(),
+    cost: `${CURRENCY_SYMBOL}${furnitureSpend({ floors: [floor] }).toLocaleString()}`,
   };
   const counts = itemCountByCategory(floor.items);
   const legend = CATEGORIES.filter((category) => counts.has(category.key))
@@ -174,7 +174,7 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
 
   const html = renderBlueprintHtml({
     title: `${layout.name} — ${floor.name}`,
-    subtitle: `${layout.width} m × ${layout.height} m · ${stats.items} items · ${CURRENCY_SYMBOL}${stats.cost}`,
+    subtitle: `${layout.width} m × ${layout.height} m · ${stats.items} items · ${stats.cost}`,
     imageUrl: dataUrl,
     legendHtml: legend,
     zonesHtml,
@@ -234,7 +234,7 @@ function renderBlueprintHtml({ title, subtitle, imageUrl, legendHtml, zonesHtml,
           <li>Items: ${stats.items}</li>
           <li>Floor area: ${stats.area} m²</li>
           <li>Furniture footprint: ${stats.footprint} m²</li>
-          <li>Total cost: ${escapeHtml(stats.cost)}</li>
+          <li>Cost: ${escapeHtml(stats.cost)}</li>
         </ul>
       </section>
       <section>
