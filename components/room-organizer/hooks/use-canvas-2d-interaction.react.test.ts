@@ -3,6 +3,7 @@ import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get2DViewTransform } from '../canvas-2d/render';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
+import { doorSwing, type PlacedItem } from '../lib/plan-export/plan-geometry';
 import { PLAN_GESTURE_ATTR } from './scene-occluders';
 import { useCanvas2DInteraction, type UseCanvas2DInteractionParams } from './use-canvas-2d-interaction';
 
@@ -418,5 +419,121 @@ describe('useCanvas2DInteraction off-plan markers and lost pointers (#381 review
     window.dispatchEvent(new Event('blur'));
     expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
     expect(params.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+  });
+});
+
+describe('useCanvas2DInteraction wall tool (#564)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const walls = { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, showFloorBelow: false, drawZoneMode: false, drawWallMode: true };
+
+  it('a release on the plan places a wall point, even over an item, and selects nothing', () => {
+    const onWallPoint = vi.fn();
+    const { params, fire } = setup([], { view: walls, onWallPoint });
+    fire('pointerdown', 0, 0);
+    fire('pointerup', 0, 0);
+    expect(onWallPoint).toHaveBeenCalledTimes(1);
+    expect(onWallPoint.mock.lastCall![0]).toBeCloseTo(0, 5);
+    expect(params.onItemSelect).not.toHaveBeenCalled();
+    expect(params.onDeselect).not.toHaveBeenCalled();
+    expect(params.onItemDragStart).not.toHaveBeenCalled();
+  });
+
+  it('reports hover between presses and the finger during one, and places where it lifts', () => {
+    const onWallPoint = vi.fn();
+    const onWallPointerMove = vi.fn();
+    const { fire } = setup([], { view: walls, onWallPoint, onWallPointerMove });
+    fire('pointermove', 1, 1);
+    expect(onWallPointerMove).toHaveBeenCalledTimes(1);
+    fire('pointerdown', 1, 1, 'touch');
+    fire('pointermove', 2, 1, 'touch');
+    fire('pointerup', 2, 1, 'touch');
+    expect(onWallPointerMove).toHaveBeenCalledTimes(3);
+    expect(onWallPoint.mock.lastCall![0]).toBeCloseTo(2, 5);
+  });
+
+  it('places no point when the pointer is cancelled', () => {
+    const onWallPoint = vi.fn();
+    const { fire } = setup([], { view: walls, onWallPoint });
+    fire('pointerdown', 1, 1);
+    fire('pointercancel', 1, 1);
+    fire('pointerup', 1, 1);
+    expect(onWallPoint).not.toHaveBeenCalled();
+  });
+
+  it('places nothing in EXPLORE, where the press selects', () => {
+    const onWallPoint = vi.fn();
+    const { params, fire } = setup([], { view: walls, onWallPoint, exploring: true });
+    fire('pointerdown', 0, 0);
+    fire('pointerup', 0, 0);
+    expect(onWallPoint).not.toHaveBeenCalled();
+    expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+  });
+
+  describe('selecting a wall', () => {
+    const select = (overrides: Partial<UseCanvas2DInteractionParams> = {}) => {
+      const onInteriorWallSelect = vi.fn();
+      const floor = makeFloor({
+        items: [makeItem({ id: 'a', position: { x: 2, z: 2 } })],
+        interiorWalls: [{ id: 'w1', x1: -3, z1: 0, x2: 3, z2: 0 }],
+      });
+      return { onInteriorWallSelect, ...setup([], { activeFloor: floor, onInteriorWallSelect, ...overrides }) };
+    };
+
+    it('a press on an interior wall selects it, and one on empty floor clears it', () => {
+      const { onInteriorWallSelect, fire, params } = select();
+      fire('pointerdown', 1, 0.05);
+      fire('pointerup', 1, 0.05);
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1');
+      fire('pointerdown', 1, 1.5);
+      fire('pointerup', 1, 1.5);
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
+      expect(params.onDeselect).toHaveBeenCalledTimes(2);
+    });
+
+    it('a finger gets a wider target than a mouse', () => {
+      const { onInteriorWallSelect, fire, scale } = select();
+      const off = 0.08 + 10 / scale;
+      fire('pointerdown', 1, off);
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
+      fire('pointerup', 1, off);
+      fire('pointerdown', 1, off, 'touch');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1');
+    });
+
+    it('an item over the wall wins, and picking it clears the wall', () => {
+      const { onInteriorWallSelect, fire, params } = select();
+      fire('pointerdown', 2, 2);
+      expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
+    });
+
+    it('a door leaf drawn over the wall takes the press, not the wall (#576)', () => {
+      const onInteriorWallSelect = vi.fn();
+      const door = makeItem({ id: 'd', type: 'door', width: 1, depth: 0.12, position: { x: 1, z: -1 }, rotation: 0 });
+      const { leafTip } = doorSwing(door as PlacedItem);
+      const floor = makeFloor({
+        items: [door],
+        interiorWalls: [{ id: 'w1', x1: leafTip.x, z1: -3, x2: leafTip.x, z2: 3 }],
+      });
+      const { params, fire } = setup([], { activeFloor: floor, onInteriorWallSelect });
+      fire('pointerdown', leafTip.x, leafTip.z);
+      expect(params.onItemSelect).toHaveBeenCalledWith('d', 'replace');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
+      expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1');
+    });
+
+    it('EXPLORE selects no wall', () => {
+      const { onInteriorWallSelect, fire } = select({ exploring: true });
+      fire('pointerdown', 1, 0.05);
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
+    });
   });
 });

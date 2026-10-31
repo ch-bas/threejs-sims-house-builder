@@ -50,7 +50,7 @@ import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap
 import { snapshotBeforeReplace } from './lib/restore-point';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
-import { entrancePlanOutline } from './lib/street';
+import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
 import { snapWallEndpoint } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
@@ -213,6 +213,8 @@ export function RoomOrganizer(): JSX.Element {
     return matches;
   }, [activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, layout.width, layout.height, keepOut]);
 
+  // Set once the history exists, below.
+  const commitWallStepRef = useRef<() => void>(() => {});
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
       if (view.drawWallMode) {
@@ -234,6 +236,8 @@ export function RoomOrganizer(): JSX.Element {
           return;
         }
         const id = `wall-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        // A segment is one undo step, however quickly the next follows.
+        commitWallStepRef.current();
         actions.addInteriorWall({
           id,
           x1: wallDraft.x,
@@ -269,6 +273,10 @@ export function RoomOrganizer(): JSX.Element {
 
   const handleFloorPointerLeave = useCallback(() => {
     setPointerWorld(null);
+  }, []);
+
+  const handleInteriorWallSelect = useCallback((id: string | null) => {
+    setSelectedWall(id === null ? null : { id, kind: 'interior' });
   }, []);
 
   // Reset wall draft + wall selection whenever draw mode flips off.
@@ -590,6 +598,8 @@ export function RoomOrganizer(): JSX.Element {
    * `price` is over what's left. The selection is left alone and the
    * refused cue plays instead of the place one: nothing was bought.
    */
+  commitWallStepRef.current = commitHistoryNow;
+
   const refuseOverBudget = useCallback((price: number): boolean => {
     const refusal = purchaseRefusal(layoutStore.getState().layout, price);
     if (refusal === null) return false;
@@ -849,6 +859,10 @@ export function RoomOrganizer(): JSX.Element {
     onItemDragCancel: handleDragCancel,
     onLockedDrag: handleLockedDrag,
     onZoneRefused: refuseZone,
+    onWallPoint: handleEmptyClick,
+    onWallPointerMove: handleFloorPointerMove,
+    onWallPointerLeave: handleFloorPointerLeave,
+    onInteriorWallSelect: handleInteriorWallSelect,
   });
 
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
@@ -866,6 +880,8 @@ export function RoomOrganizer(): JSX.Element {
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
       onWallSelect: ({ wallId, kind }) => {
+        // EXPLORE edits nothing, and this opens the paint target.
+        if (exploring) return;
         setSelectedWall({ id: wallId, kind });
       },
       // Only track the floor pointer while wall-draw mode consumes it — the
@@ -1220,6 +1236,7 @@ export function RoomOrganizer(): JSX.Element {
         }
         setSelectedItemId(null);
         setExtraSelectedIds(new Set());
+        setSelectedWall(null);
       },
       focusOnSelection: () => {
         if (selectedItem?.position) focusOn(selectedItem.position, undefined, activeFloorY);
@@ -1234,6 +1251,10 @@ export function RoomOrganizer(): JSX.Element {
       },
       toggleSidebar: () => setSidebarCollapsed((c) => !c),
       removeInteriorWall: (id: string) => {
+        if (id === ENTRANCE_WALL_ID) {
+          notifyRefusedOnce("The porch's back wall goes with the entrance: remove the entrance instead.", playCue);
+          return;
+        }
         actions.removeInteriorWall(id);
         setSelectedWall(null);
       },
