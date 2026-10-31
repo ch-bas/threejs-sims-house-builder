@@ -347,3 +347,42 @@ describe('useKeyboardShortcuts — focused form controls (#415)', () => {
     expect(calls()).toEqual([]);
   });
 });
+
+describe('useKeyboardShortcuts — Delete on a Placed Items row (#634)', () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  const rowButton = (id: string): HTMLElement => {
+    const row = document.createElement('div');
+    row.dataset.placedItemId = id;
+    const button = document.createElement('button');
+    row.appendChild(button);
+    document.body.appendChild(row);
+    button.focus();
+    return button;
+  };
+  const press = (el: HTMLElement, key: string) => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, bubbles: true }));
+  };
+
+  it.each(['Delete', 'Backspace'])('%s removes the focused row, not the selection', (key) => {
+    const { handlers } = setup();
+    press(rowButton('sofa'), key);
+    expect(handlers.removeItem).toHaveBeenCalledTimes(1);
+    expect(handlers.removeItem).toHaveBeenCalledWith('sofa');
+  });
+
+  it('another key on a row still acts on the selection', () => {
+    const { handlers } = setup();
+    press(rowButton('sofa'), 'r');
+    expect(handlers.rotateItem).toHaveBeenCalledWith('chair');
+  });
+
+  it('is off in EXPLORE, like any other removal', () => {
+    const { handlers } = setup(false, false, { exploring: true });
+    press(rowButton('sofa'), 'Delete');
+    expect(handlers.removeItem).not.toHaveBeenCalled();
+  });
+});

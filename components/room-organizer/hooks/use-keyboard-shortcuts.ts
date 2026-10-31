@@ -198,6 +198,15 @@ export function useKeyboardShortcuts({
       const deleteKey = event.key === 'Delete' || event.key === 'Backspace';
       if (exploring && (deleteKey || key === 'r' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
 
+      // A focused Placed Items row means that row, whatever is selected: the
+      // drawer covers the scene, so nothing else shows what went (#634).
+      const rowItemId = deleteKey ? focusedRowItemId(event.target) : null;
+      if (rowItemId !== null) {
+        event.preventDefault();
+        handlers.removeItem(rowItemId);
+        return;
+      }
+
       if (deleteKey && selectedItem) {
         event.preventDefault();
         // Lock enforcement lives in the handler: it must see the whole
@@ -274,6 +283,11 @@ export function useKeyboardShortcuts({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, exploring, isDragActive, handlers]);
+}
+
+function focusedRowItemId(target: EventTarget | null): string | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLElement>('[data-placed-item-id]')?.dataset.placedItemId ?? null;
 }
 
 /**
