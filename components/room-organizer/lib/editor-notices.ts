@@ -28,11 +28,18 @@ export interface Notice {
 /**
  * The one button a notice may carry. `run` is called once, on the click,
  * and the notice then closes. It must check that it still applies: the
- * notice can outlive the state it was raised for.
+ * notice can outlive the state it was raised for. With `keepOpen`, `run`
+ * resolves true when the notice has done its job; otherwise it stays, and
+ * the button can be pressed again.
  */
-export interface NoticeAction {
-  label: string;
-  run(): void;
+export type NoticeAction =
+  | { label: string; name?: string; keepOpen?: false; run(): void }
+  | { label: string; name?: string; keepOpen: true; run(): Promise<boolean> };
+
+/** The button's accessible name, for `NoticeAction.name` to override. */
+export function noticeActionName(notice: Notice): string | undefined {
+  const { action } = notice;
+  return action && (action.name ?? `${action.label}: ${notice.message}`);
 }
 
 export interface NoticeOptions {

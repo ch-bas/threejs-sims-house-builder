@@ -20,8 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The Restore question in History names the house and the time. History no longer lists a restore point that is the house on screen ([#647](https://github.com/ch-bas/threejs-sims-house-builder/issues/647))
 - The welcome tips say that items lock once placed ([#635](https://github.com/ch-bas/threejs-sims-house-builder/issues/635))
 - On a phone, Demolish is now one of the item sheet's actions, one tap away, instead of at the bottom of the expanded sheet ([#675](https://github.com/ch-bas/threejs-sims-house-builder/issues/675))
-- On a phone, unfolding Paint or Room Stamp in portrait folds the catalogue row away, as landscape already did, so more of the house stays in view ([#674](https://github.com/ch-bas/threejs-sims-house-builder/issues/674))
-- Share link opens the phone's share sheet on touch screens that have one. If the browser refuses it, the copy field offers a Share button ([#685](https://github.com/ch-bas/threejs-sims-house-builder/issues/685))
+- On a phone, unfolding Paint or Room Stamp with the wall tool on folds the catalogue row away in portrait, as landscape already did, so more of the house stays in view ([#674](https://github.com/ch-bas/threejs-sims-house-builder/issues/674))
+- Share link opens the phone's share sheet on touch screens that have one. If the browser refuses it, the copy field offers a Share button and stays until the link has gone ([#685](https://github.com/ch-bas/threejs-sims-house-builder/issues/685))
 
 ### Fixed
 - On touch tablets a catalogue category that fits one page, such as Openings, no longer shows empty slots and Previous and Next buttons that do nothing: the strip stays the same size, so the tools above it never move ([#684](https://github.com/ch-bas/threejs-sims-house-builder/issues/684))

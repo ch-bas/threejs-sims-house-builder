@@ -185,6 +185,20 @@ describe('the locked note in the popover (#635)', () => {
 });
 
 describe('the bottom sheet (#675)', () => {
+  it('turns Demolish off in EXPLORE, with the reason', () => {
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) =>
+        ({ media: query, matches: query === COMPACT_OVERLAY_QUERY, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList
+    );
+    const calls = renderEditor('popover', makeItem({ id: 's', type: 'sofa', name: 'Sofa' }), 'live');
+    const tile = screen.getByRole<HTMLButtonElement>('button', { name: 'Demolish' });
+    expect(tile.disabled).toBe(true);
+    expect(tile.getAttribute('title')).toBe(NOT_WHILE_EXPLORING);
+    fireEvent.click(tile);
+    expect(calls.onRemove).not.toHaveBeenCalled();
+  });
+
   it('offers Demolish among the actions, once', () => {
     vi.stubGlobal(
       'matchMedia',

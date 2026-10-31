@@ -198,6 +198,50 @@ describe('compact removal notices (#704)', () => {
   });
 });
 
+describe('a notice that stays until its action works (#685)', () => {
+  const setup = (run: () => Promise<boolean>) => {
+    render(<StatusToastHost />);
+    act(() => {
+      notify('Copy this share link:', 'info', {
+        copyText: 'https://example.test/#layout=x',
+        action: { label: 'Share', name: 'Share this link', keepOpen: true, run },
+      });
+    });
+    return screen.getByRole('button', { name: 'Share this link' });
+  };
+
+  it('keeps the link when the action fails, and can run again', async () => {
+    const run = vi.fn(() => Promise.resolve(false));
+    const button = setup(run);
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+    expect(shown('Copy this share link')).toBe(true);
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a second tap while running, and closes on success', async () => {
+    let finish!: (done: boolean) => void;
+    const run = vi.fn(() => new Promise<boolean>((done) => (finish = done)));
+    const button = setup(run);
+    act(() => {
+      button.click();
+      button.click();
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish(true);
+      await Promise.resolve();
+    });
+    expect(shown('Copy this share link')).toBe(false);
+  });
+});
+
 describe('notice focus (#704)', () => {
   function Opener() {
     return <button type="button">Opener</button>;

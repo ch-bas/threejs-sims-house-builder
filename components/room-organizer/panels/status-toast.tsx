@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { usePausableTimeout } from '../hooks/use-pausable-timeout';
-import { noticeDuration, subscribeNotices, type Notice, type NoticeTone } from '../lib/editor-notices';
+import { noticeActionName, noticeDuration, subscribeNotices, type Notice, type NoticeAction, type NoticeTone } from '../lib/editor-notices';
 import {
   COMPACT_OVERLAY_QUERY,
   enqueueKeepingHead,
@@ -162,6 +162,23 @@ function StatusToast({
     takeFocus: true,
   });
 
+  const running = useRef(false);
+  const act = (action: NoticeAction): void => {
+    if (!action.keepOpen) {
+      // Close first: the action may raise a notice of its own.
+      onDismiss(notice.id);
+      action.run();
+      return;
+    }
+    // Stays until it worked, so focus stays too: the unmount hands it back.
+    if (running.current) return;
+    running.current = true;
+    void action.run().then((done) => {
+      running.current = false;
+      if (done) onDismiss(notice.id);
+    });
+  };
+
   return (
     <div
       ref={toastRef}
@@ -199,11 +216,9 @@ function StatusToast({
           <button
             type="button"
             // Several notices can each offer "Undo": say which one (#651).
-            aria-label={`${notice.action.label}: ${notice.message}`}
+            aria-label={noticeActionName(notice)}
             onClick={() => {
-              // Close first: the action may raise a notice of its own.
-              onDismiss(notice.id);
-              notice.action?.run();
+              if (notice.action) act(notice.action);
             }}
             style={{
               flexShrink: 0,

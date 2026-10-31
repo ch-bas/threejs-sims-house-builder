@@ -1,5 +1,5 @@
-import { useCallback, type MutableRefObject, type RefObject } from 'react';
-import { notify, type NoticeAction } from '../lib/editor-notices';
+import { useCallback, useRef, type MutableRefObject, type RefObject } from 'react';
+import { notify } from '../lib/editor-notices';
 import {
   downloadCanvasAsPng,
   downloadLayoutAsGlb,
@@ -8,7 +8,7 @@ import {
 import { exportFileName } from '../lib/plan-export/download';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl } from '../lib/share';
-import { browserShareChannels, deliverShareLink, isShareCancelled } from '../lib/share-delivery';
+import { browserShareChannels, deliverShareLink } from '../lib/share-delivery';
 import { markLayoutLoaded } from './use-achievements';
 import { layoutStore } from './use-layout-store';
 import type { LayoutActions } from './use-layout-state';
@@ -83,10 +83,16 @@ export function useImportExport({
     }
   }, [layout]);
 
+  // A second tap while the sheet opens would fail, and read as a refusal.
+  const sharing = useRef(false);
   const handleShareLink = useCallback(async () => {
+    if (sharing.current) return;
+    sharing.current = true;
     const origin = window.location.origin + window.location.pathname;
     // Nothing is awaited before this: the delivery starts inside the tap.
-    const outcome = await deliverShareLink(encodeShareUrl(layout, origin), browserShareChannels());
+    const outcome = await deliverShareLink(encodeShareUrl(layout, origin), browserShareChannels()).finally(() => {
+      sharing.current = false;
+    });
     const leftOut = 'The floor-plan image was left out to keep it short.';
     switch (outcome.kind) {
       case 'cancelled':
@@ -105,19 +111,28 @@ export function useImportExport({
         return;
       case 'manual': {
         // Nothing took it: hand the link over to copy by hand.
+        // The notice and its link stay until the sheet has really taken it.
         const { url, share } = outcome;
-        const handOver = (action?: NoticeAction) =>
-          notify('Copy this share link:', 'info', { copyText: url, ...(action ? { action } : {}) });
-        handOver(
-          share && {
-            label: 'Share',
-            run() {
-              share().catch((error: unknown) => {
-                if (!isShareCancelled(error)) handOver();
-              });
-            },
-          }
-        );
+        notify('Copy this share link:', 'info', {
+          copyText: url,
+          ...(share
+            ? {
+                action: {
+                  label: 'Share',
+                  name: 'Share this link',
+                  keepOpen: true as const,
+                  run: () =>
+                    share().then(
+                      () => {
+                        notify('Share link sent.', 'success');
+                        return true;
+                      },
+                      () => false
+                    ),
+                },
+              }
+            : {}),
+        });
       }
     }
   }, [layout]);

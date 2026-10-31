@@ -1435,10 +1435,18 @@ html[data-plan-gesture] * {
   }
 }
 /* An unfolded wall panel is for painting or stamping: in portrait the catalog
-   row folds away, as it does in landscape, and leaves the room to the scene. */
+   row folds away with the wall tool on, as it does in landscape, and leaves
+   the room to the scene. The stamp panel only shows with the tool; elsewhere,
+   a tapped wall's Paint leaves the catalog and its category chips working.
+   The open header is as tall as a tap (the folded bar has its padding). */
 @media (max-width: 768px) {
-  .pc-bottom-hud:has(> .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) .pc-catalog-strip {
+  .pc-bottom-hud:has(> .pc-hud-left > .pc-room-stamp):has(> .pc-hud-left > .pc-glass:not(.pc-build-tools):not(.pc-dock-folded)) .pc-catalog-strip {
     display: none !important;
+  }
+}
+@media (max-width: 768px), (max-width: 1100px) and (max-height: 500px) {
+  .pc-hud-left > .pc-glass:not(.pc-dock-folded) .pc-dock-fold-toggle {
+    min-height: 44px !important;
   }
 }
 /* The tablet-width dock has room for the room shapes on one row. */
@@ -1531,6 +1539,12 @@ html[data-plan-gesture] * {
   .pc-item-popover {
     padding-right: env(safe-area-inset-right, 0px) !important;
     padding-left: env(safe-area-inset-left, 0px) !important;
+  }
+}
+/* Docked to the right edge there: its left side is nowhere near the notch. */
+@media (max-height: 500px) and (min-width: 560px) {
+  .pc-item-popover {
+    padding-left: 0 !important;
   }
 }
 
@@ -1641,6 +1655,33 @@ html[data-plan-gesture] * {
   }
   .pc-item-popover > header button {
     pointer-events: auto;
+  }
+}
+/* The floating editor on a touch tablet stops above the mode panel and scrolls.
+   The sheet's tall slider rows would push it onto that panel: here each row is
+   32px, with a 44px-wide thumb that still draws at 28px. */
+@media (pointer: coarse) and (min-width: 769px) and (min-height: 501px) {
+  .pc-item-popover {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(var(--pc-mode-top, 100dvh) - 138px);
+  }
+  .pc-item-popover__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none !important;
+  }
+  .pc-item-popover input[type='range'] {
+    height: 32px;
+  }
+  .pc-item-popover input[type='range']::-webkit-slider-thumb {
+    height: 32px;
+    margin-top: -14px;
+    border-width: 2px 8px;
+  }
+  .pc-item-popover input[type='range']::-moz-range-thumb {
+    height: 32px;
+    border-width: 2px 8px;
   }
 }
 /* Bigger controls, the same bite of the scene: the expanded sheet scrolls. */
