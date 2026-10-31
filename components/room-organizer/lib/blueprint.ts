@@ -5,6 +5,7 @@ import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
 import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
+import { COARSE_POINTER_QUERY } from './hud-layout';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
 import { distanceOutsideWalls, printWhenLoaded } from './plan-export/print';
 import { storeyHeight } from './storeys';
@@ -17,6 +18,27 @@ const PAGE_WIDTH = 1200;
 const PAGE_HEIGHT = 900;
 /** Canvas margin around the plan content: room dimensions and item labels. */
 const BLUEPRINT_PADDING = 60;
+/**
+ * Backing pixels per canvas px (#619). The sheet is laid out in canvas px and
+ * printed about 190 mm wide, so this is what sets the print's resolution:
+ * 1200 px at 3× is about 480 dpi, where 1× was about 160.
+ */
+export const BLUEPRINT_PIXEL_RATIO = 3;
+/** On a touch-first or small device: about 320 dpi, for under half the memory. */
+const BLUEPRINT_LIGHT_PIXEL_RATIO = 2;
+
+/** The print's pixel ratio on this device; `deviceMemory` is in GB, where the browser tells. */
+export function blueprintPixelRatio(device: { coarsePointer: boolean; deviceMemory?: number | undefined }): number {
+  const smallMemory = device.deviceMemory !== undefined && device.deviceMemory <= 4;
+  return device.coarsePointer || smallMemory ? BLUEPRINT_LIGHT_PIXEL_RATIO : BLUEPRINT_PIXEL_RATIO;
+}
+
+function currentPixelRatio(): number {
+  return blueprintPixelRatio({
+    coarsePointer: typeof window.matchMedia === 'function' && window.matchMedia(COARSE_POINTER_QUERY).matches,
+    deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+  });
+}
 
 /**
  * The blueprint canvas for a plan whose content spans `bounds` (#377): the
@@ -111,6 +133,42 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
   // The popup only needs the opener's handle on it, not the reverse (#455).
   printWindow.opener = null;
 
+  try {
+    const html = await blueprintHtml(layout, floor);
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWhenLoaded(printWindow);
+  } catch (error) {
+    // Never leave a blank tab behind (#619).
+    console.error('Blueprint failed', error);
+    printWindow.close();
+    notify('The blueprint couldn’t be drawn. Close some tabs and try again.', 'error');
+  }
+}
+
+/**
+ * The plan as a PNG data URL at `pixelRatio`, or null when the browser can't
+ * manage a canvas that big: it hands back an empty URL, or throws (#619).
+ */
+function planImage(draw: (canvas: HTMLCanvasElement, pixelRatio: number) => void, size: { width: number; height: number }, pixelRatio: number): string | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = size.width * pixelRatio;
+  canvas.height = size.height * pixelRatio;
+  try {
+    draw(canvas, pixelRatio);
+    const url = canvas.toDataURL('image/png');
+    return url.startsWith('data:image/png') ? url : null;
+  } catch {
+    return null;
+  } finally {
+    // Tens of MB of backing store: free it before the popup decodes the image.
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+}
+
+/** The print sheet of one floor. Throws when the plan can't be drawn even at 1×. */
+async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<string> {
   // The tracing image is painted from a lazily-warmed decoded-image cache;
   // in 3D view with the minimap off nothing has rendered the plan yet, so
   // the first printout captured only the floor colour (#288). Same
@@ -123,29 +181,29 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
   const plan = blueprintPlan(layout, floor);
   const bounds = planContentBounds(layout, plan.floor);
   const size = blueprintCanvasSize(bounds);
-  const canvas = document.createElement('canvas');
-  canvas.width = size.width;
-  canvas.height = size.height;
   const floorIndex = planFloorIndex(layout.floors, floor);
   const keepOut = floorKeepOut(layout, floorIndex);
 
-  render2DTopDown({
-    canvas,
-    layout,
-    floor: plan.floor,
-    selectedItemId: null,
-    showMeasurements: true,
-    // Coverage on by default: the blueprint is the natural artifact for
-    // planning Wi-Fi and camera placement, and hardcoding this off hid the
-    // signal rings AND the camera FOV wedges from the printout (#134).
-    showWiFiSignals: true,
-    fitBounds: bounds,
-    padding: BLUEPRINT_PADDING,
-    hasCollision: (item) =>
-      hasCollisions(item, floor.items, layout.width, layout.height, { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) }),
-  });
+  const draw = (canvas: HTMLCanvasElement, pixelRatio: number): void =>
+    render2DTopDown({
+      canvas,
+      layout,
+      floor: plan.floor,
+      selectedItemId: null,
+      showMeasurements: true,
+      // Coverage on by default: the blueprint is the natural artifact for
+      // planning Wi-Fi and camera placement, and hardcoding this off hid the
+      // signal rings AND the camera FOV wedges from the printout (#134).
+      showWiFiSignals: true,
+      fitBounds: bounds,
+      padding: BLUEPRINT_PADDING,
+      pixelRatio,
+      hasCollision: (item) =>
+        hasCollisions(item, floor.items, layout.width, layout.height, { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) }),
+    });
+  const dataUrl = planImage(draw, size, currentPixelRatio()) ?? planImage(draw, size, 1);
+  if (!dataUrl) throw new Error('The blueprint canvas is unavailable');
 
-  const dataUrl = canvas.toDataURL('image/png');
   const stats = {
     items: floor.items.length,
     area: floorArea(layout, floorIndex).toFixed(1),
@@ -173,25 +231,24 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     .map(({ item, distance }) => `<li>${escapeHtml(item.icon)} ${escapeHtml(item.name)}: ${distance.toFixed(1)} m outside the walls</li>`)
     .join('');
 
-  const html = renderBlueprintHtml({
+  return renderBlueprintHtml({
     title: `${layout.name} — ${floor.name}`,
     subtitle: `${layout.width} m × ${layout.height} m · ${stats.items} items · ${stats.cost}`,
     imageUrl: dataUrl,
+    imageSize: size,
     legendHtml: legend,
     zonesHtml,
     omittedHtml,
     stats,
   });
-
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWhenLoaded(printWindow);
 }
 
 interface BlueprintHtmlInput {
   title: string;
   subtitle: string;
   imageUrl: string;
+  /** The image's layout size in CSS px; its backing pixels are a multiple of it. */
+  imageSize: { width: number; height: number };
   legendHtml: string;
   /** One `<li>` per zone, or '' when the floor has none. */
   zonesHtml: string;
@@ -200,7 +257,7 @@ interface BlueprintHtmlInput {
   stats: { items: number; area: string; footprint: string; cost: string };
 }
 
-function renderBlueprintHtml({ title, subtitle, imageUrl, legendHtml, zonesHtml, omittedHtml, stats }: BlueprintHtmlInput): string {
+function renderBlueprintHtml({ title, subtitle, imageUrl, imageSize, legendHtml, zonesHtml, omittedHtml, stats }: BlueprintHtmlInput): string {
   return `<!doctype html>
 <html>
   <head>
@@ -227,7 +284,7 @@ function renderBlueprintHtml({ title, subtitle, imageUrl, legendHtml, zonesHtml,
         <p class="subtitle">${escapeHtml(subtitle)}</p>
       </div>
     </header>
-    <img class="plan" src="${imageUrl}" alt="Floor plan" />
+    <img class="plan" src="${imageUrl}" width="${imageSize.width}" height="${imageSize.height}" alt="Floor plan" />
     <div class="meta">
       <section>
         <strong>Statistics</strong>

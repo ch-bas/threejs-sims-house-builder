@@ -41,6 +41,11 @@ export interface Render2DOptions {
    */
   padding?: number;
   /**
+   * Backing pixels per logical px for a canvas that isn't in the page, which
+   * has no CSS size to derive it from: the printed blueprint (#619).
+   */
+  pixelRatio?: number;
+  /**
    * Canvas edges covered by the HUD (`get2DViewTransform`). Only the
    * full-screen plan on a compact viewport passes them; undefined is none.
    */
@@ -178,7 +183,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   // CSS-pixel (logical) coordinates. Reset the transform to a DPR scale so 1
   // logical unit maps to `dpr` device pixels — that keeps strokes and text
   // crisp on retina while the layout maths stays resolution-independent.
-  const dpr = canvas.width / Math.max(1, canvas.clientWidth || canvas.width);
+  const dpr = options.pixelRatio ?? canvas.width / Math.max(1, canvas.clientWidth || canvas.width);
   const viewWidth = canvas.width / dpr;
   const viewHeight = canvas.height / dpr;
 
