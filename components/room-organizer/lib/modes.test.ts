@@ -2,11 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { CATEGORIES } from './constants';
 import {
   BUILD_TOOLS,
+  buildToolsTitle,
   catalogCategoryForTool,
   categoriesForMode,
   isStructureCategory,
   resolveToolForMode,
 } from './modes';
+
+describe('buildToolsTitle (#641)', () => {
+  it('calls the FURNISH catalogue Furniture, and DESIGN\'s tools Build Tools', () => {
+    expect(buildToolsTitle('buy')).toBe('Furniture');
+    expect(buildToolsTitle('build')).toBe('Build Tools');
+  });
+});
 
 describe('categoriesForMode (#151)', () => {
   it('DESIGN shows only structure tools, walls included', () => {

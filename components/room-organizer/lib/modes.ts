@@ -53,6 +53,11 @@ export function buildToolLabel(key: BuildToolKey): string {
   return BUILD_TOOL_LABELS[key];
 }
 
+/** What the tool panel and the catalogue strip are called: FURNISH lists furniture, not build tools (#641). */
+export function buildToolsTitle(mode: GameMode): string {
+  return mode === 'buy' ? 'Furniture' : 'Build Tools';
+}
+
 const STRUCTURE_KEYS: ReadonlySet<BuildToolKey> = new Set<BuildToolKey>(['walls', 'structure']);
 
 /** True for the tools that build the house itself: walls and openings/stairs. */
