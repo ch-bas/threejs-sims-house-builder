@@ -105,6 +105,22 @@ export function notifyRefused(message: string, playCue: RefusedCue): Notice {
   return notify(message, 'error');
 }
 
+/** How to free a locked item, by input: a phone has no U key (#635). */
+function unlockHint(touch: boolean): string {
+  return touch ? 'Tap Unlock' : 'Press U or Unlock';
+}
+
+/** The line under a locked item's actions: why Rotate and Centre are off. */
+export function lockedNote(touch: boolean): string {
+  return `Locked in place. ${unlockHint(touch)} to move or turn it.`;
+}
+
+/** The notice when a key or drag meets a locked item, or `count` of them (#635). */
+export function lockedMessage(subject: string | number, touch: boolean): string {
+  const who = typeof subject === 'number' ? `These ${subject} items are` : `${subject} is`;
+  return `${who} locked. ${unlockHint(touch)} to move or turn ${typeof subject === 'number' ? 'them' : 'it'}.`;
+}
+
 /** What a removal toast says: the item's name, or how many went. */
 export function removedMessage(names: readonly string[], from?: string): string {
   const what = names.length === 1 ? (names[0] ?? 'item') : `${names.length} items`;

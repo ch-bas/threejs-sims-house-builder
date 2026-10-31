@@ -14,6 +14,7 @@ const SHORTCUTS: readonly Shortcut[] = [
   { label: 'Copy / Paste', keys: 'Ctrl+C / Ctrl+V' },
   { label: 'Rotate', keys: 'R (⇧R = 15°)' },
   { label: 'Nudge', keys: 'Arrows (⇧ = 1 m)' },
+  { label: 'Lock / unlock', keys: 'U' },
   { label: 'Deselect', keys: 'Esc' },
   { label: 'Focus on item', keys: 'F' },
   { label: 'Multi-select', keys: 'Ctrl/⌘+click' },

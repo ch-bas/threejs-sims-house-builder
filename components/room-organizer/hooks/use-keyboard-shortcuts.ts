@@ -16,6 +16,10 @@ export interface KeyboardShortcutHandlers {
   rotateItem(id: string): void;
   rotateItemBy(id: string, radians: number): void;
   moveItem(id: string, x: number, z: number): void;
+  /** U: lock or unlock the selection (#635). */
+  toggleLock(id: string): void;
+  /** An arrow nudge met a locked item: say so (#635). */
+  refuseLocked(id: string): void;
   toggle2D(): void;
   toggleMeasurements(): void;
   toggleSnap(): void;
@@ -72,6 +76,8 @@ const DRAG_INTERRUPTING_KEYS = new Set([
   'Backspace',
   'r',
   'R',
+  'u',
+  'U',
   '2',
   'PageUp',
   'PageDown',
@@ -198,7 +204,7 @@ export function useKeyboardShortcuts({
       // EXPLORE on the 2D plan: the view keys (f, 2, m, g, w, p) work, the
       // keys that change the house below do not (#699).
       const deleteKey = event.key === 'Delete' || event.key === 'Backspace';
-      if (exploring && (deleteKey || key === 'r' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
+      if (exploring && (deleteKey || key === 'r' || key === 'u' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
 
       // A held delete key takes one thing. Focus moves on after a removal, so
       // its repeats would otherwise land on whatever comes next: another row,
@@ -247,6 +253,12 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      if (key === 'u' && selectedItem) {
+        event.preventDefault();
+        handlers.toggleLock(selectedItem.id);
+        return;
+      }
+
       if (event.key === '2') {
         event.preventDefault();
         handlers.toggle2D();
@@ -278,7 +290,13 @@ export function useKeyboardShortcuts({
       }
 
       const delta = ARROW_DELTAS[event.key];
-      if (delta && selectedItem?.position && !selectedItem.locked) {
+      if (delta && selectedItem?.position && selectedItem.locked) {
+        event.preventDefault();
+        // Once per press: a held key repeats thirty times a second.
+        if (!event.repeat) handlers.refuseLocked(selectedItem.id);
+        return;
+      }
+      if (delta && selectedItem?.position) {
         event.preventDefault();
         const step = event.shiftKey ? 1.0 : 0.1;
         const [dx, dz] = delta;

@@ -8,6 +8,8 @@ import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
+import { lockedNote } from '../lib/editor-notices';
+import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { isWallMounted } from '../lib/opening-snap';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
@@ -66,6 +68,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // item stays in view above it, expanded on demand, and collapsed again for
   // each new selection.
   const sheet = useMediaQuery(COMPACT_OVERLAY_QUERY);
+  const touch = useMediaQuery(COARSE_POINTER_QUERY);
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const expanded = item !== null && expandedFor === item.id;
   const sheetOpen = sheet && item !== null;
@@ -246,6 +249,14 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           >
             {props.collision}
           </div>
+        )}
+
+        {/* Nothing else says why Rotate and Centre are off on a phone, which has
+            no tooltip (#635), so it stays in the collapsed sheet too. */}
+        {item.locked && !exploring && (
+          <p role="note" className="pc-body" style={{ margin: 0, fontSize: 11 }}>
+            {lockedNote(touch)}
+          </p>
         )}
 
         {/* A collapsed sheet shows only the warning and the action row; the

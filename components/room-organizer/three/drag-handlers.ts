@@ -50,6 +50,12 @@ export interface SceneEventHandlers {
    * The React side must discard its drag session so nothing is committed.
    */
   onItemDragCancel?: (id: string, options?: { restore?: boolean }) => void;
+  /**
+   * A drag began on the selected item, and it is locked: the camera orbits
+   * instead, and this says why (#635). Only for an item already selected:
+   * pressing any locked item and orbiting is how the camera is turned.
+   */
+  onLockedDrag?: (id: string) => void;
   onItemHover?: (info: HoverInfo | null) => void;
   onEmptyClick?: (x: number, z: number) => void;
   onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior' }) => void;
@@ -174,6 +180,7 @@ export function attachDragHandlers({
   let downClientX = 0;
   let downClientY = 0;
   let dragThreshold = DRAG_THRESHOLD_PX;
+  let lockedPress: { id: string; pointerId: number; x: number; y: number; threshold: number } | null = null;
   // Item position minus the floor point under the press: added to every
   // move so the item keeps its place under the pointer (#292).
   let grabOffsetX = 0;
@@ -286,7 +293,11 @@ export function attachDragHandlers({
     const itemId = target.userData.id as string;
     const locked = target.userData.locked === true;
     const keepSelection = !locked && keepsSelectionOnPress(mode, itemId, handlersRef.current.selectedIds);
+    const pressedSelected = handlersRef.current.selectedIds?.has(itemId) === true;
     if (!keepSelection) handlersRef.current.onItemSelect(itemId, mode);
+    if (locked && pressedSelected && mode === 'replace') {
+      lockedPress = { id: itemId, pointerId: event.pointerId, x: event.clientX, y: event.clientY, threshold: dragThresholdPx(event.pointerType) };
+    }
 
     if (locked || mode === 'toggle') return;
 
@@ -342,6 +353,15 @@ export function attachDragHandlers({
     if (event.pointerId === activePointerId) {
       lastClientX = event.clientX;
       lastClientY = event.clientY;
+    }
+    if (lockedPress?.pointerId === event.pointerId) {
+      const { id, x, y, threshold } = lockedPress;
+      const dx = event.clientX - x;
+      const dy = event.clientY - y;
+      if (dx * dx + dy * dy >= threshold * threshold) {
+        lockedPress = null;
+        handlersRef.current.onLockedDrag?.(id);
+      }
     }
     if (!dragTarget) {
       // Hover + tooltip is a mouse/pen affordance only. Skipping it for touch
@@ -534,12 +554,14 @@ export function attachDragHandlers({
   };
 
   const onPointerUp = (event: PointerEvent): void => {
+    lockedPress = null;
     endGesture(event);
   };
 
   // The browser took the pointer (OS gesture, palm rejection, a system
   // dialog): undo the drag rather than commit and lock it (#292).
   const onPointerCancel = (event: PointerEvent): void => {
+    lockedPress = null;
     if (activePointerId === null || event.pointerId !== activePointerId) return;
     abortGesture(true);
   };

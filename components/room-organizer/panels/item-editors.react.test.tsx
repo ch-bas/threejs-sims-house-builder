@@ -167,3 +167,18 @@ describe('item popover in EXPLORE (#699)', () => {
     expect(calls.onDuplicate).toHaveBeenCalledWith('s');
   });
 });
+
+describe('the locked note in the popover (#635)', () => {
+  it('says why the actions are off, for a locked item only', () => {
+    renderEditor('popover', makeItem({ id: 'a', locked: true }));
+    expect(screen.getByRole('note').textContent).toContain('Press U or Unlock');
+    cleanup();
+    renderEditor('popover', makeItem({ id: 'b' }));
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  it('gives way to the EXPLORE note', () => {
+    renderEditor('popover', makeItem({ id: 'a', locked: true }), 'live');
+    expect(screen.getByRole('note').textContent).toContain(NOT_WHILE_EXPLORING);
+  });
+});
