@@ -32,6 +32,8 @@ const NEIGHBOUR_LABELS: Record<NeighbourFlag, string> = {
 export function SitePanel(): JSX.Element {
   const { layout, actions } = useRoomEditor();
   const view = useViewSettings('view2D');
+  const slopeLabelId = useId();
+  const entranceLabelId = useId();
   const frontId = useId();
   const backId = useId();
   const entranceWidthId = useId();
@@ -74,12 +76,14 @@ export function SitePanel(): JSX.Element {
           </p>
         )}
         <div className="flex items-center justify-between gap-2">
-          <Label className="text-xs">Sloped site</Label>
+          <Label id={slopeLabelId} className="text-xs">Sloped site</Label>
           <Button
             variant={terrain ? 'default' : 'outline'}
             size="sm"
             className="text-xs"
-            aria-pressed={terrain !== undefined}
+            role="switch"
+            aria-checked={terrain !== undefined}
+            aria-labelledby={slopeLabelId}
             onClick={() => (terrain ? actions.setTerrain(null) : startSlope())}
           >
             {terrain ? 'On' : 'Off'}
@@ -167,12 +171,14 @@ export function SitePanel(): JSX.Element {
           </div>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <Label className="text-xs">Recessed entrance</Label>
+          <Label id={entranceLabelId} className="text-xs">Recessed entrance</Label>
           <Button
             variant={entrance ? 'default' : 'outline'}
             size="sm"
             className="text-xs"
-            aria-pressed={entrance !== undefined}
+            role="switch"
+            aria-checked={entrance !== undefined}
+            aria-labelledby={entranceLabelId}
             onClick={() => actions.setEntrance(entrance ? null : DEFAULT_ENTRANCE)}
           >
             {entrance ? 'On' : 'Off'}

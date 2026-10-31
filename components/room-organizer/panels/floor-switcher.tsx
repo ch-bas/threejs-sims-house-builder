@@ -15,6 +15,9 @@ import { buildingHeight, storeyHeight } from '../lib/storeys';
 import { Icon } from '../plotcraft/icon';
 import { DISABLED_TILE } from './wall-display-pill';
 
+/** One floor's row, as a button or while its name is edited. */
+const ROW_STYLE = { flex: 1, textAlign: 'left', padding: '6px 10px', borderRadius: 8 } as const;
+
 export function FloorSwitcher(): JSX.Element {
   // Layout slices come from the store via atomic selectors; view/toggle stay on
   // the context (mixed consumption — the incremental migration path).
@@ -56,6 +59,8 @@ export function FloorSwitcher(): JSX.Element {
             onClick={() => toggle('showAllFloors')}
             // The plan shows one floor: off in 2D (#444).
             disabled={view.view2D}
+            aria-pressed={view.showAllFloors}
+            aria-label="All floors"
             className={`pc-tile${view.showAllFloors ? ' pc-tile--active' : ''}`}
             title={`Show all floors at once (other floors render translucent, or solid with all walls up)${view.view2D ? ' — switch back to 3D view' : ''}`}
             style={{
@@ -147,26 +152,24 @@ export function FloorSwitcher(): JSX.Element {
               key={floor.id}
               style={{ display: 'flex', alignItems: 'center', gap: 4 }}
             >
-              <button
-                type="button"
-                onClick={() => actions.setActiveFloorIndex(index)}
-                className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
-                aria-current={isActive ? 'true' : undefined}
-                style={{
-                  flex: 1,
-                  textAlign: 'left',
-                  padding: '6px 10px',
-                  borderRadius: 8,
-                }}
-              >
-                {isRenaming ? (
+              {/* The field replaces the button, never sits in it (#557). */}
+              {isRenaming ? (
+                <div
+                  className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
+                  aria-current={isActive ? 'true' : undefined}
+                  style={ROW_STYLE}
+                  // On press, not click: the field's blur swaps this row for
+                  // the button before the release.
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) actions.setActiveFloorIndex(index);
+                  }}
+                >
                   <Input
                     autoFocus
                     aria-label="Floor name"
                     value={draft}
                     maxLength={MAX_NAME_LENGTH}
                     onChange={(event) => setDraft(event.target.value)}
-                    onClick={(event) => event.stopPropagation()}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
                         actions.renameFloor(index, draft.trim() || floor.name);
@@ -184,7 +187,15 @@ export function FloorSwitcher(): JSX.Element {
                     }}
                     className="h-6 text-xs"
                   />
-                ) : (
+                </div>
+              ) : (
+              <button
+                type="button"
+                onClick={() => actions.setActiveFloorIndex(index)}
+                className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
+                aria-current={isActive ? 'true' : undefined}
+                style={ROW_STYLE}
+              >
                   <span
                     style={{
                       display: 'flex',
@@ -228,8 +239,8 @@ export function FloorSwitcher(): JSX.Element {
                       <span>{formatMetres(storeyHeight(floor))}</span>
                     </span>
                   </span>
-                )}
               </button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"

@@ -659,7 +659,12 @@ function SegmentedRow<T extends string>({ label, value, options, onChange, label
             title={title}
             className={`pc-tile${value === option.key ? ' pc-tile--active' : ''}`}
             style={{
-              ...(disabled ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
+              // No opacity: the shape is a value to read, locked or not (#640).
+              // The choice keeps its active look; the others step back.
+              ...(disabled ? { cursor: 'not-allowed' } : {}),
+              ...(disabled && value !== option.key
+                ? { borderStyle: 'dashed', boxShadow: 'none', background: 'transparent', color: 'rgba(255, 255, 255, 0.62)' }
+                : {}),
               padding: '4px 6px',
               borderRadius: 8,
               fontFamily: 'var(--pc-font-display)',

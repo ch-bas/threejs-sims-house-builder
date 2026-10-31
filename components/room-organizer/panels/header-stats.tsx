@@ -228,10 +228,10 @@ function SaveIndicator({ lastSavedAt, saving, saveError }: SaveIndicatorProps): 
     >
       <span
         aria-hidden
+        className={saving && !saveError ? 'pc-halo-pulse' : undefined}
         style={{
           color: iconColor,
           display: 'inline-flex',
-          animation: saving && !saveError ? 'pcHaloPulse 1.6s ease-in-out infinite' : undefined,
         }}
       >
         <Icon name="save" size={14} />

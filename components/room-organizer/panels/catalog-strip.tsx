@@ -369,6 +369,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, ove
         onAdd();
       }}
       aria-disabled={blocked || undefined}
+      aria-label={`${item.name}, ${showName && overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}`}
       title={
         blocked
           ? `${item.name} — ${blockedReason}`

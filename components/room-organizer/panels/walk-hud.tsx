@@ -230,7 +230,8 @@ function StatusBar({ floorName, hint, onExit }: { floorName: string; hint?: stri
         <span style={{ color: 'var(--pc-paper)' }}>{floorName}</span>
         <Dot />
         <SunMoon night={night} />
-        <span style={{ color: 'var(--pc-paper)', fontVariantNumeric: 'tabular-nums' }} aria-label={`Time ${clock}`}>
+        <span style={{ color: 'var(--pc-paper)', fontVariantNumeric: 'tabular-nums' }}>
+          <span className="sr-only">Time </span>
           {clock}
         </span>
         {hint && (

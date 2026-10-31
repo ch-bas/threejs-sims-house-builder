@@ -181,7 +181,7 @@ function AchievementCard({
 }): JSX.Element {
   return (
     <div
-      className="pc-glass pc-glass--dark pointer-events-auto"
+      className="pc-glass pc-glass--dark pc-halo-pulse pointer-events-auto"
       role="status"
       style={{
         display: 'flex',
@@ -189,7 +189,6 @@ function AchievementCard({
         gap: compact ? 10 : 12,
         padding: compact ? '7px 10px' : '12px 14px',
         maxWidth: compact ? '100%' : 320,
-        animation: 'pcHaloPulse 1.6s ease-in-out infinite',
         ...(compact ? { borderRadius: 16 } : {}),
       }}
     >

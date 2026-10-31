@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
+import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
@@ -139,6 +140,12 @@ export interface WallPaintPanelProps {
   onSelectedWallChange(wall: { id: string; kind: 'exterior' | 'interior' } | null): void;
   /** Folded or not in the phone dock; the HUD unfolds one wall panel at a time. */
   fold?: PanelFold;
+  /**
+   * Keep the panel up with no wall selected. Clearing the wall from the
+   * keyboard would otherwise close it under the focus; the hold ends when the
+   * focus leaves the panel.
+   */
+  onHoldOpen?(held: boolean): void;
 }
 
 /**
@@ -151,6 +158,19 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
   const { activeFloor: floor, actions } = useRoomEditor();
   const fold = useDockFold(props.fold);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { onHoldOpen } = props;
+  useEffect(() => {
+    if (!onHoldOpen) return undefined;
+    // A press on the scene moves no focus, so the panel's blur can't end it.
+    const onPress = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) onHoldOpen(false);
+    };
+    document.addEventListener('pointerdown', onPress, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPress, true);
+      onHoldOpen(false);
+    };
+  }, [onHoldOpen]);
   // Unfolded in the dock the panel scrolls on its own: say so.
   useScrollCue(rootRef, `${fold.open}`);
 
@@ -171,6 +191,8 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       actions.setWallColor(target, color);
     }
   };
+  const surfaceId = useId();
+  const paletteId = useId();
   const [surface, setSurface] = useState<Surface>('walls');
   const [wallGroup, setWallGroup] = useState<string>('pastel');
   const [floorGroup, setFloorGroup] = useState<string>('wood');
@@ -208,6 +230,11 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       className={`pointer-events-auto pc-glass pc-wall-paint${fold.open ? '' : ' pc-dock-folded'}`}
       data-scene-occluder=""
       style={{ width: 280, padding: '10px 12px' }}
+      onBlur={(event) => {
+        // Switching windows or opening the native colour picker is not leaving.
+        if (!document.hasFocus()) return;
+        if (!event.currentTarget.contains(event.relatedTarget)) onHoldOpen?.(false);
+      }}
     >
       {/* Title + Surface toggle */}
       <div
@@ -236,10 +263,12 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
           Paint
         </div>
         )}
-        {fold.open && <SurfaceTabs surface={surface} onChange={setSurface} />}
+        {fold.open && <SurfaceTabs surface={surface} onChange={setSurface} baseId={surfaceId} />}
       </div>
 
-      {!fold.open ? null : surface === 'walls' ? (
+      {fold.open && (
+        <div role="tabpanel" id={panelId(surfaceId)} aria-labelledby={tabId(surfaceId, surface)}>
+      {surface === 'walls' ? (
         <>
           <SectionLabel>Wall Pattern</SectionLabel>
           <PatternGrid>
@@ -272,7 +301,9 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
           </SectionLabel>
           <ApplyToggle
             value={applyTo}
-            onChange={(v) => {
+            onChange={(v, fromKeyboard) => {
+              // Only the keyboard holds: a mouse click on All closes as ever.
+              onHoldOpen?.(v === 'all' && fromKeyboard);
               if (v === 'all') {
                 props.onSelectedWallChange(null);
               } else {
@@ -292,8 +323,11 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
             groups={WALL_PALETTES}
             active={wallGroup}
             onChange={setWallGroup}
+            label="Wall colour palette"
+            baseId={paletteId}
           />
           <SwatchGrid
+            tabpanelOf={{ id: panelId(paletteId), tab: tabId(paletteId, wallGroup) }}
             swatches={activeWallPalette.colors}
             value={currentWallColor}
             onChange={(color) => applyWallColor(applyTo ?? 'all', color)}
@@ -320,14 +354,19 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
             groups={FLOOR_PALETTES}
             active={floorGroup}
             onChange={setFloorGroup}
+            label="Floor colour palette"
+            baseId={paletteId}
           />
           <SwatchGrid
+            tabpanelOf={{ id: panelId(paletteId), tab: tabId(paletteId, floorGroup) }}
             swatches={activeFloorPalette.colors}
             value={floor.floorColor}
             onChange={(color) => actions.setFloorColor(color)}
             onCustomChange={(color) => actions.setFloorColor(color)}
           />
         </>
+      )}
+        </div>
       )}
     </div>
   );
@@ -337,12 +376,17 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
 // Helpers
 // ============================================================================
 
+const tabId = (baseId: string, tab: string): string => `${baseId}-tab-${tab}`;
+const panelId = (baseId: string): string => `${baseId}-panel`;
+
 interface SurfaceTabsProps {
   surface: Surface;
   onChange(surface: Surface): void;
+  /** Ties the tabs to the panel below them. */
+  baseId: string;
 }
 
-function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
+function SurfaceTabs({ surface, onChange, baseId }: SurfaceTabsProps): JSX.Element {
   const tabs: ReadonlyArray<{ id: Surface; label: string }> = [
     { id: 'walls', label: 'Walls' },
     { id: 'floor', label: 'Floor' },
@@ -350,6 +394,7 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
   return (
     <div
       role="tablist"
+      aria-label="Paint surface"
       className="pc-glass--inset pc-paint-tabs"
       style={{
         display: 'inline-flex',
@@ -363,8 +408,15 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
             key={t.id}
             type="button"
             role="tab"
+            id={tabId(baseId, t.id)}
             aria-selected={active}
+            aria-controls={panelId(baseId)}
+            tabIndex={active ? 0 : -1}
             onClick={() => onChange(t.id)}
+            onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+              const next = tabs[index];
+              if (next) onChange(next.id);
+            })}
             className={`pc-tile${active ? ' pc-tile--active' : ''}`}
             style={{
               padding: '4px 10px',
@@ -388,7 +440,7 @@ function SurfaceTabs({ surface, onChange }: SurfaceTabsProps): JSX.Element {
 interface ApplyToggleProps {
   /** null: nothing checked (an interior wall is the target). */
   value: WallId | 'all' | null;
-  onChange(v: WallId | 'all'): void;
+  onChange(v: WallId | 'all', fromKeyboard: boolean): void;
 }
 
 function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
@@ -402,7 +454,7 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
         gap: 3,
       }}
     >
-      {APPLY_TARGETS.map((target) => {
+      {APPLY_TARGETS.map((target, index) => {
         const active = value === target.id;
         return (
           <button
@@ -410,7 +462,14 @@ function ApplyToggle({ value, onChange }: ApplyToggleProps): JSX.Element {
             type="button"
             role="radio"
             aria-checked={active}
-            onClick={() => onChange(target.id)}
+            // Nothing checked (an interior wall): the first stays reachable.
+            tabIndex={active || (value === null && index === 0) ? 0 : -1}
+            // Space on a radio is a click with no pointer: detail 0.
+            onClick={(event) => onChange(target.id, event.detail === 0)}
+            onKeyDown={(event) => onRovingKeyDown(event, (next) => {
+              const landed = APPLY_TARGETS[next];
+              if (landed) onChange(landed.id, true);
+            })}
             title={target.id === 'all' ? 'Apply to every exterior wall' : `Apply to ${target.id} wall only`}
             className={`pc-tile${active ? ' pc-tile--active' : ''}`}
             style={{
@@ -490,12 +549,16 @@ interface GroupTabsProps {
   groups: readonly SwatchGroup[];
   active: string;
   onChange(id: string): void;
+  label: string;
+  /** Ties the tabs to the swatch grid. */
+  baseId: string;
 }
 
-function GroupTabs({ groups, active, onChange }: GroupTabsProps): JSX.Element {
+function GroupTabs({ groups, active, onChange, label, baseId }: GroupTabsProps): JSX.Element {
   return (
     <div
       role="tablist"
+      aria-label={label}
       className="pc-paint-row"
       style={{
         display: 'flex',
@@ -510,8 +573,15 @@ function GroupTabs({ groups, active, onChange }: GroupTabsProps): JSX.Element {
             key={g.id}
             type="button"
             role="tab"
+            id={tabId(baseId, g.id)}
             aria-selected={isActive}
+            aria-controls={panelId(baseId)}
+            tabIndex={isActive ? 0 : -1}
             onClick={() => onChange(g.id)}
+            onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+              const next = groups[index];
+              if (next) onChange(next.id);
+            })}
             className={`pc-tile${isActive ? ' pc-tile--active' : ''}`}
             style={{
               flex: 1,
@@ -702,12 +772,17 @@ interface SwatchGridProps {
   value: string | undefined;
   onChange(color: string): void;
   onCustomChange?(color: string): void;
+  /** The grid is the panel of the palette tabs above it. */
+  tabpanelOf: { id: string; tab: string };
 }
 
-function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridProps): JSX.Element {
+function SwatchGrid({ swatches, value, onChange, onCustomChange, tabpanelOf }: SwatchGridProps): JSX.Element {
   const normalized = (value ?? '').toLowerCase();
   return (
     <div
+      role="tabpanel"
+      id={tabpanelOf.id}
+      aria-labelledby={tabpanelOf.tab}
       className="pc-glass--inset pc-paint-swatches"
       style={{
         borderRadius: 10,
@@ -742,6 +817,7 @@ function SwatchGrid({ swatches, value, onChange, onCustomChange }: SwatchGridPro
       })}
       {onCustomChange && (
         <label
+          className="pc-colour-well"
           title="Pick a custom colour"
           style={{
             height: 22,

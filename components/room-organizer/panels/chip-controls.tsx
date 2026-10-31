@@ -78,6 +78,7 @@ export function ChipNameField({
       <input
         // Opened by a click: take focus like the dialog it replaces.
         autoFocus
+        className="pc-chip-name"
         aria-label={label}
         value={draft}
         maxLength={maxLength}
@@ -102,7 +103,6 @@ export function ChipNameField({
           fontFamily: 'var(--pc-font-body)',
           fontWeight: 600,
           fontSize: 12,
-          outline: 'none',
         }}
       />
       <ChipButton type="submit" title={submitLabel} disabled={!trimmed}>

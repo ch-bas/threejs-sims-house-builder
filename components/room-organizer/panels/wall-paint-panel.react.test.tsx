@@ -70,3 +70,206 @@ describe('WallPaintPanel — Apply-to truthfulness (#221)', () => {
     expect(setup(makeFloor(), null).ringedSwatches()).toEqual(['Use colour #e8dcc4']);
   });
 });
+
+describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
+  afterEach(cleanup);
+
+  it('names both tablists', () => {
+    setup(makeFloor(), null);
+    expect(screen.getByRole('tablist', { name: 'Paint surface' })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: 'Wall colour palette' })).toBeTruthy();
+  });
+
+  it('ties each tablist to its panel', () => {
+    setup(makeFloor(), null);
+    for (const name of ['Walls', 'Pastels']) {
+      const tab = screen.getByRole('tab', { name });
+      const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '');
+      expect(panel?.getAttribute('role')).toBe('tabpanel');
+      expect(panel?.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+  });
+
+  it('keeps one tab stop per tablist and radio group', () => {
+    setup(makeFloor(), null);
+    const stops = (role: 'tab' | 'radio') => screen.getAllByRole(role).filter((el) => el.tabIndex === 0);
+    expect(stops('tab').map((el) => el.textContent)).toEqual(['Walls', 'Pastels']);
+    expect(stops('radio').map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('keeps Apply-to reachable when nothing is checked', () => {
+    setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, color: '#ffffff' }] }), { id: 'iw-1', kind: 'interior' });
+    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('arrows, Home and End move between tabs and open the one they land on', () => {
+    setup(makeFloor(), null);
+    const pastels = screen.getByRole('tab', { name: 'Pastels' });
+    pastels.focus();
+    fireEvent.keyDown(pastels, { key: 'ArrowRight' });
+    const warm = screen.getByRole('tab', { name: 'Warm' });
+    expect(warm.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(warm);
+    fireEvent.keyDown(warm, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Neutral' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Neutral' }), { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Pastels' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tabpanel', { name: 'Pastels' })).toBeTruthy();
+  });
+
+  it('switches the surface from the keyboard and names the floor palette', () => {
+    setup(makeFloor(), null);
+    const walls = screen.getByRole('tab', { name: 'Walls' });
+    fireEvent.keyDown(walls, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Floor' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tablist', { name: 'Floor colour palette' })).toBeTruthy();
+  });
+
+  it('marks the custom colour well for its focus ring', () => {
+    setup(makeFloor(), null);
+    const input = screen.getAllByLabelText('Custom colour')[0];
+    expect(input?.closest('label')?.className).toContain('pc-colour-well');
+  });
+});
+
+describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
+  afterEach(cleanup);
+
+  it('names both tablists', () => {
+    setup(makeFloor(), null);
+    expect(screen.getByRole('tablist', { name: 'Paint surface' })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: 'Wall colour palette' })).toBeTruthy();
+  });
+
+  it('ties each tablist to its panel', () => {
+    setup(makeFloor(), null);
+    for (const name of ['Walls', 'Pastels']) {
+      const tab = screen.getByRole('tab', { name });
+      const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '');
+      expect(panel?.getAttribute('role')).toBe('tabpanel');
+      expect(panel?.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+  });
+
+  it('keeps one tab stop per tablist and radio group', () => {
+    setup(makeFloor(), null);
+    const stops = (role: 'tab' | 'radio') => screen.getAllByRole(role).filter((el) => el.tabIndex === 0);
+    expect(stops('tab').map((el) => el.textContent)).toEqual(['Walls', 'Pastels']);
+    expect(stops('radio').map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('keeps Apply-to reachable when nothing is checked', () => {
+    setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, color: '#ffffff' }] }), { id: 'iw-1', kind: 'interior' });
+    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All']);
+  });
+
+  it('arrows, Home and End move between tabs and open the one they land on', () => {
+    setup(makeFloor(), null);
+    const pastels = screen.getByRole('tab', { name: 'Pastels' });
+    pastels.focus();
+    fireEvent.keyDown(pastels, { key: 'ArrowRight' });
+    const warm = screen.getByRole('tab', { name: 'Warm' });
+    expect(warm.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(warm);
+    fireEvent.keyDown(warm, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Neutral' }).getAttribute('aria-selected')).toBe('true');
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Neutral' }), { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Pastels' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tabpanel', { name: 'Pastels' })).toBeTruthy();
+  });
+
+  it('switches the surface from the keyboard and names the floor palette', () => {
+    setup(makeFloor(), null);
+    const walls = screen.getByRole('tab', { name: 'Walls' });
+    fireEvent.keyDown(walls, { key: 'ArrowRight' });
+    expect(screen.getByRole('tab', { name: 'Floor' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tablist', { name: 'Floor colour palette' })).toBeTruthy();
+  });
+
+  it('marks the custom colour well for its focus ring', () => {
+    setup(makeFloor(), null);
+    const input = screen.getAllByLabelText('Custom colour')[0];
+    expect(input?.closest('label')?.className).toContain('pc-colour-well');
+  });
+});
+
+describe('WallPaintPanel — keyboard on Apply To stays in the panel', () => {
+  afterEach(cleanup);
+
+  function setupHold() {
+    const onSelectedWallChange = vi.fn();
+    const onHoldOpen = vi.fn();
+    const value = { activeFloor: makeFloor(), actions: {} } as unknown as RoomEditorContextValue;
+    const view = render(
+      <RoomEditorProvider value={value}>
+        <button type="button">elsewhere</button>
+        <WallPaintPanel
+          selectedWall={{ id: 'west', kind: 'exterior' }}
+          onSelectedWallChange={onSelectedWallChange}
+          onHoldOpen={onHoldOpen}
+        />
+      </RoomEditorProvider>
+    );
+    return { onSelectedWallChange, onHoldOpen, view };
+  }
+  const chip = (name: string) => screen.getByRole('radio', { name });
+
+  it('holds the panel before an arrow lands on All clears the wall', () => {
+    const { onSelectedWallChange, onHoldOpen } = setupHold();
+    fireEvent.keyDown(chip('W'), { key: 'ArrowRight' });
+    expect(onSelectedWallChange).toHaveBeenCalledWith(null);
+    expect(onHoldOpen).toHaveBeenCalledWith(true);
+    expect(onHoldOpen.mock.invocationCallOrder[0]).toBeLessThan(onSelectedWallChange.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it('holds it for Space on All too (a click with no pointer)', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.click(chip('All'), { detail: 0 });
+    expect(onHoldOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('a mouse click on All still closes, as it always has', () => {
+    const { onSelectedWallChange, onHoldOpen } = setupHold();
+    fireEvent.click(chip('All'), { detail: 1 });
+    expect(onSelectedWallChange).toHaveBeenCalledWith(null);
+    expect(onHoldOpen).not.toHaveBeenCalledWith(true);
+  });
+
+  it('lets go when a later choice is a mouse click, on All or a wall', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.keyDown(chip('W'), { key: 'ArrowRight' });
+    expect(onHoldOpen).toHaveBeenLastCalledWith(true);
+    fireEvent.click(chip('All'), { detail: 1 });
+    expect(onHoldOpen).toHaveBeenLastCalledWith(false);
+  });
+
+  it('keeps holding when the whole window loses focus', () => {
+    const { onHoldOpen } = setupHold();
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    fireEvent.focusOut(chip('W'));
+    expect(onHoldOpen).not.toHaveBeenCalled();
+    hasFocus.mockRestore();
+  });
+
+  it('lets go when the focus leaves the panel, not when it moves inside', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.focusOut(chip('W'), { relatedTarget: chip('All') });
+    expect(onHoldOpen).not.toHaveBeenCalled();
+    fireEvent.focusOut(chip('All'), { relatedTarget: screen.getByRole('button', { name: 'elsewhere' }) });
+    expect(onHoldOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('lets go on a press outside: the canvas takes no focus, so no blur comes', () => {
+    const { onHoldOpen } = setupHold();
+    fireEvent.pointerDown(chip('All'));
+    expect(onHoldOpen).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'elsewhere' }));
+    expect(onHoldOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('lets go when it unmounts', () => {
+    const { onHoldOpen, view } = setupHold();
+    view.unmount();
+    expect(onHoldOpen).toHaveBeenCalledWith(false);
+  });
+});

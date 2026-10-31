@@ -196,6 +196,7 @@ components/
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap (with companions), Escape, restore
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
+    │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)
     │   ├── use-refusal.ts               `refuse(message)` for store-reading panels: the refused cue (muted with the sounds) and an error notice (#588, #642)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
     │   ├── use-reduced-motion.ts        The OS reduce-motion setting as a hook (gates weather, walkers, cone sweep)
