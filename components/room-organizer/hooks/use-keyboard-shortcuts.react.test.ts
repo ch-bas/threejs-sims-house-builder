@@ -388,6 +388,17 @@ describe('useKeyboardShortcuts — Delete on a Placed Items row (#634)', () => {
     expect(repeat.defaultPrevented).toBe(true);
   });
 
+  it('a held Delete that runs out of rows leaves the selection alone', () => {
+    const { handlers } = setup(false);
+    const repeat = new KeyboardEvent('keydown', { key: 'Delete', repeat: true, cancelable: true, bubbles: true });
+    document.body.dispatchEvent(repeat);
+    expect(handlers.removeItem).not.toHaveBeenCalled();
+    expect(repeat.defaultPrevented).toBe(true);
+    // A fresh press still acts on the selection.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', cancelable: true, bubbles: true }));
+    expect(handlers.removeItem).toHaveBeenCalledTimes(1);
+  });
+
   it('another key on a row still acts on the selection', () => {
     const { handlers } = setup(false);
     press(rowButton('sofa'), 'r');

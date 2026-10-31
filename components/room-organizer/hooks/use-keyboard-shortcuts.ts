@@ -200,13 +200,20 @@ export function useKeyboardShortcuts({
       const deleteKey = event.key === 'Delete' || event.key === 'Backspace';
       if (exploring && (deleteKey || key === 'r' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
 
+      // A held delete key takes one thing. Focus moves on after a removal, so
+      // its repeats would otherwise land on whatever comes next: another row,
+      // the selection, a wall (#634).
+      if (deleteKey && event.repeat) {
+        event.preventDefault();
+        return;
+      }
+
       // A focused Placed Items row means that row, whatever is selected: the
-      // drawer covers the scene, so nothing else shows what went (#634). Focus
-      // moves on to the next row, so a held key must not walk down the list.
+      // drawer covers the scene, so nothing else shows what went (#634).
       const rowItemId = deleteKey ? focusedRowItemId(event.target) : null;
       if (rowItemId !== null) {
         event.preventDefault();
-        if (!event.repeat) handlers.removeRow(rowItemId);
+        handlers.removeRow(rowItemId);
         return;
       }
 
