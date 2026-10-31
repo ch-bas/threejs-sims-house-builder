@@ -9,6 +9,7 @@ import {
   COVERAGE_MARGIN_M,
   coverageExtents,
   coverageRings,
+  floorBelowUnderlay,
   formatDimension,
   growBounds,
   interiorWallDimensions,
@@ -374,5 +375,32 @@ describe('itemSchedule (#424)', () => {
       ['Sofa', 1, 500, 500],
     ]);
     expect(rows[3]).toMatchObject({ width: 2, depth: 0.9, height: 1 });
+  });
+});
+
+describe('floorBelowUnderlay (#624)', () => {
+  const stairs = makeItem({ id: 's', type: 'stairs', width: 1, depth: 2.8, position: { x: 1, z: 1 } });
+  const sofa = makeItem({ id: 'sofa', type: 'sofa', position: { x: 0, z: 0 } });
+  const ground = makeFloor({ id: 'g', items: [stairs, sofa], interiorWalls: [{ id: 'w', x1: -1, z1: 0, x2: 1, z2: 0 }] });
+  const upper = makeFloor({ id: 'u', interiorWalls: [{ id: 'other', x1: 3, z1: 3, x2: 3, z2: 2 }] });
+  const layout = makeLayout({ floors: [ground, upper] });
+
+  it('gives the storey below its walls and stair treads, not its furniture', () => {
+    const { walls, stairs: treads } = floorBelowUnderlay(layout, 1);
+    expect(walls).toEqual([{ from: { x: -1, z: 0 }, to: { x: 1, z: 0 } }]);
+    // 14 treads sharing 13 nosings, all within the stair's footprint.
+    expect(treads).toHaveLength(43);
+    for (const { from, to } of treads) {
+      for (const p of [from, to]) {
+        expect(Math.abs(p.x - 1)).toBeLessThanOrEqual(0.5 + 1e-9);
+        expect(Math.abs(p.z - 1)).toBeLessThanOrEqual(1.4 + 1e-9);
+      }
+    }
+  });
+
+  it('is empty on the ground floor and off the building', () => {
+    expect(floorBelowUnderlay(layout, 0)).toEqual({ walls: [], stairs: [] });
+    expect(floorBelowUnderlay(layout, 7)).toEqual({ walls: [], stairs: [] });
+    expect(floorBelowUnderlay(layout, -1)).toEqual({ walls: [], stairs: [] });
   });
 });

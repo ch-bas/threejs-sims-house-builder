@@ -1164,6 +1164,7 @@ export function useSceneEffects({
         showMeasurements: view.showMeasurements,
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
+        showFloorBelow: view.showFloorBelow,
         hasCollision: (item) => hasCollisions(item, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
         // The plan fits the room and the items outside it, in the part of
         // the canvas the HUD leaves free (#381); the pointer handlers read
@@ -1206,7 +1207,7 @@ export function useSceneEffects({
       removeRepaintHandler();
       if (paint2DRef.current === paint) paint2DRef.current = null;
     };
-  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds]);
+  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, view.showFloorBelow, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds]);
 
   // The dock folding, the tray opening or a panel mounting moves the plan's
   // free area: repaint. Keyed on the view alone, so a layout edit doesn't

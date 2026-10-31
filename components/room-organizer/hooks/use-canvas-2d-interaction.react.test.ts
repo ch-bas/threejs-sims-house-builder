@@ -38,7 +38,7 @@ function setup(selected: string[], overrides: Partial<UseCanvas2DInteractionPara
     canvasRef: { current: canvas },
     layout,
     activeFloor: floor,
-    view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, drawZoneMode: false },
+    view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, showFloorBelow: false, drawZoneMode: false },
     selectedItemId: selected[0] ?? null,
     extraSelectedIds: new Set(selected.slice(1)),
     allSelectedIds: new Set(selected),
@@ -169,7 +169,7 @@ describe('useCanvas2DInteraction in EXPLORE (#699)', () => {
   it('zone drawing adds no zone; the press selects instead', () => {
     const { params, fire } = setup([], {
       exploring: true,
-      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, drawZoneMode: true },
+      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, showFloorBelow: false, drawZoneMode: true },
     });
     fire('pointerdown', 0, 0);
     fire('pointermove', 2, 1);
@@ -337,7 +337,7 @@ describe('useCanvas2DInteraction outdoor items (#381)', () => {
       canvasRef: { current: canvas },
       layout,
       activeFloor: floor,
-      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, drawZoneMode: false },
+      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, showFloorBelow: false, drawZoneMode: false },
       selectedItemId: null,
       extraSelectedIds: new Set(),
       allSelectedIds: new Set(),
@@ -388,7 +388,7 @@ describe('useCanvas2DInteraction off-plan markers and lost pointers (#381 review
       canvasRef: { current: canvas },
       layout,
       activeFloor: floor,
-      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, drawZoneMode: false },
+      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, showFloorBelow: false, drawZoneMode: false },
       selectedItemId: null,
       extraSelectedIds: new Set(),
       allSelectedIds: new Set(),

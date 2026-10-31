@@ -133,6 +133,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   drawWallMode: false,
   drawZoneMode: false,
   showHeatmap: false,
+  showFloorBelow: false,
   showItemLabels: false,
   showNpcs: false,
   showCameraVision: true,

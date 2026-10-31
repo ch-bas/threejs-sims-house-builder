@@ -217,6 +217,22 @@ export function stairwellOutlines(layout: Pick<RoomLayout, 'floors'>, floorIndex
   return computeFloorOpenings(floorBelow).map((opening) => floorOpeningOutline(opening).map(([x, z]) => ({ x, z })));
 }
 
+/**
+ * The storey under `floorIndex`, for lining up on (#624): its interior walls
+ * and its stairs' tread lines, in world metres. Empty on the ground floor.
+ */
+export function floorBelowUnderlay(layout: Pick<RoomLayout, 'floors'>, floorIndex: number): { walls: PlanSegment[]; stairs: PlanSegment[] } {
+  const below = floorIndex > 0 ? layout.floors[floorIndex - 1] : undefined;
+  if (!below) return { walls: [], stairs: [] };
+  return {
+    walls: (below.interiorWalls ?? []).map((wall) => ({
+      from: { x: wall.x1, z: wall.z1 },
+      to: { x: wall.x2, z: wall.z2 },
+    })),
+    stairs: splitPlanItems(below.items).furniture.filter((item) => item.type === 'stairs').flatMap(stairTreadSegments),
+  };
+}
+
 /** True when the floor plan should draw this exterior wall dashed-hidden. */
 export function isWallHidden(floor: FloorLayout, wall: 'north' | 'south' | 'east' | 'west'): boolean {
   return (floor.hiddenWalls ?? []).includes(wall);

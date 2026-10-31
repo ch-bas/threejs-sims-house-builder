@@ -109,7 +109,7 @@ export interface UseCanvas2DInteractionParams {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   layout: RoomLayout;
   activeFloor: FloorLayout;
-  view: Pick<ViewSettings, 'showMeasurements' | 'showWiFiSignals' | 'showHeatmap' | 'drawZoneMode'>;
+  view: Pick<ViewSettings, 'showMeasurements' | 'showWiFiSignals' | 'showHeatmap' | 'showFloorBelow' | 'drawZoneMode'>;
   selectedItemId: string | null;
   extraSelectedIds: ReadonlySet<string>;
   allSelectedIds: ReadonlySet<string>;
@@ -265,6 +265,7 @@ export function useCanvas2DInteraction(
         showMeasurements: view.showMeasurements,
         showWiFiSignals: view.showWiFiSignals,
         showHeatmap: view.showHeatmap,
+        showFloorBelow: view.showFloorBelow,
         zoneDraft: draft,
         fitBounds: fit.bounds,
         offPlan: fit.offPlan,
