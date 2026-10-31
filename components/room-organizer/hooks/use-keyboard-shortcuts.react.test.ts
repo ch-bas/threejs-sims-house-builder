@@ -7,6 +7,7 @@ import { useKeyboardShortcuts, type KeyboardShortcutHandlers } from './use-keybo
 function makeHandlers(): { [K in keyof KeyboardShortcutHandlers]: ReturnType<typeof vi.fn> } {
   return {
     removeItem: vi.fn(),
+    removeRow: vi.fn(),
     removeInteriorWall: vi.fn(),
     toggleExteriorWall: vi.fn(),
     duplicateItem: vi.fn(),
@@ -345,5 +346,69 @@ describe('useKeyboardShortcuts — focused form controls (#415)', () => {
     const { calls } = setup(false);
     pressOn(focused('input'), 'z', { ctrlKey: true });
     expect(calls()).toEqual([]);
+  });
+});
+
+describe('useKeyboardShortcuts — Delete on a Placed Items row (#634)', () => {
+  afterEach(() => {
+    cleanup();
+    document.body.innerHTML = '';
+  });
+
+  const rowButton = (id: string): HTMLElement => {
+    const row = document.createElement('div');
+    row.dataset.placedItemId = id;
+    const button = document.createElement('button');
+    row.appendChild(button);
+    document.body.appendChild(row);
+    button.focus();
+    return button;
+  };
+  const press = (el: HTMLElement, key: string) => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, bubbles: true }));
+  };
+
+  it.each(['Delete', 'Backspace'])('%s removes the focused row, not the selection', (key) => {
+    const { handlers } = setup(false);
+    press(rowButton('sofa'), key);
+    expect(handlers.removeRow).toHaveBeenCalledTimes(1);
+    expect(handlers.removeRow).toHaveBeenCalledWith('sofa');
+    // Never the selection-wide path.
+    expect(handlers.removeItem).not.toHaveBeenCalled();
+  });
+
+  it('a held Delete takes one row, and its repeats touch nothing else', () => {
+    const { handlers } = setup(false);
+    const row = rowButton('sofa');
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', cancelable: true, bubbles: true }));
+    const repeat = new KeyboardEvent('keydown', { key: 'Delete', repeat: true, cancelable: true, bubbles: true });
+    rowButton('tv').dispatchEvent(repeat);
+    expect(handlers.removeRow).toHaveBeenCalledTimes(1);
+    expect(handlers.removeItem).not.toHaveBeenCalled();
+    expect(repeat.defaultPrevented).toBe(true);
+  });
+
+  it('a held Delete that runs out of rows leaves the selection alone', () => {
+    const { handlers } = setup(false);
+    const repeat = new KeyboardEvent('keydown', { key: 'Delete', repeat: true, cancelable: true, bubbles: true });
+    document.body.dispatchEvent(repeat);
+    expect(handlers.removeItem).not.toHaveBeenCalled();
+    expect(repeat.defaultPrevented).toBe(true);
+    // A fresh press still acts on the selection.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', cancelable: true, bubbles: true }));
+    expect(handlers.removeItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('another key on a row still acts on the selection', () => {
+    const { handlers } = setup(false);
+    press(rowButton('sofa'), 'r');
+    expect(handlers.rotateItem).toHaveBeenCalledWith('chair');
+  });
+
+  it('is off in EXPLORE, like any other removal', () => {
+    const { handlers } = setup(false, false, { exploring: true });
+    press(rowButton('sofa'), 'Delete');
+    expect(handlers.removeRow).not.toHaveBeenCalled();
+    expect(handlers.removeItem).not.toHaveBeenCalled();
   });
 });

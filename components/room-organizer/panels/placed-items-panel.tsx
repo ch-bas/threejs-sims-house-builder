@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -27,10 +27,36 @@ export function PlacedItemsPanel({
     return items.filter((item) => item.name.toLowerCase().includes(normalized) || item.type.toLowerCase().includes(normalized));
   }, [items, query]);
 
+  // A removal takes the focused row with it (or the popover it opened), so the
+  // keyboard carries on from the row that took its place (#634, #638). Only if
+  // the list had focus last, and focus really dropped to <body>.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const listHadFocus = useRef(false);
+  const shown = useRef({ floorId: activeFloor.id, ids: filtered.map((item) => item.id) });
+  useEffect(() => {
+    const before = shown.current;
+    const ids = filtered.map((item) => item.id);
+    shown.current = { floorId: activeFloor.id, ids };
+    if (before.floorId !== activeFloor.id || !listHadFocus.current) return;
+    const removedAt = before.ids.findIndex((id) => !items.some((item) => item.id === id));
+    const active = document.activeElement;
+    if (removedAt === -1 || (active && active !== document.body)) return;
+    const panel = panelRef.current;
+    const rows = panel?.querySelectorAll<HTMLElement>('[data-placed-item-id] > button');
+    // Not the filter field: focusing it would pop up a phone's keyboard.
+    const next = rows?.[Math.min(removedAt, rows.length - 1)] ?? panel?.querySelector<HTMLElement>('h3');
+    next?.focus();
+  }, [activeFloor.id, filtered, items]);
+  const trackListFocus = (event: FocusEvent<HTMLDivElement>) => {
+    const to = event.relatedTarget;
+    // To nowhere is the row unmounting; to a companion is a step away from it.
+    if (to instanceof Element && !to.closest('[data-focus-companion]')) listHadFocus.current = false;
+  };
+
   return (
-    <Card>
+    <Card ref={panelRef}>
       <CardHeader className="space-y-2">
-        <CardTitle>Placed Items ({items.length})</CardTitle>
+        <CardTitle tabIndex={-1}>Placed Items ({items.length})</CardTitle>
         {/* Keep the input visible while a query is set, or deleting items
             below the threshold would trap the panel in "no items match". */}
         {(items.length > 4 || query !== '') && (
@@ -49,12 +75,19 @@ export function PlacedItemsPanel({
         ) : filtered.length === 0 ? (
           <p className="text-xs text-muted-foreground">No items match this filter.</p>
         ) : (
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div
+            className="space-y-2 max-h-64 overflow-y-auto"
+            onFocus={() => {
+              listHadFocus.current = true;
+            }}
+            onBlur={trackListFocus}
+          >
             {filtered.map((item) => {
               const isColliding = collidingIds.has(item.id);
               return (
               <div
                 key={item.id}
+                data-placed-item-id={item.id}
                 className={`flex items-center justify-between p-2 rounded border ${
                   selectedItemId === item.id
                     ? 'border-primary bg-primary/10'

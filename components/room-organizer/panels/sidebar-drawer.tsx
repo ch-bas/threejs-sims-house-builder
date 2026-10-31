@@ -3,11 +3,12 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
 import { markLayoutLoaded } from '../hooks/use-achievements';
-import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { useDialogFocus, useFocusBeside } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { layoutStore } from '../hooks/use-layout-store';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn, loadTemplateUnderBudget, purchasePrice, purchaseRefusal, SELL_BACK_RATE } from '../lib/budget';
 import { CURRENCY_SYMBOL } from '../lib/constants';
@@ -35,7 +36,7 @@ import { RoofPanel } from './roof-panel';
 import { RoomSettingsPanel } from './room-settings-panel';
 import { SetsPanel } from './sets-panel';
 import { ShortcutsPanel } from './shortcuts-panel';
-import { SIDE_PANELS_ID, SIDE_TABPANEL_ID, SidebarTabs, sideTabId, type SidebarTab } from './sidebar-tabs';
+import { DRAWER_FULL_SCREEN_QUERY, SIDE_PANELS_ID, SIDE_TABPANEL_ID, SidebarTabs, sideTabId, type SidebarTab } from './sidebar-tabs';
 import { SitePanel } from './site-panel';
 import { StatisticsPanel } from './statistics-panel';
 import { StoragePanel } from './storage-panel';
@@ -52,6 +53,8 @@ const SIDEBAR_TAB_KEY = 'standalone-room-organizer-sidebar-tab';
 export interface SidebarDrawerProps {
   collapsed: boolean;
   onCollapse(): void;
+  /** Closes the item popover, as Escape does on the scene; null while there is none. */
+  dismissItemPopover: (() => void) | null;
   unlockedAchievements: ReadonlySet<string>;
   // Scene-ref callbacks that can't move into context
   onApplyPreset(preset: CameraPreset): void;
@@ -76,6 +79,7 @@ export interface SidebarDrawerProps {
 export const SidebarDrawer = memo(function SidebarDrawer({
   collapsed,
   onCollapse,
+  dismissItemPopover,
   ...bodyProps
 }: SidebarDrawerProps): JSX.Element {
   const view = useViewSettings('drawWallMode', 'drawZoneMode', 'measurementMode');
@@ -91,7 +95,18 @@ export const SidebarDrawer = memo(function SidebarDrawer({
   // Otherwise the drawer is a modal overlay (a backdrop covers the canvas),
   // so it behaves like one for keyboard users: focus moves in, Tab stays
   // inside, Escape closes it, and focus returns to the opener (#152).
-  useDialogFocus(!collapsed, drawerRef, { trap: !drawing, onEscape: onCollapse });
+  // The item popover and the toasts open from in here but render outside: they
+  // join the Tab cycle, and Escape closes the popover before the drawer (#632).
+  // A full-screen drawer covers the popover, so it stays out of that.
+  const coversPopover = useMediaQuery(DRAWER_FULL_SCREEN_QUERY);
+  const popoverBeside = !drawing && !coversPopover ? dismissItemPopover : null;
+  const focusBeside = useFocusBeside(!collapsed);
+  useDialogFocus(!collapsed, drawerRef, {
+    trap: !drawing,
+    companions: true,
+    returnHome: true,
+    onEscape: popoverBeside ?? onCollapse,
+  });
   // Storage access can throw where it is blocked; this drawer is always
   // mounted, so an unguarded read took the whole editor down (#396).
   const [sidebarTab, setSidebarTabRaw] = useState<SidebarTab>(() => {
@@ -141,7 +156,8 @@ export const SidebarDrawer = memo(function SidebarDrawer({
         ref={drawerRef}
         id={SIDE_PANELS_ID}
         role="dialog"
-        aria-modal={drawing ? undefined : 'true'}
+        // Not modal to a screen reader either while an overlay is a part of it.
+        aria-modal={drawing || popoverBeside || focusBeside ? undefined : 'true'}
         tabIndex={-1}
         aria-label="Side panels"
         className="pc-glass pc-glass--dark pc-sidebar"
@@ -203,7 +219,7 @@ export const SidebarDrawer = memo(function SidebarDrawer({
   );
 });
 
-type DrawerBodyProps = Omit<SidebarDrawerProps, 'collapsed'> & { sidebarTab: SidebarTab };
+type DrawerBodyProps = Omit<SidebarDrawerProps, 'collapsed' | 'dismissItemPopover'> & { sidebarTab: SidebarTab };
 
 const DrawerBody = memo(function DrawerBody({
   sidebarTab,

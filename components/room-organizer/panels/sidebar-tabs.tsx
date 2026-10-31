@@ -21,6 +21,8 @@ const TABS: readonly TabSpec[] = [
 
 /** The drawer's `<aside>`: the panel toggle names it in `aria-controls`. */
 export const SIDE_PANELS_ID = 'pc-side-panels';
+/** At this width the drawer fills the screen, over the item popover (globals.css). */
+export const DRAWER_FULL_SCREEN_QUERY = '(max-width: 768px)';
 /** The drawer's one tab panel, shared by every tab. */
 export const SIDE_TABPANEL_ID = 'pc-side-tabpanel';
 export function sideTabId(tab: SidebarTab): string {

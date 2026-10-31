@@ -4,6 +4,8 @@ import type { FurnitureItem } from '../lib/types';
 
 export interface KeyboardShortcutHandlers {
   removeItem(id: string): void;
+  /** One Placed Items row, never the selection around it (#634). */
+  removeRow(id: string): void;
   removeInteriorWall(id: string): void; 
   toggleExteriorWall(id: string): void;
   duplicateItem(id: string): void;
@@ -198,6 +200,23 @@ export function useKeyboardShortcuts({
       const deleteKey = event.key === 'Delete' || event.key === 'Backspace';
       if (exploring && (deleteKey || key === 'r' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
 
+      // A held delete key takes one thing. Focus moves on after a removal, so
+      // its repeats would otherwise land on whatever comes next: another row,
+      // the selection, a wall (#634).
+      if (deleteKey && event.repeat) {
+        event.preventDefault();
+        return;
+      }
+
+      // A focused Placed Items row means that row, whatever is selected: the
+      // drawer covers the scene, so nothing else shows what went (#634).
+      const rowItemId = deleteKey ? focusedRowItemId(event.target) : null;
+      if (rowItemId !== null) {
+        event.preventDefault();
+        handlers.removeRow(rowItemId);
+        return;
+      }
+
       if (deleteKey && selectedItem) {
         event.preventDefault();
         // Lock enforcement lives in the handler: it must see the whole
@@ -274,6 +293,11 @@ export function useKeyboardShortcuts({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedItem, selectedWall, hasSignalItems, walkthroughActive, exploring, isDragActive, handlers]);
+}
+
+function focusedRowItemId(target: EventTarget | null): string | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLElement>('[data-placed-item-id]')?.dataset.placedItemId ?? null;
 }
 
 /**

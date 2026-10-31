@@ -90,6 +90,7 @@ export function LotBadge({ sidebarCollapsed, onToggleSidebar }: LotBadgeProps): 
         aria-label={sidebarCollapsed ? 'Open panels' : 'Close panels'}
         aria-expanded={!sidebarCollapsed}
         aria-controls={SIDE_PANELS_ID}
+        data-focus-home=""
         className={`pc-glass pc-glass--dark pc-tile${
           sidebarCollapsed ? '' : ' pc-tile--active'
         }`}

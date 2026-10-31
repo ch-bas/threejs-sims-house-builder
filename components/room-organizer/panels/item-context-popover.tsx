@@ -14,6 +14,7 @@ import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
+import { DRAWER_FULL_SCREEN_QUERY } from './sidebar-tabs';
 import { SliderRow } from './slider-row';
 import type { FurnitureItem, SofaShape, StairsShape } from '../lib/types';
 
@@ -59,12 +60,6 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // change it is off, with the reason as its hint.
   const exploring = useExploring();
   const dialogRef = useRef<HTMLDivElement>(null);
-  // Non-modal: move focus in so screen readers land in the dialog, and hand it
-  // back when it closes (Close / Demolish / deselect) instead of dropping it
-  // to <body> (#152). The container, not a button, takes focus so Enter/Space
-  // can't trigger an action by accident. Escape is left to the global
-  // shortcut (deselect), which also cancels an in-progress wall draft first.
-  useDialogFocus(item !== null, dialogRef);
   // On a phone or a short screen the popover is a bottom sheet (globals.css,
   // "Overlays"): collapsed to the header and the action row so the selected
   // item stays in view above it, expanded on demand, and collapsed again for
@@ -83,6 +78,16 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
       delete root.dataset.sheetOpen;
     };
   }, [sheetOpen, expanded]);
+  // Non-modal: move focus in so screen readers land in the dialog, and hand it
+  // back when it closes (Close / Demolish / deselect) instead of dropping it
+  // to <body> (#152). The container, not a button, takes focus so Enter/Space
+  // can't trigger an action by accident. Escape is left to the global
+  // shortcut (deselect), which also cancels an in-progress wall draft first.
+  // After the effect above: closing unhides the dock, which may hold the tile
+  // that focus returns to (#638). Selected on the scene there is nothing to
+  // return to, so a keyboard close goes to the panels toggle.
+  useDialogFocus(item !== null, dialogRef, { returnHome: 'keyboard' });
+  const underDrawer = useMediaQuery(DRAWER_FULL_SCREEN_QUERY);
   if (!item) return <></>;
   const { onClose } = props;
   const setExpanded = (next: boolean) => setExpandedFor(next ? item.id : null);
@@ -115,6 +120,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
       role="dialog"
       aria-label={`Edit ${item.name}`}
       data-sheet={expanded ? 'expanded' : 'collapsed'}
+      data-focus-companion={underDrawer ? undefined : ''}
       style={{
         position: 'absolute',
         top: 130,

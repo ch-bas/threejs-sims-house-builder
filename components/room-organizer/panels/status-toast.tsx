@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { usePausableTimeout } from '../hooks/use-pausable-timeout';
 import { noticeDuration, subscribeNotices, type Notice, type NoticeTone } from '../lib/editor-notices';
@@ -14,8 +15,13 @@ import {
   statusToastInSlot,
   toastsHeldBack,
 } from '../lib/overlay-queue';
+import { isTypingTarget } from '../lib/walk-input';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { OverlayStackPortal } from './overlay-stack';
+
+/** When each notice was raised; one shown later than this waited in the queue. */
+const raisedAt = new WeakMap<Notice, number>();
+const ANSWERS_THE_ASKER_MS = 500;
 
 /** The newest few stay visible; older ones drop off the end. */
 const MAX_VISIBLE = 3;
@@ -48,6 +54,7 @@ export function StatusToastHost(): JSX.Element | null {
   useEffect(
     () =>
       subscribeNotices((notice) => {
+        raisedAt.set(notice, Date.now());
         // A single slot never drops the notice on screen (the oldest).
         setNotices((current) =>
           compactRef.current
@@ -126,13 +133,47 @@ function StatusToast({
   const engaged = notice.action !== undefined && (hovered || focused);
   usePausableTimeout(notice.id, !heldBack && !engaged, duration, () => onDismiss(notice.id));
 
+  // The link to copy by hand is the whole point of this notice: focus lands on
+  // it, selected, even from inside the drawer; Escape puts it away and focus
+  // goes back to the control that asked (#632).
+  const toastRef = useRef<HTMLDivElement>(null);
+  const copyFieldRef = useRef<HTMLInputElement>(null);
+  // Any other notice closing under the focus (Undo, Dismiss) hands it back to
+  // where it came from, not to <body> (#638).
+  const focusCameFrom = useRef<HTMLElement | null>(null);
+  // A layout effect runs while the notice is still in the document, so it can
+  // tell whether focus is really inside. A text field stays put on touch: its
+  // keyboard would pop up.
+  useLayoutEffect(() => {
+    const toast = toastRef.current;
+    return () => {
+      const from = focusCameFrom.current;
+      if (!from?.isConnected || !toast?.contains(document.activeElement)) return;
+      if (isTypingTarget(from) && window.matchMedia('(pointer: coarse)').matches) return;
+      from.focus({ preventScroll: true });
+    };
+  }, []);
+  // One that waited in the queue has no asker left to answer: Tab reaches it.
+  const [justAsked] = useState(() => Date.now() - (raisedAt.get(notice) ?? 0) < ANSWERS_THE_ASKER_MS);
+  useDialogFocus(notice.copyText !== undefined && justAsked, toastRef, {
+    initialFocusRef: copyFieldRef,
+    onEscape: () => onDismiss(notice.id),
+    takeFocus: true,
+  });
+
   return (
     <div
+      ref={toastRef}
+      data-focus-companion={notice.action !== undefined || notice.copyText !== undefined ? '' : undefined}
       className="pc-glass pc-glass--dark"
       role={notice.tone === 'error' ? 'alert' : 'status'}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
-      onFocus={() => setFocused(true)}
+      onFocus={(event) => {
+        setFocused(true);
+        const from = event.relatedTarget;
+        if (from instanceof HTMLElement && !event.currentTarget.contains(from)) focusCameFrom.current = from;
+      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
       }}
@@ -200,6 +241,7 @@ function StatusToast({
       </div>
       {notice.copyText !== undefined && (
         <input
+          ref={copyFieldRef}
           readOnly
           aria-label="Link to copy"
           value={notice.copyText}

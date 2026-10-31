@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useDialogFocus } from './use-dialog-focus';
+import { holdFocusReturn, useDialogFocus, useFocusBeside } from './use-dialog-focus';
 
 function Harness({ trap = false, onEscape, parked = false }: { trap?: boolean; onEscape?: () => void; parked?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -277,5 +277,284 @@ describe('useDialogFocus — Escape handled by a control inside (#152 review)', 
     key('Escape');
     expect(screen.getByText('rename cancelled')).toBeTruthy();
     expect(screen.getByRole('dialog', { name: 'drawer' })).toBeTruthy();
+  });
+});
+
+function DrawerAndFriends({ companions = true }: { companions?: boolean }) {
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(true, drawerRef, { trap: true, companions });
+  useDialogFocus(true, popoverRef);
+  return (
+    <>
+      <div ref={popoverRef} role="dialog" aria-label="popover" tabIndex={-1} data-focus-companion="">
+        <button type="button">pop first</button>
+        <button type="button">pop last</button>
+        <button type="button" disabled>
+          pop off
+        </button>
+      </div>
+      <div data-focus-companion="">
+        <button type="button">undo</button>
+      </div>
+      <div ref={drawerRef} role="dialog" aria-modal="true" aria-label="drawer" tabIndex={-1}>
+        <button type="button">row</button>
+        <button type="button">tab away</button>
+      </div>
+    </>
+  );
+}
+
+describe('useDialogFocus — companions of a modal (#632)', () => {
+  const button = (name: string) => screen.getByRole('button', { name });
+  const settle = () =>
+    act(() => {
+      vi.runAllTimers();
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('Tab walks the drawer, then each companion, and wraps; a disabled control is no edge', () => {
+    render(<DrawerAndFriends />);
+    settle();
+    button('tab away').focus();
+    key('Tab');
+    expect(document.activeElement).toBe(button('pop first'));
+    // Inside a surface Tab stays native.
+    expect(key('Tab').defaultPrevented).toBe(false);
+    button('pop last').focus();
+    key('Tab');
+    expect(document.activeElement).toBe(button('undo'));
+    key('Tab');
+    expect(document.activeElement).toBe(button('row'));
+  });
+
+  it('Shift+Tab goes back the same way, also from a surface that holds focus itself', () => {
+    render(<DrawerAndFriends />);
+    settle();
+    button('row').focus();
+    key('Tab', { shiftKey: true });
+    expect(document.activeElement).toBe(button('undo'));
+    screen.getByRole('dialog', { name: 'popover' }).focus();
+    key('Tab', { shiftKey: true });
+    expect(document.activeElement).toBe(button('tab away'));
+  });
+
+  it('a modal that did not ask stays strict', () => {
+    render(<DrawerAndFriends companions={false} />);
+    settle();
+    button('tab away').focus();
+    key('Tab');
+    expect(document.activeElement).toBe(button('row'));
+  });
+});
+
+function Closable({ returnHome = false, previousGone = false }: { returnHome?: boolean; previousGone?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [gone, setGone] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, ref, { returnHome });
+  return (
+    <>
+      <button type="button" data-focus-home="">
+        home
+      </button>
+      {!gone && (
+        <button type="button" onClick={() => setOpen(true)}>
+          opener
+        </button>
+      )}
+      <button type="button" onClick={() => setOpen(true)}>
+        toggle
+      </button>
+      {open && (
+        <div ref={ref} role="dialog" tabIndex={-1} aria-label="closable">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setGone(previousGone);
+            }}
+          >
+            close
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+describe('useDialogFocus — where focus goes on close (#638)', () => {
+  const button = (name: string) => screen.getByRole('button', { name });
+  const settle = () =>
+    act(() => {
+      vi.runAllTimers();
+    });
+  const openFromNowhere = () => {
+    (document.activeElement as HTMLElement).blur();
+    act(() => button('toggle').click());
+    settle();
+    act(() => button('close').click());
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it('opened from nowhere, it goes home if it asked to', () => {
+    render(<Closable returnHome />);
+    openFromNowhere();
+    expect(document.activeElement).toBe(button('home'));
+  });
+
+  it('opened from nowhere, it otherwise leaves focus alone', () => {
+    render(<Closable />);
+    openFromNowhere();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('with its opener gone, it goes home', () => {
+    render(<Closable previousGone />);
+    const opener = button('opener');
+    opener.focus();
+    act(() => opener.click());
+    settle();
+    act(() => button('close').click());
+    expect(document.activeElement).toBe(button('home'));
+  });
+
+  it('a control that blurred itself for the dialog gets focus back', () => {
+    render(<Closable />);
+    const toggle = button('toggle');
+    toggle.focus();
+    holdFocusReturn(toggle);
+    toggle.blur();
+    act(() => toggle.click());
+    settle();
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+    act(() => button('close').click());
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it('with no dialog opening, that control simply keeps focus (a refused add)', () => {
+    render(<Closable />);
+    const toggle = button('toggle');
+    toggle.focus();
+    holdFocusReturn(toggle);
+    toggle.blur();
+    settle();
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it('with a popover already open, it takes the keys and returns there', () => {
+    render(<Closable />);
+    act(() => button('toggle').click());
+    settle();
+    const opener = button('opener');
+    opener.focus();
+    holdFocusReturn(opener);
+    opener.blur();
+    settle();
+    expect(document.activeElement).toBe(screen.getByRole('dialog'));
+    act(() => button('close').click());
+    expect(document.activeElement).toBe(opener);
+  });
+});
+
+function SceneSelected() {
+  const [open, setOpen] = useState(true);
+  const ref = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, ref, { returnHome: 'keyboard' });
+  return (
+    <>
+      <button type="button" data-focus-home="">
+        home
+      </button>
+      <button type="button" onClick={() => setOpen(true)}>
+        reopen
+      </button>
+      {open && (
+        <div ref={ref} role="dialog" tabIndex={-1} aria-label="popover">
+          <button type="button" onClick={() => setOpen(false)}>
+            demolish
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+describe('useDialogFocus — opened by a click on the scene (#638 review)', () => {
+  const button = (name: string) => screen.getByRole('button', { name });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const open = () => {
+    render(<SceneSelected />);
+    act(() => {
+      vi.runAllTimers();
+    });
+    button('demolish').focus();
+  };
+
+  it('a key pressed inside it goes home when it closes', () => {
+    open();
+    key('Enter');
+    act(() => button('demolish').click());
+    expect(document.activeElement).toBe(button('home'));
+  });
+
+  it('a pointer closing it leaves focus alone', () => {
+    open();
+    key('Tab');
+    fireEvent.pointerDown(document.body);
+    act(() => button('demolish').click());
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
+function Beside() {
+  const beside = useFocusBeside(true);
+  return (
+    <>
+      <p>{beside ? 'beside' : 'alone'}</p>
+      <div data-focus-companion="">
+        <button type="button">undo</button>
+      </div>
+      <button type="button">row</button>
+    </>
+  );
+}
+
+describe('useFocusBeside (#632 review)', () => {
+  afterEach(cleanup);
+
+  it('follows focus into a companion and out again', () => {
+    render(<Beside />);
+    const undo = screen.getByRole('button', { name: 'undo' });
+    expect(screen.getByText('alone')).toBeTruthy();
+    act(() => undo.focus());
+    expect(screen.getByText('beside')).toBeTruthy();
+    act(() => screen.getByRole('button', { name: 'row' }).focus());
+    expect(screen.getByText('alone')).toBeTruthy();
+    act(() => undo.focus());
+    act(() => undo.blur());
+    expect(screen.getByText('alone')).toBeTruthy();
   });
 });
