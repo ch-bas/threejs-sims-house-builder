@@ -1257,6 +1257,8 @@ export function RoomOrganizer(): JSX.Element {
   // Stable identities for the memoised drawer and HUD (#3): these handlers
   // close over the layout, so they change on every edit.
   const collapseSidebar = useCallback(() => setSidebarCollapsed(true), []);
+  // What Escape does to the popover on the scene, for Escape in the drawer (#632).
+  const dismissItemPopover = useEvent(() => (shortcutHandlers.cancelPlacement ?? shortcutHandlers.deselect)());
   const stableApplyPreset = useEvent(applyPreset);
   const stableFitToRoom = useEvent(fitToRoom);
   const stableScreenshot = useEvent(handleScreenshot);
@@ -1517,6 +1519,7 @@ export function RoomOrganizer(): JSX.Element {
       <SidebarDrawer
         collapsed={sidebarCollapsed}
         onCollapse={collapseSidebar}
+        dismissItemPopover={selectedItem ? dismissItemPopover : null}
         unlockedAchievements={unlockedAchievements}
         onApplyPreset={stableApplyPreset}
         onFitToRoom={stableFitToRoom}

@@ -258,3 +258,51 @@ describe('desktop achievements (#461)', () => {
     expect(shown('Achievement a')).toBe(false);
   });
 });
+
+describe('the link to copy by hand (#632)', () => {
+  it('takes focus, selected, and Escape puts it away and hands focus back', () => {
+    compact = false;
+    const asker = document.createElement('button');
+    document.body.appendChild(asker);
+    asker.focus();
+    render(<StatusToastHost />);
+    act(() => {
+      notify('Copy this share link:', 'info', { copyText: 'https://example.test/#x' });
+    });
+    advance(1);
+    const field = screen.getByRole('textbox', { name: 'Link to copy' });
+    expect(document.activeElement).toBe(field);
+    expect(field.closest('[data-focus-companion]')).not.toBeNull();
+    act(() => {
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+    expect(shown('Copy this share link:')).toBe(false);
+    expect(document.activeElement).toBe(asker);
+    asker.remove();
+  });
+
+  it('a notice closing under the focus hands it back', () => {
+    compact = false;
+    const row = document.createElement('button');
+    document.body.appendChild(row);
+    row.focus();
+    render(<StatusToastHost />);
+    act(() => {
+      notify('Removed Sofa', 'info', { action: { label: 'Undo', run: vi.fn() } });
+    });
+    const undo = screen.getByRole('button', { name: /^Undo/ });
+    act(() => undo.focus());
+    act(() => undo.click());
+    expect(document.activeElement).toBe(row);
+    row.remove();
+  });
+
+  it('a notice with nothing to act on stays out of the Tab cycle', () => {
+    compact = false;
+    render(<StatusToastHost />);
+    act(() => {
+      notify('Saved', 'info');
+    });
+    expect(screen.getByRole('status').hasAttribute('data-focus-companion')).toBe(false);
+  });
+});

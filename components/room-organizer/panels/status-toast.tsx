@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { usePausableTimeout } from '../hooks/use-pausable-timeout';
 import { noticeDuration, subscribeNotices, type Notice, type NoticeTone } from '../lib/editor-notices';
@@ -126,13 +127,41 @@ function StatusToast({
   const engaged = notice.action !== undefined && (hovered || focused);
   usePausableTimeout(notice.id, !heldBack && !engaged, duration, () => onDismiss(notice.id));
 
+  // The link to copy by hand is the whole point of this notice: focus lands on
+  // it, selected, even from inside the drawer; Escape puts it away and focus
+  // goes back to the control that asked (#632).
+  const toastRef = useRef<HTMLDivElement>(null);
+  const copyFieldRef = useRef<HTMLInputElement>(null);
+  // Any other notice closing under the focus (Undo, Dismiss) hands it back to
+  // where it came from, not to <body> (#638).
+  const focusCameFrom = useRef<HTMLElement | null>(null);
+  useEffect(
+    () => () => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      if (focusCameFrom.current?.isConnected) focusCameFrom.current.focus({ preventScroll: true });
+    },
+    []
+  );
+  useDialogFocus(notice.copyText !== undefined, toastRef, {
+    initialFocusRef: copyFieldRef,
+    onEscape: () => onDismiss(notice.id),
+    takeFocus: true,
+  });
+
   return (
     <div
+      ref={toastRef}
+      data-focus-companion={notice.action !== undefined || notice.copyText !== undefined ? '' : undefined}
       className="pc-glass pc-glass--dark"
       role={notice.tone === 'error' ? 'alert' : 'status'}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
-      onFocus={() => setFocused(true)}
+      onFocus={(event) => {
+        setFocused(true);
+        const from = event.relatedTarget;
+        if (from instanceof HTMLElement && !event.currentTarget.contains(from)) focusCameFrom.current = from;
+      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
       }}
@@ -200,6 +229,7 @@ function StatusToast({
       </div>
       {notice.copyText !== undefined && (
         <input
+          ref={copyFieldRef}
           readOnly
           aria-label="Link to copy"
           value={notice.copyText}
