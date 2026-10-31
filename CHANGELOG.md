@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- Add floor shows a plus instead of a plus-minus sign, on the floor pill and in the drawer ([#686](https://github.com/ch-bas/threejs-sims-house-builder/issues/686))
 - The camera pad's zoom buttons are full size instead of thin slivers either side of the slider ([#639](https://github.com/ch-bas/threejs-sims-house-builder/issues/639))
 
 ## [1.25.0] - 2026-10-31

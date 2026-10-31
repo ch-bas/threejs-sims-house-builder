@@ -32,6 +32,7 @@ export type PlotcraftIconName =
   | 'magnify'
   | 'demolish'
   | 'plusminus'
+  | 'plus'
   | 'chevL'
   | 'chevR'
   | 'arrowL'
@@ -231,6 +232,7 @@ const PATHS: Record<PlotcraftIconName, ReactNode> = {
       <path d="M14 15h5" />
     </>
   ),
+  plus: <path d="M5 12h14M12 5v14" />,
   chevL: <path d="M14 7l-5 5l5 5" />,
   chevR: <path d="M10 7l5 5l-5 5" />,
   arrowL: <path d="M15 6l-6 6l6 6" />,
