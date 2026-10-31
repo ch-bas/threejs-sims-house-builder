@@ -111,7 +111,7 @@ export function FloorPill(): JSX.Element {
           cursor: canAdd && !exploring ? 'pointer' : 'not-allowed',
         }}
       >
-        <Icon name="plusminus" size={12} />
+        <Icon name="plus" size={12} />
       </button>
 
       {floors.length > 1 && (

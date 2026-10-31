@@ -129,7 +129,7 @@ export function FloorSwitcher(): JSX.Element {
               cursor: canAdd ? 'pointer' : 'not-allowed',
             }}
           >
-            <Icon name="plusminus" size={12} />
+            <Icon name="plus" size={12} />
             Floor
           </button>
         </div>

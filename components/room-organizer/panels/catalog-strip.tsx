@@ -9,7 +9,7 @@ import { useScrollCue } from '../hooks/use-scroll-cue';
 import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
-import { catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
+import { catalogFitsItsTiles, catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
 import { buildToolLabel } from '../lib/modes';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { CctvMenu } from './cctv-menu';
@@ -34,7 +34,8 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
   // instead of a two-row page with a pager.
   const compact = useMediaQuery(COMPACT_DOCK_QUERY);
   // A tooltip never shows on touch, so tiles name their item there (#423).
-  const showNames = useMediaQuery(COARSE_POINTER_QUERY) || compact;
+  const touch = useMediaQuery(COARSE_POINTER_QUERY);
+  const showNames = touch || compact;
 
   const items =
     category === 'all'
@@ -44,6 +45,10 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
   const pages = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(page, pages - 1);
   const visible = items.slice(safePage * pageSize, (safePage + 1) * pageSize);
+  // No empty slots, no pager with nowhere to go (#684). The strip keeps its
+  // frame: a resize per category would move the tool row under the finger and
+  // reframe the scene on every tap.
+  const fitted = catalogFitsItsTiles(pages, touch);
 
   // Keyboard placement (#168): one tile in the Tab order, arrows rove the grid.
   const { gridRef, tileProps } = useRovingTiles(visible.length, compact ? visible.length : COLUMNS);
@@ -54,7 +59,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
   if (category === 'security') {
     return (
       <div
-        className="pointer-events-auto pc-glass pc-catalog-strip"
+        className={`pointer-events-auto pc-glass pc-catalog-strip${collapsed ? '' : ' pc-catalog-strip--menu'}`}
         data-scene-occluder=""
         style={{ width: 540, maxWidth: '100%', padding: '10px 14px 12px' }}
       >
@@ -69,6 +74,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         {!collapsed && (
         <div
           style={{
+            flex: 1,
             background: 'rgba(0, 0, 0, 0.20)',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             borderRadius: 14,
@@ -143,6 +149,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         <div
           style={{ flex: 1, height: 1, background: 'var(--pc-glass-inner)' }}
         />
+        {!fitted && (
         <div
           className="pc-blurb"
           style={{
@@ -154,23 +161,27 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
         >
           {safePage + 1} / {pages}
         </div>
+        )}
       </div>
 
       {!collapsed && (
       <div
+        className="pc-catalog-pager"
         style={{
           display: 'grid',
-          gridTemplateColumns: '28px 1fr 28px',
+          gridTemplateColumns: fitted ? '1fr' : '28px 1fr 28px',
           gap: 8,
           alignItems: 'stretch',
         }}
       >
+        {!fitted && (
         <PageButton
           icon="chevL"
           label="Previous"
           onClick={() => setPage((p) => Math.max(0, p - 1))}
           disabled={safePage === 0}
         />
+        )}
 
         {/* Recessed inner panel — the catalog "well" that holds the tiles */}
         <div
@@ -202,7 +213,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
               gap: 6,
             }}
           >
-            {Array.from({ length: PAGE_SIZE }).map((_, index) => {
+            {Array.from({ length: fitted ? visible.length : PAGE_SIZE }).map((_, index) => {
               const item = visible[index];
               if (!item) {
                 return (
@@ -236,12 +247,14 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
           </div>
         </div>
 
+        {!fitted && (
         <PageButton
           icon="chevR"
           label="Next"
           onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
           disabled={safePage >= pages - 1}
         />
+        )}
       </div>
       )}
     </div>

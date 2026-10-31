@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { catalogPageSize, COMPACT_DOCK_QUERY, scrollCue, welcomeTips } from './hud-layout';
+import { catalogFitsItsTiles, catalogPageSize, COMPACT_DOCK_QUERY, scrollCue, welcomeTips } from './hud-layout';
+
+describe('catalogFitsItsTiles', () => {
+  it('drops the empty slots and the pager on touch when one page holds it all', () => {
+    expect(catalogFitsItsTiles(1, true)).toBe(true);
+  });
+  it('keeps the pager when there is a second page', () => {
+    expect(catalogFitsItsTiles(2, true)).toBe(false);
+  });
+  it('keeps the fixed grid for a mouse', () => {
+    expect(catalogFitsItsTiles(1, false)).toBe(false);
+  });
+});
 
 describe('catalogPageSize', () => {
   it('keeps the paged grid on desktop', () => {
