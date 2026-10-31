@@ -215,6 +215,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
           aria-label="Zoom out"
           className="pc-tile"
           style={{
+            flexShrink: 0,
             width: 24,
             height: 24,
             borderRadius: 6,
@@ -237,6 +238,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
           aria-label="Zoom"
           style={{
             flex: 1,
+            minWidth: 0,
             accentColor: 'var(--pc-cyan-glow)',
             height: 18,
           }}
@@ -248,6 +250,7 @@ export function CameraPad(props: CameraPadProps): JSX.Element {
           aria-label="Zoom in"
           className="pc-tile"
           style={{
+            flexShrink: 0,
             width: 24,
             height: 24,
             borderRadius: 6,

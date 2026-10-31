@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- The camera pad's zoom buttons are full size instead of thin slivers either side of the slider ([#639](https://github.com/ch-bas/threejs-sims-house-builder/issues/639))
+
 ## [1.25.0] - 2026-10-31
 
 The **Data safety & feedback** milestone: questions asked in the app, Undo on removals, a reason for every refusal, safer library saves, and a one-file backup of everything in this browser.
