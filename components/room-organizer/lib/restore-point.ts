@@ -1,4 +1,5 @@
 import { askConfirm } from './confirm-dialog';
+import { createChannel } from './editor-notices';
 import { INITIAL_LAYOUT } from './initial-layout';
 import { recordSnapshot } from './version-history';
 import type { ConfirmOptions } from './confirm-dialog';
@@ -56,6 +57,13 @@ export function isUntouched(layout: RoomLayout): boolean {
   return true;
 }
 
+const houseReplaced = createChannel<void>();
+
+/** Runs whenever a whole-house load starts: a note about the last load is out of date (#647). */
+export function subscribeHouseReplaced(listener: () => void): () => void {
+  return houseReplaced.subscribe(listener);
+}
+
 /**
  * Take a forced restore point of the design that is about to be replaced
  * wholesale — share link, library/template load, History restore, JSON
@@ -68,6 +76,7 @@ export function isUntouched(layout: RoomLayout): boolean {
  * blanks. Never throws: a failed snapshot must not block the replacement.
  */
 export function snapshotBeforeReplace(outgoing: RoomLayout | null | undefined): void {
+  houseReplaced.emit();
   if (!outgoing) return;
   try {
     if (isUntouched(outgoing)) return;

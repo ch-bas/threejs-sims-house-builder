@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
+import { subscribeHouseReplaced } from '../lib/restore-point';
 
 // A Record, not a list, so a template added to ROOM_TEMPLATES without a label
 // here fails the typecheck instead of silently missing from the select (#343).
@@ -33,6 +34,8 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
   const [status, setStatus] = useState<string | null>(null);
   // A template replaces the house: not while exploring (#643).
   const exploring = useExploring();
+  // "Undo brings back …" stops being true once another house replaces this one.
+  useEffect(() => subscribeHouseReplaced(() => setStatus(null)), []);
   const load = (key: RoomTemplateKey) => {
     void onLoadTemplate(ROOM_TEMPLATES[key]).then((loaded) => {
       if (loaded) setStatus(`Loaded the ${TEMPLATE_LABELS[key].replace(/^\S+\s/, '')} template. Undo brings back the house it replaced.`);

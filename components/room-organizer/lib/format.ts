@@ -14,6 +14,15 @@ export function formatSize(width: number, depth: number, decimals?: number): str
   return `${formatMetres(width, decimals)} × ${formatMetres(depth, decimals)}`;
 }
 
+/** "14:05" today, "28 Oct, 14:05" on another day, in the viewer's locale and time zone. */
+export function formatClock(at: number, now: number = Date.now()): string {
+  const date = new Date(at);
+  const time = { hour: '2-digit', minute: '2-digit' } as const;
+  return date.toDateString() === new Date(now).toDateString()
+    ? date.toLocaleTimeString([], time)
+    : date.toLocaleString([], { day: 'numeric', month: 'short', ...time });
+}
+
 /** "just now", "40 s ago", "3 min ago", "2 h ago", "4 days ago". */
 export function formatAge(ms: number, options: { seconds?: boolean } = {}): string {
   const threshold = options.seconds ? 5_000 : 60_000;

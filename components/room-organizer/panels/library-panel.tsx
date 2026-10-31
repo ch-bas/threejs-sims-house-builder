@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { layoutStore } from '../hooks/use-layout-store';
 import { budgetSpent } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
 import { CURRENCY_SYMBOL } from '../lib/constants';
-import { formatAge } from '../lib/format';
+import { formatAge, formatClock } from '../lib/format';
 import {
   countUnreadableSavedLayouts,
   deleteNamedLayout,
@@ -27,7 +27,7 @@ import {
   removeReceivedLayout,
   shareHashFromText,
 } from '../lib/pasteboard';
-import { confirmReplace } from '../lib/restore-point';
+import { confirmReplace, subscribeHouseReplaced } from '../lib/restore-point';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
 import {
@@ -35,6 +35,8 @@ import {
   floorPlanFingerprint,
   getSnapshot,
   listSnapshots,
+  snapshotBelongsTo,
+  snapshotIsLayout,
   snapshotsShareHouse,
   subscribeSnapshots,
 } from '../lib/version-history';
@@ -156,6 +158,22 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   // every replacement takes — have no `storage` event (#367).
   useEffect(() => subscribeSnapshots(() => setSnapshots(listSnapshots())), []);
 
+  // A note about an earlier load is out of date once another house comes in;
+  // a load from this panel writes its own note after this (#647).
+  useEffect(() => subscribeHouseReplaced(() => setLoaded(null)), []);
+
+  // The newest restore point when it is the house on screen, as the first
+  // autosave after a load leaves it: restoring it would do nothing, so it is
+  // not listed until the house moves on (#647). Counts first: only a likely
+  // match pays for reading the snapshot, on a panel that renders on each edit.
+  const [newest] = snapshots;
+  const liveSnapshotId = useMemo(() => {
+    if (!newest || !snapshotBelongsTo(newest, currentLayout)) return null;
+    const items = currentLayout.floors.reduce((sum, floor) => sum + floor.items.length, 0);
+    if (newest.floorCount !== currentLayout.floors.length || newest.itemCount !== items) return null;
+    return snapshotIsLayout(newest.id, currentLayout) ? newest.id : null;
+  }, [newest, currentLayout]);
+
   // A layout effect: while the drawer is closed its contexts are held (#3), so
   // a rename made then reaches this field only on open, and it must land
   // before that first paint.
@@ -222,7 +240,8 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   };
 
   const handleRestore = async (summary: VersionSummary) => {
-    if (!(await confirmReplace(currentLayout, `the restore point from ${formatAge(Date.now() - summary.savedAt)}`))) return;
+    const house = summary.name === null ? 'the restore point' : `“${summary.name}”`;
+    if (!(await confirmReplace(currentLayout, `${house} from ${formatClock(summary.savedAt)}`))) return;
     const snapshot = getSnapshot(summary.id);
     if (!snapshot) {
       setLoaded({
@@ -467,19 +486,21 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
           </p>
           <LoadedStatus note={loaded} section="history" />
           <RecoveryEntry currentLayout={currentLayout} onLoad={onLoad} />
-          {snapshots.length === 0 ? (
+          {snapshots.every((summary) => summary.id === liveSnapshotId) ? (
             <p className="text-xs text-muted-foreground py-2 text-center">No restore points yet.</p>
           ) : (
             <ul className="space-y-1 max-h-64 overflow-y-auto">
-              {snapshots.map((summary, index) => (
-                <HistoryRow
-                  key={summary.id}
-                  summary={summary}
-                  // Newest first, so the row below is the older neighbour.
-                  change={describeChange(summary, snapshots[index + 1])}
-                  onRestore={() => void handleRestore(summary)}
-                />
-              ))}
+              {snapshots.map((summary, index) =>
+                summary.id === liveSnapshotId ? null : (
+                  <HistoryRow
+                    key={summary.id}
+                    summary={summary}
+                    // Newest first, so the row below is the older neighbour.
+                    change={describeChange(summary, snapshots[index + 1])}
+                    onRestore={() => void handleRestore(summary)}
+                  />
+                )
+              )}
             </ul>
           )}
         </div>
