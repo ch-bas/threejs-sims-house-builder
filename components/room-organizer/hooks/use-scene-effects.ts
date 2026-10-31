@@ -1154,7 +1154,7 @@ export function useSceneEffects({
       if (canvas.width !== backingWidth) canvas.width = backingWidth;
       if (canvas.height !== backingHeight) canvas.height = backingHeight;
 
-      const { insets, padding } = planFit(canvas, boundsSize(fitBounds));
+      const { insets, padding, hudRects } = planFit(canvas, boundsSize(fitBounds));
       render2DTopDown({
         canvas,
         layout,
@@ -1172,6 +1172,7 @@ export function useSceneEffects({
         offPlan,
         insets,
         padding,
+        hudRects,
       });
     };
 
