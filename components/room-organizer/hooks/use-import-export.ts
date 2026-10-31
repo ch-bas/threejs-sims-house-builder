@@ -1,5 +1,5 @@
 import { useCallback, type MutableRefObject, type RefObject } from 'react';
-import { notify } from '../lib/editor-notices';
+import { notify, type NoticeAction } from '../lib/editor-notices';
 import {
   downloadCanvasAsPng,
   downloadLayoutAsGlb,
@@ -7,7 +7,8 @@ import {
 } from '../lib/file-io';
 import { exportFileName } from '../lib/plan-export/download';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
-import { encodeShareUrl, isShareUrlReasonablySized } from '../lib/share';
+import { encodeShareUrl } from '../lib/share';
+import { browserShareChannels, deliverShareLink, isShareCancelled } from '../lib/share-delivery';
 import { markLayoutLoaded } from './use-achievements';
 import { layoutStore } from './use-layout-store';
 import type { LayoutActions } from './use-layout-state';
@@ -84,23 +85,40 @@ export function useImportExport({
 
   const handleShareLink = useCallback(async () => {
     const origin = window.location.origin + window.location.pathname;
-    const { url, strippedFloorPlan } = await encodeShareUrl(layout, origin);
-
-    if (!isShareUrlReasonablySized(url)) {
-      notify(
-        'This layout is too large to fit in a share link. Try exporting it as JSON and sharing the file instead.',
-        'error'
-      );
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(url);
-      const note = strippedFloorPlan ? ' The floor-plan image was left out to keep it short.' : '';
-      notify(`Share link copied to clipboard.${note}`, 'success');
-    } catch {
-      // Clipboard refused (permissions, insecure context): hand the link over to copy by hand.
-      notify('Copy this share link:', 'info', { copyText: url });
+    // Nothing is awaited before this: the delivery starts inside the tap.
+    const outcome = await deliverShareLink(encodeShareUrl(layout, origin), browserShareChannels());
+    const leftOut = 'The floor-plan image was left out to keep it short.';
+    switch (outcome.kind) {
+      case 'cancelled':
+        return;
+      case 'too-large':
+        notify(
+          'This layout is too large to fit in a share link. Try exporting it as JSON and sharing the file instead.',
+          'error'
+        );
+        return;
+      case 'shared':
+        notify(`Share link sent.${outcome.strippedFloorPlan ? ` ${leftOut}` : ''}`, 'success');
+        return;
+      case 'copied':
+        notify(`Share link copied to clipboard.${outcome.strippedFloorPlan ? ` ${leftOut}` : ''}`, 'success');
+        return;
+      case 'manual': {
+        // Nothing took it: hand the link over to copy by hand.
+        const { url, share } = outcome;
+        const handOver = (action?: NoticeAction) =>
+          notify('Copy this share link:', 'info', { copyText: url, ...(action ? { action } : {}) });
+        handOver(
+          share && {
+            label: 'Share',
+            run() {
+              share().catch((error: unknown) => {
+                if (!isShareCancelled(error)) handOver();
+              });
+            },
+          }
+        );
+      }
     }
   }, [layout]);
 

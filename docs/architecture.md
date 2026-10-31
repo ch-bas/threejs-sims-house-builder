@@ -60,6 +60,7 @@ components/
     │   ├── initial-layout.ts            INITIAL_LAYOUT / INITIAL_GROUND_FLOOR, the house every session starts from
     │   ├── ids.ts                       Collision-resistant ids; withHouseId mints a house id (#342, #479)
     │   ├── share.ts                     Share-URL encode/decode (base64url); positions rounded to mm on encode
+    │   ├── share-delivery.ts            Share-link delivery: share sheet on touch, clipboard inside the tap, copy field last
     │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
     │   ├── dev-diagnostics.ts           `?debug` flag + allocation-free renderer.info counters
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
