@@ -20,6 +20,8 @@
  * - Openings are LINE jamb ticks + a centre line, doors add the swing ARC,
  *   hinged on the jamb the 3D door is (mirroring swaps it, #386).
  * - Labels are horizontal TEXT (rotating text helps nobody in CAD).
+ * - ZONES carries each room zone as a closed LWPOLYLINE with its name and area
+ *   as TEXT along the top edge, where the SVG puts them (#571).
  * - COVERAGE carries Wi-Fi/CCTV rings as CIRCLEs and camera wedges as an
  *   ARC plus two LINEs (#420), trimmed to the frame the SVG clips to (the
  *   plan content plus at most 5 m of coverage), so the two formats agree and
@@ -33,6 +35,7 @@
 import { stripXmlIllegal } from '../html-escape';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex } from '../street';
+import { zoneArea } from '../zones';
 import {
   buildingFrameBounds,
   clipArc,
@@ -65,11 +68,12 @@ export const DXF_LAYERS = [
   'STAIRWELL',
   'COVERAGE',
   'DIMENSIONS',
+  'ZONES',
 ] as const;
 
 export type DxfLayer = (typeof DXF_LAYERS)[number];
 
-/** ACI colour per layer (7 white, 8 grey, 5 blue, 3 green, 2 yellow, 1 red, 4 cyan, 6 magenta). */
+/** ACI colour per layer (7 white, 8 grey, 5 blue, 3 green, 2 yellow, 1 red, 4 cyan, 6 magenta, 30 orange). */
 const LAYER_COLOURS: Record<DxfLayer, number> = {
   WALLS: 7,
   INTERIOR: 8,
@@ -79,6 +83,7 @@ const LAYER_COLOURS: Record<DxfLayer, number> = {
   STAIRWELL: 1,
   COVERAGE: 4,
   DIMENSIONS: 6,
+  ZONES: 30,
 };
 
 export interface DxfExportOptions {
@@ -99,6 +104,9 @@ const OPENING_TICK_M = 0.25;
 const LABEL_TEXT_HEIGHT = 0.18;
 const TITLE_TEXT_HEIGHT = 0.35;
 const DIMENSION_TEXT_HEIGHT = 0.15;
+/** Below a zone's top edge: its name's baseline and its area's, metres (the SVG's two lines at 50 px/m). */
+const ZONE_NAME_DROP_M = 0.3;
+const ZONE_AREA_DROP_M = 0.54;
 /** Gap between the plan content and a room dimension line, metres. */
 const DIMENSION_OFFSET_M = 0.4;
 /** Offset of an interior wall's dimension line off its centreline, metres. */
@@ -501,6 +509,8 @@ function emitFloor(
   const cad = (x: number, z: number): CadPoint => [x + layout.width / 2 + offsetX, layout.height / 2 - z];
   const content = planContentBounds(layout, floor);
 
+  emitZones(doc, floor, cad);
+
   // Room outline: one closed polyline around the footprint. Hidden walls stay
   // in the export — the footprint is real even when the 2D view fades a wall.
   // A recessed entrance (#285) notches the north edge: the polyline goes in
@@ -553,6 +563,20 @@ function emitFloor(
   const [titleX] = cad(-hw, 0);
   const [, titleY] = cad(0, content.minZ);
   doc.text('LABELS', [titleX, titleY + 0.5], TITLE_TEXT_HEIGHT, `${layout.name} - ${floor.name}`);
+}
+
+/** Room zones (#571): the outline, then name and area on two lines, like the SVG's `renderZones`. */
+function emitZones(doc: DxfDocument, floor: FloorLayout, cad: (x: number, z: number) => CadPoint): void {
+  for (const zone of floor.zones ?? []) {
+    const left = zone.x;
+    const right = zone.x + zone.w;
+    const top = zone.z;
+    const bottom = zone.z + zone.d;
+    doc.polyline('ZONES', [cad(left, top), cad(right, top), cad(right, bottom), cad(left, bottom)], true);
+    const centre = zone.x + zone.w / 2;
+    doc.text('ZONES', cad(centre, top + ZONE_NAME_DROP_M), LABEL_TEXT_HEIGHT, zone.name, 'centre');
+    doc.text('ZONES', cad(centre, top + ZONE_AREA_DROP_M), DIMENSION_TEXT_HEIGHT, `${zoneArea(zone).toFixed(1)} m²`, 'centre');
+  }
 }
 
 /**

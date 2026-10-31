@@ -224,13 +224,45 @@ describe('layoutToDxf', () => {
   });
 
   it('keeps the plan layers and adds COVERAGE and DIMENSIONS', () => {
-    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS']);
+    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS', 'ZONES']);
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);
     for (const layer of ['0', ...DXF_LAYERS]) {
       expect(dxf).toContain(`0\nLAYER\n`);
       expect(dxf).toMatch(new RegExp(`AcDbLayerTableRecord\\n2\\n${layer}\\n`));
     }
+  });
+
+  it('draws each zone as a closed outline with its name and area at the top edge (#571)', () => {
+    const zone = { id: 'z', name: 'Séjour', color: '#60a5fa', x: -3, z: -2, w: 5, d: 4.5 };
+    const floor = makeFloor({ zones: [zone, { ...zone, id: 'y', name: 'Hall', x: 1, z: 2, w: 2, d: 1 }] });
+    const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+    expectValidR2000(dxf);
+    const outlines = entities(dxf, 'LWPOLYLINE', 'ZONES');
+    expect(outlines).toHaveLength(2);
+    expect(tag(outlines[0]!, 70)).toBe('1');
+    // World (−3, −2) → (2, 2.5) in an 8 × 8 room: CAD x 1…6, y 1.5…6.
+    const vertices = (code: number): string[] => outlines[0]!.tags.filter(([c]) => c === code).map(([, v]) => v);
+    expect(vertices(10)).toEqual(['1.000', '6.000', '6.000', '1.000']);
+    expect(vertices(20)).toEqual(['6.000', '6.000', '1.500', '1.500']);
+    const texts = entities(dxf, 'TEXT', 'ZONES');
+    expect(texts.map((t) => tag(t, 1))).toEqual(['S\\U+00E9jour', '22.5 m\\U+00B2', 'Hall', '2.0 m\\U+00B2']);
+    // Centred on the zone, under the top edge, area below the name, as the SVG.
+    const [name, area] = texts;
+    expect(Number(tag(name!, 11))).toBeCloseTo(3.5, 3);
+    expect(Number(tag(name!, 21))).toBeLessThan(6);
+    expect(Number(tag(area!, 21))).toBeLessThan(Number(tag(name!, 21)));
+  });
+
+  it('draws no zone entities on a floor without zones, and each floor’s own on a building (#571)', () => {
+    const { layout, floor } = makeFixture();
+    expect(entities(layoutToDxf(layout, floor), undefined, 'ZONES')).toHaveLength(0);
+    const zone = { id: 'z', name: 'Hall', color: '#60a5fa', x: 0, z: 0, w: 2, d: 2 };
+    const zoned = { ...floor, zones: [zone] };
+    const building = makeLayout({ floors: [zoned, makeFloor({ id: 'f', zones: [{ ...zone, id: 'y' }] })] });
+    const outlines = entities(buildingToDxf(building), 'LWPOLYLINE', 'ZONES');
+    expect(outlines).toHaveLength(2);
+    expect(Number(tag(outlines[1]!, 10))).toBeGreaterThan(Number(tag(outlines[0]!, 10)) + 8);
   });
 
   it('emits closed LWPOLYLINEs for the room outline and each furniture footprint', () => {
