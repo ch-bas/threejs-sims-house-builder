@@ -297,35 +297,47 @@ function hangsClearOfPartitions(item: FurnitureItem, storeyHeight: number | unde
   return mountBand(item, storeyHeight).bottom >= interiorWallHeight(floor);
 }
 
-export function hasCollisions(
+/**
+ * Why an item shows red (#627). `building` is an outdoor item standing in the
+ * room, `bounds` an indoor one leaving it.
+ */
+export type CollisionReason =
+  | { kind: 'bounds' | 'building' | 'porch' | 'stairwell' | 'partition' }
+  | { kind: 'item'; id: string };
+
+/** The first rule the item breaks, or null when it stands clear. The one home of those rules. */
+export function collisionReason(
   item: FurnitureItem,
   allItems: readonly FurnitureItem[],
   roomWidth: number,
   roomDepth: number,
   context: CollisionContext = {}
-): boolean {
-  if (!item.position) return false;
+): CollisionReason | null {
+  if (!item.position) return null;
   const keepOut = context.keepOut ?? [];
   const interiorWalls = context.interiorWalls ?? [];
-  const overlapsAnother = (): boolean =>
-    allItems.some((other) => other.id !== item.id && pairCollides(item, other, context.storeyHeight));
+  const overlapped = (): CollisionReason | null => {
+    const other = allItems.find((candidate) => candidate.id !== item.id && pairCollides(item, candidate, context.storeyHeight));
+    return other ? { kind: 'item', id: other.id } : null;
+  };
   // Wall-plane items (doors, windows, cameras) live in — or on the exterior
   // side of — the wall by design, so the room-bounds test never applies:
   // they'd always poke through the wall and read as out-of-bounds.
-  if (isWallMounted(item.type)) return overlapsAnother();
+  if (isWallMounted(item.type)) return overlapped();
   // Outdoor items belong outside the building footprint — flag them when any
   // part of their footprint pokes into the room. The porch is outside space
   // too, so one standing wholly on it is fine (#406). They still collide with
   // other items (e.g. two trees on the same spot).
   if (item.category === 'outdoor') {
     const onPorch = keepOut.some((rect) => !rect.hole && itemInsideRect(item, rect));
-    if (!onPorch && !itemFullyOutside(item, roomWidth, roomDepth)) return true;
-    return overlapsAnother();
+    if (!onPorch && !itemFullyOutside(item, roomWidth, roomDepth)) return { kind: 'building' };
+    return overlapped();
   }
-  if (!itemInBounds(item, roomWidth, roomDepth)) return true;
+  if (!itemInBounds(item, roomWidth, roomDepth)) return { kind: 'bounds' };
   // The porch is outside too, just inside the footprint (#285); a stairwell
   // is a hole in the floor (#372).
-  if (keepOut.some((rect) => keepsOut(item, rect))) return true;
+  const barred = keepOut.find((rect) => keepsOut(item, rect));
+  if (barred) return { kind: barred.hole ? 'stairwell' : 'porch' };
   // Rugs run under a partition's baseboard and decor hangs on it; anything
   // else standing inside one is impassable in the walkthrough too (#368).
   if (
@@ -334,9 +346,19 @@ export function hasCollisions(
     !hangsClearOfPartitions(item, context.storeyHeight) &&
     straddlesInteriorWall(item, allItems, interiorWalls, roomWidth, roomDepth)
   ) {
-    return true;
+    return { kind: 'partition' };
   }
-  return overlapsAnother();
+  return overlapped();
+}
+
+export function hasCollisions(
+  item: FurnitureItem,
+  allItems: readonly FurnitureItem[],
+  roomWidth: number,
+  roomDepth: number,
+  context: CollisionContext = {}
+): boolean {
+  return collisionReason(item, allItems, roomWidth, roomDepth, context) !== null;
 }
 
 export type AutoOrganizeStrategy = 'shelf' | 'by-category' | 'by-size';

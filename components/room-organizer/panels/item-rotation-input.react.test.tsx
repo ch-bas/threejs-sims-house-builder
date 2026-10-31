@@ -35,7 +35,7 @@ function Harness({ start }: { start: FurnitureItem }): JSX.Element {
   return (
     <RoomEditorProvider value={editor}>
       <SelectionProvider value={selection}>
-        <ItemResizePanel hasCollision={false} onDuplicate={vi.fn()} />
+        <ItemResizePanel collision={null} onDuplicate={vi.fn()} />
       </SelectionProvider>
     </RoomEditorProvider>
   );

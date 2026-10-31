@@ -39,6 +39,7 @@ components/
     │   ├── constants.ts                 Catalog (69 items in 12 categories), templates, MAX_FLOORS
     │   ├── schema.ts                    Type guards, legacy migration, caps that repair (never refuse)
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
+    │   ├── collision-reason.ts          The sentence for why an item shows red (rules live in geometry.ts)
     │   ├── footprint.ts                 Shared footprint primitives: rotatedHalfExtents, LOW_PROFILE_MAX_HEIGHT, clampToFootprint (a leaf, so walk-collision can import it)
     │   ├── html-escape.ts               escapeHtml for the blueprint and print popups and the SVG export
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)

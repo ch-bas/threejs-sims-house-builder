@@ -11,11 +11,11 @@ import { layoutStore } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { alignSelection, distributeSelection } from '../lib/alignment';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn, loadTemplateUnderBudget, purchasePrice, purchaseRefusal, SELL_BACK_RATE } from '../lib/budget';
+import { collisionMessage } from '../lib/collision-reason';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { notify, notifyRefused } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { placeSetInFreeSpace, setForStorey } from '../lib/furniture-sets';
-import { hasCollisions } from '../lib/geometry';
 import { sameLayoutContent } from '../lib/persistence';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
@@ -378,7 +378,7 @@ const DrawerBody = memo(function DrawerBody({
           {selectedItem && (
             <EditLock locked={exploring}>
             <ItemResizePanel
-              hasCollision={hasCollisions(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
+              collision={collisionMessage(selectedItem, activeFloor.items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) })}
               onDuplicate={duplicateItem}
             />
             </EditLock>

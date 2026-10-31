@@ -42,9 +42,9 @@ function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: Ga
     <RoomEditorProvider value={editorValue}>
       <SelectionProvider value={selection}>
         {editor === 'popover' ? (
-          <ItemContextPopover hasCollision={false} {...callbacks} />
+          <ItemContextPopover collision={null} {...callbacks} />
         ) : (
-          <ItemResizePanel hasCollision={false} onDuplicate={() => {}} />
+          <ItemResizePanel collision={null} onDuplicate={() => {}} />
         )}
       </SelectionProvider>
     </RoomEditorProvider>

@@ -36,6 +36,7 @@ import { furnitureSpend, purchasePrice, purchaseRefusal } from './lib/budget';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
+import { collisionMessage } from './lib/collision-reason';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
@@ -1467,7 +1468,7 @@ export function RoomOrganizer(): JSX.Element {
       {/* Selection popover lives on the right edge */}
       {selectedItem && (
         <ItemContextPopover
-          hasCollision={hasCollisions(
+          collision={collisionMessage(
             selectedItem,
             activeFloor.items,
             layout.width,

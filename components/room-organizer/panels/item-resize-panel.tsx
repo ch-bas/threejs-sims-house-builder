@@ -59,7 +59,8 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 export interface ItemResizePanelProps {
-  hasCollision: boolean;
+  /** Why the item shows red, as a sentence; null when it stands clear (#627). */
+  collision: string | null;
   onDuplicate(id: string): void;
 }
 
@@ -241,8 +242,8 @@ export function ItemResizePanel(props: ItemResizePanelProps): JSX.Element {
           />
         )}
 
-        {props.hasCollision && (
-          <div className="text-xs text-red-600 bg-red-50 p-2 rounded">⚠️ Item overlaps or is out of bounds!</div>
+        {props.collision !== null && (
+          <div className="text-xs text-red-600 bg-red-50 p-2 rounded">⚠️ {props.collision}</div>
         )}
 
         <div className="pt-2 border-t">

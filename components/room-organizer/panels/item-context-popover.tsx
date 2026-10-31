@@ -44,7 +44,8 @@ function sliderMax(dimension: DimensionConfig, item: FurnitureItem): number {
 }
 
 export interface ItemContextPopoverProps {
-  hasCollision: boolean;
+  /** Why the item shows red, as a sentence; null when it stands clear (#627). */
+  collision: string | null;
   onRemove(id: string): void;
   onDuplicate(id: string): void;
   onRotate(id: string): void;
@@ -231,7 +232,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           </p>
         )}
 
-        {props.hasCollision && (
+        {props.collision !== null && (
           <div
             className="pc-body"
             style={{
@@ -243,7 +244,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               padding: '6px 8px',
             }}
           >
-            Overlaps another item or escapes the room.
+            {props.collision}
           </div>
         )}
 
