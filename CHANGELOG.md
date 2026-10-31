@@ -7,7 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
-<<<<<<< HEAD
 - On touch tablets the floor and wall tiles, the mode panel's buttons, the build tools, the catalogue arrows, the sidebar button and the Hard budget switch are easy to tap. Pinch replaces the camera pad's zoom row there; computers with a mouse look the same as before ([#673](https://github.com/ch-bas/threejs-sims-house-builder/issues/673))
 - On touch tablets the build tools carry their names, and the wall pill says "Walls", with "3D only" or "Walking" when its buttons are off ([#679](https://github.com/ch-bas/threejs-sims-house-builder/issues/679))
 
@@ -18,17 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - On a landscape phone the camera buttons follow the sidebar button when the screen's notch area changes, so they can't end up on top of it ([#683](https://github.com/ch-bas/threejs-sims-house-builder/issues/683))
 - Add floor shows a plus instead of a plus-minus sign, on the floor pill and in the drawer ([#686](https://github.com/ch-bas/threejs-sims-house-builder/issues/686))
 - The camera pad's zoom buttons are full size instead of thin slivers either side of the slider ([#639](https://github.com/ch-bas/threejs-sims-house-builder/issues/639))
-=======
-
 - With the panels open, Tab now reaches the item popover and notices with a button, and Escape closes the popover before the panels ([#632](https://github.com/ch-bas/threejs-sims-house-builder/issues/632)).
 - Delete on a Placed Items row removes that row, whatever is selected, and focus moves to the next row ([#634](https://github.com/ch-bas/threejs-sims-house-builder/issues/634)).
-
-### Fixed
-
 - The share link to copy by hand takes focus, already selected, and Escape puts it away ([#632](https://github.com/ch-bas/threejs-sims-house-builder/issues/632)).
 - The View options menu opens over the item popover instead of behind it, and nothing reads through it ([#633](https://github.com/ch-bas/threejs-sims-house-builder/issues/633)).
 - Keyboard focus no longer drops to the top of the page after placing an item, Escape, Demolish, removing a row, closing the panels or pressing Undo on a notice ([#638](https://github.com/ch-bas/threejs-sims-house-builder/issues/638)).
->>>>>>> 6cf47c4 (Focus returns after placement, Escape, Demolish and drawer close)
 
 ## [1.25.0] - 2026-10-31
 
