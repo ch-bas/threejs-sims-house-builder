@@ -1499,6 +1499,7 @@ html[data-plan-gesture] * {
    label (#681). */
 .pc-dock-folded {
   position: relative;
+  overflow: hidden; /* the toggle's corners end with the bar's */
 }
 .pc-dock-folded .pc-dock-fold-toggle {
   flex: 1;
