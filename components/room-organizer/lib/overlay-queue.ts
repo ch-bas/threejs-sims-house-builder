@@ -42,6 +42,22 @@ export function enqueueKeepingHead<T>(list: readonly T[], item: T, limit: number
   return [...next.slice(0, Math.max(0, limit - 1)), head];
 }
 
+/**
+ * A notice that outdates the ones in its `slot`: it takes the place of the
+ * oldest of them, which may be on screen, and the others go, so a single-slot
+ * host never plays a notice that has already lost its point (#704). Null when
+ * it replaces nothing.
+ */
+export function replaceInSlot<T extends { slot?: string }>(list: readonly T[], item: T): readonly T[] | null {
+  if (item.slot === undefined) return null;
+  const oldest = list.findLastIndex((entry) => entry.slot === item.slot);
+  if (oldest === -1) return null;
+  return list.flatMap((entry, index) => {
+    if (index === oldest) return [item];
+    return entry.slot === item.slot ? [] : [entry];
+  });
+}
+
 /** The notice a single-slot host shows: the oldest, so they play in order. */
 export function queueHead<T>(newestFirst: readonly T[]): T | undefined {
   return newestFirst[newestFirst.length - 1];

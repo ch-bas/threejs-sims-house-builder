@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEditorViewActions, useViewSettings } from '../contexts';
 import { layoutStore, useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { useRefusal } from '../hooks/use-refusal';
 import { floorCloneRefusal, HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
 import { MAX_FLOORS } from '../lib/constants';
 import { formatMetres } from '../lib/format';
+import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { buildingHeight, storeyHeight } from '../lib/storeys';
 import { Icon } from '../plotcraft/icon';
@@ -28,6 +30,7 @@ export function FloorSwitcher(): JSX.Element {
   const view = useViewSettings('showAllFloors', 'view2D');
   const { toggle } = useEditorViewActions();
   const refuse = useRefusal();
+  const touch = useMediaQuery(COARSE_POINTER_QUERY);
   const [renaming, setRenaming] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
 
@@ -45,7 +48,7 @@ export function FloorSwitcher(): JSX.Element {
       className="pc-glass pc-glass--dark"
       style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="pc-floor-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3
           className="pc-hud-header"
           style={{ fontSize: 12, margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
@@ -150,6 +153,7 @@ export function FloorSwitcher(): JSX.Element {
           return (
             <li
               key={floor.id}
+              className="pc-floor-row"
               style={{ display: 'flex', alignItems: 'center', gap: 4 }}
             >
               {/* The field replaces the button, never sits in it (#557). */}
@@ -282,7 +286,7 @@ export function FloorSwitcher(): JSX.Element {
               >
                 <Icon name="close" size={12} />
               </Button>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="pc-floor-move" style={{ display: 'flex', flexDirection: 'column' }}>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -317,7 +321,7 @@ export function FloorSwitcher(): JSX.Element {
         className="pc-blurb"
         style={{ fontSize: 10, margin: 0 }}
       >
-        Double-click a name to rename. Each floor stacks its storey height above the one below —{' '}
+        {`${touch ? 'Tap ✎ to rename a floor.' : 'Double-click a name to rename.'} Each floor stacks its storey height above the one below — `}
         {formatMetres(buildingHeight(floors))} to the eaves.
       </p>
     </div>

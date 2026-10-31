@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notify } from '../lib/editor-notices';
+import { notify, notifyWithUndo, UNDO_STALE_MESSAGE } from '../lib/editor-notices';
 import { AchievementToast } from './achievement-toast';
 import { StatusToastHost } from './status-toast';
 import type { Achievement } from '../lib/achievements';
@@ -125,6 +125,153 @@ describe('status notices with an action (#651)', () => {
       notify('Exported');
     });
     expect(screen.getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual(['Dismiss']);
+  });
+});
+
+describe('compact removal notices (#704)', () => {
+  /** A house that moves on with every removal, as the store does. */
+  function removals() {
+    let state = 0;
+    const undo = vi.fn();
+    return {
+      undo,
+      remove(name: string) {
+        state += 1;
+        act(() => {
+          notifyWithUndo(`Removed ${name}`, { current: () => state, undo });
+        });
+      },
+    };
+  }
+
+  it('shows only the newest Undo, the one that works', () => {
+    render(<StatusToastHost />);
+    const house = removals();
+    house.remove('Sofa');
+    house.remove('Bed');
+    house.remove('Lamp');
+    expect(shown('Removed Sofa')).toBe(false);
+    expect(shown('Removed Bed')).toBe(false);
+    expect(shown('Removed Lamp')).toBe(true);
+    act(() => {
+      screen.getByRole('button', { name: /^Undo/ }).click();
+    });
+    expect(house.undo).toHaveBeenCalledTimes(1);
+    expect(shown(UNDO_STALE_MESSAGE)).toBe(false);
+    expect(screen.queryByRole('button', { name: /^Undo/ })).toBeNull();
+  });
+
+  it('gives the newest Undo its full time', () => {
+    render(<StatusToastHost />);
+    const house = removals();
+    house.remove('Sofa');
+    advance(6000);
+    house.remove('Bed');
+    advance(6000);
+    expect(shown('Removed Bed')).toBe(true);
+    advance(1000);
+    expect(shown('Removed Bed')).toBe(false);
+  });
+
+  it('leaves other notices in the queue, in order', () => {
+    render(<StatusToastHost />);
+    const house = removals();
+    act(() => {
+      notify('Exported');
+    });
+    house.remove('Sofa');
+    house.remove('Bed');
+    expect(shown('Exported')).toBe(true);
+    advance(4000);
+    expect(shown('Removed Sofa')).toBe(false);
+    expect(shown('Removed Bed')).toBe(true);
+  });
+
+  it('keeps every notice on a wide screen, where each has its own place', () => {
+    compact = false;
+    render(<StatusToastHost />);
+    const house = removals();
+    house.remove('Sofa');
+    house.remove('Bed');
+    expect(shown('Removed Sofa')).toBe(true);
+    expect(shown('Removed Bed')).toBe(true);
+  });
+});
+
+describe('a notice that stays until its action works (#685)', () => {
+  const setup = (run: () => Promise<boolean>) => {
+    render(<StatusToastHost />);
+    act(() => {
+      notify('Copy this share link:', 'info', {
+        copyText: 'https://example.test/#layout=x',
+        action: { label: 'Share', name: 'Share this link', keepOpen: true, run },
+      });
+    });
+    return screen.getByRole('button', { name: 'Share this link' });
+  };
+
+  it('keeps the link when the action fails, and can run again', async () => {
+    const run = vi.fn(() => Promise.resolve(false));
+    const button = setup(run);
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+    expect(shown('Copy this share link')).toBe(true);
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+    });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a second tap while running, and closes on success', async () => {
+    let finish!: (done: boolean) => void;
+    const run = vi.fn(() => new Promise<boolean>((done) => (finish = done)));
+    const button = setup(run);
+    act(() => {
+      button.click();
+      button.click();
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish(true);
+      await Promise.resolve();
+    });
+    expect(shown('Copy this share link')).toBe(false);
+  });
+});
+
+describe('notice focus (#704)', () => {
+  function Opener() {
+    return <button type="button">Opener</button>;
+  }
+
+  it.each([
+    ['Undo', /^Undo/],
+    ['Dismiss', /^Dismiss$/],
+  ])('goes back where it came from after %s closes the notice', (_label, name) => {
+    render(
+      <>
+        <Opener />
+        <StatusToastHost />
+      </>
+    );
+    act(() => {
+      notify('Removed Sofa', 'info', { action: { label: 'Undo', run: vi.fn() } });
+    });
+    const opener = screen.getByRole('button', { name: 'Opener' });
+    act(() => {
+      opener.focus();
+    });
+    act(() => {
+      screen.getByRole('button', { name }).focus();
+    });
+    act(() => {
+      screen.getByRole('button', { name }).click();
+    });
+    expect(shown('Removed Sofa')).toBe(false);
+    expect(document.activeElement).toBe(opener);
   });
 });
 

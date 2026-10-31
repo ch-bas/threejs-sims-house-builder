@@ -107,12 +107,12 @@ describe('notice actions (#651)', () => {
     let state: object = { v: 1 };
     const undo = vi.fn();
     const notice = notifyWithUndo('Removed Sofa', { current: () => state, undo });
-    notice.action!.run();
+    void notice.action!.run();
     expect(undo).toHaveBeenCalledTimes(1);
 
     const stale = notifyWithUndo('Removed Bed', { current: () => state, undo });
     state = { v: 2 };
-    stale.action!.run();
+    void stale.action!.run();
     stop();
     expect(undo).toHaveBeenCalledTimes(1);
     expect(seen.at(-1)!.message).toBe(UNDO_STALE_MESSAGE);

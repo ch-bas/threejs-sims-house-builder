@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { usePausableTimeout } from '../hooks/use-pausable-timeout';
-import { noticeDuration, subscribeNotices, type Notice, type NoticeTone } from '../lib/editor-notices';
+import { noticeActionName, noticeDuration, subscribeNotices, type Notice, type NoticeAction, type NoticeTone } from '../lib/editor-notices';
 import {
   COMPACT_OVERLAY_QUERY,
   enqueueKeepingHead,
@@ -12,6 +12,7 @@ import {
   HEADER_HIDDEN_QUERY,
   MAX_QUEUED_NOTICES,
   queueHead,
+  replaceInSlot,
   statusToastInSlot,
   toastsHeldBack,
 } from '../lib/overlay-queue';
@@ -58,7 +59,7 @@ export function StatusToastHost(): JSX.Element | null {
         // A single slot never drops the notice on screen (the oldest).
         setNotices((current) =>
           compactRef.current
-            ? enqueueKeepingHead(current, notice, MAX_QUEUED_NOTICES)
+            ? (replaceInSlot(current, notice) ?? enqueueKeepingHead(current, notice, MAX_QUEUED_NOTICES))
             : enqueueNewestFirst(current, notice, MAX_VISIBLE)
         );
       }),
@@ -161,11 +162,28 @@ function StatusToast({
     takeFocus: true,
   });
 
+  const running = useRef(false);
+  const act = (action: NoticeAction): void => {
+    if (!action.keepOpen) {
+      // Close first: the action may raise a notice of its own.
+      onDismiss(notice.id);
+      action.run();
+      return;
+    }
+    // Stays until it worked, so focus stays too: the unmount hands it back.
+    if (running.current) return;
+    running.current = true;
+    void action.run().then((done) => {
+      running.current = false;
+      if (done) onDismiss(notice.id);
+    });
+  };
+
   return (
     <div
       ref={toastRef}
       data-focus-companion={notice.action !== undefined || notice.copyText !== undefined ? '' : undefined}
-      className="pc-glass pc-glass--dark"
+      className="pc-glass pc-glass--dark pc-status-toast"
       role={notice.tone === 'error' ? 'alert' : 'status'}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
@@ -198,11 +216,9 @@ function StatusToast({
           <button
             type="button"
             // Several notices can each offer "Undo": say which one (#651).
-            aria-label={`${notice.action.label}: ${notice.message}`}
+            aria-label={noticeActionName(notice)}
             onClick={() => {
-              // Close first: the action may raise a notice of its own.
-              onDismiss(notice.id);
-              notice.action?.run();
+              if (notice.action) act(notice.action);
             }}
             style={{
               flexShrink: 0,

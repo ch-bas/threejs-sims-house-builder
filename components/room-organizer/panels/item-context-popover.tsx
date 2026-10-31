@@ -330,7 +330,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
 
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+        <div className="pc-item-actions" style={{ display: 'grid', gridTemplateColumns: `repeat(${sheet ? 6 : 5}, 1fr)`, gap: 4 }}>
           <ActionTile
             icon="rotate"
             label="Rotate"
@@ -376,6 +376,18 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             }
             onClick={() => actions.moveItem(item.id, 0, 0)}
           />
+          {/* The bottom sheet's sixth action, one tap from the collapsed
+              sheet (#675), in place of the long button below. */}
+          {sheet && (
+            <ActionTile
+              icon="demolish"
+              label="Demolish"
+              className="pc-sheet-demolish"
+              disabled={exploring}
+              title={exploreHint}
+              onClick={() => props.onRemove(item.id)}
+            />
+          )}
         </div>
 
         <div className="pc-sheet-more">
@@ -487,7 +499,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               width: '100%',
               height: 34,
               borderRadius: 10,
-              display: 'flex',
+              display: sheet ? 'none' : 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
@@ -564,9 +576,10 @@ interface ActionTileProps {
   disabled?: boolean | undefined;
   /** Tooltip override — used to explain why a disabled tile can't act. */
   title?: string | undefined;
+  className?: string | undefined;
 }
 
-function ActionTile({ icon, label, onClick, active, disabled, title }: ActionTileProps): JSX.Element {
+function ActionTile({ icon, label, onClick, active, disabled, title, className }: ActionTileProps): JSX.Element {
   return (
     <button
       type="button"
@@ -574,7 +587,7 @@ function ActionTile({ icon, label, onClick, active, disabled, title }: ActionTil
       disabled={disabled}
       title={title ?? label}
       aria-label={label}
-      className={`pc-tile${active ? ' pc-tile--active' : ''}`}
+      className={`pc-tile${active ? ' pc-tile--active' : ''}${className ? ` ${className}` : ''}`}
       style={{
         padding: 6,
         display: 'flex',
