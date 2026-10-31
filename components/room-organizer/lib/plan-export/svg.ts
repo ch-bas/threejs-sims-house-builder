@@ -16,7 +16,7 @@ import { CURRENCY_SYMBOL } from '../constants';
 import { escapeHtml } from '../html-escape';
 import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
-import { entrancePlanOutline, planFloorIndex } from '../street';
+import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
 import { zoneArea } from '../zones';
 import {
   buildingFrameBounds,
@@ -357,7 +357,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     `<g class="plan" transform="translate(${fmt(rootX)} ${fmt(rootY)})">`,
     `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeHtml(floor.floorColor)}"/>`,
     renderGrid(layout, margin, scale, theme),
-    renderZones(floor, px, py, scale, theme),
+    renderZones(floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), px, py, scale, theme),
     renderRoomOutline(layout, floor, margin, scale, theme),
     renderInteriorWalls(floor, px, py, scale, theme),
     renderStairwellHoles(layout, floor, px, py, theme),
@@ -452,6 +452,7 @@ function renderRoomOutline(
  */
 function renderZones(
   floor: FloorLayout,
+  recess: EntrancePlanOutline | null,
   px: (x: number) => string,
   py: (z: number) => string,
   scale: number,
@@ -468,7 +469,7 @@ function renderZones(
         `<g class="zone">`,
         `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"/>`,
         `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}">${escapeHtml(zone.name)}</text>`,
-        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}">${zoneArea(zone).toFixed(1)} m²</text>`,
+        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}">${zoneArea(zone, recess).toFixed(1)} m²</text>`,
         `</g>`,
       ].join('');
     })

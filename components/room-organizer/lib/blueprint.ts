@@ -159,9 +159,10 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
     .join('');
   // Per-room cost and area from the floor's zones (#155) — the printout is
   // where "what does the bedroom cost" gets asked.
+  const recess = entrancePlanOutline(layout, floorIndex);
   const zonesHtml = (floor.zones ?? [])
     .map((zone) => {
-      const zs = zoneStats(zone, floor.items);
+      const zs = zoneStats(zone, floor.items, recess);
       return `<li>${escapeHtml(zone.name)}: ${zs.itemCount} items · ${CURRENCY_SYMBOL}${zs.cost.toLocaleString()} · ${zs.area.toFixed(1)} m²</li>`;
     })
     .join('');

@@ -824,6 +824,8 @@ export function RoomOrganizer(): JSX.Element {
     if (item?.locked && !exploring) refuseLocked(item.name);
   });
 
+  const refuseZone = useCallback((message: string) => notifyRefused(message, playCue), [playCue]);
+
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
   // keyboard gate) are identical to a 3D drag.
@@ -845,6 +847,7 @@ export function RoomOrganizer(): JSX.Element {
     onItemDragEnd: handleDragEnd,
     onItemDragCancel: handleDragCancel,
     onLockedDrag: handleLockedDrag,
+    onZoneRefused: refuseZone,
   });
 
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =

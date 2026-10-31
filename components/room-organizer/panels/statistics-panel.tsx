@@ -7,7 +7,7 @@ import { useActiveFloorIndex, useLayout } from '../hooks/use-layout-store';
 import { budgetSpent, furnitureSpend } from '../lib/budget';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory } from '../lib/geometry';
-import { ENTRANCE_DOOR_ID } from '../lib/street';
+import { ENTRANCE_DOOR_ID, entrancePlanOutline } from '../lib/street';
 import { zoneStats } from '../lib/zones';
 
 export function StatisticsPanel(): JSX.Element {
@@ -45,15 +45,15 @@ export function StatisticsPanel(): JSX.Element {
   // the floor name only disambiguates once there is more than one floor.
   const zoneRows = useMemo(
     () =>
-      layout.floors.flatMap((floor) =>
+      layout.floors.flatMap((floor, index) =>
         (floor.zones ?? []).map((zone) => ({
           key: `${floor.id}:${zone.id}`,
           label: layout.floors.length > 1 ? `${zone.name} · ${floor.name}` : zone.name,
           color: zone.color,
-          ...zoneStats(zone, floor.items),
+          ...zoneStats(zone, floor.items, entrancePlanOutline(layout, index)),
         }))
       ),
-    [layout.floors]
+    [layout]
   );
 
   return (

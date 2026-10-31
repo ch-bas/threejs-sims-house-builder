@@ -39,7 +39,7 @@ import {
   sameEntrance,
   streetLevel,
 } from '../lib/street';
-import { MAX_ZONES, clampZoneRect, sameZone } from '../lib/zones';
+import { MAX_ZONES, clampZoneRect, sameZone, zoneInPorch } from '../lib/zones';
 import type {
   CatalogItem,
   EntranceSpec,
@@ -955,7 +955,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         const zones = floor.zones ?? [];
         if (zones.length >= MAX_ZONES || zones.some((zone) => zone.id === action.zone.id)) return floor;
         const rect = clampZoneRect(action.zone, state.layout.width, state.layout.height);
-        if (!rect) return floor;
+        if (!rect || zoneInPorch(rect, entrancePlanOutline(state.layout, state.activeFloorIndex))) return floor;
         return { ...floor, zones: [...zones, { ...action.zone, ...rect, name: capName(action.zone.name) }] };
       });
 
@@ -967,6 +967,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         merged.name = capName(merged.name);
         const rect = clampZoneRect(merged, state.layout.width, state.layout.height);
         if (!rect) return floor;
+        // A zone can't move onto the porch; one a later porch swallowed can still be renamed.
+        const recess = entrancePlanOutline(state.layout, state.activeFloorIndex);
+        const before = clampZoneRect(current, state.layout.width, state.layout.height) ?? current;
+        if (zoneInPorch(rect, recess) && !zoneInPorch(before, recess)) return floor;
         const next: RoomZone = { ...merged, ...rect };
         // Re-typing a name or re-picking a colour keeps identity: no undo
         // entry, no autosave.

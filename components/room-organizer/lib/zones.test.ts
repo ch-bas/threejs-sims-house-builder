@@ -16,6 +16,7 @@ import {
   zoneArea,
   zoneContains,
   zoneFromCorners,
+  zoneInPorch,
   zoneStats,
 } from './zones';
 import type { RoomZone } from './types';
@@ -118,15 +119,43 @@ describe('zone membership and stats (#155)', () => {
     expect(itemsInZone(bedroom, [inside, straddling, unplaced]).map((item) => item.id)).toEqual(['in']);
   });
 
+  it('leaves the porch out of the area, a zone across it stays whole (#582)', () => {
+    const recess = { x0: -0.7, x1: 0.7, frontZ: -4, backZ: -2.8 };
+    const strip = { x: -4, z: -4, w: 8, d: 2 };
+    expect(zoneArea(strip, recess)).toBeCloseTo(16 - 1.68);
+    expect(zoneStats(strip, [], recess).area).toBeCloseTo(16 - 1.68);
+    expect(zoneInPorch(strip, recess)).toBe(false);
+    // Clear of the porch, or touching it: nothing to take off.
+    expect(zoneArea({ x: 0.7, z: -4, w: 2, d: 1 }, recess)).toBe(2);
+    expect(zoneInPorch({ x: 0.7, z: -4, w: 0.3, d: 0.3 }, recess)).toBe(false);
+  });
+
+  it('never reports a negative area for a zone wholly on the porch (#582)', () => {
+    const recess = { x0: -0.7, x1: 0.7, frontZ: -4, backZ: -2.8 };
+    // 0.3 × 0.6 less the overlap, in floats, comes out a hair below zero.
+    const area = zoneArea({ x: -0.7, z: -4, w: 0.3, d: 0.6 }, recess);
+    expect(Object.is(area, -0)).toBe(false);
+    expect(area).toBeGreaterThanOrEqual(0);
+    expect(area.toFixed(1)).toBe('0.0');
+  });
+
+  it('calls a zone that is all porch, or porch and a sliver, a zone in the porch (#582)', () => {
+    const recess = { x0: -0.7, x1: 0.7, frontZ: -4, backZ: -2.8 };
+    expect(zoneInPorch({ x: -0.5, z: -3.9, w: 1, d: 1 }, recess)).toBe(true);
+    expect(zoneInPorch({ x: -0.5, z: -3.9, w: 1, d: 1.15 }, recess)).toBe(true);
+    expect(zoneInPorch({ x: -0.5, z: -3.9, w: 1, d: 1.3 }, recess)).toBe(false);
+    expect(zoneInPorch({ x: -0.5, z: -3.9, w: 1, d: 1 }, null)).toBe(false);
+  });
+
   it('zoneArea is w × d and zoneStats sums the prices of the items inside', () => {
-    expect(zoneArea(bedroom)).toBeCloseTo(7.5);
+    expect(zoneArea(bedroom, null)).toBeCloseTo(7.5);
     const items = [
       makeItem({ id: 'bed', price: 800, position: { x: -3, z: -2 } }),
       makeItem({ id: 'lamp', price: 45, position: { x: -1.5, z: -1 } }),
       makeItem({ id: 'sofa', price: 1200, position: { x: 2, z: 2 } }),
       makeItem({ id: 'free', position: { x: -2, z: -2 } }),
     ];
-    expect(zoneStats(bedroom, items)).toEqual({ itemCount: 3, cost: 845, area: 7.5 });
+    expect(zoneStats(bedroom, items, null)).toEqual({ itemCount: 3, cost: 845, area: 7.5 });
   });
 });
 

@@ -35,7 +35,7 @@
 
 import { stripXmlIllegal } from '../html-escape';
 import { planDrawOrder } from '../plan-order';
-import { entrancePlanOutline, planFloorIndex } from '../street';
+import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
 import { zoneArea } from '../zones';
 import {
   buildingFrameBounds,
@@ -518,7 +518,7 @@ function emitFloor(
   const cad = (x: number, z: number): CadPoint => [x + layout.width / 2 + offsetX, layout.height / 2 - z];
   const content = planContentBounds(layout, floor);
 
-  emitZones(doc, floor, cad);
+  emitZones(doc, floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), cad);
 
   // Room outline: one closed polyline around the footprint. Hidden walls stay
   // in the export — the footprint is real even when the 2D view fades a wall.
@@ -580,7 +580,7 @@ function emitFloor(
 }
 
 /** Room zones (#571): the outline, then name and area on two lines, like the SVG's `renderZones`. */
-function emitZones(doc: DxfDocument, floor: FloorLayout, cad: (x: number, z: number) => CadPoint): void {
+function emitZones(doc: DxfDocument, floor: FloorLayout, recess: EntrancePlanOutline | null, cad: (x: number, z: number) => CadPoint): void {
   for (const zone of floor.zones ?? []) {
     const left = zone.x;
     const right = zone.x + zone.w;
@@ -589,7 +589,7 @@ function emitZones(doc: DxfDocument, floor: FloorLayout, cad: (x: number, z: num
     doc.polyline('ZONES', [cad(left, top), cad(right, top), cad(right, bottom), cad(left, bottom)], true);
     const centre = zone.x + zone.w / 2;
     doc.text('ZONES', cad(centre, top + ZONE_NAME_DROP_M), LABEL_TEXT_HEIGHT, zone.name, 'centre');
-    doc.text('ZONES', cad(centre, top + ZONE_AREA_DROP_M), DIMENSION_TEXT_HEIGHT, `${zoneArea(zone).toFixed(1)} m²`, 'centre');
+    doc.text('ZONES', cad(centre, top + ZONE_AREA_DROP_M), DIMENSION_TEXT_HEIGHT, `${zoneArea(zone, recess).toFixed(1)} m²`, 'centre');
   }
 }
 

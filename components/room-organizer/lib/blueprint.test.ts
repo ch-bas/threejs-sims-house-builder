@@ -95,6 +95,12 @@ describe('openBlueprintPrintWindow (#288)', () => {
     expect(written).not.toContain(`${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}`);
   });
 
+  it('takes the porch off the zone list, as off the floor area (#582)', async () => {
+    const floor = makeFloor({ zones: [{ id: 'z', name: 'Hall', color: '#3b82f6', x: -3, z: -4, w: 6, d: 2 }] });
+    await openBlueprintPrintWindow(makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2 } }), floor);
+    expect(written).toContain('10.3 m²</li>');
+  });
+
   it('says so in an in-app notice, not an alert, when pop-ups are blocked (#649)', async () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
     const alert = vi.fn();

@@ -548,4 +548,13 @@ describe('SVG escaping of user text (#455)', () => {
     expect(svg).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(svg).toContain('&quot; onmouseover=&quot;alert(1)');
   });
+
+  it('leaves the porch out of a zone\'s area, and clears it over the tint (#582)', () => {
+    const zones = [{ id: 'z', name: 'Hall', color: '#3b82f6', x: -3, z: -4, w: 6, d: 2 }];
+    const floor = makeFloor({ zones });
+    const svg = layoutToSvg(makeLayout({ floors: [floor], entrance: { width: 1.4, depth: 1.2 } }), floor);
+    expect(svg).toContain('10.3 m²</text>');
+    expect(svg.indexOf('class="entrance"')).toBeGreaterThan(svg.indexOf('class="zone"'));
+    expect(layoutToSvg(makeLayout({ floors: [floor] }), floor)).toContain('12.0 m²</text>');
+  });
 });
