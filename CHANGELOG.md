@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- On touch tablets the walkthrough thumb stick and the Sit and Stand button are on screen, so you can walk: they were drawn above the top of the screen. The stick sits in the bottom-left corner on tablets ([#672](https://github.com/ch-bas/threejs-sims-house-builder/issues/672))
+- On a landscape phone the walkthrough thumb stick sits in the bottom-left corner, in reach of your thumb, instead of the middle of the left edge ([#682](https://github.com/ch-bas/threejs-sims-house-builder/issues/682))
 - On a landscape phone the camera buttons follow the sidebar button when the screen's notch area changes, so they can't end up on top of it ([#683](https://github.com/ch-bas/threejs-sims-house-builder/issues/683))
 - Add floor shows a plus instead of a plus-minus sign, on the floor pill and in the drawer ([#686](https://github.com/ch-bas/threejs-sims-house-builder/issues/686))
 - The camera pad's zoom buttons are full size instead of thin slivers either side of the slider ([#639](https://github.com/ch-bas/threejs-sims-house-builder/issues/639))

@@ -122,9 +122,14 @@ function TouchWalkHud({ seatName, seated, floorName, onStick, onToggleSit, onExi
   );
 }
 
-/** Just above the phone dock, wherever it ends (`--pc-dock-top`, measured by the bottom HUD). */
+/**
+ * Just above the mode panel, wherever it ends (`--pc-mode-top`, measured on
+ * the painted panel: the HUD box reaches near the top of a tablet, #672). The
+ * stick has no such anchor: it takes the free bottom-left corner, or rides
+ * above a phone's full-width mode bar (`.pc-walk-stick`, globals.css).
+ */
 const ACTION_POSITION: CSSProperties = {
-  bottom: 'calc(100% - var(--pc-dock-top, 100%) + 16px)',
+  bottom: 'calc(100% - var(--pc-mode-top, 100%) + 16px)',
 };
 
 const STICK_SIZE = 116;
@@ -163,7 +168,7 @@ function Stick({ onStick }: { onStick(x: number, y: number): void }): JSX.Elemen
       data-walk-stick=""
       role="group"
       aria-label="Walk: drag to move"
-      className="pc-glass pc-glass--dark absolute"
+      className="pc-glass pc-glass--dark pc-walk-stick absolute"
       onPointerDown={(event) => {
         if (pointerRef.current !== null) return;
         pointerRef.current = event.pointerId;
@@ -180,7 +185,6 @@ function Stick({ onStick }: { onStick(x: number, y: number): void }): JSX.Elemen
         if (event.pointerId === pointerRef.current) release();
       }}
       style={{
-        ...ACTION_POSITION,
         left: 'calc(16px + env(safe-area-inset-left, 0px))',
         zIndex: 26,
         width: STICK_SIZE,

@@ -1219,3 +1219,16 @@ html[data-plan-gesture] * {
     display: none;
   }
 }
+
+/* P1 touch tablets and the walk HUD (polish sprint) */
+/* The walk stick takes the bottom-left corner, free of the mode panel on
+   tablets and landscape phones (#672, #682); only the portrait dock's
+   full-width mode bar lifts it. */
+.pc-walk-stick {
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 768px) and (min-height: 501px) {
+  .pc-walk-stick {
+    bottom: calc(100% - var(--pc-mode-top, 100%) + 16px);
+  }
+}
