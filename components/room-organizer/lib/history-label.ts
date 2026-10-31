@@ -6,7 +6,7 @@ import type { FloorLayout, FurnitureItem, RoomLayout } from './types';
 // an undo lands on (lib/history-floor): a history step can merge several
 // actions inside the debounce window, and the difference is what it undoes.
 
-type Verb = 'move' | 'turn' | 'resize' | 'recolour' | 'lock' | 'unlock' | 'edit';
+type Verb = 'move' | 'turn' | 'resize' | 'recolour' | 'lock' | 'unlock' | 'group' | 'ungroup' | 'edit';
 
 /** One verb per item: a drag also locks, a wall settle also turns, and "move" is what the player did. */
 function itemVerb(before: FurnitureItem, after: FurnitureItem): Verb {
@@ -15,6 +15,7 @@ function itemVerb(before: FurnitureItem, after: FurnitureItem): Verb {
   if (before.width !== after.width || before.depth !== after.depth || before.height !== after.height) return 'resize';
   if (before.color !== after.color) return 'recolour';
   if (before.locked !== after.locked) return after.locked ? 'lock' : 'unlock';
+  if (before.groupId !== after.groupId) return after.groupId ? 'group' : 'ungroup';
   return 'edit';
 }
 
@@ -32,8 +33,12 @@ function describeItems(before: FloorLayout, after: FloorLayout): string | null {
   const removed = before.items.filter((item) => !newIds.has(item.id));
   const changed = after.items.flatMap((item) => {
     const old = oldById.get(item.id);
-    return old && old !== item ? [{ item, verb: itemVerb(old, item) }] : [];
+    return old && old !== item ? [{ item, old, verb: itemVerb(old, item) }] : [];
   });
+  // Rotating a selection orbits its members too, so each reads as a move.
+  if (added.length === 0 && removed.length === 0 && changed.length > 1 && changed.every(({ item, old }) => item.rotation !== old.rotation)) {
+    return `turn ${named(changed.map((entry) => entry.item))}`;
+  }
   if (added.length > 0 && removed.length === 0 && changed.length === 0) return `add ${named(added)}`;
   if (removed.length > 0 && added.length === 0 && changed.length === 0) return `remove ${named(removed)}`;
   const [first] = changed;
@@ -42,6 +47,17 @@ function describeItems(before: FloorLayout, after: FloorLayout): string | null {
   }
   const touched = [...added, ...removed, ...changed.map((entry) => entry.item)];
   return touched.length > 0 ? `edit ${named(touched)}` : null;
+}
+
+/** A storey change that touched no item. */
+function describeFloorFields(before: FloorLayout, after: FloorLayout): string {
+  if (before.interiorWalls !== after.interiorWalls) return 'change the walls';
+  if (before.hiddenWalls !== after.hiddenWalls) return 'show or hide a wall';
+  if (before.zones !== after.zones) return 'change the zones';
+  if (before.height !== after.height) return 'change the storey height';
+  const finishes = before.floorColor !== after.floorColor || before.floorPattern !== after.floorPattern;
+  if (finishes || before.wallPattern !== after.wallPattern || before.wallColors !== after.wallColors) return 'change the finish';
+  return 'edit the floor';
 }
 
 function describeFloors(before: RoomLayout, after: RoomLayout): string | null {
@@ -79,8 +95,8 @@ export function describeLayoutChange(before: RoomLayout, after: RoomLayout): str
     const where = after.floors.length > 1 ? ` on ${only.floor.name}` : '';
     const items = describeItems(only.old, only.floor);
     if (items) return `${items}${where}`;
-    if (only.old.interiorWalls !== only.floor.interiorWalls) return `change the walls${where}`;
-    return `change the room finish${where}`;
+    if (only.old.name !== only.floor.name) return `rename floor “${only.floor.name}”`;
+    return `${describeFloorFields(only.old, only.floor)}${where}`;
   }
   if (changed.length > 1) return 'change several floors';
   if (before.name !== after.name) return 'rename the house';
