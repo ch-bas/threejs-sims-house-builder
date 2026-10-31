@@ -545,6 +545,20 @@ describe('coverage frame (#420)', () => {
 });
 
 describe('interior wall dimensions', () => {
+  it('slide the label the same way in both formats when a door swing and a desk crowd the wall (#592)', () => {
+    const door = makeItem({ id: 'door', type: 'door', width: 0.9, depth: 0.1, position: { x: 0, z: 0 }, rotation: -Math.PI / 2 });
+    const desk = makeItem({ id: 'desk', name: 'Desk', width: 0.8, depth: 0.8, position: { x: 0.5, z: 0 } });
+    const floor = makeFloor({ items: [door, desk], interiorWalls: [{ id: 'iw', x1: 0, z1: -3, x2: 0, z2: 3 }] });
+    const layout = makeLayout({ floors: [floor] });
+    const [dim] = interiorWallDimensions(floor);
+    expect(dim!.labelShiftM).not.toBe(0);
+    // The wall's middle is CAD y 4 and sheet y 260; the wall runs south, so down both.
+    const label = entities(layoutToDxf(layout, floor), 'TEXT', 'DIMENSIONS').find((t) => tag(t, 1) === '6.00 m')!;
+    expect(Number(tag(label, 21))).toBeCloseTo(4 - dim!.labelShiftM, 3);
+    const svgLabel = /class="wall-dimension".*?translate\(([\d.]+) ([\d.]+)\)/.exec(layoutToSvg(layout, floor));
+    expect(Number(svgLabel![2])).toBeCloseTo(260 + dim!.labelShiftM * 50, 1);
+  });
+
   it('sit on the same side of the wall as in the SVG, clear of an item label', () => {
     // Wall running south at x = −1.5 with a desk against its west face.
     const desk = makeItem({ id: 'd', type: 'desk', name: 'Desk 45', width: 1.2, depth: 0.5, position: { x: -2.3, z: -2 }, rotation: Math.PI / 4 });

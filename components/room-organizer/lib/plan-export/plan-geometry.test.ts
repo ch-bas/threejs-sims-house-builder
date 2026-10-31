@@ -170,7 +170,7 @@ describe('dimensions (#424)', () => {
     });
     // Left-hand normal of (0.6, 0.8) in the x-right / z-down plane: (−0.8, 0.6).
     expect(interiorWallDimensions(floor)).toEqual([
-      { from: { x: 0, z: 0 }, to: { x: 3, z: 4 }, lengthM: 5, label: '5.00 m', normal: { x: -0.8, z: 0.6 } },
+      { from: { x: 0, z: 0 }, to: { x: 3, z: 4 }, lengthM: 5, label: '5.00 m', normal: { x: -0.8, z: 0.6 }, labelShiftM: 0 },
     ]);
   });
 
@@ -181,6 +181,55 @@ describe('dimensions (#424)', () => {
     // A desk hard against its west face: the label moves east.
     const desk = makeItem({ id: 'd', name: 'Desk', width: 1.2, depth: 0.6, position: { x: -0.5, z: 0 } });
     expect(interiorWallDimensions(makeFloor({ interiorWalls: [wall], items: [desk] }))[0]!.normal).toEqual({ x: 1, z: 0 });
+  });
+
+  describe('door swings (#592)', () => {
+    // A wall running south along x = 0, so the label's default side is west.
+    const wall = { id: 'w', x1: 0, z1: -3, x2: 0, z2: 3 };
+    const door = (rotation: number, z = 0) =>
+      makeItem({ id: `d${z}`, type: 'door', width: 0.9, depth: 0.1, position: { x: 0, z }, rotation });
+    const SWING_WEST = -Math.PI / 2;
+    const SWING_EAST = Math.PI / 2;
+
+    it('moves the label off the side the door swings into', () => {
+      const [dim] = interiorWallDimensions(makeFloor({ interiorWalls: [wall], items: [door(SWING_WEST)] }));
+      expect(dim!.normal).toEqual({ x: 1, z: 0 });
+      expect(dim!.labelShiftM).toBe(0);
+    });
+
+    it('leaves the label alone when the door swings away from it', () => {
+      const [dim] = interiorWallDimensions(makeFloor({ interiorWalls: [wall], items: [door(SWING_EAST)] }));
+      expect(dim!.normal).toEqual({ x: -1, z: 0 });
+      expect(dim!.labelShiftM).toBe(0);
+    });
+
+    it('does not count a window, which has no swing', () => {
+      const window = makeItem({ id: 'win', type: 'window', width: 0.9, depth: 0.1, position: { x: 0, z: 0 }, rotation: SWING_WEST });
+      const [dim] = interiorWallDimensions(makeFloor({ interiorWalls: [wall], items: [window] }));
+      expect(dim!.normal).toEqual({ x: -1, z: 0 });
+    });
+
+    it('slides the label along the wall when both sides are crowded', () => {
+      const desk = makeItem({ id: 'desk', name: 'Desk', width: 0.8, depth: 0.8, position: { x: 0.5, z: 0 } });
+      const [dim] = interiorWallDimensions(makeFloor({ interiorWalls: [wall], items: [door(SWING_WEST), desk] }));
+      // Clear of the swing's 0.45 m half-width and the 0.25 m clearance, label end included.
+      expect(Math.abs(dim!.labelShiftM)).toBeGreaterThanOrEqual(0.45 + 0.25 + 0.35);
+      expect(Math.abs(dim!.labelShiftM)).toBeLessThanOrEqual(3 - 0.35);
+    });
+
+    it('sees a swing that only the end of the label would touch', () => {
+      const off = door(SWING_WEST, 0.9);
+      const [dim] = interiorWallDimensions(makeFloor({ interiorWalls: [wall], items: [off] }));
+      expect(dim!.normal).toEqual({ x: 1, z: 0 });
+    });
+
+    it('stays at the middle when no spot along a short wall is clear', () => {
+      const short = { id: 's', x1: 0, z1: -0.5, x2: 0, z2: 0.5 };
+      const desk = makeItem({ id: 'desk', name: 'Desk', width: 0.8, depth: 3, position: { x: 0.5, z: 0 } });
+      const wide = makeItem({ id: 'door', type: 'door', width: 2, depth: 0.1, position: { x: 0, z: 0 }, rotation: SWING_WEST });
+      const [dim] = interiorWallDimensions(makeFloor({ interiorWalls: [short], items: [wide, desk] }));
+      expect(dim!.labelShiftM).toBe(0);
+    });
   });
 });
 
