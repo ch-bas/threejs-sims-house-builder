@@ -7,8 +7,9 @@ import { useActiveFloorIndex, useLayout } from '../hooks/use-layout-store';
 import { budgetSpent, furnitureSpend } from '../lib/budget';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
 import { footprintArea, itemCountByCategory } from '../lib/geometry';
-import { ENTRANCE_DOOR_ID, entrancePlanOutline } from '../lib/street';
-import { zoneStats } from '../lib/zones';
+import { floorRooms, hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
+import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entrancePlanOutline } from '../lib/street';
+import { zoneContains, zoneStats } from '../lib/zones';
 
 export function StatisticsPanel(): JSX.Element {
   // `layout` from the store selector; `collidingIds` stays on the context.
@@ -55,6 +56,23 @@ export function StatisticsPanel(): JSX.Element {
       ),
     [layout]
   );
+  // The rooms the walls close on each floor (#719), named after the zone
+  // over them. A floor with no partitions is one room, which says nothing.
+  const roomRows = useMemo(
+    () =>
+      layout.floors.flatMap((floor, index) => {
+        if (!floor.interiorWalls?.some((wall) => wall.id !== ENTRANCE_WALL_ID)) return [];
+        return floorRooms(layout, index).map((room, roomIndex) => {
+          const name = floor.zones?.find((zone) => zoneContains(zone, room.anchor.x, room.anchor.z))?.name ?? `Room ${roomIndex + 1}`;
+          return {
+            key: `${floor.id}:${roomIndex}`,
+            label: layout.floors.length > 1 ? `${name} · ${floor.name}` : name,
+            area: room.area,
+          };
+        });
+      }),
+    [layout]
+  );
 
   return (
     <Card>
@@ -96,6 +114,21 @@ export function StatisticsPanel(): JSX.Element {
             {CATEGORIES.filter((category) => counts.has(category.key)).map((category) => (
               <StatRow key={category.key} label={`${category.icon} ${category.label}`}>
                 {counts.get(category.key) ?? 0}
+              </StatRow>
+            ))}
+          </div>
+        )}
+
+        {layout.floors.some(hasTooManyWalls) && (
+          <p className="pt-2 border-t text-muted-foreground">Rooms aren’t listed on a floor with over {MAX_ROOM_WALLS} walls.</p>
+        )}
+
+        {roomRows.length > 0 && (
+          <div className="pt-2 border-t space-y-1" aria-label="Rooms">
+            <p className="text-muted-foreground">Rooms</p>
+            {roomRows.map((row) => (
+              <StatRow key={row.key} label={row.label}>
+                {row.area.toFixed(1)} m²
               </StatRow>
             ))}
           </div>
