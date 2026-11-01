@@ -1215,6 +1215,8 @@ export function RoomOrganizer(): JSX.Element {
     sceneRef,
     roomWidth: layout.width,
     roomDepth: layout.height,
+    // The eaves keep the ground under them dry too (#660).
+    clearance: layout.roof && layout.roof.style !== 'none' ? ROOF_EAVE_OVERHANG : 0,
   });
 
   useCameraVision({

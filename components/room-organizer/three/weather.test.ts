@@ -40,6 +40,17 @@ describe('weather particle field (#189)', () => {
     }
   });
 
+  it('keeps the eaves dry too: nothing spawns under the overhang (#660)', () => {
+    const field = createWeatherField({ kind: 'rain', ...LOT, clearance: 0.35, count: 4000, rng: seeded(3) });
+    expect(field.clearHalfW).toBeCloseTo(4.35);
+    expect(field.clearHalfD).toBeCloseTo(3.35);
+    for (let i = 0; i < field.count; i++) {
+      const x = field.positions[i * 3]!;
+      const z = field.positions[i * 3 + 2]!;
+      expect(Math.abs(x) < 4.35 && Math.abs(z) < 3.35, `particle ${i} under the eaves at ${x},${z}`).toBe(false);
+    }
+  });
+
   it('rain falls straight and fast; snow falls slowly and sways', () => {
     const rain = createWeatherField({ kind: 'rain', ...LOT, count: 100, rng: seeded(1) });
     const snow = createWeatherField({ kind: 'snow', ...LOT, count: 100, rng: seeded(1) });

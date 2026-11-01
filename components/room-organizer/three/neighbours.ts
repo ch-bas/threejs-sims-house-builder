@@ -1,4 +1,5 @@
 import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
+import { GRASS_DROP } from '../lib/site';
 import { WINDOW_WIDTH, windowCount, windowRow, type StreetFinish, type StreetHouseSpec } from '../lib/street-row';
 import { removeAndDispose } from './builder-utils';
 import { buildRoof, roofPeakHeight } from './roof';
@@ -198,11 +199,16 @@ function buildHouse(
     const rise = Math.max(0, doorFloorY - groundFrontY);
     place(parts.frames, spec.door.offset, doorFloorY + DOOR_HEIGHT / 2 + 0.05, frontZ - FACE_GAP - 0.02, DOOR_WIDTH + 0.2, DOOR_HEIGHT + 0.1, 0.03);
     place(parts.doors, spec.door.offset, doorFloorY + DOOR_HEIGHT / 2, frontZ - FACE_GAP - 0.03, DOOR_WIDTH, DOOR_HEIGHT, 0.06, 0, spec.door.color);
+    // Stoops reach down to the grass plane under the ground line, like the
+    // porch steps, so they never hover over the pavement (#660).
+    const bottom = groundFrontY - GRASS_DROP;
     if (rise > 0.05) {
       const depth = 0.4 + rise * 1.2;
-      place(parts.steps, spec.door.offset, groundFrontY + rise / 2, frontZ - depth / 2, STEP_WIDTH, rise, depth);
+      const height = rise + GRASS_DROP;
+      place(parts.steps, spec.door.offset, bottom + height / 2, frontZ - depth / 2, STEP_WIDTH, height, depth);
     } else {
-      place(parts.steps, spec.door.offset, groundFrontY + 0.03, frontZ - 0.2, STEP_WIDTH - 0.1, 0.06, 0.4);
+      const height = 0.06 + GRASS_DROP;
+      place(parts.steps, spec.door.offset, bottom + height / 2, frontZ - 0.2, STEP_WIDTH - 0.1, height, 0.4);
     }
   }
 

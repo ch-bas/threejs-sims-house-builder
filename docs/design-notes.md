@@ -194,6 +194,14 @@ to respect.
   built to `walkthroughPartitionHeight` (the ceiling line) and rebuilt on
   the way out; the porch back wall has reached its soffit the same way
   since #275 (#656).
+- **Nothing hovers, nothing shares a plane with the shell.** The grass plane
+  lies `GRASS_DROP` (5 cm) under the ground line with the pavement and road
+  stacked above it, so the porch steps and the neighbours' stoops reach down
+  to it rather than stopping at the street. A partition end that the snap
+  put on the outline (`onFootprintEdge`) stops `PARTITION_END_GAP` short of
+  the shell, twice the baseboard's own gap, so neither end face lies in
+  the facade's plane. Rain and snow keep clear of the eaves' overhang as
+  well as the footprint (#660).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made

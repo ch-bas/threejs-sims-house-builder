@@ -57,6 +57,8 @@ export interface WeatherFieldOptions {
   count?: number;
   floorY?: number;
   ceilingY?: number;
+  /** Kept clear beyond the footprint on every side: the eaves' overhang, so nothing falls through the soffit (#660). */
+  clearance?: number;
   /** Uniform [0, 1) source; injectable so tests are deterministic. */
   rng?: () => number;
 }
@@ -73,12 +75,13 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
     count = WEATHER_PARTICLE_COUNT[kind],
     floorY = WEATHER_FLOOR_Y,
     ceilingY = WEATHER_CEILING_Y,
+    clearance = 0,
     rng = Math.random,
   } = options;
   const halfExtent = groundSize / 2;
   const sway = kind === 'snow' ? SNOW_SWAY : 0;
-  const clearHalfW = roomWidth / 2 + sway;
-  const clearHalfD = roomDepth / 2 + sway;
+  const clearHalfW = roomWidth / 2 + clearance + sway;
+  const clearHalfD = roomDepth / 2 + clearance + sway;
   const [minSpeed, maxSpeed] = kind === 'rain' ? RAIN_SPEED : SNOW_SPEED;
 
   const positions = new Float32Array(count * 3);
