@@ -521,3 +521,97 @@ describe('drag-handlers hand a pinch that starts on an item to the camera', () =
     t.canvas.dispatchEvent(touch('pointerup', 100, 100, 2));
   });
 });
+
+describe('drag-handlers hold a wall gesture (#718)', () => {
+  function withWall() {
+    const context = setup([]);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1, 3));
+    wall.position.set(-3, 0, 0);
+    wall.userData = { type: 'interior-wall', wallId: 'w' };
+    context.scene.add(wall);
+    context.scene.updateMatrixWorld(true);
+    const gesture = { move: vi.fn(), end: vi.fn() };
+    const onWallSelect = vi.fn();
+    Object.assign(context.handlers, { onWallSelect, onWallGrab: vi.fn(() => gesture) });
+    const onWall = context.camera.position.clone().set(-3, 0.5, 0).project(context.camera);
+    const x = ((onWall.x + 1) / 2) * SIZE;
+    const y = ((1 - onWall.y) / 2) * SIZE;
+    return { ...context, gesture, onWallSelect, x, y };
+  }
+
+  it('asks before selecting, holds the camera, feeds floor points and commits on release', () => {
+    const { canvas, controls, handlers, gesture, onWallSelect, x, y, detach } = withWall();
+    canvas.dispatchEvent(pointer('pointerdown', x, y));
+    expect(handlers.onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ wallId: 'w', grip: 'body' }));
+    expect(onWallSelect).toHaveBeenCalledTimes(1);
+    expect(controls.enabled).toBe(false);
+    canvas.dispatchEvent(pointer('pointermove', x + 1, y));
+    expect(gesture.move).not.toHaveBeenCalled();
+    canvas.dispatchEvent(pointer('pointermove', x + 20, y));
+    expect(gesture.move).toHaveBeenCalledTimes(1);
+    canvas.dispatchEvent(pointer('pointerup', x + 20, y));
+    expect(gesture.end).toHaveBeenCalledWith(true);
+    expect(controls.enabled).toBe(true);
+    detach();
+  });
+
+  it('a right press only selects, as it always did (M7)', () => {
+    const { canvas, controls, handlers, onWallSelect, scene, x, y, detach } = withWall();
+    const handle = new THREE.Object3D();
+    handle.position.set(-3, 0.5, 0);
+    handle.userData = { type: 'interior-wall-handle', wallId: 'w', grip: 'start' };
+    scene.add(handle);
+    const press = new MouseEvent('pointerdown', { clientX: x, clientY: y, button: 2, bubbles: true });
+    Object.defineProperty(press, 'pointerId', { value: 1 });
+    Object.defineProperty(press, 'pointerType', { value: 'mouse' });
+    canvas.dispatchEvent(press);
+    expect(handlers.onWallGrab).not.toHaveBeenCalled();
+    expect(onWallSelect).toHaveBeenCalledTimes(1);
+    expect(controls.enabled).toBe(true);
+    detach();
+  });
+
+  it('a lost window focus calls a held wall off (L1)', () => {
+    const { canvas, gesture, controls, x, y, detach } = withWall();
+    canvas.dispatchEvent(pointer('pointerdown', x, y));
+    canvas.dispatchEvent(pointer('pointermove', x + 20, y));
+    window.dispatchEvent(new Event('blur'));
+    expect(gesture.end).toHaveBeenCalledWith(false);
+    expect(controls.enabled).toBe(true);
+    detach();
+  });
+
+  it('leaves the press to the camera when no gesture comes back', () => {
+    const { canvas, controls, handlers, onWallSelect, x, y, detach } = withWall();
+    handlers.onWallGrab = () => null;
+    canvas.dispatchEvent(pointer('pointerdown', x, y));
+    expect(onWallSelect).toHaveBeenCalledTimes(1);
+    expect(controls.enabled).toBe(true);
+    detach();
+  });
+
+  it('a click commits nothing, and a pointercancel calls it off', () => {
+    const { canvas, gesture, controls, x, y, detach } = withWall();
+    canvas.dispatchEvent(pointer('pointerdown', x, y));
+    canvas.dispatchEvent(pointer('pointerup', x, y));
+    expect(gesture.end).toHaveBeenLastCalledWith(false);
+    canvas.dispatchEvent(pointer('pointerdown', x, y));
+    canvas.dispatchEvent(pointer('pointermove', x + 20, y));
+    canvas.dispatchEvent(pointer('pointercancel', x + 20, y));
+    expect(gesture.end).toHaveBeenCalledTimes(2);
+    expect(gesture.end).toHaveBeenLastCalledWith(false);
+    expect(controls.enabled).toBe(true);
+    detach();
+  });
+
+  it('an end handle takes the press within reach, wider under a finger', () => {
+    const { canvas, handlers, scene, x, y, detach } = withWall();
+    const handle = new THREE.Object3D();
+    handle.position.set(-3, 0.5, 0);
+    handle.userData = { type: 'interior-wall-handle', wallId: 'w', grip: 'start' };
+    scene.add(handle);
+    canvas.dispatchEvent(pointer('pointerdown', x + 18, y, { pointerType: 'touch' }));
+    expect(handlers.onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ grip: 'start' }));
+    detach();
+  });
+});

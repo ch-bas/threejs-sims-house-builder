@@ -29,8 +29,10 @@ import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
 import { buildEntrance } from '../three/entrance';
 import { createFurnitureModel } from '../three/furniture-builders';
 import {
+  addWallHandles,
   clearInteriorWalls,
   clearPreview as clearWallPreview,
+  clearWallHandles,
   renderInteriorWalls,
   renderInteriorWallPreview,
 } from '../three/interior-walls';
@@ -1009,12 +1011,17 @@ export function useSceneEffects({
     outline.userData.wallId = selectedWall.id;
     outline.visible = wallMesh.visible;
     scene.add(outline);
+    // The ends of a wall that can move (#718).
+    const movable = selectedWall.kind === 'interior' && selectedWall.id !== ENTRANCE_WALL_ID;
+    const wall = movable && wallDisplay !== 'down' ? activeFloor.interiorWalls?.find((entry) => entry.id === selectedWall.id) : undefined;
+    if (wall) addWallHandles(THREE, scene, wall, activeFloorY);
     invalidate();
 
     return () => {
       scene.remove(outline);
       edges.dispose();
       material.dispose();
+      clearWallHandles(scene);
     };
     // Keyed on the shell + interior-wall rebuild keys (not layout.floors
     // identity) so the outline re-snapshots the fresh mesh after any wall
@@ -1022,7 +1029,7 @@ export function useSceneEffects({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
-    selectedWall, activeFloorIndex,
+    selectedWall, activeFloorIndex, wallDisplay,
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.width, layout.height, allFloors, ghostOtherFloors,
   ]);

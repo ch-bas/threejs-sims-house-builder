@@ -37,6 +37,7 @@ import {
   entranceWithinStorey,
   sameEntrance,
 } from '../lib/street';
+import { planWallMove, type WallPatch } from '../lib/wall-edit';
 import { MAX_ZONES, clampZoneRect, sameZone, zoneInPorch } from '../lib/zones';
 import type {
   CatalogItem,
@@ -95,6 +96,7 @@ export type LayoutAction =
   | { type: 'addInteriorWall'; wall: InteriorWall }
   | { type: 'addInteriorWalls'; walls: readonly InteriorWall[] }
   | { type: 'removeInteriorWall'; id: string }
+  | { type: 'updateInteriorWalls'; walls: readonly WallPatch[] }
   | { type: 'toggleExteriorWall'; wallId: WallId }
   | { type: 'clearInteriorWalls' }
   | { type: 'rotateSelection'; ids: ReadonlySet<string>; radians: number }
@@ -771,6 +773,26 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           ? { ...floor, interiorWalls: [...(floor.interiorWalls ?? []), ...walls] }
           : floor
       );
+    }
+
+    // Moves walls after they are drawn (#718), in one dispatch. What hangs on a
+    // moved wall rides along and settles, or the whole move is refused.
+    case 'updateInteriorWalls': {
+      const patches: WallPatch[] = [];
+      for (const patch of action.walls) {
+        const wall = isFiniteWall(patch) ? clampWall(patch) : null;
+        if (!wall) return state;
+        patches.push({ id: wall.id, x1: wall.x1, z1: wall.z1, x2: wall.x2, z2: wall.z2 });
+      }
+      return withActiveFloor(state, (floor) => {
+        const plan = planWallMove(floor, patches, {
+          roomWidth: state.layout.width,
+          roomDepth: state.layout.height,
+          porch: entrancePlanOutline(state.layout, state.activeFloorIndex),
+        });
+        if (!plan || 'refusal' in plan) return floor;
+        return { ...floor, interiorWalls: plan.walls, items: plan.items };
+      });
     }
 
     // The porch's back wall belongs to the recess: it goes when the entrance

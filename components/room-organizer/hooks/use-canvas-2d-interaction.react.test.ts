@@ -533,6 +533,55 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1');
     });
 
+    it('a press on the selected wall holds it; the moves feed the gesture and the release commits once (#718)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const onWallGrab = vi.fn(() => gesture);
+      const { fire } = select({ selectedWallId: 'w1', onWallGrab });
+      fire('pointerdown', 1, 0.05);
+      expect(onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ wallId: 'w1', grip: 'body' }));
+      fire('pointermove', 1, 1);
+      fire('pointermove', 1, 1.5);
+      expect(gesture.move).toHaveBeenCalledTimes(2);
+      fire('pointerup', 1, 1.5);
+      expect(gesture.end).toHaveBeenCalledTimes(1);
+      expect(gesture.end).toHaveBeenCalledWith(true);
+    });
+
+    it('a press selecting a wall says so, so the wall can come along (#718)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const onWallGrab = vi.fn(() => gesture);
+      const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab });
+      fire('pointerdown', 1, 0.05);
+      expect(onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }));
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1');
+    });
+
+    it('a press on a selected end grabs that end, ahead of the item under it (#718)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const onWallGrab = vi.fn(() => gesture);
+      const floor = makeFloor({
+        items: [makeItem({ id: 'a', position: { x: 3, z: 0 } })],
+        interiorWalls: [{ id: 'w1', x1: -3, z1: 0, x2: 3, z2: 0 }],
+      });
+      const { fire, params } = setup([], { activeFloor: floor, selectedWallId: 'w1', onWallGrab });
+      fire('pointerdown', 3, 0);
+      expect(onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ grip: 'end' }));
+      expect(params.onItemSelect).not.toHaveBeenCalled();
+    });
+
+    it('a release without a drag commits nothing, and neither does a cancel (#718)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const { fire } = select({ selectedWallId: 'w1', onWallGrab: () => gesture });
+      fire('pointerdown', 1, 0.05);
+      fire('pointerup', 1, 0.05);
+      expect(gesture.end).toHaveBeenLastCalledWith(false);
+      fire('pointerdown', 1, 0.05);
+      fire('pointermove', 1, 1);
+      fire('pointercancel', 1, 1);
+      expect(gesture.end).toHaveBeenLastCalledWith(false);
+      expect(gesture.end).toHaveBeenCalledTimes(2);
+    });
+
     it('EXPLORE selects no wall', () => {
       const { onInteriorWallSelect, fire } = select({ exploring: true });
       fire('pointerdown', 1, 0.05);

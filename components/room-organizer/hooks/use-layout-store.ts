@@ -121,6 +121,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     addInteriorWall: (wall: InteriorWall) => dispatch({ type: 'addInteriorWall', wall }),
     addInteriorWalls: (walls: readonly InteriorWall[]) => dispatch({ type: 'addInteriorWalls', walls }),
     removeInteriorWall: (id) => dispatch({ type: 'removeInteriorWall', id }),
+    updateInteriorWalls: (walls) => dispatch({ type: 'updateInteriorWalls', walls }),
     clearInteriorWalls: () => dispatch({ type: 'clearInteriorWalls' }),
     toggleExteriorWall: (wallId: WallId) => dispatch({ type: 'toggleExteriorWall', wallId }),
     rotateSelection: (ids, radians) => dispatch({ type: 'rotateSelection', ids, radians }),
