@@ -88,8 +88,14 @@ describe('camera vision cones on other storeys (#552)', () => {
   const materials = (scene: THREE.Scene) =>
     (cone(scene).userData.vision as { materials: THREE.Material[] }).materials;
 
+  const volumeMaterial = (scene: THREE.Scene) => ((cone(scene).userData.vision as { volume: THREE.Mesh }).volume.material as THREE.Material);
+
   it('draw over the world by default, as on the active storey', () => {
-    expect(materials(sceneWith([CAMERA])).every((material) => !material.depthTest)).toBe(true);
+    const scene = sceneWith([CAMERA]);
+    const volume = volumeMaterial(scene);
+    expect(materials(scene).filter((material) => material !== volume).every((material) => !material.depthTest)).toBe(true);
+    // The light volume alone is hidden by a wall in front of it (#652).
+    expect(volume.depthTest).toBe(true);
   });
 
   it('are occludable under a drawn storey and while walking, never on the active storey under ghosts', () => {
@@ -139,5 +145,18 @@ describe('a still cone asks for no frame (#556)', () => {
     expect(stepVisionCones(withChair, 0)).toBe(true);
     while (stepVisionCones(withChair, 0));
     expect(stepVisionCones(withChair, 0)).toBe(false);
+  });
+});
+
+// Additive layers over a pale wall or floor saturated it to white, so the
+// wall looked missing from the orbit view (#652).
+describe('cone layers never bleach what is behind them (#652)', () => {
+  it('blend normally, and the volume alone is always depth-tested', () => {
+    for (const options of [undefined, { occludable: true }]) {
+      const scene = sceneWith([CAMERA], options);
+      const data = cone(scene).userData.vision as { materials: THREE.Material[]; volume: THREE.Mesh };
+      for (const material of data.materials) expect(material.blending).toBe(THREE.NormalBlending);
+      expect((data.volume.material as THREE.Material).depthTest).toBe(true);
+    }
   });
 });
