@@ -23,8 +23,11 @@ export type SelectionMode = 'replace' | 'toggle' | 'single';
 export interface HeldGesture {
   /** A floor point under the pointer, past the threshold. `free` is Shift. */
   move(x: number, z: number, free: boolean): void;
-  /** Over: `commit` only for a release on the scene after a real drag. */
-  end(commit: boolean): void;
+  /**
+   * Over: `commit` only for a release on the scene after a real drag;
+   * `clicked` for a release that never left the threshold.
+   */
+  end(commit: boolean, clicked?: boolean): void;
 }
 
 export interface SceneEventHandlers {
@@ -67,6 +70,8 @@ export interface SceneEventHandlers {
    * and a wall in the way never stops an orbit.
    */
   onWallGrab?: (info: { wallId: string; grip: 'body' | 'start' | 'end'; x: number; z: number }) => HeldGesture | null;
+  /** A press on the floor in `floorPickOnly`: a room stamp in hand takes it (#724). */
+  onFloorGrab?: (x: number, z: number) => HeldGesture | null;
   onFloorPointerMove?: (x: number, z: number) => void;
   onFloorPointerLeave?: () => void;
   snapPosition: (id: string, x: number, z: number) => { x: number; z: number };
@@ -327,6 +332,16 @@ export function attachDragHandlers({
             if (gesture) holdGesture(gesture, event);
             return;
           }
+        }
+      }
+      // The right button pans the camera: it places nothing and drops nothing.
+      if (floorPickOnly && event.button !== 0) return;
+      if (floorPickOnly && handlersRef.current.onFloorGrab) {
+        const point = floorPoint();
+        const gesture = point && handlersRef.current.onFloorGrab(point.x, point.z);
+        if (gesture) {
+          holdGesture(gesture, event);
+          return;
         }
       }
       if (handlersRef.current.onEmptyClick) {
@@ -592,7 +607,7 @@ export function attachDragHandlers({
       }
       resetDragState();
       handBackControls();
-      gesture.end(moved && onScene);
+      gesture.end(moved && onScene, !moved);
       return;
     }
     // The furniture effect ran between the last move and the release: the

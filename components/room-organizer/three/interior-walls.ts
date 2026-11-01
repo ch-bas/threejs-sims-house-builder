@@ -289,7 +289,7 @@ const GHOST_COLOR = 0x42a5f5;
 const GHOST_REFUSED_COLOR = 0xef4444;
 
 /**
- * Translucent stand-ins for walls a gesture is holding (#718): one unit box per
+ * Translucent stand-ins for walls a gesture is holding (#718, #724): one unit box per
  * wall, re-posed per move and scaled, so a held gesture allocates nothing and
  * rebuilds nothing. The boxes stand a hair proud of the wall they follow.
  */

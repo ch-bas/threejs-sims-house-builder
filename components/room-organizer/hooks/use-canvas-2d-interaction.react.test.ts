@@ -480,6 +480,16 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
     expect(params.onItemSelect).toHaveBeenCalledWith('a', 'replace');
   });
 
+  it('reports the press of a point, and a press that came to nothing (#724)', () => {
+    const onWallPress = vi.fn();
+    const onWallPressCancel = vi.fn();
+    const { fire } = setup([], { view: walls, onWallPress, onWallPressCancel });
+    fire('pointerdown', 1, 1);
+    expect(onWallPress).toHaveBeenCalledTimes(1);
+    fire('pointercancel', 1, 1);
+    expect(onWallPressCancel).toHaveBeenCalledTimes(1);
+  });
+
   describe('selecting a wall', () => {
     const select = (overrides: Partial<UseCanvas2DInteractionParams> = {}) => {
       const onInteriorWallSelect = vi.fn();

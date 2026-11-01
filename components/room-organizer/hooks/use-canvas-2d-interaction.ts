@@ -148,6 +148,10 @@ export interface UseCanvas2DInteractionParams {
   /** The pointer moved over the plan with the wall tool on. */
   onWallPointerMove?(x: number, z: number): void;
   onWallPointerLeave?(): void;
+  /** The wall tool's press: a room stamp in hand starts sizing here (#724). */
+  onWallPress?(x: number, z: number): void;
+  /** That press ended with no point: the room stamp forgets it. */
+  onWallPressCancel?(): void;
   /** A press picked an interior wall, or something else (null). Not in EXPLORE. */
   onInteriorWallSelect?(id: string | null): void;
   /** The wall with handles (#718). */
@@ -487,6 +491,7 @@ export function useCanvas2DInteraction(
       if (wallPress) {
         releaseCapture(wallPress.pointerId);
         wallPress = null;
+        paramsRef.current.onWallPressCancel?.();
       }
       if (wallHold) {
         const hold = wallHold;
@@ -537,6 +542,7 @@ export function useCanvas2DInteraction(
           // Capture can throw if the pointer is already gone; safe to ignore.
         }
         p.onWallPointerMove?.(world.x, world.z);
+        p.onWallPress?.(world.x, world.z);
         return;
       }
       // Zone-draw mode (#155) claims the press: the rectangle starts here
@@ -805,7 +811,10 @@ export function useCanvas2DInteraction(
         wallPress = null;
         releaseCapture(event.pointerId);
         // Released over the HUD: no place on the floor, so no point (#511).
-        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) {
+          paramsRef.current.onWallPressCancel?.();
+          return;
+        }
         const world = worldAt(event);
         if (world && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPoint?.(world.x, world.z);
         return;

@@ -96,6 +96,7 @@ components/
     │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
     │   ├── walk-interact.ts             Seats in reach and the seated pose (facing the TV), never through a wall or across the shell (#566)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359); the mode to return to on exit
+    │   ├── room-stamp.ts                The room stamp as a held placement: snapped position, drag to size, the walls a drop adds (#724)
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
@@ -202,6 +203,7 @@ components/
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap (with companions), Escape, restore
     │   ├── use-shift-held.ts            Whether Shift is down, for tools that read it between pointer events (#723)
     │   ├── use-wall-edit.ts             The gesture of moving a selected wall, in both views: preview per move, one dispatch on release (#718)
+    │   ├── use-room-stamp.ts            The room stamp in hand: ghost under the pointer, click to drop, drag to size (#724)
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
     │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)

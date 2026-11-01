@@ -1,33 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatMetres } from '../lib/format';
 import { ROOM_SHAPES, type RoomShapeId } from '../lib/room-shapes';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
+import type { RoomStampSpec } from '../lib/room-stamp';
 
 export interface RoomShapesPanelProps {
   /** Maximum drawable dimensions, derived from the lot's footprint. */
   maxWidth: number;
   maxDepth: number;
-  onStamp(args: {
-    shape: RoomShapeId;
-    width: number;
-    depth: number;
-    centerX: number;
-    centerZ: number;
-  }): void;
+  /** The stamp is in hand, following the pointer until a click or a tap drops it. */
+  armed: boolean;
+  /** Take the stamp in hand, or change the one held. */
+  onStamp(spec: RoomStampSpec): void;
+  onCancelStamp(): void;
   /** Folded or not in the phone dock; the HUD unfolds one wall panel at a time. */
   fold?: PanelFold;
 }
 
 /**
  * Custom Room Tool — pick a pre-made footprint (rectangle / L /
- * U / T / plus / hexagon / octagon), choose a size, then stamp a closed
- * outline of interior walls onto the active floor. Shows only when the
- * walls build-tool is active.
+ * U / T / plus / hexagon / octagon), choose a size, then take the stamp in
+ * hand and drop a closed outline of interior walls where the floor needs it
+ * (#724). Shows only when the walls build-tool is active.
  */
-export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }: RoomShapesPanelProps): JSX.Element {
+export function RoomShapesPanel({ maxWidth, maxDepth, armed, onStamp, onCancelStamp, fold: panelFold }: RoomShapesPanelProps): JSX.Element {
   const [shape, setShape] = useState<RoomShapeId>('rectangle');
   const [width, setWidth] = useState(4);
   const [depth, setDepth] = useState(3);
@@ -35,6 +34,11 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }
 
   const clampedW = clamp(width, 1.5, Math.max(1.5, maxWidth - 0.5));
   const clampedD = clamp(depth, 1.5, Math.max(1.5, maxDepth - 0.5));
+
+  // The stamp in hand follows the panel.
+  useEffect(() => {
+    if (armed) onStamp({ shape, width: clampedW, depth: clampedD });
+  }, [armed, onStamp, shape, clampedW, clampedD]);
 
   return (
     <div
@@ -122,15 +126,8 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }
 
         <button
           type="button"
-          onClick={() =>
-            onStamp({
-              shape,
-              width: clampedW,
-              depth: clampedD,
-              centerX: 0,
-              centerZ: 0,
-            })
-          }
+          aria-pressed={armed}
+          onClick={() => (armed ? onCancelStamp() : onStamp({ shape, width: clampedW, depth: clampedD }))}
           className="pc-tile pc-tile--active pc-stamp-go"
           style={{
             marginTop: 4,
@@ -148,7 +145,7 @@ export function RoomShapesPanel({ maxWidth, maxDepth, onStamp, fold: panelFold }
           }}
         >
           <Icon name="sparkle" size={14} />
-          Stamp Room
+          {armed ? 'Cancel Stamp' : 'Stamp Room'}
         </button>
       </div>
       </>

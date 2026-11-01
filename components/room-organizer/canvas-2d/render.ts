@@ -15,7 +15,7 @@ import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitS
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { zoneArea, type ZoneRect } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
-import { drawSelectedWall, drawWallPreview, drawZoneHandles, type WallPreview } from './plan-edit';
+import { drawSelectedWall, drawStampGhost, drawWallPreview, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
@@ -46,6 +46,8 @@ export interface Render2DOptions {
   selectedZoneId?: string | null | undefined;
   /** The wall tool's draft, drawn over everything (#564). */
   wallPreview?: WallPreview | null | undefined;
+  /** The room stamp in hand (#724). */
+  stampGhost?: StampGhost | null | undefined;
   hasCollision: (item: FurnitureItem) => boolean;
   /**
    * Margin (CSS px) around the room. The default suits the full-screen 2D
@@ -260,6 +262,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   const selectedZone = options.selectedZoneId ? floor.zones?.find((zone) => zone.id === options.selectedZoneId) : null;
   if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);
+  if (options.stampGhost) drawStampGhost(ctx, layout, options.stampGhost, offsetX, offsetY, scale);
 }
 
 /** A thumbnail's off-plan arrows are bare dots: fan them closer. */

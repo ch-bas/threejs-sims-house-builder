@@ -32,9 +32,11 @@ import {
   addWallHandles,
   clearInteriorWalls,
   clearPreview as clearWallPreview,
+  clearWallGhosts,
   clearWallHandles,
   renderInteriorWalls,
   renderInteriorWallPreview,
+  renderWallGhosts,
 } from '../three/interior-walls';
 import { clearItemLabels, renderItemLabels } from '../three/item-labels';
 import { applyLampPool, applyTimeOfDay, computeSkyProfile, isLampPrewarmHour, prewarmLampPool } from '../three/lighting';
@@ -46,6 +48,7 @@ import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFlo
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
 import { observeSceneOccluders, planFit } from './scene-occluders';
+import type { StampGhost } from '../canvas-2d/plan-edit';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -112,6 +115,8 @@ interface PlannedFurniture {
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
 const LAMP_REASSIGN_DISTANCE = 1;
 
+const STAMP_GHOST_DOWN_HEIGHT = 0.12;
+
 export interface UseSceneEffectsParams {
   isReady: boolean;
   /** Flips once people.glb loads, so placed people rebuild as rigged figures. */
@@ -137,6 +142,9 @@ export interface UseSceneEffectsParams {
   /** The zone showing handles on the plan (#628). */
   selectedZoneId: string | null;
   wallDraft: { x: number; z: number } | null;
+  /** The room stamp in hand (#724). */
+  stampGhost: StampGhost | null;
+  stampArmed: boolean;
   wallSnapResult: { point: { x: number; z: number }; kind: string } | null;
   measurementPoints: ReadonlyArray<{ x: number; z: number }>;
   /**
@@ -176,6 +184,8 @@ export function useSceneEffects({
   selectedWall,
   selectedZoneId,
   wallDraft,
+  stampGhost,
+  stampArmed,
   wallSnapResult,
   measurementPoints,
   walkIndoors = false,
@@ -324,6 +334,25 @@ export function useSceneEffects({
     // activeFloor is read for its storey height only; storeyHeightsKey covers it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, invalidate, threeModuleRef, sceneRef, view.drawWallMode, wallDraft, wallPreviewTip, activeFloorY, storeyHeightsKey]);
+
+  // The room stamp in hand (#724), the same way: the plan draws its own.
+  const stampGhost3D = view.view2D ? null : stampGhost;
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+    if (!stampGhost3D) {
+      clearWallGhosts(scene);
+      return;
+    }
+    // With the partitions down, a footprint on the floor, not a standing wall.
+    const height = wallDisplay === 'down' ? STAMP_GHOST_DOWN_HEIGHT : interiorWallHeight(activeFloor);
+    renderWallGhosts(THREE, scene, stampGhost3D.walls, activeFloorY, height, stampGhost3D.refused);
+    // activeFloor is read for its storey height only; storeyHeightsKey covers it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, threeModuleRef, sceneRef, stampGhost3D, activeFloorY, storeyHeightsKey, wallDisplay]);
 
   // Build floor + walls
   useEffect(() => {
@@ -1152,11 +1181,12 @@ export function useSceneEffects({
   const wallAnchor = view.drawWallMode ? wallDraft : null;
   const wallTip = view.drawWallMode ? wallSnapResult : null;
   const selectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
-  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedZoneId' | 'wallPreview'>>({});
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedZoneId' | 'wallPreview' | 'stampGhost'>>({});
   planEditRef.current = {
     selectedWallId,
     selectedZoneId,
-    wallPreview: view.drawWallMode
+    stampGhost,
+    wallPreview: view.drawWallMode && !stampArmed
       ? { anchor: wallAnchor, tip: wallTip?.point ?? null, snapped: wallTip !== null && wallTip.kind !== 'none' }
       : null,
   };
@@ -1164,7 +1194,7 @@ export function useSceneEffects({
     // Once a frame, however many moves arrive in it.
     const frame = requestAnimationFrame(() => paint2DRef.current?.());
     return () => cancelAnimationFrame(frame);
-  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedZoneId]);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedZoneId, stampGhost, stampArmed]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;

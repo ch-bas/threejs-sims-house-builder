@@ -28,6 +28,7 @@ import { useNpcs } from './hooks/use-npcs';
 import { usePeopleModel } from './hooks/use-people-model';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
+import { useRoomStamp } from './hooks/use-room-stamp';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
 import { useShiftHeld } from './hooks/use-shift-held';
 import { useThreeScene } from './hooks/use-three-scene';
@@ -75,6 +76,7 @@ import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { roofPeakHeight } from './three/roof';
 import type { HoverInfo } from './hooks/use-three-scene';
+import type { RoomStampSpec } from './lib/room-stamp';
 import type { CatalogItem, FurnitureItem, GameMode, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
@@ -279,8 +281,14 @@ export function RoomOrganizer(): JSX.Element {
     [wallDraft, actions, pointerWorld]
   );
 
+  // The room stamp in hand (#724): it takes the wall tool's clicks.
+  const stampRef = useRef<{ armed: boolean; release(x: number, z: number): void }>({ armed: false, release: () => {} });
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
+      if (stampRef.current.armed) {
+        stampRef.current.release(x, z);
+        return;
+      }
       if (view.drawWallMode) {
         placeWallPoint(snapWallPoint({ x, z }).point);
         return;
@@ -332,19 +340,60 @@ export function RoomOrganizer(): JSX.Element {
     if (view.drawWallMode || view.drawZoneMode || view.measurementMode) setSelectedWall(null);
   }, [view.drawWallMode, view.drawZoneMode, view.measurementMode]);
 
+  const planPorch = useMemo(
+    () => (view.drawWallMode ? entrancePlanOutline(layout, activeFloorIndex) : null),
+    [view.drawWallMode, layout, activeFloorIndex]
+  );
+  const stampContext = useMemo(
+    () => ({
+      existingWalls: activeFloor.interiorWalls ?? [],
+      roomWidth: layout.width,
+      roomDepth: layout.height,
+      porch: planPorch,
+      hiddenWalls: activeFloor.hiddenWalls,
+    }),
+    [activeFloor.interiorWalls, activeFloor.hiddenWalls, layout.width, layout.height, planPorch]
+  );
+  const roomStamp = useRoomStamp({
+    context: stampContext,
+    pointer: view.drawWallMode ? pointerWorld : null,
+    onPointer: handleFloorPointerMove,
+    onPlace: (plan) => {
+      commitWallStepRef.current();
+      // One dispatch, so one Undo takes the whole room back.
+      actions.addInteriorWalls(plan.walls);
+      playCue('place');
+    },
+    onRefused: (message) => notifyRefused(message, playCue),
+  });
+  stampRef.current = roomStamp;
+  const { cancel: cancelStamp } = roomStamp;
+  const armStamp = useEvent((spec: RoomStampSpec) => {
+    setWallDraft(null);
+    roomStamp.arm(spec);
+  });
+  const stampGhost = useMemo(() => {
+    const ghost = roomStamp.ghost;
+    if (!ghost) return null;
+    const { centerX: x, centerZ: z, width, depth } = ghost.placement;
+    return { walls: ghost.walls, x, z, width, depth, refused: ghost.refusal !== null };
+  }, [roomStamp.ghost]);
+
   // Reset wall draft + wall selection whenever draw mode flips off.
   useEffect(() => {
     if (!view.drawWallMode) {
       setWallDraft(null);
       setSelectedWall(null);
       setPointerWorld(null);
+      cancelStamp();
     }
-  }, [view.drawWallMode]);
+  }, [view.drawWallMode, cancelStamp]);
 
   // Floor switch: drop any in-progress wall draft and selection (those live on
   // the previous floor).
   useEffect(() => {
     setWallDraft(null);
+    cancelStamp();
     setSelectedItemId(null);
     setSelectedWall(null);
     setExtraSelectedIds(new Set());
@@ -354,7 +403,7 @@ export function RoomOrganizer(): JSX.Element {
     // activeFloor.id: removing floor 0 (or reordering) can change WHICH floor
     // is active while the index stays 0 — keying on the index alone carried
     // the deleted floor's selection onto its replacement (#117).
-  }, [activeFloorIndex, activeFloor.id]);
+  }, [activeFloorIndex, activeFloor.id, cancelStamp]);
 
   // Ghost-selection guard: whenever the floor's items change (undo/redo,
   // import, clear floor, deletes from any path), drop selected ids that no
@@ -939,6 +988,8 @@ export function RoomOrganizer(): JSX.Element {
     onWallPoint: handleEmptyClick,
     onWallPointerMove: handleFloorPointerMove,
     onWallPointerLeave: handleFloorPointerLeave,
+    onWallPress: roomStamp.press,
+    onWallPressCancel: roomStamp.cancelPress,
     onInteriorWallSelect: handleInteriorWallSelect,
     selectedWallId: interiorSelectedWallId,
     onWallGrab: grabWall,
@@ -967,6 +1018,7 @@ export function RoomOrganizer(): JSX.Element {
         setSelectedWall({ id: wallId, kind });
       },
       onWallGrab: grabWall,
+      onFloorGrab: roomStamp.grabFloor,
       // Only track the floor pointer while wall-draw mode consumes it — the
       // handler writes React state per mousemove, re-rendering the whole tree,
       // and the hook skips the floor raycast when the handler is absent.
@@ -1103,6 +1155,8 @@ export function RoomOrganizer(): JSX.Element {
     selectedWall,
     selectedZoneId: planZoneId,
     wallDraft,
+    stampGhost,
+    stampArmed: roomStamp.armed,
     wallSnapResult,
     measurementPoints,
     walkIndoors: walkthroughActive && !walk.outside,
@@ -1312,6 +1366,10 @@ export function RoomOrganizer(): JSX.Element {
           repaintPlan();
           return;
         }
+        if (roomStamp.armed) {
+          cancelStamp();
+          return;
+        }
         if (wallDraft) {
           setWallDraft(null);
           return;
@@ -1401,6 +1459,8 @@ export function RoomOrganizer(): JSX.Element {
       wallDraft,
       cancelWallHold,
       repaintPlan,
+      roomStamp.armed,
+      cancelStamp,
       view.drawWallMode,
       view.measurementMode,
       view.drawZoneMode,
@@ -1549,6 +1609,12 @@ export function RoomOrganizer(): JSX.Element {
                     : null,
                 angle: wallDraft && wallSnapResult ? wallAngleDegrees(wallDraft, wallSnapResult.point) : null,
                 aimed: wallAimRef.current !== null,
+                stamp: roomStamp.armed
+                  ? {
+                      size: stampGhost ? { width: stampGhost.width, depth: stampGhost.depth } : null,
+                      refusal: roomStamp.ghost?.refusal ?? null,
+                    }
+                  : null,
               }
             : null
         }
@@ -1664,6 +1730,9 @@ export function RoomOrganizer(): JSX.Element {
         onFit={stableFitToRoom}
         controlsRef={controlsRef}
         placeCatalogItem={stablePlaceFromCatalog}
+        stampArmed={roomStamp.armed}
+        onArmStamp={armStamp}
+        onCancelStamp={cancelStamp}
       />
 
       {/* Touch mode toggle — visible on mobile only */}
