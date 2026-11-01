@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RoomEditorProvider, type RoomEditorContextValue } from '../contexts/room-editor-context';
 import { makeFloor } from '../lib/__testfixtures__/fixtures';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { WallPaintPanel } from './wall-paint-panel';
 import type { FloorLayout } from '../lib/types';
+import type { SelectedWall } from '../lib/wall-sides';
 
-type Wall = { id: string; kind: 'exterior' | 'interior' } | null;
+type Wall = SelectedWall | null;
 
 function setup(floor: FloorLayout, selectedWall: Wall) {
   const actions = { setWallColor: vi.fn(), setInteriorWallColor: vi.fn(), toggleExteriorWall: vi.fn(), removeInteriorWall: vi.fn() };
@@ -18,7 +19,7 @@ function setup(floor: FloorLayout, selectedWall: Wall) {
     </RoomEditorProvider>
   );
   const checkedChips = () =>
-    screen
+    within(screen.getByRole('radiogroup', { name: 'Apply paint to' }))
       .getAllByRole('radio')
       .filter((chip) => chip.getAttribute('aria-checked') === 'true')
       .map((chip) => chip.textContent);
@@ -44,7 +45,7 @@ describe('WallPaintPanel — Apply-to truthfulness (#221)', () => {
   it('still paints only the interior wall from that state', () => {
     const { actions } = setup(interiorFloor(), { id: 'iw-1', kind: 'interior' });
     fireEvent.click(screen.getByRole('button', { name: 'Use colour #e8dcc4' }));
-    expect(actions.setInteriorWallColor).toHaveBeenCalledWith('iw-1', '#e8dcc4');
+    expect(actions.setInteriorWallColor).toHaveBeenCalledWith('iw-1', '#e8dcc4', undefined);
     expect(actions.setWallColor).not.toHaveBeenCalled();
   });
 
@@ -69,6 +70,42 @@ describe('WallPaintPanel — Apply-to truthfulness (#221)', () => {
 
   it('treats unpainted walls as the default colour', () => {
     expect(setup(makeFloor(), null).ringedSwatches()).toEqual(['Use colour #e8dcc4']);
+  });
+});
+
+describe('WallPaintPanel — partition sides (#720)', () => {
+  afterEach(cleanup);
+
+  const floor = makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, color: '#ffffff', colorB: '#000000' }] });
+
+  it('paints the side the click recorded', () => {
+    const { actions } = setup(floor, { id: 'iw-1', kind: 'interior', side: 'b' });
+    expect(screen.getByRole('radio', { name: 'Side B' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getAllByRole('button').find((button) => button.getAttribute('aria-label')?.startsWith('Use colour'))!);
+    expect(actions.setInteriorWallColor).toHaveBeenCalledWith('iw-1', expect.any(String), 'b');
+  });
+
+  it('a held arrow moves one side, and stays out of the window shortcuts', () => {
+    const onChange = vi.fn();
+    render(
+      <RoomEditorProvider value={{ activeFloor: floor, actions: {} } as unknown as RoomEditorContextValue}>
+        <WallPaintPanel selectedWall={{ id: 'iw-1', kind: 'interior', side: 'a' }} onSelectedWallChange={onChange} />
+      </RoomEditorProvider>
+    );
+    const side = screen.getByRole('radio', { name: 'Side A' });
+    const outside = vi.fn();
+    window.addEventListener('keydown', outside);
+    fireEvent.keyDown(side, { key: 'ArrowRight', repeat: true });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(side, { key: 'ArrowRight' });
+    window.removeEventListener('keydown', outside);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(outside).not.toHaveBeenCalled();
+  });
+
+  it('shows no side choice for an exterior wall', () => {
+    setup(floor, { id: 'north', kind: 'exterior' });
+    expect(screen.queryByRole('radiogroup', { name: 'Paint which side' })).toBeNull();
   });
 });
 
@@ -100,7 +137,7 @@ describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
 
   it('keeps Apply-to reachable when nothing is checked', () => {
     setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, color: '#ffffff' }] }), { id: 'iw-1', kind: 'interior' });
-    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All']);
+    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All', 'Both']);
   });
 
   it('arrows, Home and End move between tabs and open the one they land on', () => {
@@ -161,7 +198,7 @@ describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
 
   it('keeps Apply-to reachable when nothing is checked', () => {
     setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, color: '#ffffff' }] }), { id: 'iw-1', kind: 'interior' });
-    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All']);
+    expect(screen.getAllByRole('radio').filter((el) => el.tabIndex === 0).map((el) => el.textContent)).toEqual(['All', 'Both']);
   });
 
   it('arrows, Home and End move between tabs and open the one they land on', () => {

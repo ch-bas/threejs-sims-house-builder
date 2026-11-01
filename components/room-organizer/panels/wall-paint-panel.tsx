@@ -5,10 +5,12 @@ import { useRoomEditor } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { ENTRANCE_WALL_ID } from '../lib/street';
+import { DEFAULT_INTERIOR_WALL_COLOR, wallSideColor, type SelectedWall, type WallSide } from '../lib/wall-sides';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
 import type {
   FloorPattern,
+  InteriorWall,
   WallId,
   WallPattern,
 } from '../lib/types';
@@ -137,8 +139,8 @@ type Surface = 'walls' | 'floor';
 
 export interface WallPaintPanelProps {
   /** Optional pre-selected wall (from 3D click) — pre-targets the Apply-to chip. */
-  selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
-  onSelectedWallChange(wall: { id: string; kind: 'exterior' | 'interior' } | null): void;
+  selectedWall: SelectedWall | null;
+  onSelectedWallChange(wall: SelectedWall | null): void;
   /** Folded or not in the phone dock; the HUD unfolds one wall panel at a time. */
   fold?: PanelFold;
   /**
@@ -180,7 +182,7 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
     // selection fell through to 'all' and silently repainted the four
     // exterior walls instead (#122).
     if (selectedInteriorId !== null) {
-      actions.setInteriorWallColor(selectedInteriorId, color);
+      actions.setInteriorWallColor(selectedInteriorId, color, props.selectedWall?.side);
       return;
     }
     if (target === 'all') {
@@ -214,8 +216,9 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
   const currentWallPattern = floor.wallPattern ?? 'solid';
   const currentFloorPattern = floor.floorPattern ?? 'solid';
   const exteriorColor = (wall: WallId) => floor.wallColors?.[wall] ?? DEFAULT_EXTERIOR_WALL_COLOR;
+  const selectedPartition = selectedInteriorId ? floor.interiorWalls?.find((wall) => wall.id === selectedInteriorId) : undefined;
   const currentWallColor = selectedInteriorId
-    ? floor.interiorWalls?.find((wall) => wall.id === selectedInteriorId)?.color ?? '#e0e0e0'
+    ? selectedPartition ? wallSideColor(selectedPartition, props.selectedWall?.side ?? 'a') : DEFAULT_INTERIOR_WALL_COLOR
     : selectedExteriorId
       ? exteriorColor(selectedExteriorId)
       : sharedColor(EXTERIOR_WALLS.map(exteriorColor));
@@ -312,6 +315,17 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
               }
             }}
           />
+
+          {selectedPartition && props.selectedWall && (
+            <SideToggle
+              wall={selectedPartition}
+              value={props.selectedWall.side}
+              onChange={(side) => {
+                const { side: _side, ...wall } = props.selectedWall!;
+                props.onSelectedWallChange(side ? { ...wall, side } : wall);
+              }}
+            />
+          )}
 
           {selectedInteriorId && selectedInteriorId !== ENTRANCE_WALL_ID && (
             <button
@@ -447,6 +461,70 @@ function SurfaceTabs({ surface, onChange, baseId }: SurfaceTabsProps): JSX.Eleme
             }}
           >
             {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const SIDE_TARGETS: ReadonlyArray<{ id: WallSide | undefined; label: string; title: string }> = [
+  { id: 'a', label: 'Side A', title: 'Paint side A only' },
+  { id: 'b', label: 'Side B', title: 'Paint side B only' },
+  { id: undefined, label: 'Both', title: 'Paint both sides' },
+];
+
+interface SideToggleProps {
+  wall: InteriorWall;
+  /** Undefined: both faces. */
+  value: WallSide | undefined;
+  onChange(side: WallSide | undefined): void;
+}
+
+/** Which face of a partition takes the paint (#720); the dots show what each has now. */
+function SideToggle({ wall, value, onChange }: SideToggleProps): JSX.Element {
+  return (
+    <div role="radiogroup" aria-label="Paint which side" className="pc-glass--inset pc-paint-row" style={{ display: 'flex', gap: 3 }}>
+      {SIDE_TARGETS.map((target) => {
+        const active = value === target.id;
+        return (
+          <button
+            key={target.label}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(target.id)}
+            onKeyDown={(event) =>
+              onRovingKeyDown(event, (next) => {
+                const landed = SIDE_TARGETS[next];
+                if (landed) onChange(landed.id);
+              })
+            }
+            title={target.title}
+            className={`pc-tile${active ? ' pc-tile--active' : ''}`}
+            style={{
+              flex: 1,
+              minHeight: 22,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+              borderRadius: 6,
+              fontFamily: 'var(--pc-font-display)',
+              fontWeight: 800,
+              fontSize: 9,
+              letterSpacing: 'var(--pc-tr-caps)',
+              textTransform: 'uppercase',
+            }}
+          >
+            {target.id && (
+              <span
+                aria-hidden="true"
+                style={{ width: 8, height: 8, borderRadius: 2, border: '1px solid rgba(255,255,255,0.6)', background: wallSideColor(wall, target.id) }}
+              />
+            )}
+            {target.label}
           </button>
         );
       })}

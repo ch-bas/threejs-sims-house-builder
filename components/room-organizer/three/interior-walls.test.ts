@@ -20,6 +20,51 @@ function heightOf(mesh: THREE.Mesh): { min: number; max: number } {
 
 const WALL = { id: 'iw', x1: -2, z1: 0, x2: 2, z2: 0 };
 
+describe('wall sides (#720)', () => {
+  const faces = (mesh: THREE.Mesh, normalZ: number): string[] => {
+    const normal = mesh.geometry.getAttribute('normal');
+    const index = mesh.geometry.getIndex();
+    const out = new Set<string>();
+    for (const group of mesh.geometry.groups) {
+      for (let i = group.start; i < group.start + group.count; i++) {
+        const vertex = index ? index.getX(i) : i;
+        if (Math.abs(normal.getZ(vertex) - normalZ) < 1e-6) {
+          out.add(((mesh.material as THREE.Material[])[group.materialIndex!] as THREE.MeshStandardMaterial).color.getHexString());
+        }
+      }
+    }
+    return [...out];
+  };
+  const wall = { id: 'iw', x1: -2, z1: 0, x2: 2, z2: 0, color: '#111111', colorB: '#222222' };
+  const build = (items: Parameters<typeof renderInteriorWalls>[5] = {}) => {
+    const scene = new THREE.Scene();
+    renderInteriorWalls(THREE, scene, [wall], 0, undefined, items);
+    return scene.children.find((obj): obj is THREE.Mesh => obj instanceof THREE.Mesh && obj.name === 'Interior wall iw')!;
+  };
+
+  it('paints each face of a plain wall its own colour', () => {
+    const mesh = build();
+    expect(faces(mesh, 1)).toEqual(['111111']);
+    expect(faces(mesh, -1)).toEqual(['222222']);
+  });
+
+  it('paints each face of a wall with a door hole too', () => {
+    const door = makeItem({ id: 'd', type: 'door', width: 0.9, depth: 0.12, height: 2.05, position: { x: 0, z: 0 } });
+    const mesh = build({ openingCandidates: [door], roomWidth: 10, roomDepth: 10 });
+    expect(mesh.geometry.type).toBe('ExtrudeGeometry');
+    expect(faces(mesh, 1)).toEqual(['111111']);
+    expect(faces(mesh, -1)).toEqual(['222222']);
+  });
+
+  it('a wall with one colour keeps one material', () => {
+    const scene = new THREE.Scene();
+    const { colorB: _none, ...plain } = wall;
+    renderInteriorWalls(THREE, scene, [plain], 0);
+    const mesh = scene.children.find((obj): obj is THREE.Mesh => obj instanceof THREE.Mesh && obj.name === 'Interior wall iw')!;
+    expect(Array.isArray(mesh.material)).toBe(false);
+  });
+});
+
 describe('renderInteriorWalls storey heights (#202)', () => {
   it('keeps the classic 2.6 m partition when no height is given', () => {
     const scene = new THREE.Scene();

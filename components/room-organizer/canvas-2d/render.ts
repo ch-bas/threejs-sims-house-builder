@@ -16,11 +16,12 @@ import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitS
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
-import { drawSelectedWall, drawStampGhost, drawWallPreview, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
+import { drawSelectedWall, drawStampGhost, drawWallPreview, drawWallSideMark, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
+import type { WallSide } from '../lib/wall-sides';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 
@@ -42,6 +43,8 @@ export interface Render2DOptions {
   zoneDraft?: ZoneRect | null;
   /** Detected rooms with no zone, marked in zone mode for "Name this room" (#719). */
   roomsToName?: readonly DetectedRoom[] | undefined;
+  /** The face of the selected wall that paint goes to, marked on the plan (#720). */
+  selectedWallSide?: WallSide | undefined;
   /** The interior wall selected on the plan (#564). */
   selectedWallId?: string | null | undefined;
   /** A held wall move can't land here: the wall shows it (#718). */
@@ -266,6 +269,7 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
   if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale, options.selectedWallRefused);
+  if (selectedWall && options.selectedWallSide) drawWallSideMark(ctx, layout, selectedWall, options.selectedWallSide, offsetX, offsetY, scale);
   const selectedZone = options.selectedZoneId ? floor.zones?.find((zone) => zone.id === options.selectedZoneId) : null;
   if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);

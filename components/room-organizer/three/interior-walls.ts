@@ -91,7 +91,16 @@ export function renderInteriorWalls(
         ? buildExtrudedWallGeometry(THREE, length, wallHeight, INTERIOR_WALL_THICKNESS, openings)
         : new THREE.BoxGeometry(length, wallHeight, INTERIOR_WALL_THICKNESS);
 
-    const wallMesh = new THREE.Mesh(geometry, material);
+    // Local +z is side 'a' (lib/wall-sides.ts). A second material only when
+    // the faces differ, so a plain wall stays one draw call.
+    let wallMaterial: ThreeNS.Material | ThreeNS.Material[] = material;
+    if (wall.colorB !== undefined) {
+      const back = material.clone();
+      back.color.set(wall.colorB);
+      wallMaterial = openings.length > 0 ? splitExtrudedFaces(geometry, material, back) : [material, material, material, material, material, back];
+    }
+
+    const wallMesh = new THREE.Mesh(geometry, wallMaterial);
     wallMesh.position.set((wall.x1 + wall.x2) / 2, yOffset + (openings.length > 0 ? 0 : wallHeight / 2), (wall.z1 + wall.z2) / 2);
     wallMesh.rotation.y = -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1);
     wallMesh.castShadow = true;
@@ -181,6 +190,21 @@ function buildExtrudedWallGeometry(
   // Centre the extrude on Z so the wall sits symmetrically around its line.
   geometry.translate(0, 0, -thickness / 2);
   return geometry;
+}
+
+/**
+ * An extruded wall's material list with its -z cap on `back`. ExtrudeGeometry
+ * puts both caps in its first group, the -z one first, then the sides.
+ */
+function splitExtrudedFaces(geometry: ThreeNS.BufferGeometry, front: ThreeNS.Material, back: ThreeNS.Material): ThreeNS.Material[] {
+  const [caps, sides] = geometry.groups;
+  if (!caps || !sides) return [front];
+  geometry.clearGroups();
+  const half = caps.count / 2;
+  geometry.addGroup(caps.start, half, 2);
+  geometry.addGroup(caps.start + half, half, 0);
+  geometry.addGroup(sides.start, sides.count, 1);
+  return [front, front, back];
 }
 
 /** Perpendicular distance for the legacy interior-only proximity fallback. */

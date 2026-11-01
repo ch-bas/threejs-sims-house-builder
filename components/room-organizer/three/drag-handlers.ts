@@ -1,3 +1,4 @@
+import type { Vec2 } from '../lib/types';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -62,7 +63,8 @@ export interface SceneEventHandlers {
   onItemDragCancel?: (id: string, options?: { restore?: boolean }) => void;
   onItemHover?: (info: HoverInfo | null) => void;
   onEmptyClick?: (x: number, z: number) => void;
-  onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior' }) => void;
+  /** `from` is where the wall was seen from: the viewer's side is the face clicked (#720). */
+  onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior'; from: Vec2 }) => void;
   /**
    * A press on the selected interior wall or an end handle (#718): the
    * gesture it holds, or null, which leaves the press to the camera. Asked
@@ -328,7 +330,11 @@ export function attachDragHandlers({
             const interior = wallHit.object.userData.type === 'interior-wall';
             const point = interior && event.button === 0 ? floorPoint() : null;
             const gesture = point && handlersRef.current.onWallGrab?.({ wallId: id, grip: 'body', x: point.x, z: point.z });
-            handlersRef.current.onWallSelect({ wallId: id, kind: interior ? 'interior' : 'exterior' });
+            handlersRef.current.onWallSelect({
+              wallId: id,
+              kind: interior ? 'interior' : 'exterior',
+              from: { x: raycaster.ray.origin.x, z: raycaster.ray.origin.z },
+            });
             if (gesture) holdGesture(gesture, event);
             return;
           }

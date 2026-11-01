@@ -20,15 +20,16 @@ import { RoomShapesPanel } from './room-shapes-panel';
 import { WallPaintPanel } from './wall-paint-panel';
 import type { RoomStampSpec } from '../lib/room-stamp';
 import type { CatalogItem } from '../lib/types';
+import type { SelectedWall } from '../lib/wall-sides';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export interface BottomHudProps {
-  selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
+  selectedWall: SelectedWall | null;
   /** The room stamp is in hand (#724). */
   stampArmed: boolean;
   onArmStamp(spec: RoomStampSpec): void;
   onCancelStamp(): void;
-  onSelectedWallChange(wall: { id: string; kind: 'exterior' | 'interior' } | null): void;
+  onSelectedWallChange(wall: SelectedWall | null): void;
   onOrbit(direction: 'left' | 'right' | 'up' | 'down'): void;
   onZoom(direction: '+' | '-'): void;
   onFit(): void;

@@ -95,6 +95,7 @@ components/
     │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
     │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
     │   ├── walk-interact.ts             Seats in reach and the seated pose (facing the TV), never through a wall or across the shell (#566)
+    │   ├── wall-sides.ts                The two faces of a partition: which one faces a point, painting one (#720)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359); the mode to return to on exit
     │   ├── room-stamp.ts                The room stamp as a held placement: snapped position, drag to size, the walls a drop adds (#724)
     │   ├── room-detect.ts               Rooms closed by walls: planar faces of the footprint, partitions and keep-out, with areas (#719)
