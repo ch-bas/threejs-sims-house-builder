@@ -1,6 +1,7 @@
 import { repairHardBudget } from './budget';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
+import { cutoutFits, isFootprintCutout } from './footprint';
 import { rectOutline } from './room-detect';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
@@ -11,6 +12,7 @@ import type {
   DormerOpening,
   DormerSpec,
   EntranceSpec,
+  FootprintCutout,
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
@@ -373,6 +375,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   terrain: true,
   neighbours: true,
   entrance: true,
+  cutout: true,
   frontage: true,
   budget: true,
 });
@@ -437,6 +440,7 @@ const DORMER_KEYS = keysOf<DormerSpec>({
 });
 const OPENING_KEYS = keysOf<DormerOpening>({ kind: true, from: true, to: true });
 const TERRAIN_KEYS = keysOf<TerrainSpec>({ frontY: true, backY: true });
+const CUTOUT_KEYS = keysOf<FootprintCutout>({ corner: true, width: true, depth: true });
 const ENTRANCE_KEYS = keysOf<EntranceSpec>({ width: true, depth: true, offset: true, height: true, door: true });
 
 /** `value` itself when it has no other own keys; otherwise a copy holding only `keys`. */
@@ -670,6 +674,17 @@ function repairLayout(layout: RoomLayout): RoomLayout {
     // the storey brings both back.
     const context = { width: layout.width, depth: layout.height, floors: layout.floors, ...(layout.terrain ? { terrain: layout.terrain } : {}) };
     if (entranceProblem(entrance, context) === 'too-low') patch.floors = mapSame(patch.floors ?? layout.floors, withoutPorchParts);
+  }
+  // A malformed cut, or one that leaves no wing on this house, is dropped, not
+  // refused: the house loads as its rectangle. A pitched roof can't cover an L, so a file that
+  // says both gets a flat one rather than a rectangle over the notch (#727).
+  if (layout.cutout !== undefined) {
+    if (!isFootprintCutout(layout.cutout) || !cutoutFits(layout.cutout, layout.width, layout.height)) {
+      const { cutout: _dropped, ...rest } = layout;
+      return repairLayout(rest);
+    }
+    patch.cutout = pick(layout.cutout, CUTOUT_KEYS);
+    if (patch.roof && (patch.roof.style === 'gable' || patch.roof.style === 'hipped')) patch.roof = { ...patch.roof, style: 'flat' };
   }
   // The hard budget (#463e) is repaired, never refused: anything that isn't
   // an object switches it off rather than costing the user their house.
