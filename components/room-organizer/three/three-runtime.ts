@@ -25,6 +25,7 @@ export {
   EdgesGeometry,
   ExtrudeGeometry,
   Float32BufferAttribute,
+  FrontSide,
   GridHelper,
   Group,
   HemisphereLight,
