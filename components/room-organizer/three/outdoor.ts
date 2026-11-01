@@ -1,6 +1,7 @@
 import { cutoutRect } from '../lib/footprint';
 import { LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
+import { layGroundSurface } from './ground-surfaces';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
 import type { FootprintCutout, Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
@@ -111,6 +112,7 @@ export function setOutdoorVisible(
   // ---- 1. Grass plane (warm suburban green, or as the weather left it) ----
   const weather = (scene.userData[WEATHER_KEY] as Weather | undefined) ?? 'clear';
   const grassMat = new THREE.MeshStandardMaterial({ color: outdoorGroundColor(weather), roughness: 1 });
+  layGroundSurface(THREE, grassMat, 'grass');
   const grass = terrain
     ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y, cutout), grassMat)
     : new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize, 1, 1), grassMat);
@@ -123,6 +125,8 @@ export function setOutdoorVisible(
   grass.userData.role = GROUND_ROLE;
   freezeMatrix(grass);
   scene.add(grass);
+
+  scene.add(buildGroundSkirt(THREE, groundSize, (z) => groundAt(z) + GRASS_Y - SKIRT_DROP, outdoorGroundColor(weather)));
 
   // The sides of the dig where the house cuts into the hill.
   const excavation = terrain ? buildExcavationGeometry(THREE, terrain, halfW, halfD, cutout) : null;
@@ -147,7 +151,8 @@ export function setOutdoorVisible(
   const sidewalkDepth = PAVEMENT_DEPTH;
   const roadDepth = ROAD_DEPTH;
 
-  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xcfd1cf, roughness: 0.85 });
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: PAVING_COLOR, roughness: 0.85 });
+  layGroundSurface(THREE, sidewalkMat, 'paving');
   const sidewalk = new THREE.Mesh(
     new THREE.PlaneGeometry(groundSize, sidewalkDepth),
     sidewalkMat
@@ -159,7 +164,8 @@ export function setOutdoorVisible(
   freezeMatrix(sidewalk);
   scene.add(sidewalk);
 
-  const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x3a3d40, roughness: 0.95 });
+  const asphaltMat = new THREE.MeshStandardMaterial({ color: ASPHALT_COLOR, roughness: 0.95 });
+  layGroundSurface(THREE, asphaltMat, 'asphalt');
   const road = new THREE.Mesh(
     new THREE.PlaneGeometry(groundSize, roadDepth),
     asphaltMat
@@ -170,6 +176,25 @@ export function setOutdoorVisible(
   road.userData.type = OUTDOOR_TAG;
   freezeMatrix(road);
   scene.add(road);
+
+  // The kerb between them, proud of the road, along the pavement's far edge.
+  const kerbY = streetY + ROAD_Y + KERB_HEIGHT / 2;
+  const kerbZ = -(roadOffset + sidewalkDepth);
+  const kerb = new THREE.Mesh(
+    new THREE.BoxGeometry(groundSize, KERB_HEIGHT, KERB_WIDTH),
+    new THREE.MeshStandardMaterial({ color: 0xb9bab6, roughness: 0.9 })
+  );
+  kerb.position.set(0, kerbY, kerbZ);
+  kerb.receiveShadow = true;
+  kerb.userData.type = OUTDOOR_TAG;
+  freezeMatrix(kerb);
+  scene.add(kerb);
+
+  // Past the lot the road carries on and dissolves with the skirt.
+  scene.add(buildRoadTails(THREE, groundSize, streetY, [
+    { near: -(roadOffset + sidewalkDepth), far: -roadOffset, y: SIDEWALK_Y, color: PAVING_COLOR },
+    { near: -(roadOffset + sidewalkDepth + roadDepth), far: -(roadOffset + sidewalkDepth), y: ROAD_Y, color: ASPHALT_TAIL_COLOR },
+  ]));
 
   // Yellow centre dashes on the road — one InstancedMesh (1 draw call) for all
   // the identical dashes.
@@ -231,6 +256,119 @@ export function setOutdoorVisible(
 
   // Everything out here is on the far side of a wall from the lamps indoors.
   for (const obj of scene.children) if (obj.userData.type === OUTDOOR_TAG) shutOutIndoorLampsUnder(THREE, obj);
+}
+
+/** Distance out from the lot's edge, and how solid the ground still is there. */
+const SKIRT_STEPS: ReadonlyArray<readonly [number, number]> = [[0, 1], [50, 0.92], [140, 0.5], [340, 0]];
+const SKIRT_SEGMENTS = 64;
+/** Under the grass where they overlap, or the two z-fight (#276). */
+const SKIRT_DROP = 0.02;
+const SKIRT_OVERLAP = 0.5;
+
+/**
+ * The ground past the lot (#761): the same lit grass, thinning into the haze
+ * under the horizon, so the lot has no square edge and nothing distant is
+ * washed out, as a camera-distance fog would do. Solid at the lot's edge and
+ * fading on vertex alpha, with no shader change. It follows the weather tint.
+ */
+function buildGroundSkirt(
+  THREE: ThreeModule,
+  groundSize: number,
+  heightAt: (z: number) => number,
+  color: number
+): ThreeNS.Mesh {
+  const half = groundSize / 2 - SKIRT_OVERLAP;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const rings = SKIRT_STEPS.length;
+  for (let segment = 0; segment <= SKIRT_SEGMENTS; segment += 1) {
+    const angle = (segment / SKIRT_SEGMENTS) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    // The inner ring sits on the lot's square, the rest fan out from it.
+    const reach = half / Math.max(Math.abs(cos), Math.abs(sin));
+    const y = heightAt(Math.max(-half, Math.min(half, sin * reach)));
+    for (const [out, alpha] of SKIRT_STEPS) {
+      positions.push(cos * (reach + out), y, sin * (reach + out));
+      colors.push(1, 1, 1, alpha);
+    }
+    if (segment === SKIRT_SEGMENTS) continue;
+    for (let ring = 0; ring < rings - 1; ring += 1) {
+      const a = segment * rings + ring;
+      const b = a + rings;
+      indices.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(positions.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  geometry.setIndex(indices);
+  const material = new THREE.MeshStandardMaterial({ color, roughness: 1, vertexColors: true, transparent: true, depthWrite: false });
+  layGroundSurface(THREE, material, 'grass');
+  const skirt = new THREE.Mesh(geometry, material);
+  skirt.renderOrder = -0.9;
+  skirt.raycast = () => undefined;
+  skirt.userData.type = OUTDOOR_TAG;
+  skirt.userData.role = GROUND_ROLE;
+  freezeMatrix(skirt);
+  return skirt;
+}
+
+const PAVING_COLOR = 0xe2e3df;
+const ASPHALT_COLOR = 0x53565a;
+/** The textured road's average, for the plain tail that carries on from it. */
+const ASPHALT_TAIL_COLOR = 0x3a3c3f;
+const KERB_HEIGHT = 0.1;
+const KERB_WIDTH = 0.16;
+const ROAD_TAIL_STEPS: ReadonlyArray<readonly [number, number]> = [[0, 1], [50, 0.9], [130, 0.5], [300, 0]];
+
+/** Road and pavement beyond the lot on both sides, one mesh, fading like the skirt. */
+function buildRoadTails(
+  THREE: ThreeModule,
+  groundSize: number,
+  streetY: number,
+  bands: ReadonlyArray<{ near: number; far: number; y: number; color: number }>
+): ThreeNS.Mesh {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const paint = new THREE.Color();
+  for (const band of bands) {
+    paint.setHex(band.color);
+    for (const side of [-1, 1]) {
+      const base = positions.length / 3;
+      for (const [out, alpha] of ROAD_TAIL_STEPS) {
+        const x = side * (groundSize / 2 + out);
+        for (const z of [band.near, band.far]) {
+          positions.push(x, streetY + band.y, z);
+          colors.push(paint.r, paint.g, paint.b, alpha);
+        }
+      }
+      for (let step = 0; step < ROAD_TAIL_STEPS.length - 1; step += 1) {
+        const a = base + step * 2;
+        // Facing up on either side.
+        if (side > 0) indices.push(a, a + 1, a + 2, a + 2, a + 1, a + 3);
+        else indices.push(a, a + 2, a + 1, a + 2, a + 3, a + 1);
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(positions.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  geometry.setIndex(indices);
+  const tails = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({ roughness: 0.95, vertexColors: true, transparent: true, depthWrite: false })
+  );
+  tails.renderOrder = -0.8;
+  tails.frustumCulled = false;
+  tails.raycast = () => undefined;
+  tails.userData.type = OUTDOOR_TAG;
+  freezeMatrix(tails);
+  return tails;
 }
 
 /** Static mesh — never moves after positioning, so bake its matrix once. */
@@ -430,8 +568,9 @@ function scatterPerimeter(
   pavementFrom: number | null
 ): void {
   const onStreet = (z: number) => pavementFrom !== null && z < -pavementFrom;
-  const bushMat = new THREE.MeshStandardMaterial({ color: 0x3e7a35, roughness: 0.9 });
-  const bushGeom = new THREE.SphereGeometry(0.45, 10, 10);
+  // Lumpy and faceted like the tree crowns beside them, not smooth balls.
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0x3e7a35, roughness: 0.9, flatShading: true });
+  const bushGeom = buildLeafBlobGeometry(THREE, 0.45, 11);
 
   // Trees: ring around three sides of the lot (skip the road side).
   const forest: Forest = { parts: new Map(), bases: [] };

@@ -36,14 +36,18 @@ export function maskedLightsChunk(chunk: string): string {
 export function shutOutIndoorLamps(THREE: ThreeModule, material: ThreeNS.Material): void {
   if (material.userData.indoorLampsShut === true) return;
   material.userData.indoorLampsShut = true;
-  material.onBeforeCompile = (shader) => {
+  // On top of what the material already patches (ground surfaces, #761).
+  const previous = material.onBeforeCompile;
+  const previousKey = material.customProgramCacheKey();
+  material.onBeforeCompile = (shader, renderer) => {
+    previous.call(material, shader, renderer);
     shader.uniforms.lampReachesOutdoors = lampReachesOutdoors;
     shader.fragmentShader = `uniform float lampReachesOutdoors[ ${LAMP_POOL_SIZE} ];\n${shader.fragmentShader.replace(
       '#include <lights_fragment_begin>',
       maskedLightsChunk(THREE.ShaderChunk.lights_fragment_begin)
     )}`;
   };
-  material.customProgramCacheKey = () => 'outdoor-lamps';
+  material.customProgramCacheKey = () => `${previousKey}|outdoor-lamps`;
 }
 
 /** `shutOutIndoorLamps` for every material under `root`. */
