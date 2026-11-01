@@ -71,7 +71,11 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     new THREE.BoxGeometry(item.width * 0.93, item.height * 0.93, item.depth * 0.2),
     glassMat
   );
-  glass.position.set(0, sillHeight + item.height / 2, 0); 
+  glass.position.set(0, sillHeight + item.height / 2, 0);
+  // The wall is cut around the window so the sun comes in (#132); the shadow
+  // pass ignores opacity, so a casting pane would plug 93 % of that hole
+  // again (#551). The frame and mullions still cast, like dormer glass (#369).
+  glass.castShadow = false;
   group.add(glass);
 
   // Outer frame (4 sides).
