@@ -83,3 +83,38 @@ describe('applyWallDisplay', () => {
     expect(children.every((c) => c.visible)).toBe(true);
   });
 });
+
+// A door or window is a furniture group stamped with the wall it is cut
+// into; cutaway and walls-down left every frame standing where the wall had
+// been (#659).
+describe('applyWallDisplay: doors and windows follow their wall (#659)', () => {
+  const opening = (ownerTag: string, wallId: string, extra: Record<string, unknown> = {}): FakeObject => ({
+    visible: true,
+    userData: { type: 'furniture', ownerTag, wallId, floorIndex: 0, ...extra },
+  });
+  const sofa = (): FakeObject => ({ visible: true, userData: { type: 'furniture', floorIndex: 0 } });
+
+  it('hides a window with the wall the cutaway removes, and brings it back', () => {
+    const children = [wall('south'), wall('north'), opening('wall', 'south'), opening('wall', 'north'), sofa()];
+    const scene = makeScene(children);
+    applyWallDisplay(scene, 0, 10, 'cutaway', 8, 8);
+    expect(children.map((c) => c.visible)).toEqual([false, true, false, true, true]);
+    applyWallDisplay(scene, 0, -10, 'cutaway', 8, 8);
+    expect(children.map((c) => c.visible)).toEqual([true, false, true, false, true]);
+  });
+
+  it('walls-down hides every opening, in exterior and interior walls, and keeps the furniture', () => {
+    const children = [wall('east'), interior('iw1'), opening('wall', 'east'), opening('interior-wall', 'iw1'), sofa()];
+    const scene = makeScene(children);
+    applyWallDisplay(scene, 0, 10, 'down', 8, 8);
+    expect(children.map((c) => c.visible)).toEqual([false, false, false, false, true]);
+    applyWallDisplay(scene, 0, 10, 'up', 8, 8);
+    expect(children.every((c) => c.visible)).toBe(true);
+  });
+
+  it('never shows an opening of a storey the walkthrough hides', () => {
+    const children = [wall('north'), opening('wall', 'north', { offStorey: true })];
+    applyWallDisplay(makeScene(children), 0, 10, 'up', 8, 8);
+    expect(children[1]!.visible).toBe(false);
+  });
+});

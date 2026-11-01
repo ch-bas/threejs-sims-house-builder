@@ -47,7 +47,7 @@ import { setOutdoorVisible } from '../three/outdoor';
 import { buildAtticCeiling, buildRoof, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
 import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
-import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
+import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
 import { observeSceneOccluders, planFit } from './scene-occluders';
 import type { StampGhost } from '../canvas-2d/plan-edit';
 import type { DetectedRoom } from '../lib/room-detect';
@@ -92,7 +92,9 @@ function applyStoreyRange(scene: ThreeNS.Scene, range: { from: number; to: numbe
     if (obj.userData[OFF_STOREY_KEY] === off) continue;
     obj.userData[OFF_STOREY_KEY] = off;
     const tag = obj.userData.type;
-    if (tag !== ROOM_OBJECT_TAGS.Wall && tag !== 'interior-wall') obj.visible = !off;
+    // Walls and partitions are shown by applyWallDisplay, which owns their
+    // visibility; so are the doors and windows stamped with a wall (#659).
+    if (tag !== ROOM_OBJECT_TAGS.Wall && tag !== 'interior-wall' && obj.userData.ownerTag === undefined) obj.visible = !off;
   }
 }
 
@@ -113,6 +115,8 @@ interface PlannedFurniture {
   floorY: number;
   storeyH: number;
   isActive: boolean;
+  /** The wall a door or window is cut into (#659). */
+  owner?: OpeningOwner;
 }
 
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
@@ -589,13 +593,17 @@ export function useSceneEffects({
       const isActive = index === activeFloorIndex;
       const floorY = floorElevation(layout.floors, index);
       const storeyH = storeyHeight(floor);
+      // The wall each door and window is cut into: the group follows that
+      // wall's visibility in cutaway and walls-down (#659).
+      const owners = classifyOpeningOwners(items, layout.width, layout.height, floor?.interiorWalls ?? [], layout.cutout);
       items.forEach((item, i) => {
         const collision = collisions[i] === true;
         // Stairs climb to the floor above and openings are fitted into the
         // storey, so the mesh matches the hole cut for it (#202, #277).
         const fitted = itemForStorey(item, floor);
         const key = furnitureMeshKey(index, item.id);
-        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive });
+        const owner = owners.get(item.id);
+        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive, ...(owner ? { owner } : {}) });
         nextBuildKeys.set(
           key,
           furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady })
@@ -642,6 +650,13 @@ export function useSceneEffects({
         changed = true;
       }
       group.userData.floorIndex = spec.floorIndex;
+      if (spec.owner) {
+        group.userData.ownerTag = spec.owner.kind === 'interior' ? 'interior-wall' : ROOM_OBJECT_TAGS.Wall;
+        group.userData.wallId = spec.owner.kind === 'interior' ? spec.owner.wallId : spec.owner.wall;
+      } else {
+        delete group.userData.ownerTag;
+        delete group.userData.wallId;
+      }
       group.userData.locked = spec.item.locked === true || !spec.isActive;
       // Inactive-floor groups are excluded from pointer raycasts entirely
       // (see drag-handlers' furnitureList, #122).
@@ -653,6 +668,10 @@ export function useSceneEffects({
     // change aborts (drag-handlers). Recompute the static shadow map only
     // when a shadow caster was added, removed or moved.
     if (changed) applyStoreyRange(scene, storeyRangeRef.current);
+    // A rebuilt or re-owned door or window takes its wall's visibility now,
+    // not on the next orbit (#659).
+    const camera = cameraRef.current;
+    if (camera) applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
     scene.userData[FURNITURE_REVISION_KEY] =
       ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
     if (changed) requestShadowUpdate();
@@ -663,9 +682,12 @@ export function useSceneEffects({
     // floor elevations and itemForStorey's fitting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
+    isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef,
     itemsKey, collisionKey, storeyHeightsKey,
     activeFloorIndex, allFloors, ghostOtherFloors,
+    // Opening ownership (#659) reads the partitions and the footprint; the
+    // wall display is re-applied to the groups it stamps.
+    interiorWallsKey, cutoutKey, layout.width, layout.height, wallDisplay,
     // Not read in the body: createFurnitureModel picks the rigged person up
     // from the model cache, and this re-runs the build once it's filled.
     peopleModelReady,

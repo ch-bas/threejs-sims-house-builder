@@ -147,9 +147,14 @@ export function applyWallDisplay(
   }
 
   for (const obj of scene.children) {
-    if (obj.userData.type !== 'wall-selection') continue;
+    const tag = obj.userData.type;
+    // A selection outline follows its wall; so does a door or window (a
+    // furniture group stamped with its owner wall, #659): cutaway and
+    // walls-down used to leave every frame standing where the wall was.
+    if (tag !== 'wall-selection' && !(tag === ROOM_OBJECT_TAGS.Furniture && obj.userData.ownerTag !== undefined)) continue;
     const owner = wallVisibility.get(`${obj.userData.ownerTag as string}:${obj.userData.wallId as string}`);
-    if (owner !== undefined) setVisible(obj, owner);
+    if (owner === undefined) continue;
+    setVisible(obj, owner && obj.userData[OFF_STOREY_KEY] !== true);
   }
 
   return changed;
