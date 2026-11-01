@@ -1,6 +1,7 @@
 import { cutoutRect } from '../lib/footprint';
 import { LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
+import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
 import type { FootprintCutout, Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -227,6 +228,9 @@ export function setOutdoorVisible(
 
   // ---- 3. Perimeter trees + bushes ----
   scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD, groundAt, site.neighbours, pavement ? halfD : null);
+
+  // Everything out here is on the far side of a wall from the lamps indoors.
+  for (const obj of scene.children) if (obj.userData.type === OUTDOOR_TAG) shutOutIndoorLampsUnder(THREE, obj);
 }
 
 /** Static mesh — never moves after positioning, so bake its matrix once. */

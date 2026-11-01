@@ -61,6 +61,7 @@ export {
   RingGeometry,
   SRGBColorSpace,
   Scene,
+  ShaderChunk,
   Shape,
   ShapeGeometry,
   SphereGeometry,

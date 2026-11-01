@@ -1,6 +1,7 @@
 import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
 import { WINDOW_WIDTH, windowCount, windowRow, type StreetFinish, type StreetHouseSpec } from '../lib/street-row';
 import { removeAndDispose } from './builder-utils';
+import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildRoof, roofPeakHeight } from './roof';
 import { buildWallMaterial } from './wall-patterns';
 import type * as ThreeNS from 'three';
@@ -146,6 +147,8 @@ export function buildNeighbours(THREE: ThreeModule, scene: ThreeNS.Scene, houses
     mesh.userData.part = part;
     scene.add(mesh);
   }
+  // Across the garden from the lamps indoors, and just as walled off (#664).
+  for (const obj of scene.children) if (obj.userData.type === NEIGHBOUR_TAG) shutOutIndoorLampsUnder(THREE, obj);
 }
 
 function buildHouse(

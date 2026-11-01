@@ -5,6 +5,7 @@ import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
+import { shutOutIndoorLamps } from './outdoor-lamps';
 import { ROOF_OFF_STOREY_KEY } from './roof';
 import { getMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
@@ -371,6 +372,8 @@ function addFoundation(
   foundation.receiveShadow = true;
   foundation.castShadow = true;
   foundation.name = 'Foundation';
+  // Only its outer faces show, and those are outdoors (#664).
+  shutOutIndoorLamps(THREE, material);
   foundation.userData.type = ROOM_OBJECT_TAGS.Floor;
   makeStatic(foundation);
   scene.add(foundation);

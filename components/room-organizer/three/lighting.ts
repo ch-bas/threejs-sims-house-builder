@@ -1,6 +1,7 @@
 import { LAMP_POOL_SIZE, type LampPoolPlan } from '../lib/night-lights';
 import { fitSunShadow, type ShadowBox, type SunShadowFit, type Vec3 } from '../lib/sun-shadow';
 import { applyOutdoorWeather } from './outdoor';
+import { applyOutdoorLampMask } from './outdoor-lamps';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -137,6 +138,7 @@ export function applyLampPool(scene: ThreeNS.Scene, plan: LampPoolPlan): void {
   const pool = lampPool(scene);
   if (!pool) return;
   pool.visible = plan.lit;
+  applyOutdoorLampMask(plan);
   pool.children.forEach((child, index) => {
     const light = child as ThreeNS.PointLight;
     const slot = plan.slots[index];

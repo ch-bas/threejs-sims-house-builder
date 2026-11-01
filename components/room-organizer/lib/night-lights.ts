@@ -1,3 +1,4 @@
+import { isInsideBuilding, type FootprintBuilding } from './footprint';
 import { mountBand, pendantBulbY } from './mount-band';
 import { floorElevation, storeyHeight } from './storeys';
 import type { FloorLayout } from './types';
@@ -44,6 +45,8 @@ export interface LampLight {
   candela: number;
   /** Distance at which the light's contribution reaches zero. */
   range: number;
+  /** Stands outside the walls, so the garden gets its light (#664). */
+  outdoors?: boolean;
 }
 
 /** Which storeys the 3D view draws: the active one, or all of them. */
@@ -55,9 +58,16 @@ export interface RenderedFloors {
 /**
  * Every night light on a rendered storey, with the bulb in world space. A
  * storey that isn't drawn lights nothing, or an upper-floor lamp would wash
- * the empty floor below in amber.
+ * the empty floor below in amber. With `building`, a lamp on the ground
+ * outside the walls is marked `outdoors`, whatever its type: it goes by where
+ * the lamp stands, so a lamppost in an L's cut corner counts and one inside
+ * doesn't (#664).
  */
-export function collectLampLights(floors: readonly FloorLayout[], rendered: RenderedFloors): LampLight[] {
+export function collectLampLights(
+  floors: readonly FloorLayout[],
+  rendered: RenderedFloors,
+  building?: FootprintBuilding
+): LampLight[] {
   return floors.flatMap((floor, index) => {
     if (!rendered.showAllFloors && index !== rendered.activeFloorIndex) return [];
     const floorY = floorElevation(floors, index);
@@ -78,6 +88,7 @@ export function collectLampLights(floors: readonly FloorLayout[], rendered: Rend
           z: item.position.z,
           candela: spec.candela,
           range: spec.range,
+          ...(building && !isInsideBuilding(building, item.position.x, item.position.z) ? { outdoors: true } : {}),
         },
       ];
     });
@@ -91,6 +102,8 @@ export interface LampPoolSlot {
   z: number;
   intensity: number;
   distance: number;
+  /** Lights outdoor surfaces too; an indoor lamp is kept off them (#664). */
+  outdoors: boolean;
 }
 
 export interface LampPoolPlan {
@@ -122,8 +135,8 @@ export function planLampPool(
   const slots = Array.from({ length: size }, (_, index): LampPoolSlot => {
     const lamp = nearest[index];
     return lamp
-      ? { x: lamp.x, y: lamp.y, z: lamp.z, intensity: lamp.candela * level, distance: lamp.range }
-      : { x: 0, y: 0, z: 0, intensity: 0, distance: 1 };
+      ? { x: lamp.x, y: lamp.y, z: lamp.z, intensity: lamp.candela * level, distance: lamp.range, outdoors: lamp.outdoors === true }
+      : { x: 0, y: 0, z: 0, intensity: 0, distance: 1, outdoors: false };
   });
   return { lit, slots };
 }

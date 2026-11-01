@@ -60,6 +60,28 @@ describe('collectLampLights (#215)', () => {
   });
 });
 
+describe('lamps indoors and out (#664)', () => {
+  const house = { width: 8, height: 6, cutout: { corner: 'ne', width: 3, depth: 2 } } as const;
+  const outdoors = (x: number, z: number, type = 'lamppost') =>
+    collectLampLights([floor([item(type, 3.2, x, z)])], GROUND, house)[0]?.outdoors === true;
+
+  it('goes by where the lamp stands, not its type', () => {
+    expect(outdoors(0, -6)).toBe(true);
+    expect(outdoors(0, 0)).toBe(false);
+    expect(outdoors(-6, 0, 'lamp')).toBe(true);
+  });
+
+  it('counts the cut corner of an L as outdoors', () => {
+    expect(outdoors(3, -2.5)).toBe(true);
+  });
+
+  it('carries the flag onto the pool, spares dark and indoors', () => {
+    const plan = planLampPool([{ x: 0, y: 1, z: 0, candela: 1, range: 1, outdoors: true }], { x: 0, y: 1, z: 0 }, 1);
+    expect(plan.slots[0]?.outdoors).toBe(true);
+    expect(plan.slots[1]?.outdoors).toBe(false);
+  });
+});
+
 describe('planLampPool (#393)', () => {
   const ORIGIN = { x: 0, y: 0, z: 0 };
   const many = Array.from({ length: 60 }, (_, i) => lamp(i, 0));
