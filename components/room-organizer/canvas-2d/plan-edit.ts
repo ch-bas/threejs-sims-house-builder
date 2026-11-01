@@ -2,7 +2,7 @@ import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { wallAngleDegrees } from '../lib/wall-snap';
-import { clampZoneRect, MIN_ZONE_SIZE, zoneContains, zoneFromCorners, zoneInPorch, type ZoneRect } from '../lib/zones';
+import { clampZoneRect, MIN_ZONE_SIZE, zoneContains, zoneFromCorners, zoneInPorch, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import type { EntrancePlanOutline } from '../lib/street';
 import type { InteriorWall, RoomLayout, RoomZone, Vec2 } from '../lib/types';
 
@@ -217,7 +217,9 @@ function markOnAxis(value: number, low: number, high: number, reach: number): 'l
  * the edge freely but only a third of the way in, so even a thin zone under
  * a finger keeps a middle to move it by.
  */
-export function zoneGripAt(zone: ZoneRect, x: number, z: number, slop: number, markSlop = slop): ZoneGrip | null {
+export function zoneGripAt(zone: ZoneShape, x: number, z: number, slop: number, markSlop = slop): ZoneGrip | null {
+  // A polygon zone follows its walls (#719): it has no handles to take hold of.
+  if (zone.outline) return null;
   const x1 = zone.x + zone.w;
   const z1 = zone.z + zone.d;
   const alongX = markOnAxis(x, zone.x, x1, markSlop);
@@ -297,15 +299,33 @@ function fitDraggedZone(
 /** Half the side of a drawn handle, px. The target under a finger is wider than the mark. */
 const ZONE_HANDLE_HALF = 5;
 
-/** The selected zone's outline, with a handle on each corner and each edge's middle. */
+/** The selected zone's outline, with a handle on each corner and each edge's middle; a polygon has none. */
 export function drawZoneHandles(
   ctx: CanvasRenderingContext2D,
   layout: RoomLayout,
-  zone: ZoneRect,
+  zone: ZoneShape,
   offsetX: number,
   offsetY: number,
   scale: number
 ): void {
+  if (zone.outline) {
+    ctx.save();
+    ctx.strokeStyle = DRAFT_INK;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const ring of zoneRings(zone)) {
+      ring.forEach((point, index) => {
+        const px = offsetX + (point.x + layout.width / 2) * scale;
+        const py = offsetY + (point.z + layout.height / 2) * scale;
+        if (index === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.closePath();
+    }
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   const left = offsetX + (zone.x + layout.width / 2) * scale;
   const top = offsetY + (zone.z + layout.height / 2) * scale;
   const width = zone.w * scale;

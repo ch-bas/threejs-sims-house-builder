@@ -104,6 +104,15 @@ export function onRing(ring: readonly Vec2[], x: number, z: number, tolerance: n
   });
 }
 
+/** Whether two of the ring's edges cross. Touching at a corner, as a room on a cut vertex does, isn't crossing. */
+export function ringCrossesItself(ring: readonly Vec2[]): boolean {
+  const edges = ringSegments(ring);
+  const side = (p: Vec2, q: Vec2, r: Vec2): number => Math.sign((q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x));
+  return edges.some((e, i) =>
+    edges.slice(i + 1).some((f) => side(e.a, e.b, f.a) * side(e.a, e.b, f.b) < 0 && side(f.a, f.b, e.a) * side(f.a, f.b, e.b) < 0)
+  );
+}
+
 /** The corners of a keep-out rect, with its rotation about its centre (see `itemEntersRect`). */
 function keepOutRing(rect: KeepOutRect): Vec2[] {
   const cx = (rect.x0 + rect.x1) / 2;

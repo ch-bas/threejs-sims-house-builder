@@ -17,7 +17,7 @@ import { escapeHtml } from '../html-escape';
 import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
-import { zoneArea } from '../zones';
+import { zoneArea, zoneLabelSpot, zoneRings } from '../zones';
 import {
   buildingFrameBounds,
   coverageRings,
@@ -49,7 +49,7 @@ import {
   type PlanPoint,
   type ScheduleRow,
 } from './plan-geometry';
-import type { FloorLayout, RoomLayout, WallId } from '../types';
+import type { FloorLayout, RoomLayout, Vec2, WallId } from '../types';
 
 /** Line colours; defaults match the blueprint / 2D-view look. */
 export interface SvgPlanTheme {
@@ -468,17 +468,26 @@ function renderZones(
   return zones
     .map((zone) => {
       const color = escapeHtml(zone.color);
-      const cx = fmt(Number(px(zone.x)) + (zone.w * scale) / 2);
-      const top = fmt(Number(py(zone.z)) + 15);
+      const spot = zoneLabelSpot(zone);
+      const cx = fmt(Number(px(spot.x)) + (spot.w * scale) / 2);
+      const top = fmt(Number(py(spot.z)) + 15);
+      const paint = `fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"`;
       return [
         `<g class="zone">`,
-        `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"/>`,
+        zone.outline
+          ? `<path d="${zoneRings(zone).map((ring) => ringPath(ring, px, py)).join(' ')}" fill-rule="evenodd" ${paint}/>`
+          : `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" ${paint}/>`,
         `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}">${escapeHtml(zone.name)}</text>`,
         `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}">${zoneArea(zone, recess).toFixed(1)} m²</text>`,
         `</g>`,
       ].join('');
     })
     .join('\n');
+}
+
+/** A closed ring as path data. */
+function ringPath(ring: readonly Vec2[], px: (x: number) => string, py: (z: number) => string): string {
+  return `${ring.map((point, index) => `${index === 0 ? 'M' : 'L'} ${px(point.x)} ${py(point.z)}`).join(' ')} Z`;
 }
 
 function renderInteriorWalls(

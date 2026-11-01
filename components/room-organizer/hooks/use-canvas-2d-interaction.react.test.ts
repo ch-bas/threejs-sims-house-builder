@@ -670,6 +670,33 @@ describe('useCanvas2DInteraction zone editing (#628)', () => {
     expect(addZone).not.toHaveBeenCalled();
   });
 
+  it('a tap on a room with no zone names it; a drag there still draws (#719)', () => {
+    const room = {
+      outline: [{ x: -2, z: -2 }, { x: 2, z: -2 }, { x: 2, z: 2 }, { x: -2, z: 2 }],
+      area: 16,
+      anchor: { x: 0, z: 0 },
+    };
+    const { fire, addZone } = edit({ selectedZoneId: null, activeFloor: makeFloor(), roomsToName: [room] });
+    fire('pointerdown', 0, 0);
+    fire('pointerup', 0, 0);
+    expect(addZone).toHaveBeenCalledTimes(1);
+    expect(addZone.mock.calls[0]![0]).toMatchObject({ outline: room.outline, x: -2, w: 4 });
+    fire('pointerdown', -1, -1);
+    fire('pointermove', 1, 1);
+    fire('pointerup', 1, 1);
+    expect(addZone).toHaveBeenCalledTimes(2);
+    expect(addZone.mock.calls[1]![0].outline).toBeUndefined();
+  });
+
+  it('a polygon zone has no grips: a drag on it draws, and changes nothing of it (#719)', () => {
+    const polygon = { ...zone, outline: [{ x: -2, z: -2 }, { x: 0, z: -2 }, { x: 0, z: 0 }, { x: -2, z: 0 }] };
+    const { fire, updateZone } = edit({ activeFloor: makeFloor({ zones: [polygon] }) });
+    fire('pointerdown', -1, -1);
+    fire('pointermove', 1, 1);
+    fire('pointerup', 1, 1);
+    expect(updateZone).not.toHaveBeenCalled();
+  });
+
   it('a tap on the selected zone deselects it, or steps to the zone under it', () => {
     const over = { ...zone, id: 'z2', x: -1.5, z: -1.5, w: 1, d: 1 };
     const floor = makeFloor({ zones: [zone, over] });

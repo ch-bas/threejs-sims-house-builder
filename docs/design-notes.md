@@ -140,7 +140,10 @@ to respect.
   applies `withViewInvariants` on every change, so leaving the plan by any
   route ends the draw mode, a chip on the plan says it is on (with Done for
   touch), and Escape leaves it like the wall and distance tools (#439).
-  Zone names are left off when wider than their zone, and on the minimap
+  A zone made from a detected room (#719) stores its polygon and follows
+  its walls: the reducer re-fits it in the step that moved a wall, it has no
+  handles, and a rectangle zone is never re-fitted. Zone names are left off
+  when wider than their zone, and on the minimap
   and thumbnails (`thumbnail`) also below 25 px per metre (#433). A lost
   window or pointer capture mid-drag undoes the drag and clears the
   gesture flag.

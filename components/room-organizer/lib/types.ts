@@ -224,6 +224,10 @@ export interface InteriorWall {
  * plan, the blueprint and the statistics panel measure and cost per room
  * (#155); see lib/zones.ts. `x`/`z` is the north-west corner in world metres
  * (room-centred, like item positions); `w`/`d` extend along +x / +z.
+ *
+ * A zone made from a detected room (#719) also has `outline`, and `holes`
+ * around anything nested in it: then the rectangle is the polygon's bounding
+ * box, and the zone follows its walls instead of being moved by hand.
  */
 export interface RoomZone {
   id: string;
@@ -233,6 +237,8 @@ export interface RoomZone {
   z: number;
   w: number;
   d: number;
+  outline?: Vec2[];
+  holes?: Vec2[][];
 }
 
 export interface FloorLayout {

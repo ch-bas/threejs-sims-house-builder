@@ -37,7 +37,7 @@
 import { stripXmlIllegal } from '../html-escape';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
-import { zoneArea } from '../zones';
+import { zoneArea, zoneLabelSpot, zoneRings } from '../zones';
 import {
   buildingFrameBounds,
   clipArc,
@@ -591,12 +591,10 @@ function emitFloor(
 /** Room zones (#571): the outline, then name and area on two lines, like the SVG's `renderZones`. */
 function emitZones(doc: DxfDocument, floor: FloorLayout, recess: EntrancePlanOutline | null, cad: (x: number, z: number) => CadPoint): void {
   for (const zone of floor.zones ?? []) {
-    const left = zone.x;
-    const right = zone.x + zone.w;
-    const top = zone.z;
-    const bottom = zone.z + zone.d;
-    doc.polyline('ZONES', [cad(left, top), cad(right, top), cad(right, bottom), cad(left, bottom)], true);
-    const centre = zone.x + zone.w / 2;
+    for (const ring of zoneRings(zone)) doc.polyline('ZONES', ring.map((point) => cad(point.x, point.z)), true);
+    const spot = zoneLabelSpot(zone);
+    const top = spot.z;
+    const centre = spot.x + spot.w / 2;
     doc.text('ZONES', cad(centre, top + ZONE_NAME_DROP_M), LABEL_TEXT_HEIGHT, zone.name, 'centre');
     doc.text('ZONES', cad(centre, top + ZONE_AREA_DROP_M), DIMENSION_TEXT_HEIGHT, `${zoneArea(zone, recess).toFixed(1)} m²`, 'centre');
   }
