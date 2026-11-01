@@ -132,6 +132,38 @@ export function buildStairs(ctx: BuilderContext): ThreeNS.Group {
 /** Handrail height above the stairs' pitch line, and the rail's radius. */
 const RAIL_HEIGHT = 0.9;
 const RAIL_RADIUS = 0.03;
+/** A closed string: this thick across the pitch, this far above the nosings, this wide. */
+const STRINGER_DEPTH = 0.25;
+const STRINGER_LIP = 0.03;
+const STRINGER_WIDTH = 0.06;
+
+/**
+ * The outline of a closed string in the stair's (z, y) plane (#658): its
+ * top edge runs along the nosings, a lip above them, from the first nosing
+ * to the last; it is `STRINGER_DEPTH` thick across the pitch, cut level
+ * at the floor, and ends square under the top nosing against the floor
+ * above. A tilted box used to hang 0.36 m over the floor at the foot, stop
+ * short of the landing and stand 0.22 m proud of the treads.
+ */
+export function stringerOutline(depth: number, height: number, stepCount: number): Array<[number, number]> {
+  const hd = depth / 2;
+  const going = depth / stepCount;
+  const rise = height / stepCount;
+  const slope = height / depth;
+  const top = (z: number) => rise + STRINGER_LIP + (z + hd) * slope;
+  // Vertical thickness of a band `STRINGER_DEPTH` thick across the pitch.
+  const drop = STRINGER_DEPTH * Math.hypot(depth, height) / depth;
+  const zEnd = hd - going;
+  // Where the bottom edge meets the floor: the foot is cut level there.
+  const zFoot = Math.min(zEnd, -hd + Math.max(0, drop - rise - STRINGER_LIP) / slope);
+  return [
+    [-hd, 0],
+    [-hd, top(-hd)],
+    [zEnd, top(zEnd)],
+    [zEnd, Math.max(0, top(zEnd) - drop)],
+    [zFoot, 0],
+  ];
+}
 
 function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
@@ -156,14 +188,19 @@ function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: 
     group.add(step);
   }
 
-  // Stringers along each side.
-  const stringerGeo = new THREE.BoxGeometry(0.06, item.height * 0.18, item.depth + 0.1);
+  // A closed string along each side, following the nosings (#658).
+  const outline = stringerOutline(item.depth, item.height, stepCount);
+  const shape = new THREE.Shape();
+  outline.forEach(([z, y], i) => (i === 0 ? shape.moveTo(z, y) : shape.lineTo(z, y)));
+  shape.closePath();
+  // Drawn in the (z, y) plane and extruded across x; the extrusion runs
+  // from x = 0 to −width, so it is centred on its side afterwards.
+  const stringerGeo = new THREE.ExtrudeGeometry(shape, { depth: STRINGER_WIDTH, bevelEnabled: false });
+  stringerGeo.rotateY(-Math.PI / 2);
+  stringerGeo.translate(STRINGER_WIDTH / 2, 0, 0);
   for (const dx of [-1, 1]) {
     const stringer = mesh(THREE, stringerGeo, stepMat);
-    // Run the stringer along the slope.
-    const angle = Math.atan2(item.height, item.depth);
-    stringer.rotation.x = -angle;
-    stringer.position.set(dx * (item.width / 2 - 0.05), item.height / 2, 0);
+    stringer.position.set(dx * (item.width / 2 - STRINGER_WIDTH / 2), 0, 0);
     group.add(stringer);
   }
 
