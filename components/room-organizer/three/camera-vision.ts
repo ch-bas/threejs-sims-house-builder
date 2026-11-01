@@ -37,6 +37,8 @@ const EDGE_Y = 0.035;
 const ARC_SEGMENTS = 40;
 const WEDGE_BASE_OPACITY = 0.16;
 const WEDGE_ALERT_OPACITY = 0.28;
+/** The light volume from the lens to the floor arc: faint, and never brighter than the wall behind it. */
+const VOLUME_OPACITY = 0.07;
 const SCAN_FOV_RATIO = 0.1;
 const SWEEP_SPEED = 1.6;
 /** How fast the cone colour eases between idle and alert (per frame factor). */
@@ -62,6 +64,8 @@ interface VisionConeUserData {
   phase: number;
   /** The flat floor wedge, whose opacity gently pulses. */
   wedge: ThreeNS.Mesh;
+  /** The faint light volume from the lens to the floor arc; always depth-tested (#652). */
+  volume: ThreeNS.Mesh;
   /** Cone geometry parameters, used for the in-FOV target test. */
   range: number;
   fov: number;
@@ -292,6 +296,11 @@ function buildCone(
   // walls, furniture, and floor coverings (rugs share the wedge's y) can never
   // occlude or z-fight the effect, and a high renderOrder paints it after the
   // world. depthWrite stays off so the cone never blocks anything else.
+  // Normal blending throughout (#652): additive layers stacked over a pale
+  // wall or floor saturated it to pure white, so a whole wall looked
+  // missing from the orbit view. The light volume alone is always
+  // depth-tested, so a wall between the camera and the viewer hides it
+  // rather than being painted over.
 
   // Flat floor wedge — the primary "this is what the camera sees" footprint.
   const wedgeGeo = fanGeometry(THREE, [0, FLOOR_Y, 0], arcPoints(range, fov, FLOOR_Y));
@@ -302,7 +311,6 @@ function buildCone(
     side: THREE.DoubleSide,
     depthWrite: false,
     ...depth,
-    blending: THREE.AdditiveBlending,
     toneMapped: false,
   });
   const wedge = new THREE.Mesh(wedgeGeo, wedgeMat);
@@ -314,11 +322,10 @@ function buildCone(
   const volumeMat = new THREE.MeshBasicMaterial({
     color: CONE_COLOR,
     transparent: true,
-    opacity: 0.05,
+    opacity: VOLUME_OPACITY,
     side: THREE.DoubleSide,
     depthWrite: false,
-    ...depth,
-    blending: THREE.AdditiveBlending,
+    depthTest: true,
     toneMapped: false,
   });
   const volume = new THREE.Mesh(volumeGeo, volumeMat);
@@ -354,7 +361,6 @@ function buildCone(
     side: THREE.DoubleSide,
     depthWrite: false,
     ...depth,
-    blending: THREE.AdditiveBlending,
     toneMapped: false,
   });
   const scan = new THREE.Mesh(scanGeo, scanMat);
@@ -366,6 +372,7 @@ function buildCone(
     swing: Math.max(fov / 2 - scanFov / 2, 0),
     phase: Math.random() * Math.PI * 2,
     wedge,
+    volume,
     range,
     fov,
     scanFov,

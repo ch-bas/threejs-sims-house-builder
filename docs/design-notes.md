@@ -224,6 +224,12 @@ to respect.
   labels, the GLB export and the walker all read it, so what you see is what
   the walker climbs; a flight with no floor to reach says so in its controls
   (`stairGoesNowhere`) (#654).
+- **Overlays never bleach the house.** The vision cone's wedge, light
+  volume and scan line blend normally: additive layers stacked over a pale
+  wall or floor saturated it to pure white, and a whole wall read as
+  missing from the orbit view. The flat wedge and the scan still draw over
+  the world (so a rug can't hide them), but the light volume is always
+  depth-tested, so a wall between the lens and the viewer hides it (#652).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
