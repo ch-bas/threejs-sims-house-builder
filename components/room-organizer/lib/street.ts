@@ -1,9 +1,10 @@
 import { WINDOW_SILL_HEIGHT } from './constants';
 import { toCentimetre } from './dormers';
+import { cutoutRect } from './footprint';
 import { groundHeightAt } from './site';
 import { floorElevation, storeyHeight } from './storeys';
 import type { KeepOutRect } from './geometry';
-import type { EntranceSpec, FloorLayout, FurnitureItem, RoomLayout, TerrainSpec } from './types';
+import type { EntranceSpec, FloorLayout, FootprintCutout, FurnitureItem, RoomLayout, TerrainSpec } from './types';
 
 /**
  * The street face of the house (#204): per-window sill heights, a recessed
@@ -161,16 +162,19 @@ export interface EntranceContext {
   depth: number;
   floors: readonly Pick<FloorLayout, 'height'>[];
   terrain?: TerrainSpec;
+  /** The corner cut out of the building (#727): the recess keeps a pier clear of it. */
+  cutout?: FootprintCutout | undefined;
 }
 
 /** Why a recess can't be built; the Site panel shows the label (#274, #281). */
-export type EntranceProblem = 'facade-too-narrow' | 'house-too-shallow' | 'no-street-storey' | 'too-low';
+export type EntranceProblem = 'facade-too-narrow' | 'house-too-shallow' | 'no-street-storey' | 'too-low' | 'cutout-clash';
 
 export const ENTRANCE_PROBLEM_LABELS: Record<EntranceProblem, string> = {
   'facade-too-narrow': "The recess doesn't fit on this front wall — widen the house.",
   'house-too-shallow': "The recess doesn't fit in this house — deepen the house.",
   'no-street-storey': 'No storey at street level — lower the street or add a floor above it.',
   'too-low': 'The storey at street level is too low for a porch.',
+  'cutout-clash': 'The recess runs into the corner cut out of the house — move it along the wall.',
 };
 
 /** The recess width the front wall can take: the spec's, trimmed to leave a pier either side. */
@@ -203,6 +207,16 @@ function fitEntrance(
   if (depth < ENTRANCE_LIMITS.depth[0] - 1e-9) return { geometry: null, problem: 'house-too-shallow' };
   const maxCenter = maxEntranceCenter(entrance, ctx.width);
   const center = Math.max(-maxCenter, Math.min(maxCenter, entrance.offset ?? 0));
+  const notch = cutoutRect({ width: ctx.width, height: ctx.depth, cutout: ctx.cutout });
+  if (
+    notch &&
+    center - width / 2 - MIN_PIER < notch.x1 &&
+    center + width / 2 + MIN_PIER > notch.x0 &&
+    -ctx.depth / 2 < notch.z1 &&
+    -ctx.depth / 2 + depth > notch.z0
+  ) {
+    return { geometry: null, problem: 'cutout-clash' };
+  }
 
   const streetY = streetLevel(ctx.terrain, ctx.depth);
   const floorIndex = entranceFloorIndex(ctx.floors, streetY);
@@ -295,6 +309,7 @@ export interface EntranceBuilding extends Pick<RoomLayout, 'width' | 'height'> {
   terrain?: TerrainSpec | undefined;
   entrance?: EntranceSpec | undefined;
   floors: readonly Pick<FloorLayout, 'height'>[];
+  cutout?: FootprintCutout | undefined;
 }
 
 /**
@@ -310,6 +325,7 @@ export function entrancePlanOutline(layout: EntranceBuilding, floorIndex: number
   const geometry = entranceGeometry(layout.entrance, {
     width: layout.width,
     depth: layout.height,
+    cutout: layout.cutout,
     floors: layout.floors,
     ...(layout.terrain ? { terrain: layout.terrain } : {}),
   });

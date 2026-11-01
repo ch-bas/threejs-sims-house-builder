@@ -598,7 +598,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
             colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS,
             feetY: walker.y,
             outside: walker.kind === 'ground',
-            footprint: { width: buildingRef.current.width, depth: buildingRef.current.depth },
+            footprint: { width: buildingRef.current.width, depth: buildingRef.current.depth, cutout: buildingRef.current.cutout },
             ...(worldRef.current?.porch
               ? {
                   porch: {

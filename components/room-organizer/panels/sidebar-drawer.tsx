@@ -320,6 +320,7 @@ const DrawerBody = memo(function DrawerBody({
                 keepOut,
                 interiorWalls: activeFloor.interiorWalls ?? [],
                 frontGap: entrancePlanOutline(layout, activeFloorIndex),
+                cutout: layout.cutout,
                 storeyHeight: storeyHeight(activeFloor),
                 floorIndex: activeFloorIndex,
               });

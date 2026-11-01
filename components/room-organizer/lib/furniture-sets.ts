@@ -4,7 +4,7 @@ import { hasCollisions, itemsOverlap, type KeepOutRect } from './geometry';
 import { remapGroupIds } from './groups';
 import { randomSuffix } from './ids';
 import { isWallMounted, settleWallMountedItem, type WallGap } from './opening-snap';
-import type { FurnitureItem, InteriorWall, Vec2 } from './types';
+import type { FootprintCutout, FurnitureItem, InteriorWall, Vec2 } from './types';
 
 /**
  * A placed item minus what a set can't carry: its id and floor position
@@ -105,6 +105,8 @@ interface BuildSetOptions {
   interiorWalls?: readonly InteriorWall[];
   /** The recessed entrance's cut in the north wall (`entrancePlanOutline`). */
   frontGap?: WallGap | null;
+  /** The corner cut out of the building (#727). */
+  cutout?: FootprintCutout | undefined;
 }
 
 interface ResolvedSpec {
@@ -253,7 +255,8 @@ export function buildFurnitureSet(set: FurnitureSet, options: BuildSetOptions = 
           room.width,
           room.depth,
           options.interiorWalls ?? [],
-          options.frontGap ?? null
+          options.frontGap ?? null,
+          options.cutout
         );
         return settled ? { ...item, ...settled } : item;
       }),
@@ -294,6 +297,7 @@ export interface FreeSpaceOptions {
   /** The storey's partitions: pieces may not straddle them, openings settle on them. */
   interiorWalls?: readonly InteriorWall[];
   frontGap?: WallGap | null;
+  cutout?: FootprintCutout | undefined;
   storeyHeight?: number;
   /** The storey the set goes on; above the ground floor its garden pieces are left out (#591). */
   floorIndex?: number;
@@ -369,6 +373,7 @@ export function placeSetInFreeSpace(fullSet: FurnitureSet, options: FreeSpaceOpt
       roomDepth,
       interiorWalls: context.interiorWalls,
       frontGap: options.frontGap ?? null,
+      cutout: options.cutout,
     });
     // The fit and the self-collision refusal don't depend on the centre.
     if (pieces.length === 0) return [];

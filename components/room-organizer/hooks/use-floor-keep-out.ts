@@ -9,9 +9,9 @@ import type { RoomLayout } from '../lib/types';
  * fields they are fitted to, not the whole layout.
  */
 export function useFloorKeepOut(layout: RoomLayout, floorIndex: number): readonly KeepOutRect[] {
-  const { width, height, terrain, entrance, floors } = layout;
+  const { width, height, terrain, entrance, floors, cutout } = layout;
   return useMemo(
-    () => floorKeepOut({ width, height, terrain, entrance, floors }, floorIndex),
-    [width, height, terrain, entrance, floors, floorIndex]
+    () => floorKeepOut({ width, height, terrain, entrance, floors, cutout }, floorIndex),
+    [width, height, terrain, entrance, floors, cutout, floorIndex]
   );
 }

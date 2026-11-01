@@ -13,11 +13,12 @@
  * switches at the landings.
  */
 
+import { cutoutRect, type FootprintRect } from './footprint';
 import { groundHeightAt, outdoorGroundSize } from './site';
 import { STAIR_STEP_COUNT, stairSteps, stairToWorld, stairTopNosing, stairwellParts } from './stairs';
 import { stairRise, storeyHeight, floorElevation } from './storeys';
 import { entranceGeometry, entranceSteps, entranceWallCut } from './street';
-import type { EntranceSpec, FloorLayout, Frontage, FurnitureItem, TerrainSpec } from './types';
+import type { EntranceSpec, FloorLayout, FootprintCutout, Frontage, FurnitureItem, TerrainSpec } from './types';
 
 export type WalkSurfaceKind = 'floor' | 'tread' | 'ground';
 
@@ -38,6 +39,8 @@ export interface WalkBuilding {
   terrain?: TerrainSpec | undefined;
   entrance?: EntranceSpec | undefined;
   frontage?: Frontage | undefined;
+  /** The corner cut out of the building (#727): ground, not floor. */
+  cutout?: FootprintCutout | undefined;
 }
 
 /** A convex polygon in world XZ, with its bounds. */
@@ -106,6 +109,8 @@ interface Porch {
 export interface WalkWorld {
   halfWidth: number;
   halfDepth: number;
+  /** The corner cut out of the building, or null. */
+  notch: FootprintRect | null;
   elevations: number[];
   storeyHeights: number[];
   stairsByFloor: WalkStair[][];
@@ -170,6 +175,7 @@ export function buildWalkWorld(building: WalkBuilding): WalkWorld {
   let porch: Porch | null = null;
   if (building.entrance) {
     const geometry = entranceGeometry(building.entrance, {
+      cutout: building.cutout,
       width: building.width,
       depth: building.depth,
       floors,
@@ -196,6 +202,7 @@ export function buildWalkWorld(building: WalkBuilding): WalkWorld {
   return {
     halfWidth,
     halfDepth,
+    notch: cutoutRect({ width: building.width, height: building.depth, cutout: building.cutout }),
     elevations,
     storeyHeights,
     stairsByFloor,
@@ -396,6 +403,13 @@ function offer(
  * `out` and returns true; false when nothing there is reachable (a wall of
  * treads, the stairwell, a drop, the lot's edge). Allocation-free.
  */
+/** Whether (x, z) is within the walls: the rectangle, less the corner cut out of it. */
+export function insideWalls(world: WalkWorld, x: number, z: number): boolean {
+  const { notch } = world;
+  if (notch !== null && x > notch.x0 && x < notch.x1 && z > notch.z0 && z < notch.z1) return false;
+  return Math.abs(x) <= world.halfWidth && Math.abs(z) <= world.halfDepth;
+}
+
 export function walkSurfaceAt(
   world: WalkWorld,
   x: number,
@@ -408,7 +422,9 @@ export function walkSurfaceAt(
   pick.bestY = -Infinity;
   const porch = world.porch;
   const inPorch = porch !== null && x >= porch.x0 && x <= porch.x1 && z >= porch.frontZ && z <= porch.backZ;
-  const inside = Math.abs(x) < world.halfWidth && Math.abs(z) < world.halfDepth;
+  const notch = world.notch;
+  const inNotch = notch !== null && x > notch.x0 && x < notch.x1 && z > notch.z0 && z < notch.z1;
+  const inside = Math.abs(x) < world.halfWidth && Math.abs(z) < world.halfDepth && !inNotch;
 
   if (inside) {
     const { elevations, stairsByFloor } = world;

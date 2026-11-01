@@ -48,6 +48,7 @@ export function SitePanel(): JSX.Element {
     ? entranceProblem(entrance, {
         width: layout.width,
         depth: layout.height,
+        cutout: layout.cutout,
         floors: layout.floors,
         ...(layout.terrain ? { terrain: layout.terrain } : {}),
       })
