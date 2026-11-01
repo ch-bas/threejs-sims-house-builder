@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { GRASS_DROP } from '../lib/site';
 import { generateStreet, type StreetHouseSpec } from '../lib/street-row';
 import { NEIGHBOUR_TAG, buildNeighbours, removeNeighbours } from './neighbours';
 import { applyWallDisplay } from './room-builder';
@@ -180,8 +181,10 @@ describe('the street (#310)', () => {
     const scene = new THREE.Scene();
     buildNeighbours(THREE, scene, [house({ groundFrontY: -0.6, groundBackY: -0.6 })]);
     const [step] = instanceBoxes(scene, 'steps');
-    expect(step!.scale.y).toBeCloseTo(0.6);
-    expect(step!.position.y).toBeCloseTo(-0.3);
+    // Down to the grass plane under the ground line, never hovering (#660).
+    expect(step!.scale.y).toBeCloseTo(0.6 + GRASS_DROP);
+    expect(step!.position.y - step!.scale.y / 2).toBeCloseTo(-0.6 - GRASS_DROP);
+    expect(step!.position.y + step!.scale.y / 2).toBeCloseTo(0);
   });
 
   it('opens windows in a free-standing side wall only', () => {

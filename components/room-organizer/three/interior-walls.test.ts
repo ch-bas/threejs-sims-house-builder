@@ -162,3 +162,79 @@ describe('renderInteriorWallPreview (#409)', () => {
     expect(disposed).toBe(true);
   });
 });
+
+// The snap puts a partition's end exactly on the outline, so a full-length
+// box shared its 0.16 × 2.6 m end face with the facade's plane and flickered
+// through it from outside (#660).
+describe('a partition end on the shell stops short of it (#660)', () => {
+  const ROOM = { roomWidth: 8, roomDepth: 6, openingCandidates: [] as never[] };
+  const xRange = (mesh: THREE.Mesh): { min: number; max: number } => {
+    mesh.updateMatrixWorld();
+    const box = new THREE.Box3().setFromObject(mesh);
+    return { min: box.min.x, max: box.max.x };
+  };
+
+  it('trims the end on the west wall and keeps the free end where it was', () => {
+    const scene = new THREE.Scene();
+    renderInteriorWalls(THREE, scene, [{ id: 'iw', x1: -4, z1: 0.5, x2: 0, z2: 0.5 }], 0, undefined, ROOM);
+    const { min, max } = xRange(wallMesh(scene));
+    expect(min).toBeGreaterThan(-4 + 0.005);
+    expect(min).toBeLessThan(-4 + 0.01);
+    expect(max).toBeCloseTo(0, 5);
+  });
+
+  it('trims both ends of a wall spanning the house, and neither end of one inside it', () => {
+    const across = new THREE.Scene();
+    renderInteriorWalls(THREE, across, [{ id: 'iw', x1: -4, z1: 0, x2: 4, z2: 0 }], 0, undefined, ROOM);
+    const span = xRange(wallMesh(across));
+    expect(span.min).toBeGreaterThan(-4);
+    expect(span.max).toBeLessThan(4);
+    expect(span.max - span.min).toBeCloseTo(8 - 2 * 0.006, 5);
+    const inside = new THREE.Scene();
+    renderInteriorWalls(THREE, inside, [{ id: 'iw', x1: -2, z1: 0, x2: 2, z2: 0 }], 0, undefined, ROOM);
+    expect(xRange(wallMesh(inside))).toEqual({ min: -2, max: 2 });
+  });
+
+  it('keeps a doorway where it was drawn after the trim', () => {
+    const door = makeItem({ id: 'door', type: 'door', width: 0.9, depth: 0.12, height: 2.05, position: { x: -3, z: 0.5 }, rotation: 0 });
+    const scene = new THREE.Scene();
+    renderInteriorWalls(THREE, scene, [{ id: 'iw', x1: -4, z1: 0.5, x2: 0, z2: 0.5 }], 0, undefined, { ...ROOM, openingCandidates: [door] });
+    const mesh = wallMesh(scene);
+    mesh.updateMatrixWorld();
+    // A ray through the doorway's centre at knee height passes; one through the wall beside it hits.
+    const hits = (x: number) =>
+      new THREE.Raycaster(new THREE.Vector3(x, 0.5, 2), new THREE.Vector3(0, 0, -1)).intersectObject(mesh).length;
+    expect(hits(-3)).toBe(0);
+    expect(hits(-1)).toBeGreaterThan(0);
+  });
+
+  it('keeps the hole of a door flush with the trimmed end', () => {
+    // On the 8 m room's west wall the door's span is clamped flush to the
+    // wall end at x = -4; the end stops 6 mm short of it.
+    const scene = new THREE.Scene();
+    const door = makeItem({ id: 'door', type: 'door', width: 0.9, depth: 0.12, height: 2.05, position: { x: -3.55, z: 0 } });
+    renderInteriorWalls(THREE, scene, [{ id: 'iw', x1: -4, z1: 0, x2: 0, z2: 0 }], 0, undefined, {
+      openingCandidates: [door],
+      roomWidth: 8,
+      roomDepth: 8,
+      wallHeight: 2.6,
+      storeyHeight: 3,
+    });
+    const wall = wallMesh(scene);
+    const position = wall.geometry.getAttribute('position');
+    // The area of the +z cap: the wall face less the door's hole.
+    const index = wall.geometry.index;
+    const count = index ? index.count : position.count;
+    const at = (i: number): number => (index ? index.getX(i) : i);
+    let area = 0;
+    for (let i = 0; i < count; i += 3) {
+      const [a, b, c] = [at(i), at(i + 1), at(i + 2)];
+      if (![a, b, c].every((v) => position.getZ(v) > 0.05)) continue;
+      area += Math.abs(
+        (position.getX(b) - position.getX(a)) * (position.getY(c) - position.getY(a)) -
+          (position.getX(c) - position.getX(a)) * (position.getY(b) - position.getY(a))
+      ) / 2;
+    }
+    expect(area).toBeCloseTo((4 - 0.006) * 2.6 - (0.9 - 0.006) * 2.05, 3);
+  });
+});

@@ -154,6 +154,25 @@ export function footprintOutline(building: FootprintBuilding, grow = 0): Vec2[] 
   return order.flatMap((key) => (key === corner ? steps : [corners[key]]));
 }
 
+/**
+ * Whether a world point lies on the building's outline, within `tolerance`:
+ * on an outer wall's plane and along its run, including the two walls of
+ * the cut corner. A partition drawn to the shell ends here (#660).
+ */
+export function onFootprintEdge(building: FootprintBuilding, x: number, z: number, tolerance = 0.001): boolean {
+  const outline = footprintOutline(building);
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i]!;
+    const b = outline[(i + 1) % outline.length]!;
+    const minX = Math.min(a.x, b.x) - tolerance;
+    const maxX = Math.max(a.x, b.x) + tolerance;
+    const minZ = Math.min(a.z, b.z) - tolerance;
+    const maxZ = Math.max(a.z, b.z) + tolerance;
+    if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) return true;
+  }
+  return false;
+}
+
 /** Whether a world point stands on the building: within the rectangle, not in the cut (edges count as on it). */
 export function isInsideBuilding(building: FootprintBuilding, x: number, z: number): boolean {
   if (Math.abs(x) > building.width / 2 || Math.abs(z) > building.height / 2) return false;

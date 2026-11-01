@@ -1,3 +1,4 @@
+import { onFootprintEdge } from '../lib/footprint';
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan } from '../lib/opening-snap';
 import { OPENING_HEAD_CLEARANCE, fitOpeningToStorey } from '../lib/storeys';
 import { FLOOR_HEIGHT_METERS, type FootprintCutout, type FurnitureItem, type InteriorWall } from '../lib/types';
@@ -11,6 +12,8 @@ type ThreeModule = typeof import('./three-runtime');
 const INTERIOR_WALL_TAG = 'interior-wall';
 /** Partition height in a classic 3 m storey; see `interiorWallHeight` (#202). */
 const DEFAULT_WALL_HEIGHT = 2.6;
+/** A partition end on the building's outline stops this short of the shell (#660): twice the baseboard's gap. */
+const PARTITION_END_GAP = BASEBOARD_WALL_GAP * 2;
 
 interface SegmentOpening {
   /** Centre position along the wall, measured from the segment midpoint (m). */
@@ -78,6 +81,22 @@ export function renderInteriorWalls(
     const openings = options.openingCandidates
       ? computeSegmentOpenings(wall, options.openingCandidates, owners, wallHeight, storeyHeight)
       : [];
+    const dirX = (wall.x2 - wall.x1) / length;
+    const dirZ = (wall.z2 - wall.z1) / length;
+    // An end drawn to the shell (the snap puts it exactly on the outline)
+    // stops short of it: a full-length box put a 0.16 × 2.6 m end face in
+    // the facade's own plane, a flickering stripe seen from outside (#660).
+    // The baseboard keeps its own, smaller gap (#201), so it still tucks
+    // under the wall's end rather than sharing a plane with it.
+    const building =
+      options.roomWidth !== undefined && options.roomDepth !== undefined
+        ? { width: options.roomWidth, height: options.roomDepth, cutout: options.cutout }
+        : null;
+    const trimStart = building && onFootprintEdge(building, wall.x1, wall.z1) ? PARTITION_END_GAP : 0;
+    const trimEnd = building && onFootprintEdge(building, wall.x2, wall.z2) ? PARTITION_END_GAP : 0;
+    const meshLength = length - trimStart - trimEnd;
+    const shift = (trimStart - trimEnd) / 2;
+    const meshOpenings = shift === 0 ? openings : openings.map((o) => trimmedOpening(o, shift, meshLength));
 
     const material = new THREE.MeshStandardMaterial({
       color: wall.color ?? 0xe0e0e0,
@@ -90,8 +109,8 @@ export function renderInteriorWalls(
 
     const geometry =
       openings.length > 0
-        ? buildExtrudedWallGeometry(THREE, length, wallHeight, INTERIOR_WALL_THICKNESS, openings)
-        : new THREE.BoxGeometry(length, wallHeight, INTERIOR_WALL_THICKNESS);
+        ? buildExtrudedWallGeometry(THREE, meshLength, wallHeight, INTERIOR_WALL_THICKNESS, meshOpenings)
+        : new THREE.BoxGeometry(meshLength, wallHeight, INTERIOR_WALL_THICKNESS);
 
     // Local +z is side 'a' (lib/wall-sides.ts). A second material only when
     // the faces differ, so a plain wall stays one draw call.
@@ -103,7 +122,11 @@ export function renderInteriorWalls(
     }
 
     const wallMesh = new THREE.Mesh(geometry, wallMaterial);
-    wallMesh.position.set((wall.x1 + wall.x2) / 2, yOffset + (openings.length > 0 ? 0 : wallHeight / 2), (wall.z1 + wall.z2) / 2);
+    wallMesh.position.set(
+      (wall.x1 + wall.x2) / 2 + dirX * shift,
+      yOffset + (openings.length > 0 ? 0 : wallHeight / 2),
+      (wall.z1 + wall.z2) / 2 + dirZ * shift
+    );
     wallMesh.rotation.y = -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1);
     wallMesh.castShadow = true;
     wallMesh.receiveShadow = true;
@@ -124,8 +147,6 @@ export function renderInteriorWalls(
       baseMat.transparent = true;
       baseMat.opacity = ghostOpacity;
     }
-    const dirX = (wall.x2 - wall.x1) / length;
-    const dirZ = (wall.z2 - wall.z1) / length;
     const half = length / 2;
     for (const [from, to] of baseboardRuns(-half + BASEBOARD_WALL_GAP, half - BASEBOARD_WALL_GAP, openings)) {
       const mid = (from + to) / 2;
@@ -207,6 +228,19 @@ function splitExtrudedFaces(geometry: ThreeNS.BufferGeometry, front: ThreeNS.Mat
   geometry.addGroup(caps.start + half, half, 0);
   geometry.addGroup(sides.start, sides.count, 1);
   return [front, front, back];
+}
+
+/**
+ * An opening in the frame of a trimmed wall. `interiorWallOpeningSpan` lets a
+ * door sit flush with the wall's end, so the hole is cut to the trimmed end
+ * too: left past it, the triangulator dropped the hole and walled the door
+ * over (#660).
+ */
+function trimmedOpening(opening: SegmentOpening, shift: number, meshLength: number): SegmentOpening {
+  const half = meshLength / 2;
+  const low = Math.max(opening.centerAlongWall - opening.width / 2 - shift, -half);
+  const high = Math.min(opening.centerAlongWall + opening.width / 2 - shift, half);
+  return { ...opening, centerAlongWall: (low + high) / 2, width: high - low };
 }
 
 /** Perpendicular distance for the legacy interior-only proximity fallback. */

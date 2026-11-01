@@ -1,3 +1,4 @@
+import { GRASS_DROP } from '../lib/site';
 import { entranceSteps, type EntranceGeometry } from '../lib/street';
 import { FOUNDATION_OVERHANG } from './room-builder';
 import type * as ThreeNS from 'three';
@@ -83,11 +84,15 @@ export function buildEntrance(THREE: ThreeModule, options: BuildEntranceOptions)
     // the plinth, so the steps meet the porch floor at the wall.
     const landingZ = g.floorIndex === 0 ? g.frontZ - FOUNDATION_OVERHANG : g.frontZ;
     // Top step is the porch floor's edge; each one below steps out toward the street.
+    // Every block reaches down to the grass plane, which lies under the
+    // ground line: a bottom riser that stopped at the street hovered 3.5 cm
+    // over a pavement and 5 cm over grass, with a shadow line under it (#660).
+    const bottom = g.streetY - GRASS_DROP;
     for (let i = 0; i < steps.count; i++) {
       const top = g.bottomY - i * steps.rise;
-      const blockHeight = top - g.streetY;
+      const blockHeight = top - bottom;
       const step = new THREE.Mesh(new THREE.BoxGeometry(width, blockHeight, steps.going), stone);
-      step.position.set((g.x0 + g.x1) / 2, g.streetY + blockHeight / 2, landingZ - steps.going * (i + 0.5));
+      step.position.set((g.x0 + g.x1) / 2, bottom + blockHeight / 2, landingZ - steps.going * (i + 0.5));
       step.castShadow = ghostOpacity === undefined;
       step.receiveShadow = true;
       stairs.add(step);
