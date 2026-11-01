@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { layoutReducer, type LayoutState } from '../hooks/layout-reducer';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
+import { footprintOutline } from './footprint';
 import { layoutToDxf } from './plan-export/dxf';
 import { layoutToSvg } from './plan-export/svg';
-import { detectRooms, floorRooms, largestBand, rectOutline } from './room-detect';
+import { detectRooms, floorRooms, largestBand } from './room-detect';
 import { isFloorLayout, parseStoredLayout } from './schema';
 import {
   arrangeByZone,
@@ -259,7 +260,7 @@ describe('zone floor finishes (#720)', () => {
 });
 
 describe('zoneShapeFits and the schema repair (#719)', () => {
-  const footprint = rectOutline(10, 8);
+  const footprint = footprintOutline({ width: 10, height: 8 });
   const square = (x: number, z: number, side: number) => [{ x, z }, { x: x + side, z }, { x: x + side, z: z + side }, { x, z: z + side }];
   const zoneOf = (outline: Vec2[], rest: Partial<RoomZone> = {}): RoomZone => ({ id: 'q', name: 'Q', color: '#000', ...regionShape({ outline }), ...rest });
   const parsedZone = (zone: RoomZone) => parseStoredLayout(JSON.parse(JSON.stringify(building({ zones: [zone] }))))?.floors[0]?.zones?.[0];
@@ -361,8 +362,8 @@ describe('re-fit matching (#719)', () => {
   it('a moved wall takes the zones with it, each on its own side', () => {
     const left = strip('A', -3, -3, -2, 3);
     const right = strip('B', -2, -3, 3, 3);
-    const rooms = detectRooms([{ id: 'w', x1: 2, z1: -3, x2: 2, z2: 3 }], rectOutline(6, 6), []);
-    const [a, b] = refitZonesToRooms([left, right], rooms, rectOutline(6, 6), 6, 6);
+    const rooms = detectRooms([{ id: 'w', x1: 2, z1: -3, x2: 2, z2: 3 }], footprintOutline({ width: 6, height: 6 }), []);
+    const [a, b] = refitZonesToRooms([left, right], rooms, footprintOutline({ width: 6, height: 6 }), 6, 6);
     expect(zoneArea(a!, null)).toBeCloseTo(30);
     expect(zoneContains(a!, 0, 0)).toBe(true);
     expect(zoneArea(b!, null)).toBeCloseTo(6);
@@ -372,12 +373,12 @@ describe('re-fit matching (#719)', () => {
   it('a lone zone does not take the unnamed room its wall opened into', () => {
     const small: RoomZone = { id: 'y', ...zoneFromRoom(rooms.find((room) => room.area === 20)!, 'Study', '#000') };
     const merged = floorRooms(building({ interiorWalls: [] }), 0);
-    expect(refitZonesToRooms([small], merged, rectOutline(10, 8), 10, 8)[0]).toBe(small);
+    expect(refitZonesToRooms([small], merged, footprintOutline({ width: 10, height: 8 }), 10, 8)[0]).toBe(small);
   });
 });
 
 describe('refitZonesToRooms (#719)', () => {
-  const fit = (zones: RoomZone[], next: ReturnType<typeof floorRooms>) => refitZonesToRooms(zones, next, rectOutline(10, 8), 10, 8);
+  const fit = (zones: RoomZone[], next: ReturnType<typeof floorRooms>) => refitZonesToRooms(zones, next, footprintOutline({ width: 10, height: 8 }), 10, 8);
 
   it('returns the same list when every zone still matches its room', () => {
     const zones = [lZone];

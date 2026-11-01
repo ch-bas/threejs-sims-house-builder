@@ -1,4 +1,5 @@
 import { MAX_ROOM_DIMENSION } from './constants';
+import { clampToFootprint, cutoutRect, footprintOutline, trimRectToCutout } from './footprint';
 import { autoOrganize, type AutoOrganizeStrategy, type CollisionContext, type KeepOutRect, totalCost } from './geometry';
 import {
   type DetectedRoom,
@@ -7,14 +8,13 @@ import {
   onRing,
   type PlanRegion,
   pointInRing,
-  rectOutline,
   regionsOutside,
   ringArea,
   ringCrossesItself,
 } from './room-detect';
 import { ENTRANCE_WALL_ID, type EntrancePlanOutline } from './street';
 import type { KeepOutBuilding } from './floor-keep-out';
-import type { FloorLayout, FloorPattern, FurnitureItem, InteriorWall, RoomZone, Vec2 } from './types';
+import type { FloorLayout, FloorPattern, FootprintCutout, FurnitureItem, InteriorWall, RoomZone, Vec2 } from './types';
 
 /**
  * Room zones (#155): named, coloured parts of a floor — "Bedroom",
@@ -128,21 +128,29 @@ export function isRoomZone(value: unknown): value is RoomZone {
  * past it), which lands on the wall, so a zone drawn edge to edge on a
  * 5.05 m floor ends at the wall rather than 5 cm past it (#618). Used by
  * the 2D draw gesture and, on every add/update, by the reducer — so a
- * stored zone always fits its floor, and re-fitting it changes nothing.
+ * stored zone always fits its floor, and re-fitting it changes nothing. On a
+ * house with a `cutout` a corner lands on a notch wall the same way, and a
+ * rectangle across the cut keeps its larger part (#727).
  */
-export function zoneFromCorners(a: Vec2, b: Vec2, roomWidth: number, roomDepth: number): ZoneRect | null {
+export function zoneFromCorners(a: Vec2, b: Vec2, roomWidth: number, roomDepth: number, cutout?: FootprintCutout | undefined): ZoneRect | null {
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
-  const x0 = snapCorner(Math.min(a.x, b.x), halfW);
-  const x1 = snapCorner(Math.max(a.x, b.x), halfW);
-  const z0 = snapCorner(Math.min(a.z, b.z), halfD);
-  const z1 = snapCorner(Math.max(a.z, b.z), halfD);
+  const notch = cutoutRect({ width: roomWidth, height: roomDepth, cutout });
+  const notchX = notch && (cutout?.corner.endsWith('e') ? notch.x0 : notch.x1);
+  const notchZ = notch && (cutout?.corner.startsWith('n') ? notch.z1 : notch.z0);
+  const cornerAt = (value: number, half: number, line: number | null): number =>
+    line !== null && Math.abs(value - line) < ZONE_GRID / 2 - 1e-9 ? line : snapCorner(value, half);
+  const x0 = cornerAt(Math.min(a.x, b.x), halfW, notchX);
+  const x1 = cornerAt(Math.max(a.x, b.x), halfW, notchX);
+  const z0 = cornerAt(Math.min(a.z, b.z), halfD, notchZ);
+  const z1 = cornerAt(Math.max(a.z, b.z), halfD, notchZ);
   // Sizes from the corners, without re-rounding to the grid; only float
   // noise is trimmed, and never past the far wall.
   const w = Math.min(trimNoise(x1 - x0), halfW - x0);
   const d = Math.min(trimNoise(z1 - z0), halfD - z0);
   if (!(w >= MIN_ZONE_SIZE) || !(d >= MIN_ZONE_SIZE)) return null;
-  return { x: x0, z: z0, w, d };
+  const rect = trimRectToCutout({ x: x0, z: z0, w, d }, notch);
+  return rect && rect.w >= MIN_ZONE_SIZE && rect.d >= MIN_ZONE_SIZE ? rect : null;
 }
 
 /** A corner on the grid, or on the wall when it is within half a grid step of it or beyond. */
@@ -161,9 +169,20 @@ function trimNoise(value: number): number {
 }
 
 /** `zoneFromCorners` for a rectangle already expressed as corner + size. */
-export function clampZoneRect(rect: ZoneRect, roomWidth: number, roomDepth: number): ZoneRect | null {
+export function clampZoneRect(rect: ZoneRect, roomWidth: number, roomDepth: number, cutout?: FootprintCutout | undefined): ZoneRect | null {
   if (!isZoneRect(rect)) return null;
-  return zoneFromCorners({ x: rect.x, z: rect.z }, { x: rect.x + rect.w, z: rect.z + rect.d }, roomWidth, roomDepth);
+  return zoneFromCorners({ x: rect.x, z: rect.z }, { x: rect.x + rect.w, z: rect.z + rect.d }, roomWidth, roomDepth, cutout);
+}
+
+/**
+ * Where a zone that keeps its size stops: clear of the notch, the shorter way
+ * out. One too big for either wing is left where it is, for the fit to trim.
+ */
+export function zoneClearOfCutout(rect: ZoneRect, roomWidth: number, roomDepth: number, cutout: FootprintCutout | undefined): ZoneRect {
+  if (!cutout) return rect;
+  const size = { width: rect.w, depth: rect.d };
+  const centre = clampToFootprint(size, { x: rect.x + rect.w / 2, z: rect.z + rect.d / 2 }, roomWidth, roomDepth, cutout);
+  return { ...rect, x: centre.x - rect.w / 2, z: centre.z - rect.d / 2 };
 }
 
 /**
@@ -180,9 +199,50 @@ export function zoneShapeFits(zone: ZoneShape, footprint: readonly Vec2[]): bool
   const bounds = ringBounds(zone.outline);
   const off = (a: number, b: number): boolean => Math.abs(a - b) > RECT_TOLERANCE;
   if (off(bounds.x, zone.x) || off(bounds.z, zone.z) || off(bounds.w, zone.w) || off(bounds.d, zone.d)) return false;
-  const within = (ring: readonly Vec2[], point: Vec2): boolean => onRing(ring, point.x, point.z) || pointInRing(ring, point.x, point.z);
-  if (!zone.outline.every((point) => within(footprint, point))) return false;
-  return (zone.holes ?? []).every((hole) => hole.every((point) => within(zone.outline!, point)));
+  if (!ringOnFootprint(zone.outline, footprint)) return false;
+  return (zone.holes ?? []).every((hole) => hole.every((point) => withinRing(zone.outline!, point)));
+}
+
+function withinRing(ring: readonly Vec2[], point: Vec2): boolean {
+  return onRing(ring, point.x, point.z) || pointInRing(ring, point.x, point.z);
+}
+
+/** Where along a → b it crosses the sides of a ring, from 0 to 1. */
+function ringCrossings(a: Vec2, b: Vec2, ring: readonly Vec2[]): number[] {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const hits = [0, 1];
+  ring.forEach((from, index) => {
+    const to = ring[(index + 1) % ring.length]!;
+    const ex = to.x - from.x;
+    const ez = to.z - from.z;
+    const cross = dx * ez - dz * ex;
+    if (Math.abs(cross) < 1e-12) return;
+    const t = ((from.x - a.x) * ez - (from.z - a.z) * ex) / cross;
+    const u = ((from.x - a.x) * dz - (from.z - a.z) * dx) / cross;
+    if (t > 0 && t < 1 && u >= 0 && u <= 1) hits.push(t);
+  });
+  return hits.sort((p, q) => p - q);
+}
+
+/**
+ * Whether a ring stands on the footprint. Its corners decide on a rectangle;
+ * on an L a side can leave them both on the house and cross the notch, so
+ * each stretch of each side is tried too.
+ */
+function ringOnFootprint(ring: readonly Vec2[], footprint: readonly Vec2[]): boolean {
+  if (!ring.every((point) => withinRing(footprint, point))) return false;
+  if (footprint.length <= 4) return true;
+  return ring.every((a, index) => {
+    const b = ring[(index + 1) % ring.length]!;
+    const hits = ringCrossings(a, b, footprint);
+    return hits.every((t, at) => {
+      const next = hits[at + 1];
+      if (next === undefined) return true;
+      const middle = (t + next) / 2;
+      return withinRing(footprint, { x: a.x + (b.x - a.x) * middle, z: a.z + (b.z - a.z) * middle });
+    });
+  });
 }
 
 /** A zone with its polygon taken off, down to its rectangle. */
@@ -365,7 +425,7 @@ export function roomsToName(building: KeepOutBuilding, floorIndex: number): Dete
   const floor = building.floors[floorIndex];
   if (!floor?.interiorWalls?.some((wall) => wall.id !== ENTRANCE_WALL_ID)) return [];
   const zones = floor.zones ?? [];
-  const footprint = rectOutline(building.width, building.height);
+  const footprint = footprintOutline(building);
   return floorRooms(building, floorIndex).filter(
     (room) => zoneShapeFits(regionShape(room), footprint) && !zones.some((zone) => zoneContains(zone, room.anchor.x, room.anchor.z))
   );
@@ -440,8 +500,8 @@ function overlapArea(zone: RoomZone, room: DetectedRoom, strips: readonly Vec2[]
  * exception is a moved wall: the rest of the room was the floor of zones that
  * have another room to go to. A zone left with no room keeps the shape it
  * had, so opening a wall never loses a name; one that no longer fits the
- * `footprint` falls back to its clamped rectangle, and goes when nothing of
- * that is left. A room the schema would not keep is no home either. Rectangle
+ * `footprint` falls back to its clamped rectangle, off any `cutout`, and goes
+ * when nothing of that is left. A room the schema would not keep is no home either. Rectangle
  * zones are the player's own and don't move. Returns `zones` when nothing changed.
  *
  * After a wall move, `swept` holds the strips it passed over, and zones and
@@ -456,6 +516,7 @@ export function refitZonesToRooms(
   footprint: readonly Vec2[],
   roomWidth: number,
   roomDepth: number,
+  cutout?: FootprintCutout | undefined,
   swept: readonly Vec2[][] = []
 ): RoomZone[] {
   const polygons = zones.filter((zone) => zone.outline);
@@ -497,7 +558,6 @@ export function refitZonesToRooms(
     homes.set(zone.id, room);
     taken.add(room);
   }
-  const fits = (point: Vec2): boolean => onRing(footprint, point.x, point.z) || pointInRing(footprint, point.x, point.z);
   let changed = false;
   const next = zones.flatMap((zone) => {
     if (!zone.outline) return [zone];
@@ -508,9 +568,9 @@ export function refitZonesToRooms(
       changed = true;
       return [housed];
     }
-    if (zone.outline.every(fits)) return [zone];
+    if (ringOnFootprint(zone.outline, footprint)) return [zone];
     changed = true;
-    const rect = clampZoneRect(zone, roomWidth, roomDepth);
+    const rect = clampZoneRect(zone, roomWidth, roomDepth, cutout);
     return rect ? [{ ...plainZone(zone), ...rect }] : [];
   });
   return changed ? next : zones;

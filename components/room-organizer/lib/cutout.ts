@@ -1,9 +1,10 @@
-import { floorKeepOut } from './floor-keep-out';
+import { cutoutKeepOut, floorKeepOut } from './floor-keep-out';
 import {
   clampToFootprint,
   cutoutFits,
   cutoutRect,
   entersCutout,
+  footprintOutline,
   isFootprintCutout,
   MIN_WING_SIZE,
   rotatedHalfExtents,
@@ -14,10 +15,11 @@ import {
 import { formatMetres } from './format';
 import { collisionReason, type CollisionContext } from './geometry';
 import { INTERIOR_WALL_THICKNESS, isOpening, isWallMounted, settleWallMountedItem } from './opening-snap';
+import { regionsOutside } from './room-detect';
 import { storeyHeight } from './storeys';
 import { ENTRANCE_DOOR_ID, clipWallToPorch, entrancePlanOutline, entranceProblem } from './street';
-import { clampZoneRect, sameZone } from './zones';
-import type { FloorLayout, FootprintCutout, FurnitureItem, InteriorWall, RoofStyle, RoomLayout, Vec2 } from './types';
+import { clampZoneRect, isRoomZone, MIN_ZONE_SIZE, plainZone, regionShape, sameZone, zoneRings, zoneShapeFits } from './zones';
+import type { FloorLayout, FootprintCutout, FurnitureItem, InteriorWall, RoofStyle, RoomLayout, RoomZone, Vec2 } from './types';
 
 /**
  * What cutting a corner out of the building (#727) does to the house: why it
@@ -139,6 +141,30 @@ export function clipWallToCutout<W extends InteriorWall>(wall: W, notch: Footpri
   );
 }
 
+/**
+ * A zone on the new outline, or null when none of it is left. A rectangle keeps
+ * its larger part. A polygon that fits stays as it is; one that doesn't is
+ * clipped to the floor, its largest piece kept, or falls back to what's left
+ * of its rectangle: never a polygon the outline can't hold. A rectangle clear
+ * of the notch isn't touched, so a loaded zone stays where it was stored. With
+ * `polygonsFollow` the walls are about to speak: a resize leaves polygons to
+ * `followRooms`, which fits each to its room.
+ */
+function fitZone(zone: RoomZone, building: Building, footprint: readonly Vec2[], polygonsFollow: boolean): RoomZone | null {
+  const { width, height, cutout } = building;
+  const rect = (): RoomZone | null => {
+    const fitted = clampZoneRect(zone, width, height, cutout);
+    return fitted && { ...plainZone(zone), ...fitted };
+  };
+  if (!zone.outline) return trimRectToCutout(zone, cutoutRect(building)) === zone ? zone : rect();
+  if (polygonsFollow || zoneShapeFits(zone, footprint)) return zone;
+  const [outline, ...holes] = zoneRings(zone);
+  const pieces = regionsOutside(outline!, holes, cutoutKeepOut(building)).sort((a, b) => b.area - a.area);
+  const piece = pieces[0];
+  const clipped = piece && piece.area >= MIN_ZONE_SIZE * MIN_ZONE_SIZE ? { ...plainZone(zone), ...regionShape(piece) } : null;
+  return clipped && isRoomZone(clipped) && zoneShapeFits(clipped, footprint) ? clipped : rect();
+}
+
 interface FloorFit {
   floor: FloorLayout;
   /** An item with no clear spot left on the storey. */
@@ -150,6 +176,8 @@ interface FloorFit {
 interface FitOptions {
   /** A saved house: only what stands in the corner moves, and the rest comes back as it was stored. */
   loading?: boolean;
+  /** A resize: `followRooms` fits polygon zones, from the rooms the new size leaves. */
+  polygonsFollow?: boolean;
 }
 
 /** Whether two openings share a wall and overlap along it. */
@@ -164,7 +192,7 @@ function openingsOverlap(a: FurnitureItem, b: FurnitureItem): boolean {
   return across < INTERIOR_WALL_THICKNESS && along < (a.width + b.width) / 2 - 1e-6;
 }
 
-function fitFloor(layout: RoomLayout, floor: FloorLayout, index: number, { loading = false }: FitOptions = {}): FloorFit {
+function fitFloor(layout: RoomLayout, floor: FloorLayout, index: number, { loading = false, polygonsFollow = false }: FitOptions = {}): FloorFit {
   const { width, height, cutout } = layout;
   const building = { width, height, cutout };
   const notch = cutoutRect(building);
@@ -209,14 +237,13 @@ function fitFloor(layout: RoomLayout, floor: FloorLayout, index: number, { loadi
 
   // Zones keep the larger part of themselves; one wholly in the corner goes.
   let zonesChanged = false;
+  const footprint = footprintOutline(building);
   const zones = floor.zones?.flatMap((zone) => {
-    const trimmed = trimRectToCutout(zone, notch);
-    const rect = trimmed ? clampZoneRect(trimmed, width, height) : null;
-    if (!rect) {
+    const next = fitZone(zone, building, footprint, polygonsFollow);
+    if (!next) {
       zonesChanged = true;
       return [];
     }
-    const next = { ...zone, ...rect };
     if (sameZone(zone, next)) return [zone];
     zonesChanged = true;
     return [next];
@@ -287,7 +314,7 @@ function movedLockedItem(before: RoomLayout, after: RoomLayout): FurnitureItem |
  * carries the new cut and size with its floors as they stand. Returns the
  * layout with every storey fitted, and the reason when it can't be done.
  */
-export function fitNewShape(before: RoomLayout, next: RoomLayout): { layout: RoomLayout; refusal: string | null } {
+export function fitNewShape(before: RoomLayout, next: RoomLayout, options: FitOptions = {}): { layout: RoomLayout; refusal: string | null } {
   if (clashesWithEntrance(before, next)) return { layout: before, refusal: ENTRANCE_CLASH_REFUSAL };
   const building = { width: next.width, height: next.height, cutout: next.cutout };
   const stairs = next.floors
@@ -295,7 +322,7 @@ export function fitNewShape(before: RoomLayout, next: RoomLayout): { layout: Roo
     .find((item) => item.type === 'stairs' && item.position && entersCutout(item, item.position, building));
   // Moving a flight drags the stairwell under what stands upstairs.
   if (stairs) return { layout: before, refusal: `The ${stairs.name} stands in that corner. Move it first.` };
-  const fitted = fitFloors(next);
+  const fitted = fitFloors(next, options);
   if (fitted.stuck) return { layout: before, refusal: `There is no clear spot left for the ${fitted.stuck.name}. Make room or remove it first.` };
   if (fitted.clash) {
     const [moved, other] = fitted.clash;
@@ -334,6 +361,14 @@ function inCorner(item: FurnitureItem, building: Building): boolean {
 export function itemsInCorner(layout: RoomLayout, cutout: FootprintCutout): FurnitureItem[] {
   const building = { width: layout.width, height: layout.height, cutout };
   return layout.floors.flatMap((floor) => floor.items.filter((item) => item.id !== ENTRANCE_DOOR_ID && inCorner(item, building)));
+}
+
+/** The zones a cut leaves nothing of, across every storey: the panel tells the user. */
+export function zonesInCorner(layout: RoomLayout, cutout: FootprintCutout): RoomZone[] {
+  const fitted = fitFloors({ ...layout, cutout }).layout;
+  return layout.floors.flatMap((floor, index) =>
+    (floor.zones ?? []).filter((zone) => !fitted.floors[index]?.zones?.some((kept) => kept.id === zone.id))
+  );
 }
 
 /**

@@ -43,12 +43,12 @@ export function useRoomStamp(params: UseRoomStampParams): UseRoomStampResult {
   const pressRef = useRef(pressedAt);
   pressRef.current = pressedAt;
 
-  const { existingWalls, roomWidth, roomDepth, porch, hiddenWalls } = context;
+  const { existingWalls, roomWidth, roomDepth, cutout, porch, hiddenWalls } = context;
   const ghost = useMemo(() => {
     if (!spec || !pointer) return null;
-    const fit = { existingWalls, roomWidth, roomDepth, porch, hiddenWalls };
+    const fit = { existingWalls, roomWidth, roomDepth, cutout, porch, hiddenWalls };
     return planRoomStamp(spec, stampPlacement(spec, pressedAt, pointer, fit), fit, 'stamp-ghost');
-  }, [spec, pointer, pressedAt, existingWalls, roomWidth, roomDepth, porch, hiddenWalls]);
+  }, [spec, pointer, pressedAt, existingWalls, roomWidth, roomDepth, cutout, porch, hiddenWalls]);
 
   const cancel = useCallback(() => {
     setSpec(null);

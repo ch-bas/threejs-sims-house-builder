@@ -76,6 +76,7 @@ export function useWallEdit(params: UseWallEditParams): UseWallEditResult {
     const context = {
       roomWidth: p.layout.width,
       roomDepth: p.layout.height,
+      cutout: p.layout.cutout,
       porch: entrancePlanOutline(p.layout, p.activeFloorIndex),
     };
     let refused = false;
@@ -94,7 +95,7 @@ export function useWallEdit(params: UseWallEditParams): UseWallEditResult {
           clearPreview();
           return;
         }
-        const next = dragWalls(grab, { x, z }, { roomWidth: context.roomWidth, roomDepth: context.roomDepth, free });
+        const next = dragWalls(grab, { x, z }, { roomWidth: context.roomWidth, roomDepth: context.roomDepth, cutout: context.cutout, free });
         if (!next) return;
         const plan = planWallMove(floor, wallPatches(walls, next), context);
         const preview: WallMovePreview = {

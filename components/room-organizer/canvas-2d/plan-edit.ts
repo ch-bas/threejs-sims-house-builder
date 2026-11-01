@@ -1,10 +1,11 @@
+import { cutoutRect } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { wallAngleDegrees } from '../lib/wall-snap';
-import { clampZoneRect, MIN_ZONE_SIZE, zoneContains, zoneFromCorners, zoneInPorch, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
+import { clampZoneRect, MIN_ZONE_SIZE, zoneClearOfCutout, zoneContains, zoneFromCorners, zoneInPorch, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import type { EntrancePlanOutline } from '../lib/street';
-import type { InteriorWall, RoomLayout, RoomZone, Vec2 } from '../lib/types';
+import type { FootprintCutout, InteriorWall, RoomLayout, RoomZone, Vec2 } from '../lib/types';
 import type { WallSide } from '../lib/wall-sides';
 
 /**
@@ -258,7 +259,8 @@ export function zoneAt(zones: readonly RoomZone[], x: number, z: number, below?:
  * the opposite side. A move keeps the size, except on a floor off the zone
  * grid, where a corner that lands on a wall gains or loses a few cm.
  * Null when nothing valid is left, or when the drag would put a zone that
- * isn't on the porch onto it, which the reducer refuses (#582).
+ * isn't on the porch onto it, which the reducer refuses (#582). A corner cut
+ * out of the house stops a move, and a resize at its wall (#727).
  */
 export function draggedZoneRect(
   origin: ZoneRect,
@@ -267,9 +269,10 @@ export function draggedZoneRect(
   dz: number,
   roomWidth: number,
   roomDepth: number,
-  recess: EntrancePlanOutline | null = null
+  recess: EntrancePlanOutline | null = null,
+  cutout?: FootprintCutout | undefined
 ): ZoneRect | null {
-  const fitted = fitDraggedZone(origin, grip, dx, dz, roomWidth, roomDepth);
+  const fitted = fitDraggedZone(origin, grip, dx, dz, roomWidth, roomDepth, cutout);
   return fitted && zoneInPorch(fitted, recess) && !zoneInPorch(origin, recess) ? null : fitted;
 }
 
@@ -279,12 +282,13 @@ function fitDraggedZone(
   dx: number,
   dz: number,
   roomWidth: number,
-  roomDepth: number
+  roomDepth: number,
+  cutout: FootprintCutout | undefined
 ): ZoneRect | null {
   if (grip === 'move') {
     const x = Math.max(-roomWidth / 2, Math.min(roomWidth / 2 - origin.w, origin.x + dx));
     const z = Math.max(-roomDepth / 2, Math.min(roomDepth / 2 - origin.d, origin.z + dz));
-    return clampZoneRect({ ...origin, x, z }, roomWidth, roomDepth);
+    return clampZoneRect(zoneClearOfCutout({ ...origin, x, z }, roomWidth, roomDepth, cutout), roomWidth, roomDepth, cutout);
   }
   let x0 = origin.x;
   let z0 = origin.z;
@@ -294,7 +298,22 @@ function fitDraggedZone(
   if (grip.includes('e')) x1 = Math.max(x1 + dx, x0 + MIN_ZONE_SIZE);
   if (grip.includes('n')) z0 = Math.min(z0 + dz, z1 - MIN_ZONE_SIZE);
   if (grip.includes('s')) z1 = Math.max(z1 + dz, z0 + MIN_ZONE_SIZE);
-  return zoneFromCorners({ x: x0, z: z0 }, { x: x1, z: z1 }, roomWidth, roomDepth);
+  // Only the sides in hand stop at the notch: the others stay.
+  const notch = cutoutRect({ width: roomWidth, height: roomDepth, cutout });
+  if (notch && x1 > notch.x0 && x0 < notch.x1 && z1 > notch.z0 && z0 < notch.z1) {
+    const stops = [
+      ...(grip.includes('e') ? [{ x1: notch.x0 }] : []),
+      ...(grip.includes('w') ? [{ x0: notch.x1 }] : []),
+      ...(grip.includes('s') ? [{ z1: notch.z0 }] : []),
+      ...(grip.includes('n') ? [{ z0: notch.z1 }] : []),
+    ];
+    const clear = stops
+      .map((stop) => ({ x0, x1, z0, z1, ...stop }))
+      .filter((rect) => rect.x1 - rect.x0 >= MIN_ZONE_SIZE && rect.z1 - rect.z0 >= MIN_ZONE_SIZE)
+      .sort((a, b) => (b.x1 - b.x0) * (b.z1 - b.z0) - (a.x1 - a.x0) * (a.z1 - a.z0))[0];
+    if (clear) ({ x0, x1, z0, z1 } = clear);
+  }
+  return zoneFromCorners({ x: x0, z: z0 }, { x: x1, z: z1 }, roomWidth, roomDepth, cutout);
 }
 
 /** The face of a selected wall that paint goes to: a line along that side (#720). */

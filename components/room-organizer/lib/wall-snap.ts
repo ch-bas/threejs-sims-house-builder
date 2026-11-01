@@ -1,5 +1,6 @@
+import { clampToBuilding, cutoutRect, footprintOutline, type FootprintBuilding, type FootprintRect } from './footprint';
 import { projectOntoSegment } from './opening-snap';
-import type { InteriorWall, Vec2 } from './types';
+import type { FootprintCutout, InteriorWall, Vec2 } from './types';
 
 export type WallSnapKind = 'vertex' | 'on-wall' | 'right-angle' | 'angle' | 'none';
 
@@ -27,6 +28,8 @@ export interface WallSnapOptions {
   /** Building footprint, used as additional snap targets at the corners and edges. */
   roomWidth: number;
   roomDepth: number;
+  /** The corner cut out of the building (#727): its two walls snap, and nothing lands in it. */
+  cutout?: FootprintCutout | undefined;
   /** Maximum distance, in metres, considered "near enough" to snap. */
   snapDistance?: number;
   /** Shift: no angle steps and no grid. Vertices and walls still catch the point. */
@@ -46,8 +49,8 @@ export interface WallSnapOptions {
  *   4. Otherwise round the pointer to the grid, still kind 'none'. `free`
  *      skips the steps and the grid and returns the pointer as it is.
  *
- * The final point is always clamped to the lot footprint so users can't
- * draw walls into the grass beyond the building's edge.
+ * The final point is always clamped to the building's outline so users can't
+ * draw walls into the grass beyond its edge, or into a corner cut out of it.
  *
  * Pure: no React, no Three.js. Easy to unit test.
  */
@@ -57,30 +60,26 @@ export function snapWallEndpoint({
   fromPoint = null,
   roomWidth,
   roomDepth,
+  cutout,
   snapDistance = 0.45,
   free = false,
 }: WallSnapOptions): WallSnapResult {
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
+  const building: FootprintBuilding = { width: roomWidth, height: roomDepth, cutout };
+  const notch = cutoutRect(building);
   // Clamp the cursor up front — every snap branch operates against a
   // point already inside the lot, so vertex / right-angle snaps stay
   // accurate even when the user has dragged the cursor onto the grass.
-  const clamped: Vec2 = {
-    x: Math.max(-halfW, Math.min(halfW, point.x)),
-    z: Math.max(-halfD, Math.min(halfD, point.z)),
-  };
+  const clamped = clampToBuilding(building, point);
+  const outline = footprintOutline(building);
 
   // 1. Vertex snap — existing wall endpoints + building corners.
   const vertices: Vec2[] = [];
   for (const wall of existingWalls) {
     vertices.push({ x: wall.x1, z: wall.z1 }, { x: wall.x2, z: wall.z2 });
   }
-  vertices.push(
-    { x: -halfW, z: -halfD },
-    { x: halfW, z: -halfD },
-    { x: halfW, z: halfD },
-    { x: -halfW, z: halfD }
-  );
+  vertices.push(...outline);
 
   let best: WallSnapResult | null = null;
   let bestDist = snapDistance;
@@ -91,7 +90,8 @@ export function snapWallEndpoint({
       vertex.x < -halfW - 0.001 ||
       vertex.x > halfW + 0.001 ||
       vertex.z < -halfD - 0.001 ||
-      vertex.z > halfD + 0.001
+      vertex.z > halfD + 0.001 ||
+      (notch && vertex.x > notch.x0 && vertex.x < notch.x1 && vertex.z > notch.z0 && vertex.z < notch.z1)
     ) {
       continue;
     }
@@ -104,17 +104,19 @@ export function snapWallEndpoint({
   if (best) return best;
 
   // The angle step from the chain anchor, if any.
-  const angled = fromPoint && !free ? angleStep(fromPoint, clamped, halfW, halfD) : null;
+  // Aimed by where the cursor is, not where the cut pushed it: the reach stops the wall at the notch.
+  const inLot = clampToBuilding({ width: roomWidth, height: roomDepth }, point);
+  const angled = fromPoint && !free ? angleStep(fromPoint, inLot, building) : null;
 
   // 2. On-wall snap — the nearest wall body, the building's edges included.
   // While chaining, a junction that would bend a square wall off its axis
   // gives way to the right-angle snap (a wall drawn alongside another stays straight).
   const segments: Array<{ x1: number; z1: number; x2: number; z2: number }> = [
     ...existingWalls,
-    { x1: -halfW, z1: -halfD, x2: halfW, z2: -halfD },
-    { x1: halfW, z1: -halfD, x2: halfW, z2: halfD },
-    { x1: halfW, z1: halfD, x2: -halfW, z2: halfD },
-    { x1: -halfW, z1: halfD, x2: -halfW, z2: -halfD },
+    ...outline.map((from, index) => {
+      const to = outline[(index + 1) % outline.length]!;
+      return { x1: from.x, z1: from.z, x2: to.x, z2: to.z };
+    }),
   ];
   bestDist = snapDistance;
   for (const segment of segments) {
@@ -126,7 +128,7 @@ export function snapWallEndpoint({
     if (!square && angled?.kind === 'right-angle') continue;
     bestDist = projected.distance;
     const landed = square ?? (free ? projected.point : gridAlong(projected.point, segment));
-    best = { point: clampTo(landed, halfW, halfD), kind: 'on-wall' };
+    best = { point: clampToBuilding(building, landed), kind: 'on-wall' };
   }
   if (best) return best;
 
@@ -135,7 +137,7 @@ export function snapWallEndpoint({
 
   // 4. The grid, unless drawing free.
   if (free) return { point: clamped, kind: 'none' };
-  return { point: clampTo({ x: onGrid(clamped.x), z: onGrid(clamped.z) }, halfW, halfD), kind: 'none' };
+  return { point: clampToBuilding(building, { x: onGrid(clamped.x), z: onGrid(clamped.z) }), kind: 'none' };
 }
 
 /** Divides by 10, as 3 * 0.1 is 0.30000000000000004; + 0 turns -0 into 0. */
@@ -151,19 +153,31 @@ function gridAlong(point: Vec2, segment: { x1: number; z1: number; x2: number; z
   return point;
 }
 
-function clampTo(point: Vec2, halfW: number, halfD: number): Vec2 {
-  return { x: Math.max(-halfW, Math.min(halfW, point.x)), z: Math.max(-halfD, Math.min(halfD, point.z)) };
-}
-
-/** How far a ray from a point inside the lot runs before it leaves the lot. */
-export function reachInLot(from: Vec2, dirX: number, dirZ: number, halfW: number, halfD: number): number {
+/** How far a ray from a point inside the lot runs before it leaves the lot, or enters `notch`. */
+export function reachInLot(from: Vec2, dirX: number, dirZ: number, halfW: number, halfD: number, notch: FootprintRect | null = null): number {
   const along = (start: number, dir: number, half: number): number =>
     dir > 1e-9 ? (half - start) / dir : dir < -1e-9 ? (-half - start) / dir : Infinity;
-  return Math.max(0, Math.min(along(from.x, dirX, halfW), along(from.z, dirZ, halfD)));
+  const reach = Math.max(0, Math.min(along(from.x, dirX, halfW), along(from.z, dirZ, halfD)));
+  return notch ? Math.min(reach, reachToNotch(from, dirX, dirZ, notch)) : reach;
 }
 
-/** The cursor turned to the nearest angle step from `from`, its length on the grid and inside the lot. */
-function angleStep(from: Vec2, cursor: Vec2, halfW: number, halfD: number): WallSnapResult | null {
+/** Where a ray enters the open rectangle, or Infinity: running along its edge isn't entering. */
+function reachToNotch(from: Vec2, dirX: number, dirZ: number, notch: FootprintRect): number {
+  const slab = (start: number, dir: number, low: number, high: number): [number, number] | null => {
+    if (Math.abs(dir) <= 1e-9) return start > low && start < high ? [-Infinity, Infinity] : null;
+    const a = (low - start) / dir;
+    const b = (high - start) / dir;
+    return [Math.min(a, b), Math.max(a, b)];
+  };
+  const x = slab(from.x, dirX, notch.x0, notch.x1);
+  const z = slab(from.z, dirZ, notch.z0, notch.z1);
+  if (!x || !z) return Infinity;
+  const enter = Math.max(x[0], z[0], 0);
+  return enter < Math.min(x[1], z[1]) - 1e-9 ? enter : Infinity;
+}
+
+/** The cursor turned to the nearest angle step from `from`, its length on the grid and on the building. */
+function angleStep(from: Vec2, cursor: Vec2, building: FootprintBuilding): WallSnapResult | null {
   const length = Math.hypot(cursor.x - from.x, cursor.z - from.z);
   if (length < MIN_AIM) return null;
   const step = (WALL_ANGLE_STEP_DEG * Math.PI) / 180;
@@ -171,7 +185,7 @@ function angleStep(from: Vec2, cursor: Vec2, halfW: number, halfD: number): Wall
   // Rounded so the axes are exact: cos(90°) is 6e-17, a wall a hair off square.
   const dirX = Math.round(Math.cos(steps * step) * 1e12) / 1e12;
   const dirZ = Math.round(Math.sin(steps * step) * 1e12) / 1e12;
-  const reach = Math.min(Math.max(WALL_GRID, onGrid(length)), reachInLot(from, dirX, dirZ, halfW, halfD));
+  const reach = Math.min(Math.max(WALL_GRID, onGrid(length)), reachInLot(from, dirX, dirZ, building.width / 2, building.height / 2, cutoutRect(building)));
   return {
     point: { x: from.x + dirX * reach, z: from.z + dirZ * reach },
     kind: steps % 6 === 0 ? 'right-angle' : 'angle',
@@ -250,12 +264,17 @@ export function wallAngleDegrees(from: Vec2, to: Vec2): number {
 
 /**
  * The end of a wall `length` long from `from` along `direction`. Null when it
- * would leave the lot: a typed measurement is kept or refused, never trimmed.
+ * would leave the lot or reach a corner cut out of it: a typed measurement is
+ * kept or refused, never trimmed.
  */
-export function wallEndAtLength(from: Vec2, direction: Vec2, length: number, roomWidth: number, roomDepth: number): Vec2 | null {
+export function wallEndAtLength(from: Vec2, direction: Vec2, length: number, roomWidth: number, roomDepth: number, cutout?: FootprintCutout | undefined): Vec2 | null {
   const norm = Math.hypot(direction.x, direction.z);
   if (norm < 1e-9) return null;
   const end = { x: from.x + (direction.x / norm) * length, z: from.z + (direction.z / norm) * length };
   const inside = Math.abs(end.x) <= roomWidth / 2 + 1e-6 && Math.abs(end.z) <= roomDepth / 2 + 1e-6;
-  return inside ? clampTo(end, roomWidth / 2, roomDepth / 2) : null;
+  if (!inside) return null;
+  const building = { width: roomWidth, height: roomDepth, cutout };
+  const notch = cutoutRect(building);
+  if (notch && reachToNotch(from, direction.x / norm, direction.z / norm, notch) < length - 1e-6) return null;
+  return clampToBuilding(building, end);
 }

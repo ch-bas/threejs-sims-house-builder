@@ -37,6 +37,7 @@ const WALL_HIT_SLOP_TOUCH_PX = 14;
 /** How far a zone's edges reach, and its handles under a finger: a 44 px target (CSS px). */
 const ZONE_GRIP_SLOP_PX = 8;
 const ZONE_ON_PORCH = 'The porch is outside the house, so it can’t be a zone.';
+const ZONE_IN_CORNER = 'That corner is outside the house, so it can’t be a zone.';
 const ZONE_MARK_SLOP_TOUCH_PX = 22;
 /** How far a selected wall's end handles reach, the same 44 px under a finger. */
 const WALL_END_REACH_PX = 10;
@@ -356,7 +357,7 @@ export function useCanvas2DInteraction(
       const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : (wallMove?.items ?? activeFloor.items);
       const keepOut = floorKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
       const draft = zoneGesture?.started
-        ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height)
+        ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height, layout.cutout)
         : null;
       const edit = zoneEdit?.started ? zoneEdit : null;
       const zones = edit
@@ -427,7 +428,9 @@ export function useCanvas2DInteraction(
       }
       releaseCapture(session.pointerId);
       const { layout, activeFloor, onZoneRefused } = p;
-      const rect = commit ? zoneFromCorners(session.start, session.latest, layout.width, layout.height) : null;
+      const rect = commit ? zoneFromCorners(session.start, session.latest, layout.width, layout.height, layout.cutout) : null;
+      // Big enough, had the corner been there: say why it adds nothing.
+      if (commit && !rect && zoneFromCorners(session.start, session.latest, layout.width, layout.height)) onZoneRefused?.(ZONE_IN_CORNER);
       const onPorch = rect !== null && zoneInPorch(rect, entrancePlanOutline(layout, planFloorIndex(layout.floors, activeFloor)));
       if (onPorch) onZoneRefused?.(ZONE_ON_PORCH);
       if (rect && !onPorch) {
@@ -729,7 +732,7 @@ export function useCanvas2DInteraction(
         const world = worldAt(event);
         if (!world) return;
         const { layout } = paramsRef.current;
-        const rect = draggedZoneRect(edit.origin, edit.grip, world.x - edit.grabbedAt.x, world.z - edit.grabbedAt.z, layout.width, layout.height, edit.recess);
+        const rect = draggedZoneRect(edit.origin, edit.grip, world.x - edit.grabbedAt.x, world.z - edit.grabbedAt.z, layout.width, layout.height, edit.recess, layout.cutout);
         edit.overPorch = rect === null && edit.recess !== null;
         if (rect) edit.latest = rect;
         schedulePaint();
