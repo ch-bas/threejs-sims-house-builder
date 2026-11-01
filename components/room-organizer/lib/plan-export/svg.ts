@@ -13,11 +13,12 @@
  */
 
 import { CURRENCY_SYMBOL } from '../constants';
+import { floorKeepOut } from '../floor-keep-out';
 import { escapeHtml } from '../html-escape';
 import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
-import { zoneArea, zoneLabelSpot, zoneRings } from '../zones';
+import { hasFloorFinish, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings } from '../zones';
 import {
   buildingFrameBounds,
   coverageRings,
@@ -360,6 +361,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     `<rect width="${fmt(sheet.widthPx)}" height="${fmt(sheet.heightPx)}" fill="${theme.background}"/>`,
     `<g class="plan" transform="translate(${fmt(rootX)} ${fmt(rootY)})">`,
     `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeHtml(floor.floorColor)}"/>`,
+    renderZoneFloors(layout, floor, px, py),
     renderGrid(layout, margin, scale, theme),
     renderZones(floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), px, py, scale, theme),
     renderRoomOutline(layout, floor, margin, scale, theme),
@@ -472,16 +474,31 @@ function renderZones(
       const cx = fmt(Number(px(spot.x)) + (spot.w * scale) / 2);
       const top = fmt(Number(py(spot.z)) + 15);
       const paint = `fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"`;
+      // A room's own floor can be dark: its name gets a halo, as on the plan.
+      const halo = hasFloorFinish(zone) ? ` stroke="${theme.background}" stroke-width="3" stroke-linejoin="round" paint-order="stroke"` : '';
       return [
         `<g class="zone">`,
         zone.outline
           ? `<path d="${zoneRings(zone).map((ring) => ringPath(ring, px, py)).join(' ')}" fill-rule="evenodd" ${paint}/>`
           : `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" ${paint}/>`,
-        `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}">${escapeHtml(zone.name)}</text>`,
-        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}">${zoneArea(zone, recess).toFixed(1)} m²</text>`,
+        `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}"${halo}>${escapeHtml(zone.name)}</text>`,
+        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}"${halo}>${zoneArea(zone, recess).toFixed(1)} m²</text>`,
         `</g>`,
       ].join('');
     })
+    .join('\n');
+}
+
+/** Rooms with a floor of their own (#720): the patches 3D lays, under the grid. */
+function renderZoneFloors(layout: RoomLayout, floor: FloorLayout, px: (x: number) => string, py: (z: number) => string): string {
+  if (!floor.zones?.some(hasFloorFinish)) return '';
+  return zoneFloorPatches(floor, floorKeepOut(layout, planFloorIndex(layout.floors, floor)))
+    .flatMap((patch) =>
+      patch.regions.map((region) => {
+        const rings = [region.outline, ...(region.holes ?? [])];
+        return `<path class="zone-floor" d="${rings.map((ring) => ringPath(ring, px, py)).join(' ')}" fill-rule="evenodd" fill="${escapeHtml(patch.color)}"/>`;
+      })
+    )
     .join('\n');
 }
 

@@ -21,6 +21,7 @@ import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/stre
 import { generateStreet } from '../lib/street-row';
 import { shadowCasterBounds, type ShadowBox } from '../lib/sun-shadow';
 import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from '../lib/walkthrough-view';
+import { zoneFinishesKey, zoneFloorPatches } from '../lib/zones';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones, visionConesOccludable } from '../three/camera-vision';
 import { buildCeiling, removeCeiling } from '../three/ceiling';
@@ -278,6 +279,7 @@ export function useSceneEffects({
           floor.wallPattern,
           floor.wallColors,
           floor.hiddenWalls,
+          zoneFinishesKey(floor),
         ])
       ),
     [layout.floors]
@@ -415,6 +417,7 @@ export function useSceneEffects({
         wallOpenings,
         ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
         floorOpenings,
+        zonePatches: zoneFloorPatches(floor, floorKeepOut(entranceBuilding, index)),
         floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
         floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
         floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',

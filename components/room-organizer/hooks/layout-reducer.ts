@@ -132,7 +132,7 @@ export type LayoutAction =
   | { type: 'clearGroup'; ids: ReadonlySet<string> }
   // room zones (#155) — target the active floor
   | { type: 'addZone'; zone: RoomZone }
-  | { type: 'updateZone'; id: string; patch: Partial<Omit<RoomZone, 'id'>> }
+  | { type: 'updateZone'; id: string; patch: ZonePatch }
   | { type: 'removeZone'; id: string };
 
 // ---------------------------------------------------------------------------
@@ -192,6 +192,14 @@ function overHardBudget(prev: LayoutState, next: LayoutState, action: LayoutActi
   const spent = budgetSpent(next.layout);
   return spent > DEFAULT_BUDGET && spent > budgetSpent(prev.layout);
 }
+
+/** A zone's finish in a patch: null clears it, back to the storey's (#720). */
+interface ZoneFinishPatch {
+  floorPattern?: FloorPattern | null | undefined;
+  floorColor?: string | null | undefined;
+}
+
+export type ZonePatch = Partial<Omit<RoomZone, 'id' | 'floorPattern' | 'floorColor'>> & ZoneFinishPatch;
 
 export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
   const next = reduceWithEntrance(state, action);
@@ -996,7 +1004,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withActiveFloor(state, (floor) => {
         const current = floor.zones?.find((zone) => zone.id === action.id);
         if (!current || !floor.zones) return floor;
-        const merged: RoomZone = { ...current, ...action.patch, id: current.id };
+        const merged: RoomZone = withFinish({ ...current, ...action.patch, id: current.id });
         merged.name = capName(merged.name);
         // A polygon follows its walls (#719): its shape isn't a patch's to change.
         if (current.outline) {
@@ -1301,6 +1309,12 @@ function refitFloor(floor: FloorLayout, from: Footprint, to: Footprint): FloorLa
     }
   }
   return next;
+}
+
+/** A zone with a patch's finish applied: null goes back to the storey's. */
+function withFinish(zone: Omit<RoomZone, 'floorPattern' | 'floorColor'> & ZoneFinishPatch): RoomZone {
+  const { floorPattern, floorColor, ...rest } = zone;
+  return { ...rest, ...(floorPattern ? { floorPattern } : {}), ...(floorColor ? { floorColor } : {}) };
 }
 
 /**

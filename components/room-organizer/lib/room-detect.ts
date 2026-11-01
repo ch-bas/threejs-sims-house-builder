@@ -381,6 +381,37 @@ export function detectRooms(walls: readonly InteriorWall[], outline: readonly Ve
 }
 
 /**
+ * A shape less the keep-out: what of it is real floor. A rectangle drawn over
+ * the porch or a stairwell keeps its shape as a zone, but a finish painted on
+ * it can't cover a hole in the floor (#720).
+ */
+export function regionsOutside(outline: readonly Vec2[], holes: readonly (readonly Vec2[])[], keepOut: readonly KeepOutRect[]): PlanRegion[] {
+  const xs = outline.map((point) => point.x);
+  const zs = outline.map((point) => point.z);
+  const box = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+  const keepOutRings = keepOut.map(keepOutRing).filter((ring) =>
+    ring.some((point) => point.x > box.x0) &&
+    ring.some((point) => point.x < box.x1) &&
+    ring.some((point) => point.z > box.z0) &&
+    ring.some((point) => point.z < box.z1)
+  );
+  // Nothing in the way, the usual case: no graph to walk on every plan paint.
+  if (keepOutRings.length === 0) {
+    const band = largestBand([outline, ...holes]);
+    if (!band) return [];
+    const area = ringArea(outline) - holes.reduce((sum, hole) => sum + ringArea(hole), 0);
+    const anchor = { x: (band.x0 + band.x1) / 2, z: (band.z0 + band.z1) / 2 };
+    return [{ outline: [...outline], ...(holes.length > 0 ? { holes: holes.map((hole) => [...hole]) } : {}), area, anchor }];
+  }
+  return planarRegions({
+    segments: [...ringSegments(outline), ...holes.flatMap(ringSegments), ...keepOutRings.flatMap(ringSegments)],
+    keeps: (x, z) => pointInRing(outline, x, z) && ![...holes, ...keepOutRings].some((ring) => pointInRing(ring, x, z)),
+    minArea: 1e-4,
+    minWidth: 0,
+  });
+}
+
+/**
  * More walls than rooms are looked for on: the walk grows with the cube of the
  * walls (a crossing grid of 80 takes 53 ms, of 200 over a second, of 998 more
  * than three minutes), and it runs on commit. Past any real house. The panels

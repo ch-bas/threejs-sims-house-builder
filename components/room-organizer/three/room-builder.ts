@@ -8,7 +8,8 @@ import { ROOF_OFF_STOREY_KEY } from './roof';
 import { getMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { buildWallMaterial } from './wall-patterns';
-import type { FloorPattern, FloorPlanFitMode, WallId, WallPattern } from '../lib/types';
+import type { FloorPattern, FloorPlanFitMode, Vec2, WallId, WallPattern } from '../lib/types';
+import type { ZoneFloorPatch } from '../lib/zones';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -167,6 +168,8 @@ export interface RoomBuilderOptions {
   hiddenWalls?: readonly WallId[]; 
   /** Stairwell openings to cut through this floor's plane. */
   floorOpenings?: readonly FloorOpening[];
+  /** Rooms with a floor of their own (#720), laid over the slab in order. */
+  zonePatches?: readonly ZoneFloorPatch[];
   floorPlanImage: string | null;
   floorPlanOpacity: number;
   floorPlanFitMode: FloorPlanFitMode;
@@ -230,6 +233,11 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   makeStatic(floor);
   options.scene.add(floor);
 
+  // A traced ground floor is the drawing: nothing is laid over it.
+  if (!options.floorPlanImage) {
+    options.zonePatches?.forEach((patch) => addZoneFloorPatch(THREE, options, patch));
+  }
+
   // Concrete foundation plinth — only on the ground floor. build-mode houses sit on
   // a low base that extends slightly past the wall plane and grounds the
   // building visually.
@@ -254,6 +262,42 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
       options.wallHeight
     );
   }
+}
+
+/** A zone's floor clears the slab by this much, or the two z-fight (#276). */
+const ZONE_PATCH_GAP = 0.003;
+/** A patch over another clears it by this much: zones can overlap. */
+const ZONE_PATCH_STEP = 0.0005;
+/** Stacks stop rising here, 8 mm up: under the 1 cm base of a rug. */
+const ZONE_PATCH_MAX_LAYER = 10;
+
+/**
+ * One zone's floor over the slab. UVs and texture repeat are the room's, as on
+ * the slab, so a tile grid runs on across the room whatever the zone's shape.
+ */
+function addZoneFloorPatch(THREE: ThreeModule, options: RoomBuilderOptions, patch: ZoneFloorPatch): void {
+  const yOffset = options.yOffset ?? 0;
+  const toPoints = (ring: readonly Vec2[]) => ring.map((point) => new THREE.Vector2(point.x, -point.z));
+  const shapes = patch.regions.map((region) => {
+    const shape = new THREE.Shape(toPoints(region.outline));
+    for (const hole of region.holes ?? []) shape.holes.push(new THREE.Path(toPoints(hole)));
+    return shape;
+  });
+  if (shapes.length === 0) return;
+  const geometry = normalizeShapeUvs(new THREE.ShapeGeometry(shapes), options.width, options.depth);
+  const material = buildFloorMaterial(THREE, { pattern: patch.pattern, color: patch.color, roomWidth: options.width, roomDepth: options.depth });
+  if (options.ghostOpacity !== undefined && options.ghostOpacity < 1) {
+    material.transparent = true;
+    material.opacity = options.ghostOpacity;
+  }
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = yOffset + ZONE_PATCH_GAP + Math.min(patch.layer, ZONE_PATCH_MAX_LAYER) * ZONE_PATCH_STEP;
+  mesh.receiveShadow = true;
+  mesh.name = `Floor ${patch.id}`;
+  mesh.userData.type = ROOM_OBJECT_TAGS.Floor;
+  makeStatic(mesh);
+  options.scene.add(mesh);
 }
 
 /** How far the plinth ring reaches past the wall plane; the porch steps start beyond it (#276). */

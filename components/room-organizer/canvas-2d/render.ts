@@ -5,6 +5,7 @@ import {
   DEFAULT_VISION_RANGE_M,
   GRID_SIZE_METERS,
 } from '../lib/constants';
+import { floorKeepOut } from '../lib/floor-keep-out';
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 import { rotatedHalfExtents } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
@@ -13,7 +14,7 @@ import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-ge
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
-import { regionShape, zoneArea, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
+import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawSelectedWall, drawStampGhost, drawWallPreview, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
@@ -213,6 +214,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
+  drawZoneFloors(ctx, layout, floor, offsetX, offsetY, scale);
   if (options.showFloorBelow) drawFloorBelow(ctx, layout, planFloorIndex(layout.floors, floor), offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
   // The stairwell the floor below cuts through this slab (#290), under everything placed over it.
@@ -380,6 +382,24 @@ function traceZoneRings(ctx: CanvasRenderingContext2D, layout: RoomLayout, zone:
       else ctx.lineTo(x, y);
     });
     ctx.closePath();
+  }
+}
+
+/**
+ * Rooms with a floor of their own (#720), over the storey's: the patches 3D
+ * lays, so a finish stops at the stairwell and the porch here too. The plan
+ * shows no floor pattern, for a room or a storey. A traced floor is the
+ * drawing, so it stays clear.
+ */
+function drawZoneFloors(ctx: CanvasRenderingContext2D, layout: RoomLayout, floor: FloorLayout, offsetX: number, offsetY: number, scale: number): void {
+  if (!floor.zones?.some(hasFloorFinish)) return;
+  if (layout.floorPlanImage && layout.floors[0]?.id === floor.id) return;
+  for (const patch of zoneFloorPatches(floor, floorKeepOut(layout, planFloorIndex(layout.floors, floor)))) {
+    ctx.fillStyle = patch.color;
+    for (const region of patch.regions) {
+      traceZoneRings(ctx, layout, regionShape(region), offsetX, offsetY, scale);
+      ctx.fill('evenodd');
+    }
   }
 }
 

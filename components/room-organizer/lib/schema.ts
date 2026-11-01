@@ -240,6 +240,10 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   if (v.zones !== undefined) {
     if (!Array.isArray(v.zones)) return false;
     if (!v.zones.every(isRoomZone)) return false;
+    for (const zone of v.zones as RoomZone[]) {
+      if (zone.floorPattern !== undefined && !FLOOR_PATTERNS.includes(zone.floorPattern)) return false;
+      if (!isOptionalString(zone.floorColor)) return false;
+    }
   }
   return true;
 }
@@ -417,7 +421,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
 });
 const VEC2_KEYS = ['x', 'z'] as const;
 const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true });
-const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true });
+const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true, floorPattern: true, floorColor: true });
 const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({
   id: true,
@@ -562,6 +566,13 @@ function repairWall(wall: InteriorWall): InteriorWall {
   return rebuild(wall, WALL_KEYS, patch);
 }
 
+/** An empty floor colour means none: the storey's stands in (#720). */
+function withoutEmptyFinish(zone: RoomZone): RoomZone {
+  if (zone.floorColor !== '') return zone;
+  const { floorColor: _empty, ...rest } = zone;
+  return rest;
+}
+
 function repairFloor(floor: FloorLayout): FloorLayout {
   const patch: Partial<FloorLayout> = {
     id: capText(floor.id, MAX_ID_LENGTH),
@@ -594,13 +605,14 @@ function repairFloor(floor: FloorLayout): FloorLayout {
     );
   }
   if (floor.zones) {
-    patch.zones = mapSame(sliceTo(floor.zones, MAX_ZONES), (zone) =>
+    patch.zones = mapSame(mapSame(sliceTo(floor.zones, MAX_ZONES), withoutEmptyFinish), (zone) =>
       rebuild(zone, ZONE_KEYS, {
         id: capText(zone.id, MAX_ID_LENGTH),
         name: capText(zone.name, MAX_NAME_LENGTH),
         color: capText(zone.color, MAX_COLOR_LENGTH),
         ...(zone.outline ? { outline: mapSame(zone.outline, repairVec2) } : {}),
         ...(zone.holes ? { holes: mapSame(zone.holes, (hole) => mapSame(hole, repairVec2)) } : {}),
+        ...(zone.floorColor !== undefined ? { floorColor: capText(zone.floorColor, MAX_COLOR_LENGTH) } : {}),
       })
     );
   }
