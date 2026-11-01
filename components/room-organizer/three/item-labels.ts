@@ -36,9 +36,9 @@ export const LABEL_RISE = 0.4;
  * canopy or a painting rather than at floor + height, which put it 60 cm
  * under the shade and across the window glass (#657).
  */
-export function itemLabelY(item: FurnitureItem, floor: Pick<FloorLayout, 'height'> | undefined, yOffset: number): number {
+export function itemLabelY(item: FurnitureItem, floor: Pick<FloorLayout, 'height'> | undefined, yOffset: number, roofed = false): number {
   const height = storeyHeight(floor);
-  return yOffset + mountBand(itemForStorey(item, floor), height).top + LABEL_RISE;
+  return yOffset + mountBand(itemForStorey(item, floor, roofed), height).top + LABEL_RISE;
 }
 
 export function renderItemLabels(
@@ -46,13 +46,14 @@ export function renderItemLabels(
   scene: ThreeNS.Scene,
   items: readonly FurnitureItem[],
   yOffset: number,
-  floor?: Pick<FloorLayout, 'height'>
+  floor?: Pick<FloorLayout, 'height'>,
+  roofed = false
 ): void {
   clearItemLabels(scene);
   for (const item of items) {
     if (!item.position) continue;
     const sprite = createLabelSprite(THREE, item.name);
-    sprite.position.set(item.position.x, itemLabelY(item, floor, yOffset), item.position.z);
+    sprite.position.set(item.position.x, itemLabelY(item, floor, yOffset, roofed), item.position.z);
     sprite.userData.type = LABEL_TAG;
     sprite.userData.itemId = item.id;
     scene.add(sprite);

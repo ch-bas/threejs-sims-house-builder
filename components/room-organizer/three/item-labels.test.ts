@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { FURNITURE_CATALOG } from '../lib/constants';
 import { mountBand } from '../lib/mount-band';
+import { ROOF_STAIR_GAP } from '../lib/storeys';
 import { LABEL_RISE, itemLabelY, renderItemLabels } from './item-labels';
 import type { FurnitureItem } from '../lib/types';
 
@@ -36,6 +37,12 @@ describe('item labels float above the built mesh (#657)', () => {
   it('follows the storey: a pendant under a 2.4 m ceiling', () => {
     const pendant = catalogItem('pendant-light');
     expect(itemLabelY(pendant, { height: 2.4 }, 3)).toBeCloseTo(3 + 2.4 + LABEL_RISE);
+  });
+
+  it('sits over the rise a flight is built with (#654)', () => {
+    const stairs = catalogItem('stairs');
+    expect(itemLabelY(stairs, undefined, 0, true)).toBeCloseTo(3 - ROOF_STAIR_GAP + LABEL_RISE);
+    expect(itemLabelY(stairs, undefined, 0)).toBeCloseTo(3 + LABEL_RISE);
   });
 
   it('places the sprite there', () => {
