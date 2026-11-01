@@ -1,6 +1,6 @@
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan } from '../lib/opening-snap';
 import { OPENING_HEAD_CLEARANCE, fitOpeningToStorey } from '../lib/storeys';
-import { FLOOR_HEIGHT_METERS, type FurnitureItem, type InteriorWall } from '../lib/types';
+import { FLOOR_HEIGHT_METERS, type FootprintCutout, type FurnitureItem, type InteriorWall } from '../lib/types';
 import { BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { classifyOpeningOwners, mergeHoleRects, type OpeningOwner } from './wall-openings';
@@ -36,6 +36,8 @@ export interface RenderInteriorWallsOptions {
    */
   roomWidth?: number;
   roomDepth?: number;
+  /** The footprint's cut corner: its two walls claim openings too (#727). */
+  cutout?: FootprintCutout | undefined;
   /** Partition height for this storey (#202). Defaults to 2.6 m. */
   wallHeight?: number;
   /**
@@ -65,7 +67,7 @@ export function renderInteriorWalls(
   // it never gets double-cut at a junction.
   const owners =
     options.openingCandidates && options.roomWidth !== undefined && options.roomDepth !== undefined
-      ? classifyOpeningOwners(options.openingCandidates, options.roomWidth, options.roomDepth, walls)
+      ? classifyOpeningOwners(options.openingCandidates, options.roomWidth, options.roomDepth, walls, options.cutout)
       : null;
 
   for (const wall of walls) {
