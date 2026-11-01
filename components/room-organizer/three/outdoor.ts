@@ -13,7 +13,7 @@ const GROUND_ROLE = 'ground';
 /** Where the last-applied weather is remembered, so a rebuilt lot starts tinted. */
 const WEATHER_KEY = 'outdoorWeather';
 
-const GRASS_COLOR = 0x7cb04a;
+const GRASS_COLOR = 0x6a9445;
 
 /**
  * The grass colour under each weather (#189): a wet lawn reads darker and
@@ -21,8 +21,8 @@ const GRASS_COLOR = 0x7cb04a;
  */
 export function outdoorGroundColor(weather: Weather): number {
   switch (weather) {
-    case 'rain': return 0x6a9a44;
-    case 'snow': return 0xe9eef3;
+    case 'rain': return 0x5b8240;
+    case 'snow': return 0xcfd6de;
     default: return GRASS_COLOR;
   }
 }

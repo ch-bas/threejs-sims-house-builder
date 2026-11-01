@@ -43,7 +43,7 @@ function addRings(
       transparent: true,
       opacity: startOpacity - (i - 1) * opacityFalloff,
       side: THREE.DoubleSide,
-      // UI overlay: bypass ACES tone mapping so the range-ring colour coding
+      // UI overlay: bypass tone mapping so the range-ring colour coding
       // hits its exact hex, and don't write depth so concentric/overlapping
       // rings from nearby sources don't punch holes in each other.
       toneMapped: false,
