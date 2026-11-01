@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-11-01
+
+The **Core building** milestone: walls stay editable after you draw them, closed walls become real rooms with their own floors, and a house can be L-shaped. The house also looks better: natural daylight, walls lit by the sun, and a calmer camera lens.
+
+### Added
+- Cut a corner out of the house for an L-shaped footprint (Room Settings → House shape). Furniture, doors, walls, zones, the walkthrough, plans and every export follow the real outline. An L-shaped house takes a flat roof for now ([#727](https://github.com/ch-bas/threejs-sims-house-builder/issues/727))
+- Drag a selected interior wall or its ends to move it, in 3D and on the 2D plan. Connected walls, doors, windows and hung decor come with it, and one Undo takes it all back ([#718](https://github.com/ch-bas/threejs-sims-house-builder/issues/718))
+- Statistics lists the rooms your walls close, with their areas. Name a closed room in one click: L-shaped rooms get true areas, and the zone follows its walls ([#719](https://github.com/ch-bas/threejs-sims-house-builder/issues/719))
+- Each room can have its own floor pattern and colour, and each side of an interior wall can have its own paint ([#720](https://github.com/ch-bas/threejs-sims-house-builder/issues/720))
+- Type an exact length while drawing a wall. Walls snap to 15° steps and a 0.1 m grid, with Shift for free drawing, and the status chip shows length and angle ([#723](https://github.com/ch-bas/threejs-sims-house-builder/issues/723))
+
+### Changed
+- Room stamps now go where you click, and you can drag to size them. They snap to walls and leave out sides that already have a wall ([#724](https://github.com/ch-bas/threejs-sims-house-builder/issues/724))
+- Daylight looks natural: a white noon sun, warm dawn and dusk, real shadows, moonlit nights, and paints that match their swatches. Lamps come on an hour before sunset ([#752](https://github.com/ch-bas/threejs-sims-house-builder/issues/752))
+- The camera uses a 40° lens, so the house has calmer verticals and true proportions, and it can tilt lower to show more sky. Walkthrough stays wide ([#753](https://github.com/ch-bas/threejs-sims-house-builder/issues/753))
+- Holding an arrow key in a button group moves one step, not several
+
+### Fixed
+- Sun-facing outer walls now take direct sun, so trees and eaves cast shadows on them ([#752](https://github.com/ch-bas/threejs-sims-house-builder/issues/752))
+- Stars and the moon stay in the sky on very large houses, and walls on them no longer show dashed marks at a distance ([#753](https://github.com/ch-bas/threejs-sims-house-builder/issues/753))
+- The camera stays above sloped ground, and focus stays clear of partitions and frames items outside the house from outside ([#753](https://github.com/ch-bas/threejs-sims-house-builder/issues/753))
+- A right-click in 3D no longer places a wall point or a measuring point
+
 ## [1.27.0] - 2026-10-31
 
 The **Plan parity II** milestone: the 2D plan is a real editor now, with walls and zones you can edit in place, proper door and window symbols, and exports that say more.
@@ -829,7 +852,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.27.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.28.0...HEAD
+[1.28.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.25.0...v1.26.0
 [1.25.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.24.0...v1.25.0

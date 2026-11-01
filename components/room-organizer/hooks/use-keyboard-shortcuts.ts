@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { isTypingTarget } from '../lib/walk-input';
 import type { FurnitureItem } from '../lib/types';
+import type { SelectedWall } from '../lib/wall-sides';
 
 export interface KeyboardShortcutHandlers {
   removeItem(id: string): void;
@@ -42,7 +43,7 @@ export interface KeyboardShortcutHandlers {
 
 export interface UseKeyboardShortcutsOptions {
   selectedItem: FurnitureItem | null;
-  selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
+  selectedWall: SelectedWall | null;
   hasSignalItems: boolean;
   /**
    * When first-person walkthrough owns the keyboard (WASD/arrows drive the

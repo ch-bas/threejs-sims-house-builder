@@ -1,3 +1,4 @@
+import type { Vec2 } from '../lib/types';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -20,6 +21,16 @@ export type SelectionMode = 'replace' | 'toggle' | 'single';
  * `{ current }` box so the latest render's closures are always used without
  * re-attaching DOM listeners.
  */
+export interface HeldGesture {
+  /** A floor point under the pointer, past the threshold. `free` is Shift. */
+  move(x: number, z: number, free: boolean): void;
+  /**
+   * Over: `commit` only for a release on the scene after a real drag;
+   * `clicked` for a release that never left the threshold.
+   */
+  end(commit: boolean, clicked?: boolean): void;
+}
+
 export interface SceneEventHandlers {
   /**
    * When true, first-person walkthrough owns the canvas (PointerLockControls).
@@ -52,7 +63,17 @@ export interface SceneEventHandlers {
   onItemDragCancel?: (id: string, options?: { restore?: boolean }) => void;
   onItemHover?: (info: HoverInfo | null) => void;
   onEmptyClick?: (x: number, z: number) => void;
-  onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior' }) => void;
+  /** `from` is where the wall was seen from: the viewer's side is the face clicked (#720). */
+  onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior'; from: Vec2 }) => void;
+  /**
+   * A press on the selected interior wall or an end handle (#718): the
+   * gesture it holds, or null, which leaves the press to the camera. Asked
+   * before onWallSelect, so the first press on a wall still only selects it
+   * and a wall in the way never stops an orbit.
+   */
+  onWallGrab?: (info: { wallId: string; grip: 'body' | 'start' | 'end'; x: number; z: number }) => HeldGesture | null;
+  /** A press on the floor in `floorPickOnly`: a room stamp in hand takes it (#724). */
+  onFloorGrab?: (x: number, z: number) => HeldGesture | null;
   onFloorPointerMove?: (x: number, z: number) => void;
   onFloorPointerLeave?: () => void;
   snapPosition: (id: string, x: number, z: number) => { x: number; z: number };
@@ -84,6 +105,9 @@ export const FURNITURE_REVISION_KEY = 'furnitureRevision';
 // routinely exceeds the mouse radius, so touch gets a wider one (#292).
 const DRAG_THRESHOLD_PX = 4;
 const TOUCH_DRAG_THRESHOLD_PX = 10;
+/** How far a press reaches for a wall's end handle: a 44 px target under a finger. */
+const HANDLE_REACH_PX = 14;
+const HANDLE_REACH_TOUCH_PX = 22;
 
 /** Click-vs-drag radius for a pointer type — shared with the 2D plan. */
 export function dragThresholdPx(pointerType: string): number {
@@ -192,6 +216,10 @@ export function attachDragHandlers({
   // True while that replayed press is being dispatched.
   let replaying = false;
 
+  // A wall or room gesture: the same press, threshold and capture as an item
+  // drag, with the moves handed over instead of moving a mesh here.
+  let held: { gesture: HeldGesture; started: boolean } | null = null;
+
   const setPointerFromEvent = (event: { clientX: number; clientY: number }): void => {
     const rect = canvas.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -199,10 +227,52 @@ export function attachDragHandlers({
   };
 
   const resetDragState = (): void => {
+    held = null;
     dragTarget = null;
     dragStarted = false;
     activePointerId = null;
     selectOnRelease = false;
+  };
+
+  const floorPoint = (): ThreeNS.Vector3 | null => {
+    dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
+    return raycaster.ray.intersectPlane(dragPlane, intersection);
+  };
+
+  const holdGesture = (gesture: HeldGesture, event: PointerEvent): void => {
+    held = { gesture, started: false };
+    controls.enabled = false;
+    activePointerId = event.pointerId;
+    downClientX = event.clientX;
+    downClientY = event.clientY;
+    lastClientX = event.clientX;
+    lastClientY = event.clientY;
+    dragThreshold = dragThresholdPx(event.pointerType);
+  };
+
+  /** A press within reach of a selected wall's end handle grabs that end. */
+  const pressWallHandle = (event: PointerEvent): boolean => {
+    if (event.button !== 0) return false;
+    const rect = canvas.getBoundingClientRect();
+    const reach = event.pointerType === 'touch' ? HANDLE_REACH_TOUCH_PX : HANDLE_REACH_PX;
+    for (const handle of scene.children) {
+      if (handle.userData.type !== 'interior-wall-handle') continue;
+      const onScreen = intersection.copy(handle.position).project(camera);
+      const x = rect.left + ((onScreen.x + 1) / 2) * rect.width;
+      const y = rect.top + ((1 - onScreen.y) / 2) * rect.height;
+      if (Math.hypot(event.clientX - x, event.clientY - y) > reach) continue;
+      const point = floorPoint();
+      const gesture = point && handlersRef.current.onWallGrab?.({
+        wallId: handle.userData.wallId as string,
+        grip: handle.userData.grip as 'start' | 'end',
+        x: point.x,
+        z: point.z,
+      });
+      if (!gesture) return false;
+      holdGesture(gesture, event);
+      return true;
+    }
+    return false;
   };
 
   const beginDragSession = (event: PointerEvent): void => {
@@ -240,6 +310,7 @@ export function attachDragHandlers({
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     const floorPickOnly = handlersRef.current.floorPickOnly === true;
+    if (!floorPickOnly && pressWallHandle(event)) return;
     const furniture = furnitureList();
     const hits = floorPickOnly ? [] : raycaster.intersectObjects(furniture, true);
     if (hits.length === 0) {
@@ -256,14 +327,27 @@ export function attachDragHandlers({
         if (wallHit) {
           const id = wallHit.object.userData.wallId as string | undefined;
           if (id) {
+            const interior = wallHit.object.userData.type === 'interior-wall';
+            const point = interior && event.button === 0 ? floorPoint() : null;
+            const gesture = point && handlersRef.current.onWallGrab?.({ wallId: id, grip: 'body', x: point.x, z: point.z });
             handlersRef.current.onWallSelect({
               wallId: id,
-              kind: wallHit.object.userData.type === 'interior-wall'
-                ? 'interior'
-                : 'exterior',
+              kind: interior ? 'interior' : 'exterior',
+              from: { x: raycaster.ray.origin.x, z: raycaster.ray.origin.z },
             });
+            if (gesture) holdGesture(gesture, event);
             return;
           }
+        }
+      }
+      // The right button pans the camera: it places nothing and drops nothing.
+      if (floorPickOnly && event.button !== 0) return;
+      if (floorPickOnly && handlersRef.current.onFloorGrab) {
+        const point = floorPoint();
+        const gesture = point && handlersRef.current.onFloorGrab(point.x, point.z);
+        if (gesture) {
+          holdGesture(gesture, event);
+          return;
         }
       }
       if (handlersRef.current.onEmptyClick) {
@@ -342,6 +426,26 @@ export function attachDragHandlers({
     if (event.pointerId === activePointerId) {
       lastClientX = event.clientX;
       lastClientY = event.clientY;
+    }
+    if (held) {
+      if (event.pointerId !== activePointerId) return;
+      if (!held.started) {
+        const dx = event.clientX - downClientX;
+        const dy = event.clientY - downClientY;
+        if (dx * dx + dy * dy < dragThreshold * dragThreshold) return;
+        held.started = true;
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // Capture can throw if the pointer is already gone; safe to ignore.
+        }
+      }
+      if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+      setPointerFromEvent(event);
+      raycaster.setFromCamera(pointer, camera);
+      const point = floorPoint();
+      if (point) held.gesture.move(point.x, point.z, event.shiftKey);
+      return;
     }
     if (!dragTarget) {
       // Hover + tooltip is a mouse/pen affordance only. Skipping it for touch
@@ -437,6 +541,7 @@ export function attachDragHandlers({
   const abortGesture = (restore: boolean, heldPointer: number | null = null): void => {
     const target = dragTarget;
     const started = dragStarted;
+    const gesture = held?.gesture;
     if (activePointerId !== null) {
       try {
         canvas.releasePointerCapture(activePointerId);
@@ -445,6 +550,7 @@ export function attachDragHandlers({
       }
     }
     resetDragState();
+    gesture?.end(false);
     if (started && heldPointer !== null) {
       heldPointerId = heldPointer;
       doc.addEventListener('pointerup', onHeldPointerEnd);
@@ -497,6 +603,19 @@ export function attachDragHandlers({
 
   const endGesture = (event: PointerEvent): void => {
     if (event.pointerId !== activePointerId && activePointerId !== null) return;
+    if (held) {
+      const { gesture, started: moved } = held;
+      const onScene = pointerOnCanvas(canvas, event.clientX, event.clientY);
+      try {
+        canvas.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore if capture was never held or already released.
+      }
+      resetDragState();
+      handBackControls();
+      gesture.end(moved && onScene, !moved);
+      return;
+    }
     // The furniture effect ran between the last move and the release: the
     // same stale-commit hazard as in onPointerMove, so abort, don't commit.
     if (dragStarted && dragTarget && (dragTarget.parent === null || furnitureRevision() !== dragRevision)) {
@@ -559,11 +678,19 @@ export function attachDragHandlers({
       resetDragState();
       handBackControls();
     }
+    if (held && !held.started) abortGesture(false);
   };
 
   // Capture phase: at the canvas itself, capture listeners run before
   // OrbitControls' (bubble) pointerdown, so a press on an item can switch
   // the controls off before they see it.
+  // A pointerup the page never sees (the window lost focus mid-gesture) must
+  // not leave a wall held. Called off, as on the plan.
+  const onWindowBlur = (): void => {
+    if (held) abortGesture(false);
+  };
+  doc.defaultView?.addEventListener('blur', onWindowBlur);
+
   canvas.addEventListener('pointerdown', onPointerDown, true);
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
@@ -572,6 +699,7 @@ export function attachDragHandlers({
 
   return () => {
     releaseHeldControls();
+    doc.defaultView?.removeEventListener('blur', onWindowBlur);
     canvas.removeEventListener('pointerdown', onPointerDown, true);
     canvas.removeEventListener('pointermove', onPointerMove);
     canvas.removeEventListener('pointerup', onPointerUp);

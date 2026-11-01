@@ -115,7 +115,7 @@ export function buildNpcNav(input: NpcNavInput): NpcNav | null {
   const halfD = roomDepth / 2 - EXTERIOR_MARGIN;
   if (!(halfW > NPC_RADIUS && halfD > NPC_RADIUS)) return null;
 
-  const collisionOptions: WalkCollisionOptions = { roomWidth, roomDepth };
+  const collisionOptions: WalkCollisionOptions = { roomWidth, roomDepth, cutout: keepOut.find((rect) => rect.cutout)?.cutout };
   const colliders = buildWalkColliders(items, interiorWalls, collisionOptions);
   const furniture: WalkCollider[] = [];
   for (const item of items) {

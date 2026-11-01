@@ -9,7 +9,7 @@
 
 import { ENTRANCE_DOOR_ID } from './street';
 import { exteriorDoorWall, walkClearance, type ShellBuilding, type WalkCollider } from './walk-collision';
-import { walkSurfaceAt, type WalkSurface, type WalkSurfaceKind, type WalkWorld } from './walk-world';
+import { insideWalls, walkSurfaceAt, type WalkSurface, type WalkSurfaceKind, type WalkWorld } from './walk-world';
 import type { WallId } from './types';
 
 export interface WalkPose {
@@ -59,7 +59,7 @@ function standable(ctx: WalkSpawnContext, floorIndex: number, x: number, z: numb
   if (y === undefined) return false;
   if (!walkSurfaceAt(ctx.world, x, z, y, 'floor', scratch)) return false;
   if (scratch.kind !== 'floor' || scratch.floorIndex !== floorIndex) return false;
-  const inside = Math.abs(x) <= ctx.world.halfWidth && Math.abs(z) <= ctx.world.halfDepth;
+  const inside = insideWalls(ctx.world, x, z);
   return walkClearance(ctx.colliders, x, z, inside, y) >= ctx.radius + SPAWN_MARGIN;
 }
 
@@ -150,7 +150,7 @@ export function walkSpawn(ctx: WalkSpawnContext, floorIndex: number): WalkPose {
       doors.push({ ...item.position, normal: INWARD.north, rank: -1 });
       continue;
     }
-    const wall = exteriorDoorWall(item, floor?.interiorWalls ?? [], ctx.building.width, ctx.building.depth);
+    const wall = exteriorDoorWall(item, floor?.interiorWalls ?? [], ctx.building.width, ctx.building.depth, ctx.building.cutout);
     if (wall) doors.push({ ...item.position, normal: INWARD[wall], rank: WALL_PRIORITY.indexOf(wall) });
   }
   doors.sort((a, b) => a.rank - b.rank);

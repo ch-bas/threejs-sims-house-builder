@@ -4,9 +4,10 @@
  * faces. Pure: which seat the walker is looking at, and the pose it takes.
  */
 
+import { isInsideBuilding } from './footprint';
 import { hasSeatSurface, seatSurfaceHeight } from './seat-surface';
 import { sightBlocked, type WalkCollider } from './walk-collision';
-import type { FurnitureItem } from './types';
+import type { FootprintCutout, FurnitureItem } from './types';
 
 /** Seated eye height above the seat. */
 export const SEATED_EYE = 0.72;
@@ -60,7 +61,7 @@ export interface SeatSight {
    * outside it is outdoors, whatever its category. Without it the catalogue
    * category decides.
    */
-  footprint?: { width: number; depth: number };
+  footprint?: { width: number; depth: number; cutout?: FootprintCutout | undefined };
   /**
    * The recessed porch's plan rect: inside the footprint but out on the lot,
    * as the walker counts it, so a bench on the porch is outdoors (#566).
@@ -80,7 +81,7 @@ function seatOutdoors(seat: FurnitureItem, at: Point, sight: SeatSight): boolean
   const { footprint, porch } = sight;
   if (!footprint) return seat.category === 'outdoor';
   if (porch && at.x > porch.x0 && at.x < porch.x1 && at.z > porch.z0 && at.z < porch.z1) return true;
-  return Math.abs(at.x) > footprint.width / 2 || Math.abs(at.z) > footprint.depth / 2;
+  return !isInsideBuilding({ width: footprint.width, height: footprint.depth, cutout: footprint.cutout }, at.x, at.z);
 }
 
 /**

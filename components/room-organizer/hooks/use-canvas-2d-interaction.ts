@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
-import { draggedZoneRect, hitInteriorWall, ZONE_GRIP_CURSORS, zoneAt, zoneGripAt, type ZoneGrip } from '../canvas-2d/plan-edit';
+import { draggedZoneRect, hitInteriorWall, wallEndAt, ZONE_GRIP_CURSORS, zoneAt, zoneGripAt, type ZoneGrip } from '../canvas-2d/plan-edit';
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
@@ -10,14 +10,18 @@ import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, hitOffPlanMarker, offPlanMarkers, PLAN_PADDING_PX, planViewFit, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
-import { defaultZoneName, nextZoneColor, zoneFromCorners, zoneInPorch, type ZoneRect } from '../lib/zones';
+import { wallSideAt, type WallSide } from '../lib/wall-sides';
+import { defaultZoneName, nextZoneColor, roomAt, zoneFromCorners, zoneFromRoom, zoneInPorch, type ZoneRect } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
 import type { DragCancelOptions } from './use-item-drag';
+import type { WallGrabInfo, WallMovePreview } from './use-wall-edit';
+import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { EntrancePlanOutline } from '../lib/street';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
+import type { HeldGesture } from '../three/drag-handlers';
 
 /**
  * Extra hit margin (CSS px) around wall-mounted and very small items (#286):
@@ -33,7 +37,11 @@ const WALL_HIT_SLOP_TOUCH_PX = 14;
 /** How far a zone's edges reach, and its handles under a finger: a 44 px target (CSS px). */
 const ZONE_GRIP_SLOP_PX = 8;
 const ZONE_ON_PORCH = 'The porch is outside the house, so it can’t be a zone.';
+const ZONE_IN_CORNER = 'That corner is outside the house, so it can’t be a zone.';
 const ZONE_MARK_SLOP_TOUCH_PX = 22;
+/** How far a selected wall's end handles reach, the same 44 px under a finger. */
+const WALL_END_REACH_PX = 10;
+const WALL_END_REACH_TOUCH_PX = 22;
 
 /**
  * Topmost item under a world-space point, by exact rotated-rect containment.
@@ -143,16 +151,30 @@ export interface UseCanvas2DInteractionParams {
   /** The pointer moved over the plan with the wall tool on. */
   onWallPointerMove?(x: number, z: number): void;
   onWallPointerLeave?(): void;
+  /** The wall tool's press: a room stamp in hand starts sizing here (#724). */
+  onWallPress?(x: number, z: number): void;
+  /** That press ended with no point: the room stamp forgets it. */
+  onWallPressCancel?(): void;
   /** A press picked an interior wall, or something else (null). Not in EXPLORE. */
-  onInteriorWallSelect?(id: string | null): void;
+  onInteriorWallSelect?(id: string | null, side?: WallSide): void;
+  /** The wall with handles (#718). */
+  selectedWallId?: string | null;
+  /** A press on the selected wall or an end: the gesture to feed, or null. */
+  onWallGrab?(info: WallGrabInfo): HeldGesture | null;
+  /** What the held wall gesture shows, for the ghost repaint. */
+  wallMovePreview?(): WallMovePreview | null;
   /** The zone showing handles (#628): zone mode only, the orchestrator clears it. */
   selectedZoneId?: string | null;
   onZoneSelect?(id: string | null): void;
+  /** Detected rooms with no zone, in zone mode: a tap on one names it (#719). */
+  roomsToName?: readonly DetectedRoom[];
 }
 
 export interface UseCanvas2DInteractionResult {
   /** Client coords → world x/z via the renderer's inverse transform, or null off-canvas. */
   clientToWorld2D(clientX: number, clientY: number): { x: number; z: number } | null;
+  /** Repaint in the next frame: something a gesture previewed was called off from outside. */
+  repaintPlan(): void;
 }
 
 /**
@@ -186,6 +208,11 @@ export interface UseCanvas2DInteractionResult {
  * the selected zone's edges, corners or body resizes or moves it; a drag
  * anywhere else still draws, even inside another zone. Like an item drag it
  * repaints the ghost per frame and dispatches once, on release.
+ *
+ * Wall editing (#718): a press on a wall slides it and a press on the selected
+ * wall's end handle moves that end. The gesture is `useWallEdit`'s, which says
+ * whether a wall not yet selected may move: this hook feeds it and repaints
+ * what it previews.
  */
 export function useCanvas2DInteraction(
   params: UseCanvas2DInteractionParams
@@ -195,6 +222,7 @@ export function useCanvas2DInteraction(
   // Stable for the store's lifetime (use-layout-store), so the effect below
   // can close over it without re-subscribing.
   const layoutActions = useLayoutActions();
+  const repaintRef = useRef<() => void>(() => {});
 
   /**
    * Client coords → world x/z through the renderer's own transform. `fit`
@@ -294,6 +322,26 @@ export function useCanvas2DInteraction(
     let zoneEdit: ZoneEdit | null = null;
     /** The press of a wall point, placed on release (#564). */
     let wallPress: { pointerId: number } | null = null;
+    /** A press on the selected wall (#718); `started` past the threshold. */
+    interface WallHold {
+      pointerId: number;
+      gesture: HeldGesture;
+      downClientX: number;
+      downClientY: number;
+      threshold: number;
+      started: boolean;
+    }
+    let wallHold: WallHold | null = null;
+    const holdWall = (gesture: HeldGesture, event: PointerEvent): void => {
+      wallHold = {
+        pointerId: event.pointerId,
+        gesture,
+        downClientX: event.clientX,
+        downClientY: event.clientY,
+        threshold: dragThresholdPx(event.pointerType),
+        started: false,
+      };
+    };
     // The fit, measured at each press: the gesture maps the pointer and
     // repaints with the transform the plan was painted with, so dragging an
     // item past the walls doesn't rescale the plan under the pointer; the
@@ -303,12 +351,13 @@ export function useCanvas2DInteraction(
 
     const paintGhost = (): void => {
       rafId = null;
-      const { layout, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId } = paramsRef.current;
+      const { layout, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId, selectedWallId, roomsToName } = paramsRef.current;
       const session = gesture?.started ? gesture : null;
-      const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : activeFloor.items;
+      const wallMove = wallHold?.started ? paramsRef.current.wallMovePreview?.() : null;
+      const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : (wallMove?.items ?? activeFloor.items);
       const keepOut = floorKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
       const draft = zoneGesture?.started
-        ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height)
+        ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height, layout.cutout)
         : null;
       const edit = zoneEdit?.started ? zoneEdit : null;
       const zones = edit
@@ -317,7 +366,7 @@ export function useCanvas2DInteraction(
       render2DTopDown({
         canvas,
         layout,
-        floor: session || edit ? { ...activeFloor, items, ...zones } : activeFloor,
+        floor: session || edit || wallMove ? { ...activeFloor, items, ...zones, ...(wallMove ? { interiorWalls: wallMove.walls } : {}) } : activeFloor,
         selectedItemId,
         extraSelectedIds,
         showMeasurements: view.showMeasurements,
@@ -325,19 +374,23 @@ export function useCanvas2DInteraction(
         showHeatmap: view.showHeatmap,
         showFloorBelow: view.showFloorBelow,
         zoneDraft: draft,
+        roomsToName,
         selectedZoneId,
+        selectedWallId,
+        selectedWallRefused: (wallMove?.refusal ?? null) !== null,
         fitBounds: fit.bounds,
         offPlan: fit.offPlan,
         insets: fit.insets,
         padding: fit.padding,
         hudRects: fit.hudRects,
         hasCollision: (item) =>
-          hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
+          hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: wallMove?.walls ?? activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
       });
     };
     const schedulePaint = (): void => {
       if (rafId === null) rafId = requestAnimationFrame(paintGhost);
     };
+    repaintRef.current = schedulePaint;
 
     const releaseCapture = (pointerId: number): void => {
       try {
@@ -364,12 +417,20 @@ export function useCanvas2DInteraction(
       zoneGesture = null;
       const p = paramsRef.current;
       if (!session.started) {
-        if (commit) selectZone(session.tapZoneId);
+        const room = commit && !session.tapZoneId ? roomAt(p.roomsToName ?? [], session.start.x, session.start.z) : null;
+        if (room) {
+          const zones = p.activeFloor.zones ?? [];
+          requestZoneName(layoutActions.addZone(zoneFromRoom(room, defaultZoneName(zones), nextZoneColor(zones))));
+        } else if (commit) {
+          selectZone(session.tapZoneId);
+        }
         return;
       }
       releaseCapture(session.pointerId);
       const { layout, activeFloor, onZoneRefused } = p;
-      const rect = commit ? zoneFromCorners(session.start, session.latest, layout.width, layout.height) : null;
+      const rect = commit ? zoneFromCorners(session.start, session.latest, layout.width, layout.height, layout.cutout) : null;
+      // Big enough, had the corner been there: say why it adds nothing.
+      if (commit && !rect && zoneFromCorners(session.start, session.latest, layout.width, layout.height)) onZoneRefused?.(ZONE_IN_CORNER);
       const onPorch = rect !== null && zoneInPorch(rect, entrancePlanOutline(layout, planFloorIndex(layout.floors, activeFloor)));
       if (onPorch) onZoneRefused?.(ZONE_ON_PORCH);
       if (rect && !onPorch) {
@@ -444,6 +505,14 @@ export function useCanvas2DInteraction(
       if (wallPress) {
         releaseCapture(wallPress.pointerId);
         wallPress = null;
+        paramsRef.current.onWallPressCancel?.();
+      }
+      if (wallHold) {
+        const hold = wallHold;
+        wallHold = null;
+        releaseCapture(hold.pointerId);
+        hold.gesture.end(false);
+        if (restore) schedulePaint();
       }
       if (zoneEdit) finishZoneEdit(zoneEdit, false);
       if (zoneGesture) {
@@ -465,7 +534,7 @@ export function useCanvas2DInteraction(
       // A second finger while one is on the plan is a two-finger gesture,
       // not a drag: drop the drag (the item goes back) or the zone draft,
       // as the 3D canvas does.
-      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit;
+      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold;
       if (held) {
         if (event.pointerId !== held.pointerId) abortGesture(true);
         return;
@@ -487,6 +556,7 @@ export function useCanvas2DInteraction(
           // Capture can throw if the pointer is already gone; safe to ignore.
         }
         p.onWallPointerMove?.(world.x, world.z);
+        p.onWallPress?.(world.x, world.z);
         return;
       }
       // Zone-draw mode (#155) claims the press: the rectangle starts here
@@ -511,8 +581,21 @@ export function useCanvas2DInteraction(
           zoneEdit = { ...press, zoneId: selected.id, grip, grabbedAt: world, origin, latest: origin, recess, overPorch: false };
           return;
         }
-        zoneGesture = { ...press, start: world, latest: world, tapZoneId: zoneAt(zones, world.x, world.z)?.id ?? null };
+        // A tap on a selected polygon zone steps down, as one on a rectangle's body does.
+        const below = selected?.outline ? selected.id : undefined;
+        zoneGesture = { ...press, start: world, latest: world, tapZoneId: zoneAt(zones, world.x, world.z, below)?.id ?? null };
         return;
+      }
+      // The selected wall's ends sit on top of whatever is under them (#718).
+      const selectedWall = p.exploring ? undefined : p.activeFloor.interiorWalls?.find((wall) => wall.id === p.selectedWallId);
+      if (selectedWall) {
+        const reach = hitSlopWorld(fit, event.pointerType === 'touch' ? WALL_END_REACH_TOUCH_PX : WALL_END_REACH_PX);
+        const grip = wallEndAt(selectedWall, world.x, world.z, reach);
+        const end = grip && p.onWallGrab?.({ wallId: selectedWall.id, grip, x: world.x, z: world.z });
+        if (end) {
+          holdWall(end, event);
+          return;
+        }
       }
       // An off-plan marker selects the far item it points to (#381): its
       // sheet or popover carries Centre to bring it back. No drag.
@@ -535,7 +618,14 @@ export function useCanvas2DInteraction(
         p.onDeselect();
         const slop = hitSlopWorld(fit, event.pointerType === 'touch' ? WALL_HIT_SLOP_TOUCH_PX : WALL_HIT_SLOP_PX);
         const wall = p.exploring ? null : hitInteriorWall(p.activeFloor.interiorWalls ?? [], world.x, world.z, slop);
-        p.onInteriorWallSelect?.(wall?.id ?? null);
+        // The panel a new selection opens refits the plan. On a press that
+        // also holds the wall the fit is frozen till the release, so the wall
+        // stays under the pointer.
+        const slide = wall && p.onWallGrab?.({ wallId: wall.id, grip: 'body', x: world.x, z: world.z, fresh: wall.id !== p.selectedWallId });
+        // The side of the line the press landed on is the face to paint (#720).
+        if (wall) p.onInteriorWallSelect?.(wall.id, wallSideAt(wall, world));
+        else p.onInteriorWallSelect?.(null);
+        if (slide) holdWall(slide, event);
         return;
       }
       p.onInteriorWallSelect?.(null);
@@ -583,10 +673,40 @@ export function useCanvas2DInteraction(
       const hoverFit = selected ? measureFit(canvas) : null;
       const world = hoverFit && toWorld(event.clientX, event.clientY, hoverFit);
       const grip = selected && hoverFit && world ? zoneGripAt(selected, world.x, world.z, hitSlopWorld(hoverFit, ZONE_GRIP_SLOP_PX)) : null;
-      setZoneCursor(grip ? ZONE_GRIP_CURSORS[grip] : '');
+      if (grip) {
+        setZoneCursor(ZONE_GRIP_CURSORS[grip]);
+        return;
+      }
+      // Likewise the selected wall: its ends take the press, its body slides (#718).
+      const wall = p.exploring ? undefined : p.activeFloor.interiorWalls?.find((entry) => entry.id === p.selectedWallId);
+      const wallFit = wall ? measureFit(canvas) : null;
+      const at = wallFit && toWorld(event.clientX, event.clientY, wallFit);
+      const near = wall && wallFit && at ? hitInteriorWall([wall], at.x, at.z, hitSlopWorld(wallFit, WALL_HIT_SLOP_PX)) : null;
+      setZoneCursor(near ? 'move' : '');
     };
 
     const onPointerMove = (event: PointerEvent): void => {
+      const hold = wallHold;
+      if (hold && event.pointerId === hold.pointerId) {
+        if (!hold.started) {
+          const dx = event.clientX - hold.downClientX;
+          const dy = event.clientY - hold.downClientY;
+          if (dx * dx + dy * dy < hold.threshold * hold.threshold) return;
+          hold.started = true;
+          try {
+            canvas.setPointerCapture(event.pointerId);
+          } catch {
+            // Capture can throw if the pointer is already gone; safe to ignore.
+          }
+        }
+        // Over the HUD the wall holds; a release there calls it off (#511).
+        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+        const world = worldAt(event);
+        if (!world) return;
+        hold.gesture.move(world.x, world.z, event.shiftKey);
+        schedulePaint();
+        return;
+      }
       if (wallPress ? event.pointerId === wallPress.pointerId : paramsRef.current.view.drawWallMode && !paramsRef.current.exploring) {
         if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
         // Between presses nothing measured the fit: read it now.
@@ -612,7 +732,7 @@ export function useCanvas2DInteraction(
         const world = worldAt(event);
         if (!world) return;
         const { layout } = paramsRef.current;
-        const rect = draggedZoneRect(edit.origin, edit.grip, world.x - edit.grabbedAt.x, world.z - edit.grabbedAt.z, layout.width, layout.height, edit.recess);
+        const rect = draggedZoneRect(edit.origin, edit.grip, world.x - edit.grabbedAt.x, world.z - edit.grabbedAt.z, layout.width, layout.height, edit.recess, layout.cutout);
         edit.overPorch = rect === null && edit.recess !== null;
         if (rect) edit.latest = rect;
         schedulePaint();
@@ -691,11 +811,28 @@ export function useCanvas2DInteraction(
 
     const endGesture = (event: PointerEvent): void => {
       lockedPress = null;
+      if (wallHold && event.pointerId === wallHold.pointerId) {
+        const { gesture: wallGesture, started } = wallHold;
+        wallHold = null;
+        releaseCapture(event.pointerId);
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        const commit = started && event.type === 'pointerup' && pointerOnCanvas(canvas, event.clientX, event.clientY);
+        wallGesture.end(commit);
+        // Called off, or refused: no state change repaints.
+        if (started) schedulePaint();
+        return;
+      }
       if (wallPress && event.pointerId === wallPress.pointerId) {
         wallPress = null;
         releaseCapture(event.pointerId);
         // Released over the HUD: no place on the floor, so no point (#511).
-        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) {
+          paramsRef.current.onWallPressCancel?.();
+          return;
+        }
         const world = worldAt(event);
         if (world && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPoint?.(world.x, world.z);
         return;
@@ -750,7 +887,7 @@ export function useCanvas2DInteraction(
         return;
       }
       // A zone draft or edit is discarded by endGesture (it checks the event type).
-      if ((zoneGesture ?? zoneEdit)?.pointerId === event.pointerId) {
+      if ((zoneGesture ?? zoneEdit ?? wallHold)?.pointerId === event.pointerId) {
         endGesture(event);
         return;
       }
@@ -766,6 +903,10 @@ export function useCanvas2DInteraction(
       if (gesture && !gesture.started) gesture = null;
       if (zoneGesture && !zoneGesture.started) zoneGesture = null;
       if (zoneEdit && !zoneEdit.started) zoneEdit = null;
+      if (wallHold && !wallHold.started) {
+        wallHold.gesture.end(false);
+        wallHold = null;
+      }
       if (!zoneEdit?.started) setZoneCursor('');
       if (!wallPress && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPointerLeave?.();
     };
@@ -774,7 +915,7 @@ export function useCanvas2DInteraction(
     // follows the gesture state after every event.
     const root = document.documentElement;
     const syncGestureFlag = (): void => {
-      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null || wallPress !== null || zoneEdit !== null);
+      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null || wallPress !== null || zoneEdit !== null || wallHold !== null);
     };
     const synced = (handler: (event: PointerEvent) => void) => (event: PointerEvent): void => {
       handler(event);
@@ -791,12 +932,12 @@ export function useCanvas2DInteraction(
     // capture was taken away) must not leave the gesture armed: page-wide
     // text selection would stay off and the fit frozen. Undo the drag.
     const onLost = (): void => {
-      if (gesture === null && zoneGesture === null && wallPress === null && zoneEdit === null) return;
+      if (gesture === null && zoneGesture === null && wallPress === null && zoneEdit === null && wallHold === null) return;
       abortGesture(true);
       syncGestureFlag();
     };
     const onLostCapture = (event: PointerEvent): void => {
-      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit;
+      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold;
       if (held && held.pointerId === event.pointerId) onLost();
     };
 
@@ -824,5 +965,6 @@ export function useCanvas2DInteraction(
     };
   }, [params.enabled, params.canvasRef, toWorld, measureFit, hitSlopWorld, layoutActions]);
 
-  return { clientToWorld2D };
+  const repaintPlan = useCallback(() => repaintRef.current(), []);
+  return { clientToWorld2D, repaintPlan };
 }

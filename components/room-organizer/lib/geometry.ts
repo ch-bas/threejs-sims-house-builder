@@ -1,9 +1,9 @@
-import { LOW_PROFILE_MAX_HEIGHT, rotatedHalfExtents } from './footprint';
+import { LOW_PROFILE_MAX_HEIGHT, rotatedHalfExtents, shellWalls } from './footprint';
 import { isCeilingHung, isWallHung, mountBand } from './mount-band';
 import { isOpening, isWallMounted } from './opening-snap';
 import { interiorWallHeight } from './storeys';
 import { buildWalkColliders, type WalkCollider } from './walk-collision';
-import type { FurnitureItem, InteriorWall, Vec2 } from './types';
+import type { FootprintCutout, FurnitureItem, InteriorWall, Vec2 } from './types';
 
 export function boundingRadius(item: Pick<FurnitureItem, 'width' | 'depth'>): number {
   return Math.hypot(item.width / 2, item.depth / 2);
@@ -192,8 +192,9 @@ function pairCollides(a: FurnitureItem, b: FurnitureItem, storeyHeight: number |
 
 /**
  * A world-space (x/z, metres) rectangle inside the room that furniture can't
- * occupy: the recessed entrance's porch (#285), or a stairwell hole cut by
- * the stairs on the floor below (#372).
+ * occupy: the recessed entrance's porch (#285), the corner cut out of the
+ * building (#727), or a stairwell hole cut by the stairs on the floor below
+ * (#372).
  */
 export interface KeepOutRect {
   x0: number;
@@ -208,6 +209,8 @@ export interface KeepOutRect {
    * the flight below are exempt, and outdoor items can't stand in it.
    */
   hole?: boolean;
+  /** Set on the corner cut out of the building (#727): beyond the walls, not a porch within them. */
+  cutout?: FootprintCutout;
 }
 
 /** True when the item's footprint overlaps the rect (touching edges don't count). */
@@ -263,14 +266,15 @@ function straddlesInteriorWall(
   allItems: readonly FurnitureItem[],
   interiorWalls: readonly InteriorWall[],
   roomWidth: number,
-  roomDepth: number
+  roomDepth: number,
+  cutout: FootprintCutout | undefined
 ): boolean {
   // The walker's wall boxes, door gaps included. Wall-plane items never
   // become item colliders, so passing only them returns just the walls.
   const walls: readonly WalkCollider[] = buildWalkColliders(
     allItems.filter((other) => isWallMounted(other.type)),
     interiorWalls,
-    { roomWidth, roomDepth }
+    { roomWidth, roomDepth, cutout }
   );
   const box = toObb(item);
   return walls.some((wall) => obbOverlap(box, wall));
@@ -337,14 +341,14 @@ export function collisionReason(
   // The porch is outside too, just inside the footprint (#285); a stairwell
   // is a hole in the floor (#372).
   const barred = keepOut.find((rect) => keepsOut(item, rect));
-  if (barred) return { kind: barred.hole ? 'stairwell' : 'porch' };
+  if (barred) return { kind: barred.hole ? 'stairwell' : barred.cutout ? 'bounds' : 'porch' };
   // Rugs run under a partition's baseboard and decor hangs on it; anything
   // else standing inside one is impassable in the walkthrough too (#368).
   if (
     interiorWalls.length > 0 &&
     !isLowProfile(item) &&
     !hangsClearOfPartitions(item, context.storeyHeight) &&
-    straddlesInteriorWall(item, allItems, interiorWalls, roomWidth, roomDepth)
+    straddlesInteriorWall(item, allItems, interiorWalls, roomWidth, roomDepth, keepOut.find((rect) => rect.cutout)?.cutout)
   ) {
     return { kind: 'partition' };
   }
@@ -411,7 +415,7 @@ export function autoOrganize(
       ? buildWalkColliders(
           items.filter((other) => isWallMounted(other.type)),
           interiorWalls,
-          { roomWidth, roomDepth }
+          { roomWidth, roomDepth, cutout: keepOut.find((rect) => rect.cutout)?.cutout }
         )
       : [];
   const { x0: left, x1: right, z0: top, z1: bottom } = options.bounds ?? {
@@ -517,6 +521,8 @@ export interface SnapToWallOptions {
   item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation' | 'category'>;
   roomWidth: number;
   roomDepth: number;
+  /** The corner cut out of the building (#727): its two walls snap, the stretches it took don't. */
+  cutout?: FootprintCutout | undefined;
   /** Maximum distance (m) from the wall at which snapping is applied. */
   threshold?: number;
 }
@@ -533,25 +539,33 @@ export function snapToWall({
   item,
   roomWidth,
   roomDepth,
+  cutout,
   threshold = 0.35,
 }: SnapToWallOptions): Vec2 {
   const { halfW, halfD } = rotatedHalfExtents(item);
   // Inner face: the centre sits half an extent inside the wall; outer: outside.
   const sign = item.category === 'outdoor' ? 1 : -1;
-  const faceX = roomWidth / 2 + sign * halfW;
-  const faceZ = roomDepth / 2 + sign * halfD;
 
   let { x, z } = position;
+  const walls = shellWalls({ width: roomWidth, height: roomDepth, cutout });
   // Beside the wall: the item's extent overlaps the wall's run.
-  const besideXWalls = Math.abs(position.z) < roomDepth / 2 + halfD;
-  const besideZWalls = Math.abs(position.x) < roomWidth / 2 + halfW;
-  if (besideXWalls) {
-    if (Math.abs(x + faceX) < threshold) x = -faceX;
-    else if (Math.abs(x - faceX) < threshold) x = faceX;
+  for (const wall of walls) {
+    if (wall.side !== 'west' && wall.side !== 'east') continue;
+    if (position.z - halfD >= wall.z2 || position.z + halfD <= wall.z1) continue;
+    const face = wall.x1 + (wall.side === 'east' ? 1 : -1) * sign * halfW;
+    if (Math.abs(x - face) < threshold) {
+      x = face;
+      break;
+    }
   }
-  if (besideZWalls) {
-    if (Math.abs(z + faceZ) < threshold) z = -faceZ;
-    else if (Math.abs(z - faceZ) < threshold) z = faceZ;
+  for (const wall of walls) {
+    if (wall.side !== 'north' && wall.side !== 'south') continue;
+    if (position.x - halfW >= wall.x2 || position.x + halfW <= wall.x1) continue;
+    const face = wall.z1 + (wall.side === 'south' ? 1 : -1) * sign * halfD;
+    if (Math.abs(z - face) < threshold) {
+      z = face;
+      break;
+    }
   }
 
   return { x, z };

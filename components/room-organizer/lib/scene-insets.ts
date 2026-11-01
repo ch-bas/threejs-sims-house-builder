@@ -11,7 +11,42 @@
  * Pure: rects in, numbers out. The hook reads the DOM rects.
  */
 
+import { isInsideBuilding, shellWalls, type FootprintBuilding } from './footprint';
+
 export type Vec3 = readonly [number, number, number];
+
+/** The orbit lens, vertical degrees: near architectural photography (#753). */
+export const ORBIT_FOV_DEG = 40;
+/** First person keeps a wide view: a long lens indoors feels like tunnel vision. */
+export const WALK_FOV_DEG = 75;
+/** How much further back the orbit lens stands than `WALK_FOV_DEG` to fill the same height. */
+export const ORBIT_LENS_SCALE = Math.tan((WALK_FOV_DEG * Math.PI) / 360) / Math.tan((ORBIT_FOV_DEG * Math.PI) / 360);
+/** The lowest orbit: through 40° this keeps the moon and stars in frame. */
+export const ORBIT_MAX_POLAR = Math.PI / 2.2;
+/** The orbit near plane, and its share of the orbit distance past that. */
+const ORBIT_NEAR = 0.3;
+const ORBIT_NEAR_PER_METRE = 1 / 60;
+
+/**
+ * The orbit near plane for a camera this far from its target. Depth precision
+ * goes with the near plane, so a 60 m house framed from 190 m shows its wall
+ * gaps as dashes at 0.3 (#753). Something this close to the camera is already
+ * out of the picture, so moving the plane out with the camera costs nothing.
+ */
+export function orbitNear(distance: number): number {
+  return Math.max(ORBIT_NEAR, distance * ORBIT_NEAR_PER_METRE);
+}
+
+/** How far above the ground the orbit camera stays, metres. */
+const ORBIT_GROUND_CLEARANCE = 0.5;
+
+/** The orbit camera's height over ground at `groundY`: a slope can't swallow it. */
+export function clearOfGround(y: number, groundY: number): number {
+  return Math.max(y, groundY + ORBIT_GROUND_CLEARANCE);
+}
+
+/** Where the orbit camera starts, looking at the origin: the classic (0, 8, 8) view. */
+export const ORBIT_START: Vec3 = [0, 8 * ORBIT_LENS_SCALE, 8 * ORBIT_LENS_SCALE];
 
 /** A rectangle in CSS pixels, edges inclusive of `left`/`top`. */
 export interface Rect {
@@ -301,6 +336,80 @@ export function houseFrameBox(house: HouseShape): { boxMin: Vec3; boxMax: Vec3 }
   const halfD = Math.max(1, house.depth) / 2 + overhang;
   const top = Math.max(0, house.height) + (house.roof ? Math.max(0, house.roof.peak) : 0);
   return { boxMin: [-halfW, 0, -halfD], boxMax: [halfW, top, halfD] };
+}
+
+/** Shortest pull-back of focus-on-item, and metres of it per metre of item. */
+const FOCUS_MIN_DISTANCE = 4;
+const FOCUS_DISTANCE_PER_METRE = 3.2;
+/** How far from the walls and ceiling a covered focus keeps the camera. */
+const FOCUS_ROOM_MARGIN = 0.3;
+
+/** A wall in plan, world metres. */
+interface PlanWall {
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+}
+
+/** The storey around a focused item, when something is drawn above it. */
+export interface FocusCover {
+  /** Floor to ceiling, metres. */
+  storeyHeight: number;
+  /** The house, whose footprint keeps the camera in and the outside out. */
+  building: FootprintBuilding;
+  /** The storey's partitions. */
+  walls: readonly PlanWall[];
+}
+
+/** Share of the way from `from` along `step` at which it meets `wall`, or null. */
+function wallCrossing(from: { x: number; z: number }, step: { x: number; z: number }, wall: PlanWall): number | null {
+  const wx = wall.x2 - wall.x1;
+  const wz = wall.z2 - wall.z1;
+  const across = step.x * wz - step.z * wx;
+  if (Math.abs(across) < 1e-9) return null;
+  const dx = wall.x1 - from.x;
+  const dz = wall.z1 - from.z;
+  const along = (dx * wz - dz * wx) / across;
+  const onWall = (dx * step.z - dz * step.x) / across;
+  return along > 0 && along <= 1 && onWall >= 0 && onWall <= 1 ? along : null;
+}
+
+/**
+ * Where focus-on-item puts the camera, relative to the item on its floor. The
+ * distance fits the item's largest side. With a roof or a storey above, an
+ * item indoors is seen from inside its room: of the four diagonals, the one
+ * that backs furthest away before a wall, the open side first on a tie. A
+ * tight room leaves the camera close and steep. A garden item is seen from
+ * the side away from the house.
+ */
+export function focusOffset(target: { x: number; z: number }, size: number, cover: FocusCover | null): Vec3 {
+  const distance = Math.max(FOCUS_MIN_DISTANCE, size * FOCUS_DISTANCE_PER_METRE);
+  const back = distance * 0.6;
+  const up = distance * 0.8;
+  if (!cover) return [back, up, back];
+  const awayX = target.x < 0 ? -1 : 1;
+  const awayZ = target.z < 0 ? -1 : 1;
+  if (!isInsideBuilding(cover.building, target.x, target.z)) return [awayX * back, up, awayZ * back];
+
+  const walls = [...shellWalls(cover.building), ...cover.walls];
+  const margin = FOCUS_ROOM_MARGIN / back;
+  const reach = (step: { x: number; z: number }): number =>
+    walls.reduce((nearest, wall) => {
+      const crossing = wallCrossing(target, step, wall);
+      return crossing === null ? nearest : Math.min(nearest, crossing - margin);
+    }, 1);
+  let best = { x: 0, z: 0 };
+  let bestReach = 0;
+  for (const [x, z] of [[-awayX, -awayZ], [-awayX, awayZ], [awayX, -awayZ], [awayX, awayZ]] as const) {
+    const step = { x: x * back, z: z * back };
+    const share = reach(step);
+    if (share > bestReach) {
+      bestReach = share;
+      best = { x: step.x * share, z: step.z * share };
+    }
+  }
+  return [best.x, Math.min(up, cover.storeyHeight - FOCUS_ROOM_MARGIN), best.z];
 }
 
 function dot(a: Vec3, b: Vec3): number {

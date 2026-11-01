@@ -28,9 +28,12 @@ import { useNpcs } from './hooks/use-npcs';
 import { usePeopleModel } from './hooks/use-people-model';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
+import { useRoomStamp } from './hooks/use-room-stamp';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
+import { useShiftHeld } from './hooks/use-shift-held';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough, type WalkthroughBuilding } from './hooks/use-walkthrough';
+import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
 import { useWeather } from './hooks/use-weather';
 import { furnitureSpend, purchasePrice, purchaseRefusal } from './lib/budget';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
@@ -41,6 +44,8 @@ import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
 import { lockedMessage, notify, notifyRefused, notifyRefusedOnce, notifyWithUndo, removedMessage } from './lib/editor-notices';
+import { isInsideBuilding } from './lib/footprint';
+import { formatMetres } from './lib/format';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { describeLayoutChange } from './lib/history-label';
@@ -48,11 +53,15 @@ import { COARSE_POINTER_QUERY } from './lib/hud-layout';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { snapshotBeforeReplace } from './lib/restore-point';
+import { ORBIT_MAX_POLAR } from './lib/scene-insets';
+import { groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
-import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
+import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
-import { snapWallEndpoint } from './lib/wall-snap';
+import { wallSideAt, type SelectedWall, type WallSide } from './lib/wall-sides';
+import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
+import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
@@ -69,8 +78,11 @@ import { Viewport } from './panels/viewport';
 import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
+import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { roofPeakHeight } from './three/roof';
 import type { HoverInfo } from './hooks/use-three-scene';
+import type { DetectedRoom } from './lib/room-detect';
+import type { RoomStampSpec } from './lib/room-stamp';
 import type { CatalogItem, FurnitureItem, GameMode, RoomLayout, ViewSettings, WallId } from './lib/types';
 
 function orbitCamera(
@@ -93,7 +105,7 @@ function orbitCamera(
       spherical.phi = Math.max(0.15, spherical.phi - step / 2);
       break;
     case 'down':
-      spherical.phi = Math.min(Math.PI / 2.2, spherical.phi + step / 2);
+      spherical.phi = Math.min(ORBIT_MAX_POLAR, spherical.phi + step / 2);
       break;
   }
   offset.setFromSpherical(spherical);
@@ -112,6 +124,9 @@ function zoomCamera(
   camera.position.copy(controls.target).add(offset);
   controls.update();
 }
+
+/** A stable "none" for the plan's memoised rooms to name. */
+const NO_ROOMS: readonly DetectedRoom[] = [];
 
 const INITIAL_VIEW_SETTINGS: ViewSettings = {
   view2D: false,
@@ -175,6 +190,7 @@ export function RoomOrganizer(): JSX.Element {
   // EXPLORE (the game mode) never edits the house, the 2D plan included: the
   // plan's clicks select only and the edit shortcuts are off (#699).
   const exploring = useStore(viewStore, (state) => state.gameMode === 'live');
+  const designing = useStore(viewStore, (state) => state.gameMode === 'build');
 
   const playCue = useCallback(
     (cue: SoundCue) => {
@@ -183,7 +199,7 @@ export function RoomOrganizer(): JSX.Element {
     [view.soundsEnabled]
   );
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [selectedWall, setSelectedWall] = useState<{ id: string; kind: 'exterior' | 'interior' } | null>(null);
+  const [selectedWall, setSelectedWall] = useState<SelectedWall | null>(null);
   const [extraSelectedIds, setExtraSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -191,16 +207,44 @@ export function RoomOrganizer(): JSX.Element {
   const [wallDraft, setWallDraft] = useState<{ x: number; z: number } | null>(null);
   const [pointerWorld, setPointerWorld] = useState<{ x: number; z: number } | null>(null);
 
-  const wallSnapResult = useMemo(() => {
-    if (!view.drawWallMode || !pointerWorld) return null;
-    return snapWallEndpoint({
-      point: pointerWorld,
-      existingWalls: activeFloor.interiorWalls ?? [],
-      fromPoint: wallDraft,
-      roomWidth: layout.width,
-      roomDepth: layout.height,
-    });
-  }, [view.drawWallMode, pointerWorld, activeFloor.interiorWalls, wallDraft, layout.width, layout.height]);
+  // Shift draws free of the angle steps and the grid (#723).
+  const wallFree = useShiftHeld(view.drawWallMode);
+  const snapWallPoint = useCallback(
+    (point: { x: number; z: number }) =>
+      snapWallEndpoint({
+        point,
+        existingWalls: activeFloor.interiorWalls ?? [],
+        fromPoint: wallDraft,
+        roomWidth: layout.width,
+        roomDepth: layout.height,
+        cutout: layout.cutout,
+        free: wallFree,
+      }),
+    [activeFloor.interiorWalls, wallDraft, layout.width, layout.height, layout.cutout, wallFree]
+  );
+  const wallTipUnderPointer = useMemo(
+    () => (view.drawWallMode && pointerWorld ? snapWallPoint(pointerWorld) : null),
+    [view.drawWallMode, pointerWorld, snapWallPoint]
+  );
+  // With the length field open the draft holds still: the pointer is on its
+  // way to the field's buttons, and the preview shows where Place will go.
+  const [wallLengthOpen, setWallLengthOpen] = useState(false);
+  const wallHeldTipRef = useRef<WallSnapResult | null>(null);
+  const wallSnapResult = wallLengthOpen ? wallHeldTipRef.current : wallTipUnderPointer;
+  // Which way the draft points, kept while the pointer is away at the length
+  // field (#723). A new anchor starts it over.
+  const wallAimRef = useRef<{ x: number; z: number } | null>(null);
+  // A point rounds off the pointer that placed it: that gap is no direction,
+  // only the pointer moving on is. A finger never does, and picks one instead.
+  const wallPlacedByRef = useRef<{ x: number; z: number } | null>(null);
+  if (!wallLengthOpen && wallDraft && wallTipUnderPointer && pointerWorld !== wallPlacedByRef.current) {
+    const x = wallTipUnderPointer.point.x - wallDraft.x;
+    const z = wallTipUnderPointer.point.z - wallDraft.z;
+    if (Math.hypot(x, z) >= MIN_WALL_LENGTH) {
+      wallAimRef.current = { x, z };
+      wallHeldTipRef.current = wallTipUnderPointer;
+    }
+  }
 
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const collidingIds = useMemo(() => {
@@ -215,38 +259,48 @@ export function RoomOrganizer(): JSX.Element {
 
   // Set once the history exists, below.
   const commitWallStepRef = useRef<() => void>(() => {});
+  // The one way a wall point lands, clicked or typed (#723).
+  const placeWallPoint = useCallback(
+    (point: { x: number; z: number }) => {
+      wallAimRef.current = null;
+      wallHeldTipRef.current = null;
+      wallPlacedByRef.current = pointerWorld;
+      if (!wallDraft) {
+        setWallDraft(point);
+        return;
+      }
+      // Reject zero-length walls (two clicks on the same vertex).
+      const length = Math.hypot(point.x - wallDraft.x, point.z - wallDraft.z);
+      if (length < MIN_WALL_LENGTH) {
+        setWallDraft(null);
+        return;
+      }
+      const id = `wall-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      // A segment is one undo step, however quickly the next follows.
+      commitWallStepRef.current();
+      actions.addInteriorWall({
+        id,
+        x1: wallDraft.x,
+        z1: wallDraft.z,
+        x2: point.x,
+        z2: point.z,
+      });
+      // Chain: keep the just-placed endpoint as the start of the next wall.
+      setWallDraft(point);
+    },
+    [wallDraft, actions, pointerWorld]
+  );
+
+  // The room stamp in hand (#724): it takes the wall tool's clicks.
+  const stampRef = useRef<{ armed: boolean; release(x: number, z: number): void }>({ armed: false, release: () => {} });
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
+      if (stampRef.current.armed) {
+        stampRef.current.release(x, z);
+        return;
+      }
       if (view.drawWallMode) {
-        const snapped = snapWallEndpoint({
-          point: { x, z },
-          existingWalls: activeFloor.interiorWalls ?? [],
-          fromPoint: wallDraft,
-          roomWidth: layout.width,
-          roomDepth: layout.height,
-        });
-        if (!wallDraft) {
-          setWallDraft(snapped.point);
-          return;
-        }
-        // Reject zero-length walls (two clicks on the same vertex).
-        const length = Math.hypot(snapped.point.x - wallDraft.x, snapped.point.z - wallDraft.z);
-        if (length < 0.1) {
-          setWallDraft(null);
-          return;
-        }
-        const id = `wall-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        // A segment is one undo step, however quickly the next follows.
-        commitWallStepRef.current();
-        actions.addInteriorWall({
-          id,
-          x1: wallDraft.x,
-          z1: wallDraft.z,
-          x2: snapped.point.x,
-          z2: snapped.point.z,
-        });
-        // Chain: keep the just-placed endpoint as the start of the next wall.
-        setWallDraft(snapped.point);
+        placeWallPoint(snapWallPoint({ x, z }).point);
         return;
       }
       if (view.measurementMode) {
@@ -256,15 +310,7 @@ export function RoomOrganizer(): JSX.Element {
         });
       }
     },
-    [
-      view.measurementMode,
-      view.drawWallMode,
-      wallDraft,
-      actions,
-      activeFloor.interiorWalls,
-      layout.width,
-      layout.height,
-    ]
+    [view.measurementMode, view.drawWallMode, placeWallPoint, snapWallPoint]
   );
 
   const handleFloorPointerMove = useCallback((x: number, z: number) => {
@@ -281,9 +327,68 @@ export function RoomOrganizer(): JSX.Element {
     if (!view.drawZoneMode) setSelectedZoneId(null);
   }, [view.drawZoneMode]);
 
-  const handleInteriorWallSelect = useCallback((id: string | null) => {
-    setSelectedWall(id === null ? null : { id, kind: 'interior' });
+  // A typed length: the draft's direction unless a button named one (#723).
+  const handleWallLength = (length: number, direction: { x: number; z: number } | null): boolean => {
+    const aim = direction ?? wallAimRef.current;
+    if (!wallDraft || !aim) return false;
+    const end = wallEndAtLength(wallDraft, aim, length, layout.width, layout.height, layout.cutout);
+    if (!end) {
+      notifyRefused(`A ${formatMetres(length)} wall from here runs past the outside wall.`, playCue);
+      return false;
+    }
+    placeWallPoint(end);
+    return true;
+  };
+
+  const handleInteriorWallSelect = useCallback((id: string | null, side?: WallSide) => {
+    setSelectedWall(id === null ? null : { id, kind: 'interior', ...(side ? { side } : {}) });
   }, []);
+
+  // The tools that take every press leave a selected wall's handles with
+  // nothing to do.
+  useEffect(() => {
+    if (view.drawWallMode || view.drawZoneMode || view.measurementMode) setSelectedWall(null);
+  }, [view.drawWallMode, view.drawZoneMode, view.measurementMode]);
+
+  const planPorch = useMemo(
+    () => (view.drawWallMode ? entrancePlanOutline(layout, activeFloorIndex) : null),
+    [view.drawWallMode, layout, activeFloorIndex]
+  );
+  const stampContext = useMemo(
+    () => ({
+      existingWalls: activeFloor.interiorWalls ?? [],
+      roomWidth: layout.width,
+      roomDepth: layout.height,
+      cutout: layout.cutout,
+      porch: planPorch,
+      hiddenWalls: activeFloor.hiddenWalls,
+    }),
+    [activeFloor.interiorWalls, activeFloor.hiddenWalls, layout.width, layout.height, layout.cutout, planPorch]
+  );
+  const roomStamp = useRoomStamp({
+    context: stampContext,
+    pointer: view.drawWallMode ? pointerWorld : null,
+    onPointer: handleFloorPointerMove,
+    onPlace: (plan) => {
+      commitWallStepRef.current();
+      // One dispatch, so one Undo takes the whole room back.
+      actions.addInteriorWalls(plan.walls);
+      playCue('place');
+    },
+    onRefused: (message) => notifyRefused(message, playCue),
+  });
+  stampRef.current = roomStamp;
+  const { cancel: cancelStamp } = roomStamp;
+  const armStamp = useEvent((spec: RoomStampSpec) => {
+    setWallDraft(null);
+    roomStamp.arm(spec);
+  });
+  const stampGhost = useMemo(() => {
+    const ghost = roomStamp.ghost;
+    if (!ghost) return null;
+    const { centerX: x, centerZ: z, width, depth } = ghost.placement;
+    return { walls: ghost.walls, x, z, width, depth, refused: ghost.refusal !== null };
+  }, [roomStamp.ghost]);
 
   // Reset wall draft + wall selection whenever draw mode flips off.
   useEffect(() => {
@@ -291,13 +396,15 @@ export function RoomOrganizer(): JSX.Element {
       setWallDraft(null);
       setSelectedWall(null);
       setPointerWorld(null);
+      cancelStamp();
     }
-  }, [view.drawWallMode]);
+  }, [view.drawWallMode, cancelStamp]);
 
   // Floor switch: drop any in-progress wall draft and selection (those live on
   // the previous floor).
   useEffect(() => {
     setWallDraft(null);
+    cancelStamp();
     setSelectedItemId(null);
     setSelectedWall(null);
     setExtraSelectedIds(new Set());
@@ -307,7 +414,7 @@ export function RoomOrganizer(): JSX.Element {
     // activeFloor.id: removing floor 0 (or reordering) can change WHICH floor
     // is active while the index stays 0 — keying on the index alone carried
     // the deleted floor's selection onto its replacement (#117).
-  }, [activeFloorIndex, activeFloor.id]);
+  }, [activeFloorIndex, activeFloor.id, cancelStamp]);
 
   // Ghost-selection guard: whenever the floor's items change (undo/redo,
   // import, clear floor, deletes from any path), drop selected ids that no
@@ -454,10 +561,10 @@ export function RoomOrganizer(): JSX.Element {
 
   // The recess's span of the front wall on this storey; openings settle on
   // its piers (#394). Memoised on what the recess is fitted to.
-  const { width: lotWidth, height: lotDepth, terrain, entrance, floors } = layout;
+  const { width: lotWidth, height: lotDepth, terrain, entrance, floors, cutout } = layout;
   const frontGap = useMemo(
-    () => entrancePlanOutline({ width: lotWidth, height: lotDepth, terrain, entrance, floors }, activeFloorIndex),
-    [lotWidth, lotDepth, terrain, entrance, floors, activeFloorIndex]
+    () => entrancePlanOutline({ width: lotWidth, height: lotDepth, terrain, entrance, floors, cutout }, activeFloorIndex),
+    [lotWidth, lotDepth, terrain, entrance, floors, cutout, activeFloorIndex]
   );
 
   const {
@@ -475,6 +582,7 @@ export function RoomOrganizer(): JSX.Element {
     roomDepth: layout.height,
     keepOut,
     frontGap,
+    cutout: layout.cutout,
     actions,
     allSelectedIds,
   });
@@ -496,12 +604,13 @@ export function RoomOrganizer(): JSX.Element {
         roomWidth: layout.width,
         roomDepth: layout.height,
         interiorWalls: activeFloor.interiorWalls ?? [],
+        cutout: layout.cutout,
         rotation,
         ...(bracketed ? { bracketArm: CAMERA_BRACKET_ARM } : {}),
       });
       actions.moveItem(id, pos.x, pos.z);
     },
-    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
+    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, layout.cutout, actions]
   );
 
   // A key or plan drag that met a lock (#635): says why, the way a budget
@@ -784,6 +893,7 @@ export function RoomOrganizer(): JSX.Element {
     view,
     allSelectedIds,
     frontGap,
+    cutout: layout.cutout,
     refusePurchase: refuseOverBudget,
     // A soft-budget buy agreed to in the in-app question lands after the
     // place call returned '' (#649).
@@ -845,11 +955,37 @@ export function RoomOrganizer(): JSX.Element {
 
   // EXPLORE edits nothing, so it shows no handles either.
   const planZoneId = exploring ? null : selectedZoneId;
+  // The rooms the zone tool offers to name (#719); none outside it.
+  const planRoomsToName = useMemo(
+    () => (view.drawZoneMode && !exploring ? roomsToName(layout, activeFloorIndex) : NO_ROOMS),
+    [view.drawZoneMode, exploring, layout, activeFloorIndex]
+  );
+
+  // Moving a selected wall, in both views (#718). The 3D ghosts are wired below,
+  // once the scene exists.
+  const interiorSelectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
+  const wallGhostsRef = useRef<((preview: WallMovePreview | null) => void) | null>(null);
+  const { grabWall, wallMovePreview, isHoldingWall, cancelWallHold } = useWallEdit({
+    enabled: !exploring && !walkthroughActive && !ghost && !view.drawWallMode && !view.drawZoneMode && !view.measurementMode,
+    pressDrags: designing,
+    layout,
+    activeFloor,
+    activeFloorIndex,
+    selectedWallId: interiorSelectedWallId,
+    ghostsRef: wallGhostsRef,
+    onMove: (patches) => {
+      // One undo step, however quickly the next move follows.
+      commitWallStepRef.current();
+      actions.updateInteriorWalls(patches);
+      playCue('place');
+    },
+    onRefused: refuseZone,
+  });
 
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
   // keyboard gate) are identical to a 3D drag.
-  const { clientToWorld2D } = useCanvas2DInteraction({
+  const { clientToWorld2D, repaintPlan } = useCanvas2DInteraction({
     enabled: view.view2D,
     exploring,
     canvasRef: canvas2DRef,
@@ -871,15 +1007,26 @@ export function RoomOrganizer(): JSX.Element {
     onWallPoint: handleEmptyClick,
     onWallPointerMove: handleFloorPointerMove,
     onWallPointerLeave: handleFloorPointerLeave,
+    onWallPress: roomStamp.press,
+    onWallPressCancel: roomStamp.cancelPress,
     onInteriorWallSelect: handleInteriorWallSelect,
+    selectedWallId: interiorSelectedWallId,
+    onWallGrab: grabWall,
+    wallMovePreview,
     selectedZoneId: planZoneId,
     onZoneSelect: setSelectedZoneId,
+    roomsToName: planRoomsToName,
   });
 
+  const orbitGroundAt = useCallback(
+    (z: number) => groundHeightAt(layout.terrain, z, layout.height / 2),
+    [layout.terrain, layout.height]
+  );
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
+      groundAt: orbitGroundAt,
       // The distance tool measures across furniture, so its clicks go to the floor (#341).
       floorPickOnly: view.drawWallMode || view.measurementMode,
       onItemSelect: handleSelect,
@@ -890,11 +1037,14 @@ export function RoomOrganizer(): JSX.Element {
       onItemDragCancel: handleDragCancel,
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
-      onWallSelect: ({ wallId, kind }) => {
+      onWallSelect: ({ wallId, kind, from }) => {
         // EXPLORE edits nothing, and this opens the paint target.
         if (exploring) return;
-        setSelectedWall({ id: wallId, kind });
+        const wall = kind === 'interior' ? activeFloor.interiorWalls?.find((entry) => entry.id === wallId) : undefined;
+        setSelectedWall({ id: wallId, kind, ...(wall ? { side: wallSideAt(wall, from) } : {}) });
       },
+      onWallGrab: grabWall,
+      onFloorGrab: roomStamp.grabFloor,
       // Only track the floor pointer while wall-draw mode consumes it — the
       // handler writes React state per mousemove, re-rendering the whole tree,
       // and the hook skips the floor raycast when the handler is absent.
@@ -903,6 +1053,15 @@ export function RoomOrganizer(): JSX.Element {
       snapPosition,
       getDragPlaneY,
     });
+
+  wallGhostsRef.current = (preview) => {
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+    if (preview) renderWallGhosts(THREE, scene, preview.moved, activeFloorY, interiorWallHeight(activeFloor), preview.refusal !== null);
+    else clearWallGhosts(scene);
+    invalidate();
+  };
 
   sceneBoxRef.current = sceneRef;
   invalidateBoxRef.current = invalidate;
@@ -975,10 +1134,11 @@ export function RoomOrganizer(): JSX.Element {
       terrain: layout.terrain,
       entrance: layout.entrance,
       frontage: layout.frontage,
+      cutout: layout.cutout,
       ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
       ...(walkRoofStyle ? { roof: { style: walkRoofStyle, ...(walkRoofColor ? { color: walkRoofColor } : {}) } } : {}),
     }),
-    [layout.width, layout.height, layout.floors, layout.terrain, layout.entrance, layout.frontage, layout.neighbours, walkRoofStyle, walkRoofColor]
+    [layout.width, layout.height, layout.floors, layout.terrain, layout.entrance, layout.frontage, layout.cutout, layout.neighbours, walkRoofStyle, walkRoofColor]
   );
 
   const walk = useWalkthrough({
@@ -1021,7 +1181,10 @@ export function RoomOrganizer(): JSX.Element {
     extraSelectedIds,
     selectedWall,
     selectedZoneId: planZoneId,
+    roomsToName: planRoomsToName,
     wallDraft,
+    stampGhost,
+    stampArmed: roomStamp.armed,
     wallSnapResult,
     measurementPoints,
     walkIndoors: walkthroughActive && !walk.outside,
@@ -1135,6 +1298,7 @@ export function RoomOrganizer(): JSX.Element {
     const built = buildPasteItems({
       roomWidth: layout.width,
       roomDepth: layout.height,
+      cutout: layout.cutout,
       interiorWalls: activeFloor.interiorWalls ?? [],
       idTag: randomSuffix(),
       floorIndex: activeFloorIndex,
@@ -1149,7 +1313,7 @@ export function RoomOrganizer(): JSX.Element {
     }
     playCue('place');
     return true;
-  }, [layout.width, layout.height, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
+  }, [layout.width, layout.height, layout.cutout, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
 
   const shortcutHandlers = useMemo(
     () => ({
@@ -1203,7 +1367,8 @@ export function RoomOrganizer(): JSX.Element {
               layout.width,
               layout.height,
               activeFloor.interiorWalls ?? [],
-              frontGap
+              frontGap,
+              layout.cutout
             )
           : null;
         if (settled) actions.updateItem(id, settled);
@@ -1227,6 +1392,14 @@ export function RoomOrganizer(): JSX.Element {
       undo: history.undo,
       redo: history.redo,
       deselect: () => {
+        if (cancelWallHold()) {
+          repaintPlan();
+          return;
+        }
+        if (roomStamp.armed) {
+          cancelStamp();
+          return;
+        }
         if (wallDraft) {
           setWallDraft(null);
           return;
@@ -1251,7 +1424,16 @@ export function RoomOrganizer(): JSX.Element {
         setSelectedWall(null);
       },
       focusOnSelection: () => {
-        if (selectedItem?.position) focusOn(selectedItem.position, undefined, activeFloorY);
+        if (!selectedItem?.position) return;
+        const { x, z } = selectedItem.position;
+        const building = { width: layout.width, height: layout.height, cutout: layout.cutout };
+        // A flat roof counts: only 'none' leaves the storey open to the sky.
+        const covered = roofShows || (view.showAllFloors && activeFloorIndex < layout.floors.length - 1);
+        focusOn(selectedItem.position, {
+          floorY: isInsideBuilding(building, x, z) || activeFloorIndex > 0 ? activeFloorY : orbitGroundAt(z),
+          size: Math.max(selectedItem.width, selectedItem.depth, selectedItem.height),
+          cover: covered ? { storeyHeight: activeStoreyHeight, building, walls: activeFloor.interiorWalls ?? [] } : null,
+        });
       },
       advanceTime: (deltaHours: number) => {
         setView((v) => ({ ...v, timeOfDay: (((v.timeOfDay + deltaHours) % 24) + 24) % 24 }));
@@ -1302,6 +1484,7 @@ export function RoomOrganizer(): JSX.Element {
       layout.floors.length,
       layout.width,
       layout.height,
+      layout.cutout,
       unlockedSelectedIds,
       setView,
       toggle,
@@ -1309,24 +1492,35 @@ export function RoomOrganizer(): JSX.Element {
       history.redo,
       selectedItem,
       focusOn,
+      roofShows,
+      view.showAllFloors,
+      activeStoreyHeight,
+      orbitGroundAt,
       rotateItemHandler,
       reseatCamera,
       playCue,
       refuseLocked,
       wallDraft,
+      cancelWallHold,
+      repaintPlan,
+      roomStamp.armed,
+      cancelStamp,
       view.drawWallMode,
       view.measurementMode,
       view.drawZoneMode,
     ]
   );
 
+  // The wall gesture commits on release, like an item drag: what would change
+  // the house under it waits.
+  const isAnyHoldActive = useCallback(() => isDragActive() || isHoldingWall(), [isDragActive, isHoldingWall]);
   useKeyboardShortcuts({
     selectedItem,
     selectedWall,
     hasSignalItems,
     walkthroughActive,
     exploring,
-    isDragActive,
+    isDragActive: isAnyHoldActive,
     handlers: shortcutHandlers,
   });
 
@@ -1457,9 +1651,19 @@ export function RoomOrganizer(): JSX.Element {
                         wallSnapResult.point.z - wallDraft.z
                       )
                     : null,
+                angle: wallDraft && wallSnapResult ? wallAngleDegrees(wallDraft, wallSnapResult.point) : null,
+                aimed: wallAimRef.current !== null,
+                stamp: roomStamp.armed
+                  ? {
+                      size: stampGhost ? { width: stampGhost.width, depth: stampGhost.depth } : null,
+                      refusal: roomStamp.ghost?.refusal ?? null,
+                    }
+                  : null,
               }
             : null
         }
+        onWallLength={handleWallLength}
+        onWallLengthField={setWallLengthOpen}
         canvasRef={canvasRef}
         canvas2DRef={canvas2DRef}
         hover={
@@ -1570,6 +1774,9 @@ export function RoomOrganizer(): JSX.Element {
         onFit={stableFitToRoom}
         controlsRef={controlsRef}
         placeCatalogItem={stablePlaceFromCatalog}
+        stampArmed={roomStamp.armed}
+        onArmStamp={armStamp}
+        onCancelStamp={cancelStamp}
       />
 
       {/* Touch mode toggle — visible on mobile only */}

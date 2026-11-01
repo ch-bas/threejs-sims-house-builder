@@ -1,15 +1,18 @@
 import { repairHardBudget } from './budget';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
+import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
+import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entranceProblem, entranceWithinStorey, isEntranceSpec, isSillHeight } from './street';
-import { MAX_ZONES, isRoomZone } from './zones';
+import { MAX_ZONES, isRoomZone, plainZone, zoneShapeFits } from './zones';
 import type {
   DormerOpening,
   DormerSpec,
   EntranceSpec,
+  FootprintCutout,
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
@@ -228,7 +231,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
       ) {
         return false;
       }
-      if (!isOptionalString(wall.color)) return false;
+      if (!isOptionalString(wall.color) || !isOptionalString(wall.colorB)) return false;
     }
   }
   // Storey height feeds every floor's elevation and the roof base: a zero,
@@ -239,6 +242,10 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   if (v.zones !== undefined) {
     if (!Array.isArray(v.zones)) return false;
     if (!v.zones.every(isRoomZone)) return false;
+    for (const zone of v.zones as RoomZone[]) {
+      if (zone.floorPattern !== undefined && !FLOOR_PATTERNS.includes(zone.floorPattern)) return false;
+      if (!isOptionalString(zone.floorColor)) return false;
+    }
   }
   return true;
 }
@@ -368,6 +375,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   terrain: true,
   neighbours: true,
   entrance: true,
+  cutout: true,
   frontage: true,
   budget: true,
 });
@@ -415,8 +423,8 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
   groupId: true,
 });
 const VEC2_KEYS = ['x', 'z'] as const;
-const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true });
-const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true });
+const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true });
+const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true, floorPattern: true, floorColor: true });
 const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({
   id: true,
@@ -432,6 +440,7 @@ const DORMER_KEYS = keysOf<DormerSpec>({
 });
 const OPENING_KEYS = keysOf<DormerOpening>({ kind: true, from: true, to: true });
 const TERRAIN_KEYS = keysOf<TerrainSpec>({ frontY: true, backY: true });
+const CUTOUT_KEYS = keysOf<FootprintCutout>({ corner: true, width: true, depth: true });
 const ENTRANCE_KEYS = keysOf<EntranceSpec>({ width: true, depth: true, offset: true, height: true, door: true });
 
 /** `value` itself when it has no other own keys; otherwise a copy holding only `keys`. */
@@ -558,7 +567,15 @@ function repairWall(wall: InteriorWall): InteriorWall {
     z2: clampCoordinate(wall.z2),
   };
   if (wall.color !== undefined) patch.color = capText(wall.color, MAX_COLOR_LENGTH);
+  if (wall.colorB !== undefined) patch.colorB = capText(wall.colorB, MAX_COLOR_LENGTH);
   return rebuild(wall, WALL_KEYS, patch);
+}
+
+/** An empty floor colour means none: the storey's stands in (#720). */
+function withoutEmptyFinish(zone: RoomZone): RoomZone {
+  if (zone.floorColor !== '') return zone;
+  const { floorColor: _empty, ...rest } = zone;
+  return rest;
 }
 
 function repairFloor(floor: FloorLayout): FloorLayout {
@@ -593,11 +610,14 @@ function repairFloor(floor: FloorLayout): FloorLayout {
     );
   }
   if (floor.zones) {
-    patch.zones = mapSame(sliceTo(floor.zones, MAX_ZONES), (zone) =>
+    patch.zones = mapSame(mapSame(sliceTo(floor.zones, MAX_ZONES), withoutEmptyFinish), (zone) =>
       rebuild(zone, ZONE_KEYS, {
         id: capText(zone.id, MAX_ID_LENGTH),
         name: capText(zone.name, MAX_NAME_LENGTH),
         color: capText(zone.color, MAX_COLOR_LENGTH),
+        ...(zone.outline ? { outline: mapSame(zone.outline, repairVec2) } : {}),
+        ...(zone.holes ? { holes: mapSame(zone.holes, (hole) => mapSame(hole, repairVec2)) } : {}),
+        ...(zone.floorColor !== undefined ? { floorColor: capText(zone.floorColor, MAX_COLOR_LENGTH) } : {}),
       })
     );
   }
@@ -628,11 +648,34 @@ function withoutPorchParts(floor: FloorLayout): FloorLayout {
   return { ...floor, items, ...(walls ? { interiorWalls: walls } : {}) };
 }
 
-/** Whitelist every object (#350) and bring every field within the caps above. */
+/** A polygon the footprint can't hold, or that crosses itself, goes back to its rectangle (#719). */
+function repairZoneShapes(floor: FloorLayout, layout: RoomLayout): FloorLayout {
+  if (!floor.zones?.some((zone) => zone.outline)) return floor;
+  const footprint = footprintOutline(layout);
+  const zones = mapSame(floor.zones, (zone) => (zoneShapeFits(zone, footprint) ? zone : plainZone(zone)));
+  return zones === floor.zones ? floor : { ...floor, zones };
+}
+
+/**
+ * Whitelist every object (#350) and bring every field within the caps above.
+ * A file can hold anything in a corner it cuts: fitting is what `setCutout`
+ * does, so a loaded L is the same house as one cut here (#727).
+ */
 function repairLayout(layout: RoomLayout): RoomLayout {
+  const repaired = repairFields(layout);
+  return repaired.cutout ? fitFloorsToCutout(repaired) : repaired;
+}
+
+function repairFields(layout: RoomLayout): RoomLayout {
+  // A malformed cut, or one that leaves no wing on this house, is dropped, not
+  // refused: the house loads as its rectangle. First, as all below reads it.
+  if (layout.cutout !== undefined && (!isFootprintCutout(layout.cutout) || !cutoutFits(layout.cutout, layout.width, layout.height))) {
+    const { cutout: _dropped, ...rest } = layout;
+    return repairFields(rest);
+  }
   const patch: Partial<RoomLayout> = {
     name: capText(layout.name, MAX_NAME_LENGTH),
-    floors: mapSame(layout.floors, repairFloor),
+    floors: mapSame(mapSame(layout.floors, repairFloor), (floor) => repairZoneShapes(floor, layout)),
   };
   if (layout.id !== undefined) patch.id = capText(layout.id, MAX_ID_LENGTH);
   if (layout.roof) patch.roof = repairRoof(layout.roof);
@@ -644,8 +687,15 @@ function repairLayout(layout: RoomLayout): RoomLayout {
     // A porch the street storey is too low for isn't built, so neither are its
     // door and back wall, as on the reducer's re-fit. `door` stays unset: raising
     // the storey brings both back.
-    const context = { width: layout.width, depth: layout.height, floors: layout.floors, ...(layout.terrain ? { terrain: layout.terrain } : {}) };
-    if (entranceProblem(entrance, context) === 'too-low') patch.floors = mapSame(patch.floors ?? layout.floors, withoutPorchParts);
+    const context = { width: layout.width, depth: layout.height, cutout: layout.cutout, floors: layout.floors, ...(layout.terrain ? { terrain: layout.terrain } : {}) };
+    const problem = entranceProblem(entrance, context);
+    if (problem === 'too-low' || problem === 'cutout-clash') patch.floors = mapSame(patch.floors ?? layout.floors, withoutPorchParts);
+  }
+  // A pitched roof can't cover an L, so a file that says both gets a flat one
+  // rather than a rectangle over the notch (#727).
+  if (layout.cutout !== undefined) {
+    patch.cutout = pick(layout.cutout, CUTOUT_KEYS);
+    if (patch.roof && (patch.roof.style === 'gable' || patch.roof.style === 'hipped')) patch.roof = { ...patch.roof, style: 'flat' };
   }
   // The hard budget (#463e) is repaired, never refused: anything that isn't
   // an object switches it off rather than costing the user their house.

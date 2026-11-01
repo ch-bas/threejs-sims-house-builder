@@ -140,7 +140,16 @@ to respect.
   applies `withViewInvariants` on every change, so leaving the plan by any
   route ends the draw mode, a chip on the plan says it is on (with Done for
   touch), and Escape leaves it like the wall and distance tools (#439).
-  Zone names are left off when wider than their zone, and on the minimap
+  A zone made from a detected room (#719) stores its polygon and follows
+  its walls: the reducer re-fits it in the step that moved a wall, it has no
+  handles, and a rectangle zone is never re-fitted. A zone's own floor
+  (#720) is a patch over the slab, less the porch and stairwells, on the
+  room's texture grid; the plan shows its colour, as it shows no floor
+  patterns at all, and a traced ground floor stays clear. A partition's
+  `colorB` exists only while its faces differ: a click picks the face that
+  looks at the camera, or on the plan the side of the line pressed, and the
+  paint panel's Side A / Side B / Both can change it. Zone names are left off
+  when wider than their zone, and on the minimap
   and thumbnails (`thumbnail`) also below 25 px per metre (#433). A lost
   window or pointer capture mid-drag undoes the drag and clears the
   gesture flag.
@@ -168,7 +177,19 @@ to respect.
   back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
   not on every item edit, and the wall-draw preview re-poses one unit box per
   pointer move (#283, #409).
-- **Filmic rendering pipeline.** ACES tone mapping, explicit sRGB output,
+- **Outer walls.** Each shell wall is one mesh with two single-sided faces back
+  to back (`withOutsideFace`), so each lights and shadows from its own side.
+  A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
+  a sun-facing wall shadow itself.
+- **Orbit lens.** The orbit camera is 40° (`ORBIT_FOV_DEG`), and the start
+  pose, presets, Fit and zoom slider stand back by `ORBIT_LENS_SCALE` from
+  their 75° numbers. Walkthrough swaps to 75° on entry and restores it on
+  exit, beside the near-plane swap. A far orbit moves its near plane out
+  (`orbitNear`) to keep depth precision on big houses, and the moon and stars
+  are centred on the camera at draw time (`followCamera`), so a far camera
+  never leaves the sky dome. Focus-on-item stays inside the room when a roof or
+  a storey is drawn above it (`focusOffset`).
+- **Rendering pipeline.** Khronos Neutral tone mapping, explicit sRGB output,
   device-pixel-ratio-aware rendering (capped at 2×), PCF shadows softened
   by the sun's `shadow.radius`, and
   image-based lighting from a PMREM-filtered `RoomEnvironment`. The

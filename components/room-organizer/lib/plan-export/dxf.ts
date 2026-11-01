@@ -34,10 +34,11 @@
  *   on the same layers at the same 1:1 scale, each with its own title (#405).
  */
 
+import { footprintOutline } from '../footprint';
 import { stripXmlIllegal } from '../html-escape';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
-import { zoneArea } from '../zones';
+import { zoneArea, zoneLabelSpot, zoneRings } from '../zones';
 import {
   buildingFrameBounds,
   clipArc,
@@ -531,13 +532,17 @@ function emitFloor(
   // along the east cheek, across the recess's back and out along the west
   // cheek — eight vertices. (The back wall's centreline is on INTERIOR too,
   // like the 2D view draws it; its door is an ordinary opening.)
+  // The L (#727) walks its six corners the same way.
   const hw = layout.width / 2;
   const hd = layout.height / 2;
   const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
   const northEdge: CadPoint[] = recess
     ? [cad(recess.x1, recess.frontZ), cad(recess.x1, recess.backZ), cad(recess.x0, recess.backZ), cad(recess.x0, recess.frontZ)]
     : [];
-  doc.polyline('WALLS', [cad(-hw, hd), cad(hw, hd), cad(hw, -hd), ...northEdge, cad(-hw, -hd)], true);
+  const corners = footprintOutline(layout).reverse().map(({ x, z }) => cad(x, z));
+  // The north wall is where consecutive corners sit at -hd; the recess goes between them.
+  corners.splice(footprintOutline(layout).reverse().findIndex(({ z }) => z === -hd) + 1, 0, ...northEdge);
+  doc.polyline('WALLS', corners, true);
 
   // Interior walls: centrelines (the 0.16 m thickness is a render style).
   for (const wall of floor.interiorWalls ?? []) {
@@ -591,12 +596,10 @@ function emitFloor(
 /** Room zones (#571): the outline, then name and area on two lines, like the SVG's `renderZones`. */
 function emitZones(doc: DxfDocument, floor: FloorLayout, recess: EntrancePlanOutline | null, cad: (x: number, z: number) => CadPoint): void {
   for (const zone of floor.zones ?? []) {
-    const left = zone.x;
-    const right = zone.x + zone.w;
-    const top = zone.z;
-    const bottom = zone.z + zone.d;
-    doc.polyline('ZONES', [cad(left, top), cad(right, top), cad(right, bottom), cad(left, bottom)], true);
-    const centre = zone.x + zone.w / 2;
+    for (const ring of zoneRings(zone)) doc.polyline('ZONES', ring.map((point) => cad(point.x, point.z)), true);
+    const spot = zoneLabelSpot(zone);
+    const top = spot.z;
+    const centre = spot.x + spot.w / 2;
     doc.text('ZONES', cad(centre, top + ZONE_NAME_DROP_M), LABEL_TEXT_HEIGHT, zone.name, 'centre');
     doc.text('ZONES', cad(centre, top + ZONE_AREA_DROP_M), DIMENSION_TEXT_HEIGHT, `${zoneArea(zone, recess).toFixed(1)} m²`, 'centre');
   }

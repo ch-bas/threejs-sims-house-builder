@@ -40,7 +40,8 @@ components/
     │   ├── schema.ts                    Type guards, legacy migration, caps that repair (never refuse)
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
     │   ├── collision-reason.ts          The sentence for why an item shows red (rules live in geometry.ts)
-    │   ├── footprint.ts                 Shared footprint primitives: rotatedHalfExtents, LOW_PROFILE_MAX_HEIGHT, clampToFootprint (a leaf, so walk-collision can import it)
+    │   ├── cutout.ts                    The L-shaped footprint's rules: why a cut is refused, and bringing every storey inside it (#727)
+    │   ├── footprint.ts                 Shared footprint primitives: rotatedHalfExtents, LOW_PROFILE_MAX_HEIGHT, clampToFootprint; the building's outline: the optional corner cut-out, footprintOutline, isInsideBuilding, clampToBuilding, shellWalls (a leaf, so walk-collision can import it)
     │   ├── html-escape.ts               escapeHtml for the blueprint and print popups and the SVG export
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
@@ -84,7 +85,8 @@ components/
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
-    │   ├── wall-snap.ts                 Vertex + right-angle snap for interior walls
+    │   ├── wall-edit.ts                 Moving drawn walls: slide, end moves, corners that follow, what rides along (#718)
+    │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
@@ -94,7 +96,10 @@ components/
     │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
     │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
     │   ├── walk-interact.ts             Seats in reach and the seated pose (facing the TV), never through a wall or across the shell (#566)
+    │   ├── wall-sides.ts                The two faces of a partition: which one faces a point, painting one (#720)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359); the mode to return to on exit
+    │   ├── room-stamp.ts                The room stamp as a held placement: snapped position, drag to size, the walls a drop adds (#724)
+    │   ├── room-detect.ts               Rooms closed by walls: planar faces of the footprint, partitions and keep-out, with areas (#719)
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
@@ -104,7 +109,7 @@ components/
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
-    │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats (porch left out, #582)
+    │   ├── zones.ts                     Room zones: rect and polygon validation, clamping, re-fit to detected rooms (#719), per-zone stats (porch left out, #582)
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
@@ -199,6 +204,9 @@ components/
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
     │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d)
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap (with companions), Escape, restore
+    │   ├── use-shift-held.ts            Whether Shift is down, for tools that read it between pointer events (#723)
+    │   ├── use-wall-edit.ts             The gesture of moving a selected wall, in both views: preview per move, one dispatch on release (#718)
+    │   ├── use-room-stamp.ts            The room stamp in hand: ghost under the pointer, click to drop, drag to size (#724)
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
     │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)
@@ -225,7 +233,7 @@ components/
         ├── slider-row.tsx               Shared label + range + readout row
         ├── floor-switcher.tsx
         ├── walls-panel.tsx
-        ├── zones-panel.tsx              Room zones: list, rename, recolour, delete, draw toggle
+        ├── zones-panel.tsx              Room zones: list, rename, recolour, delete, draw toggle, name a detected room
         ├── roof-panel.tsx
         ├── site-panel.tsx               Slope, neighbours + street, frontage, entrance
         ├── room-settings-panel.tsx
@@ -248,6 +256,7 @@ components/
         ├── touch-mode-toggle.tsx        Touch camera buttons: orbit / pan, zoom, fit
         ├── floor-pill.tsx
         ├── room-shapes-panel.tsx
+        ├── wall-draw-chip.tsx           The wall tool's status chip and its typed-length field (#723)
         ├── dock-fold.tsx                Fold toggle for the wall tool's panels in the phone dock
         ├── walk-hud.tsx                 Walkthrough HUD: lock-state hints, sit prompt, floor + clock; touch stick and buttons
         ├── wall-display-pill.tsx

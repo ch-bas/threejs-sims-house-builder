@@ -1,10 +1,12 @@
+import { ORBIT_LENS_SCALE } from './scene-insets';
+
 /**
  * The camera pad's zoom slider as a view of the real orbit distance (#167).
  * Log scale, so each zoom step moves the thumb by the same amount; 100 is
  * closest. Distances outside the range pin the thumb to an end.
  */
-export const ZOOM_SLIDER_MIN_DISTANCE = 2;
-export const ZOOM_SLIDER_MAX_DISTANCE = 80;
+export const ZOOM_SLIDER_MIN_DISTANCE = 2 * ORBIT_LENS_SCALE;
+export const ZOOM_SLIDER_MAX_DISTANCE = 80 * ORBIT_LENS_SCALE;
 
 /** What one '+' / '-' press multiplies the orbit distance by. */
 export const ZOOM_IN_FACTOR = 0.85;

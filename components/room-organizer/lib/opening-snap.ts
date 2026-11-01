@@ -6,7 +6,8 @@
  */
 
 import { CAMERA_BRACKET_ARM } from './constants';
-import type { InteriorWall } from './types';
+import { shellWalls } from './footprint';
+import type { FootprintCutout, InteriorWall, WallId } from './types';
 
 export type WallKind = 'exterior' | 'interior';
 
@@ -63,14 +64,22 @@ export interface SnapOpeningOptions {
    * never in the hole.
    */
   frontGap?: WallGap | null;
+  /** The corner cut out of the building (#727): the walls it takes and the two it adds. */
+  cutout?: FootprintCutout | undefined;
 }
+
+/** Each side's exterior candidate: the rotation that faces an opening or a camera into the house. */
+const EXTERIOR_ROTATIONS: ReadonlyArray<readonly [WallId, number]> = [
+  ['north', 0],
+  ['south', Math.PI],
+  ['east', -Math.PI / 2],
+  ['west', Math.PI / 2],
+];
 
 export function snapOpeningToWall(options: SnapOpeningOptions): OpeningSnap {
   const { position, itemWidth, roomWidth, roomDepth } = options;
   const interiorWalls = options.interiorWalls ?? [];
 
-  const halfW = roomWidth / 2;
-  const halfD = roomDepth / 2;
   const half = itemWidth / 2;
 
   const candidates: OpeningSnap[] = [];
@@ -84,21 +93,26 @@ export function snapOpeningToWall(options: SnapOpeningOptions): OpeningSnap {
       distance: Math.hypot(position.x - x, position.z - z),
     });
   };
-  const northRuns: Array<[number, number]> = options.frontGap
-    ? [
-        [-halfW, options.frontGap.x0],
-        [options.frontGap.x1, halfW],
-      ]
-    : [[-halfW, halfW]];
-  for (const [from, to] of northRuns) {
-    // A pier too narrow for the opening offers no spot; the whole wall always
-    // does (clamp centres an opening wider than the wall, as before).
-    if (options.frontGap && to - from < itemWidth) continue;
-    pushExterior(clamp(position.x, from + half, to - half), -halfD, 0);
+  const walls = shellWalls({ width: roomWidth, height: roomDepth, cutout: options.cutout });
+  for (const [side, rotation] of EXTERIOR_ROTATIONS) {
+    for (const wall of walls.filter((candidate) => candidate.side === side)) {
+      const notchWall = wall.id !== side;
+      const gap = wall.id === 'north' ? options.frontGap : null;
+      if (wall.z1 === wall.z2) {
+        const runs: Array<[number, number]> = gap ? [[wall.x1, gap.x0], [gap.x1, wall.x2]] : [[wall.x1, wall.x2]];
+        for (const [from, to] of runs) {
+          // A pier too narrow for the opening offers no spot, nor does a notch
+          // wall; a whole wall always does (clamp centres an opening wider
+          // than the wall, as before).
+          if ((gap || notchWall) && to - from < itemWidth) continue;
+          pushExterior(clamp(position.x, from + half, to - half), wall.z1, rotation);
+        }
+      } else {
+        if (notchWall && wall.z2 - wall.z1 < itemWidth) continue;
+        pushExterior(wall.x1, clamp(position.z, wall.z1 + half, wall.z2 - half), rotation);
+      }
+    }
   }
-  pushExterior(clamp(position.x, -halfW + half, halfW - half), halfD, Math.PI);
-  pushExterior(halfW, clamp(position.z, -halfD + half, halfD - half), -Math.PI / 2);
-  pushExterior(-halfW, clamp(position.z, -halfD + half, halfD - half), Math.PI / 2);
 
   for (const wall of interiorWalls) {
     const projected = projectOntoSegment(position, wall, half);
@@ -314,7 +328,8 @@ export function settleWallMountedItem(
   roomWidth: number,
   roomDepth: number,
   interiorWalls: readonly InteriorWall[] = [],
-  frontGap?: WallGap | null
+  frontGap?: WallGap | null,
+  cutout?: FootprintCutout
 ): SettledPlacement | null {
   if (isOpening(item.type)) {
     const snapped = snapOpeningToWall({
@@ -323,6 +338,7 @@ export function settleWallMountedItem(
       roomWidth,
       roomDepth,
       interiorWalls,
+      cutout,
       ...(frontGap ? { frontGap } : {}),
     });
     const patch: SettledPlacement = { position: snapped.position };
@@ -340,6 +356,7 @@ export function settleWallMountedItem(
       roomWidth,
       roomDepth,
       interiorWalls,
+      cutout,
       ...(frontGap ? { frontGap } : {}),
     });
     if (item.cameraBracket) {
@@ -350,6 +367,7 @@ export function settleWallMountedItem(
         roomWidth,
         roomDepth,
         interiorWalls,
+        cutout,
         ...(frontGap ? { frontGap } : {}),
         rotation: item.rotation ?? snapped.rotation,
         bracketArm: CAMERA_BRACKET_ARM,
@@ -372,6 +390,7 @@ export function settleWallMountedItem(
       roomWidth,
       roomDepth,
       interiorWalls,
+      cutout,
       ...(frontGap ? { frontGap } : {}),
       rotation,
     });

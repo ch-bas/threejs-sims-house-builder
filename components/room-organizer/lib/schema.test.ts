@@ -904,3 +904,35 @@ describe('storedEntryLoss names what a repair left out (#553)', () => {
     expect(storedEntryLoss(layout, parseStoredLayout(layout)!)).toBeNull();
   });
 });
+
+describe('the footprint cut-out (#727)', () => {
+  const cutout = { corner: 'ne', width: 3, depth: 2 } as const;
+
+  it('round-trips, stray keys stripped, and an absent one stays absent', () => {
+    const parsed = parseStoredLayout(makeLayout({ cutout: { ...cutout, extra: 1 } as never }));
+    expect(parsed?.cutout).toEqual(cutout);
+    expect(parseStoredLayout(makeLayout())).not.toHaveProperty('cutout');
+  });
+
+  it.each([
+    ['unknown corner', { corner: 'up', width: 3, depth: 2 }],
+    ['negative size', { corner: 'ne', width: -3, depth: 2 }],
+    ['not an object', 7],
+    ['null', null],
+  ])('drops a malformed one and loads the house: %s (review M6)', (_label, value) => {
+    const parsed = parseStoredLayout(makeLayout({ cutout: value as never }));
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty('cutout');
+  });
+
+  it('drops a cut that leaves no wing, keeping the house', () => {
+    const parsed = parseStoredLayout(makeLayout({ width: 4, height: 4, cutout: { corner: 'ne', width: 3, depth: 2 } }));
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty('cutout');
+  });
+
+  it('never loads a pitched roof over an L', () => {
+    const parsed = parseStoredLayout(makeLayout({ width: 10, height: 8, cutout, roof: { style: 'gable', color: '#123456' } }));
+    expect(parsed?.roof).toEqual({ style: 'flat', color: '#123456' });
+  });
+});

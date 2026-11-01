@@ -13,11 +13,13 @@
  */
 
 import { CURRENCY_SYMBOL } from '../constants';
+import { floorKeepOut } from '../floor-keep-out';
+import { cutoutRect, shellWalls } from '../footprint';
 import { escapeHtml } from '../html-escape';
 import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
-import { zoneArea } from '../zones';
+import { hasFloorFinish, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings } from '../zones';
 import {
   buildingFrameBounds,
   coverageRings,
@@ -49,7 +51,7 @@ import {
   type PlanPoint,
   type ScheduleRow,
 } from './plan-geometry';
-import type { FloorLayout, RoomLayout, WallId } from '../types';
+import type { FloorLayout, RoomLayout, Vec2, WallId } from '../types';
 
 /** Line colours; defaults match the blueprint / 2D-view look. */
 export interface SvgPlanTheme {
@@ -360,6 +362,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     `<rect width="${fmt(sheet.widthPx)}" height="${fmt(sheet.heightPx)}" fill="${theme.background}"/>`,
     `<g class="plan" transform="translate(${fmt(rootX)} ${fmt(rootY)})">`,
     `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeHtml(floor.floorColor)}"/>`,
+    renderZoneFloors(layout, floor, px, py),
     renderGrid(layout, margin, scale, theme),
     renderZones(floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), px, py, scale, theme),
     renderRoomOutline(layout, floor, margin, scale, theme),
@@ -411,11 +414,17 @@ function renderRoomOutline(
   const x0 = margin;
   const y0 = margin;
   const x1 = margin + layout.width * scale;
-  const y1 = margin + layout.height * scale;
   // The recessed entrance (#285), as the 2D view draws it: the north edge
   // breaks across the opening, the two cheeks run back to the recess's rear
   // wall (an interior wall, emitted with the others), and the recess is
-  // painted in the page colour over the floor, grid and zones — outside.
+  // painted in the page colour over the floor, grid and zones — outside. The
+  // corner cut out of the building (#727) likewise, and the six walls of the
+  // L run round it.
+  const canvasX = (x: number) => margin + (x + layout.width / 2) * scale;
+  const canvasY = (z: number) => margin + (z + layout.height / 2) * scale;
+  const [northWall, ...otherWalls] = shellWalls(layout);
+  const northX0 = canvasX(northWall!.x1);
+  const northX1 = canvasX(northWall!.x2);
   const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
   const rx0 = recess ? margin + (recess.x0 + layout.width / 2) * scale : x0;
   const rx1 = recess ? margin + (recess.x1 + layout.width / 2) * scale : x1;
@@ -423,17 +432,21 @@ function renderRoomOutline(
   type Edge = { id: WallId; x1: number; y1: number; x2: number; y2: number };
   const north: Edge[] = recess
     ? [
-        { id: 'north', x1: x0, y1: y0, x2: rx0, y2: y0 },
+        { id: 'north', x1: northX0, y1: y0, x2: rx0, y2: y0 },
         { id: 'north', x1: rx0, y1: y0, x2: rx0, y2: ry1 },
         { id: 'north', x1: rx1, y1: y0, x2: rx1, y2: ry1 },
-        { id: 'north', x1: rx1, y1: y0, x2: x1, y2: y0 },
+        { id: 'north', x1: rx1, y1: y0, x2: northX1, y2: y0 },
       ]
-    : [{ id: 'north', x1: x0, y1: y0, x2: x1, y2: y0 }];
+    : [{ id: 'north', x1: northX0, y1: y0, x2: northX1, y2: y0 }];
   const edges: Edge[] = [
     ...north,
-    { id: 'south', x1: x0, y1: y1, x2: x1, y2: y1 },
-    { id: 'west', x1: x0, y1: y0, x2: x0, y2: y1 },
-    { id: 'east', x1: x1, y1: y0, x2: x1, y2: y1 },
+    ...otherWalls.map((wall): Edge => ({
+      id: wall.side,
+      x1: canvasX(wall.x1),
+      y1: canvasY(wall.z1),
+      x2: canvasX(wall.x2),
+      y2: canvasY(wall.z2),
+    })),
   ];
   const lines = edges.map((edge) => {
     const hidden = isWallHidden(floor, edge.id);
@@ -447,8 +460,22 @@ function renderRoomOutline(
       `<rect class="entrance" x="${fmt(rx0)}" y="${fmt(y0)}" width="${fmt(rx1 - rx0)}" height="${fmt(ry1 - y0)}" fill="${theme.background}"/>`
     );
   }
+  const notch = cutoutRect(layout);
+  if (notch) {
+    // Past the two sides on the old outline by a wall stroke, so it doesn't ghost.
+    const east = notch.x1 >= layout.width / 2;
+    const north = notch.z0 <= -layout.height / 2;
+    const left = canvasX(notch.x0) - (east ? 0 : CUTOUT_OUTER_BLEED_PX);
+    const top = canvasY(notch.z0) - (north ? CUTOUT_OUTER_BLEED_PX : 0);
+    const width = (notch.x1 - notch.x0) * scale + CUTOUT_OUTER_BLEED_PX;
+    const height = (notch.z1 - notch.z0) * scale + CUTOUT_OUTER_BLEED_PX;
+    lines.unshift(`<rect class="cutout" x="${fmt(left)}" y="${fmt(top)}" width="${fmt(width)}" height="${fmt(height)}" fill="${theme.background}"/>`);
+  }
   return lines.join('\n');
 }
+
+/** The wall stroke's 3 px, which the page colour must cover on the old outline. */
+const CUTOUT_OUTER_BLEED_PX = 3;
 
 /**
  * Room zones (#155) as tinted rects with the name and area along the top
@@ -468,17 +495,41 @@ function renderZones(
   return zones
     .map((zone) => {
       const color = escapeHtml(zone.color);
-      const cx = fmt(Number(px(zone.x)) + (zone.w * scale) / 2);
-      const top = fmt(Number(py(zone.z)) + 15);
+      const spot = zoneLabelSpot(zone);
+      const cx = fmt(Number(px(spot.x)) + (spot.w * scale) / 2);
+      const top = fmt(Number(py(spot.z)) + 15);
+      const paint = `fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"`;
+      // A room's own floor can be dark: its name gets a halo, as on the plan.
+      const halo = hasFloorFinish(zone) ? ` stroke="${theme.background}" stroke-width="3" stroke-linejoin="round" paint-order="stroke"` : '';
       return [
         `<g class="zone">`,
-        `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.7" stroke-width="1.5"/>`,
-        `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}">${escapeHtml(zone.name)}</text>`,
-        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}">${zoneArea(zone, recess).toFixed(1)} m²</text>`,
+        zone.outline
+          ? `<path d="${zoneRings(zone).map((ring) => ringPath(ring, px, py)).join(' ')}" fill-rule="evenodd" ${paint}/>`
+          : `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" ${paint}/>`,
+        `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}"${halo}>${escapeHtml(zone.name)}</text>`,
+        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}"${halo}>${zoneArea(zone, recess).toFixed(1)} m²</text>`,
         `</g>`,
       ].join('');
     })
     .join('\n');
+}
+
+/** Rooms with a floor of their own (#720): the patches 3D lays, under the grid. */
+function renderZoneFloors(layout: RoomLayout, floor: FloorLayout, px: (x: number) => string, py: (z: number) => string): string {
+  if (!floor.zones?.some(hasFloorFinish)) return '';
+  return zoneFloorPatches(floor, floorKeepOut(layout, planFloorIndex(layout.floors, floor)))
+    .flatMap((patch) =>
+      patch.regions.map((region) => {
+        const rings = [region.outline, ...(region.holes ?? [])];
+        return `<path class="zone-floor" d="${rings.map((ring) => ringPath(ring, px, py)).join(' ')}" fill-rule="evenodd" fill="${escapeHtml(patch.color)}"/>`;
+      })
+    )
+    .join('\n');
+}
+
+/** A closed ring as path data. */
+function ringPath(ring: readonly Vec2[], px: (x: number) => string, py: (z: number) => string): string {
+  return `${ring.map((point, index) => `${index === 0 ? 'M' : 'L'} ${px(point.x)} ${py(point.z)}`).join(' ')} Z`;
 }
 
 function renderInteriorWalls(

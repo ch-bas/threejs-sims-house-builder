@@ -32,6 +32,62 @@ function twoStoreys(): RoomLayout {
 
 const storeys = (root: THREE.Object3D) => root.children.filter((child) => child.userData.type === 'storey');
 
+describe('zone floors in the export (#720)', () => {
+  const zone = { id: 'k', name: 'Kitchen', color: '#000', x: -4, z: -3, w: 3, d: 3, floorColor: '#ff0000' };
+  const patches = (root: THREE.Object3D) => {
+    const found: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      if (node.name === 'Floor k') found.push(node as THREE.Mesh);
+    });
+    return found;
+  };
+
+  it('lays the zone floor over the slab with a gap, inside its rectangle', () => {
+    const layout = twoStoreys();
+    const root = buildExportBuilding(THREE, { ...layout, floors: [{ ...layout.floors[0]!, zones: [zone] }, layout.floors[1]!] });
+    const [patch] = patches(root);
+    expect(patch).toBeDefined();
+    expect(patch!.position.y).toBeGreaterThan(0);
+    expect((patch!.material as THREE.MeshStandardMaterial).color.getHexString()).toBe('ff0000');
+    patch!.geometry.computeBoundingBox();
+    const box = patch!.geometry.boundingBox!;
+    expect([box.min.x, box.max.x, box.min.y + 0, box.max.y]).toEqual([-4, -1, 0, 3]);
+    disposeObject(root);
+  });
+
+  it('fifteen finished rooms side by side lie at one height, under a rug', () => {
+    const layout = twoStoreys();
+    const zones = Array.from({ length: 15 }, (_, index) => ({ ...zone, id: `z${index}`, x: -4 + index * 0.5, w: 0.5 }));
+    const root = buildExportBuilding(THREE, { ...layout, floors: [{ ...layout.floors[0]!, zones }, layout.floors[1]!] });
+    const heights = new Set<number>();
+    root.traverse((node) => {
+      if (node.name.startsWith('Floor z')) heights.add(node.position.y);
+    });
+    expect(heights.size).toBe(1);
+    disposeObject(root);
+  });
+
+  it('a tall stack of overlapping floors stays under the rug too', () => {
+    const layout = twoStoreys();
+    const zones = Array.from({ length: 32 }, (_, index) => ({ ...zone, id: `z${index}` }));
+    const root = buildExportBuilding(THREE, { ...layout, floors: [{ ...layout.floors[0]!, zones }, layout.floors[1]!] });
+    let top = 0;
+    root.traverse((node) => {
+      if (node.name.startsWith('Floor z')) top = Math.max(top, node.position.y);
+    });
+    expect(top).toBeLessThan(0.01);
+    disposeObject(root);
+  });
+
+  it('adds no mesh for a zone without a finish', () => {
+    const layout = twoStoreys();
+    const { floorColor: _none, ...plain } = zone;
+    const root = buildExportBuilding(THREE, { ...layout, floors: [{ ...layout.floors[0]!, zones: [plain] }, layout.floors[1]!] });
+    expect(patches(root)).toEqual([]);
+    disposeObject(root);
+  });
+});
+
 describe('buildExportBuilding (#373)', () => {
   it('builds every storey and the roof, named, whatever the view', () => {
     const root = buildExportBuilding(THREE, twoStoreys());

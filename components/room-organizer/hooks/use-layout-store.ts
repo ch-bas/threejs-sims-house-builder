@@ -46,6 +46,7 @@ import type {
   WallId,
   WallPattern,
 } from '../lib/types';
+import type { WallSide } from '../lib/wall-sides';
 
 const nextId = randomId;
 
@@ -71,11 +72,12 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setWallPattern: (pattern: WallPattern) => dispatch({ type: 'setWallPattern', pattern }),
     setStoreyHeight: (height) => dispatch({ type: 'setStoreyHeight', height }),
     setWallColor: (wall: WallId, color: string | null) => dispatch({ type: 'setWallColor', wall, color }),
-    setInteriorWallColor: (id: string, color: string) => dispatch({ type: 'setInteriorWallColor', id, color }),
+    setInteriorWallColor: (id: string, color: string, side?: WallSide) => dispatch({ type: 'setInteriorWallColor', id, color, side }),
     setFloorPlan: (image) => dispatch({ type: 'setFloorPlan', image }),
     setFloorPlanOpacity: (opacity) => dispatch({ type: 'setFloorPlanOpacity', opacity }),
     setFloorPlanFitMode: (mode: FloorPlanFitMode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
     setRoofStyle: (style: RoofStyle) => dispatch({ type: 'setRoofStyle', style }),
+    setCutout: (cutout) => dispatch({ type: 'setCutout', cutout }),
     setRoofColor: (color) => dispatch({ type: 'setRoofColor', color }),
     addDormer: (dormer) => {
       const id = nextId('dormer');
@@ -121,6 +123,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     addInteriorWall: (wall: InteriorWall) => dispatch({ type: 'addInteriorWall', wall }),
     addInteriorWalls: (walls: readonly InteriorWall[]) => dispatch({ type: 'addInteriorWalls', walls }),
     removeInteriorWall: (id) => dispatch({ type: 'removeInteriorWall', id }),
+    updateInteriorWalls: (walls) => dispatch({ type: 'updateInteriorWalls', walls }),
     clearInteriorWalls: () => dispatch({ type: 'clearInteriorWalls' }),
     toggleExteriorWall: (wallId: WallId) => dispatch({ type: 'toggleExteriorWall', wallId }),
     rotateSelection: (ids, radians) => dispatch({ type: 'rotateSelection', ids, radians }),

@@ -1,7 +1,9 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
+import { floorKeepOut } from '../lib/floor-keep-out';
 import { lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
+import { zoneFloorPatches } from '../lib/zones';
 import { disposeObject } from './builder-utils';
 import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
@@ -45,11 +47,13 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
   root.name = layout.name.trim() || 'House';
   const width = layout.width;
   const depth = layout.height;
+  const { cutout } = layout;
 
   const entrance = layout.entrance
     ? entranceGeometry(layout.entrance, {
         width,
         depth,
+        cutout,
         floors: layout.floors,
         ...(layout.terrain ? { terrain: layout.terrain } : {}),
       })
@@ -64,7 +68,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     const storeyH = storeyHeight(floor);
 
     // Shell, as the shell effect builds it.
-    const wallOpenings = computeWallOpenings(floor.items, width, depth, storeyH, floor.interiorWalls ?? []);
+    const wallOpenings = computeWallOpenings(floor.items, width, depth, storeyH, floor.interiorWalls ?? [], cutout);
     const entranceCut = entrance ? entranceWallCut(entrance, layout.floors, index) : null;
     if (entranceCut) {
       wallOpenings.set('north', [...(wallOpenings.get('north') ?? []), { id: 'entrance', ...entranceCut }]);
@@ -73,6 +77,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       scene: scratch,
       width,
       depth,
+      cutout,
       floorColor: floor.floorColor,
       ...(floor.floorPattern ? { floorPattern: floor.floorPattern } : {}),
       ...(floor.wallPattern ? { wallPattern: floor.wallPattern } : {}),
@@ -80,6 +85,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       wallOpenings,
       ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
       floorOpenings: computeFloorOpenings(index > 0 ? layout.floors[index - 1] : undefined),
+      zonePatches: zoneFloorPatches(floor, floorKeepOut(layout, index)),
       floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
       floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
       floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
@@ -115,6 +121,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
         openingCandidates: floor.items,
         roomWidth: width,
         roomDepth: depth,
+        cutout,
         wallHeight,
         ...(wallHeights ? { wallHeights } : {}),
         storeyHeight: storeyH,
@@ -154,7 +161,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
 
   if (layout.roof && layout.roof.style !== 'none') {
     const scratch = new THREE.Scene();
-    buildRoof(THREE, { scene: scratch, width, depth, baseY: buildingHeight(layout.floors), spec: layout.roof });
+    buildRoof(THREE, { scene: scratch, width, depth, cutout, baseY: buildingHeight(layout.floors), spec: layout.roof });
     const roof = new THREE.Group();
     roof.name = 'Roof';
     for (const child of [...scratch.children]) roof.add(child);

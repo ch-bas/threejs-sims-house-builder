@@ -29,17 +29,17 @@ export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
   hemi.userData.type = LIGHTING_TAGS.Hemisphere;
   scene.add(hemi);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+  const ambient = new THREE.AmbientLight(0xffffff, NOON_AMBIENT);
   ambient.userData.type = LIGHTING_TAGS.Ambient;
   scene.add(ambient);
 
-  const directional = new THREE.DirectionalLight(0xfff4d1, 1.05);
+  const directional = new THREE.DirectionalLight(0xfff4d1, NOON_SUN);
   directional.castShadow = true;
   directional.shadow.mapSize.set(2048, 2048);
   directional.shadow.bias = -0.0005;
-  // Offsets the lookup along the normal: with the fitted frustum and the PCF
-  // blur, sun-facing walls otherwise speckle with self-shadow acne (#379).
-  directional.shadow.normalBias = 0.03;
+  // `normalBias` offsets the lookup along the normal, set by `placeSun`: with
+  // the fitted frustum and the PCF blur, walls otherwise speckle with
+  // self-shadow acne (#379).
   // PCFShadowMap blurs over `radius` shadow-map texels (#379).
   directional.shadow.radius = 3;
   directional.userData.type = LIGHTING_TAGS.Directional;
@@ -164,14 +164,20 @@ export function prewarmLampPool(renderer: ThreeNS.WebGLRenderer, scene: ThreeNS.
   }
 }
 
-/** Hours before sunset in which the lamp pool's shaders are compiled. */
+/** Hours before the lamps start in which the lamp pool's shaders are compiled. */
 const LAMP_PREWARM_HOURS = 3;
 
 /** Whether `hour` is in the stretch of afternoon that pre-warms the lamps' shaders. */
 export function isLampPrewarmHour(hour: number): boolean {
   const time = ((hour % 24) + 24) % 24;
-  return time >= 18 - LAMP_PREWARM_HOURS && time <= 18;
+  const lampsOn = 18 - LAMPS_EARLY_HOURS;
+  return time >= lampsOn - LAMP_PREWARM_HOURS && time <= lampsOn;
 }
+
+/** The normal offset of a shadow lookup, floored for small lots. */
+const MIN_NORMAL_BIAS = 0.03;
+/** ...and in shadow-map texels: a fitted frustum sets how coarse those are. */
+const NORMAL_BIAS_TEXELS = 2.5;
 
 function placeSun(light: ThreeNS.DirectionalLight, fit: SunShadowFit): void {
   light.position.set(fit.position[0], fit.position[1], fit.position[2]);
@@ -185,12 +191,23 @@ function placeSun(light: ThreeNS.DirectionalLight, fit: SunShadowFit): void {
   camera.near = fit.near;
   camera.far = fit.far;
   camera.updateProjectionMatrix();
+  // The PCF blur reaches `radius` texels, and on a slope facing away from a
+  // low sun or moon that is further than the fixed offset lifts it: acne.
+  light.shadow.normalBias = shadowNormalBias(fit.right - fit.left, light.shadow.mapSize.width);
+}
+
+/** The normal offset for a shadow frustum `span` metres wide on a `mapSize` map. */
+export function shadowNormalBias(span: number, mapSize: number): number {
+  return Math.max(MIN_NORMAL_BIAS, (span / mapSize) * NORMAL_BIAS_TEXELS);
 }
 
 export interface SkyProfile {
   ambient: { color: number; intensity: number };
   hemisphere: { sky: number; ground: number; intensity: number };
-  /** `position` is a direction toward the sun; its length is meaningless. */
+  /**
+   * The one directional light: the sun by day, the moon once twilight is over.
+   * `position` is a direction toward it; its length is meaningless.
+   */
   sun: { color: number; intensity: number; position: Vec3 };
   /** `scene.environmentIntensity` for the neutral studio IBL. */
   environment: number;
@@ -200,19 +217,22 @@ export interface SkyProfile {
   backgroundTop: number;
   /** 0..1 share of each lamp's full night intensity. */
   lamps: number;
+  /** 0 while the sun is up, rising to 1 over twilight. */
+  twilight: number;
 }
 
 /**
  * How each weather overcasts the clear-sky profile (#189). `grey` is how far
  * the sky colours pull toward their own luminance (a flat, washed sky), and
  * `lift` scales them after — under 1 for a dark rain sky, over 1 for the
- * bright white-out of a snow sky. Sun and ambient are plain multipliers:
- * cloud cover softens the sun most; rain also takes the ambient down a
- * touch, while fresh snow bounces enough light back to leave it alone.
+ * bright white-out of a snow sky. Cloud cover softens shadows by taking the
+ * sun down much further than the fill: `dayFill` holds the omnidirectional
+ * light near its clear level, so the lot doesn't go dark. `nightFill` is the
+ * same scale once twilight is over.
  */
-const OVERCAST: Record<Exclude<Weather, 'clear'>, { grey: number; lift: number; sun: number; ambient: number }> = {
-  rain: { grey: 0.6, lift: 0.9, sun: 0.55, ambient: 0.85 },
-  snow: { grey: 0.55, lift: 1.08, sun: 0.7, ambient: 1 },
+const OVERCAST: Record<Exclude<Weather, 'clear'>, { grey: number; lift: number; sun: number; dayFill: number; nightFill: number }> = {
+  rain: { grey: 0.6, lift: 0.9, sun: 0.35, dayFill: 0.95, nightFill: 0.85 },
+  snow: { grey: 0.55, lift: 1.08, sun: 0.45, dayFill: 1, nightFill: 1 },
 };
 
 /**
@@ -226,14 +246,15 @@ export function computeSkyProfile(hour: number, weather: Weather = 'clear'): Sky
   const clear = computeClearSkyProfile(hour);
   if (weather === 'clear') return clear;
   const cast = OVERCAST[weather];
+  const fillScale = cast.nightFill + (cast.dayFill - cast.nightFill) * (1 - clear.twilight);
   return {
     ...clear,
-    ambient: { color: clear.ambient.color, intensity: clear.ambient.intensity * cast.ambient },
-    environment: clear.environment * cast.ambient,
+    ambient: { color: clear.ambient.color, intensity: clear.ambient.intensity * fillScale },
+    environment: clear.environment * fillScale,
     hemisphere: {
       sky: overcastHex(clear.hemisphere.sky, cast.grey, cast.lift),
       ground: clear.hemisphere.ground,
-      intensity: clear.hemisphere.intensity * cast.ambient,
+      intensity: clear.hemisphere.intensity * fillScale,
     },
     sun: { ...clear.sun, intensity: clear.sun.intensity * cast.sun },
     background: overcastHex(clear.background, cast.grey, cast.lift),
@@ -253,12 +274,24 @@ function overcastHex(hex: number, grey: number, lift: number): number {
 
 /** Hours past sunset (and before sunrise) over which the light fades to full night (#215). */
 const TWILIGHT_HOURS = 1.5;
-const DUSK_SUN = 0.2;
-const DUSK_AMBIENT = 0.35;
-const NOON_AMBIENT = 0.65;
-const NIGHT_AMBIENT = 0.14;
-const HEMI_NOON_INTENSITY = 0.55;
-const NIGHT_ENVIRONMENT_SHARE = 0.3;
+/** Lamps start this many hours before sunset and stay on as long after sunrise. */
+const LAMPS_EARLY_HOURS = 1;
+const DUSK_SUN = 0.85;
+const NOON_SUN = 1.7;
+/** Full moonlight, held from three hours after sunset to three before sunrise. */
+const MOONLIGHT = 0.6;
+const MOON_COLOR = 0xa9b9e6;
+/** Lifts the arc's ends off the horizon, so a low sun still rakes the ground. */
+const SUN_LOW_HEIGHT = 4;
+const NIGHT_AMBIENT = 0.26;
+const DUSK_AMBIENT = 0.38;
+const NOON_AMBIENT = 0.45;
+const NIGHT_HEMI = 0.14;
+const DUSK_HEMI = 0.42;
+const HEMI_NOON_INTENSITY = 0.37;
+const NIGHT_ENVIRONMENT = 0.06;
+const DUSK_ENVIRONMENT = 0.33;
+const NOON_ENVIRONMENT = 0.4;
 /** Moonlit blues the night ambient and sky fill settle on. */
 const NIGHT_AMBIENT_COLOR = 0x33447a;
 const NIGHT_HEMI_SKY = 0x3a4a80;
@@ -279,22 +312,31 @@ function computeClearSkyProfile(hour: number): SkyProfile {
   // Sun arcs across the sky from east (-x) to west (+x), peaking at y.
   const azimuth = (dayFraction - 0.5) * Math.PI; // -π/2..π/2
   const elevation = sunAboveHorizon ? Math.sin(dayFraction * Math.PI) : 0;
-  const position: Vec3 = [Math.sin(azimuth) * 10, elevation * 10 + 1, Math.cos(azimuth) * 5];
+  const position: Vec3 = [Math.sin(azimuth) * 10, elevation * 10 + SUN_LOW_HEIGHT, Math.cos(azimuth) * 5];
 
   // Warmth: high at sunrise/sunset, low at noon (white); the afterglow keeps it.
-  const warmth = sunAboveHorizon ? Math.pow(1 - Math.abs(dayFraction - 0.5) * 2, 2) : 1;
+  const warmth = sunAboveHorizon ? Math.pow(Math.abs(dayFraction - 0.5) * 2, 2) : 1;
   const noonness = sunAboveHorizon ? Math.sin(dayFraction * Math.PI) : 0;
 
-  const sunColor = mixHex(0xffffff, 0xff8a50, warmth * 0.7);
-  const sunIntensity = sunAboveHorizon ? DUSK_SUN + noonness * 0.7 : DUSK_SUN * daylight;
+  const sunColor = mixHex(0xffffff, 0xffb27a, warmth * 0.75);
+  const sunIntensity = sunAboveHorizon ? DUSK_SUN + noonness * (NOON_SUN - DUSK_SUN) : DUSK_SUN * daylight;
+  // The moon takes the light over only after the sun has faded to nothing, so
+  // the swap of direction and colour never shows.
+  const moonUp = !sunAboveHorizon && hoursFromSun > TWILIGHT_HOURS;
+  const moonlight = moonUp ? smoothstep01(hoursFromSun / TWILIGHT_HOURS - 1) : 0;
 
   const dayAmbient = mixHex(0xffd29a, 0xffffff, noonness);
   // Dusk blue deepening to moonlit navy as the glow goes.
   const nightAmbient = mixHex(NIGHT_AMBIENT_COLOR, 0x6a7fb7, glow);
   const ambientColor = sunAboveHorizon ? dayAmbient : mixHex(nightAmbient, 0xffd29a, daylight);
-  const ambientIntensity = sunAboveHorizon
-    ? DUSK_AMBIENT + noonness * (NOON_AMBIENT - DUSK_AMBIENT)
-    : NIGHT_AMBIENT + (DUSK_AMBIENT - NIGHT_AMBIENT) * daylight;
+  // Each fill rests at its night level, reaches its dusk level at the sun
+  // events and its noon level at the top of the arc. It fades twice as slowly
+  // as the sun, past the moon's rise, so no hour is darker than midnight.
+  const fillFade = smoothstep01(1 - hoursFromSun / (TWILIGHT_HOURS * 2));
+  const fill = (night: number, dusk: number, noon: number): number =>
+    sunAboveHorizon ? dusk + noonness * (noon - dusk) : night + (dusk - night) * fillFade;
+  // Past sunset is positive; the lamps lead it, for a room the low sun has left.
+  const hoursPastSunset = hour < 12 ? 6 - hour : hour - 18;
 
   // Horizon (bottom) and zenith (top) pairs per phase. The zenith is always
   // deeper/more saturated than the horizon, which is what makes a sky read
@@ -321,21 +363,30 @@ function computeClearSkyProfile(hour: number): SkyProfile {
   }
 
   return {
-    ambient: { color: ambientColor, intensity: ambientIntensity },
+    ambient: { color: ambientColor, intensity: fill(NIGHT_AMBIENT, DUSK_AMBIENT, NOON_AMBIENT) },
     hemisphere: {
       sky: hemiSky,
       ground: mixHex(NIGHT_HEMI_GROUND, 0xa07a48, daylight),
-      intensity: (HEMI_NOON_INTENSITY * ambientIntensity) / NOON_AMBIENT,
+      intensity: fill(NIGHT_HEMI, DUSK_HEMI, HEMI_NOON_INTENSITY),
     },
-    sun: { color: sunColor, intensity: sunIntensity, position },
-    // The studio environment is white and bright: it follows the ambient by
-    // day (0.585 at noon) and drops further through twilight, or it keeps
-    // the night lot lit grey-green (#375).
-    environment: ambientIntensity * 0.9 * (NIGHT_ENVIRONMENT_SHARE + (1 - NIGHT_ENVIRONMENT_SHARE) * daylight),
+    sun: moonUp
+      ? { color: MOON_COLOR, intensity: MOONLIGHT * moonlight, position: moonDirection(hour) }
+      : { color: sunColor, intensity: sunIntensity, position },
+    // The studio environment is white and bright: it drops to almost nothing
+    // through twilight, or it keeps the night lot lit grey-green (#375).
+    environment: fill(NIGHT_ENVIRONMENT, DUSK_ENVIRONMENT, NOON_ENVIRONMENT),
     background,
     backgroundTop,
-    lamps: sunAboveHorizon ? 0 : 1 - daylight,
+    lamps: smoothstep01((hoursPastSunset + LAMPS_EARLY_HOURS) / (TWILIGHT_HOURS + LAMPS_EARLY_HOURS)),
+    twilight: sunAboveHorizon ? 0 : 1 - daylight,
   };
+}
+
+/** Toward the moon: high enough to throw a shadow, on the sprite's north side. */
+function moonDirection(hour: number): Vec3 {
+  const t = computeNightSky(hour).moonT ?? 0.5;
+  const azimuth = (t - 0.5) * Math.PI;
+  return [Math.sin(azimuth) * 10, Math.sin(t * Math.PI) * 6 + 6, -Math.cos(azimuth) * 8];
 }
 
 export interface NightSky {
@@ -395,7 +446,7 @@ function makeSkyGradientTexture(
 
 const STAR_COUNT = 350;
 const STAR_SEED = 20260918;
-/** Radius of the star dome / moon arc — far beyond the lot, well inside the camera far plane. */
+/** Radius of the star dome around the camera: well inside the far plane. */
 const SKY_RADIUS = 140;
 
 /** Deterministic PRNG so the starfield is identical every session. */
@@ -411,6 +462,21 @@ function mulberry32(seed: number): () => number {
 }
 
 /**
+ * Keep a sky object centred on whichever camera draws it, however far out a
+ * big house's framing stands: otherwise the dome ends up below the camera and
+ * its stars draw over the lawn. Done per draw, on the object's world matrix, so
+ * a camera move costs no rebuild and needs no invalidate of its own.
+ */
+export function followCamera(sky: ThreeNS.Object3D): void {
+  sky.onBeforeRender = (_renderer, _scene, camera) => {
+    const world = sky.matrixWorld.elements;
+    world[12] = sky.position.x + camera.position.x;
+    world[13] = sky.position.y + camera.position.y;
+    world[14] = sky.position.z + camera.position.z;
+  };
+}
+
+/**
  * World-space night sky (#182): a Points starfield on a distant upper dome
  * and a billboarded moon sprite arcing east→west across the night. Created
  * lazily once, then only opacity/position are driven per time change.
@@ -419,8 +485,8 @@ function mulberry32(seed: number): () => number {
  * the backdrop is screen-space and stretched to the viewport, which smeared
  * 1px stars into blurry rectangles and distorted the moon — and it pinned
  * the moon to a fixed screen band regardless of camera tilt. Points with
- * sizeAttenuation off stay pixel-crisp at any resolution and pick up real
- * parallax when the camera orbits.
+ * sizeAttenuation off stay pixel-crisp at any resolution, and the sky turns
+ * with the camera while staying at infinity (`followCamera`).
  */
 function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSky): void {
   let stars = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Stars) as
@@ -455,6 +521,7 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     stars.renderOrder = -1;
     stars.matrixAutoUpdate = false;
     stars.updateMatrix();
+    followCamera(stars);
     scene.add(stars);
 
     // A sparse second layer of larger, slightly warm stars gives the field
@@ -486,6 +553,7 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     bright.renderOrder = -1;
     bright.matrixAutoUpdate = false;
     bright.updateMatrix();
+    followCamera(bright);
     scene.add(bright);
   }
   for (const layer of scene.children.filter((obj) => obj.userData.type === LIGHTING_TAGS.Stars)) {
@@ -509,6 +577,7 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     moon.userData.type = LIGHTING_TAGS.Moon;
     moon.frustumCulled = false;
     moon.renderOrder = -1;
+    followCamera(moon);
     scene.add(moon);
   }
   if (night.moonT === null || night.moonAlpha <= 0.01) {
@@ -520,19 +589,15 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     // camera sits south of the lot looking north, so that's the visible sky.
     const azimuth = (night.moonT - 0.5) * Math.PI;
     const elevation = Math.sin(night.moonT * Math.PI);
-    // Low, flat arc: the default iso camera looks slightly downward, so the
-    // visible sky is a band just above the horizon — a high apex leaves the
-    // frame entirely. Peak ≈ 40 world units at z −120 is ~13° up: prominent
-    // in the default view and still natural when tilted or walking.
-    // Hug the horizon: the iso camera's visible sky is a shallow band, so
-    // even modest world heights project off the top of the frame (verified
-    // empirically — y=30 at z=-50 hides behind the header bar). ~8° up at
-    // ~110 units reads as a rising/hanging moon over the treeline.
+    // Relative to the camera (`followCamera`). The orbit lens shows about 12°
+    // above the horizon at its lowest tilt (ORBIT_MAX_POLAR), so the arc stays
+    // 5° to 8° up, hanging over the treeline. A tilt above that leaves the
+    // sky out of frame, as it does for any view looking down at the lot.
     const arcRadius = 100;
     moon.position.set(
       Math.sin(azimuth) * arcRadius,
-      8 + elevation * 16,
-      -Math.cos(azimuth) * arcRadius - 10
+      8 + elevation * 6,
+      -Math.cos(azimuth) * arcRadius
     );
   }
 }

@@ -9,7 +9,7 @@
 import { clampToFootprint } from './footprint';
 import { remapGroupIds } from './groups';
 import { settleWallMountedItem } from './opening-snap';
-import type { FurnitureItem, InteriorWall, Vec2 } from './types';
+import type { FootprintCutout, FurnitureItem, InteriorWall, Vec2 } from './types';
 
 export interface CentroidArrangement {
   /** Deep copies with `position` rewritten as the offset from the centroid. */
@@ -60,6 +60,8 @@ export interface PasteOptions {
   roomWidth: number;
   roomDepth: number;
   interiorWalls?: readonly InteriorWall[];
+  /** The corner cut out of the building (#727). */
+  cutout?: FootprintCutout | undefined;
   /** Unique tag mixed into the pasted ids (caller supplies randomness — keeps this pure). */
   idTag: string;
   /**
@@ -88,7 +90,7 @@ export interface PasteOptions {
  */
 export function buildPasteItems(options: PasteOptions): FurnitureItem[] {
   if (!content) return [];
-  const { roomWidth, roomDepth, idTag } = options;
+  const { roomWidth, roomDepth, idTag, cutout } = options;
   const interiorWalls = options.interiorWalls ?? [];
   const target = options.target ?? {
     x: content.sourceCentroid.x + 0.5,
@@ -106,11 +108,11 @@ export function buildPasteItems(options: PasteOptions): FurnitureItem[] {
     };
     delete copy.locked;
 
-    const settled = settleWallMountedItem(copy, copy.position!, roomWidth, roomDepth, interiorWalls);
+    const settled = settleWallMountedItem(copy, copy.position!, roomWidth, roomDepth, interiorWalls, null, cutout);
     if (settled) return { ...copy, ...settled };
     if (copy.category === 'outdoor') return copy;
 
-    copy.position = clampToFootprint(copy, copy.position!, roomWidth, roomDepth);
+    copy.position = clampToFootprint(copy, copy.position!, roomWidth, roomDepth, cutout);
     return copy;
   });
 }

@@ -10,6 +10,7 @@
  */
 
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from '../constants';
+import { shellWalls, shellWallSpan, type ShellWallId } from '../footprint';
 import { isOpening, isWallMounted } from '../opening-snap';
 import { computeFloorOpenings, floorOpeningOutline, floorStairHeadroom, stairPlanSymbol, stairTreadLines } from '../stairs';
 import { entrancePlanOutline, planFloorIndex } from '../street';
@@ -592,33 +593,48 @@ const CHAIN_LABEL_SPACING_M = 0.72;
  * Interior walls carry no chain. Each label takes the first row where it
  * stands `labelSpacingM` clear of the label before it.
  */
+const CHAIN_WALL_ORDER: readonly ShellWallId[] = ['north', 'east', 'south', 'west', 'notch-x', 'notch-z'];
+const SIDE_OUTWARD: Record<WallId, PlanPoint> = {
+  north: { x: 0, z: -1 },
+  east: { x: 1, z: 0 },
+  south: { x: 0, z: 1 },
+  west: { x: -1, z: 0 },
+};
+
 export function wallOpeningDimensions(layout: RoomLayout, floor: FloorLayout, labelSpacingM = CHAIN_LABEL_SPACING_M): OpeningChain[] {
-  const hw = layout.width / 2;
-  const hd = layout.height / 2;
-  const spans: Record<WallId, Array<[number, number]>> = { north: [], east: [], south: [], west: [] };
+  const spans = new Map<ShellWallId, Array<[number, number]>>();
+  const shell = shellWalls(layout);
   for (const item of splitPlanItems(floor.items).openings) {
     const { along } = openingAxes(item);
     const horizontal = Math.abs(along.x) >= Math.abs(along.z);
-    const offWall = horizontal ? Math.abs(Math.abs(item.position.z) - hd) : Math.abs(Math.abs(item.position.x) - hw);
-    if (offWall > CHAIN_WALL_TOLERANCE_M) continue;
-    const wall: WallId = horizontal ? (item.position.z < 0 ? 'north' : 'south') : item.position.x > 0 ? 'east' : 'west';
-    const centre = horizontal ? item.position.x + hw : item.position.z + hd;
-    const [from, to] = [centre - item.width / 2, centre + item.width / 2];
-    if (to > 0 && from < (horizontal ? layout.width : layout.height)) spans[wall].push([from, to]);
+    // The wall of that direction whose line the opening stands on, an L's two new ones included.
+    const wall = shell.find(({ x1, z1, x2, z2 }) => {
+      if (horizontal !== (z1 === z2)) return false;
+      const offWall = horizontal ? Math.abs(item.position.z - z1) : Math.abs(item.position.x - x1);
+      const at = horizontal ? item.position.x : item.position.z;
+      const [low, high] = horizontal ? [x1, x2] : [z1, z2];
+      return offWall <= CHAIN_WALL_TOLERANCE_M && at + item.width / 2 > low && at - item.width / 2 < high;
+    });
+    if (!wall) continue;
+    const centre = horizontal ? item.position.x - wall.x1 : item.position.z - wall.z1;
+    spans.set(wall.id, [...(spans.get(wall.id) ?? []), [centre - item.width / 2, centre + item.width / 2]]);
   }
   const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
-  if (recess) spans.north.push([recess.x0 + hw, recess.x1 + hw]);
+  if (recess) {
+    const start = shell[0]!.x1;
+    spans.set('north', [...(spans.get('north') ?? []), [recess.x0 - start, recess.x1 - start]]);
+  }
 
-  const walls: Array<{ wall: WallId; outward: PlanPoint; start: PlanPoint; along: PlanPoint; length: number }> = [
-    { wall: 'north', outward: { x: 0, z: -1 }, start: { x: -hw, z: -hd }, along: { x: 1, z: 0 }, length: layout.width },
-    { wall: 'east', outward: { x: 1, z: 0 }, start: { x: hw, z: -hd }, along: { x: 0, z: 1 }, length: layout.height },
-    { wall: 'south', outward: { x: 0, z: 1 }, start: { x: -hw, z: hd }, along: { x: 1, z: 0 }, length: layout.width },
-    { wall: 'west', outward: { x: -1, z: 0 }, start: { x: -hw, z: -hd }, along: { x: 0, z: 1 }, length: layout.height },
-  ];
   const chains: OpeningChain[] = [];
-  for (const { wall, outward, start, along, length } of walls) {
-    const wallSpans = spans[wall];
-    if (wallSpans.length === 0) continue;
+  for (const id of CHAIN_WALL_ORDER) {
+    const shellWall = shell.find((candidate) => candidate.id === id);
+    const wallSpans = spans.get(id);
+    if (!shellWall || !wallSpans) continue;
+    const wall = shellWall.side;
+    const outward = SIDE_OUTWARD[wall];
+    const start: PlanPoint = { x: shellWall.x1, z: shellWall.z1 };
+    const along: PlanPoint = shellWall.z1 === shellWall.z2 ? { x: 1, z: 0 } : { x: 0, z: 1 };
+    const length = shellWallSpan(shellWall).length;
     const stations = chainStations(wallSpans, length);
     const at = (t: number): PlanPoint => ({ x: start.x + along.x * t, z: start.z + along.z * t });
     const segments: ChainSegment[] = [];

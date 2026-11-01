@@ -5,20 +5,23 @@ import {
   DEFAULT_VISION_RANGE_M,
   GRID_SIZE_METERS,
 } from '../lib/constants';
+import { floorKeepOut } from '../lib/floor-keep-out';
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
-import { rotatedHalfExtents } from '../lib/footprint';
+import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
 import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
-import { zoneArea, type ZoneRect } from '../lib/zones';
+import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
-import { drawSelectedWall, drawWallPreview, drawZoneHandles, type WallPreview } from './plan-edit';
+import { drawSelectedWall, drawStampGhost, drawWallPreview, drawWallSideMark, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
+import type { WallSide } from '../lib/wall-sides';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
 
@@ -38,12 +41,20 @@ export interface Render2DOptions {
   showFloorBelow?: boolean;
   /** The zone rectangle being dragged out, drawn over everything as a dashed outline (#155). */
   zoneDraft?: ZoneRect | null;
+  /** Detected rooms with no zone, marked in zone mode for "Name this room" (#719). */
+  roomsToName?: readonly DetectedRoom[] | undefined;
+  /** The face of the selected wall that paint goes to, marked on the plan (#720). */
+  selectedWallSide?: WallSide | undefined;
   /** The interior wall selected on the plan (#564). */
   selectedWallId?: string | null | undefined;
+  /** A held wall move can't land here: the wall shows it (#718). */
+  selectedWallRefused?: boolean | undefined;
   /** The zone with resize handles (#628). */
   selectedZoneId?: string | null | undefined;
   /** The wall tool's draft, drawn over everything (#564). */
   wallPreview?: WallPreview | null | undefined;
+  /** The room stamp in hand (#724). */
+  stampGhost?: StampGhost | null | undefined;
   hasCollision: (item: FurnitureItem) => boolean;
   /**
    * Margin (CSS px) around the room. The default suits the full-screen 2D
@@ -206,6 +217,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
+  drawZoneFloors(ctx, layout, floor, offsetX, offsetY, scale);
   if (options.showFloorBelow) drawFloorBelow(ctx, layout, planFloorIndex(layout.floors, floor), offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
   // The stairwell the floor below cuts through this slab (#290), under everything placed over it.
@@ -249,15 +261,19 @@ export function render2DTopDown(options: Render2DOptions): void {
     drawOffPlanMarkers(ctx, markers, options.thumbnail === true);
   }
 
+  if (options.roomsToName?.length) drawRoomsToName(ctx, layout, options.roomsToName, offsetX, offsetY, scale);
+
   if (options.zoneDraft) {
     drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale);
   }
 
   const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
-  if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale);
+  if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale, options.selectedWallRefused);
+  if (selectedWall && options.selectedWallSide) drawWallSideMark(ctx, layout, selectedWall, options.selectedWallSide, offsetX, offsetY, scale);
   const selectedZone = options.selectedZoneId ? floor.zones?.find((zone) => zone.id === options.selectedZoneId) : null;
   if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);
+  if (options.stampGhost) drawStampGhost(ctx, layout, options.stampGhost, offsetX, offsetY, scale);
 }
 
 /** A thumbnail's off-plan arrows are bare dots: fan them closer. */
@@ -327,6 +343,7 @@ const ZONE_MIN_LABEL_EDGE_PX = 36;
  * name wider than its zone.
  */
 const ZONE_LABEL_MIN_SCALE = 25;
+const ROOM_TO_NAME_LABEL = 'Name this room';
 
 /**
  * `#rgb` / `#rrggbb` → `rgba(...)` at the given alpha. Anything else (a
@@ -358,6 +375,74 @@ function zoneCanvasRect(
   };
 }
 
+/** A polygon zone's outline and holes, as one path to fill even-odd. */
+function traceZoneRings(ctx: CanvasRenderingContext2D, layout: RoomLayout, zone: ZoneShape, offsetX: number, offsetY: number, scale: number): void {
+  ctx.beginPath();
+  for (const ring of zoneRings(zone)) {
+    ring.forEach((point, index) => {
+      const x = offsetX + (point.x + layout.width / 2) * scale;
+      const y = offsetY + (point.z + layout.height / 2) * scale;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+  }
+}
+
+/**
+ * Rooms with a floor of their own (#720), over the storey's: the patches 3D
+ * lays, so a finish stops at the stairwell and the porch here too. The plan
+ * shows no floor pattern, for a room or a storey. A traced floor is the
+ * drawing, so it stays clear.
+ */
+function drawZoneFloors(ctx: CanvasRenderingContext2D, layout: RoomLayout, floor: FloorLayout, offsetX: number, offsetY: number, scale: number): void {
+  if (!floor.zones?.some(hasFloorFinish)) return;
+  if (layout.floorPlanImage && layout.floors[0]?.id === floor.id) return;
+  for (const patch of zoneFloorPatches(floor, floorKeepOut(layout, planFloorIndex(layout.floors, floor)))) {
+    ctx.fillStyle = patch.color;
+    for (const region of patch.regions) {
+      traceZoneRings(ctx, layout, regionShape(region), offsetX, offsetY, scale);
+      ctx.fill('evenodd');
+    }
+  }
+}
+
+/** Detected rooms with no zone yet: a dashed outline and what a tap does. */
+function drawRoomsToName(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  rooms: readonly DetectedRoom[],
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  ctx.save();
+  ctx.strokeStyle = '#1d4ed8';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  for (const room of rooms) {
+    traceZoneRings(ctx, layout, regionShape(room), offsetX, offsetY, scale);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 11px Arial';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.fillStyle = '#1d4ed8';
+  for (const room of rooms) {
+    const spot = zoneCanvasRect(zoneLabelSpot(regionShape(room)), layout, offsetX, offsetY, scale);
+    if (ctx.measureText(ROOM_TO_NAME_LABEL).width > spot.w - 4) continue;
+    const x = offsetX + (room.anchor.x + layout.width / 2) * scale;
+    const y = offsetY + (room.anchor.z + layout.height / 2) * scale;
+    ctx.strokeText(ROOM_TO_NAME_LABEL, x, y);
+    ctx.fillText(ROOM_TO_NAME_LABEL, x, y);
+  }
+  ctx.restore();
+}
+
 function drawZoneFills(
   ctx: CanvasRenderingContext2D,
   layout: RoomLayout,
@@ -371,10 +456,16 @@ function drawZoneFills(
   ctx.save();
   ctx.lineWidth = 1.5;
   for (const zone of zones) {
-    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
     ctx.fillStyle = withAlpha(zone.color, ZONE_FILL_ALPHA);
-    ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = withAlpha(zone.color, ZONE_STROKE_ALPHA);
+    if (zone.outline) {
+      traceZoneRings(ctx, layout, zone, offsetX, offsetY, scale);
+      ctx.fill('evenodd');
+      ctx.stroke();
+      continue;
+    }
+    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
+    ctx.fillRect(x, y, w, h);
     ctx.strokeRect(x, y, w, h);
   }
   ctx.restore();
@@ -402,7 +493,7 @@ function drawZoneLabels(
   ctx.lineWidth = 3;
   ctx.fillStyle = '#333';
   for (const zone of zones) {
-    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
+    const { x, y, w, h } = zoneCanvasRect(zoneLabelSpot(zone), layout, offsetX, offsetY, scale);
     if (Math.min(w, h) < ZONE_MIN_LABEL_EDGE_PX) continue;
     // Along the top edge rather than the centre: the centre of a room is
     // where its bed or table sits, and the furniture paints over labels.
@@ -594,7 +685,14 @@ function drawRoomOutline(
   const x0 = offsetX;
   const y0 = offsetY;
   const x1 = offsetX + layout.width * scale;
-  const y1 = offsetY + layout.height * scale;
+  const canvasX = (x: number) => offsetX + (x + layout.width / 2) * scale;
+  const canvasY = (z: number) => offsetY + (z + layout.height / 2) * scale;
+  // The corner cut out of the building (#727) is outside too, and the six
+  // walls of the L run round it.
+  clearCutout(ctx, layout, offsetX, offsetY, scale);
+  const [northWall, ...otherWalls] = shellWalls(layout);
+  const northX0 = canvasX(northWall!.x1);
+  const northX1 = canvasX(northWall!.x2);
   // The recessed entrance (#285): the north edge breaks across the opening
   // and the recess's two cheeks run back to its rear wall (an ordinary
   // interior wall carrying the porch door, drawn with the others). The
@@ -608,17 +706,19 @@ function drawRoomOutline(
   type Edge = { id: WallId; from: readonly [number, number]; to: readonly [number, number] };
   const north: Edge[] = recess
     ? [
-        { id: 'north', from: [x0, y0], to: [rx0, y0] },
+        { id: 'north', from: [northX0, y0], to: [rx0, y0] },
         { id: 'north', from: [rx0, y0], to: [rx0, ry1] },
         { id: 'north', from: [rx1, y0], to: [rx1, ry1] },
-        { id: 'north', from: [rx1, y0], to: [x1, y0] },
+        { id: 'north', from: [rx1, y0], to: [northX1, y0] },
       ]
-    : [{ id: 'north', from: [x0, y0], to: [x1, y0] }];
+    : [{ id: 'north', from: [northX0, y0], to: [northX1, y0] }];
   const edges: Edge[] = [
     ...north,
-    { id: 'south', from: [x0, y1], to: [x1, y1] },
-    { id: 'west', from: [x0, y0], to: [x0, y1] },
-    { id: 'east', from: [x1, y0], to: [x1, y1] },
+    ...otherWalls.map((wall): Edge => ({
+      id: wall.side,
+      from: [canvasX(wall.x1), canvasY(wall.z1)],
+      to: [canvasX(wall.x2), canvasY(wall.z2)],
+    })),
   ];
   for (const edge of edges) {
     const isHidden = hidden.has(edge.id);
@@ -632,6 +732,24 @@ function drawRoomOutline(
     ctx.stroke();
     ctx.restore();
   }
+}
+
+const CUTOUT_CLEAR_MARGIN_PX = 3;
+
+/** Wipe the cut corner back to the canvas, over the floor, grid, tracing image and zone tints. */
+function clearCutout(ctx: CanvasRenderingContext2D, layout: RoomLayout, offsetX: number, offsetY: number, scale: number): void {
+  const notch = cutoutRect(layout);
+  if (!notch) return;
+  const x0 = offsetX + (notch.x0 + layout.width / 2) * scale;
+  const x1 = offsetX + (notch.x1 + layout.width / 2) * scale;
+  const y0 = offsetY + (notch.z0 + layout.height / 2) * scale;
+  const y1 = offsetY + (notch.z1 + layout.height / 2) * scale;
+  // A few pixels past the old outline: the grid's edge lines stand astride it.
+  const east = notch.x1 >= layout.width / 2;
+  const north = notch.z0 <= -layout.height / 2;
+  const left = east ? x0 : x0 - CUTOUT_CLEAR_MARGIN_PX;
+  const top = north ? y0 - CUTOUT_CLEAR_MARGIN_PX : y0;
+  ctx.clearRect(left, top, x1 - left + (east ? CUTOUT_CLEAR_MARGIN_PX : 0), y1 - top + (north ? 0 : CUTOUT_CLEAR_MARGIN_PX));
 }
 
 function drawInteriorWalls(
@@ -694,6 +812,7 @@ function drawOpeningGaps(
     const x1 = offsetX + (recess.x1 + layout.width / 2) * scale;
     ctx.clearRect(x0, offsetY, x1 - x0, (recess.backZ + layout.height / 2) * scale);
   }
+  clearCutout(ctx, layout, offsetX, offsetY, scale);
   ctx.restore();
 }
 

@@ -3,7 +3,7 @@ import { hasCollisions, type KeepOutRect } from '../lib/geometry';
 import { settleWallMountedItem, type WallGap } from '../lib/opening-snap';
 import { storeyHeight } from '../lib/storeys';
 import type { LayoutActions } from './use-layout-state';
-import type { FloorLayout } from '../lib/types';
+import type { FloorLayout, FootprintCutout } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 export interface UseItemDragParams {
@@ -15,6 +15,8 @@ export interface UseItemDragParams {
   keepOut: readonly KeepOutRect[];
   /** The recessed entrance's span of the front wall: openings settle on its piers (#394). */
   frontGap: WallGap | null;
+  /** The corner cut out of the building (#727). */
+  cutout?: FootprintCutout | undefined;
   actions: LayoutActions;
   allSelectedIds: ReadonlySet<string>;
 }
@@ -90,6 +92,7 @@ export function useItemDrag({
   roomDepth,
   keepOut,
   frontGap,
+  cutout,
   actions,
   allSelectedIds,
 }: UseItemDragParams): UseItemDragResult {
@@ -264,12 +267,13 @@ export function useItemDrag({
           roomWidth,
           roomDepth,
           activeFloor.interiorWalls ?? [],
-          frontGap
+          frontGap,
+          cutout
         );
         if (settled) actions.updateItem(movedId, settled);
       }
     },
-    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, actions, findFurnitureGroup, setDragCollisionTint, voidIfViewportTurned]
+    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, cutout, actions, findFurnitureGroup, setDragCollisionTint, voidIfViewportTurned]
   );
 
   const handleDragCancel = useCallback(

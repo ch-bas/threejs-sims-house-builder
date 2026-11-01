@@ -1,5 +1,6 @@
 import { GRID_SIZE_METERS } from '../lib/constants';
 import { floorPlanCanvasLayout } from '../lib/floor-plan-fit';
+import { alongSide, cutoutRect, footprintOutline, shellWalls, shellWallSpan, type ShellWallId } from '../lib/footprint';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
@@ -8,7 +9,8 @@ import { ROOF_OFF_STOREY_KEY } from './roof';
 import { getMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { buildWallMaterial } from './wall-patterns';
-import type { FloorPattern, FloorPlanFitMode, WallId, WallPattern } from '../lib/types';
+import type { FloorPattern, FloorPlanFitMode, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
+import type { ZoneFloorPatch } from '../lib/zones';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -56,6 +58,14 @@ export type WallDisplay = 'up' | 'cutaway' | 'down';
  * (#446): applyWallDisplay keeps such walls hidden whatever the mode.
  */
 export const OFF_STOREY_KEY = 'offStorey';
+
+/**
+ * userData on the shell parts of an L's two new walls (#727): the x or z of
+ * their plane. They face the same way as a whole side of the house but stand
+ * elsewhere, and the cutaway hides a wall by the side of its plane the camera
+ * is on.
+ */
+const WALL_PLANE_KEY = 'wallPlane';
 
 export function applyWallDisplay(
   scene: ThreeNS.Scene,
@@ -109,6 +119,7 @@ export function applyWallDisplay(
       setVisible(obj, true);
       continue;
     }
+    const plane = obj.userData[WALL_PLANE_KEY] as number | undefined;
 
     let visible: boolean;
     if (mode === 'down') {
@@ -122,16 +133,17 @@ export function applyWallDisplay(
       let cx = 0;
       let cz = 0;
       switch (wallId) {
-        case 'north': nz = -1; cz = -halfD; break;
-        case 'south': nz =  1; cz =  halfD; break;
-        case 'east':  nx =  1; cx =  halfW; break;
-        case 'west':  nx = -1; cx = -halfW; break;
+        case 'north': nz = -1; cz = plane ?? -halfD; break;
+        case 'south': nz =  1; cz = plane ??  halfD; break;
+        case 'east':  nx =  1; cx = plane ??  halfW; break;
+        case 'west':  nx = -1; cx = plane ?? -halfW; break;
       }
       const dot = (cameraX - cx) * nx + (cameraZ - cz) * nz;
       visible = dot < 0;
     }
     setVisible(obj, visible);
-    wallVisibility.set(`${ROOM_OBJECT_TAGS.Wall}:${wallId}`, visible);
+    // A selection outline follows its side's main wall.
+    if (plane === undefined) wallVisibility.set(`${ROOM_OBJECT_TAGS.Wall}:${wallId}`, visible);
   }
 
   for (const obj of scene.children) {
@@ -162,11 +174,15 @@ export interface RoomBuilderOptions {
   wallPattern?: WallPattern;
   wallColors?: Partial<Record<WallId, string>>;
   /** Door / window cutouts to punch through the relevant walls. */
-  wallOpenings?: ReadonlyMap<WallId, WallOpening[]>;
+  wallOpenings?: ReadonlyMap<ShellWallId, WallOpening[]>;
+  /** The corner taken out of the footprint (#727): floor, plinth and walls follow the L. */
+  cutout?: FootprintCutout | undefined;
   /** Exterior walls that have been removed (open sides). */ 
   hiddenWalls?: readonly WallId[]; 
   /** Stairwell openings to cut through this floor's plane. */
   floorOpenings?: readonly FloorOpening[];
+  /** Rooms with a floor of their own (#720), laid over the slab in order. */
+  zonePatches?: readonly ZoneFloorPatch[];
   floorPlanImage: string | null;
   floorPlanOpacity: number;
   floorPlanFitMode: FloorPlanFitMode;
@@ -185,7 +201,9 @@ export interface RoomBuilderOptions {
   onTextureLoaded?: () => void;
 }
 
-export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void {
+export function buildRoom(THREE: ThreeModule, input: RoomBuilderOptions): void {
+  // The traced plan's relief needs a dense grid plane, which can't be an L.
+  const options = input.cutout ? { ...input, floorPlan3DEffect: false } : input;
   const yOffset = options.yOffset ?? 0;
   const isGhost = options.ghostOpacity !== undefined && options.ghostOpacity < 1;
 
@@ -195,8 +213,8 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   // When the floor has stairwell openings we use ShapeGeometry so we can
   // punch rectangular holes. Otherwise keep the simpler PlaneGeometry
   // (which also supports displacement subdivision for floor-plan 3D effect).
-  const geometry = hasFloorOpenings && !useDisplacement
-    ? buildFloorGeometryWithOpenings(THREE, options.width, options.depth, options.floorOpenings!)
+  const geometry = (hasFloorOpenings || options.cutout) && !useDisplacement
+    ? buildFloorGeometryWithOpenings(THREE, options.width, options.depth, options.floorOpenings ?? [], options.cutout)
     : new THREE.PlaneGeometry(options.width, options.depth, useDisplacement ? 100 : 1, useDisplacement ? 100 : 1);
 
   let material: ThreeNS.Material;
@@ -230,12 +248,17 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
   makeStatic(floor);
   options.scene.add(floor);
 
+  // A traced ground floor is the drawing: nothing is laid over it.
+  if (!options.floorPlanImage) {
+    options.zonePatches?.forEach((patch) => addZoneFloorPatch(THREE, options, patch));
+  }
+
   // Concrete foundation plinth — only on the ground floor. build-mode houses sit on
   // a low base that extends slightly past the wall plane and grounds the
   // building visually.
   if (yOffset === 0 && !options.floorPlanImage) {
     addFoundation(
-      THREE, options.scene, options.width, options.depth, isGhost ? options.ghostOpacity : undefined, options.groundY
+      THREE, options.scene, options.width, options.depth, isGhost ? options.ghostOpacity : undefined, options.groundY, options.cutout
     );
   }
 
@@ -251,9 +274,46 @@ export function buildRoom(THREE: ThreeModule, options: RoomBuilderOptions): void
       isGhost ? options.ghostOpacity : undefined,
       options.wallOpenings,
       options.hiddenWalls,
-      options.wallHeight
+      options.wallHeight,
+      options.cutout
     );
   }
+}
+
+/** A zone's floor clears the slab by this much, or the two z-fight (#276). */
+const ZONE_PATCH_GAP = 0.003;
+/** A patch over another clears it by this much: zones can overlap. */
+const ZONE_PATCH_STEP = 0.0005;
+/** Stacks stop rising here, 8 mm up: under the 1 cm base of a rug. */
+const ZONE_PATCH_MAX_LAYER = 10;
+
+/**
+ * One zone's floor over the slab. UVs and texture repeat are the room's, as on
+ * the slab, so a tile grid runs on across the room whatever the zone's shape.
+ */
+function addZoneFloorPatch(THREE: ThreeModule, options: RoomBuilderOptions, patch: ZoneFloorPatch): void {
+  const yOffset = options.yOffset ?? 0;
+  const toPoints = (ring: readonly Vec2[]) => ring.map((point) => new THREE.Vector2(point.x, -point.z));
+  const shapes = patch.regions.map((region) => {
+    const shape = new THREE.Shape(toPoints(region.outline));
+    for (const hole of region.holes ?? []) shape.holes.push(new THREE.Path(toPoints(hole)));
+    return shape;
+  });
+  if (shapes.length === 0) return;
+  const geometry = normalizeShapeUvs(new THREE.ShapeGeometry(shapes), options.width, options.depth);
+  const material = buildFloorMaterial(THREE, { pattern: patch.pattern, color: patch.color, roomWidth: options.width, roomDepth: options.depth });
+  if (options.ghostOpacity !== undefined && options.ghostOpacity < 1) {
+    material.transparent = true;
+    material.opacity = options.ghostOpacity;
+  }
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = yOffset + ZONE_PATCH_GAP + Math.min(patch.layer, ZONE_PATCH_MAX_LAYER) * ZONE_PATCH_STEP;
+  mesh.receiveShadow = true;
+  mesh.name = `Floor ${patch.id}`;
+  mesh.userData.type = ROOM_OBJECT_TAGS.Floor;
+  makeStatic(mesh);
+  options.scene.add(mesh);
 }
 
 /** How far the plinth ring reaches past the wall plane; the porch steps start beyond it (#276). */
@@ -267,25 +327,27 @@ function addFoundation(
   width: number,
   depth: number,
   ghostOpacity?: number,
-  groundY = 0
+  groundY = 0,
+  cutout?: FootprintCutout
 ): void {
   const plinthHeight = FOUNDATION_HEIGHT + Math.max(0, -groundY);
-  const outerW = width + FOUNDATION_OVERHANG * 2;
-  const outerD = depth + FOUNDATION_OVERHANG * 2;
-  // Hollow rectangle: outer perimeter minus the inner room footprint, so the
+  // Hollow outline: outer perimeter minus the inner room footprint, so the
   // foundation reads as a ring around the building rather than overlapping
-  // the floor mesh.
+  // the floor mesh. Shape y is world −z, as on the floor plate; a rectangle
+  // reads the same either way and keeps its long-standing triangulation.
+  const building = { width, height: depth, cutout };
+  const shapeY = cutout ? -1 : 1;
   const outline = new THREE.Shape();
-  outline.moveTo(-outerW / 2, -outerD / 2);
-  outline.lineTo(outerW / 2, -outerD / 2);
-  outline.lineTo(outerW / 2, outerD / 2);
-  outline.lineTo(-outerW / 2, outerD / 2);
+  footprintOutline(building, FOUNDATION_OVERHANG).forEach(({ x, z }, index) => {
+    if (index === 0) outline.moveTo(x, z * shapeY);
+    else outline.lineTo(x, z * shapeY);
+  });
   outline.closePath();
   const hole = new THREE.Path();
-  hole.moveTo(-width / 2, -depth / 2);
-  hole.lineTo(width / 2, -depth / 2);
-  hole.lineTo(width / 2, depth / 2);
-  hole.lineTo(-width / 2, depth / 2);
+  footprintOutline(building).forEach(({ x, z }, index) => {
+    if (index === 0) hole.moveTo(x, z * shapeY);
+    else hole.lineTo(x, z * shapeY);
+  });
   hole.closePath();
   outline.holes.push(hole);
 
@@ -528,27 +590,40 @@ function buildWalls(
   pattern?: WallPattern,
   yOffset = 0,
   ghostOpacity?: number,
-  openings?: ReadonlyMap<WallId, WallOpening[]>,
+  openings?: ReadonlyMap<ShellWallId, WallOpening[]>,
   hiddenWalls?: readonly WallId[],
-  wallHeight = FLOOR_HEIGHT_METERS
+  wallHeight = FLOOR_HEIGHT_METERS,
+  cutout?: FootprintCutout
 ): void {
   const centerY = yOffset + wallHeight / 2;
+  const building = { width, height: depth, cutout };
+  const notch = cutoutRect(building);
 
-  const wallSpecs: ReadonlyArray<{
-    id: WallId;
-    width: number;
-    rotateY: number;
-    position: [number, number, number];
-  }> = [
-    { id: 'north', width, rotateY: 0, position: [0, centerY, -depth / 2] },
-    { id: 'south', width, rotateY: Math.PI, position: [0, centerY, depth / 2] },
-    { id: 'west', width: depth, rotateY: Math.PI / 2, position: [-width / 2, centerY, 0] },
-    { id: 'east', width: depth, rotateY: -Math.PI / 2, position: [width / 2, centerY, 0] },
-  ];
+  const wallSpecs: ReadonlyArray<WallSpec> = shellWalls(building).map((wall) => {
+    const { from, to, length } = shellWallSpan(wall);
+    const alongZ = wall.side === 'east' || wall.side === 'west';
+    const isNotchWall = wall.id === 'notch-x' || wall.id === 'notch-z';
+    // The notch's z wall rounds the L's outer corner, so its board runs past
+    // that end to meet the x wall's, where every other east/west board stops.
+    const outerCorner =
+      wall.id === 'notch-z' && notch && cutout
+        ? alongSide(wall.side, 0, cutout.corner.startsWith('n') ? notch.z1 : notch.z0)
+        : null;
+    return {
+      id: wall.id,
+      side: wall.side,
+      width: length,
+      rotateY: WALL_ROTATIONS[wall.side],
+      position: [(wall.x1 + wall.x2) / 2, centerY, (wall.z1 + wall.z2) / 2],
+      frameOffset: (from + to) / 2,
+      ...(isNotchWall ? { plane: alongZ ? wall.x1 : wall.z1 } : {}),
+      ...(outerCorner !== null ? { outerEnd: outerCorner > (from + to) / 2 ? 'high' as const : 'low' as const } : {}),
+    };
+  });
 
   for (const spec of wallSpecs) {
-    if (hiddenWalls?.includes(spec.id)) continue;
-    const color = colors?.[spec.id] ?? hexFromInt(DEFAULT_WALL_COLOR);
+    if (hiddenWalls?.includes(spec.side)) continue;
+    const color = colors?.[spec.side] ?? hexFromInt(DEFAULT_WALL_COLOR);
     const material = buildWallMaterial(THREE, {
       pattern: pattern ?? 'solid',
       color,
@@ -561,18 +636,28 @@ function buildWalls(
       material.opacity *= ghostOpacity;
     }
 
-    const wallCutouts = openings ? openingsForWall(openings, spec.id) : [];
-    const geometry =
+    // Into the wall's own frame: a shortened wall's middle isn't the side's.
+    const wallCutouts = (openings ? openingsForWall(openings, spec.id) : []).map((opening) =>
+      spec.frameOffset === 0 ? opening : { ...opening, centerAlongWall: opening.centerAlongWall - spec.frameOffset }
+    );
+    const geometry = withOutsideFace(
+      THREE,
       wallCutouts.length > 0
         ? buildWallGeometryWithCutouts(THREE, spec.width, wallHeight, wallCutouts)
-        : new THREE.PlaneGeometry(spec.width, wallHeight);
+        : new THREE.PlaneGeometry(spec.width, wallHeight)
+    );
+    // Single-sided, so each face keeps its own normal; see withOutsideFace.
+    // The shadow pass still has to draw whichever face the light meets.
+    material.side = THREE.FrontSide;
+    material.shadowSide = THREE.DoubleSide;
 
     const wall = new THREE.Mesh(geometry, material);
     wall.rotation.y = spec.rotateY;
     wall.position.set(spec.position[0], spec.position[1], spec.position[2]);
     wall.name = `Wall ${spec.id}`;
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
-    wall.userData.wallId = spec.id;
+    wall.userData.wallId = spec.side;
+    if (spec.plane !== undefined) wall.userData[WALL_PLANE_KEY] = spec.plane;
     // Solid walls block the sun like the roof, foundation, and interior walls
     // already do — without this, dawn/dusk light fell on furniture straight
     // through the shell (#132). Ghosted floors (show-all-floors) are
@@ -612,12 +697,66 @@ function buildWalls(
 
 const SNAP_GRID_FLOOR_GAP = 0.003;
 
+/**
+ * Add the outside of a wall to its inward-facing sheet. A DoubleSide sheet
+ * shades its back with a flipped normal, but the shadow lookup's normal offset
+ * doesn't flip with it: a wall facing the sun looked up its shadow from behind
+ * itself and shadowed itself. Two faces back to back, each drawn from its own
+ * side only, can't z-fight: only one ever faces the camera.
+ */
+export function withOutsideFace(THREE: ThreeModule, sheet: ThreeNS.BufferGeometry): ThreeNS.BufferGeometry {
+  const inside = sheet.index ? sheet.toNonIndexed() : sheet;
+  const positions = inside.getAttribute('position');
+  const normals = inside.getAttribute('normal');
+  const uvs = inside.getAttribute('uv');
+  const count = positions.count;
+  const position = new Float32Array(count * 6);
+  const normal = new Float32Array(count * 6);
+  const uv = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    // The outside copy winds each triangle the other way: 0, 2, 1.
+    const corner = i + (i % 3 === 1 ? 1 : i % 3 === 2 ? -1 : 0);
+    position.set([positions.getX(i), positions.getY(i), positions.getZ(i)], i * 3);
+    normal.set([normals.getX(i), normals.getY(i), normals.getZ(i)], i * 3);
+    uv.set([uvs.getX(i), uvs.getY(i)], i * 2);
+    const out = count + i;
+    position.set([positions.getX(corner), positions.getY(corner), positions.getZ(corner)], out * 3);
+    normal.set([-normals.getX(corner), -normals.getY(corner), -normals.getZ(corner)], out * 3);
+    uv.set([uvs.getX(corner), uvs.getY(corner)], out * 2);
+  }
+  const both = new THREE.BufferGeometry();
+  both.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  both.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  both.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  if (inside !== sheet) inside.dispose();
+  sheet.dispose();
+  return both;
+}
+
+/** Each side's wall mesh turned to face into the house. */
+const WALL_ROTATIONS: Record<WallId, number> = { north: 0, south: Math.PI, west: Math.PI / 2, east: -Math.PI / 2 };
+
+/** One exterior wall mesh: `side` owns its colour, visibility and tag; `id` its openings. */
+interface WallSpec {
+  id: ShellWallId;
+  side: WallId;
+  width: number;
+  rotateY: number;
+  position: [number, number, number];
+  /** The wall's middle in its side's frame, where its openings are measured. */
+  frameOffset: number;
+  /** The plane of a notch wall; see WALL_PLANE_KEY. */
+  plane?: number;
+  /** Which end of the notch's z wall rounds the outer corner of the L. */
+  outerEnd?: 'low' | 'high';
+}
+
 const BASEBOARD_COLOR = 0x4a3a2a;
 
 function addBaseboard(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
-  spec: { id: WallId; width: number; rotateY: number; position: readonly [number, number, number] },
+  spec: WallSpec,
   yOffset: number,
   ghostOpacity: number | undefined,
   openings: readonly WallOpening[]
@@ -634,10 +773,9 @@ function addBaseboard(
   // Sit just inside the wall plane (inward = toward the room centre), not
   // flush with it: a flush back face z-fought the double-sided wall (#201).
   const [px, , pz] = spec.position;
-  const radial = Math.hypot(px, pz);
   const inset = BASEBOARD_DEPTH / 2 + BASEBOARD_WALL_GAP;
-  const nx = radial > 0.001 ? px / radial : 0;
-  const nz = radial > 0.001 ? pz / radial : 0;
+  const nx = spec.side === 'east' ? 1 : spec.side === 'west' ? -1 : 0;
+  const nz = spec.side === 'south' ? 1 : spec.side === 'north' ? -1 : 0;
   // The wall-local +x axis in world space, for placing runs along the wall.
   const ax = Math.cos(spec.rotateY);
   const az = -Math.sin(spec.rotateY);
@@ -645,9 +783,11 @@ function addBaseboard(
   // North/south boards run the full width; east/west boards stop at the
   // north/south boards' inner faces instead of overlapping them at the
   // corners (#201).
-  const endTrim = spec.id === 'east' || spec.id === 'west' ? BASEBOARD_DEPTH + BASEBOARD_WALL_GAP : 0;
+  const endTrim = spec.side === 'east' || spec.side === 'west' ? BASEBOARD_DEPTH + BASEBOARD_WALL_GAP : 0;
   const half = spec.width / 2;
-  for (const [from, to] of baseboardRuns(-half + endTrim, half - endTrim, openings)) {
+  const lowEnd = -half + (spec.outerEnd === 'low' ? -endTrim : endTrim);
+  const highEnd = half + (spec.outerEnd === 'high' ? endTrim : -endTrim);
+  for (const [from, to] of baseboardRuns(lowEnd, highEnd, openings)) {
     const mid = (from + to) / 2;
     const base = new THREE.Mesh(new THREE.BoxGeometry(to - from, BASEBOARD_HEIGHT, BASEBOARD_DEPTH), material);
     base.rotation.y = spec.rotateY;
@@ -656,7 +796,8 @@ function addBaseboard(
     base.castShadow = ghostOpacity === undefined;
     base.name = `Baseboard ${spec.id}`;
     base.userData.type = ROOM_OBJECT_TAGS.Wall;
-    base.userData.wallId = spec.id;
+    base.userData.wallId = spec.side;
+    if (spec.plane !== undefined) base.userData[WALL_PLANE_KEY] = spec.plane;
     makeStatic(base);
     scene.add(base);
   }
@@ -732,7 +873,8 @@ export function buildFloorGeometryWithOpenings(
   THREE: ThreeModule,
   roomWidth: number,
   roomDepth: number,
-  openings: readonly FloorOpening[]
+  openings: readonly FloorOpening[],
+  cutout?: FootprintCutout
 ): ThreeNS.BufferGeometry {
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
@@ -741,13 +883,20 @@ export function buildFloorGeometryWithOpenings(
   // to world Z (negated by the -90° rotation), so we use depth as the Y
   // axis of the shape.
   const shape = new THREE.Shape();
-  shape.moveTo(-halfW, -halfD);
-  shape.lineTo(halfW, -halfD);
-  shape.lineTo(halfW, halfD);
-  shape.lineTo(-halfW, halfD);
+  if (cutout) {
+    footprintOutline({ width: roomWidth, height: roomDepth, cutout }).forEach(({ x, z }, index) => {
+      if (index === 0) shape.moveTo(x, -z);
+      else shape.lineTo(x, -z);
+    });
+  } else {
+    shape.moveTo(-halfW, -halfD);
+    shape.lineTo(halfW, -halfD);
+    shape.lineTo(halfW, halfD);
+    shape.lineTo(-halfW, halfD);
+  }
   shape.closePath();
 
-  for (const outline of floorHoleOutlines(roomWidth, roomDepth, openings)) {
+  for (const outline of floorHoleOutlines(roomWidth, roomDepth, openings, cutout)) {
     const hole = new THREE.Path();
     hole.moveTo(outline[0]![0], outline[0]![1]);
     for (const [x, y] of outline.slice(1)) hole.lineTo(x, y);
@@ -766,7 +915,8 @@ export function buildFloorGeometryWithOpenings(
 export function floorHoleOutlines(
   roomWidth: number,
   roomDepth: number,
-  openings: readonly FloorOpening[]
+  openings: readonly FloorOpening[],
+  cutout?: FootprintCutout
 ): Array<Array<[number, number]>> {
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
@@ -858,7 +1008,42 @@ export function floorHoleOutlines(
   // bounding box when they cross the floor outline, like rotated holes.
   for (const o of outlined) pushPolygon(o.outline!.map(([x, z]): [number, number] => [x, -z]));
 
-  return holes;
+  const notch = cutoutRect({ width: roomWidth, height: roomDepth, cutout });
+  return notch ? holes.flatMap((hole) => clearOfNotch(hole, notch, HOLE_INSET)) : holes;
+}
+
+/**
+ * A stairwell hole kept off the L's cut (#727): stairs stay out of the corner,
+ * but one flush with a notch wall still shares an edge with the floor outline,
+ * which earcut can't take. A hole that reaches the cut is clipped to the side
+ * of it that leaves the most hole.
+ */
+function clearOfNotch(
+  hole: Array<[number, number]>,
+  notch: { x0: number; x1: number; z0: number; z1: number },
+  inset: number
+): Array<Array<[number, number]>> {
+  // In shape space, where y is world −z.
+  const x0 = notch.x0 - inset;
+  const x1 = notch.x1 + inset;
+  const y0 = -notch.z1 - inset;
+  const y1 = -notch.z0 + inset;
+  const xs = hole.map(([x]) => x);
+  const ys = hole.map(([, y]) => y);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  if (maxX <= x0 || minX >= x1 || maxY <= y0 || minY >= y1) return [hole];
+  const far = 1e4;
+  const candidates = [
+    clipToRect(hole, -far, -far, x0, far),
+    clipToRect(hole, x1, -far, far, far),
+    clipToRect(hole, -far, -far, far, y0),
+    clipToRect(hole, -far, y1, far, far),
+  ].filter((clipped) => clipped.length >= 3);
+  const best = candidates.reduce<Array<[number, number]>>(
+    (kept, clipped) => (Math.abs(polygonArea(clipped)) > Math.abs(polygonArea(kept)) ? clipped : kept),
+    []
+  );
+  return best.length >= 3 ? [best] : [];
 }
 
 /**

@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useRoomEditor, useViewSettings } from '../contexts';
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
+import { PITCHED_OVER_CUTOUT_REFUSAL, roofCoversCutout } from '../lib/cutout';
 import {
   DORMER_PRESET_LABELS,
   MAX_DORMER_WIDTH,
@@ -59,11 +60,16 @@ export function RoofPanel(): JSX.Element {
             aria-label="Roof style"
           >
             {ROOF_STYLES.map((option) => (
-              <option key={option} value={option}>
+              <option key={option} value={option} disabled={!!layout.cutout && !roofCoversCutout(option)}>
                 {ROOF_LABELS[option]}
               </option>
             ))}
           </Select>
+          {layout.cutout && (
+            <p className="mt-1 text-[10px] text-muted-foreground" role="note">
+              {PITCHED_OVER_CUTOUT_REFUSAL}
+            </p>
+          )}
         </div>
         {style !== 'none' && (
           <div>

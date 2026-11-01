@@ -5,6 +5,7 @@ import {
   INITIAL_LAYOUT,
   type LayoutAction,
   type LayoutState,
+  type ZonePatch,
 } from './layout-reducer';
 import {
   useActiveFloorIndex,
@@ -30,7 +31,10 @@ import type {
   TerrainSpec,
   WallId,
   WallPattern,
+  FootprintCutout,
 } from '../lib/types';
+import type { WallPatch } from '../lib/wall-edit';
+import type { WallSide } from '../lib/wall-sides';
 
 export type { LayoutAction, LayoutState };
 export { INITIAL_LAYOUT };
@@ -49,11 +53,14 @@ export interface LayoutActions {
   /** Active floor's storey height in metres; `null` restores the default 3 m (#202). */
   setStoreyHeight(height: number | null): void;
   setWallColor(wall: WallId, color: string | null): void;
-  setInteriorWallColor(id: string, color: string): void;
+  /** Without a side, both faces. */
+  setInteriorWallColor(id: string, color: string, side?: WallSide): void;
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
   setRoofStyle(style: RoofStyle): void;
+  /** Cut a corner out of the building, or fill it back in (#727). */
+  setCutout(cutout: FootprintCutout | null): void;
   setRoofColor(color: string): void;
   /** Roof dormers (#203). `addDormer` returns the new dormer's id. */
   addDormer(dormer: Omit<DormerInput, 'id'>): string;
@@ -94,6 +101,7 @@ export interface LayoutActions {
   addInteriorWall(wall: InteriorWall): void;
   addInteriorWalls(walls: readonly InteriorWall[]): void;
   removeInteriorWall(id: string): void;
+  updateInteriorWalls(walls: readonly WallPatch[]): void;
   clearInteriorWalls(): void;
   toggleExteriorWall(wallId: WallId): void;
   rotateSelection(ids: ReadonlySet<string>, radians: number): void;
@@ -116,7 +124,7 @@ export interface LayoutActions {
   restoreLayout(layout: RoomLayout): void;
   /** Room zones on the active floor (#155). `addZone` returns the new zone's id. */
   addZone(zone: Omit<RoomZone, 'id'>): string;
-  updateZone(id: string, patch: Partial<Omit<RoomZone, 'id'>>): void;
+  updateZone(id: string, patch: ZonePatch): void;
   removeZone(id: string): void;
 }
 

@@ -2,6 +2,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ORBIT_FOV_DEG, WALK_FOV_DEG } from '../lib/scene-insets';
 import { useWalkthrough, type UseWalkthroughOptions, type WalkthroughBuilding } from './use-walkthrough';
 import type { FurnitureItem } from '../lib/types';
 
@@ -102,8 +103,8 @@ function pointer(target: EventTarget, type: string, init: { pointerType: string;
 }
 
 async function setup(b: WalkthroughBuilding, extra: Partial<UseWalkthroughOptions> = {}) {
-  // The app's orbit camera: 75°, near 0.3 (hooks/use-three-scene).
-  const camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.3, 1000);
+  // The app's orbit camera: near 0.3 (hooks/use-three-scene).
+  const camera = new THREE.PerspectiveCamera(ORBIT_FOV_DEG, 16 / 9, 0.3, 1000);
   camera.position.set(0, 8, 8);
   const canvas = document.createElement('canvas');
   const orbit = { enabled: true, target: new THREE.Vector3(0, 1.5, 0) };
@@ -156,6 +157,13 @@ describe('useWalkthrough — spawn and HUD state (#463a, #454)', () => {
     expect(camera.near).toBe(0.1);
     rerender({ ...props, enabled: false });
     expect(camera.near).toBe(0.3);
+  });
+
+  it('widens the lens while walking and puts it back (#753)', async () => {
+    const { camera, rerender, props } = await setup(building([FRONT_DOOR]));
+    expect(camera.fov).toBe(WALK_FOV_DEG);
+    rerender({ ...props, enabled: false });
+    expect(camera.fov).toBe(ORBIT_FOV_DEG);
   });
 
   it('on exit after a floor change, the camera moves with the orbit target (#446)', async () => {

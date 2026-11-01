@@ -217,6 +217,8 @@ export interface InteriorWall {
   x2: number;
   z2: number;
   color?: string;
+  /** The second face, when it differs from `color` (#720); see lib/wall-sides.ts. */
+  colorB?: string;
 }
 
 /**
@@ -224,6 +226,10 @@ export interface InteriorWall {
  * plan, the blueprint and the statistics panel measure and cost per room
  * (#155); see lib/zones.ts. `x`/`z` is the north-west corner in world metres
  * (room-centred, like item positions); `w`/`d` extend along +x / +z.
+ *
+ * A zone made from a detected room (#719) also has `outline`, and `holes`
+ * around anything nested in it: then the rectangle is the polygon's bounding
+ * box, and the zone follows its walls instead of being moved by hand.
  */
 export interface RoomZone {
   id: string;
@@ -233,6 +239,11 @@ export interface RoomZone {
   z: number;
   w: number;
   d: number;
+  outline?: Vec2[];
+  holes?: Vec2[][];
+  /** The room's own floor finish (#720); the storey's stands in for what isn't set. */
+  floorPattern?: FloorPattern;
+  floorColor?: string;
 }
 
 export interface FloorLayout {
@@ -320,6 +331,18 @@ export interface HardBudget {
  * entries stack upward. Footprint and floor-plan upload live on the
  * building because they're shared across levels.
  */
+/** The corner of the building a cut-out takes: north is the street side, west the plan's left. */
+export type FootprintCorner = 'nw' | 'ne' | 'sw' | 'se';
+
+/** A rectangle out of one corner of the building, on every storey, which makes the footprint an L (#727). */
+export interface FootprintCutout {
+  corner: FootprintCorner;
+  /** Along x, in metres. */
+  width: number;
+  /** Along z, in metres. */
+  depth: number;
+}
+
 export interface RoomLayout {
   id?: string;
   name: string;
@@ -335,6 +358,8 @@ export interface RoomLayout {
   neighbours?: NeighbourSpec;
   /** A recessed porch in the front wall (#204); see lib/street.ts. */
   entrance?: EntranceSpec;
+  /** A corner taken out of the footprint; see lib/footprint.ts. `width` and `height` stay the full rectangle. */
+  cutout?: FootprintCutout;
   /** 'pavement': the pavement runs right up to the front wall, no front garden. */
   frontage?: Frontage;
   /** The opt-in hard budget (#463e); absent, the budget only advises. */

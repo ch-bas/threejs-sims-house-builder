@@ -1747,3 +1747,9 @@ html[data-plan-gesture] * {
     min-height: 44px;
   }
 }
+
+/* B1 wall tools (core building) */
+/* The status toast keeps clear of the wall tool chip, field open or not. */
+body:has(.pc-wall-hint) .pc-status-toasts {
+  top: 216px !important;
+}

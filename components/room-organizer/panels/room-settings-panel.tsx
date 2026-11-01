@@ -7,13 +7,120 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
-import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
+import { resizeRefusal } from '../hooks/layout-reducer';
+import { layoutStore } from '../hooks/use-layout-store';
+import { useRefusal } from '../hooks/use-refusal';
+import { DEFAULT_FLOOR_PLAN_OPACITY, MAX_ROOM_DIMENSION } from '../lib/constants';
+import { cutoutRefusal, itemsInCorner, outdoorItemsTakenIn, zonesInCorner } from '../lib/cutout';
+import { notifyWithUndo } from '../lib/editor-notices';
+import { MIN_CUTOUT_SIZE, MIN_WING_SIZE } from '../lib/footprint';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { MAX_STOREY_HEIGHT, MIN_STOREY_HEIGHT, storeyHeight } from '../lib/storeys';
-import type { FloorPlanFitMode } from '../lib/types';
+import type { FloorPlanFitMode, FootprintCorner, FootprintCutout } from '../lib/types';
 
 const ROOM_INPUT_MIN = 2;
 const ROOM_INPUT_MAX = 20;
+
+const CORNER_LABELS: Record<FootprintCorner, string> = {
+  nw: 'L: front left corner out',
+  ne: 'L: front right corner out',
+  sw: 'L: back left corner out',
+  se: 'L: back right corner out',
+};
+const CORNERS = Object.keys(CORNER_LABELS) as FootprintCorner[];
+
+/** Wide open: a size the house can't take is refused with its reason, not clamped in silence. */
+const CUT_INPUT_RANGE = { min: 0, max: MAX_ROOM_DIMENSION };
+
+/** A first cut: half the house, on the half-metre, within what the house can give. */
+function defaultCutSize(size: number): number {
+  return Math.max(MIN_CUTOUT_SIZE, Math.min(size - MIN_WING_SIZE, Math.round(size) / 2));
+}
+
+/** The building's shape (#727): a rectangle, or an L with one corner cut out on every storey. */
+function FootprintShape(): JSX.Element {
+  const { layout, actions, history } = useRoomEditor();
+  const refuse = useRefusal();
+  const shapeId = useId();
+  const cutWidthId = useId();
+  const cutDepthId = useId();
+  const { cutout } = layout;
+
+  const apply = (next: FootprintCutout | null) => {
+    const refusal = cutoutRefusal(layout, next);
+    if (refusal) {
+      refuse(refusal);
+      return;
+    }
+    const moved = next ? itemsInCorner(layout, next).length : 0;
+    const takenIn = outdoorItemsTakenIn(layout, next).length;
+    const zonesGone = next ? zonesInCorner(layout, next).length : 0;
+    history.commitNow();
+    actions.setCutout(next);
+    const said = [
+      moved > 0 ? `Moved ${moved} ${moved === 1 ? 'item' : 'items'} out of the cut corner.` : '',
+      takenIn > 0 ? `${takenIn} outdoor ${takenIn === 1 ? 'item now stands' : 'items now stand'} indoors.` : '',
+      zonesGone > 0 ? `Removed ${zonesGone} ${zonesGone === 1 ? 'zone' : 'zones'} in the cut corner.` : '',
+    ].filter(Boolean);
+    if (said.length > 0) {
+      notifyWithUndo(said.join(' '), { current: () => layoutStore.getState().layout, undo: history.undo });
+    }
+  };
+
+  return (
+    <div>
+      <Label htmlFor={shapeId}>House shape</Label>
+      <Select
+        id={shapeId}
+        value={cutout?.corner ?? 'rectangle'}
+        onValueChange={(value) => {
+          if (value === 'rectangle') apply(null);
+          else {
+            apply({
+              corner: value as FootprintCorner,
+              width: cutout?.width ?? defaultCutSize(layout.width),
+              depth: cutout?.depth ?? defaultCutSize(layout.height),
+            });
+          }
+        }}
+      >
+        <option value="rectangle">Rectangle</option>
+        {CORNERS.map((corner) => (
+          <option key={corner} value={corner}>
+            {CORNER_LABELS[corner]}
+          </option>
+        ))}
+      </Select>
+      {cutout && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div>
+            <Label htmlFor={cutWidthId}>Cut width</Label>
+            <RoomDimensionInput
+              id={cutWidthId}
+              value={cutout.width}
+              onCommit={(width) => apply({ ...cutout, width })}
+              {...CUT_INPUT_RANGE}
+            />
+          </div>
+          <div>
+            <Label htmlFor={cutDepthId}>Cut depth</Label>
+            <RoomDimensionInput
+              id={cutDepthId}
+              value={cutout.depth}
+              onCommit={(depth) => apply({ ...cutout, depth })}
+              {...CUT_INPUT_RANGE}
+            />
+          </div>
+        </div>
+      )}
+      <p className="mt-1 text-xs text-muted-foreground">
+        {cutout
+          ? 'On every floor. The two new walls take the colour of the side they face. Flat roof only.'
+          : 'Cut a corner out of the house to make an L, on every floor.'}
+      </p>
+    </div>
+  );
+}
 
 const FIT_MODE_HINTS: Record<FloorPlanFitMode, string> = {
   stretch: '↔️ Stretches image to fill entire room',
@@ -27,6 +134,7 @@ export interface RoomSettingsPanelProps {
 
 export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps): JSX.Element {
   const { layout, activeFloor, actions } = useRoomEditor();
+  const refuse = useRefusal();
   const view = useViewSettings('floorPlan3DEffect');
   const { setView } = useEditorViewActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,12 +172,29 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
         </div>
         <div>
           <Label htmlFor={widthId}>Width (metres)</Label>
-          <RoomDimensionInput id={widthId} value={layout.width} onCommit={actions.setWidth} />
+          <RoomDimensionInput
+            id={widthId}
+            value={layout.width}
+            onCommit={(width) => {
+              const refusal = resizeRefusal(layout, width, layout.height);
+              if (refusal) refuse(refusal);
+              else actions.setWidth(width);
+            }}
+          />
         </div>
         <div>
           <Label htmlFor={heightId}>Depth (metres)</Label>
-          <RoomDimensionInput id={heightId} value={layout.height} onCommit={actions.setHeight} />
+          <RoomDimensionInput
+            id={heightId}
+            value={layout.height}
+            onCommit={(height) => {
+              const refusal = resizeRefusal(layout, layout.width, height);
+              if (refusal) refuse(refusal);
+              else actions.setHeight(height);
+            }}
+          />
         </div>
+        <FootprintShape />
         <div>
           <Label htmlFor={storeyId}>Storey height (metres)</Label>
           <div className="flex items-center gap-2">

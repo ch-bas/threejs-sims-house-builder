@@ -1,7 +1,8 @@
+import { cutoutRect } from '../lib/footprint';
 import { LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
-import type { Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
+import type { FootprintCutout, Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -12,7 +13,7 @@ const GROUND_ROLE = 'ground';
 /** Where the last-applied weather is remembered, so a rebuilt lot starts tinted. */
 const WEATHER_KEY = 'outdoorWeather';
 
-const GRASS_COLOR = 0x7cb04a;
+const GRASS_COLOR = 0x6a9445;
 
 /**
  * The grass colour under each weather (#189): a wet lawn reads darker and
@@ -20,8 +21,8 @@ const GRASS_COLOR = 0x7cb04a;
  */
 export function outdoorGroundColor(weather: Weather): number {
   switch (weather) {
-    case 'rain': return 0x6a9a44;
-    case 'snow': return 0xe9eef3;
+    case 'rain': return 0x5b8240;
+    case 'snow': return 0xcfd6de;
     default: return GRASS_COLOR;
   }
 }
@@ -57,6 +58,8 @@ export function applyOutdoorWeather(scene: ThreeNS.Scene, weather: Weather): voi
  * lot is excavated around the house. Trees skip a side with a neighbour.
  */
 export interface OutdoorSite {
+  /** The corner taken out of the footprint (#727): open ground. */
+  cutout?: FootprintCutout;
   terrain?: TerrainSpec;
   neighbours?: NeighbourSpec;
   /** 'pavement': pavement and road run right up to the front wall (#204). */
@@ -90,7 +93,7 @@ export function setOutdoorVisible(
   const lotHalfW = halfW + lotMargin;
   const lotHalfD = halfD + lotMargin;
   const groundSize = outdoorGroundSize(roomWidth, roomDepth);
-  const { terrain } = site;
+  const { terrain, cutout } = site;
   const groundAt = (z: number) => groundHeightAt(terrain, z, halfD);
   const streetY = groundAt(-halfD);
 
@@ -108,7 +111,7 @@ export function setOutdoorVisible(
   const weather = (scene.userData[WEATHER_KEY] as Weather | undefined) ?? 'clear';
   const grassMat = new THREE.MeshStandardMaterial({ color: outdoorGroundColor(weather), roughness: 1 });
   const grass = terrain
-    ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y), grassMat)
+    ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y, cutout), grassMat)
     : new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize, 1, 1), grassMat);
   if (!terrain) {
     grass.rotation.x = -Math.PI / 2;
@@ -121,7 +124,7 @@ export function setOutdoorVisible(
   scene.add(grass);
 
   // The sides of the dig where the house cuts into the hill.
-  const excavation = terrain ? buildExcavationGeometry(THREE, terrain, halfW, halfD) : null;
+  const excavation = terrain ? buildExcavationGeometry(THREE, terrain, halfW, halfD, cutout) : null;
   if (excavation) {
     const earth = new THREE.Mesh(excavation, earthMaterial(THREE));
     earth.receiveShadow = true;
@@ -198,7 +201,10 @@ export function setOutdoorVisible(
   // Path of stepping stones from the front-of-lot edge to the room's "door"
   // wall (north). Identical cylinders → one InstancedMesh.
   const stoneTransforms: ThreeNS.Matrix4[] = [];
-  for (let z = -halfD - 0.5; !pavement && z >= -roadOffset; z -= 0.7) {
+  // A cut across the middle of the front moves the wall the path leads to.
+  const notch = cutoutRect({ width: roomWidth, height: roomDepth, cutout });
+  const pathStart = notch && notch.z0 === -halfD && notch.x0 < 0 && notch.x1 > 0 ? notch.z1 : -halfD;
+  for (let z = pathStart - 0.5; !pavement && z >= -roadOffset; z -= 0.7) {
     dummy.position.set(0, groundAt(z) - 0.005, z);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.set(1, 1, 1);
