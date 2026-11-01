@@ -29,6 +29,7 @@ import { applyCollisionTint, fadeGroup } from '../three/collision-tint';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
 import { buildEntrance } from '../three/entrance';
 import { createFurnitureModel } from '../three/furniture-builders';
+import { releaseDetailTextures } from '../three/furniture-materials';
 import {
   addWallHandles,
   clearInteriorWalls,
@@ -558,6 +559,8 @@ export function useSceneEffects({
     // wallOpeningsKey covers them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, ceilingY, ceilingCapY, pitY, pitTopY, pitFloorColor, activeFloorIndex, allFloors, neighboursHidden, layout.width, layout.height, cutoutKey, wallOpeningsKey]);
+
+  useEffect(() => () => releaseDetailTextures(), []);
 
   // Furniture meshes
   useEffect(() => {

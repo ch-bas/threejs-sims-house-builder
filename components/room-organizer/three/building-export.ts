@@ -7,6 +7,7 @@ import { zoneFloorPatches } from '../lib/zones';
 import { disposeObject } from './builder-utils';
 import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
+import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
 import { buildRoof } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
@@ -133,6 +134,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       const position = item.position;
       if (!position) continue;
       const group = createFurnitureModel(THREE, itemForStorey(item, floor), false, storeyH);
+      stripDetailMaps(group);
       group.name = item.name;
       group.userData.type = ROOM_OBJECT_TAGS.Furniture;
       group.userData.id = item.id;

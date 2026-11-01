@@ -575,7 +575,7 @@ function buildFloorPlanMaterial(
   material = new THREE.MeshStandardMaterial({
     map,
     roughness: 0.8,
-    metalness: 0.2,
+    metalness: 0,
     ...(displacement ? { displacementMap: displacement, displacementScale: 0.3 } : {}),
   });
   return material;

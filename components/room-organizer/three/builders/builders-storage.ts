@@ -1,9 +1,11 @@
 import { type BuilderContext, EDGE, material, mesh, softBox } from '../builder-utils';
+import { surfaceMaterial } from '../furniture-materials';
 import type * as ThreeNS from 'three';
 
-export function buildBookshelf({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildBookshelf(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, hasCollision, baseColor, opacity } = ctx;
   const group = new THREE.Group();
-  const shelfMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const shelfMat = surfaceMaterial(ctx, baseColor, 'woodOiled', { detailed: true });
 
   const back = mesh(THREE, softBox(THREE, item.width, item.height, item.depth * 0.1, EDGE.wood), shelfMat);
   back.position.set(0, item.height / 2, -item.depth * 0.45);
@@ -42,10 +44,14 @@ export function buildBookshelf({ THREE, item, hasCollision, baseColor, opacity }
   return group;
 }
 
-export function buildCabinet({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildCabinet(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
-  const accentMat = material(THREE, 0x424242, hasCollision, opacity, { metalness: 0.6, roughness: 0.3 });
+  // The dishwasher shares this builder, and it isn't timber.
+  const bodyMat = item.type === 'dishwasher'
+    ? surfaceMaterial(ctx, baseColor, 'painted')
+    : surfaceMaterial(ctx, baseColor, 'woodLacquered', { detailed: true });
+  const accentMat = surfaceMaterial(ctx, 0x424242, 'brushedMetal');
 
   const body = mesh(THREE, softBox(THREE, item.width, item.height, item.depth, EDGE.wood), bodyMat);
   body.position.y = item.height / 2;

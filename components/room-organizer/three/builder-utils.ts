@@ -32,6 +32,16 @@ function isSharedGeometry(geometry: ThreeNS.BufferGeometry): boolean {
 }
 
 /**
+ * Textures every item shares, such as the wood and fabric detail (#756).
+ * `disposeMaterial` leaves them alone, or each rebuild would re-upload them.
+ */
+const sharedTextures = new WeakSet<ThreeNS.Texture>();
+
+export function markSharedTexture(texture: ThreeNS.Texture): void {
+  sharedTextures.add(texture);
+}
+
+/**
  * Free the GPU resources owned by an object and all its descendants.
  *
  * `scene.remove()` only detaches an object from the graph — geometries,
@@ -63,7 +73,7 @@ function disposeMaterial(material: ThreeNS.Material): void {
   // Dispose every texture slot (map, normalMap, sprite map, …) generically.
   for (const value of Object.values(material)) {
     const texture = value as ThreeNS.Texture | null;
-    if (texture && typeof texture === 'object' && texture.isTexture) texture.dispose();
+    if (texture && typeof texture === 'object' && texture.isTexture && !sharedTextures.has(texture)) texture.dispose();
   }
   material.dispose();
 }
@@ -305,7 +315,7 @@ export function buildFallback({ THREE, item, hasCollision, baseColor, opacity }:
   const block = mesh(
     THREE,
     new THREE.BoxGeometry(item.width, item.height, item.depth),
-    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7, metalness: 0.3 })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7, metalness: 0 })
   );
   block.position.y = item.height / 2;
   group.add(block);

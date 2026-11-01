@@ -13,7 +13,7 @@ import type * as ThreeNS from 'three';
 export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
-  const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 0.8, roughness: 0.2 });
+  const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 1, roughness: 0.2 });
 
   // Door slab (almost as wide and tall as the wall opening).
   const slab = mesh(
@@ -55,7 +55,7 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   const glassMat = new THREE.MeshStandardMaterial({
     color: baseColor,
     roughness: 0.05,
-    metalness: 0.25,
+    metalness: 0,
     transparent: true,
     opacity: hasCollision ? 0.5 : 0.4,
   });
@@ -132,7 +132,7 @@ const RAIL_RADIUS = 0.03;
 function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const stepMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
-  const railMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 });
+  const railMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.5, metalness: 1 });
 
   // Item height is the rise to the next floor; build steps that span the depth.
   const stepCount = 14;
