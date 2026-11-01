@@ -1,6 +1,8 @@
+import { mountBand } from '../lib/mount-band';
+import { itemForStorey, storeyHeight } from '../lib/storeys';
 import { disposeObject } from './builder-utils';
 import { DisposableLruCache } from './texture-lru';
-import type { FurnitureItem } from '../lib/types';
+import type { FloorLayout, FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -25,17 +27,32 @@ export function clearItemLabels(scene: ThreeNS.Scene): void {
   }
 }
 
+/** How far above the top of an item's mesh its label floats. */
+export const LABEL_RISE = 0.4;
+
+/**
+ * Where an item's label floats: above the top of its built mesh, from the
+ * same band the selection outline uses, so a label sits over a pendant's
+ * canopy or a painting rather than at floor + height, which put it 60 cm
+ * under the shade and across the window glass (#657).
+ */
+export function itemLabelY(item: FurnitureItem, floor: Pick<FloorLayout, 'height'> | undefined, yOffset: number): number {
+  const height = storeyHeight(floor);
+  return yOffset + mountBand(itemForStorey(item, floor), height).top + LABEL_RISE;
+}
+
 export function renderItemLabels(
   THREE: ThreeModule,
   scene: ThreeNS.Scene,
   items: readonly FurnitureItem[],
-  yOffset: number
+  yOffset: number,
+  floor?: Pick<FloorLayout, 'height'>
 ): void {
   clearItemLabels(scene);
   for (const item of items) {
     if (!item.position) continue;
     const sprite = createLabelSprite(THREE, item.name);
-    sprite.position.set(item.position.x, yOffset + item.height + 0.4, item.position.z);
+    sprite.position.set(item.position.x, itemLabelY(item, floor, yOffset), item.position.z);
     sprite.userData.type = LABEL_TAG;
     sprite.userData.itemId = item.id;
     scene.add(sprite);
