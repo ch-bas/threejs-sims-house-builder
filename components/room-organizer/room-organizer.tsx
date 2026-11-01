@@ -29,6 +29,7 @@ import { usePeopleModel } from './hooks/use-people-model';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
+import { useShiftHeld } from './hooks/use-shift-held';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough, type WalkthroughBuilding } from './hooks/use-walkthrough';
 import { useWeather } from './hooks/use-weather';
@@ -41,6 +42,7 @@ import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
 import { lockedMessage, notify, notifyRefused, notifyRefusedOnce, notifyWithUndo, removedMessage } from './lib/editor-notices';
+import { formatMetres } from './lib/format';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { describeLayoutChange } from './lib/history-label';
@@ -52,7 +54,7 @@ import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
-import { snapWallEndpoint } from './lib/wall-snap';
+import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
@@ -191,16 +193,43 @@ export function RoomOrganizer(): JSX.Element {
   const [wallDraft, setWallDraft] = useState<{ x: number; z: number } | null>(null);
   const [pointerWorld, setPointerWorld] = useState<{ x: number; z: number } | null>(null);
 
-  const wallSnapResult = useMemo(() => {
-    if (!view.drawWallMode || !pointerWorld) return null;
-    return snapWallEndpoint({
-      point: pointerWorld,
-      existingWalls: activeFloor.interiorWalls ?? [],
-      fromPoint: wallDraft,
-      roomWidth: layout.width,
-      roomDepth: layout.height,
-    });
-  }, [view.drawWallMode, pointerWorld, activeFloor.interiorWalls, wallDraft, layout.width, layout.height]);
+  // Shift draws free of the angle steps and the grid (#723).
+  const wallFree = useShiftHeld(view.drawWallMode);
+  const snapWallPoint = useCallback(
+    (point: { x: number; z: number }) =>
+      snapWallEndpoint({
+        point,
+        existingWalls: activeFloor.interiorWalls ?? [],
+        fromPoint: wallDraft,
+        roomWidth: layout.width,
+        roomDepth: layout.height,
+        free: wallFree,
+      }),
+    [activeFloor.interiorWalls, wallDraft, layout.width, layout.height, wallFree]
+  );
+  const wallTipUnderPointer = useMemo(
+    () => (view.drawWallMode && pointerWorld ? snapWallPoint(pointerWorld) : null),
+    [view.drawWallMode, pointerWorld, snapWallPoint]
+  );
+  // With the length field open the draft holds still: the pointer is on its
+  // way to the field's buttons, and the preview shows where Place will go.
+  const [wallLengthOpen, setWallLengthOpen] = useState(false);
+  const wallHeldTipRef = useRef<WallSnapResult | null>(null);
+  const wallSnapResult = wallLengthOpen ? wallHeldTipRef.current : wallTipUnderPointer;
+  // Which way the draft points, kept while the pointer is away at the length
+  // field (#723). A new anchor starts it over.
+  const wallAimRef = useRef<{ x: number; z: number } | null>(null);
+  // A point rounds off the pointer that placed it: that gap is no direction,
+  // only the pointer moving on is. A finger never does, and picks one instead.
+  const wallPlacedByRef = useRef<{ x: number; z: number } | null>(null);
+  if (!wallLengthOpen && wallDraft && wallTipUnderPointer && pointerWorld !== wallPlacedByRef.current) {
+    const x = wallTipUnderPointer.point.x - wallDraft.x;
+    const z = wallTipUnderPointer.point.z - wallDraft.z;
+    if (Math.hypot(x, z) >= MIN_WALL_LENGTH) {
+      wallAimRef.current = { x, z };
+      wallHeldTipRef.current = wallTipUnderPointer;
+    }
+  }
 
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const collidingIds = useMemo(() => {
@@ -215,38 +244,42 @@ export function RoomOrganizer(): JSX.Element {
 
   // Set once the history exists, below.
   const commitWallStepRef = useRef<() => void>(() => {});
+  // The one way a wall point lands, clicked or typed (#723).
+  const placeWallPoint = useCallback(
+    (point: { x: number; z: number }) => {
+      wallAimRef.current = null;
+      wallHeldTipRef.current = null;
+      wallPlacedByRef.current = pointerWorld;
+      if (!wallDraft) {
+        setWallDraft(point);
+        return;
+      }
+      // Reject zero-length walls (two clicks on the same vertex).
+      const length = Math.hypot(point.x - wallDraft.x, point.z - wallDraft.z);
+      if (length < MIN_WALL_LENGTH) {
+        setWallDraft(null);
+        return;
+      }
+      const id = `wall-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      // A segment is one undo step, however quickly the next follows.
+      commitWallStepRef.current();
+      actions.addInteriorWall({
+        id,
+        x1: wallDraft.x,
+        z1: wallDraft.z,
+        x2: point.x,
+        z2: point.z,
+      });
+      // Chain: keep the just-placed endpoint as the start of the next wall.
+      setWallDraft(point);
+    },
+    [wallDraft, actions, pointerWorld]
+  );
+
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
       if (view.drawWallMode) {
-        const snapped = snapWallEndpoint({
-          point: { x, z },
-          existingWalls: activeFloor.interiorWalls ?? [],
-          fromPoint: wallDraft,
-          roomWidth: layout.width,
-          roomDepth: layout.height,
-        });
-        if (!wallDraft) {
-          setWallDraft(snapped.point);
-          return;
-        }
-        // Reject zero-length walls (two clicks on the same vertex).
-        const length = Math.hypot(snapped.point.x - wallDraft.x, snapped.point.z - wallDraft.z);
-        if (length < 0.1) {
-          setWallDraft(null);
-          return;
-        }
-        const id = `wall-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        // A segment is one undo step, however quickly the next follows.
-        commitWallStepRef.current();
-        actions.addInteriorWall({
-          id,
-          x1: wallDraft.x,
-          z1: wallDraft.z,
-          x2: snapped.point.x,
-          z2: snapped.point.z,
-        });
-        // Chain: keep the just-placed endpoint as the start of the next wall.
-        setWallDraft(snapped.point);
+        placeWallPoint(snapWallPoint({ x, z }).point);
         return;
       }
       if (view.measurementMode) {
@@ -256,15 +289,7 @@ export function RoomOrganizer(): JSX.Element {
         });
       }
     },
-    [
-      view.measurementMode,
-      view.drawWallMode,
-      wallDraft,
-      actions,
-      activeFloor.interiorWalls,
-      layout.width,
-      layout.height,
-    ]
+    [view.measurementMode, view.drawWallMode, placeWallPoint, snapWallPoint]
   );
 
   const handleFloorPointerMove = useCallback((x: number, z: number) => {
@@ -280,6 +305,19 @@ export function RoomOrganizer(): JSX.Element {
   useEffect(() => {
     if (!view.drawZoneMode) setSelectedZoneId(null);
   }, [view.drawZoneMode]);
+
+  // A typed length: the draft's direction unless a button named one (#723).
+  const handleWallLength = (length: number, direction: { x: number; z: number } | null): boolean => {
+    const aim = direction ?? wallAimRef.current;
+    if (!wallDraft || !aim) return false;
+    const end = wallEndAtLength(wallDraft, aim, length, layout.width, layout.height);
+    if (!end) {
+      notifyRefused(`A ${formatMetres(length)} wall from here runs past the outside wall.`, playCue);
+      return false;
+    }
+    placeWallPoint(end);
+    return true;
+  };
 
   const handleInteriorWallSelect = useCallback((id: string | null) => {
     setSelectedWall(id === null ? null : { id, kind: 'interior' });
@@ -1457,9 +1495,13 @@ export function RoomOrganizer(): JSX.Element {
                         wallSnapResult.point.z - wallDraft.z
                       )
                     : null,
+                angle: wallDraft && wallSnapResult ? wallAngleDegrees(wallDraft, wallSnapResult.point) : null,
+                aimed: wallAimRef.current !== null,
               }
             : null
         }
+        onWallLength={handleWallLength}
+        onWallLengthField={setWallLengthOpen}
         canvasRef={canvasRef}
         canvas2DRef={canvas2DRef}
         hover={

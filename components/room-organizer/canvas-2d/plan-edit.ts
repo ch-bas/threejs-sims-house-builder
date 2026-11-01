@@ -1,5 +1,6 @@
 import { formatMetres } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
+import { wallAngleDegrees } from '../lib/wall-snap';
 import { clampZoneRect, MIN_ZONE_SIZE, zoneContains, zoneFromCorners, zoneInPorch, type ZoneRect } from '../lib/zones';
 import type { EntrancePlanOutline } from '../lib/street';
 import type { InteriorWall, RoomLayout, RoomZone, Vec2 } from '../lib/types';
@@ -100,8 +101,9 @@ export function drawWallPreview(
       ctx.fillStyle = DRAFT_INK;
       const labelX = (toX(anchor.x) + toX(tip.x)) / 2;
       const labelY = (toY(anchor.z) + toY(tip.z)) / 2 - 8;
-      ctx.strokeText(formatMetres(length), labelX, labelY);
-      ctx.fillText(formatMetres(length), labelX, labelY);
+      const label = `${formatMetres(length)} · ${wallAngleDegrees(anchor, tip)}°`;
+      ctx.strokeText(label, labelX, labelY);
+      ctx.fillText(label, labelX, labelY);
     }
   }
   const dot = (point: Vec2, filled: boolean) => {

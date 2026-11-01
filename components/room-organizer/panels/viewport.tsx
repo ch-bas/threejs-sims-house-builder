@@ -11,7 +11,8 @@ import { Icon, iconForItem } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
 import { Minimap } from './minimap';
 import { WalkHud, type WalkHudProps } from './walk-hud';
-import type { FurnitureItem, RoomLayout } from '../lib/types';
+import { WallDrawChip, type WallDrawStatus } from './wall-draw-chip';
+import type { FurnitureItem, RoomLayout, Vec2 } from '../lib/types';
 import type { FloorLayout } from '../lib/types';
 
 export interface HoverState {
@@ -47,11 +48,10 @@ export interface ViewportProps {
   /** Points placed with the distance tool; absent while the tool is off. */
   measurementPointsPlaced?: number;
   /** When set, a HUD chip shows the current wall-drawing status. */
-  wallDrawStatus?: {
-    hasAnchor: boolean;
-    snapKind?: 'vertex' | 'on-wall' | 'right-angle' | 'none';
-    currentLength?: number | null;
-  } | null;
+  wallDrawStatus?: WallDrawStatus | null;
+  /** A typed wall length (#723): see `WallDrawChipProps.onLength`. */
+  onWallLength?(length: number, direction: Vec2 | null): boolean;
+  onWallLengthField?(open: boolean): void;
   canvasRef: React.RefObject<HTMLCanvasElement>;
   canvas2DRef: React.RefObject<HTMLCanvasElement>;
   onCatalogDrop?(clientX: number, clientY: number, type: string): void;
@@ -418,107 +418,11 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
         )}
 
       {props.wallDrawStatus && (
-        <div
-          // Top-centre like the other tool chips: the top-right corner is the
-          // floor and wall pills, which covered it (#473).
-          className="pc-top-chip pc-wall-hint absolute left-1/2 pc-glass pc-glass--dark"
-          style={{
-            top: 104,
-            transform: 'translateX(-50%)',
-            zIndex: 31,
-            padding: '8px 12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            minWidth: 200,
-          }}
-        >
-          {props.wallDrawStatus.hasAnchor ? (
-            <>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontFamily: 'var(--pc-font-display)',
-                  fontWeight: 700,
-                  fontSize: 11,
-                  color: 'var(--pc-paper)',
-                }}
-              >
-                <Icon name="brick" size={14} />
-                {touch ? 'Tap to extend · tap Walls to stop' : 'Click to extend · Esc to stop'}
-              </div>
-              {props.wallDrawStatus.currentLength !== undefined &&
-                props.wallDrawStatus.currentLength !== null && (
-                  <div
-                    className="pc-blurb"
-                    style={{
-                      fontSize: 11,
-                      fontVariantNumeric: 'tabular-nums',
-                      paddingLeft: 20,
-                    }}
-                  >
-                    {props.wallDrawStatus.currentLength.toFixed(2)} m
-                  </div>
-                )}
-              {props.wallDrawStatus.snapKind === 'vertex' && (
-                <div
-                  style={{
-                    fontFamily: 'var(--pc-font-display)',
-                    fontWeight: 600,
-                    fontSize: 11,
-                    color: 'var(--pc-confirm-green)',
-                    paddingLeft: 20,
-                  }}
-                >
-                  ⊙ Snapping to vertex
-                </div>
-              )}
-              {props.wallDrawStatus.snapKind === 'on-wall' && (
-                <div
-                  style={{
-                    fontFamily: 'var(--pc-font-display)',
-                    fontWeight: 600,
-                    fontSize: 11,
-                    color: 'var(--pc-confirm-green)',
-                    paddingLeft: 20,
-                  }}
-                >
-                  ⊥ Snapping onto wall
-                </div>
-              )}
-              {props.wallDrawStatus.snapKind === 'right-angle' && (
-                <div
-                  style={{
-                    fontFamily: 'var(--pc-font-display)',
-                    fontWeight: 600,
-                    fontSize: 11,
-                    color: 'var(--pc-cyan-glow)',
-                    paddingLeft: 20,
-                  }}
-                >
-                  ⟂ Right-angle snap
-                </div>
-              )}
-            </>
-          ) : (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontFamily: 'var(--pc-font-display)',
-                fontWeight: 700,
-                fontSize: 11,
-                color: 'var(--pc-paper)',
-              }}
-            >
-              <Icon name="brick" size={14} />
-              {touch ? 'Tap to place the first wall point' : 'Click to place the first wall point'}
-            </div>
-          )}
-        </div>
+        <WallDrawChip
+          status={props.wallDrawStatus}
+          {...(props.onWallLength ? { onLength: props.onWallLength } : {})}
+          {...(props.onWallLengthField ? { onFieldOpen: props.onWallLengthField } : {})}
+        />
       )}
 
       {props.hover && props.hover.item.id !== props.selectedItem?.id && (
