@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.29.0] - 2026-11-01
+
+The **Rendering & performance II** milestone, first wave: the shell and its furniture stop fighting each other. Sun comes through the windows, stairs stop under the roof, openings go with their walls, and a security camera no longer bleaches the room.
+
+### Fixed
+- Window glass and the shower enclosure no longer cast solid shadows, so the sun comes in through the hole the wall cuts for a window ([#551](https://github.com/ch-bas/threejs-sims-house-builder/issues/551))
+- A security camera's vision cone no longer bleaches pale walls and floors to white; its light volume is hidden by walls in front of it ([#652](https://github.com/ch-bas/threejs-sims-house-builder/issues/652))
+- A stair on the top storey stops under the roof instead of climbing through the gable, in the scene, the GLB export and the walkthrough alike ([#654](https://github.com/ch-bas/threejs-sims-house-builder/issues/654))
+- A party-wall neighbour's roof, fascia and gutters stop at its own wall instead of reaching 0.33 m into your top storey ([#655](https://github.com/ch-bas/threejs-sims-house-builder/issues/655))
+- In the walkthrough, partitions reach the ceiling: there is no longer an open slot over every room divider ([#656](https://github.com/ch-bas/threejs-sims-house-builder/issues/656))
+- Item labels float above what is drawn: over a pendant's canopy or a painting, not across a window's glass ([#657](https://github.com/ch-bas/threejs-sims-house-builder/issues/657))
+- Straight stairs have a proper closed string on each side that follows the treads, instead of a plank hovering beside them ([#658](https://github.com/ch-bas/threejs-sims-house-builder/issues/658))
+- Cutaway and walls-down hide doors and windows with their wall instead of leaving the frames standing in mid-air ([#659](https://github.com/ch-bas/threejs-sims-house-builder/issues/659))
+- A partition drawn to an outside wall no longer flickers through the facade, porch steps and neighbours' stoops stand on the ground instead of hovering over it, and rain and snow no longer fall through the eaves ([#660](https://github.com/ch-bas/threejs-sims-house-builder/issues/660))
+
+### Performance
+- A security camera's cone asks for a new frame only when something in it moved, so a still cone no longer renders 60 times a second ([#556](https://github.com/ch-bas/threejs-sims-house-builder/issues/556))
+
+### Developer
+- Four 1080p screenshots of the builder in `docs/images/screenshots/`, for posts and the wiki
+
 ## [1.28.0] - 2026-11-01
 
 The **Core building** milestone: walls stay editable after you draw them, closed walls become real rooms with their own floors, and a house can be L-shaped. The house also looks better: natural daylight, walls lit by the sun, and a calmer camera lens.
