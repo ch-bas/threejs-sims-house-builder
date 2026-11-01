@@ -107,7 +107,7 @@ components/
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
-    │   ├── zones.ts                     Room zones: rect validation / clamping, per-zone stats (porch left out, #582)
+    │   ├── zones.ts                     Room zones: rect and polygon validation, clamping, re-fit to detected rooms (#719), per-zone stats (porch left out, #582)
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
@@ -231,7 +231,7 @@ components/
         ├── slider-row.tsx               Shared label + range + readout row
         ├── floor-switcher.tsx
         ├── walls-panel.tsx
-        ├── zones-panel.tsx              Room zones: list, rename, recolour, delete, draw toggle
+        ├── zones-panel.tsx              Room zones: list, rename, recolour, delete, draw toggle, name a detected room
         ├── roof-panel.tsx
         ├── site-panel.tsx               Slope, neighbours + street, frontage, entrance
         ├── room-settings-panel.tsx

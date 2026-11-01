@@ -1,11 +1,12 @@
 import { repairHardBudget } from './budget';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
+import { rectOutline } from './room-detect';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entranceProblem, entranceWithinStorey, isEntranceSpec, isSillHeight } from './street';
-import { MAX_ZONES, isRoomZone } from './zones';
+import { MAX_ZONES, isRoomZone, plainZone, zoneShapeFits } from './zones';
 import type {
   DormerOpening,
   DormerSpec,
@@ -416,7 +417,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
 });
 const VEC2_KEYS = ['x', 'z'] as const;
 const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true });
-const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true });
+const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true });
 const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({
   id: true,
@@ -598,6 +599,8 @@ function repairFloor(floor: FloorLayout): FloorLayout {
         id: capText(zone.id, MAX_ID_LENGTH),
         name: capText(zone.name, MAX_NAME_LENGTH),
         color: capText(zone.color, MAX_COLOR_LENGTH),
+        ...(zone.outline ? { outline: mapSame(zone.outline, repairVec2) } : {}),
+        ...(zone.holes ? { holes: mapSame(zone.holes, (hole) => mapSame(hole, repairVec2)) } : {}),
       })
     );
   }
@@ -629,10 +632,18 @@ function withoutPorchParts(floor: FloorLayout): FloorLayout {
 }
 
 /** Whitelist every object (#350) and bring every field within the caps above. */
+/** A polygon the footprint can't hold, or that crosses itself, goes back to its rectangle (#719). */
+function repairZoneShapes(floor: FloorLayout, layout: RoomLayout): FloorLayout {
+  if (!floor.zones?.some((zone) => zone.outline)) return floor;
+  const footprint = rectOutline(layout.width, layout.height);
+  const zones = mapSame(floor.zones, (zone) => (zoneShapeFits(zone, footprint) ? zone : plainZone(zone)));
+  return zones === floor.zones ? floor : { ...floor, zones };
+}
+
 function repairLayout(layout: RoomLayout): RoomLayout {
   const patch: Partial<RoomLayout> = {
     name: capText(layout.name, MAX_NAME_LENGTH),
-    floors: mapSame(layout.floors, repairFloor),
+    floors: mapSame(mapSame(layout.floors, repairFloor), (floor) => repairZoneShapes(floor, layout)),
   };
   if (layout.id !== undefined) patch.id = capText(layout.id, MAX_ID_LENGTH);
   if (layout.roof) patch.roof = repairRoof(layout.roof);

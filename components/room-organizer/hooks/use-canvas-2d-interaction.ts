@@ -10,12 +10,13 @@ import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, hitOffPlanMarker, offPlanMarkers, PLAN_PADDING_PX, planViewFit, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
-import { defaultZoneName, nextZoneColor, zoneFromCorners, zoneInPorch, type ZoneRect } from '../lib/zones';
+import { defaultZoneName, nextZoneColor, roomAt, zoneFromCorners, zoneFromRoom, zoneInPorch, type ZoneRect } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
 import type { DragCancelOptions } from './use-item-drag';
 import type { WallGrabInfo, WallMovePreview } from './use-wall-edit';
+import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { EntrancePlanOutline } from '../lib/street';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
@@ -163,6 +164,8 @@ export interface UseCanvas2DInteractionParams {
   /** The zone showing handles (#628): zone mode only, the orchestrator clears it. */
   selectedZoneId?: string | null;
   onZoneSelect?(id: string | null): void;
+  /** Detected rooms with no zone, in zone mode: a tap on one names it (#719). */
+  roomsToName?: readonly DetectedRoom[];
 }
 
 export interface UseCanvas2DInteractionResult {
@@ -346,7 +349,7 @@ export function useCanvas2DInteraction(
 
     const paintGhost = (): void => {
       rafId = null;
-      const { layout, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId, selectedWallId } = paramsRef.current;
+      const { layout, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId, selectedWallId, roomsToName } = paramsRef.current;
       const session = gesture?.started ? gesture : null;
       const wallMove = wallHold?.started ? paramsRef.current.wallMovePreview?.() : null;
       const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : (wallMove?.items ?? activeFloor.items);
@@ -369,6 +372,7 @@ export function useCanvas2DInteraction(
         showHeatmap: view.showHeatmap,
         showFloorBelow: view.showFloorBelow,
         zoneDraft: draft,
+        roomsToName,
         selectedZoneId,
         selectedWallId,
         selectedWallRefused: (wallMove?.refusal ?? null) !== null,
@@ -411,7 +415,13 @@ export function useCanvas2DInteraction(
       zoneGesture = null;
       const p = paramsRef.current;
       if (!session.started) {
-        if (commit) selectZone(session.tapZoneId);
+        const room = commit && !session.tapZoneId ? roomAt(p.roomsToName ?? [], session.start.x, session.start.z) : null;
+        if (room) {
+          const zones = p.activeFloor.zones ?? [];
+          requestZoneName(layoutActions.addZone(zoneFromRoom(room, defaultZoneName(zones), nextZoneColor(zones))));
+        } else if (commit) {
+          selectZone(session.tapZoneId);
+        }
         return;
       }
       releaseCapture(session.pointerId);
@@ -567,7 +577,9 @@ export function useCanvas2DInteraction(
           zoneEdit = { ...press, zoneId: selected.id, grip, grabbedAt: world, origin, latest: origin, recess, overPorch: false };
           return;
         }
-        zoneGesture = { ...press, start: world, latest: world, tapZoneId: zoneAt(zones, world.x, world.z)?.id ?? null };
+        // A tap on a selected polygon zone steps down, as one on a rectangle's body does.
+        const below = selected?.outline ? selected.id : undefined;
+        zoneGesture = { ...press, start: world, latest: world, tapZoneId: zoneAt(zones, world.x, world.z, below)?.id ?? null };
         return;
       }
       // The selected wall's ends sit on top of whatever is under them (#718).

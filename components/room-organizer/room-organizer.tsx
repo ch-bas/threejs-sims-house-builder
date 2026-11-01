@@ -57,6 +57,7 @@ import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
 import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
+import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
@@ -76,6 +77,7 @@ import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { roofPeakHeight } from './three/roof';
 import type { HoverInfo } from './hooks/use-three-scene';
+import type { DetectedRoom } from './lib/room-detect';
 import type { RoomStampSpec } from './lib/room-stamp';
 import type { CatalogItem, FurnitureItem, GameMode, RoomLayout, ViewSettings, WallId } from './lib/types';
 
@@ -118,6 +120,9 @@ function zoomCamera(
   camera.position.copy(controls.target).add(offset);
   controls.update();
 }
+
+/** A stable "none" for the plan's memoised rooms to name. */
+const NO_ROOMS: readonly DetectedRoom[] = [];
 
 const INITIAL_VIEW_SETTINGS: ViewSettings = {
   view2D: false,
@@ -941,6 +946,11 @@ export function RoomOrganizer(): JSX.Element {
 
   // EXPLORE edits nothing, so it shows no handles either.
   const planZoneId = exploring ? null : selectedZoneId;
+  // The rooms the zone tool offers to name (#719); none outside it.
+  const planRoomsToName = useMemo(
+    () => (view.drawZoneMode && !exploring ? roomsToName(layout, activeFloorIndex) : NO_ROOMS),
+    [view.drawZoneMode, exploring, layout, activeFloorIndex]
+  );
 
   // Moving a selected wall, in both views (#718). The 3D ghosts are wired below,
   // once the scene exists.
@@ -996,6 +1006,7 @@ export function RoomOrganizer(): JSX.Element {
     wallMovePreview,
     selectedZoneId: planZoneId,
     onZoneSelect: setSelectedZoneId,
+    roomsToName: planRoomsToName,
   });
 
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
@@ -1154,6 +1165,7 @@ export function RoomOrganizer(): JSX.Element {
     extraSelectedIds,
     selectedWall,
     selectedZoneId: planZoneId,
+    roomsToName: planRoomsToName,
     wallDraft,
     stampGhost,
     stampArmed: roomStamp.armed,

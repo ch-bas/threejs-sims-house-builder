@@ -13,10 +13,11 @@ import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-ge
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
-import { zoneArea, type ZoneRect } from '../lib/zones';
+import { regionShape, zoneArea, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawSelectedWall, drawStampGhost, drawWallPreview, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
 
@@ -38,6 +39,8 @@ export interface Render2DOptions {
   showFloorBelow?: boolean;
   /** The zone rectangle being dragged out, drawn over everything as a dashed outline (#155). */
   zoneDraft?: ZoneRect | null;
+  /** Detected rooms with no zone, marked in zone mode for "Name this room" (#719). */
+  roomsToName?: readonly DetectedRoom[] | undefined;
   /** The interior wall selected on the plan (#564). */
   selectedWallId?: string | null | undefined;
   /** A held wall move can't land here: the wall shows it (#718). */
@@ -253,6 +256,8 @@ export function render2DTopDown(options: Render2DOptions): void {
     drawOffPlanMarkers(ctx, markers, options.thumbnail === true);
   }
 
+  if (options.roomsToName?.length) drawRoomsToName(ctx, layout, options.roomsToName, offsetX, offsetY, scale);
+
   if (options.zoneDraft) {
     drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale);
   }
@@ -332,6 +337,7 @@ const ZONE_MIN_LABEL_EDGE_PX = 36;
  * name wider than its zone.
  */
 const ZONE_LABEL_MIN_SCALE = 25;
+const ROOM_TO_NAME_LABEL = 'Name this room';
 
 /**
  * `#rgb` / `#rrggbb` → `rgba(...)` at the given alpha. Anything else (a
@@ -363,6 +369,56 @@ function zoneCanvasRect(
   };
 }
 
+/** A polygon zone's outline and holes, as one path to fill even-odd. */
+function traceZoneRings(ctx: CanvasRenderingContext2D, layout: RoomLayout, zone: ZoneShape, offsetX: number, offsetY: number, scale: number): void {
+  ctx.beginPath();
+  for (const ring of zoneRings(zone)) {
+    ring.forEach((point, index) => {
+      const x = offsetX + (point.x + layout.width / 2) * scale;
+      const y = offsetY + (point.z + layout.height / 2) * scale;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+  }
+}
+
+/** Detected rooms with no zone yet: a dashed outline and what a tap does. */
+function drawRoomsToName(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  rooms: readonly DetectedRoom[],
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  ctx.save();
+  ctx.strokeStyle = '#1d4ed8';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  for (const room of rooms) {
+    traceZoneRings(ctx, layout, regionShape(room), offsetX, offsetY, scale);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 11px Arial';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.lineWidth = 3;
+  ctx.fillStyle = '#1d4ed8';
+  for (const room of rooms) {
+    const spot = zoneCanvasRect(zoneLabelSpot(regionShape(room)), layout, offsetX, offsetY, scale);
+    if (ctx.measureText(ROOM_TO_NAME_LABEL).width > spot.w - 4) continue;
+    const x = offsetX + (room.anchor.x + layout.width / 2) * scale;
+    const y = offsetY + (room.anchor.z + layout.height / 2) * scale;
+    ctx.strokeText(ROOM_TO_NAME_LABEL, x, y);
+    ctx.fillText(ROOM_TO_NAME_LABEL, x, y);
+  }
+  ctx.restore();
+}
+
 function drawZoneFills(
   ctx: CanvasRenderingContext2D,
   layout: RoomLayout,
@@ -376,10 +432,16 @@ function drawZoneFills(
   ctx.save();
   ctx.lineWidth = 1.5;
   for (const zone of zones) {
-    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
     ctx.fillStyle = withAlpha(zone.color, ZONE_FILL_ALPHA);
-    ctx.fillRect(x, y, w, h);
     ctx.strokeStyle = withAlpha(zone.color, ZONE_STROKE_ALPHA);
+    if (zone.outline) {
+      traceZoneRings(ctx, layout, zone, offsetX, offsetY, scale);
+      ctx.fill('evenodd');
+      ctx.stroke();
+      continue;
+    }
+    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
+    ctx.fillRect(x, y, w, h);
     ctx.strokeRect(x, y, w, h);
   }
   ctx.restore();
@@ -407,7 +469,7 @@ function drawZoneLabels(
   ctx.lineWidth = 3;
   ctx.fillStyle = '#333';
   for (const zone of zones) {
-    const { x, y, w, h } = zoneCanvasRect(zone, layout, offsetX, offsetY, scale);
+    const { x, y, w, h } = zoneCanvasRect(zoneLabelSpot(zone), layout, offsetX, offsetY, scale);
     if (Math.min(w, h) < ZONE_MIN_LABEL_EDGE_PX) continue;
     // Along the top edge rather than the centre: the centre of a room is
     // where its bed or table sits, and the furniture paints over labels.

@@ -8,10 +8,12 @@ import {
   MAX_ROOM_DIMENSION,
 } from '../lib/constants';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
+import { floorKeepOut } from '../lib/floor-keep-out';
 import { clampToFootprint } from '../lib/footprint';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
+import { floorRooms, rectOutline } from '../lib/room-detect';
 import {
   MAX_INTERIOR_WALLS_PER_FLOOR,
   MAX_ITEMS_PER_FLOOR,
@@ -38,7 +40,7 @@ import {
   sameEntrance,
 } from '../lib/street';
 import { planWallMove, type WallPatch } from '../lib/wall-edit';
-import { MAX_ZONES, clampZoneRect, sameZone, zoneInPorch } from '../lib/zones';
+import { MAX_ZONES, clampZoneRect, isRoomZone, refitZonesToRooms, sameZone, sweptStrips, zoneInPorch, zoneShapeFits } from '../lib/zones';
 import type {
   CatalogItem,
   EntranceSpec,
@@ -192,6 +194,12 @@ function overHardBudget(prev: LayoutState, next: LayoutState, action: LayoutActi
 }
 
 export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
+  const next = reduceWithEntrance(state, action);
+  // applyLayout restores verbatim: undo, redo and loads don't re-fit.
+  return next === state || action.type === 'applyLayout' ? next : followRooms(state, next, action);
+}
+
+function reduceWithEntrance(state: LayoutState, action: LayoutAction): LayoutState {
   const next = reduceLayout(state, action);
   if (overHardBudget(state, next, action)) return state;
   const entrance = next.layout.entrance;
@@ -974,6 +982,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withActiveFloor(state, (floor) => {
         const zones = floor.zones ?? [];
         if (zones.length >= MAX_ZONES || zones.some((zone) => zone.id === action.zone.id)) return floor;
+        // A polygon comes whole from a detected room: there is nothing to fit.
+        if (action.zone.outline) {
+          const fits = isRoomZone(action.zone) && zoneShapeFits(action.zone, rectOutline(state.layout.width, state.layout.height));
+          return fits ? { ...floor, zones: [...zones, { ...action.zone, name: capName(action.zone.name) }] } : floor;
+        }
         const rect = clampZoneRect(action.zone, state.layout.width, state.layout.height);
         if (!rect || zoneInPorch(rect, entrancePlanOutline(state.layout, state.activeFloorIndex))) return floor;
         return { ...floor, zones: [...zones, { ...action.zone, ...rect, name: capName(action.zone.name) }] };
@@ -985,6 +998,13 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         if (!current || !floor.zones) return floor;
         const merged: RoomZone = { ...current, ...action.patch, id: current.id };
         merged.name = capName(merged.name);
+        // A polygon follows its walls (#719): its shape isn't a patch's to change.
+        if (current.outline) {
+          const { x, z, w, d, outline, holes } = current;
+          const kept: RoomZone = { ...merged, x, z, w, d, outline, ...(holes ? { holes } : {}) };
+          if (sameZone(current, kept)) return floor;
+          return { ...floor, zones: floor.zones.map((zone) => (zone.id === action.id ? kept : zone)) };
+        }
         const rect = clampZoneRect(merged, state.layout.width, state.layout.height);
         if (!rect) return floor;
         // A zone can't move onto the porch; one a later porch swallowed can still be renamed.
@@ -1258,6 +1278,7 @@ function refitFloor(floor: FloorLayout, from: Footprint, to: Footprint): FloorLa
 
   let zonesChanged = false;
   const zones = floor.zones?.flatMap((zone) => {
+    if (zone.outline) return [zone]; // followRooms re-fits a polygon to the walls.
     const rect = clampZoneRect(zone, to.width, to.depth);
     if (!rect) {
       zonesChanged = true;
@@ -1280,6 +1301,40 @@ function refitFloor(floor: FloorLayout, from: Footprint, to: Footprint): FloorLa
     }
   }
   return next;
+}
+
+/**
+ * Polygon zones follow their rooms (#719), in the same step as the edit that
+ * moved a wall, so one Undo takes both back. Only a floor with a polygon zone
+ * whose walls, footprint or keep-out changed is measured; a house without
+ * polygon zones costs one scan, and an unchanged floor keeps its identity.
+ */
+function followRooms(prev: LayoutState, next: LayoutState, action: LayoutAction): LayoutState {
+  const before = prev.layout;
+  const after = next.layout;
+  if (after === before) return next;
+  const resized = before.width !== after.width || before.height !== after.height;
+  let changed = false;
+  const floors = after.floors.map((floor, index) => {
+    if (!floor.zones?.some((zone) => zone.outline)) return floor;
+    const old = before.floors.find((entry) => entry.id === floor.id);
+    if (
+      old &&
+      !resized &&
+      old.interiorWalls === floor.interiorWalls &&
+      JSON.stringify(floorKeepOut(before, before.floors.indexOf(old))) === JSON.stringify(floorKeepOut(after, index))
+    ) {
+      return floor;
+    }
+    const swept = action.type === 'updateInteriorWalls' ? sweptStrips(old?.interiorWalls ?? [], floor.interiorWalls ?? []) : [];
+    const zones = refitZonesToRooms(floor.zones, floorRooms(after, index), rectOutline(after.width, after.height), after.width, after.height, swept);
+    if (zones === floor.zones) return floor;
+    changed = true;
+    if (zones.length > 0) return { ...floor, zones };
+    const { zones: _none, ...rest } = floor;
+    return rest;
+  });
+  return changed ? { ...next, layout: { ...after, floors } } : next;
 }
 
 /**

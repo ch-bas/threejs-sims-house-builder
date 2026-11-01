@@ -1,13 +1,17 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
+import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { CURRENCY_SYMBOL } from '../lib/constants';
+import { requestZoneName } from '../lib/editor-notices';
+import { hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
-import { MAX_ZONES, zoneStats } from '../lib/zones';
+import { MAX_ZONES, defaultZoneName, nextZoneColor, roomsToName, zoneFromRoom, zoneStats } from '../lib/zones';
+import type { DetectedRoom } from '../lib/room-detect';
 import type { RoomZone } from '../lib/types';
 
 export interface ZonesPanelProps {
@@ -30,8 +34,16 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
   const view = useViewSettings('drawZoneMode');
   const { setView } = useEditorViewActions();
   const zones = activeFloor.zones ?? [];
-  const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, activeFloor));
+  const floorIndex = planFloorIndex(layout.floors, activeFloor);
+  const recess = entrancePlanOutline(layout, floorIndex);
   const drawing = view.drawZoneMode;
+  const exploring = useExploring();
+  const rooms = useMemo(() => roomsToName(layout, floorIndex), [layout, floorIndex]);
+
+  /** One click: the room becomes a zone, and the chip asks for its name (#374). */
+  const nameRoom = (room: DetectedRoom) => {
+    requestZoneName(actions.addZone(zoneFromRoom(room, defaultZoneName(zones), nextZoneColor(zones))));
+  };
 
   const toggleDrawing = () => {
     if (drawing) {
@@ -84,6 +96,30 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
             : 'Name the rooms of this floor to see what each one costs and measures.'}
         </p>
 
+        {hasTooManyWalls(activeFloor) && (
+          <p className="border-t pt-2 text-xs text-muted-foreground">Rooms aren’t found on a floor with over {MAX_ROOM_WALLS} walls.</p>
+        )}
+
+        {rooms.length > 0 && (
+          <ul className="space-y-1 border-t pt-2" aria-label="Rooms without a name">
+            {rooms.map((room) => (
+              <li key={`${room.anchor.x}:${room.anchor.z}`} className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">Closed room · {room.area.toFixed(1)} m²</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={exploring || zones.length >= MAX_ZONES}
+                  title={exploring ? NOT_WHILE_EXPLORING : undefined}
+                  onClick={() => nameRoom(room)}
+                >
+                  Name this room
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {zones.length > 0 && (
           <ul className="space-y-1 border-t pt-2" aria-label="Zones on this floor">
             {zones.map((zone) => {
@@ -132,6 +168,7 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
                     <span className="block text-muted-foreground">
                       {stats.itemCount} {stats.itemCount === 1 ? 'item' : 'items'} · {CURRENCY_SYMBOL}
                       {stats.cost.toLocaleString()} · {stats.area.toFixed(1)} m²
+                      {zone.outline ? ' · follows its walls' : ''}
                     </span>
                   </div>
                   <Button

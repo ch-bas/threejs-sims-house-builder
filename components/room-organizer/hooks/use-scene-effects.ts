@@ -49,6 +49,7 @@ import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
 import { observeSceneOccluders, planFit } from './scene-occluders';
 import type { StampGhost } from '../canvas-2d/plan-edit';
+import type { DetectedRoom } from '../lib/room-detect';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -141,6 +142,7 @@ export interface UseSceneEffectsParams {
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
   /** The zone showing handles on the plan (#628). */
   selectedZoneId: string | null;
+  roomsToName: readonly DetectedRoom[];
   wallDraft: { x: number; z: number } | null;
   /** The room stamp in hand (#724). */
   stampGhost: StampGhost | null;
@@ -183,6 +185,7 @@ export function useSceneEffects({
   highlightedIds,
   selectedWall,
   selectedZoneId,
+  roomsToName,
   wallDraft,
   stampGhost,
   stampArmed,
@@ -1181,10 +1184,11 @@ export function useSceneEffects({
   const wallAnchor = view.drawWallMode ? wallDraft : null;
   const wallTip = view.drawWallMode ? wallSnapResult : null;
   const selectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
-  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedZoneId' | 'wallPreview' | 'stampGhost'>>({});
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost'>>({});
   planEditRef.current = {
     selectedWallId,
     selectedZoneId,
+    roomsToName,
     stampGhost,
     wallPreview: view.drawWallMode && !stampArmed
       ? { anchor: wallAnchor, tip: wallTip?.point ?? null, snapped: wallTip !== null && wallTip.kind !== 'none' }
@@ -1194,7 +1198,7 @@ export function useSceneEffects({
     // Once a frame, however many moves arrive in it.
     const frame = requestAnimationFrame(() => paint2DRef.current?.());
     return () => cancelAnimationFrame(frame);
-  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedZoneId, stampGhost, stampArmed]);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedZoneId, roomsToName, stampGhost, stampArmed]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;
