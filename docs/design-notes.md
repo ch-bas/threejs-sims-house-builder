@@ -177,6 +177,10 @@ to respect.
   back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
   not on every item edit, and the wall-draw preview re-poses one unit box per
   pointer move (#283, #409).
+- **Outer walls.** Each shell wall is one mesh with two single-sided faces back
+  to back (`withOutsideFace`), so each lights and shadows from its own side.
+  A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
+  a sun-facing wall shadow itself.
 - **Rendering pipeline.** Khronos Neutral tone mapping, explicit sRGB output,
   device-pixel-ratio-aware rendering (capped at 2×), PCF shadows softened
   by the sun's `shadow.radius`, and
