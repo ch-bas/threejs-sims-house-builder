@@ -34,6 +34,7 @@
  *   on the same layers at the same 1:1 scale, each with its own title (#405).
  */
 
+import { footprintOutline } from '../footprint';
 import { stripXmlIllegal } from '../html-escape';
 import { planDrawOrder } from '../plan-order';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
@@ -531,13 +532,17 @@ function emitFloor(
   // along the east cheek, across the recess's back and out along the west
   // cheek — eight vertices. (The back wall's centreline is on INTERIOR too,
   // like the 2D view draws it; its door is an ordinary opening.)
+  // The L (#727) walks its six corners the same way.
   const hw = layout.width / 2;
   const hd = layout.height / 2;
   const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
   const northEdge: CadPoint[] = recess
     ? [cad(recess.x1, recess.frontZ), cad(recess.x1, recess.backZ), cad(recess.x0, recess.backZ), cad(recess.x0, recess.frontZ)]
     : [];
-  doc.polyline('WALLS', [cad(-hw, hd), cad(hw, hd), cad(hw, -hd), ...northEdge, cad(-hw, -hd)], true);
+  const corners = footprintOutline(layout).reverse().map(({ x, z }) => cad(x, z));
+  // The north wall is where consecutive corners sit at -hd; the recess goes between them.
+  corners.splice(footprintOutline(layout).reverse().findIndex(({ z }) => z === -hd) + 1, 0, ...northEdge);
+  doc.polyline('WALLS', corners, true);
 
   // Interior walls: centrelines (the 0.16 m thickness is a render style).
   for (const wall of floor.interiorWalls ?? []) {

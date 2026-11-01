@@ -6,6 +6,7 @@ import { useRoomEditor } from '../contexts';
 import { useActiveFloorIndex, useLayout } from '../hooks/use-layout-store';
 import { budgetSpent, furnitureSpend } from '../lib/budget';
 import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
+import { buildingArea } from '../lib/footprint';
 import { footprintArea, itemCountByCategory } from '../lib/geometry';
 import { floorRooms, hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entrancePlanOutline } from '../lib/street';
@@ -36,7 +37,7 @@ export function StatisticsPanel(): JSX.Element {
     () => layout.floors.reduce((sum, floor) => sum + footprintArea(floor.items), 0),
     [layout.floors]
   );
-  const roomArea = layout.width * layout.height;
+  const roomArea = buildingArea(layout);
   const totalArea = roomArea * layout.floors.length;
   const density = totalArea > 0 ? Math.min(100, (footprint / totalArea) * 100) : 0;
   const counts = useMemo(() => itemCountByCategory(allItems), [allItems]);

@@ -3,6 +3,7 @@ import { furnitureSpend } from './budget';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
 import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
+import { buildingArea } from './footprint';
 import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
 import { COARSE_POINTER_QUERY } from './hud-layout';
@@ -106,13 +107,13 @@ export function blueprintPlan(layout: RoomLayout, floor: FloorLayout): Blueprint
 }
 
 /**
- * The storey's floor area in m²: the footprint less the recessed entrance's
- * porch, which is outside (#285).
+ * The storey's floor area in m²: the footprint, less any cut corner (#727),
+ * less the recessed entrance's porch, which is outside (#285).
  */
 export function floorArea(layout: EntranceBuilding, floorIndex: number): number {
   const recess = entrancePlanOutline(layout, floorIndex);
   const porch = recess ? (recess.x1 - recess.x0) * (recess.backZ - recess.frontZ) : 0;
-  return layout.width * layout.height - porch;
+  return buildingArea(layout) - porch;
 }
 
 /**

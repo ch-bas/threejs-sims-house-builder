@@ -7,7 +7,7 @@ import {
 } from '../lib/constants';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
-import { rotatedHalfExtents } from '../lib/footprint';
+import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
 import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
@@ -685,7 +685,14 @@ function drawRoomOutline(
   const x0 = offsetX;
   const y0 = offsetY;
   const x1 = offsetX + layout.width * scale;
-  const y1 = offsetY + layout.height * scale;
+  const canvasX = (x: number) => offsetX + (x + layout.width / 2) * scale;
+  const canvasY = (z: number) => offsetY + (z + layout.height / 2) * scale;
+  // The corner cut out of the building (#727) is outside too, and the six
+  // walls of the L run round it.
+  clearCutout(ctx, layout, offsetX, offsetY, scale);
+  const [northWall, ...otherWalls] = shellWalls(layout);
+  const northX0 = canvasX(northWall!.x1);
+  const northX1 = canvasX(northWall!.x2);
   // The recessed entrance (#285): the north edge breaks across the opening
   // and the recess's two cheeks run back to its rear wall (an ordinary
   // interior wall carrying the porch door, drawn with the others). The
@@ -699,17 +706,19 @@ function drawRoomOutline(
   type Edge = { id: WallId; from: readonly [number, number]; to: readonly [number, number] };
   const north: Edge[] = recess
     ? [
-        { id: 'north', from: [x0, y0], to: [rx0, y0] },
+        { id: 'north', from: [northX0, y0], to: [rx0, y0] },
         { id: 'north', from: [rx0, y0], to: [rx0, ry1] },
         { id: 'north', from: [rx1, y0], to: [rx1, ry1] },
-        { id: 'north', from: [rx1, y0], to: [x1, y0] },
+        { id: 'north', from: [rx1, y0], to: [northX1, y0] },
       ]
-    : [{ id: 'north', from: [x0, y0], to: [x1, y0] }];
+    : [{ id: 'north', from: [northX0, y0], to: [northX1, y0] }];
   const edges: Edge[] = [
     ...north,
-    { id: 'south', from: [x0, y1], to: [x1, y1] },
-    { id: 'west', from: [x0, y0], to: [x0, y1] },
-    { id: 'east', from: [x1, y0], to: [x1, y1] },
+    ...otherWalls.map((wall): Edge => ({
+      id: wall.side,
+      from: [canvasX(wall.x1), canvasY(wall.z1)],
+      to: [canvasX(wall.x2), canvasY(wall.z2)],
+    })),
   ];
   for (const edge of edges) {
     const isHidden = hidden.has(edge.id);
@@ -723,6 +732,24 @@ function drawRoomOutline(
     ctx.stroke();
     ctx.restore();
   }
+}
+
+const CUTOUT_CLEAR_MARGIN_PX = 3;
+
+/** Wipe the cut corner back to the canvas, over the floor, grid, tracing image and zone tints. */
+function clearCutout(ctx: CanvasRenderingContext2D, layout: RoomLayout, offsetX: number, offsetY: number, scale: number): void {
+  const notch = cutoutRect(layout);
+  if (!notch) return;
+  const x0 = offsetX + (notch.x0 + layout.width / 2) * scale;
+  const x1 = offsetX + (notch.x1 + layout.width / 2) * scale;
+  const y0 = offsetY + (notch.z0 + layout.height / 2) * scale;
+  const y1 = offsetY + (notch.z1 + layout.height / 2) * scale;
+  // A few pixels past the old outline: the grid's edge lines stand astride it.
+  const east = notch.x1 >= layout.width / 2;
+  const north = notch.z0 <= -layout.height / 2;
+  const left = east ? x0 : x0 - CUTOUT_CLEAR_MARGIN_PX;
+  const top = north ? y0 - CUTOUT_CLEAR_MARGIN_PX : y0;
+  ctx.clearRect(left, top, x1 - left + (east ? CUTOUT_CLEAR_MARGIN_PX : 0), y1 - top + (north ? 0 : CUTOUT_CLEAR_MARGIN_PX));
 }
 
 function drawInteriorWalls(
@@ -785,6 +812,7 @@ function drawOpeningGaps(
     const x1 = offsetX + (recess.x1 + layout.width / 2) * scale;
     ctx.clearRect(x0, offsetY, x1 - x0, (recess.backZ + layout.height / 2) * scale);
   }
+  clearCutout(ctx, layout, offsetX, offsetY, scale);
   ctx.restore();
 }
 
