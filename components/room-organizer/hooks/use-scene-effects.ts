@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type RefObject, type MutableRefObject } from 'react';
 import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
+import { planContactShadow } from '../lib/contact-shadow';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import {
   diffFurniture,
@@ -26,6 +27,7 @@ import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones, visionConesOccludable } from '../three/camera-vision';
 import { buildCeiling, removeCeiling } from '../three/ceiling';
 import { applyCollisionTint, fadeGroup } from '../three/collision-tint';
+import { buildContactShadow, removeContactShadows } from '../three/contact-shadow';
 import { FURNITURE_REVISION_KEY } from '../three/drag-handlers';
 import { buildEntrance } from '../three/entrance';
 import { createFurnitureModel } from '../three/furniture-builders';
@@ -673,6 +675,38 @@ export function useSceneEffects({
     // from the model cache, and this re-runs the build once it's filled.
     peopleModelReady,
   ]);
+
+  // Baked contact shadows (#754), one per solid storey on screen. The plans
+  // are the key: a repaint or a colour change leaves them equal, and a drag
+  // only commits at the drop, so this never runs per move. A ghosted storey
+  // shows none.
+  const contactPlans = useMemo(
+    () =>
+      furniturePlan.flatMap(({ index }) =>
+        ghostOtherFloors && index !== activeFloorIndex ? [] : (planContactShadow(entranceBuilding, index) ?? [])
+      ),
+    [furniturePlan, entranceBuilding, ghostOtherFloors, activeFloorIndex]
+  );
+  const contactKey = JSON.stringify(contactPlans);
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+    for (const plan of contactPlans) {
+      const mesh = buildContactShadow(THREE, plan);
+      if (!mesh) continue;
+      mesh.userData[STOREY_KEY] = plan.storey;
+      scene.add(mesh);
+    }
+    applyStoreyRange(scene, storeyRangeRef.current);
+    return () => {
+      removeContactShadows(scene);
+      invalidate();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, threeModuleRef, sceneRef, contactKey]);
 
   // Selection / highlight outlines. Kept out of the furniture effect above so
   // a selection click only swaps the outline LineSegments instead of

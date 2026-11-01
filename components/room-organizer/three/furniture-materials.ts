@@ -1,7 +1,6 @@
 import { drawDetail, type DetailKind } from '../lib/detail-patterns';
-import { isPhone } from '../lib/render-quality';
 import { type BuilderContext, type ThreeModule, markSharedTexture, material } from './builder-utils';
-import { getMaxAnisotropy } from './texture-settings';
+import { drawsForPhone, getMaxAnisotropy } from './texture-settings';
 import type * as ThreeNS from 'three';
 
 /**
@@ -29,22 +28,13 @@ const DETAIL_SIZE = 512;
 const PHONE_DETAIL_SIZE = 256;
 const MAX_DETAIL_ANISOTROPY = 8;
 
-function detailSize(): number {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return DETAIL_SIZE;
-  const phone = isPhone({
-    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
-    screenShortSide: Math.min(window.screen.width, window.screen.height),
-  });
-  return phone ? PHONE_DETAIL_SIZE : DETAIL_SIZE;
-}
-
 const detailTextures = new Map<DetailKind, ThreeNS.DataTexture>();
 
 /** One texture per kind, drawn on first use and shared by every item. */
 function detailTexture(THREE: ThreeModule, kind: DetailKind): ThreeNS.DataTexture {
   const cached = detailTextures.get(kind);
   if (cached) return cached;
-  const { size, data } = drawDetail(kind, detailSize());
+  const { size, data } = drawDetail(kind, drawsForPhone() ? PHONE_DETAIL_SIZE : DETAIL_SIZE);
   const texture = new THREE.DataTexture(data, size, size);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;

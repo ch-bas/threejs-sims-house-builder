@@ -52,6 +52,7 @@ components/
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
+    │   ├── contact-shadow.ts            What a storey's baked floor contact map shows: item patches, wall bands, doors and holes wiped (#754)
     │   ├── render-quality.ts            Pixel-ratio cap per device class (phones 1.5, else 2)
     │   ├── detail-patterns.ts           Tileable grey wood, fabric and leather images for furniture (#756)
     │   ├── reduced-motion.ts            prefers-reduced-motion query and a one-off read for non-React code
@@ -163,6 +164,7 @@ components/
     │   ├── terrain.ts                   Sloped ground + excavation faces
     │   ├── entrance.ts                  Recessed porch reveals, soffit, steps
     │   ├── baseboard.ts                 Skirting profile + door-gap runs
+    │   ├── contact-shadow.ts            Paints the contact plan to a canvas and shows it on one quad over the floor (#754)
     │   ├── furniture-materials.ts       Material classes (fabric, wood, metal, …) and shared wood/fabric/leather detail textures (#756)
     │   ├── floor-patterns.ts            Procedural CanvasTexture floors
     │   ├── wall-patterns.ts             Procedural CanvasTexture walls
