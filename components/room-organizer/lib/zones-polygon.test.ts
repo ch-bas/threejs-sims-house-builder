@@ -7,6 +7,7 @@ import { detectRooms, floorRooms, largestBand, rectOutline } from './room-detect
 import { isFloorLayout, parseStoredLayout } from './schema';
 import {
   arrangeByZone,
+  hasFloorFinish,
   isRoomZone,
   refitZonesToRooms,
   roomAt,
@@ -15,6 +16,8 @@ import {
   sameZone,
   zoneArea,
   zoneContains,
+  zoneFinishesKey,
+  zoneFloorPatches,
   zoneFromRoom,
   zoneLabelSpot,
   zoneRings,
@@ -141,6 +144,117 @@ describe('polygon zones in the exports (#719)', () => {
     expect(body).toHaveLength(1);
     expect(body[0]!.replace(/\r/g, '')).toMatch(/\n90\n\s*6\n/);
     expect(dxf).toContain('60.0 m');
+  });
+});
+
+describe('zone floor finishes (#720)', () => {
+  const rect: RoomZone = { id: 'r', name: 'Kitchen', color: '#000', x: -5, z: -4, w: 4, d: 4 };
+
+  it('only a zone with a finish gets a patch, and the storey stands in for what it does not set', () => {
+    const floor = makeFloor({ floorColor: '#aaaaaa', floorPattern: 'wood', zones: [rect, { ...rect, id: 't', floorPattern: 'tile' }, { ...rect, id: 'c', floorColor: '#112233' }] });
+    expect(zoneFloorPatches(floor, []).map(({ id, pattern, color }) => [id, pattern, color])).toEqual([
+      ['t', 'tile', '#aaaaaa'],
+      ['c', 'wood', '#112233'],
+    ]);
+    expect(zoneFloorPatches(makeFloor(), [])).toEqual([]);
+  });
+
+  it('follows a polygon, holes included', () => {
+    const floor = makeFloor({ zones: [{ ...lZone, floorPattern: 'tile' }] });
+    const [patch] = zoneFloorPatches(floor, []);
+    expect(patch!.regions).toHaveLength(1);
+    expect(patch!.regions[0]!.outline).toHaveLength(6);
+    expect(patch!.regions[0]!.area).toBeCloseTo(60);
+  });
+
+  it('leaves out the porch and a stairwell a rectangle zone was drawn over', () => {
+    const floor = makeFloor({ zones: [{ ...rect, floorColor: '#112233' }] });
+    const [patch] = zoneFloorPatches(floor, [
+      { x0: -4, x1: -2, z0: -4, z1: -3 },
+      { x0: -4, x1: -3, z0: -2, z1: -1, hole: true },
+    ]);
+    expect(patch!.regions[0]!.area).toBeCloseTo(16 - 2 - 1);
+    expect(patch!.regions[0]!.holes).toHaveLength(1);
+  });
+
+  it('a patch wholly in a keep-out has no regions', () => {
+    const floor = makeFloor({ zones: [{ ...rect, floorColor: '#112233' }] });
+    expect(zoneFloorPatches(floor, [{ x0: -6, x1: 0, z0: -5, z1: 1 }])[0]!.regions).toEqual([]);
+  });
+
+  it('an empty floor colour means none: no patch, and the schema drops it', () => {
+    const blank = { ...rect, floorColor: '' };
+    expect(zoneFloorPatches(makeFloor({ zones: [blank] }), [])).toEqual([]);
+    expect(hasFloorFinish(blank)).toBe(false);
+    const tiled = { ...blank, floorPattern: 'tile' as const };
+    expect(zoneFloorPatches(makeFloor({ floorColor: '#aaaaaa', zones: [tiled] }), [])[0]!.color).toBe('#aaaaaa');
+    const parsed = parseStoredLayout(JSON.parse(JSON.stringify(building({ zones: [blank] }))));
+    expect(parsed?.floors[0]?.zones?.[0]).not.toHaveProperty('floorColor');
+  });
+
+  it('only overlapping patches stack, so fifteen rooms side by side all lie flat', () => {
+    const rooms = Array.from({ length: 15 }, (_, index) => ({ ...rect, id: `r${index}`, x: -5 + index * 0.5, w: 0.5, floorColor: '#112233' }));
+    expect(zoneFloorPatches(makeFloor({ zones: rooms }), []).map((patch) => patch.layer)).toEqual(rooms.map(() => 0));
+    const over = { ...rect, id: 'o', x: -4, w: 2, floorColor: '#445566' };
+    const stack = zoneFloorPatches(makeFloor({ zones: [{ ...rect, floorColor: '#112233' }, over, { ...over, id: 'p' }] }), []);
+    expect(stack.map((patch) => patch.layer)).toEqual([0, 1, 2]);
+  });
+
+  it('a finished room’s name gets a halo in the SVG, and a plain one stays as it was', () => {
+    const finished = building({ zones: [{ ...rect, floorColor: '#112233' }] });
+    expect(layoutToSvg(finished, finished.floors[0]!)).toContain('paint-order="stroke"');
+    const plain = building({ zones: [rect] });
+    expect(layoutToSvg(plain, plain.floors[0]!)).not.toContain('paint-order');
+  });
+
+  it('the plan and SVG cut a finish around a stairwell, as 3D does', () => {
+    const stairs = makeItem({ id: 's', type: 'stairs', width: 1, depth: 3, height: 3, position: { x: -3, z: -2 } });
+    const upper = makeFloor({ id: 'u', zones: [{ ...rect, floorColor: '#112233' }] });
+    const layout = makeLayout({ width: 10, height: 8, floors: [makeFloor({ id: 'g', items: [stairs] }), upper] });
+    const svg = layoutToSvg(layout, upper);
+    const path = /class="zone-floor" d="([^"]+)"/.exec(svg)![1]!;
+    expect(path.match(/M /g)!.length + path.match(/L /g)!.length).toBeGreaterThan(4);
+  });
+
+  it('the finish key ignores names and zones without a finish', () => {
+    const plain = { zones: [rect] };
+    expect(zoneFinishesKey(plain)).toEqual([]);
+    const finished = { ...rect, floorColor: '#112233' };
+    expect(JSON.stringify(zoneFinishesKey({ zones: [finished] }))).toBe(JSON.stringify(zoneFinishesKey({ zones: [{ ...finished, name: 'Other', color: '#fff' }] })));
+    expect(JSON.stringify(zoneFinishesKey({ zones: [finished] }))).not.toBe(JSON.stringify(zoneFinishesKey({ zones: [{ ...finished, x: 0 }] })));
+  });
+
+  it('the reducer sets and clears a finish, and a repeat is a no-op', () => {
+    const state = stateOf({ zones: [rect] });
+    const tiled = layoutReducer(state, { type: 'updateZone', id: 'r', patch: { floorPattern: 'tile', floorColor: '#112233' } });
+    expect(tiled.layout.floors[0]!.zones![0]).toMatchObject({ floorPattern: 'tile', floorColor: '#112233' });
+    expect(layoutReducer(tiled, { type: 'updateZone', id: 'r', patch: { floorPattern: 'tile' } })).toBe(tiled);
+    const cleared = layoutReducer(tiled, { type: 'updateZone', id: 'r', patch: { floorPattern: null, floorColor: null } });
+    expect(cleared.layout.floors[0]!.zones![0]).toEqual(rect);
+  });
+
+  it('a polygon zone takes a finish too, and keeps it when the walls move', () => {
+    const state = stateOf({ zones: [lZone] });
+    const tiled = layoutReducer(state, { type: 'updateZone', id: 'z', patch: { floorPattern: 'tile' } });
+    const moved = layoutReducer(tiled, { type: 'addInteriorWall', wall: { id: 'c', x1: -2, z1: -4, x2: -2, z2: 4 } });
+    expect(moved.layout.floors[0]!.zones![0]).toMatchObject({ floorPattern: 'tile', name: 'Living' });
+    expect(zoneArea(moved.layout.floors[0]!.zones![0]!, null)).toBeCloseTo(36);
+  });
+
+  it('the schema keeps a finish and refuses a bad one', () => {
+    const zone = { ...rect, floorPattern: 'tile', floorColor: '#112233' };
+    const layout = building({ zones: [zone as RoomZone] });
+    expect(parseStoredLayout(JSON.parse(JSON.stringify(layout)))?.floors[0]?.zones?.[0]).toMatchObject({ floorPattern: 'tile', floorColor: '#112233' });
+    expect(isFloorLayout({ ...makeFloor(), zones: [{ ...zone, floorPattern: 'lava' }] })).toBe(false);
+    expect(isFloorLayout({ ...makeFloor(), zones: [{ ...zone, floorColor: 3 }] })).toBe(false);
+  });
+
+  it('the SVG paints the floor colour under the grid', () => {
+    const layout = building({ zones: [{ ...rect, floorColor: '#112233' }] });
+    const svg = layoutToSvg(layout, layout.floors[0]!);
+    expect(svg).toContain('class="zone-floor"');
+    expect(svg.indexOf('class="zone-floor"')).toBeLessThan(svg.indexOf('class="grid"'));
+    expect(layoutToSvg(building({ zones: [rect] }), building({ zones: [rect] }).floors[0]!)).not.toContain('zone-floor');
   });
 });
 

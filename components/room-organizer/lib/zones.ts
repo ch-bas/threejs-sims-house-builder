@@ -5,14 +5,16 @@ import {
   floorRooms,
   largestBand,
   onRing,
+  type PlanRegion,
   pointInRing,
   rectOutline,
+  regionsOutside,
   ringArea,
   ringCrossesItself,
 } from './room-detect';
 import { ENTRANCE_WALL_ID, type EntrancePlanOutline } from './street';
 import type { KeepOutBuilding } from './floor-keep-out';
-import type { FurnitureItem, InteriorWall, RoomZone, Vec2 } from './types';
+import type { FloorLayout, FloorPattern, FurnitureItem, InteriorWall, RoomZone, Vec2 } from './types';
 
 /**
  * Room zones (#155): named, coloured parts of a floor — "Bedroom",
@@ -315,6 +317,46 @@ export function zoneStats(zone: ZoneShape, items: readonly FurnitureItem[], rece
   return { itemCount: inside.length, cost: totalCost(inside), area: zoneArea(zone, recess) };
 }
 
+/** A zone's own floor, ready to draw: the storey's finish stands in for what the zone doesn't set. */
+export interface ZoneFloorPatch {
+  id: string;
+  pattern: FloorPattern;
+  color: string;
+  regions: PlanRegion[];
+  /** How many earlier patches it lies on: overlapping patches are stacked, others share a height. */
+  layer: number;
+}
+
+export function hasFloorFinish(zone: RoomZone): boolean {
+  return zone.floorPattern !== undefined || !!zone.floorColor;
+}
+
+/** What the patches are built from: a zone without a finish adds nothing. */
+export function zoneFinishesKey(floor: Pick<FloorLayout, 'zones'>): unknown[] {
+  return (floor.zones ?? []).filter(hasFloorFinish).map(({ x, z, w, d, outline, holes, floorPattern, floorColor }) => [x, z, w, d, outline, holes, floorPattern, floorColor]);
+}
+
+/**
+ * The floor patches of a storey (#720), in painting order: every zone with a
+ * finish of its own, less the porch and the stairwells. What the 3D floor
+ * and the plan draw, so they can't disagree.
+ */
+export function zoneFloorPatches(floor: Pick<FloorLayout, 'zones' | 'floorColor' | 'floorPattern'>, keepOut: readonly KeepOutRect[]): ZoneFloorPatch[] {
+  const laid: Array<{ zone: RoomZone; layer: number }> = [];
+  return (floor.zones ?? []).filter(hasFloorFinish).map((zone) => {
+    const [outline, ...holes] = zoneRings(zone);
+    const layer = laid.filter((under) => rectsOverlap(under.zone, zone)).reduce((top, under) => Math.max(top, under.layer + 1), 0);
+    laid.push({ zone, layer });
+    return {
+      id: zone.id,
+      pattern: zone.floorPattern ?? floor.floorPattern ?? 'solid',
+      color: zone.floorColor || floor.floorColor,
+      regions: regionsOutside(outline!, holes, keepOut),
+      layer,
+    };
+  });
+}
+
 /**
  * The detected rooms of a storey no zone stands on yet: what "Name this room"
  * offers (#719). A storey with no partitions is one room, not worth offering.
@@ -583,7 +625,9 @@ export function sameZone(a: RoomZone, b: RoomZone): boolean {
     a.w === b.w &&
     a.d === b.d &&
     sameRing(a.outline, b.outline) &&
-    sameRings(a.holes, b.holes)
+    sameRings(a.holes, b.holes) &&
+    a.floorPattern === b.floorPattern &&
+    a.floorColor === b.floorColor
   );
 }
 

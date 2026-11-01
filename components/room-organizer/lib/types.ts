@@ -239,6 +239,9 @@ export interface RoomZone {
   d: number;
   outline?: Vec2[];
   holes?: Vec2[][];
+  /** The room's own floor finish (#720); the storey's stands in for what isn't set. */
+  floorPattern?: FloorPattern;
+  floorColor?: string;
 }
 
 export interface FloorLayout {
