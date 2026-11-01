@@ -446,7 +446,7 @@ function makeSkyGradientTexture(
 
 const STAR_COUNT = 350;
 const STAR_SEED = 20260918;
-/** Radius of the star dome / moon arc — far beyond the lot, well inside the camera far plane. */
+/** Radius of the star dome around the camera: well inside the far plane. */
 const SKY_RADIUS = 140;
 
 /** Deterministic PRNG so the starfield is identical every session. */
@@ -462,6 +462,21 @@ function mulberry32(seed: number): () => number {
 }
 
 /**
+ * Keep a sky object centred on whichever camera draws it, however far out a
+ * big house's framing stands: otherwise the dome ends up below the camera and
+ * its stars draw over the lawn. Done per draw, on the object's world matrix, so
+ * a camera move costs no rebuild and needs no invalidate of its own.
+ */
+export function followCamera(sky: ThreeNS.Object3D): void {
+  sky.onBeforeRender = (_renderer, _scene, camera) => {
+    const world = sky.matrixWorld.elements;
+    world[12] = sky.position.x + camera.position.x;
+    world[13] = sky.position.y + camera.position.y;
+    world[14] = sky.position.z + camera.position.z;
+  };
+}
+
+/**
  * World-space night sky (#182): a Points starfield on a distant upper dome
  * and a billboarded moon sprite arcing east→west across the night. Created
  * lazily once, then only opacity/position are driven per time change.
@@ -470,8 +485,8 @@ function mulberry32(seed: number): () => number {
  * the backdrop is screen-space and stretched to the viewport, which smeared
  * 1px stars into blurry rectangles and distorted the moon — and it pinned
  * the moon to a fixed screen band regardless of camera tilt. Points with
- * sizeAttenuation off stay pixel-crisp at any resolution and pick up real
- * parallax when the camera orbits.
+ * sizeAttenuation off stay pixel-crisp at any resolution, and the sky turns
+ * with the camera while staying at infinity (`followCamera`).
  */
 function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSky): void {
   let stars = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Stars) as
@@ -506,6 +521,7 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     stars.renderOrder = -1;
     stars.matrixAutoUpdate = false;
     stars.updateMatrix();
+    followCamera(stars);
     scene.add(stars);
 
     // A sparse second layer of larger, slightly warm stars gives the field
@@ -537,6 +553,7 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     bright.renderOrder = -1;
     bright.matrixAutoUpdate = false;
     bright.updateMatrix();
+    followCamera(bright);
     scene.add(bright);
   }
   for (const layer of scene.children.filter((obj) => obj.userData.type === LIGHTING_TAGS.Stars)) {
@@ -560,6 +577,7 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     moon.userData.type = LIGHTING_TAGS.Moon;
     moon.frustumCulled = false;
     moon.renderOrder = -1;
+    followCamera(moon);
     scene.add(moon);
   }
   if (night.moonT === null || night.moonAlpha <= 0.01) {
@@ -571,19 +589,15 @@ function updateNightSky(THREE: ThreeModule, scene: ThreeNS.Scene, night: NightSk
     // camera sits south of the lot looking north, so that's the visible sky.
     const azimuth = (night.moonT - 0.5) * Math.PI;
     const elevation = Math.sin(night.moonT * Math.PI);
-    // Low, flat arc: the default iso camera looks slightly downward, so the
-    // visible sky is a band just above the horizon — a high apex leaves the
-    // frame entirely. Peak ≈ 40 world units at z −120 is ~13° up: prominent
-    // in the default view and still natural when tilted or walking.
-    // Hug the horizon: the iso camera's visible sky is a shallow band, so
-    // even modest world heights project off the top of the frame (verified
-    // empirically — y=30 at z=-50 hides behind the header bar). ~8° up at
-    // ~110 units reads as a rising/hanging moon over the treeline.
+    // Relative to the camera (`followCamera`). The orbit lens shows about 12°
+    // above the horizon at its lowest tilt (ORBIT_MAX_POLAR), so the arc stays
+    // 5° to 8° up, hanging over the treeline. A tilt above that leaves the
+    // sky out of frame, as it does for any view looking down at the lot.
     const arcRadius = 100;
     moon.position.set(
       Math.sin(azimuth) * arcRadius,
-      8 + elevation * 16,
-      -Math.cos(azimuth) * arcRadius - 10
+      8 + elevation * 6,
+      -Math.cos(azimuth) * arcRadius
     );
   }
 }

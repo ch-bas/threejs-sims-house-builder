@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset } from '../lib/scene-insets';
+import { ORBIT_LENS_SCALE, ORBIT_START, focusOffset, frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset } from '../lib/scene-insets';
 import { OCCLUDER_SELECTOR, SHEET_SELECTOR, measureRegion } from './scene-occluders';
-import type { HouseShape, Vec3 } from '../lib/scene-insets';
+import type { FocusCover, HouseShape, Vec3 } from '../lib/scene-insets';
 import type { CameraPreset } from '../lib/types';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -11,11 +11,17 @@ interface PresetView {
   target: readonly [number, number, number];
 }
 
+/** Stand back from the target by the lens scale: the same view at the same size. */
+function throughLens({ position, target }: PresetView): PresetView {
+  const back = (axis: 0 | 1 | 2) => target[axis] + (position[axis] - target[axis]) * ORBIT_LENS_SCALE;
+  return { position: [back(0), back(1), back(2)], target };
+}
+
 const PRESETS: Record<CameraPreset, (size: number) => PresetView> = {
-  iso: (size) => ({ position: [size * 0.8, size * 0.9, size * 0.8], target: [0, 0, 0] }),
-  top: (size) => ({ position: [0, size * 1.6, 0.001], target: [0, 0, 0] }),
-  front: (size) => ({ position: [0, size * 0.4, size * 1.4], target: [0, size * 0.3, 0] }),
-  corner: (size) => ({ position: [size * 1.1, size * 0.6, -size * 0.6], target: [0, 0, 0] }),
+  iso: (size) => throughLens({ position: [size * 0.8, size * 0.9, size * 0.8], target: [0, 0, 0] }),
+  top: (size) => throughLens({ position: [0, size * 1.6, 0.001], target: [0, 0, 0] }),
+  front: (size) => throughLens({ position: [0, size * 0.4, size * 1.4], target: [0, size * 0.3, 0] }),
+  corner: (size) => throughLens({ position: [size * 1.1, size * 0.6, -size * 0.6], target: [0, 0, 0] }),
 };
 
 export interface UseCameraPresetsOptions {
@@ -59,6 +65,16 @@ interface FramedPose {
   target: Vec3;
 }
 
+/** How to frame a focused item. */
+export interface FocusView {
+  /** World Y of the item's floor. */
+  floorY?: number;
+  /** The item's largest side, metres. */
+  size?: number;
+  /** The storey around it, when something is drawn above it. */
+  cover?: FocusCover | null;
+}
+
 export function useCameraPresets({
   cameraRef,
   controlsRef,
@@ -73,7 +89,7 @@ export function useCameraPresets({
   walkthroughActive = false,
 }: UseCameraPresetsOptions): {
   applyPreset(preset: CameraPreset): void;
-  focusOn(target: { x: number; z: number }, distance?: number, floorY?: number): void;
+  focusOn(target: { x: number; z: number }, view?: FocusView): void;
   fitToRoom(): void;
 } {
   // The pose the last frame-to-fit left the camera in. While the camera is
@@ -104,12 +120,13 @@ export function useCameraPresets({
     // `floorY` lifts both the camera and the orbit target onto the item's
     // floor plane — without it, focusing an upper-floor item dives the camera
     // into the storey below and frames empty floor (#126).
-    (target: { x: number; z: number }, distance = 3, floorY = 0) => {
+    (target: { x: number; z: number }, { floorY = 0, size = 1, cover = null }: FocusView = {}) => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       if (!camera) return;
 
-      camera.position.set(target.x + distance * 0.6, floorY + distance * 0.8, target.z + distance * 0.6);
+      const [x, y, z] = focusOffset(target, size, cover);
+      camera.position.set(target.x + x, floorY + y, target.z + z);
       camera.lookAt(target.x, floorY, target.z);
 
       if (controls) {
@@ -157,12 +174,12 @@ export function useCameraPresets({
           // A desktop load keeps the camera's start pose. Only a window that
           // was framed compact and then grew goes back to it.
           if (!framedRef.current) return false;
-          position = [0, 8, 8];
+          position = ORBIT_START;
           target = [0, 0, 0];
         } else {
           // Frame the building diagonal plus roof headroom.
           const safeSize = Math.max(2, roomSize);
-          const distance = Math.max(safeSize * 1.4, buildingHeight * 2.2);
+          const distance = Math.max(safeSize * 1.4, buildingHeight * 2.2) * ORBIT_LENS_SCALE;
           const targetY = buildingHeight / 2;
           position = [distance * 0.6, distance * 0.7 + targetY, distance * 0.6];
           target = [0, targetY, 0];

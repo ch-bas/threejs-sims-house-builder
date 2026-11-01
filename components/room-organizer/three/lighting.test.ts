@@ -7,6 +7,7 @@ import {
   computeNightSky,
   computeSkyProfile,
   shadowNormalBias,
+  followCamera,
   isLampPrewarmHour,
   prewarmLampPool,
 } from './lighting';
@@ -253,6 +254,19 @@ describe('computeSkyProfile — daylight balance (#752)', () => {
       expect(position[2], `hour ${hour}`).toBeLessThan(0);
     }
     expect(computeSkyProfile(0).sun.intensity).toBeLessThan(computeSkyProfile(18).sun.intensity);
+  });
+});
+
+describe('night sky around the camera (#753)', () => {
+  it('draws centred on the camera, wherever it stands', () => {
+    const sky = new THREE.Object3D();
+    sky.position.set(1, 2, 3);
+    followCamera(sky);
+    const camera = new THREE.PerspectiveCamera();
+    camera.position.set(100, 50, -80);
+    sky.onBeforeRender(undefined as never, undefined as never, camera, undefined as never, undefined as never, undefined as never);
+    expect(new THREE.Vector3().setFromMatrixPosition(sky.matrixWorld).toArray()).toEqual([101, 52, -77]);
+    expect(sky.position.toArray()).toEqual([1, 2, 3]);
   });
 });
 

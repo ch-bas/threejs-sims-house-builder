@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { prefersReducedMotion } from '../lib/reduced-motion';
+import { WALK_FOV_DEG } from '../lib/scene-insets';
 import { groundHeightAt } from '../lib/site';
 import {
   advanceWalker,
@@ -239,7 +240,9 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     // wide screen (a landscape phone), so it cut through a wall the walker
     // stood against. Walking pulls it in; exit puts it back.
     const savedNear = camera.near;
+    const savedFov = camera.fov;
     camera.near = WALK_NEAR;
+    camera.fov = WALK_FOV_DEG;
     camera.updateProjectionMatrix();
     let rafId = 0;
 
@@ -651,6 +654,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       camera.quaternion.copy(savedCameraQuaternion);
       if (orbit && savedTarget) camera.position.add(savedTarget.subVectors(orbit.target, savedTarget));
       camera.near = savedNear;
+      camera.fov = savedFov;
       camera.updateProjectionMatrix();
       invalidateRef.current?.();
       if (orbit) orbit.enabled = true;

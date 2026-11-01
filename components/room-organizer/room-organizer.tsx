@@ -44,6 +44,7 @@ import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
 import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
 import { lockedMessage, notify, notifyRefused, notifyRefusedOnce, notifyWithUndo, removedMessage } from './lib/editor-notices';
+import { isInsideBuilding } from './lib/footprint';
 import { formatMetres } from './lib/format';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
@@ -52,6 +53,8 @@ import { COARSE_POINTER_QUERY } from './lib/hud-layout';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { snapshotBeforeReplace } from './lib/restore-point';
+import { ORBIT_MAX_POLAR } from './lib/scene-insets';
+import { groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
@@ -102,7 +105,7 @@ function orbitCamera(
       spherical.phi = Math.max(0.15, spherical.phi - step / 2);
       break;
     case 'down':
-      spherical.phi = Math.min(Math.PI / 2.2, spherical.phi + step / 2);
+      spherical.phi = Math.min(ORBIT_MAX_POLAR, spherical.phi + step / 2);
       break;
   }
   offset.setFromSpherical(spherical);
@@ -1015,10 +1018,15 @@ export function RoomOrganizer(): JSX.Element {
     roomsToName: planRoomsToName,
   });
 
+  const orbitGroundAt = useCallback(
+    (z: number) => groundHeightAt(layout.terrain, z, layout.height / 2),
+    [layout.terrain, layout.height]
+  );
   const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
+      groundAt: orbitGroundAt,
       // The distance tool measures across furniture, so its clicks go to the floor (#341).
       floorPickOnly: view.drawWallMode || view.measurementMode,
       onItemSelect: handleSelect,
@@ -1416,7 +1424,16 @@ export function RoomOrganizer(): JSX.Element {
         setSelectedWall(null);
       },
       focusOnSelection: () => {
-        if (selectedItem?.position) focusOn(selectedItem.position, undefined, activeFloorY);
+        if (!selectedItem?.position) return;
+        const { x, z } = selectedItem.position;
+        const building = { width: layout.width, height: layout.height, cutout: layout.cutout };
+        // A flat roof counts: only 'none' leaves the storey open to the sky.
+        const covered = roofShows || (view.showAllFloors && activeFloorIndex < layout.floors.length - 1);
+        focusOn(selectedItem.position, {
+          floorY: isInsideBuilding(building, x, z) || activeFloorIndex > 0 ? activeFloorY : orbitGroundAt(z),
+          size: Math.max(selectedItem.width, selectedItem.depth, selectedItem.height),
+          cover: covered ? { storeyHeight: activeStoreyHeight, building, walls: activeFloor.interiorWalls ?? [] } : null,
+        });
       },
       advanceTime: (deltaHours: number) => {
         setView((v) => ({ ...v, timeOfDay: (((v.timeOfDay + deltaHours) % 24) + 24) % 24 }));
@@ -1475,6 +1492,10 @@ export function RoomOrganizer(): JSX.Element {
       history.redo,
       selectedItem,
       focusOn,
+      roofShows,
+      view.showAllFloors,
+      activeStoreyHeight,
+      orbitGroundAt,
       rotateItemHandler,
       reseatCamera,
       playCue,

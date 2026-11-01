@@ -181,6 +181,14 @@ to respect.
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
   a sun-facing wall shadow itself.
+- **Orbit lens.** The orbit camera is 40° (`ORBIT_FOV_DEG`), and the start
+  pose, presets, Fit and zoom slider stand back by `ORBIT_LENS_SCALE` from
+  their 75° numbers. Walkthrough swaps to 75° on entry and restores it on
+  exit, beside the near-plane swap. A far orbit moves its near plane out
+  (`orbitNear`) to keep depth precision on big houses, and the moon and stars
+  are centred on the camera at draw time (`followCamera`), so a far camera
+  never leaves the sky dome. Focus-on-item stays inside the room when a roof or
+  a storey is drawn above it (`focusOffset`).
 - **Rendering pipeline.** Khronos Neutral tone mapping, explicit sRGB output,
   device-pixel-ratio-aware rendering (capped at 2×), PCF shadows softened
   by the sun's `shadow.radius`, and

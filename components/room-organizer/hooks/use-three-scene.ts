@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/chunk-reload';
 import { REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
 import { qualityProfile } from '../lib/render-quality';
+import { ORBIT_FOV_DEG, ORBIT_MAX_POLAR, ORBIT_START, clearOfGround, orbitNear } from '../lib/scene-insets';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { addLights } from '../three/lighting';
@@ -17,6 +18,8 @@ type ThreeModule = typeof import('../three/three-runtime');
 export type { HoverInfo, SelectionMode } from '../three/drag-handlers';
 
 export interface UseThreeSceneOptions extends SceneEventHandlers {
+  /** Ground height at world z, which the orbit camera stays above. */
+  groundAt?: (z: number) => number;
   canvasRef: React.RefObject<HTMLCanvasElement>;
 }
 
@@ -72,7 +75,8 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
   // Latest-callback refs: capture handlers without making them part of the
   // init-effect dependency list (which would tear down the scene unnecessarily).
-  const handlersRef = useRef<SceneEventHandlers>(options);
+  const handlersRef = useRef<UseThreeSceneOptions>(options);
+  const refitOrbitRef = useRef<(() => void) | null>(null);
   handlersRef.current = options;
 
   // Load Three.js + OrbitControls once.
@@ -116,6 +120,13 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   }, []);
 
   // Initialize scene once the module + canvas are ready.
+  // The ground moved under a camera nothing else is moving: a new slope.
+  const { groundAt } = options;
+  useEffect(() => {
+    refitOrbitRef.current?.();
+    dirtyRef.current = true;
+  }, [groundAt]);
+
   useEffect(() => {
     if (!isModuleLoaded) return undefined;
     const canvas = canvasRef.current;
@@ -139,12 +150,12 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       scene.background = new THREE.Color(0xdceefb);
       sceneRef.current = scene;
 
-      // Near plane pulled from 0.1 to 0.3 for better depth precision. The
-      // walkthrough eye height is ~1.6m so 0.3 never clips near geometry.
+      // Near plane pulled from 0.1 to 0.3 for better depth precision, and
+      // further still for a far orbit (`orbitNear`).
       // The canvas is display:none when the editor opens in 2D; keep a finite
       // aspect until the first non-zero resize (#363).
-      const camera = new THREE.PerspectiveCamera(75, aspectOf(canvas), 0.3, 1000);
-      camera.position.set(0, 8, 8);
+      const camera = new THREE.PerspectiveCamera(ORBIT_FOV_DEG, aspectOf(canvas), 0.3, 1000);
+      camera.position.set(...ORBIT_START);
       camera.lookAt(0, 0, 0);
       cameraRef.current = camera;
 
@@ -228,9 +239,27 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       applyMotionPreference();
       motionQuery?.addEventListener('change', applyMotionPreference);
       cleanup.push(() => motionQuery?.removeEventListener('change', applyMotionPreference));
-      controls.maxPolarAngle = Math.PI / 2.5;
+      controls.maxPolarAngle = ORBIT_MAX_POLAR;
       controls.screenSpacePanning = true;
       controlsRef.current = controls;
+      // Fired inside controls.update(), ahead of the frame it moves. The
+      // walkthrough owns the camera while it runs.
+      const fitOrbit = () => {
+        if (handlersRef.current.walkthroughActive) return;
+        const y = clearOfGround(camera.position.y, handlersRef.current.groundAt?.(camera.position.z) ?? 0);
+        // Lift the target with the camera: moving the camera alone would change
+        // the orbit's tilt for good, because OrbitControls reads it back.
+        if (y !== camera.position.y) {
+          controls.target.y += y - camera.position.y;
+          camera.position.y = y;
+        }
+        const near = orbitNear(camera.position.distanceTo(controls.target));
+        if (Math.abs(near - camera.near) < near * 0.01) return;
+        camera.near = near;
+        camera.updateProjectionMatrix();
+      };
+      controls.addEventListener('change', fitOrbit);
+      refitOrbitRef.current = fitOrbit;
       cleanup.push(() => {
         controls.dispose();
         controlsRef.current = null;
