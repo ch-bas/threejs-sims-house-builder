@@ -550,7 +550,7 @@ describe('drag-handlers hold a wall gesture (#718)', () => {
     canvas.dispatchEvent(pointer('pointermove', x + 20, y));
     expect(gesture.move).toHaveBeenCalledTimes(1);
     canvas.dispatchEvent(pointer('pointerup', x + 20, y));
-    expect(gesture.end).toHaveBeenCalledWith(true);
+    expect(gesture.end).toHaveBeenCalledWith(true, false);
     expect(controls.enabled).toBe(true);
     detach();
   });
@@ -594,7 +594,7 @@ describe('drag-handlers hold a wall gesture (#718)', () => {
     const { canvas, gesture, controls, x, y, detach } = withWall();
     canvas.dispatchEvent(pointer('pointerdown', x, y));
     canvas.dispatchEvent(pointer('pointerup', x, y));
-    expect(gesture.end).toHaveBeenLastCalledWith(false);
+    expect(gesture.end).toHaveBeenLastCalledWith(false, true);
     canvas.dispatchEvent(pointer('pointerdown', x, y));
     canvas.dispatchEvent(pointer('pointermove', x + 20, y));
     canvas.dispatchEvent(pointer('pointercancel', x + 20, y));
@@ -612,6 +612,51 @@ describe('drag-handlers hold a wall gesture (#718)', () => {
     scene.add(handle);
     canvas.dispatchEvent(pointer('pointerdown', x + 18, y, { pointerType: 'touch' }));
     expect(handlers.onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ grip: 'start' }));
+    detach();
+  });
+});
+
+describe('drag-handlers hold a floor gesture (#724)', () => {
+  it('a floor press in floorPickOnly goes to a stamp in hand, and a click says so', () => {
+    const { canvas, handlers, controls, detach } = setup([]);
+    const gesture = { move: vi.fn(), end: vi.fn() };
+    const onEmptyClick = vi.fn();
+    Object.assign(handlers, { floorPickOnly: true, onEmptyClick, onFloorGrab: vi.fn(() => gesture) });
+    canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    expect(controls.enabled).toBe(false);
+    expect(onEmptyClick).not.toHaveBeenCalled();
+    canvas.dispatchEvent(pointer('pointerup', 100, 100));
+    expect(gesture.end).toHaveBeenCalledWith(false, true);
+    canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    canvas.dispatchEvent(pointer('pointermove', 140, 100));
+    canvas.dispatchEvent(pointer('pointerup', 140, 100));
+    expect(gesture.move).toHaveBeenCalledTimes(1);
+    expect(gesture.end).toHaveBeenLastCalledWith(true, false);
+    detach();
+  });
+
+  it('a right press leaves the stamp in hand (M7)', () => {
+    const { canvas, handlers, controls, detach } = setup([]);
+    const onFloorGrab = vi.fn();
+    const onEmptyClick = vi.fn();
+    Object.assign(handlers, { floorPickOnly: true, onFloorGrab, onEmptyClick });
+    const press = new MouseEvent('pointerdown', { clientX: 100, clientY: 100, button: 2, bubbles: true });
+    Object.defineProperty(press, 'pointerId', { value: 1 });
+    Object.defineProperty(press, 'pointerType', { value: 'mouse' });
+    canvas.dispatchEvent(press);
+    expect(onFloorGrab).not.toHaveBeenCalled();
+    expect(onEmptyClick).not.toHaveBeenCalled();
+    expect(controls.enabled).toBe(true);
+    detach();
+  });
+
+  it('with nothing in hand the press stays the wall tool\'s point', () => {
+    const { canvas, handlers, controls, detach } = setup([]);
+    const onEmptyClick = vi.fn();
+    Object.assign(handlers, { floorPickOnly: true, onEmptyClick, onFloorGrab: () => null });
+    canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    expect(onEmptyClick).toHaveBeenCalledTimes(1);
+    expect(controls.enabled).toBe(true);
     detach();
   });
 });

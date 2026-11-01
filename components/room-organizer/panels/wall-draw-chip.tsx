@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from '../hooks/use-media-query';
-import { formatMetres } from '../lib/format';
+import { formatMetres, formatSize } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { isTypingTarget } from '../lib/walk-input';
 import { parseWallLength, type WallSnapKind } from '../lib/wall-snap';
@@ -18,6 +18,8 @@ export interface WallDrawStatus {
   angle?: number | null;
   /** The pointer has shown a direction for a typed length. */
   aimed: boolean;
+  /** A room stamp is in hand (#724). */
+  stamp?: { size: { width: number; depth: number } | null; refusal: string | null } | null;
 }
 
 /** Tall enough that a row with nothing to say keeps the rows under it where they are. */
@@ -127,7 +129,24 @@ export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProp
         minWidth: 200,
       }}
     >
-      {hasAnchor ? (
+      {status.stamp ? (
+        <>
+          <div style={row}>
+            <Icon name="brick" size={14} />
+            {touch ? 'Tap to place · drag to size' : 'Click to place · drag to size · Esc to cancel'}
+          </div>
+          {status.stamp.size && (
+            <div className="pc-blurb" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', paddingLeft: 20 }}>
+              {formatSize(status.stamp.size.width, status.stamp.size.depth)}
+            </div>
+          )}
+          {status.stamp.refusal && (
+            <div className="pc-blurb" style={{ fontSize: 11, paddingLeft: 20 }}>
+              ⚠ {status.stamp.refusal}
+            </div>
+          )}
+        </>
+      ) : hasAnchor ? (
         <>
           <div style={row}>
             <Icon name="brick" size={14} />

@@ -1,4 +1,4 @@
-import { formatMetres } from '../lib/format';
+import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { wallAngleDegrees } from '../lib/wall-snap';
@@ -139,6 +139,50 @@ export function drawWallPreview(
   };
   if (anchor) dot(anchor, true);
   if (tip) dot(tip, snapped);
+  ctx.restore();
+}
+
+/** The room stamp in hand (#724): the walls a drop adds and the room's size. */
+export interface StampGhost {
+  walls: readonly InteriorWall[];
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  refused: boolean;
+}
+
+/** The stamp's walls dashed, with W × D over the middle: red where a drop is refused. */
+export function drawStampGhost(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  ghost: StampGhost,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const toX = (x: number) => offsetX + (x + layout.width / 2) * scale;
+  const toY = (z: number) => offsetY + (z + layout.height / 2) * scale;
+  ctx.save();
+  ctx.strokeStyle = ghost.refused ? '#ef4444' : DRAFT_STROKE;
+  ctx.lineWidth = Math.max(2, INTERIOR_WALL_THICKNESS * scale);
+  ctx.setLineDash([8, 5]);
+  for (const wall of ghost.walls) {
+    ctx.beginPath();
+    ctx.moveTo(toX(wall.x1), toY(wall.z1));
+    ctx.lineTo(toX(wall.x2), toY(wall.z2));
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.font = 'bold 11px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+  ctx.fillStyle = ghost.refused ? '#b91c1c' : DRAFT_INK;
+  const label = formatSize(ghost.width, ghost.depth);
+  ctx.strokeText(label, toX(ghost.x), toY(ghost.z));
+  ctx.fillText(label, toX(ghost.x), toY(ghost.z));
   ctx.restore();
 }
 

@@ -11,7 +11,6 @@ import { useSheetInset } from '../hooks/use-sheet-inset';
 import { askConfirm } from '../lib/confirm-dialog';
 import { DEFAULT_BUDGET } from '../lib/constants';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
-import { generateRoomShape } from '../lib/room-shapes';
 import { runSurprise } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
 import { CameraPad } from './camera-pad';
@@ -19,11 +18,16 @@ import { CatalogStrip } from './catalog-strip';
 import { ModePanel } from './mode-panel';
 import { RoomShapesPanel } from './room-shapes-panel';
 import { WallPaintPanel } from './wall-paint-panel';
+import type { RoomStampSpec } from '../lib/room-stamp';
 import type { CatalogItem } from '../lib/types';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export interface BottomHudProps {
   selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
+  /** The room stamp is in hand (#724). */
+  stampArmed: boolean;
+  onArmStamp(spec: RoomStampSpec): void;
+  onCancelStamp(): void;
   onSelectedWallChange(wall: { id: string; kind: 'exterior' | 'interior' } | null): void;
   onOrbit(direction: 'left' | 'right' | 'up' | 'down'): void;
   onZoom(direction: '+' | '-'): void;
@@ -36,7 +40,7 @@ export interface BottomHudProps {
 // Memoised with stable props from the orchestrator (#3); it still follows the
 // layout through its context, so the children that only take callbacks are
 // memoised too.
-export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem }: BottomHudProps): JSX.Element {
+export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem, stampArmed, onArmStamp, onCancelStamp }: BottomHudProps): JSX.Element {
   const { layout, activeFloorIndex, actions, isReady, error, playCue } = useRoomEditor();
   const view = useViewSettings('drawWallMode', 'view2D', 'walkthroughMode');
   const { toggle, setView, setGameMode } = useEditorViewActions();
@@ -63,6 +67,12 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   }
   const paintUnfolded = unfolded === 'paint' || (unfolded === null && !view.drawWallMode);
   const stampUnfolded = unfolded === 'stamp';
+  // In the dock the unfolded panel covers the floor the stamp is for, and hides its chip.
+  // Only as it is taken up: the sliders still drive the stamp in hand.
+  const armStamp = useEvent((spec: RoomStampSpec) => {
+    if (!stampArmed) setUnfolded('none');
+    onArmStamp(spec);
+  });
   const toggleFold = useEvent((panel: 'paint' | 'stamp') => {
     const open = panel === 'paint' ? paintUnfolded : stampUnfolded;
     setUnfolded(open ? 'none' : panel);
@@ -147,27 +157,9 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
                 maxWidth={layout.width}
                 maxDepth={layout.height}
                 fold={{ open: stampUnfolded, onToggle: () => toggleFold('stamp') }}
-                onStamp={({ shape, width, depth, centerX, centerZ }) => {
-                  // Random suffix so two stamps in the same millisecond can't
-                  // produce colliding wall ids.
-                  const seed = `stamp-${shape}-${Date.now().toString(36)}-${Math.random()
-                    .toString(36)
-                    .slice(2, 6)}`;
-                  const walls = generateRoomShape(
-                    shape,
-                    centerX,
-                    centerZ,
-                    width,
-                    depth,
-                    seed,
-                    undefined,
-                    { width: layout.width, depth: layout.height }
-                  );
-                  // Batch all segments into one dispatch so the whole stamp is a
-                  // single undo entry rather than N steps.
-                  actions.addInteriorWalls(walls);
-                  playCue('place');
-                }}
+                armed={stampArmed}
+                onStamp={armStamp}
+                onCancelStamp={onCancelStamp}
               />
             </>
           )}
