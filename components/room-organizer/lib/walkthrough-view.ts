@@ -1,4 +1,4 @@
-import { floorElevation } from './storeys';
+import { floorElevation, storeyHeight } from './storeys';
 import type { FloorLayout, GameMode, ViewSettings } from './types';
 
 type WallDisplay = ViewSettings['wallDisplay'];
@@ -12,6 +12,25 @@ type WallDisplay = ViewSettings['wallDisplay'];
  */
 export function sceneWallDisplay(mode: WallDisplay, walkthroughActive: boolean): WallDisplay {
   return walkthroughActive ? 'up' : mode;
+}
+
+/**
+ * The walkthrough ceiling hangs this far under the storey above's floor
+ * plate, which "show all floors" also draws (#276); the attic ceiling and
+ * the partitions built while walking stop at the same line.
+ */
+export const WALKTHROUGH_CEILING_GAP = 0.01;
+
+/**
+ * Partition height while walking (#656). From orbit a partition stops 0.4 m
+ * short of the ceiling (`interiorWallHeight`), the Sims-style room divider
+ * seen from above; standing in the room that left an open slot over every
+ * wall, through which the next room and its lamp light showed. Walking,
+ * partitions reach the ceiling the walker sees, as the porch back wall has
+ * since #275.
+ */
+export function walkthroughPartitionHeight(floor: Pick<FloorLayout, 'height'> | undefined): number {
+  return storeyHeight(floor) - WALKTHROUGH_CEILING_GAP;
 }
 
 export interface WalkthroughCeiling {

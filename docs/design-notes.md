@@ -186,6 +186,14 @@ to respect.
   partitions, so a hidden storey's openings never reappear on their own; the
   furniture effect re-applies the display after a rebuild, and keys on the
   partitions and the footprint because ownership does (#659).
+- **Walking, partitions reach the ceiling.** From orbit a partition stops
+  0.4 m short of its storey (`interiorWallHeight`), the room divider seen
+  from above. The walkthrough ceiling hangs 1 cm under the plate above, so
+  that left a 0.39 m slot over every partition at eye level, with the next
+  room and its lamp light showing through. While walking, partitions are
+  built to `walkthroughPartitionHeight` (the ceiling line) and rebuilt on
+  the way out; the porch back wall has reached its soffit the same way
+  since #275 (#656).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made

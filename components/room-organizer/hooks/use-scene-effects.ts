@@ -20,7 +20,7 @@ import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, stor
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
 import { shadowCasterBounds, type ShadowBox } from '../lib/sun-shadow';
-import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from '../lib/walkthrough-view';
+import { sceneWallDisplay, walkthroughCeiling, walkthroughPartitionHeight, walkthroughPit } from '../lib/walkthrough-view';
 import { zoneFinishesKey, zoneFloorPatches } from '../lib/zones';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones, visionConesOccludable } from '../three/camera-vision';
@@ -978,7 +978,9 @@ export function useSceneEffects({
       const firstChild = scene.children.length;
       const isActive = index === activeFloorIndex;
       const floorY = floorElevation(layout.floors, index);
-      const wallHeight = interiorWallHeight(floor);
+      // Walking, partitions reach the ceiling instead of stopping 0.4 m
+      // short of it, which left a slot into the next room (#656).
+      const wallHeight = walkthroughActive ? walkthroughPartitionHeight(floor) : interiorWallHeight(floor);
       const wallHeights =
         entrance && index === entrance.floorIndex
           ? new Map([[
@@ -1017,7 +1019,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, walkthroughActive, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
 
   // Which storeys are drawn while walking indoors (#446). Declared after the
   // shell, partition and furniture effects, so a rebuild in the same commit
