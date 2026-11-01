@@ -1,6 +1,6 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { MIN_FOOTPRINT_PX, MIN_REGION_PX, frameBox, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
+import { MIN_FOOTPRINT_PX, MIN_REGION_PX, ORBIT_FOV_DEG, ORBIT_LENS_SCALE, ORBIT_MAX_POLAR, WALK_FOV_DEG, clearOfGround, focusOffset, frameBox, orbitNear, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
 import type { FrameInput, Rect } from './scene-insets';
 
 const rect = (left: number, top: number, right: number, bottom: number): Rect => ({ left, top, right, bottom });
@@ -107,6 +107,90 @@ function projectedBounds(input: FrameInput): Rect {
   }
   return out;
 }
+
+describe('orbit lens (#753)', () => {
+  it('stands back by the ratio that keeps the same view height', () => {
+    const halfHeight = (fovDeg: number, distance: number) => Math.tan((fovDeg * Math.PI) / 360) * distance;
+    expect(ORBIT_LENS_SCALE).toBeCloseTo(2.108, 3);
+    expect(halfHeight(ORBIT_FOV_DEG, 10 * ORBIT_LENS_SCALE)).toBeCloseTo(halfHeight(WALK_FOV_DEG, 10), 10);
+  });
+
+  it('frames a house about as tall through the new lens, further out', () => {
+    const frame = (fovDeg: number) =>
+      frameBox({ canvasWidth: 390, canvasHeight: 664, region: rect(0, 60, 390, 380), fovDeg, boxMin: [-4, 0, -4], boxMax: [4, 3, 4], direction: [0, 1, 1] });
+    const wide = frame(WALK_FOV_DEG);
+    const lens = frame(ORBIT_FOV_DEG);
+    expect(lens.position[2]).toBeGreaterThan(wide.position[2] * 1.8);
+    expect(lens.extentWidth / wide.extentWidth).toBeGreaterThan(0.9);
+  });
+});
+
+describe('focusOffset (#753)', () => {
+  const room = { storeyHeight: 3, building: { width: 10, height: 8 }, walls: [] };
+
+  it('stands back in proportion to the item, with a floor for small ones', () => {
+    expect(focusOffset({ x: 0, z: 0 }, 0.3, null)[1]).toBeCloseTo(3.2);
+    expect(focusOffset({ x: 0, z: 0 }, 2, null)[1]).toBeCloseTo(5.12);
+    expect(focusOffset({ x: 0, z: 0 }, 2, null)[0]).toBeCloseTo(3.84);
+  });
+
+  it('stays under the ceiling and inside the walls when covered', () => {
+    const [x, y, z] = focusOffset({ x: 4, z: 3 }, 2, room);
+    expect(y).toBeLessThan(room.storeyHeight);
+    expect(x).toBeLessThan(0);
+    expect(z).toBeLessThan(0);
+    expect(4 + x).toBeGreaterThan(-5);
+    expect(3 + z).toBeGreaterThan(-4);
+    const small = focusOffset({ x: 0, z: 0 }, 6, { storeyHeight: 3, building: { width: 4, height: 4 }, walls: [] });
+    expect(Math.abs(small[0])).toBeCloseTo(1.7);
+  });
+
+  it('never looks through a partition', () => {
+    const walls = [{ x1: 2, z1: 1, x2: 5, z2: 1 }, { x1: 2, z1: 1, x2: 2, z2: 4 }];
+    const target = { x: 3.4, z: 2.9 };
+    const [x, , z] = focusOffset(target, 2, { storeyHeight: 3, building: { width: 10, height: 8 }, walls });
+    const camera = { x: target.x + x, z: target.z + z };
+    expect(camera.x).toBeGreaterThan(2);
+    expect(camera.x).toBeLessThan(5);
+    expect(camera.z).toBeGreaterThan(1);
+    expect(camera.z).toBeLessThan(4);
+  });
+
+  it('sees a garden item from the side away from the house', () => {
+    const [x, y, z] = focusOffset({ x: -6.3, z: 0 }, 1, { storeyHeight: 3, building: { width: 8, height: 6 }, walls: [] });
+    expect(x).toBeLessThan(0);
+    expect(y).toBeGreaterThan(3);
+    expect(Math.abs(z)).toBeGreaterThan(0);
+  });
+
+  it('treats the notch of an L as the garden', () => {
+    const building = { width: 10, height: 8, cutout: { corner: 'ne', width: 4, depth: 3 } } as const;
+    const [x] = focusOffset({ x: 4, z: -3 }, 1, { storeyHeight: 3, building, walls: [] });
+    expect(x).toBeGreaterThan(0);
+  });
+});
+
+describe('clearOfGround (#753)', () => {
+  it('lifts a camera under a slope and leaves one above it alone', () => {
+    expect(clearOfGround(3.39, 6)).toBe(6.5);
+    expect(clearOfGround(9, 6)).toBe(9);
+  });
+});
+
+describe('orbitNear (#753)', () => {
+  it('holds 0.3 m at house distance and moves out with a far camera', () => {
+    expect(orbitNear(5)).toBe(0.3);
+    expect(orbitNear(18)).toBe(0.3);
+    expect(orbitNear(190)).toBeCloseTo(3.17, 2);
+  });
+});
+
+describe('orbit tilt limit (#753)', () => {
+  it('leaves at least 10° of sky above the horizon through the lens', () => {
+    const pitchBelowHorizon = 90 - ORBIT_MAX_POLAR * (180 / Math.PI);
+    expect(ORBIT_FOV_DEG / 2 - pitchBelowHorizon).toBeGreaterThan(10);
+  });
+});
 
 describe('frameBox', () => {
   const base: FrameInput = {
