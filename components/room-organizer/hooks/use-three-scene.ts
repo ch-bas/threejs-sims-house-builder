@@ -180,6 +180,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
       }
       renderer.shadowMap.enabled = true;
+      // Per-material clipping planes: the party-wall neighbours' roofs stop
+      // at their own wall on our side (#655).
+      renderer.localClippingEnabled = true;
       // r186 removed PCFSoftShadowMap (it fell back to PCF with a warning);
       // PCF softens by the light's `shadow.radius` instead (#379).
       renderer.shadowMap.type = THREE.PCFShadowMap;
