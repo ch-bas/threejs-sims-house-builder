@@ -255,6 +255,24 @@ export function isLampPrewarmHour(hour: number): boolean {
   return time >= lampsOn - LAMP_PREWARM_HOURS && time <= lampsOn;
 }
 
+/**
+ * Size the sun's shadow map for the quality tier (#760). A new size frees the
+ * old map, and three makes the next one on the next shadow pass, which the
+ * caller requests. No-op when nothing changes.
+ */
+export function applyShadowQuality(scene: ThreeNS.Scene, mapSize: number, radius: number): boolean {
+  const light = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Directional) as ThreeNS.DirectionalLight | undefined;
+  if (!light) return false;
+  const { shadow } = light;
+  if (shadow.mapSize.width === mapSize && shadow.radius === radius) return false;
+  shadow.radius = radius;
+  shadow.mapSize.set(mapSize, mapSize);
+  shadow.map?.dispose();
+  shadow.map = null;
+  shadow.normalBias = shadowNormalBias(shadow.camera.right - shadow.camera.left, mapSize);
+  return true;
+}
+
 /** The normal offset of a shadow lookup, floored for small lots. */
 const MIN_NORMAL_BIAS = 0.03;
 /** ...and in shadow-map texels: a fitted frustum sets how coarse those are. */

@@ -50,6 +50,7 @@ import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFlo
 import { addSignalOverlays } from '../three/signal-overlay';
 import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
 import { observeSceneOccluders, planFit } from './scene-occluders';
+import { currentQuality } from './use-three-scene';
 import type { StampGhost } from '../canvas-2d/plan-edit';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
@@ -871,6 +872,7 @@ export function useSceneEffects({
   }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, lampLevel, view.timeOfDay, walkthroughActive]);
 
   // Outdoor
+  const groundTile = currentQuality(view.renderQuality).groundTile;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -878,6 +880,7 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
     setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height, {
+      groundTile,
       ...(layout.cutout ? { cutout: layout.cutout } : {}),
       ...(layout.terrain ? { terrain: layout.terrain } : {}),
       ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
@@ -886,7 +889,7 @@ export function useSceneEffects({
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage, groundTile]);
 
   // The street of neighbours (#202, #310). Never touched by applyWallDisplay,
   // so they stay put in every wall-display mode (#201). Keyed on exactly what

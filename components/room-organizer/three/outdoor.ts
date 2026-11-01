@@ -66,6 +66,8 @@ export interface OutdoorSite {
   neighbours?: NeighbourSpec;
   /** 'pavement': pavement and road run right up to the front wall (#204). */
   frontage?: Frontage;
+  /** Pixels across a ground tile, by quality tier (#760). */
+  groundTile?: number;
 }
 
 export function setOutdoorVisible(
@@ -112,7 +114,7 @@ export function setOutdoorVisible(
   // ---- 1. Grass plane (warm suburban green, or as the weather left it) ----
   const weather = (scene.userData[WEATHER_KEY] as Weather | undefined) ?? 'clear';
   const grassMat = new THREE.MeshStandardMaterial({ color: outdoorGroundColor(weather), roughness: 1 });
-  layGroundSurface(THREE, grassMat, 'grass');
+  layGroundSurface(THREE, grassMat, 'grass', site.groundTile);
   const grass = terrain
     ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y, cutout), grassMat)
     : new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize, 1, 1), grassMat);
@@ -126,7 +128,7 @@ export function setOutdoorVisible(
   freezeMatrix(grass);
   scene.add(grass);
 
-  scene.add(buildGroundSkirt(THREE, groundSize, (z) => groundAt(z) + GRASS_Y - SKIRT_DROP, outdoorGroundColor(weather)));
+  scene.add(buildGroundSkirt(THREE, groundSize, (z) => groundAt(z) + GRASS_Y - SKIRT_DROP, outdoorGroundColor(weather), site.groundTile));
 
   // The sides of the dig where the house cuts into the hill.
   const excavation = terrain ? buildExcavationGeometry(THREE, terrain, halfW, halfD, cutout) : null;
@@ -152,7 +154,7 @@ export function setOutdoorVisible(
   const roadDepth = ROAD_DEPTH;
 
   const sidewalkMat = new THREE.MeshStandardMaterial({ color: PAVING_COLOR, roughness: 0.85 });
-  layGroundSurface(THREE, sidewalkMat, 'paving');
+  layGroundSurface(THREE, sidewalkMat, 'paving', site.groundTile);
   const sidewalk = new THREE.Mesh(
     new THREE.PlaneGeometry(groundSize, sidewalkDepth),
     sidewalkMat
@@ -165,7 +167,7 @@ export function setOutdoorVisible(
   scene.add(sidewalk);
 
   const asphaltMat = new THREE.MeshStandardMaterial({ color: ASPHALT_COLOR, roughness: 0.95 });
-  layGroundSurface(THREE, asphaltMat, 'asphalt');
+  layGroundSurface(THREE, asphaltMat, 'asphalt', site.groundTile);
   const road = new THREE.Mesh(
     new THREE.PlaneGeometry(groundSize, roadDepth),
     asphaltMat
@@ -275,7 +277,8 @@ function buildGroundSkirt(
   THREE: ThreeModule,
   groundSize: number,
   heightAt: (z: number) => number,
-  color: number
+  color: number,
+  groundTile: number | undefined
 ): ThreeNS.Mesh {
   const half = groundSize / 2 - SKIRT_OVERLAP;
   const positions: number[] = [];
@@ -306,7 +309,7 @@ function buildGroundSkirt(
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(positions.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
   geometry.setIndex(indices);
   const material = new THREE.MeshStandardMaterial({ color, roughness: 1, vertexColors: true, transparent: true, depthWrite: false });
-  layGroundSurface(THREE, material, 'grass');
+  layGroundSurface(THREE, material, 'grass', groundTile);
   const skirt = new THREE.Mesh(geometry, material);
   skirt.renderOrder = -0.9;
   skirt.raycast = () => undefined;

@@ -52,6 +52,7 @@ import { describeLayoutChange } from './lib/history-label';
 import { COARSE_POINTER_QUERY } from './lib/hud-layout';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
+import { loadQualityChoice } from './lib/render-quality';
 import { snapshotBeforeReplace } from './lib/restore-point';
 import { ORBIT_MAX_POLAR } from './lib/scene-insets';
 import { groundHeightAt } from './lib/site';
@@ -320,6 +321,12 @@ export function RoomOrganizer(): JSX.Element {
   const handleFloorPointerLeave = useCallback(() => {
     setPointerWorld(null);
   }, []);
+
+  // A quality picked on this device (#760). In an effect: the prerender has no storage.
+  useEffect(() => {
+    const renderQuality = loadQualityChoice();
+    if (renderQuality !== 'auto') setView((v) => ({ ...v, renderQuality }));
+  }, [setView]);
 
   // The zone with handles on the plan (#628). The handles are zone mode's.
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
@@ -1027,6 +1034,7 @@ export function RoomOrganizer(): JSX.Element {
       canvasRef,
       walkthroughActive,
       groundAt: orbitGroundAt,
+      renderQuality: view.renderQuality,
       // The distance tool measures across furniture, so its clicks go to the floor (#341).
       floorPickOnly: view.drawWallMode || view.measurementMode,
       onItemSelect: handleSelect,

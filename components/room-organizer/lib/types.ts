@@ -1,3 +1,5 @@
+import type { QualityChoice } from './render-quality';
+
 export type Vec2 = Readonly<{ x: number; z: number }>;
 
 export type FurnitureType =
@@ -408,6 +410,8 @@ export interface ViewSettings {
   showHeatmap: boolean;
   /** When true, the 2D plan of an upper storey shows the floor below faintly (#624). */
   showFloorBelow: boolean;
+  /** The View menu's render quality (#760); absent is automatic. */
+  renderQuality?: QualityChoice;
   /** When true, every placed item has a name label hovering above it in 3D. */
   showItemLabels: boolean;
   /** When true, animated NPCs wander the active floor. */
