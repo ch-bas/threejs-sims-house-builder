@@ -1,8 +1,10 @@
+import { clipWallToCutout } from './cutout';
+import { cutoutRect, shellWalls } from './footprint';
 import { isCeilingHung, isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, isOpening, isWallMounted, projectOntoSegment, settleWallMountedItem, snapOpeningToWall } from './opening-snap';
 import { clipWallToPorch, ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, type EntrancePlanOutline } from './street';
 import { MIN_WALL_LENGTH, reachInLot, snapWallEndpoint, WALL_GRID } from './wall-snap';
-import type { FloorLayout, FurnitureItem, InteriorWall, Vec2 } from './types';
+import type { FloorLayout, FootprintCutout, FurnitureItem, InteriorWall, Vec2, WallId } from './types';
 
 /**
  * Moving interior walls after they are drawn (#718). Pure: the plan and the 3D
@@ -33,6 +35,8 @@ export interface WallGrab {
 export interface WallDragContext {
   roomWidth: number;
   roomDepth: number;
+  /** The corner cut out of the building (#727). */
+  cutout?: FootprintCutout | undefined;
   /** Shift: no grid and no angle steps. */
   free?: boolean;
 }
@@ -189,7 +193,7 @@ export function dragWalls(grab: WallGrab, pointer: Vec2, context: WallDragContex
   if (!wall) return null;
   const dx = pointer.x - grab.at.x;
   const dz = pointer.z - grab.at.z;
-  const { roomWidth, roomDepth, free = false } = context;
+  const { roomWidth, roomDepth, cutout, free = false } = context;
   const others = grab.walls.filter((entry) => entry.id !== wall.id);
   const start = startOf(wall);
   const end = endOf(wall);
@@ -199,7 +203,8 @@ export function dragWalls(grab: WallGrab, pointer: Vec2, context: WallDragContex
     // Rounded so an axis-aligned wall's normal is exact.
     const normal = { x: Math.round((-(wall.z2 - wall.z1) / length) * 1e12) / 1e12, z: Math.round(((wall.x2 - wall.x1) / length) * 1e12) / 1e12 };
     const raw = dx * normal.x + dz * normal.z;
-    const shell = footprintEdges(roomWidth, roomDepth);
+    const shell = footprintEdges(roomWidth, roomDepth, cutout);
+    const notch = cutoutRect({ width: roomWidth, height: roomDepth, cutout });
     const halfW = roomWidth / 2;
     const halfD = roomDepth / 2;
     const wanted = free ? raw : settleSlide(wall, [...others, ...shell], normal, raw, halfW, halfD);
@@ -208,8 +213,8 @@ export function dragWalls(grab: WallGrab, pointer: Vec2, context: WallDragContex
     const startHost = hostOf(start, hosts);
     const endHost = hostOf(end, hosts);
     const unhosted = [...(startHost ? [] : [start]), ...(endHost ? [] : [end])];
-    const forward = Math.min(Infinity, ...unhosted.map((point) => reachInLot(point, normal.x, normal.z, halfW, halfD)));
-    const backward = Math.min(Infinity, ...unhosted.map((point) => reachInLot(point, -normal.x, -normal.z, halfW, halfD)));
+    const forward = Math.min(Infinity, ...unhosted.map((point) => reachInLot(point, normal.x, normal.z, halfW, halfD, notch)));
+    const backward = Math.min(Infinity, ...unhosted.map((point) => reachInLot(point, -normal.x, -normal.z, halfW, halfD, notch)));
     const distance = Math.max(-backward, Math.min(forward, wanted));
     const shift = (point: Vec2): Vec2 => ({ x: point.x + normal.x * distance, z: point.z + normal.z * distance });
     const direction = { x: wall.x2 - wall.x1, z: wall.z2 - wall.z1 };
@@ -230,6 +235,7 @@ export function dragWalls(grab: WallGrab, pointer: Vec2, context: WallDragContex
     fromPoint: anchor,
     roomWidth,
     roomDepth,
+    cutout,
     free,
   });
   if (Math.hypot(point.x - anchor.x, point.z - anchor.z) < MIN_WALL_LENGTH) return null;
@@ -259,21 +265,27 @@ export function wallsOverlap(a: WallPatch, b: WallPatch): boolean {
   return Math.min(to, length) - Math.max(from, 0) > MIN_OVERLAP;
 }
 
-/** The footprint's four sides, as walls. */
-export function footprintEdges(roomWidth: number, roomDepth: number): WallPatch[] {
-  const w = roomWidth / 2;
-  const d = roomDepth / 2;
-  return [
-    { id: 'north', x1: -w, z1: -d, x2: w, z2: -d },
-    { id: 'east', x1: w, z1: -d, x2: w, z2: d },
-    { id: 'south', x1: w, z1: d, x2: -w, z2: d },
-    { id: 'west', x1: -w, z1: d, x2: -w, z2: -d },
-  ];
+/** An edge of the outline, as a wall; `side` is the side of the house it counts as. */
+export interface FootprintEdge extends WallPatch {
+  side: WallId;
+}
+
+const EDGE_ORDER = ['north', 'east', 'south', 'west', 'notch-x', 'notch-z'];
+
+/** The outline's edges, as walls, running clockwise: the four sides, then the two walls of a cut (#727). */
+export function footprintEdges(roomWidth: number, roomDepth: number, cutout?: FootprintCutout | undefined): FootprintEdge[] {
+  return shellWalls({ width: roomWidth, height: roomDepth, cutout })
+    .sort((a, b) => EDGE_ORDER.indexOf(a.id) - EDGE_ORDER.indexOf(b.id))
+    .map(({ id, side, x1, z1, x2, z2 }) =>
+      id === 'south' || id === 'west' ? { id, side, x1: x2, z1: z2, x2: x1, z2: z1 } : { id, side, x1, z1, x2, z2 }
+    );
 }
 
 interface WallMoveContext {
   roomWidth: number;
   roomDepth: number;
+  /** The corner cut out of the building (#727): no wall stands in it. */
+  cutout?: FootprintCutout | undefined;
   /** The storey's recessed entrance: openings settle around it and no wall crosses it. */
   porch: EntrancePlanOutline | null;
 }
@@ -316,14 +328,16 @@ function hungOn(item: FurnitureItem, position: Vec2, walls: readonly InteriorWal
       bestDistance = projected.distance;
     }
   }
-  const toShell = Math.min(context.roomWidth / 2 - Math.abs(position.x), context.roomDepth / 2 - Math.abs(position.z));
+  const notchWalls = footprintEdges(context.roomWidth, context.roomDepth, context.cutout).slice(4);
+  const toNotch = notchWalls.map((wall) => projectOntoSegment(position, wall, 0)?.distance ?? Infinity);
+  const toShell = Math.min(context.roomWidth / 2 - Math.abs(position.x), context.roomDepth / 2 - Math.abs(position.z), ...toNotch);
   return toShell < bestDistance ? null : best;
 }
 
 /** The interior wall a door, window or camera sits on. */
 function seatedOn(item: FurnitureItem, position: Vec2, walls: readonly InteriorWall[], context: WallMoveContext): InteriorWall | null {
-  const { roomWidth, roomDepth, porch } = context;
-  const seat = snapOpeningToWall({ position, itemWidth: item.width, roomWidth, roomDepth, interiorWalls: walls, ...(porch ? { frontGap: porch } : {}) }).interiorWall;
+  const { roomWidth, roomDepth, porch, cutout } = context;
+  const seat = snapOpeningToWall({ position, itemWidth: item.width, roomWidth, roomDepth, interiorWalls: walls, cutout, ...(porch ? { frontGap: porch } : {}) }).interiorWall;
   return (seat && walls.find((wall) => wall.x1 === seat.x1 && wall.z1 === seat.z1 && wall.x2 === seat.x2 && wall.z2 === seat.z2)) ?? null;
 }
 
@@ -343,7 +357,7 @@ function followWalls(
   after: readonly InteriorWall[],
   context: WallMoveContext
 ): { items: FurnitureItem[] } | { refusal: string } {
-  const { roomWidth, roomDepth, porch } = context;
+  const { roomWidth, roomDepth, porch, cutout } = context;
   let changed = false;
   const items: FurnitureItem[] = [];
   const openings = new Map<string, Array<{ name: string; half: number; from: number; along: number }>>();
@@ -365,7 +379,7 @@ function followWalls(
       items.push({ ...item, position: carried.position, ...(Math.abs(turn) > 1e-9 ? { rotation: (item.rotation ?? 0) - turn } : {}) });
       continue;
     }
-    const settled = settleWallMountedItem(item, carried.position, roomWidth, roomDepth, after, porch);
+    const settled = settleWallMountedItem(item, carried.position, roomWidth, roomDepth, after, porch, cutout);
     items.push(settled ? { ...item, ...settled } : { ...item, position: carried.position });
     if (isOpening(item.type)) {
       const onWall = openings.get(next.id) ?? [];
@@ -402,7 +416,11 @@ export function planWallMove(floor: FloorLayout, patches: readonly WallPatch[], 
   if (porch && after.some((wall) => ids.has(wall.id) && clipWallToPorch(wall, porch)[0] !== wall)) {
     return { refusal: "A wall can't run through the porch: it's outside the house." };
   }
-  const shell = footprintEdges(context.roomWidth, context.roomDepth);
+  const notch = cutoutRect({ width: context.roomWidth, height: context.roomDepth, cutout: context.cutout });
+  if (after.some((wall) => ids.has(wall.id) && clipWallToCutout(wall, notch)[0] !== wall)) {
+    return { refusal: "A wall can't run through the corner: it's outside the house." };
+  }
+  const shell = footprintEdges(context.roomWidth, context.roomDepth, context.cutout);
   const onAnother = (wall: WallPatch, walls: readonly WallPatch[]): boolean =>
     [...walls, ...shell].some((other) => other.id !== wall.id && (wallsOverlap(wall, other) || wallsOverlap(other, wall)));
   for (const wall of moved) {

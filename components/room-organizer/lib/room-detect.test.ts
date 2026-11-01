@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { detectRooms, floorRooms, hasTooManyWalls, MAX_ROOM_WALLS, rectOutline, ringArea } from './room-detect';
+import { footprintOutline } from './footprint';
+import { detectRooms, floorRooms, hasTooManyWalls, MAX_ROOM_WALLS, ringArea } from './room-detect';
 import type { KeepOutRect } from './geometry';
 import type { FloorLayout, InteriorWall, Vec2 } from './types';
 
 /** A 10 × 8 m house: x from -5 to 5, z from -4 to 4. */
-const house = rectOutline(10, 8);
+const house = footprintOutline({ width: 10, height: 8 });
 
 let nextWall = 0;
 function wall(x1: number, z1: number, x2: number, z2: number): InteriorWall {

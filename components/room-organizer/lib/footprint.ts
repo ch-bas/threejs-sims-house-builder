@@ -161,6 +161,19 @@ export function isInsideBuilding(building: FootprintBuilding, x: number, z: numb
   return !(notch && x > notch.x0 && x < notch.x1 && z > notch.z0 && z < notch.z1);
 }
 
+/** The nearest point standing on the building: inside the rectangle, and out of the cut by the shorter way. */
+export function clampToBuilding(building: FootprintBuilding, point: Vec2): Vec2 {
+  const hw = building.width / 2;
+  const hd = building.height / 2;
+  const clamped = { x: Math.max(-hw, Math.min(hw, point.x)), z: Math.max(-hd, Math.min(hd, point.z)) };
+  const notch = cutoutRect(building);
+  const corner = building.cutout?.corner;
+  if (!notch || !corner || isInsideBuilding(building, clamped.x, clamped.z)) return clamped;
+  const x = corner.endsWith('e') ? notch.x0 : notch.x1;
+  const z = corner.startsWith('n') ? notch.z1 : notch.z0;
+  return Math.abs(clamped.x - x) <= Math.abs(clamped.z - z) ? { x, z: clamped.z } : { x: clamped.x, z };
+}
+
 /** Whether an item's rotated footprint at `position` overlaps the cut (touching its walls doesn't count). */
 export function entersCutout(
   item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation'>,

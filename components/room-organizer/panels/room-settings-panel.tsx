@@ -11,7 +11,7 @@ import { resizeRefusal } from '../hooks/layout-reducer';
 import { layoutStore } from '../hooks/use-layout-store';
 import { useRefusal } from '../hooks/use-refusal';
 import { DEFAULT_FLOOR_PLAN_OPACITY, MAX_ROOM_DIMENSION } from '../lib/constants';
-import { cutoutRefusal, itemsInCorner, outdoorItemsTakenIn } from '../lib/cutout';
+import { cutoutRefusal, itemsInCorner, outdoorItemsTakenIn, zonesInCorner } from '../lib/cutout';
 import { notifyWithUndo } from '../lib/editor-notices';
 import { MIN_CUTOUT_SIZE, MIN_WING_SIZE } from '../lib/footprint';
 import { MAX_NAME_LENGTH } from '../lib/schema';
@@ -54,11 +54,13 @@ function FootprintShape(): JSX.Element {
     }
     const moved = next ? itemsInCorner(layout, next).length : 0;
     const takenIn = outdoorItemsTakenIn(layout, next).length;
+    const zonesGone = next ? zonesInCorner(layout, next).length : 0;
     history.commitNow();
     actions.setCutout(next);
     const said = [
       moved > 0 ? `Moved ${moved} ${moved === 1 ? 'item' : 'items'} out of the cut corner.` : '',
       takenIn > 0 ? `${takenIn} outdoor ${takenIn === 1 ? 'item now stands' : 'items now stand'} indoors.` : '',
+      zonesGone > 0 ? `Removed ${zonesGone} ${zonesGone === 1 ? 'zone' : 'zones'} in the cut corner.` : '',
     ].filter(Boolean);
     if (said.length > 0) {
       notifyWithUndo(said.join(' '), { current: () => layoutStore.getState().layout, undo: history.undo });

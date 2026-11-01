@@ -1,4 +1,5 @@
 import { floorKeepOut, type KeepOutBuilding } from './floor-keep-out';
+import { footprintOutline } from './footprint';
 import { INTERIOR_WALL_THICKNESS } from './opening-snap';
 import type { KeepOutRect } from './geometry';
 import type { FloorLayout, InteriorWall, Vec2 } from './types';
@@ -46,18 +47,6 @@ const COORDINATE_PRECISION = 1e6;
 interface Segment {
   a: Vec2;
   b: Vec2;
-}
-
-/** The rectangular footprint as a closed ring: what call sites pass as `outline` for now. */
-export function rectOutline(width: number, depth: number): Vec2[] {
-  const x = width / 2;
-  const z = depth / 2;
-  return [
-    { x: -x, z: -z },
-    { x, z: -z },
-    { x, z },
-    { x: -x, z },
-  ];
 }
 
 /** Positive when the ring winds from +x towards +z. */
@@ -423,9 +412,10 @@ export function hasTooManyWalls(floor: Pick<FloorLayout, 'interiorWalls'>): bool
   return (floor.interiorWalls?.length ?? 0) > MAX_ROOM_WALLS;
 }
 
-/** The rooms of one storey of a house, past its porch and stairwells. */
+/** The rooms of one storey of a house, past its porch and stairwells. The outline already leaves out a cut corner. */
 export function floorRooms(building: KeepOutBuilding, floorIndex: number): DetectedRoom[] {
   const floor = building.floors[floorIndex];
   if (!floor || hasTooManyWalls(floor)) return [];
-  return detectRooms(floor.interiorWalls ?? [], rectOutline(building.width, building.height), floorKeepOut(building, floorIndex));
+  const keepOut = floorKeepOut(building, floorIndex).filter((rect) => !rect.cutout);
+  return detectRooms(floor.interiorWalls ?? [], footprintOutline(building), keepOut);
 }

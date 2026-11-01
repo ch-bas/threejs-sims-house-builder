@@ -214,9 +214,10 @@ export function RoomOrganizer(): JSX.Element {
         fromPoint: wallDraft,
         roomWidth: layout.width,
         roomDepth: layout.height,
+        cutout: layout.cutout,
         free: wallFree,
       }),
-    [activeFloor.interiorWalls, wallDraft, layout.width, layout.height, wallFree]
+    [activeFloor.interiorWalls, wallDraft, layout.width, layout.height, layout.cutout, wallFree]
   );
   const wallTipUnderPointer = useMemo(
     () => (view.drawWallMode && pointerWorld ? snapWallPoint(pointerWorld) : null),
@@ -327,7 +328,7 @@ export function RoomOrganizer(): JSX.Element {
   const handleWallLength = (length: number, direction: { x: number; z: number } | null): boolean => {
     const aim = direction ?? wallAimRef.current;
     if (!wallDraft || !aim) return false;
-    const end = wallEndAtLength(wallDraft, aim, length, layout.width, layout.height);
+    const end = wallEndAtLength(wallDraft, aim, length, layout.width, layout.height, layout.cutout);
     if (!end) {
       notifyRefused(`A ${formatMetres(length)} wall from here runs past the outside wall.`, playCue);
       return false;
@@ -355,10 +356,11 @@ export function RoomOrganizer(): JSX.Element {
       existingWalls: activeFloor.interiorWalls ?? [],
       roomWidth: layout.width,
       roomDepth: layout.height,
+      cutout: layout.cutout,
       porch: planPorch,
       hiddenWalls: activeFloor.hiddenWalls,
     }),
-    [activeFloor.interiorWalls, activeFloor.hiddenWalls, layout.width, layout.height, planPorch]
+    [activeFloor.interiorWalls, activeFloor.hiddenWalls, layout.width, layout.height, layout.cutout, planPorch]
   );
   const roomStamp = useRoomStamp({
     context: stampContext,

@@ -10,12 +10,12 @@ import {
 import { clipWallToCutout, fitNewShape, roofCoversCutout, withCutout } from '../lib/cutout';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, trimRectToCutout } from '../lib/footprint';
+import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
 import { formatMetres } from '../lib/format';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
-import { floorRooms, rectOutline } from '../lib/room-detect';
+import { floorRooms } from '../lib/room-detect';
 import {
   MAX_INTERIOR_WALLS_PER_FLOOR,
   MAX_ITEMS_PER_FLOOR,
@@ -826,6 +826,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         const plan = planWallMove(floor, patches, {
           roomWidth: state.layout.width,
           roomDepth: state.layout.height,
+          cutout: state.layout.cutout,
           porch: entrancePlanOutline(state.layout, state.activeFloorIndex),
         });
         if (!plan || 'refusal' in plan) return floor;
@@ -1014,11 +1015,10 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         if (zones.length >= MAX_ZONES || zones.some((zone) => zone.id === action.zone.id)) return floor;
         // A polygon comes whole from a detected room: there is nothing to fit.
         if (action.zone.outline) {
-          const fits = isRoomZone(action.zone) && zoneShapeFits(action.zone, rectOutline(state.layout.width, state.layout.height));
+          const fits = isRoomZone(action.zone) && zoneShapeFits(action.zone, footprintOutline(state.layout));
           return fits ? { ...floor, zones: [...zones, { ...action.zone, name: capName(action.zone.name) }] } : floor;
         }
-        const trimmed = trimRectToCutout(action.zone, cutoutRect(state.layout));
-        const rect = trimmed && clampZoneRect(trimmed, state.layout.width, state.layout.height);
+        const rect = clampZoneRect(action.zone, state.layout.width, state.layout.height, state.layout.cutout);
         if (!rect || zoneInPorch(rect, entrancePlanOutline(state.layout, state.activeFloorIndex))) return floor;
         return { ...floor, zones: [...zones, { ...action.zone, ...rect, name: capName(action.zone.name) }] };
       });
@@ -1036,12 +1036,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           if (sameZone(current, kept)) return floor;
           return { ...floor, zones: floor.zones.map((zone) => (zone.id === action.id ? kept : zone)) };
         }
-        const trimmed = trimRectToCutout(merged, cutoutRect(state.layout));
-        const rect = trimmed && clampZoneRect(trimmed, state.layout.width, state.layout.height);
+        const rect = clampZoneRect(merged, state.layout.width, state.layout.height, state.layout.cutout);
         if (!rect) return floor;
         // A zone can't move onto the porch; one a later porch swallowed can still be renamed.
         const recess = entrancePlanOutline(state.layout, state.activeFloorIndex);
-        const before = clampZoneRect(current, state.layout.width, state.layout.height) ?? current;
+        const before = clampZoneRect(current, state.layout.width, state.layout.height, state.layout.cutout) ?? current;
         if (zoneInPorch(rect, recess) && !zoneInPorch(before, recess)) return floor;
         const next: RoomZone = { ...merged, ...rect };
         // Re-typing a name or re-picking a colour keeps identity: no undo
@@ -1296,7 +1295,7 @@ function resizeWithCutout(layout: RoomLayout, width: number, depth: number): { l
     return { layout, refusal: `The house has to keep ${formatMetres(MIN_WING_SIZE)} on each wing beside its cut corner.` };
   }
   const next = refitFloors(layout, width, depth);
-  return next.cutout ? fitNewShape(layout, next) : { layout: next, refusal: null };
+  return next.cutout ? fitNewShape(layout, next, { polygonsFollow: true }) : { layout: next, refusal: null };
 }
 
 function refitFloors(layout: RoomLayout, width: number, depth: number): RoomLayout {
@@ -1334,7 +1333,7 @@ function refitFloor(floor: FloorLayout, from: Footprint, to: Footprint): FloorLa
   let zonesChanged = false;
   const zones = floor.zones?.flatMap((zone) => {
     if (zone.outline) return [zone]; // followRooms re-fits a polygon to the walls.
-    const rect = clampZoneRect(zone, to.width, to.depth);
+    const rect = clampZoneRect(zone, to.width, to.depth, to.cutout);
     if (!rect) {
       zonesChanged = true;
       return [];
@@ -1374,7 +1373,7 @@ function followRooms(prev: LayoutState, next: LayoutState, action: LayoutAction)
   const before = prev.layout;
   const after = next.layout;
   if (after === before) return next;
-  const resized = before.width !== after.width || before.height !== after.height;
+  const resized = before.width !== after.width || before.height !== after.height || !sameCutout(before.cutout, after.cutout);
   let changed = false;
   const floors = after.floors.map((floor, index) => {
     if (!floor.zones?.some((zone) => zone.outline)) return floor;
@@ -1388,7 +1387,7 @@ function followRooms(prev: LayoutState, next: LayoutState, action: LayoutAction)
       return floor;
     }
     const swept = action.type === 'updateInteriorWalls' ? sweptStrips(old?.interiorWalls ?? [], floor.interiorWalls ?? []) : [];
-    const zones = refitZonesToRooms(floor.zones, floorRooms(after, index), rectOutline(after.width, after.height), after.width, after.height, swept);
+    const zones = refitZonesToRooms(floor.zones, floorRooms(after, index), footprintOutline(after), after.width, after.height, after.cutout, swept);
     if (zones === floor.zones) return floor;
     changed = true;
     if (zones.length > 0) return { ...floor, zones };

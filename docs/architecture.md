@@ -41,7 +41,7 @@ components/
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
     │   ├── collision-reason.ts          The sentence for why an item shows red (rules live in geometry.ts)
     │   ├── cutout.ts                    The L-shaped footprint's rules: why a cut is refused, and bringing every storey inside it (#727)
-    │   ├── footprint.ts                 Shared footprint primitives: rotatedHalfExtents, LOW_PROFILE_MAX_HEIGHT, clampToFootprint; the building's outline: the optional corner cut-out, footprintOutline, isInsideBuilding, shellWalls (a leaf, so walk-collision can import it)
+    │   ├── footprint.ts                 Shared footprint primitives: rotatedHalfExtents, LOW_PROFILE_MAX_HEIGHT, clampToFootprint; the building's outline: the optional corner cut-out, footprintOutline, isInsideBuilding, clampToBuilding, shellWalls (a leaf, so walk-collision can import it)
     │   ├── html-escape.ts               escapeHtml for the blueprint and print popups and the SVG export
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
