@@ -132,7 +132,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     for (const item of floor.items) {
       const position = item.position;
       if (!position) continue;
-      const group = createFurnitureModel(THREE, itemForStorey(item, floor), false, storeyH);
+      const group = createFurnitureModel(THREE, itemForStorey(item, floor, index === layout.floors.length - 1), false, storeyH);
       group.name = item.name;
       group.userData.type = ROOM_OBJECT_TAGS.Furniture;
       group.userData.id = item.id;

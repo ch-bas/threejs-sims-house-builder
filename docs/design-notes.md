@@ -202,6 +202,18 @@ to respect.
   the shell, twice the baseboard's own gap, so neither end face lies in
   the facade's plane. Rain and snow keep clear of the eaves' overhang as
   well as the footprint (#660).
+- **A flight on the top storey stops under the roof.** `stairRise` takes a
+  `topStorey` flag: with no floor above, the rise is capped at the storey
+  height minus `TOP_STOREY_STAIR_CLEARANCE` (the stair headroom), so the
+  treads and both handrails stay under the roof and the attic plate instead
+  of piercing the gable. The scene, the GLB export and the walker's world
+  all pass the flag from the floor index, so what you see is what the
+  walker climbs (#654).
+- **A straight stair carries a closed string per side** (`stringerOutline`):
+  its top edge follows the nosings a lip above them, it is cut level at the
+  floor and ends square under the top nosing. The tilted box it replaces
+  hung over the floor at the foot, stopped short of the landing and stood
+  proud of the treads (#658).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made

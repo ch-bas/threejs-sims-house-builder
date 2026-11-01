@@ -599,8 +599,9 @@ export function useSceneEffects({
       items.forEach((item, i) => {
         const collision = collisions[i] === true;
         // Stairs climb to the floor above and openings are fitted into the
-        // storey, so the mesh matches the hole cut for it (#202, #277).
-        const fitted = itemForStorey(item, floor);
+        // storey, so the mesh matches the hole cut for it (#202, #277); a
+        // flight on the top storey stops under the roof (#654).
+        const fitted = itemForStorey(item, floor, index === layout.floors.length - 1);
         const key = furnitureMeshKey(index, item.id);
         const owner = owners.get(item.id);
         planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive, ...(owner ? { owner } : {}) });

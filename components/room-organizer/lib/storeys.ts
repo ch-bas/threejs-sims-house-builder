@@ -59,13 +59,23 @@ export function interiorWallHeight(floor: StoreyFloor | undefined): number {
 }
 
 /**
+ * A flight on the top storey, with nothing above to climb to, stops this
+ * far under the ceiling: the stair headroom, so the handrails clear the
+ * roof and the attic plate as well (#654).
+ */
+export const TOP_STOREY_STAIR_CLEARANCE = 2;
+
+/**
  * The rise a staircase is built with. Stairs bridge to the storey above,
  * so on a floor with an explicit height they climb exactly that; on a
  * classic storey they keep their own height, but never more than the
  * storey, so an imported 4 m stair can't pierce the floor above (#366).
+ * On the top storey (`topStorey`) there is no floor above: the flight
+ * stops under the roof instead of climbing through it (#654).
  */
-export function stairRise(item: { height: number }, floor: StoreyFloor | undefined): number {
-  return floor?.height ?? Math.min(item.height, storeyHeight(floor));
+export function stairRise(item: { height: number }, floor: StoreyFloor | undefined, topStorey = false): number {
+  const rise = floor?.height ?? Math.min(item.height, storeyHeight(floor));
+  return topStorey ? Math.min(rise, Math.max(0, storeyHeight(floor) - TOP_STOREY_STAIR_CLEARANCE)) : rise;
 }
 
 /**
@@ -110,10 +120,10 @@ export function fitOpeningToStorey(
  * are fitted into it (#277), the camera's height being its wall-mount run.
  * Everything else is built as is.
  */
-export function itemForStorey(item: FurnitureItem, floor: StoreyFloor | undefined): FurnitureItem {
+export function itemForStorey(item: FurnitureItem, floor: StoreyFloor | undefined, topStorey = false): FurnitureItem {
   switch (item.type) {
     case 'stairs':
-      return { ...item, height: stairRise(item, floor) };
+      return { ...item, height: stairRise(item, floor, topStorey) };
     case 'door':
     case 'security-camera':
       return { ...item, height: fitOpeningToStorey(item, storeyHeight(floor)).height };

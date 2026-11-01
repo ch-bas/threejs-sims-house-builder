@@ -347,3 +347,15 @@ describe('seeing the storeys either side (#446)', () => {
     expect(seesNeighbourStoreys(true, 'floor', STAIRWELL_VIEW_LEAVE + 0.01)).toBe(false);
   });
 });
+
+describe('walk world — stairs on the top storey (#654)', () => {
+  it('builds the flight to the capped rise, so the walker does not climb into the roof', () => {
+    const top = { width: 8, depth: 8, floors: [{ items: [] }, { items: [STAIRS] }] };
+    const world = buildWalkWorld(top);
+    const [flight] = world.stairsByFloor[1]!;
+    expect(flight).toBeDefined();
+    // The top tread sits at the capped rise above the storey's floor (3 m up).
+    const topTread = flight!.treads.find((tread) => tread.top)!;
+    expect(topTread.y - world.elevations[1]!).toBeCloseTo(1);
+  });
+});

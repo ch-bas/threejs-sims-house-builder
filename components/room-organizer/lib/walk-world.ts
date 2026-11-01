@@ -162,7 +162,7 @@ export function buildWalkWorld(building: WalkBuilding): WalkWorld {
     const stairs: WalkStair[] = [];
     for (const item of floor.items) {
       if (item.type !== 'stairs' || !item.position) continue;
-      const rise = stairRise(item, floor);
+      const rise = stairRise(item, floor, floorIndex + 1 >= floors.length);
       if (floorIndex + 1 < floors.length) {
         landingStep[floorIndex + 1] = Math.max(landingStep[floorIndex + 1]!, storeyHeight(floor) - rise);
       }

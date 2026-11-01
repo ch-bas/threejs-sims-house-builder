@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { WINDOW_SILL_HEIGHT } from './constants';
 import {
-  CAMERA_CEILING_CLEARANCE,
-  MAX_STOREY_HEIGHT,
-  MIN_STOREY_HEIGHT,
   buildingHeight,
-  OPENING_HEAD_CLEARANCE,
+  CAMERA_CEILING_CLEARANCE,
   clampStoreyHeight,
   fitOpeningToStorey,
   floorElevation,
   interiorWallHeight,
   isStoreyHeight,
+  itemForStorey,
+  MAX_STOREY_HEIGHT,
+  MIN_STOREY_HEIGHT,
+  OPENING_HEAD_CLEARANCE,
   stairRise,
   storeyHeight,
+  TOP_STOREY_STAIR_CLEARANCE,
 } from './storeys';
 import { FLOOR_HEIGHT_METERS } from './types';
 
@@ -105,5 +107,24 @@ describe('fitOpeningToStorey (#277)', () => {
 
   it('never returns a negative height', () => {
     expect(fitOpeningToStorey(door, 0.02).height).toBe(0);
+  });
+});
+
+describe('stairs on the top storey (#654)', () => {
+  it('stop under the roof instead of climbing through it', () => {
+    expect(stairRise({ height: 3 }, {}, true)).toBe(3 - TOP_STOREY_STAIR_CLEARANCE);
+    expect(stairRise({ height: 3 }, { height: 2.4 }, true)).toBeCloseTo(0.4);
+    expect(stairRise({ height: 3 }, { height: 1.5 }, true)).toBe(0);
+  });
+
+  it('keep the full rise below the top storey', () => {
+    expect(stairRise({ height: 3 }, {}, false)).toBe(3);
+    expect(stairRise({ height: 3 }, {})).toBe(3);
+  });
+
+  it('itemForStorey passes the flag on', () => {
+    const stairs = { id: 's', type: 'stairs', name: 'Stairs', width: 1.2, depth: 2.4, height: 3, color: '#000', icon: '' };
+    expect(itemForStorey(stairs, {}).height).toBe(3);
+    expect(itemForStorey(stairs, {}, true).height).toBe(1);
   });
 });
