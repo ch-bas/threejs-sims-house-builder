@@ -83,6 +83,8 @@ function describeFloors(before: RoomLayout, after: RoomLayout): string | null {
 export function describeLayoutChange(before: RoomLayout, after: RoomLayout): string | null {
   if (before === after) return null;
   if (before.id !== undefined && after.id !== undefined && before.id !== after.id) return `load “${after.name}”`;
+  // Named first: a cut also moves what stood in the corner, and that isn't what the player did.
+  if (before.cutout !== after.cutout) return 'change the house shape';
   const floors = describeFloors(before, after);
   if (floors) return floors;
 

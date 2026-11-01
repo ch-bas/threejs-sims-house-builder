@@ -106,3 +106,15 @@ describe('describeLayoutChange, through the real reducer (#625)', () => {
     expect(step(edge, { type: 'setWidth', width: 5 })).toBe('resize the house');
   });
 });
+
+describe('the house shape (review)', () => {
+  it('names the cut, not the sofa it moved', () => {
+    const sofa = makeItem({ id: 's', position: { x: 3, z: -3 } });
+    const before = makeLayout({ floors: [makeFloor({ items: [sofa] })] });
+    const after = makeLayout({
+      cutout: { corner: 'ne', width: 3, depth: 3 },
+      floors: [makeFloor({ items: [{ ...sofa, position: { x: 0, z: 0 } }] })],
+    });
+    expect(describeLayoutChange(before, after)).toBe('change the house shape');
+  });
+});
