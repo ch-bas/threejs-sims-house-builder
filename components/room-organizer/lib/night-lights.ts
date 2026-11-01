@@ -9,14 +9,14 @@ import type { FloorLayout } from './types';
  *
  * Intensities are candela (three's physical units since r155, decay 2),
  * scaled to this scene's photometry rather than to the real world: the sun
- * peaks under 1, so a 60 cd room lamp would blow everything out (#375).
+ * peaks at 1.7, so a 60 cd room lamp would blow everything out (#375).
  */
 const NIGHT_LIGHTS = {
-  lamp: { bulb: 0.9, candela: 8, range: 7 },
-  'floor-lamp': { bulb: 0.9, candela: 10, range: 8 },
+  lamp: { bulb: 0.9, candela: 10, range: 7 },
+  'floor-lamp': { bulb: 0.9, candela: 12, range: 8 },
   // Placed by `pendantBulbY` instead.
-  'pendant-light': { bulb: 0, candela: 10, range: 8 },
-  lamppost: { bulb: 0.93, candela: 25, range: 12 },
+  'pendant-light': { bulb: 0, candela: 12, range: 8 },
+  lamppost: { bulb: 0.93, candela: 32, range: 12 },
 } as const satisfies Record<string, { bulb: number; candela: number; range: number }>;
 
 export type NightLitType = keyof typeof NIGHT_LIGHTS;

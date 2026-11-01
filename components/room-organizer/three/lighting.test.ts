@@ -6,6 +6,7 @@ import {
   applyLampPool,
   computeNightSky,
   computeSkyProfile,
+  shadowNormalBias,
   isLampPrewarmHour,
   prewarmLampPool,
 } from './lighting';
@@ -100,15 +101,16 @@ describe('computeSkyProfile — weather overcast (#189)', () => {
     }
   });
 
-  it('rain dims the sun and the ambient, snow dims only the sun, both by a constant factor', () => {
+  it('turns direct sun into fill by day, and only dims the night', () => {
     for (const hour of HOURS) {
       const clear = computeSkyProfile(hour);
       const rain = computeSkyProfile(hour, 'rain');
       const snow = computeSkyProfile(hour, 'snow');
-      expect(rain.ambient.intensity, `rain ambient ${hour}`).toBeCloseTo(clear.ambient.intensity * 0.85, 10);
-      expect(rain.sun.intensity, `rain sun ${hour}`).toBeCloseTo(clear.sun.intensity * 0.55, 10);
-      expect(snow.ambient.intensity, `snow ambient ${hour}`).toBeCloseTo(clear.ambient.intensity, 10);
-      expect(snow.sun.intensity, `snow sun ${hour}`).toBeCloseTo(clear.sun.intensity * 0.7, 10);
+      expect(rain.sun.intensity, `rain sun ${hour}`).toBeCloseTo(clear.sun.intensity * 0.35, 10);
+      expect(snow.sun.intensity, `snow sun ${hour}`).toBeCloseTo(clear.sun.intensity * 0.45, 10);
+      const day = hour >= 6 && hour <= 18;
+      expect(rain.ambient.intensity, `rain ambient ${hour}`).toBeCloseTo(clear.ambient.intensity * (day ? 0.95 : 0.85), 10);
+      expect(snow.ambient.intensity, `snow ambient ${hour}`).toBeCloseTo(clear.ambient.intensity * 1, 10);
       // Sun position and light colours ride along untouched: the arc is the same arc.
       expect(rain.sun.position).toEqual(clear.sun.position);
       expect(snow.sun.color).toBe(clear.sun.color);
@@ -149,7 +151,7 @@ describe('computeSkyProfile — twilight (#215, #375)', () => {
       const a = computeSkyProfile(SAMPLES[i - 1]!);
       const b = computeSkyProfile(SAMPLES[i]!);
       const at = `hour ${SAMPLES[i]}`;
-      expect(Math.abs(a.sun.intensity - b.sun.intensity), at).toBeLessThan(0.03);
+      expect(Math.abs(a.sun.intensity - b.sun.intensity), at).toBeLessThan(0.08);
       expect(Math.abs(a.ambient.intensity - b.ambient.intensity), at).toBeLessThan(0.03);
       expect(Math.abs(a.hemisphere.intensity - b.hemisphere.intensity), at).toBeLessThan(0.03);
       expect(Math.abs(a.lamps - b.lamps), at).toBeLessThan(0.06);
@@ -173,7 +175,7 @@ describe('computeSkyProfile — twilight (#215, #375)', () => {
   });
 
   it('dims the hemisphere fill at night instead of holding its noon sky-blue', () => {
-    expect(computeSkyProfile(12).hemisphere.intensity).toBeCloseTo(0.55, 10);
+    expect(computeSkyProfile(12).hemisphere.intensity).toBeCloseTo(0.37, 10);
     expect(computeSkyProfile(12).hemisphere.sky).toBe(0xbfe5ff);
     for (const hour of [21, 23, 0, 3]) {
       expect(computeSkyProfile(hour).hemisphere.intensity, `hour ${hour}`).toBeLessThan(0.15);
@@ -182,14 +184,75 @@ describe('computeSkyProfile — twilight (#215, #375)', () => {
   });
 
   it('overcasts the hemisphere with the weather', () => {
-    expect(computeSkyProfile(12, 'rain').hemisphere.intensity).toBeCloseTo(computeSkyProfile(12).hemisphere.intensity * 0.85, 10);
+    expect(computeSkyProfile(12, 'rain').hemisphere.intensity).toBeCloseTo(computeSkyProfile(12).hemisphere.intensity * 0.95, 10);
+    expect(computeSkyProfile(0, 'rain').hemisphere.intensity).toBeCloseTo(computeSkyProfile(0).hemisphere.intensity * 0.85, 10);
   });
 
   it('switches the lamps on through twilight and off by day', () => {
-    for (const hour of [6, 9, 12, 15, 18]) expect(computeSkyProfile(hour).lamps, `hour ${hour}`).toBe(0);
-    expect(computeSkyProfile(18.5).lamps).toBeGreaterThan(0);
-    expect(computeSkyProfile(18.5).lamps).toBeLessThan(1);
+    for (const hour of [7, 9, 12, 15, 17]) expect(computeSkyProfile(hour).lamps, `hour ${hour}`).toBe(0);
+    // They lead the sunset, for the room the low sun has already left.
+    for (const hour of [6, 17.5, 18, 18.5]) {
+      expect(computeSkyProfile(hour).lamps, `hour ${hour}`).toBeGreaterThan(0);
+      expect(computeSkyProfile(hour).lamps, `hour ${hour}`).toBeLessThan(1);
+    }
     for (const hour of [20, 23, 0, 4]) expect(computeSkyProfile(hour).lamps, `hour ${hour}`).toBe(1);
+  });
+});
+
+describe('computeSkyProfile — daylight balance (#752)', () => {
+  const offWhite = (hex: number) => Math.max(...channels(hex).map((c) => 255 - c));
+
+  it('keeps the sun white at noon and warm at the sun events', () => {
+    expect(offWhite(computeSkyProfile(12).sun.color)).toBe(0);
+    for (const hour of [6, 18]) expect(offWhite(computeSkyProfile(hour).sun.color), `hour ${hour}`).toBeGreaterThan(80);
+    expect(offWhite(computeSkyProfile(9).sun.color)).toBeLessThan(offWhite(computeSkyProfile(7).sun.color));
+  });
+
+  it('lets the sun carry the day: more direct light than all the fill together', () => {
+    const noon = computeSkyProfile(12);
+    expect(noon.sun.intensity).toBeGreaterThan(noon.ambient.intensity + noon.hemisphere.intensity + noon.environment);
+  });
+
+  it('keeps the arc off the horizon, so dawn and dusk still throw shadows', () => {
+    for (const hour of [6, 18]) {
+      const [x, y, z] = computeSkyProfile(hour).sun.position;
+      expect(y / Math.hypot(x, y, z), `hour ${hour}`).toBeGreaterThan(0.25);
+    }
+  });
+
+  it('keeps the night darkest at midnight: the fill outlasts the sun past the moon\'s rise', () => {
+    const groundLight = (hour: number) => {
+      const { ambient, hemisphere, environment, sun } = computeSkyProfile(hour);
+      const [x, y, z] = sun.position;
+      const tint = (hex: number) => channels(hex).reduce((sum, c) => sum + c, 0) / 765;
+      return (
+        ambient.intensity * tint(ambient.color) +
+        hemisphere.intensity * tint(hemisphere.sky) +
+        environment * Math.PI +
+        ((sun.intensity * y) / Math.hypot(x, y, z)) * tint(sun.color)
+      );
+    };
+    for (const hour of [19, 19.5, 20, 4, 4.5, 5]) {
+      expect(groundLight(hour), `hour ${hour}`).toBeGreaterThan(groundLight(0));
+    }
+  });
+
+  it('scales the shadow lookup offset with the shadow texel, floored for small lots', () => {
+    expect(shadowNormalBias(20, 2048)).toBe(0.03);
+    expect(shadowNormalBias(120, 2048)).toBeCloseTo(0.146, 3);
+  });
+
+  it('hands the light to a cool moon after twilight, through darkness', () => {
+    expect(computeSkyProfile(19.5).sun.intensity).toBe(0);
+    expect(computeSkyProfile(4.5).sun.intensity).toBe(0);
+    for (const hour of [21, 22, 0, 3]) {
+      const { color, intensity, position } = computeSkyProfile(hour).sun;
+      const [r, , b] = channels(color);
+      expect(intensity, `hour ${hour}`).toBeGreaterThan(0.5);
+      expect(b, `hour ${hour}`).toBeGreaterThan(r!);
+      expect(position[2], `hour ${hour}`).toBeLessThan(0);
+    }
+    expect(computeSkyProfile(0).sun.intensity).toBeLessThan(computeSkyProfile(18).sun.intensity);
   });
 });
 
@@ -240,8 +303,8 @@ describe('lamp pool (#393)', () => {
   });
 
   it('pre-warms the lit variant in the hours before dusk, leaving the pool hidden', () => {
-    expect([14, 15, 17, 18].map(isLampPrewarmHour)).toEqual([false, true, true, true]);
-    expect([12, 19, 0, 5].some(isLampPrewarmHour)).toBe(false);
+    expect([13, 14, 16, 17].map(isLampPrewarmHour)).toEqual([false, true, true, true]);
+    expect([12, 18, 19, 0, 5].some(isLampPrewarmHour)).toBe(false);
     const scene = new THREE.Scene();
     addLights(THREE, scene);
     const seen: number[] = [];

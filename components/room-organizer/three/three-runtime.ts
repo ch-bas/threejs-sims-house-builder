@@ -5,7 +5,6 @@
 // missing one as "Property 'X' does not exist". The #411 codemod also collects
 // every `THREE.X` it sees. app/page.tsx prefetches this module (#413).
 export {
-  ACESFilmicToneMapping,
   AdditiveBlending,
   AmbientLight,
   AnimationMixer,
@@ -43,6 +42,7 @@ export {
   MeshBasicMaterial,
   MeshLambertMaterial,
   MeshStandardMaterial,
+  NeutralToneMapping,
   Object3D,
   OctahedronGeometry,
   PCFShadowMap,

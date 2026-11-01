@@ -177,9 +177,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       // requestShadowUpdate). Frame 1 needs the initial pass, so start dirty.
       renderer.shadowMap.autoUpdate = false;
       renderer.shadowMap.needsUpdate = true;
-      // Filmic colour pipeline: ACES tone mapping + explicit sRGB output.
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.15;
+      // Khronos Neutral keeps a paint's hue and depth closest to its swatch in
+      // the colour picker (#752), with an explicit sRGB output.
+      renderer.toneMapping = THREE.NeutralToneMapping;
+      renderer.toneMappingExposure = 0.9;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
       rendererRef.current = renderer;

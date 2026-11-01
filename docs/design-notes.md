@@ -177,7 +177,7 @@ to respect.
   back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
   not on every item edit, and the wall-draw preview re-poses one unit box per
   pointer move (#283, #409).
-- **Filmic rendering pipeline.** ACES tone mapping, explicit sRGB output,
+- **Rendering pipeline.** Khronos Neutral tone mapping, explicit sRGB output,
   device-pixel-ratio-aware rendering (capped at 2×), PCF shadows softened
   by the sun's `shadow.radius`, and
   image-based lighting from a PMREM-filtered `RoomEnvironment`. The
