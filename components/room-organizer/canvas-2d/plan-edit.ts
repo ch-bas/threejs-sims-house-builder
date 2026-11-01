@@ -1,5 +1,6 @@
 import { formatMetres } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
+import { ENTRANCE_WALL_ID } from '../lib/street';
 import { wallAngleDegrees } from '../lib/wall-snap';
 import { clampZoneRect, MIN_ZONE_SIZE, zoneContains, zoneFromCorners, zoneInPorch, type ZoneRect } from '../lib/zones';
 import type { EntrancePlanOutline } from '../lib/street';
@@ -21,6 +22,7 @@ export interface WallPreview {
 }
 
 const DRAFT_INK = '#1d4ed8';
+const WALL_HANDLE_RADIUS = 6;
 const DRAFT_STROKE = '#3b82f6';
 /** Shorter than this there is no wall to draw or to measure. */
 const MIN_DRAFT_LENGTH = 0.01;
@@ -47,25 +49,45 @@ export function hitInteriorWall(walls: readonly InteriorWall[], x: number, z: nu
   return best;
 }
 
-/** Same stroke as `drawInteriorWalls`, in the selection's colour. */
+/** The selected wall's end near a world point, within `reach` metres. */
+export function wallEndAt(wall: InteriorWall, x: number, z: number, reach: number): 'start' | 'end' | null {
+  const start = Math.hypot(x - wall.x1, z - wall.z1);
+  const end = Math.hypot(x - wall.x2, z - wall.z2);
+  if (Math.min(start, end) > reach) return null;
+  return start <= end ? 'start' : 'end';
+}
+
+/** Same stroke as `drawInteriorWalls`, in the selection's colour, with a handle on each end. */
 export function drawSelectedWall(
   ctx: CanvasRenderingContext2D,
   layout: RoomLayout,
   wall: InteriorWall,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  refused = false
 ): void {
   const toX = (x: number) => offsetX + (x + layout.width / 2) * scale;
   const toY = (z: number) => offsetY + (z + layout.height / 2) * scale;
   ctx.save();
-  ctx.strokeStyle = '#00ff00';
+  ctx.strokeStyle = refused ? '#ef4444' : '#00ff00';
   ctx.lineCap = 'round';
   ctx.lineWidth = Math.max(4, INTERIOR_WALL_THICKNESS * scale + 2);
   ctx.beginPath();
   ctx.moveTo(toX(wall.x1), toY(wall.z1));
   ctx.lineTo(toX(wall.x2), toY(wall.z2));
   ctx.stroke();
+  if (wall.id !== ENTRANCE_WALL_ID) {
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = DRAFT_INK;
+    ctx.lineWidth = 2;
+    for (const [x, z] of [[wall.x1, wall.z1], [wall.x2, wall.z2]] as const) {
+      ctx.beginPath();
+      ctx.arc(toX(x), toY(z), WALL_HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 

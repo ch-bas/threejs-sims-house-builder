@@ -31,6 +31,7 @@ import type {
   WallId,
   WallPattern,
 } from '../lib/types';
+import type { WallPatch } from '../lib/wall-edit';
 
 export type { LayoutAction, LayoutState };
 export { INITIAL_LAYOUT };
@@ -94,6 +95,7 @@ export interface LayoutActions {
   addInteriorWall(wall: InteriorWall): void;
   addInteriorWalls(walls: readonly InteriorWall[]): void;
   removeInteriorWall(id: string): void;
+  updateInteriorWalls(walls: readonly WallPatch[]): void;
   clearInteriorWalls(): void;
   toggleExteriorWall(wallId: WallId): void;
   rotateSelection(ids: ReadonlySet<string>, radians: number): void;

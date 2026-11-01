@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { MIN_ZONE_SIZE, zoneInPorch } from '../lib/zones';
-import { draggedZoneRect, hitInteriorWall, zoneAt, zoneGripAt } from './plan-edit';
+import { draggedZoneRect, hitInteriorWall, wallEndAt, zoneAt, zoneGripAt } from './plan-edit';
 import type { EntrancePlanOutline } from '../lib/street';
 import type { InteriorWall, RoomZone } from '../lib/types';
 
 const across: InteriorWall = { id: 'across', x1: -2, z1: 0, x2: 2, z2: 0 };
 const down: InteriorWall = { id: 'down', x1: 1, z1: -3, x2: 1, z2: 3 };
+
+describe('wallEndAt (#718)', () => {
+  it('finds the nearer end within reach, and nothing along the body', () => {
+    expect(wallEndAt(across, -1.9, 0.1, 0.2)).toBe('start');
+    expect(wallEndAt(across, 2.1, 0, 0.2)).toBe('end');
+    expect(wallEndAt(across, 0, 0, 0.2)).toBeNull();
+  });
+});
 
 describe('hitInteriorWall (#564)', () => {
   it('finds a wall within its thickness and misses past it', () => {

@@ -40,6 +40,8 @@ export interface Render2DOptions {
   zoneDraft?: ZoneRect | null;
   /** The interior wall selected on the plan (#564). */
   selectedWallId?: string | null | undefined;
+  /** A held wall move can't land here: the wall shows it (#718). */
+  selectedWallRefused?: boolean | undefined;
   /** The zone with resize handles (#628). */
   selectedZoneId?: string | null | undefined;
   /** The wall tool's draft, drawn over everything (#564). */
@@ -254,7 +256,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   }
 
   const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
-  if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale);
+  if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale, options.selectedWallRefused);
   const selectedZone = options.selectedZoneId ? floor.zones?.find((zone) => zone.id === options.selectedZoneId) : null;
   if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);

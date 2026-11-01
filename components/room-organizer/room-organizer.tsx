@@ -32,6 +32,7 @@ import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from
 import { useShiftHeld } from './hooks/use-shift-held';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough, type WalkthroughBuilding } from './hooks/use-walkthrough';
+import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
 import { useWeather } from './hooks/use-weather';
 import { furnitureSpend, purchasePrice, purchaseRefusal } from './lib/budget';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
@@ -51,7 +52,7 @@ import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { snapshotBeforeReplace } from './lib/restore-point';
 import { playSound, type SoundCue } from './lib/sounds';
-import { buildingHeight, floorElevation, storeyHeight } from './lib/storeys';
+import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
 import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
@@ -71,6 +72,7 @@ import { Viewport } from './panels/viewport';
 import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
+import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { roofPeakHeight } from './three/roof';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { CatalogItem, FurnitureItem, GameMode, RoomLayout, ViewSettings, WallId } from './lib/types';
@@ -177,6 +179,7 @@ export function RoomOrganizer(): JSX.Element {
   // EXPLORE (the game mode) never edits the house, the 2D plan included: the
   // plan's clicks select only and the edit shortcuts are off (#699).
   const exploring = useStore(viewStore, (state) => state.gameMode === 'live');
+  const designing = useStore(viewStore, (state) => state.gameMode === 'build');
 
   const playCue = useCallback(
     (cue: SoundCue) => {
@@ -322,6 +325,12 @@ export function RoomOrganizer(): JSX.Element {
   const handleInteriorWallSelect = useCallback((id: string | null) => {
     setSelectedWall(id === null ? null : { id, kind: 'interior' });
   }, []);
+
+  // The tools that take every press leave a selected wall's handles with
+  // nothing to do.
+  useEffect(() => {
+    if (view.drawWallMode || view.drawZoneMode || view.measurementMode) setSelectedWall(null);
+  }, [view.drawWallMode, view.drawZoneMode, view.measurementMode]);
 
   // Reset wall draft + wall selection whenever draw mode flips off.
   useEffect(() => {
@@ -884,10 +893,31 @@ export function RoomOrganizer(): JSX.Element {
   // EXPLORE edits nothing, so it shows no handles either.
   const planZoneId = exploring ? null : selectedZoneId;
 
+  // Moving a selected wall, in both views (#718). The 3D ghosts are wired below,
+  // once the scene exists.
+  const interiorSelectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
+  const wallGhostsRef = useRef<((preview: WallMovePreview | null) => void) | null>(null);
+  const { grabWall, wallMovePreview, isHoldingWall, cancelWallHold } = useWallEdit({
+    enabled: !exploring && !walkthroughActive && !ghost && !view.drawWallMode && !view.drawZoneMode && !view.measurementMode,
+    pressDrags: designing,
+    layout,
+    activeFloor,
+    activeFloorIndex,
+    selectedWallId: interiorSelectedWallId,
+    ghostsRef: wallGhostsRef,
+    onMove: (patches) => {
+      // One undo step, however quickly the next move follows.
+      commitWallStepRef.current();
+      actions.updateInteriorWalls(patches);
+      playCue('place');
+    },
+    onRefused: refuseZone,
+  });
+
   // 2D plan select/drag (#219). Reuses use-item-drag's session, so the commit
   // semantics (single dispatch, lock-on-release, wall settling, isDragActive
   // keyboard gate) are identical to a 3D drag.
-  const { clientToWorld2D } = useCanvas2DInteraction({
+  const { clientToWorld2D, repaintPlan } = useCanvas2DInteraction({
     enabled: view.view2D,
     exploring,
     canvasRef: canvas2DRef,
@@ -910,6 +940,9 @@ export function RoomOrganizer(): JSX.Element {
     onWallPointerMove: handleFloorPointerMove,
     onWallPointerLeave: handleFloorPointerLeave,
     onInteriorWallSelect: handleInteriorWallSelect,
+    selectedWallId: interiorSelectedWallId,
+    onWallGrab: grabWall,
+    wallMovePreview,
     selectedZoneId: planZoneId,
     onZoneSelect: setSelectedZoneId,
   });
@@ -933,6 +966,7 @@ export function RoomOrganizer(): JSX.Element {
         if (exploring) return;
         setSelectedWall({ id: wallId, kind });
       },
+      onWallGrab: grabWall,
       // Only track the floor pointer while wall-draw mode consumes it — the
       // handler writes React state per mousemove, re-rendering the whole tree,
       // and the hook skips the floor raycast when the handler is absent.
@@ -941,6 +975,15 @@ export function RoomOrganizer(): JSX.Element {
       snapPosition,
       getDragPlaneY,
     });
+
+  wallGhostsRef.current = (preview) => {
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+    if (preview) renderWallGhosts(THREE, scene, preview.moved, activeFloorY, interiorWallHeight(activeFloor), preview.refusal !== null);
+    else clearWallGhosts(scene);
+    invalidate();
+  };
 
   sceneBoxRef.current = sceneRef;
   invalidateBoxRef.current = invalidate;
@@ -1265,6 +1308,10 @@ export function RoomOrganizer(): JSX.Element {
       undo: history.undo,
       redo: history.redo,
       deselect: () => {
+        if (cancelWallHold()) {
+          repaintPlan();
+          return;
+        }
         if (wallDraft) {
           setWallDraft(null);
           return;
@@ -1352,19 +1399,24 @@ export function RoomOrganizer(): JSX.Element {
       playCue,
       refuseLocked,
       wallDraft,
+      cancelWallHold,
+      repaintPlan,
       view.drawWallMode,
       view.measurementMode,
       view.drawZoneMode,
     ]
   );
 
+  // The wall gesture commits on release, like an item drag: what would change
+  // the house under it waits.
+  const isAnyHoldActive = useCallback(() => isDragActive() || isHoldingWall(), [isDragActive, isHoldingWall]);
   useKeyboardShortcuts({
     selectedItem,
     selectedWall,
     hasSignalItems,
     walkthroughActive,
     exploring,
-    isDragActive,
+    isDragActive: isAnyHoldActive,
     handlers: shortcutHandlers,
   });
 

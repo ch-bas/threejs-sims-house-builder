@@ -156,7 +156,7 @@ function clampTo(point: Vec2, halfW: number, halfD: number): Vec2 {
 }
 
 /** How far a ray from a point inside the lot runs before it leaves the lot. */
-function reachInLot(from: Vec2, dirX: number, dirZ: number, halfW: number, halfD: number): number {
+export function reachInLot(from: Vec2, dirX: number, dirZ: number, halfW: number, halfD: number): number {
   const along = (start: number, dir: number, half: number): number =>
     dir > 1e-9 ? (half - start) / dir : dir < -1e-9 ? (-half - start) / dir : Infinity;
   return Math.max(0, Math.min(along(from.x, dirX, halfW), along(from.z, dirZ, halfD)));

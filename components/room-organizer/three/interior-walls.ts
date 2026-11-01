@@ -283,3 +283,68 @@ export function clearPreview(scene: ThreeNS.Scene): void {
     .filter((obj) => obj.userData.type === PREVIEW_TAG)
     .forEach((obj) => removeAndDispose(scene, obj));
 }
+
+const GHOST_TAG = `${INTERIOR_WALL_TAG}-ghost`;
+const GHOST_COLOR = 0x42a5f5;
+const GHOST_REFUSED_COLOR = 0xef4444;
+
+/**
+ * Translucent stand-ins for walls a gesture is holding (#718): one unit box per
+ * wall, re-posed per move and scaled, so a held gesture allocates nothing and
+ * rebuilds nothing. The boxes stand a hair proud of the wall they follow.
+ */
+export function renderWallGhosts(
+  THREE: ThreeModule,
+  scene: ThreeNS.Scene,
+  walls: ReadonlyArray<{ x1: number; z1: number; x2: number; z2: number }>,
+  yOffset: number,
+  wallHeight: number,
+  refused = false
+): void {
+  const pool = scene.children.filter((obj) => obj.userData.type === GHOST_TAG) as ThreeNS.Mesh[];
+  walls.forEach((wall, index) => {
+    let mesh = pool[index];
+    if (!mesh) {
+      const material = new THREE.MeshStandardMaterial({ color: GHOST_COLOR, transparent: true, opacity: 0.5 });
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+      mesh.userData.type = GHOST_TAG;
+      scene.add(mesh);
+    }
+    (mesh.material as ThreeNS.MeshStandardMaterial).color.setHex(refused ? GHOST_REFUSED_COLOR : GHOST_COLOR);
+    const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
+    mesh.scale.set(length, wallHeight + 0.02, INTERIOR_WALL_THICKNESS + 0.02);
+    mesh.position.set((wall.x1 + wall.x2) / 2, yOffset + wallHeight / 2, (wall.z1 + wall.z2) / 2);
+    mesh.rotation.y = -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1);
+  });
+  for (const extra of pool.slice(walls.length)) removeAndDispose(scene, extra);
+}
+
+export function clearWallGhosts(scene: ThreeNS.Scene): void {
+  scene.children
+    .filter((obj) => obj.userData.type === GHOST_TAG)
+    .forEach((obj) => removeAndDispose(scene, obj));
+}
+
+/** drag-handlers finds the selected wall's end handles by this tag. */
+const WALL_HANDLE_TAG = `${INTERIOR_WALL_TAG}-handle`;
+const WALL_HANDLE_RADIUS = 0.14;
+
+/** A dot on each end of the selected wall, on the floor and drawn over everything (#718). */
+export function addWallHandles(THREE: ThreeModule, scene: ThreeNS.Scene, wall: InteriorWall, yOffset: number): void {
+  for (const [grip, x, z] of [['start', wall.x1, wall.z1], ['end', wall.x2, wall.z2]] as const) {
+    const material = new THREE.MeshStandardMaterial({ color: 0x7ff3ff, emissive: 0x2a8fa0, depthTest: false, transparent: true });
+    const handle = new THREE.Mesh(new THREE.SphereGeometry(WALL_HANDLE_RADIUS, 16, 12), material);
+    handle.position.set(x, yOffset + WALL_HANDLE_RADIUS, z);
+    handle.renderOrder = 1000;
+    handle.userData.type = WALL_HANDLE_TAG;
+    handle.userData.wallId = wall.id;
+    handle.userData.grip = grip;
+    scene.add(handle);
+  }
+}
+
+export function clearWallHandles(scene: ThreeNS.Scene): void {
+  scene.children
+    .filter((obj) => obj.userData.type === WALL_HANDLE_TAG)
+    .forEach((obj) => removeAndDispose(scene, obj));
+}
