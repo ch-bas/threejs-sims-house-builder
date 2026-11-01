@@ -220,6 +220,14 @@ to respect.
   missing from the orbit view. The flat wedge and the scan still draw over
   the world (so a rug can't hide them), but the light volume is always
   depth-tested, so a wall between the lens and the viewer hides it (#652).
+- **A party-wall neighbour's roof stops at its wall.** Its eaves overhang
+  `ROOF_EAVE_OVERHANG` past a 2 cm gap, which put its slope, fascia and
+  gutter 0.33 m inside our top storey. The roof meshes of an attached
+  immediate neighbour carry a local clipping plane at that house's own wall
+  on our side (`clipAtPartyWall`; every roof clones its material, so the
+  plane stays on that house, and the renderer has `localClippingEnabled`),
+  the gutter along that eave is not placed, and the front and back gutters
+  end at the wall (#655).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
