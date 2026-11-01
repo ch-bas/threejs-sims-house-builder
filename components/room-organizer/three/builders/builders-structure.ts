@@ -72,6 +72,7 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     glassMat
   );
   glass.position.set(0, sillHeight + item.height / 2, 0); 
+  glass.userData.litGlass = true;
   group.add(glass);
 
   // Outer frame (4 sides).
