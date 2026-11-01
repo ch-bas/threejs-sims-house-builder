@@ -8,12 +8,15 @@ export function ChipButton({
   children,
   onClick,
   title,
+  ariaLabel,
   disabled,
   type = 'button',
 }: {
   children: ReactNode;
   onClick?(): void;
   title: string;
+  /** For a glyph that says nothing read aloud. */
+  ariaLabel?: string;
   disabled?: boolean;
   type?: 'button' | 'submit';
 }): JSX.Element {
@@ -22,6 +25,7 @@ export function ChipButton({
       type={type}
       onClick={onClick}
       title={title}
+      aria-label={ariaLabel}
       disabled={disabled}
       style={{
         border: '1px solid currentColor',
