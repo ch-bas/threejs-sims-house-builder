@@ -504,11 +504,21 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       const { onInteriorWallSelect, fire, params } = select();
       fire('pointerdown', 1, 0.05);
       fire('pointerup', 1, 0.05);
-      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', expect.any(String));
       fire('pointerdown', 1, 1.5);
       fire('pointerup', 1, 1.5);
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
       expect(params.onDeselect).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports the side of the line the press landed on (#720)', () => {
+      const { onInteriorWallSelect, fire } = select();
+      fire('pointerdown', 1, 0.02);
+      fire('pointerup', 1, 0.02);
+      const first = onInteriorWallSelect.mock.calls.at(-1)![1];
+      fire('pointerdown', 1, -0.02);
+      fire('pointerup', 1, -0.02);
+      expect(onInteriorWallSelect.mock.calls.at(-1)![1]).not.toBe(first);
     });
 
     it('a finger gets a wider target than a mouse', () => {
@@ -518,7 +528,7 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
       fire('pointerup', 1, off);
       fire('pointerdown', 1, off, 'touch');
-      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', expect.any(String));
     });
 
     it('an item over the wall wins, and picking it clears the wall', () => {
@@ -540,7 +550,7 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       fire('pointerdown', leafTip.x, leafTip.z);
       expect(params.onItemSelect).toHaveBeenCalledWith('d', 'replace');
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
-      expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1');
+      expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1', expect.any(String));
     });
 
     it('a press on the selected wall holds it; the moves feed the gesture and the release commits once (#718)', () => {
@@ -563,7 +573,7 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab });
       fire('pointerdown', 1, 0.05);
       expect(onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }));
-      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', 'a');
     });
 
     it('a press on a selected end grabs that end, ahead of the item under it (#718)', () => {

@@ -5,6 +5,7 @@ import { wallAngleDegrees } from '../lib/wall-snap';
 import { clampZoneRect, MIN_ZONE_SIZE, zoneContains, zoneFromCorners, zoneInPorch, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import type { EntrancePlanOutline } from '../lib/street';
 import type { InteriorWall, RoomLayout, RoomZone, Vec2 } from '../lib/types';
+import type { WallSide } from '../lib/wall-sides';
 
 /**
  * What the on-screen plan draws while editing: never part of the house, so
@@ -294,6 +295,33 @@ function fitDraggedZone(
   if (grip.includes('n')) z0 = Math.min(z0 + dz, z1 - MIN_ZONE_SIZE);
   if (grip.includes('s')) z1 = Math.max(z1 + dz, z0 + MIN_ZONE_SIZE);
   return zoneFromCorners({ x: x0, z: z0 }, { x: x1, z: z1 }, roomWidth, roomDepth);
+}
+
+/** The face of a selected wall that paint goes to: a line along that side (#720). */
+export function drawWallSideMark(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  wall: InteriorWall,
+  side: WallSide,
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
+  if (length === 0) return;
+  const reach = (Math.max(4, INTERIOR_WALL_THICKNESS * scale + 2) / 2 + 3) * (side === 'a' ? 1 : -1);
+  const shiftX = (-(wall.z2 - wall.z1) / length) * reach;
+  const shiftY = ((wall.x2 - wall.x1) / length) * reach;
+  const toX = (x: number) => offsetX + (x + layout.width / 2) * scale + shiftX;
+  const toY = (z: number) => offsetY + (z + layout.height / 2) * scale + shiftY;
+  ctx.save();
+  ctx.strokeStyle = DRAFT_INK;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(toX(wall.x1), toY(wall.z1));
+  ctx.lineTo(toX(wall.x2), toY(wall.z2));
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** Half the side of a drawn handle, px. The target under a finger is wider than the mark. */

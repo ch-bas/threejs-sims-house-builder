@@ -142,7 +142,13 @@ to respect.
   touch), and Escape leaves it like the wall and distance tools (#439).
   A zone made from a detected room (#719) stores its polygon and follows
   its walls: the reducer re-fits it in the step that moved a wall, it has no
-  handles, and a rectangle zone is never re-fitted. Zone names are left off
+  handles, and a rectangle zone is never re-fitted. A zone's own floor
+  (#720) is a patch over the slab, less the porch and stairwells, on the
+  room's texture grid; the plan shows its colour, as it shows no floor
+  patterns at all, and a traced ground floor stays clear. A partition's
+  `colorB` exists only while its faces differ: a click picks the face that
+  looks at the camera, or on the plan the side of the line pressed, and the
+  paint panel's Side A / Side B / Both can change it. Zone names are left off
   when wider than their zone, and on the minimap
   and thumbnails (`thumbnail`) also below 25 px per metre (#433). A lost
   window or pointer capture mid-drag undoes the drag and clears the

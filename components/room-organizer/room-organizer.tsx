@@ -56,6 +56,7 @@ import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
+import { wallSideAt, type SelectedWall, type WallSide } from './lib/wall-sides';
 import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
 import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
@@ -195,7 +196,7 @@ export function RoomOrganizer(): JSX.Element {
     [view.soundsEnabled]
   );
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [selectedWall, setSelectedWall] = useState<{ id: string; kind: 'exterior' | 'interior' } | null>(null);
+  const [selectedWall, setSelectedWall] = useState<SelectedWall | null>(null);
   const [extraSelectedIds, setExtraSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -335,8 +336,8 @@ export function RoomOrganizer(): JSX.Element {
     return true;
   };
 
-  const handleInteriorWallSelect = useCallback((id: string | null) => {
-    setSelectedWall(id === null ? null : { id, kind: 'interior' });
+  const handleInteriorWallSelect = useCallback((id: string | null, side?: WallSide) => {
+    setSelectedWall(id === null ? null : { id, kind: 'interior', ...(side ? { side } : {}) });
   }, []);
 
   // The tools that take every press leave a selected wall's handles with
@@ -1023,10 +1024,11 @@ export function RoomOrganizer(): JSX.Element {
       onItemDragCancel: handleDragCancel,
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
-      onWallSelect: ({ wallId, kind }) => {
+      onWallSelect: ({ wallId, kind, from }) => {
         // EXPLORE edits nothing, and this opens the paint target.
         if (exploring) return;
-        setSelectedWall({ id: wallId, kind });
+        const wall = kind === 'interior' ? activeFloor.interiorWalls?.find((entry) => entry.id === wallId) : undefined;
+        setSelectedWall({ id: wallId, kind, ...(wall ? { side: wallSideAt(wall, from) } : {}) });
       },
       onWallGrab: grabWall,
       onFloorGrab: roomStamp.grabFloor,

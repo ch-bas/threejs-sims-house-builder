@@ -52,6 +52,7 @@ import { observeSceneOccluders, planFit } from './scene-occluders';
 import type { StampGhost } from '../canvas-2d/plan-edit';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
+import type { SelectedWall } from '../lib/wall-sides';
 import type * as ThreeNS from 'three';
 
 /**
@@ -140,7 +141,7 @@ export interface UseSceneEffectsParams {
   selectedItemId: string | null;
   extraSelectedIds: ReadonlySet<string>;
   highlightedIds: ReadonlySet<string>;
-  selectedWall: { id: string; kind: 'exterior' | 'interior' } | null;
+  selectedWall: SelectedWall | null;
   /** The zone showing handles on the plan (#628). */
   selectedZoneId: string | null;
   roomsToName: readonly DetectedRoom[];
@@ -1187,9 +1188,11 @@ export function useSceneEffects({
   const wallAnchor = view.drawWallMode ? wallDraft : null;
   const wallTip = view.drawWallMode ? wallSnapResult : null;
   const selectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
-  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost'>>({});
+  const selectedWallSide = selectedWall?.kind === 'interior' ? selectedWall.side : undefined;
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedWallSide' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost'>>({});
   planEditRef.current = {
     selectedWallId,
+    selectedWallSide,
     selectedZoneId,
     roomsToName,
     stampGhost,
@@ -1201,7 +1204,7 @@ export function useSceneEffects({
     // Once a frame, however many moves arrive in it.
     const frame = requestAnimationFrame(() => paint2DRef.current?.());
     return () => cancelAnimationFrame(frame);
-  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedZoneId, roomsToName, stampGhost, stampArmed]);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedWallSide, selectedZoneId, roomsToName, stampGhost, stampArmed]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;

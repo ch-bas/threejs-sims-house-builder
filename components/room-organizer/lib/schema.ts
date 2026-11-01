@@ -229,7 +229,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
       ) {
         return false;
       }
-      if (!isOptionalString(wall.color)) return false;
+      if (!isOptionalString(wall.color) || !isOptionalString(wall.colorB)) return false;
     }
   }
   // Storey height feeds every floor's elevation and the roof base: a zero,
@@ -420,7 +420,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
   groupId: true,
 });
 const VEC2_KEYS = ['x', 'z'] as const;
-const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true });
+const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true });
 const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true, floorPattern: true, floorColor: true });
 const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({
@@ -563,6 +563,7 @@ function repairWall(wall: InteriorWall): InteriorWall {
     z2: clampCoordinate(wall.z2),
   };
   if (wall.color !== undefined) patch.color = capText(wall.color, MAX_COLOR_LENGTH);
+  if (wall.colorB !== undefined) patch.colorB = capText(wall.colorB, MAX_COLOR_LENGTH);
   return rebuild(wall, WALL_KEYS, patch);
 }
 

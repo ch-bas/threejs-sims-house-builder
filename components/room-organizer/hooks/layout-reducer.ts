@@ -40,6 +40,7 @@ import {
   sameEntrance,
 } from '../lib/street';
 import { planWallMove, type WallPatch } from '../lib/wall-edit';
+import { paintWallSide, type WallSide } from '../lib/wall-sides';
 import { MAX_ZONES, clampZoneRect, isRoomZone, refitZonesToRooms, sameZone, sweptStrips, zoneInPorch, zoneShapeFits } from '../lib/zones';
 import type {
   CatalogItem,
@@ -75,7 +76,7 @@ export type LayoutAction =
   | { type: 'setWallPattern'; pattern: WallPattern }
   | { type: 'setStoreyHeight'; height: number | null }
   | { type: 'setWallColor'; wall: WallId; color: string | null }
-  | { type: 'setInteriorWallColor'; id: string; color: string }
+  | { type: 'setInteriorWallColor'; id: string; color: string; side?: WallSide | undefined }
   // floor-scoped items — target the active floor
   | { type: 'addCatalogItem'; catalogItem: CatalogItem; id: string; position?: { x: number; z: number } }
   | { type: 'removeItem'; id: string }
@@ -338,11 +339,15 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     case 'setInteriorWallColor':
       return withActiveFloor(state, (floor) => {
         const walls = floor.interiorWalls;
-        if (!walls?.some((wall) => wall.id === action.id && wall.color !== action.color)) return floor;
-        return {
-          ...floor,
-          interiorWalls: walls.map((wall) => (wall.id === action.id ? { ...wall, color: action.color } : wall)),
-        };
+        if (!walls) return floor;
+        let changed = false;
+        const painted = walls.map((wall) => {
+          if (wall.id !== action.id) return wall;
+          const next = paintWallSide(wall, action.color, action.side);
+          if (next !== wall) changed = true;
+          return next;
+        });
+        return changed ? { ...floor, interiorWalls: painted } : floor;
       });
 
     // -- floor plan ---------------------------------------------------------
@@ -1440,7 +1445,7 @@ function findEntranceWall(floors: readonly FloorLayout[]): InteriorWall | undefi
 }
 
 function sameWall(a: InteriorWall, b: InteriorWall): boolean {
-  return a.id === b.id && a.x1 === b.x1 && a.z1 === b.z1 && a.x2 === b.x2 && a.z2 === b.z2 && a.color === b.color;
+  return a.id === b.id && a.x1 === b.x1 && a.z1 === b.z1 && a.x2 === b.x2 && a.z2 === b.z2 && a.color === b.color && a.colorB === b.colorB;
 }
 
 function sameItem(a: FurnitureItem, b: FurnitureItem): boolean {
@@ -1509,6 +1514,7 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previo
     const existingWall = findEntranceWall(layout.floors) ?? findEntranceWall(previous.floors);
     wall = { id: ENTRANCE_WALL_ID, ...entranceBackWall(geometry) };
     if (existingWall?.color !== undefined) wall.color = existingWall.color;
+    if (existingWall?.colorB !== undefined) wall.colorB = existingWall.colorB;
     if (entrance.door !== false) {
       const existing = findEntranceDoor(layout.floors) ?? findEntranceDoor(previous.floors) ?? catalogEntranceDoor();
       if (existing) door = { ...existing, position: { x: (geometry.x0 + geometry.x1) / 2, z: geometry.backZ }, rotation: 0 };

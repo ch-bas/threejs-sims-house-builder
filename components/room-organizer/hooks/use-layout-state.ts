@@ -33,6 +33,7 @@ import type {
   WallPattern,
 } from '../lib/types';
 import type { WallPatch } from '../lib/wall-edit';
+import type { WallSide } from '../lib/wall-sides';
 
 export type { LayoutAction, LayoutState };
 export { INITIAL_LAYOUT };
@@ -51,7 +52,8 @@ export interface LayoutActions {
   /** Active floor's storey height in metres; `null` restores the default 3 m (#202). */
   setStoreyHeight(height: number | null): void;
   setWallColor(wall: WallId, color: string | null): void;
-  setInteriorWallColor(id: string, color: string): void;
+  /** Without a side, both faces. */
+  setInteriorWallColor(id: string, color: string, side?: WallSide): void;
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;

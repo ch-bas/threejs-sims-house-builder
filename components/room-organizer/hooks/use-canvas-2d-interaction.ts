@@ -10,6 +10,7 @@ import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, hitOffPlanMarker, offPlanMarkers, PLAN_PADDING_PX, planViewFit, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
 import { storeyHeight } from '../lib/storeys';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
+import { wallSideAt, type WallSide } from '../lib/wall-sides';
 import { defaultZoneName, nextZoneColor, roomAt, zoneFromCorners, zoneFromRoom, zoneInPorch, type ZoneRect } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
@@ -154,7 +155,7 @@ export interface UseCanvas2DInteractionParams {
   /** That press ended with no point: the room stamp forgets it. */
   onWallPressCancel?(): void;
   /** A press picked an interior wall, or something else (null). Not in EXPLORE. */
-  onInteriorWallSelect?(id: string | null): void;
+  onInteriorWallSelect?(id: string | null, side?: WallSide): void;
   /** The wall with handles (#718). */
   selectedWallId?: string | null;
   /** A press on the selected wall or an end: the gesture to feed, or null. */
@@ -618,7 +619,9 @@ export function useCanvas2DInteraction(
         // also holds the wall the fit is frozen till the release, so the wall
         // stays under the pointer.
         const slide = wall && p.onWallGrab?.({ wallId: wall.id, grip: 'body', x: world.x, z: world.z, fresh: wall.id !== p.selectedWallId });
-        p.onInteriorWallSelect?.(wall?.id ?? null);
+        // The side of the line the press landed on is the face to paint (#720).
+        if (wall) p.onInteriorWallSelect?.(wall.id, wallSideAt(wall, world));
+        else p.onInteriorWallSelect?.(null);
         if (slide) holdWall(slide, event);
         return;
       }

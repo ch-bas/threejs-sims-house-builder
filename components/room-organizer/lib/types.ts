@@ -217,6 +217,8 @@ export interface InteriorWall {
   x2: number;
   z2: number;
   color?: string;
+  /** The second face, when it differs from `color` (#720); see lib/wall-sides.ts. */
+  colorB?: string;
 }
 
 /**

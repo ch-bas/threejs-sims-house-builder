@@ -18,6 +18,9 @@ export function onRovingKeyDown(event: KeyboardEvent<HTMLElement>, activate: (in
   // Kept from the editor's window shortcuts, where arrows nudge the selection.
   event.preventDefault();
   event.stopPropagation();
+  // A held arrow stays here, swallowed, rather than racing round the group,
+  // switching a tab or a storey view on every repeat.
+  if (event.repeat) return;
   activate(next);
   items[next]?.focus();
 }
