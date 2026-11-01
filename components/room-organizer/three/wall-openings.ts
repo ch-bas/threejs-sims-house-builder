@@ -1,5 +1,6 @@
+import { alongSide, shellWalls, shellWallSpan, type ShellWall, type ShellWallId } from '../lib/footprint';
 import { fitOpeningToStorey } from '../lib/storeys';
-import type { FurnitureItem, InteriorWall, WallId } from '../lib/types';
+import type { FootprintCutout, FurnitureItem, InteriorWall, WallId } from '../lib/types';
 
 /**
  * Stairwell openings are pure maths and live in lib/stairs.ts, where the 2D
@@ -11,7 +12,11 @@ export { computeFloorOpenings, type FloorOpening } from '../lib/stairs';
 export interface WallOpening {
   /** Item id that this opening originates from (for cleanup / debugging). */
   id: string;
-  /** Centre position along the wall, in metres from the wall's mid-point. */
+  /**
+   * Centre position along the wall, in metres, in the frame of the side it is
+   * on: from the middle of that side of the house, which is the wall's own
+   * mid-point unless a cut-out shortened it (#727).
+   */
   centerAlongWall: number;
   /** Distance from the floor to the bottom of the opening, in metres. */
   bottomFromFloor: number;
@@ -37,7 +42,7 @@ const INTERIOR_NEARNESS_THRESHOLD = 0.4;
  * interior candidates — so a door near a junction is cut only once.
  */
 export type OpeningOwner =
-  | { kind: 'exterior'; wall: WallId }
+  | { kind: 'exterior'; wall: ShellWallId }
   | { kind: 'interior'; wallId: string };
 
 interface WallCandidate {
@@ -51,15 +56,15 @@ interface WallCandidate {
   threshold: number;
 }
 
-function exteriorCandidates(roomWidth: number, roomDepth: number): WallCandidate[] {
-  const hw = roomWidth / 2;
-  const hd = roomDepth / 2;
-  return [
-    { owner: { kind: 'exterior', wall: 'north' }, x1: -hw, z1: -hd, x2: hw, z2: -hd, threshold: NEARNESS_THRESHOLD },
-    { owner: { kind: 'exterior', wall: 'south' }, x1: -hw, z1: hd, x2: hw, z2: hd, threshold: NEARNESS_THRESHOLD },
-    { owner: { kind: 'exterior', wall: 'west' }, x1: -hw, z1: -hd, x2: -hw, z2: hd, threshold: NEARNESS_THRESHOLD },
-    { owner: { kind: 'exterior', wall: 'east' }, x1: hw, z1: -hd, x2: hw, z2: hd, threshold: NEARNESS_THRESHOLD },
-  ];
+function exteriorCandidates(roomWidth: number, roomDepth: number, cutout: FootprintCutout | undefined): WallCandidate[] {
+  return shellWalls({ width: roomWidth, height: roomDepth, cutout }).map(({ id, x1, z1, x2, z2 }) => ({
+    owner: { kind: 'exterior', wall: id },
+    x1,
+    z1,
+    x2,
+    z2,
+    threshold: NEARNESS_THRESHOLD,
+  }));
 }
 
 /** Perpendicular distance from a point to a finite segment. */
@@ -84,10 +89,11 @@ export function classifyOpeningOwners(
   items: readonly FurnitureItem[],
   roomWidth: number,
   roomDepth: number,
-  interiorWalls: readonly InteriorWall[] = []
+  interiorWalls: readonly InteriorWall[] = [],
+  cutout?: FootprintCutout
 ): Map<string, OpeningOwner> {
   const candidates: WallCandidate[] = [
-    ...exteriorCandidates(roomWidth, roomDepth),
+    ...exteriorCandidates(roomWidth, roomDepth, cutout),
     ...interiorWalls.map<WallCandidate>((w) => ({
       owner: { kind: 'interior', wallId: w.id },
       x1: w.x1,
@@ -165,7 +171,7 @@ export function mergeHoleRects(
  * an interior wall may claim an opening, in which case no exterior wall cuts it.
  * Pass the floor's `interiorWalls` so the classifier can consider them.
  *
- * Returns a `Map<WallId, WallOpening[]>` where missing keys mean "no
+ * Returns a `Map<ShellWallId, WallOpening[]>` where missing keys mean "no
  * cutouts on this wall". Callers should use {@link openingsForWall} to
  * read safely.
  */
@@ -174,10 +180,12 @@ export function computeWallOpenings(
   roomWidth: number,
   roomDepth: number,
   wallHeight = 3,
-  interiorWalls: readonly InteriorWall[] = []
-): Map<WallId, WallOpening[]> {
-  const result = new Map<WallId, WallOpening[]>();
-  const owners = classifyOpeningOwners(items, roomWidth, roomDepth, interiorWalls);
+  interiorWalls: readonly InteriorWall[] = [],
+  cutout?: FootprintCutout
+): Map<ShellWallId, WallOpening[]> {
+  const result = new Map<ShellWallId, WallOpening[]>();
+  const owners = classifyOpeningOwners(items, roomWidth, roomDepth, interiorWalls, cutout);
+  const walls = shellWalls({ width: roomWidth, height: roomDepth, cutout });
 
   for (const item of items) {
     const classification = classifyOpening(item);
@@ -188,20 +196,21 @@ export function computeWallOpenings(
     // Only cut this opening if the classifier assigned it to an EXTERIOR wall;
     // interior-owned openings are cut by interior-walls.ts instead.
     if (!owner || owner.kind !== 'exterior') continue;
-    const wall = owner.wall;
+    const wall = walls.find((candidate) => candidate.id === owner.wall);
+    if (!wall) continue;
 
-    const opening = buildOpening(item, classification, wall, roomWidth, roomDepth, wallHeight);
+    const opening = buildOpening(item, classification, wall, wallHeight);
     if (!opening) continue;
 
-    const list = result.get(wall) ?? [];
+    const list = result.get(wall.id) ?? [];
     list.push(opening);
-    result.set(wall, list);
+    result.set(wall.id, list);
   }
 
   return result;
 }
 
-export function openingsForWall(map: ReadonlyMap<WallId, WallOpening[]>, wall: WallId): readonly WallOpening[] {
+export function openingsForWall(map: ReadonlyMap<ShellWallId, WallOpening[]>, wall: ShellWallId): readonly WallOpening[] {
   return map.get(wall) ?? [];
 }
 
@@ -214,21 +223,21 @@ function classifyOpening(item: FurnitureItem): OpeningClassification | null {
 function buildOpening(
   item: FurnitureItem,
   classification: OpeningClassification,
-  wall: WallId,
-  roomWidth: number,
-  roomDepth: number,
+  wall: ShellWall,
   wallHeight: number
 ): WallOpening | null {
-  const centerAlongWall = projectAlongWall(item.position!, wall);
-  const wallLength = wall === 'north' || wall === 'south' ? roomWidth : roomDepth;
-  const halfWallLength = wallLength / 2;
+  // centerAlongWall is measured in the side's frame, along the wall mesh's
+  // local +X. The south and west walls are rotated relative to world space,
+  // so world coords must be flipped to land the cutout under the slab.
+  const centerAlongWall = alongSide(wall.side, item.position!.x, item.position!.z);
+  const { from, to, length: wallLength } = shellWallSpan(wall);
 
   // Clamp the width to the wall segment first (an oversized/resized opening must
   // not extend past the wall outline), then clamp the centre using the CLAMPED
   // half-width so the hole always stays fully inside the wall.
   const width = Math.min(item.width, Math.max(0, wallLength - 0.05));
   const half = width / 2;
-  const clampedCenter = Math.max(-halfWallLength + half, Math.min(halfWallLength - half, centerAlongWall));
+  const clampedCenter = Math.max(from + half, Math.min(to - half, centerAlongWall));
 
   // Windows open at their sill — the window's own `sillHeight` or the shared
   // datum — and anything too tall for the storey is fitted to it, through the
@@ -243,25 +252,4 @@ function buildOpening(
     width,
     height: fitted.height,
   };
-}
-
-function projectAlongWall(position: { x: number; z: number }, wall: WallId): number {
-  // centerAlongWall is measured in each wall's LOCAL frame (origin at the
-  // wall's midpoint, along its local +X). The south and west walls are
-  // rotated relative to world space, so world coords must be flipped to land
-  // the cutout under the slab.
-  switch (wall) {
-    case 'north':
-      // North wall: local +X aligns with world +X.
-      return position.x;
-    case 'south':
-      // South wall is rotateY π (local +X → world −X), so flip.
-      return -position.x;
-    case 'east':
-      // East wall: local +X aligns with world +Z.
-      return position.z;
-    case 'west':
-      // West wall is rotateY π/2 (local +X → world −Z), so flip.
-      return -position.z;
-  }
 }

@@ -1,5 +1,6 @@
+import { cutoutRect, footprintOutline } from '../lib/footprint';
 import { groundHeightAt } from '../lib/site';
-import type { TerrainSpec } from '../lib/types';
+import type { FootprintCutout, TerrainSpec } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -23,7 +24,8 @@ export function buildTerrainGeometry(
   groundSize: number,
   halfWidth: number,
   halfDepth: number,
-  yOffset: number
+  yOffset: number,
+  cutout?: FootprintCutout
 ): ThreeNS.BufferGeometry {
   const g = groundSize / 2;
   const positions: number[] = [];
@@ -40,6 +42,9 @@ export function buildTerrainGeometry(
   quad(-g, g, halfDepth, g); // garden side
   quad(-g, -halfWidth, -halfDepth, halfDepth); // west slope
   quad(halfWidth, g, -halfDepth, halfDepth); // east slope
+  // The corner cut out of the house (#727) is open ground, not excavation.
+  const notch = cutoutRect({ width: halfWidth * 2, height: halfDepth * 2, cutout });
+  if (notch) quad(notch.x0, notch.x1, notch.z0, notch.z1);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -58,7 +63,8 @@ export function buildExcavationGeometry(
   THREE: ThreeModule,
   terrain: TerrainSpec,
   halfWidth: number,
-  halfDepth: number
+  halfDepth: number,
+  cutout?: FootprintCutout
 ): ThreeNS.BufferGeometry | null {
   const positions: number[] = [];
   const x = halfWidth + EARTH_WALL_GAP;
@@ -79,10 +85,20 @@ export function buildExcavationGeometry(
     positions.push(x0, 0, z0, x1, 0, z1, x1, top1, z1, x0, 0, z0, x1, top1, z1, x0, top0, z0);
   };
   const { frontY, backY } = terrain;
-  face(-x, -z, frontY, x, -z, frontY); // north wall
-  face(x, z, backY, -x, z, backY); // south wall
-  face(x, -z, frontY, x, z, backY); // east wall
-  face(-x, z, backY, -x, -z, frontY); // west wall
+  if (cutout) {
+    // Round the L: the ground line is the terrain's height at each corner.
+    const outline = footprintOutline({ width: halfWidth * 2, height: halfDepth * 2, cutout }, EARTH_WALL_GAP);
+    const ground = (at: number) => groundHeightAt(terrain, at, halfDepth);
+    outline.forEach((from, index) => {
+      const to = outline[(index + 1) % outline.length]!;
+      face(from.x, from.z, ground(from.z), to.x, to.z, ground(to.z));
+    });
+  } else {
+    face(-x, -z, frontY, x, -z, frontY); // north wall
+    face(x, z, backY, -x, z, backY); // south wall
+    face(x, -z, frontY, x, z, backY); // east wall
+    face(-x, z, backY, -x, -z, frontY); // west wall
+  }
   if (positions.length === 0) return null;
 
   const geometry = new THREE.BufferGeometry();

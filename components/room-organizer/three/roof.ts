@@ -1,10 +1,11 @@
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
 import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
+import { footprintOutline } from '../lib/footprint';
 import { removeAndDispose } from './builder-utils';
 import { buildDormers, buildDormerWell, dormerWells } from './dormers';
 import { DisposableLruCache } from './texture-lru';
 import { getMaxAnisotropy } from './texture-settings';
-import type { RoofSpec, RoofStyle } from '../lib/types';
+import type { FootprintCutout, RoofSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -43,6 +44,12 @@ export interface BuildRoofOptions {
   baseY: number;
   spec: RoofSpec;
   /**
+   * The corner taken out of the footprint (#727): the slab follows the L.
+   * Only a flat roof covers one; the reducer and the schema keep pitched
+   * roofs off an L, and one that reaches here all the same builds flat.
+   */
+  cutout?: FootprintCutout | undefined;
+  /**
    * Multiplier on the peak height (default 1). Only the dormer-less
    * neighbour roofs use it (#310): lib/dormers.ts fits dormers to the
    * unscaled slope, so our own roof always builds at 1.
@@ -55,6 +62,11 @@ export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
   if (options.spec.style === 'none') return;
 
   const color = options.spec.color ?? defaultRoofColor(options.spec.style);
+
+  if (options.cutout) {
+    options.scene.add(buildFlatRoof(THREE, options, color));
+    return;
+  }
 
   switch (options.spec.style) {
     case 'flat':
@@ -144,6 +156,8 @@ export interface AtticCeilingOptions {
   /** Y of the roof base (top of the highest storey). */
   baseY: number;
   spec: RoofSpec;
+  /** The corner taken out of the footprint (#727). */
+  cutout?: FootprintCutout | undefined;
 }
 
 /**
@@ -157,7 +171,7 @@ export interface AtticCeilingOptions {
  * `setRoofShellHidden` when there are any), or null when nothing is built.
  */
 export function buildAtticCeiling(THREE: ThreeModule, options: AtticCeilingOptions): number | null {
-  const { scene, width, depth, baseY, spec } = options;
+  const { scene, width, depth, baseY, spec, cutout } = options;
   removeAtticCeiling(scene);
   if (spec.style === 'none') return null;
 
@@ -169,14 +183,7 @@ export function buildAtticCeiling(THREE: ThreeModule, options: AtticCeilingOptio
   const ceilingY = baseY - ATTIC_CEILING_GAP;
 
   // Laid out in XY and turned flat: shape y is world −z.
-  const halfW = width / 2 + EAVE_OVERHANG;
-  const halfD = depth / 2 + EAVE_OVERHANG;
-  const outline = new THREE.Shape();
-  outline.moveTo(-halfW, -halfD);
-  outline.lineTo(halfW, -halfD);
-  outline.lineTo(halfW, halfD);
-  outline.lineTo(-halfW, halfD);
-  outline.closePath();
+  const outline = eaveOutline(THREE, width, depth, cutout);
   for (const { rect } of wells) {
     const hole = new THREE.Path();
     hole.moveTo(rect.x0, -rect.z1);
@@ -232,16 +239,36 @@ function defaultRoofColor(style: RoofStyle): string {
   return ROOF_STYLE_DEFAULT_COLORS[style];
 }
 
+/** The footprint out to the eaves, laid out in XY: shape y is world −z. */
+function eaveOutline(THREE: ThreeModule, width: number, depth: number, cutout: FootprintCutout | undefined): ThreeNS.Shape {
+  const outline = new THREE.Shape();
+  footprintOutline({ width, height: depth, cutout }, EAVE_OVERHANG).forEach(({ x, z }, index) => {
+    if (index === 0) outline.moveTo(x, -z);
+    else outline.lineTo(x, -z);
+  });
+  outline.closePath();
+  return outline;
+}
+
 function buildFlatRoof(
   THREE: ThreeModule,
-  { width, depth, baseY }: BuildRoofOptions,
+  { width, depth, baseY, cutout }: BuildRoofOptions,
   color: string
 ): ThreeNS.Object3D {
   const thickness = FLAT_ROOF_THICKNESS;
   const w = width + EAVE_OVERHANG * 2;
   const d = depth + EAVE_OVERHANG * 2;
   const material = buildShingleMaterial(THREE, color);
-  const mesh = new THREE.Mesh(withSurfaceUvs(THREE, new THREE.BoxGeometry(w, thickness, d)), material);
+  let geometry: ThreeNS.BufferGeometry;
+  if (cutout) {
+    geometry = new THREE.ExtrudeGeometry(eaveOutline(THREE, width, depth, cutout), { depth: thickness, bevelEnabled: false });
+    // Stand it up, centred on the slab's height as the box is.
+    geometry.rotateX(-Math.PI / 2);
+    geometry.translate(0, -thickness / 2, 0);
+  } else {
+    geometry = new THREE.BoxGeometry(w, thickness, d);
+  }
+  const mesh = new THREE.Mesh(withSurfaceUvs(THREE, geometry), material);
   mesh.position.set(0, baseY + thickness / 2, 0);
   mesh.castShadow = true;
   mesh.receiveShadow = true;

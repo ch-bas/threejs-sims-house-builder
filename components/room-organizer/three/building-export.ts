@@ -47,6 +47,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
   root.name = layout.name.trim() || 'House';
   const width = layout.width;
   const depth = layout.height;
+  const { cutout } = layout;
 
   const entrance = layout.entrance
     ? entranceGeometry(layout.entrance, {
@@ -66,7 +67,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     const storeyH = storeyHeight(floor);
 
     // Shell, as the shell effect builds it.
-    const wallOpenings = computeWallOpenings(floor.items, width, depth, storeyH, floor.interiorWalls ?? []);
+    const wallOpenings = computeWallOpenings(floor.items, width, depth, storeyH, floor.interiorWalls ?? [], cutout);
     const entranceCut = entrance ? entranceWallCut(entrance, layout.floors, index) : null;
     if (entranceCut) {
       wallOpenings.set('north', [...(wallOpenings.get('north') ?? []), { id: 'entrance', ...entranceCut }]);
@@ -75,6 +76,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       scene: scratch,
       width,
       depth,
+      cutout,
       floorColor: floor.floorColor,
       ...(floor.floorPattern ? { floorPattern: floor.floorPattern } : {}),
       ...(floor.wallPattern ? { wallPattern: floor.wallPattern } : {}),
@@ -118,6 +120,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
         openingCandidates: floor.items,
         roomWidth: width,
         roomDepth: depth,
+        cutout,
         wallHeight,
         ...(wallHeights ? { wallHeights } : {}),
         storeyHeight: storeyH,
@@ -157,7 +160,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
 
   if (layout.roof && layout.roof.style !== 'none') {
     const scratch = new THREE.Scene();
-    buildRoof(THREE, { scene: scratch, width, depth, baseY: buildingHeight(layout.floors), spec: layout.roof });
+    buildRoof(THREE, { scene: scratch, width, depth, cutout, baseY: buildingHeight(layout.floors), spec: layout.roof });
     const roof = new THREE.Group();
     roof.name = 'Roof';
     for (const child of [...scratch.children]) roof.add(child);

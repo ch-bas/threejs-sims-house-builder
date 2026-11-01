@@ -206,6 +206,8 @@ export function useSceneEffects({
   // base (#202). The structural effects are keyed on narrow signatures, not
   // `layout.floors` identity, so they need this one too.
   const storeyHeightsKey = layout.floors.map((floor) => floor.height ?? '').join(',');
+  // The corner cut out of the building reshapes the shell, the roof and the ground.
+  const cutoutKey = JSON.stringify(layout.cutout ?? null);
   // Same gate as room-organizer's walkthroughActive. While walking every wall
   // and the roof stay up, whatever the orbit mode (#359).
   const walkthroughActive = view.walkthroughMode && !view.view2D;
@@ -397,7 +399,8 @@ export function useSceneEffects({
         layout.width,
         layout.height,
         storeyHeight(floor),
-        floor.interiorWalls ?? []
+        floor.interiorWalls ?? [],
+        layout.cutout
       );
       const entranceCut = entrance ? entranceWallCut(entrance, layout.floors, index) : null;
       if (entranceCut) {
@@ -411,6 +414,7 @@ export function useSceneEffects({
         scene,
         width: layout.width,
         depth: layout.height,
+        cutout: layout.cutout,
         floorColor: floor.floorColor,
         ...(floor.floorPattern ? { floorPattern: floor.floorPattern } : {}),
         ...(floor.wallPattern ? { wallPattern: floor.wallPattern } : {}),
@@ -469,7 +473,7 @@ export function useSceneEffects({
     // interior walls (nearest wall wins), so the exterior hole set changes
     // when interior walls do — without this dep a door claimed by a new
     // interior wall stays double-cut into the exterior wall (#119).
-    layout.width, layout.height, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
+    layout.width, layout.height, cutoutKey, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
     layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
     view.floorPlan3DEffect, allFloors, ghostOtherFloors,
     shellActiveKey,
@@ -528,6 +532,7 @@ export function useSceneEffects({
       scene,
       width: layout.width,
       depth: layout.height,
+      cutout: layout.cutout,
       // The storey above's floor plate faces up only, so the walker below
       // sees its underside here, every storey built or not (#446).
       above:
@@ -551,7 +556,7 @@ export function useSceneEffects({
     // activeFloor and the storey below are read for their stairwells only;
     // wallOpeningsKey covers them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, ceilingY, ceilingCapY, pitY, pitTopY, pitFloorColor, activeFloorIndex, allFloors, neighboursHidden, layout.width, layout.height, wallOpeningsKey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, ceilingY, ceilingCapY, pitY, pitTopY, pitFloorColor, activeFloorIndex, allFloors, neighboursHidden, layout.width, layout.height, cutoutKey, wallOpeningsKey]);
 
   // Furniture meshes
   useEffect(() => {
@@ -865,6 +870,7 @@ export function useSceneEffects({
     const scene = sceneRef.current;
     if (!THREE || !scene) return;
     setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height, {
+      ...(layout.cutout ? { cutout: layout.cutout } : {}),
       ...(layout.terrain ? { terrain: layout.terrain } : {}),
       ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
       ...(layout.frontage ? { frontage: layout.frontage } : {}),
@@ -872,7 +878,7 @@ export function useSceneEffects({
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.terrain, layout.neighbours, layout.frontage]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage]);
 
   // The street of neighbours (#202, #310). Never touched by applyWallDisplay,
   // so they stay put in every wall-display mode (#201). Keyed on exactly what
@@ -964,6 +970,7 @@ export function useSceneEffects({
           openingCandidates: floor.items,
           roomWidth: layout.width,
           roomDepth: layout.height,
+          cutout: layout.cutout,
           wallHeight,
           ...(wallHeights ? { wallHeights } : {}),
           storeyHeight: storeyHeight(floor),
@@ -986,7 +993,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, layout.width, layout.height, layout.entrance, layout.terrain]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
 
   // Which storeys are drawn while walking indoors (#446). Declared after the
   // shell, partition and furniture effects, so a rebuild in the same commit
@@ -1067,7 +1074,7 @@ export function useSceneEffects({
     isReady, invalidate, threeModuleRef, sceneRef, rendererRef, cameraRef,
     selectedWall, activeFloorIndex, wallDisplay,
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
-    layout.width, layout.height, allFloors, ghostOtherFloors,
+    layout.width, layout.height, cutoutKey, allFloors, ghostOtherFloors,
   ]);
 
   // Measurement markers
@@ -1125,9 +1132,9 @@ export function useSceneEffects({
     }
 
     const baseY = buildingHeight(layout.floors);
-    const buildKey = JSON.stringify([layout.roof, layout.width, layout.height, baseY]);
+    const buildKey = JSON.stringify([layout.roof, layout.width, layout.height, baseY, layout.cutout ?? null]);
     if (roofOnStorey && scene.userData[ROOF_BUILD_KEY] !== buildKey) {
-      buildRoof(THREE, { scene, width: layout.width, depth: layout.height, baseY, spec: layout.roof });
+      buildRoof(THREE, { scene, width: layout.width, depth: layout.height, cutout: layout.cutout, baseY, spec: layout.roof });
       scene.userData[ROOF_BUILD_KEY] = buildKey;
       requestShadowUpdate();
     }
@@ -1144,7 +1151,7 @@ export function useSceneEffects({
     // wallDisplay is read for the initial visibility only: the cutaway effect
     // re-applies it on change, so a display flip needn't rebuild the roof.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, layout.floors.length, storeyHeightsKey, roofOnStorey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, cutoutKey, layout.floors.length, storeyHeightsKey, roofOnStorey]);
 
   // Walkthrough attic (#487): walking indoors where the top storey shows,
   // the roof's shingled underside gives way to a plain ceiling that opens
@@ -1161,6 +1168,7 @@ export function useSceneEffects({
       scene,
       width: layout.width,
       depth: layout.height,
+      cutout: layout.cutout,
       baseY: buildingHeight(layout.floors),
       spec: layout.roof,
     });
@@ -1173,7 +1181,7 @@ export function useSceneEffects({
     };
     // layout.floors is read for the eaves height only, as in the roof effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, atticCeiling, layout.roof, layout.width, layout.height, layout.floors.length, storeyHeightsKey]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, atticCeiling, layout.roof, layout.width, layout.height, cutoutKey, layout.floors.length, storeyHeightsKey]);
 
   // 2D top-down view. The backing store is sized to the container's
   // clientWidth/clientHeight × devicePixelRatio (via a ResizeObserver) so the

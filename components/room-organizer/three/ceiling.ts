@@ -1,6 +1,7 @@
 import { removeAndDispose } from './builder-utils';
 import { buildFloorGeometryWithOpenings, floorHoleOutlines } from './room-builder';
 import type { FloorOpening } from './wall-openings';
+import type { FootprintCutout } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -16,6 +17,8 @@ export interface CeilingOptions {
   scene: ThreeNS.Scene;
   width: number;
   depth: number;
+  /** The corner taken out of the footprint (#727): the plate follows the floor. */
+  cutout?: FootprintCutout | undefined;
   /**
    * The storey above: the underside of its floor at `y`, cut by `openings`
    * (the active storey's stairwells), each closed by a shaft up to `capY`.
@@ -38,7 +41,7 @@ export interface CeilingOptions {
  * Returns null when there is nothing to build.
  */
 export function buildCeiling(THREE: ThreeModule, options: CeilingOptions): ThreeNS.Group | null {
-  const { above, below, width, depth } = options;
+  const { above, below, width, depth, cutout } = options;
   const pitOpenings = options.shafts && below ? below.openings : [];
   if (!above && pitOpenings.length === 0) return null;
 
@@ -51,8 +54,8 @@ export function buildCeiling(THREE: ThreeModule, options: CeilingOptions): Three
     // Laid out like the floor plate (normal up) and drawn double-sided for
     // the walker below; three flips the normal on the back face.
     const geometry =
-      above.openings.length > 0
-        ? buildFloorGeometryWithOpenings(THREE, width, depth, above.openings)
+      above.openings.length > 0 || cutout
+        ? buildFloorGeometryWithOpenings(THREE, width, depth, above.openings, cutout)
         : new THREE.PlaneGeometry(width, depth);
     const plate = new THREE.Mesh(geometry, plaster(THREE.DoubleSide));
     plate.rotation.x = -Math.PI / 2;
@@ -62,13 +65,13 @@ export function buildCeiling(THREE: ThreeModule, options: CeilingOptions): Three
     group.add(plate);
     if (options.shafts) {
       const material = plaster(THREE.BackSide);
-      addShafts(THREE, group, floorHoleOutlines(width, depth, above.openings), above.y - CEILING_GAP, above.capY, [material, material]);
+      addShafts(THREE, group, floorHoleOutlines(width, depth, above.openings, cutout), above.y - CEILING_GAP, above.capY, [material, material]);
     }
   }
 
   if (below && pitOpenings.length > 0) {
     const floor = new THREE.MeshStandardMaterial({ color: below.floorColor, roughness: 0.8, side: THREE.BackSide });
-    addShafts(THREE, group, floorHoleOutlines(width, depth, pitOpenings), below.y, below.topY, [floor, plaster(THREE.BackSide)]);
+    addShafts(THREE, group, floorHoleOutlines(width, depth, pitOpenings, cutout), below.y, below.topY, [floor, plaster(THREE.BackSide)]);
   }
 
   options.scene.add(group);
