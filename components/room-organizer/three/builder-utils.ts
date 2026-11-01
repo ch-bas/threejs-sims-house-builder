@@ -117,6 +117,125 @@ export function material(
   return new THREE.MeshStandardMaterial({ color, transparent: hasCollision, opacity, ...extra });
 }
 
+/** Edge radius by class of part (#755), in metres. Even 5 mm catches a highlight at orbit distance. */
+export const EDGE = {
+  wood: 0.005,
+  upholstery: 0.04,
+  cushion: 0.045,
+} as const;
+
+export interface SoftBoxOptions {
+  /**
+   * Tilts each face's corner normals outwards, 0 to 1, so a flat face shades
+   * like a shallow dome: a filled cushion without another vertex.
+   */
+  puff?: number;
+}
+
+/** No chamfer may eat more of a side than this, or thin parts turn inside out. */
+const MAX_CHAMFER_SHARE = 0.45;
+
+/**
+ * A box with one chamfer per edge (#755): 44 triangles, against 12 for a box
+ * and 300 for RoundedBoxGeometry at 2 segments. Every vertex keeps its face's
+ * normal, so faces stay flat and the normals turn across the chamfer, which
+ * is what draws the thin highlight along an edge. Centred, and exactly
+ * w × h × d, like the BoxGeometry it replaces.
+ *
+ * UVs are in metres, along each face's longer side, so a shared detail
+ * texture keeps its scale on every part and its grain runs down a part.
+ */
+export function softBox(
+  THREE: ThreeModule,
+  w: number,
+  h: number,
+  d: number,
+  radius: number,
+  { puff = 0 }: SoftBoxOptions = {}
+): ThreeNS.BufferGeometry {
+  const half = [w / 2, h / 2, d / 2];
+  const r = Math.min(radius, Math.min(w, h, d) * MAX_CHAMFER_SHARE);
+  // Grain doesn't start at the same place on every part.
+  const uvShift = (w * 7.3 + h * 5.1 + d * 3.7) % 1;
+
+  /** The vertex on `axis`'s face nearest box corner `signs`. */
+  const corner = (axis: number, signs: readonly number[]) => {
+    const position = signs.map((sign, i) => sign * (i === axis ? half[i]! : half[i]! - r));
+    const tilted = signs.map((sign, i) => (i === axis ? sign : sign * puff));
+    const length = Math.hypot(...tilted);
+    return { position, normal: tilted.map((n) => n / length) };
+  };
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  /** One flat polygon, UV-mapped in the plane of `uvAxis` and wound outwards. */
+  const addPolygon = (vertices: ReadonlyArray<ReturnType<typeof corner>>, uvAxis: number) => {
+    const [uAxis, vAxis] = [0, 1, 2].filter((i) => i !== uvAxis).sort((a, b) => half[b]! - half[a]!) as [number, number];
+    const first = positions.length / 3;
+    for (const { position, normal } of vertices) {
+      positions.push(...position);
+      normals.push(...normal);
+      uvs.push(position[uAxis]! + half[uAxis]! + uvShift, position[vAxis]! + half[vAxis]! + uvShift);
+    }
+    const [a, b, c] = vertices as unknown as [ReturnType<typeof corner>, ReturnType<typeof corner>, ReturnType<typeof corner>];
+    const ab = a.position.map((v, i) => b.position[i]! - v);
+    const ac = a.position.map((v, i) => c.position[i]! - v);
+    const cross = [
+      ab[1]! * ac[2]! - ab[2]! * ac[1]!,
+      ab[2]! * ac[0]! - ab[0]! * ac[2]!,
+      ab[0]! * ac[1]! - ab[1]! * ac[0]!,
+    ];
+    const facing = cross.reduce((sum, v, i) => sum + v * (a.normal[i]! + c.normal[i]!), 0);
+    for (let i = 1; i + 1 < vertices.length; i += 1) {
+      if (facing >= 0) indices.push(first, first + i, first + i + 1);
+      else indices.push(first, first + i + 1, first + i);
+    }
+  };
+
+  const SIGNS = [-1, 1];
+  for (const axis of [0, 1, 2]) {
+    const [p, q] = [(axis + 1) % 3, (axis + 2) % 3] as [number, number];
+    const signed = (onAxis: number, onP: number, onQ: number) => {
+      const signs = [0, 0, 0];
+      signs[axis] = onAxis;
+      signs[p] = onP;
+      signs[q] = onQ;
+      return signs;
+    };
+    for (const s of SIGNS) {
+      // The face on this side of `axis`.
+      addPolygon([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => corner(axis, signed(s, u!, v!))), axis);
+      // The edge that runs along `axis`, between the faces of p and q.
+      for (const t of SIGNS) {
+        addPolygon(
+          [
+            corner(p, signed(-1, s, t)),
+            corner(q, signed(-1, s, t)),
+            corner(q, signed(1, s, t)),
+            corner(p, signed(1, s, t)),
+          ],
+          p
+        );
+      }
+    }
+  }
+  for (const x of SIGNS) {
+    for (const y of SIGNS) {
+      for (const z of SIGNS) addPolygon([0, 1, 2].map((axis) => corner(axis, [x, y, z])), 1);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  return geometry;
+}
+
 export function cornerPositions(x: number, y: number, z: number): ReadonlyArray<readonly [number, number, number]> {
   return [
     [x, y, z],

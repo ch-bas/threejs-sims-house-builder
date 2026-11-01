@@ -127,7 +127,7 @@ components/
     │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory: furniture type → mesh builder
-    │   ├── builder-utils.ts             Shared types + mesh()/material() helpers, dispose helpers (disposeScene on unmount, #213)
+    │   ├── builder-utils.ts             Shared types + mesh()/material()/softBox() helpers (soft chamfered edges, #755), dispose helpers (disposeScene on unmount, #213)
     │   ├── three-runtime.ts             The named three.js symbols the app uses; the engine's only runtime import (#411)
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
