@@ -9,7 +9,7 @@ import {
 import { isOpening, settleWallMountedItem, snapOpeningToWall, snapWallMountedItem, type WallGap } from '../lib/opening-snap';
 import { ghostItem } from '../lib/placement-ghost';
 import type { LayoutActions } from './use-layout-state';
-import type { CatalogItem, FloorLayout, FurnitureItem, ViewSettings } from '../lib/types';
+import type { CatalogItem, FloorLayout, FootprintCutout, FurnitureItem, ViewSettings } from '../lib/types';
 
 export interface UseItemPlacementParams {
   activeFloor: FloorLayout;
@@ -37,6 +37,8 @@ export interface UseItemPlacementParams {
    * wall (`entrancePlanOutline`): openings snap onto the piers beside it (#394).
    */
   frontGap?: WallGap | null;
+  /** The corner cut out of the building (#727). */
+  cutout?: FootprintCutout | undefined;
   /**
    * A soft-budget purchase the player agreed to in the in-app question
    * (#649). The question doesn't block, so `placeCatalogItem` has already
@@ -85,6 +87,7 @@ export function useItemPlacement({
   view,
   allSelectedIds,
   frontGap,
+  cutout,
   refusePurchase,
   onPlacedAfterConfirm,
 }: UseItemPlacementParams): UseItemPlacementResult {
@@ -93,8 +96,8 @@ export function useItemPlacement({
   const gapX0 = frontGap?.x0;
   const gapX1 = frontGap?.x1;
   const gap = useMemo(
-    () => (gapX0 !== undefined && gapX1 !== undefined ? { frontGap: { x0: gapX0, x1: gapX1 } } : {}),
-    [gapX0, gapX1]
+    () => ({ cutout, ...(gapX0 !== undefined && gapX1 !== undefined ? { frontGap: { x0: gapX0, x1: gapX1 } } : {}) }),
+    [gapX0, gapX1, cutout]
   );
 
   /** Grid, neighbour and wall snaps for a free-standing item, as the toggles ask. */
@@ -121,11 +124,12 @@ export function useItemPlacement({
           item,
           roomWidth,
           roomDepth,
+          cutout,
         });
       }
       return result;
     },
-    [view.snapToGrid, view.snapToItems, view.snapToWall, activeFloor.items, roomWidth, roomDepth]
+    [view.snapToGrid, view.snapToItems, view.snapToWall, activeFloor.items, roomWidth, roomDepth, cutout]
   );
 
   const snapPosition = useCallback(
@@ -136,7 +140,7 @@ export function useItemPlacement({
       // Doors and windows have to live on a wall — there's no such thing as
       // a "free-floating" opening. Force-snap them regardless of the toggle.
       if (item && isOpening(item.type)) {
-        const settled = settleWallMountedItem(item, result, roomWidth, roomDepth, activeFloor.interiorWalls ?? [], gap.frontGap);
+        const settled = settleWallMountedItem(item, result, roomWidth, roomDepth, activeFloor.interiorWalls ?? [], gap.frontGap, gap.cutout);
         if (settled) {
           return { ...settled.position, ...(settled.rotation === undefined ? {} : { rotation: settled.rotation }) };
         }

@@ -556,10 +556,10 @@ export function RoomOrganizer(): JSX.Element {
 
   // The recess's span of the front wall on this storey; openings settle on
   // its piers (#394). Memoised on what the recess is fitted to.
-  const { width: lotWidth, height: lotDepth, terrain, entrance, floors } = layout;
+  const { width: lotWidth, height: lotDepth, terrain, entrance, floors, cutout } = layout;
   const frontGap = useMemo(
-    () => entrancePlanOutline({ width: lotWidth, height: lotDepth, terrain, entrance, floors }, activeFloorIndex),
-    [lotWidth, lotDepth, terrain, entrance, floors, activeFloorIndex]
+    () => entrancePlanOutline({ width: lotWidth, height: lotDepth, terrain, entrance, floors, cutout }, activeFloorIndex),
+    [lotWidth, lotDepth, terrain, entrance, floors, cutout, activeFloorIndex]
   );
 
   const {
@@ -577,6 +577,7 @@ export function RoomOrganizer(): JSX.Element {
     roomDepth: layout.height,
     keepOut,
     frontGap,
+    cutout: layout.cutout,
     actions,
     allSelectedIds,
   });
@@ -598,12 +599,13 @@ export function RoomOrganizer(): JSX.Element {
         roomWidth: layout.width,
         roomDepth: layout.height,
         interiorWalls: activeFloor.interiorWalls ?? [],
+        cutout: layout.cutout,
         rotation,
         ...(bracketed ? { bracketArm: CAMERA_BRACKET_ARM } : {}),
       });
       actions.moveItem(id, pos.x, pos.z);
     },
-    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, actions]
+    [activeFloor.items, activeFloor.interiorWalls, layout.width, layout.height, layout.cutout, actions]
   );
 
   // A key or plan drag that met a lock (#635): says why, the way a budget
@@ -886,6 +888,7 @@ export function RoomOrganizer(): JSX.Element {
     view,
     allSelectedIds,
     frontGap,
+    cutout: layout.cutout,
     refusePurchase: refuseOverBudget,
     // A soft-budget buy agreed to in the in-app question lands after the
     // place call returned '' (#649).
@@ -1121,10 +1124,11 @@ export function RoomOrganizer(): JSX.Element {
       terrain: layout.terrain,
       entrance: layout.entrance,
       frontage: layout.frontage,
+      cutout: layout.cutout,
       ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
       ...(walkRoofStyle ? { roof: { style: walkRoofStyle, ...(walkRoofColor ? { color: walkRoofColor } : {}) } } : {}),
     }),
-    [layout.width, layout.height, layout.floors, layout.terrain, layout.entrance, layout.frontage, layout.neighbours, walkRoofStyle, walkRoofColor]
+    [layout.width, layout.height, layout.floors, layout.terrain, layout.entrance, layout.frontage, layout.cutout, layout.neighbours, walkRoofStyle, walkRoofColor]
   );
 
   const walk = useWalkthrough({
@@ -1284,6 +1288,7 @@ export function RoomOrganizer(): JSX.Element {
     const built = buildPasteItems({
       roomWidth: layout.width,
       roomDepth: layout.height,
+      cutout: layout.cutout,
       interiorWalls: activeFloor.interiorWalls ?? [],
       idTag: randomSuffix(),
       floorIndex: activeFloorIndex,
@@ -1298,7 +1303,7 @@ export function RoomOrganizer(): JSX.Element {
     }
     playCue('place');
     return true;
-  }, [layout.width, layout.height, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
+  }, [layout.width, layout.height, layout.cutout, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
 
   const shortcutHandlers = useMemo(
     () => ({
@@ -1352,7 +1357,8 @@ export function RoomOrganizer(): JSX.Element {
               layout.width,
               layout.height,
               activeFloor.interiorWalls ?? [],
-              frontGap
+              frontGap,
+              layout.cutout
             )
           : null;
         if (settled) actions.updateItem(id, settled);
@@ -1459,6 +1465,7 @@ export function RoomOrganizer(): JSX.Element {
       layout.floors.length,
       layout.width,
       layout.height,
+      layout.cutout,
       unlockedSelectedIds,
       setView,
       toggle,

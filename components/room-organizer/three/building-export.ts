@@ -53,6 +53,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     ? entranceGeometry(layout.entrance, {
         width,
         depth,
+        cutout,
         floors: layout.floors,
         ...(layout.terrain ? { terrain: layout.terrain } : {}),
       })

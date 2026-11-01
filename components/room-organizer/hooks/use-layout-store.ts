@@ -77,6 +77,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setFloorPlanOpacity: (opacity) => dispatch({ type: 'setFloorPlanOpacity', opacity }),
     setFloorPlanFitMode: (mode: FloorPlanFitMode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
     setRoofStyle: (style: RoofStyle) => dispatch({ type: 'setRoofStyle', style }),
+    setCutout: (cutout) => dispatch({ type: 'setCutout', cutout }),
     setRoofColor: (color) => dispatch({ type: 'setRoofColor', color }),
     addDormer: (dormer) => {
       const id = nextId('dormer');

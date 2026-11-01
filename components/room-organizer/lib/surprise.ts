@@ -2,6 +2,7 @@ import { activeWriteOff, budgetBlockedReason, furnitureSpend, hardBudgetLoss, is
 import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from './constants';
 import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
+import { entersCutout } from './footprint';
 import {
   FURNITURE_SETS,
   WALL_INSET,
@@ -17,7 +18,7 @@ import { storeyHeight } from './storeys';
 import { entrancePlanOutline } from './street';
 import type { ConfirmOptions } from './confirm-dialog';
 import type { SoundCue } from './sounds';
-import type { CatalogItem, FurnitureItem, InteriorWall, RoomLayout } from './types';
+import type { CatalogItem, FootprintCutout, FurnitureItem, InteriorWall, RoomLayout } from './types';
 
 const DECOR_TYPES = ['plant', 'flowerpot', 'rug', 'painting', 'vase', 'lamp', 'floor-lamp', 'mirror'] as const;
 
@@ -48,6 +49,8 @@ export interface SurpriseOptions {
   interiorWalls?: readonly InteriorWall[];
   /** The recess's span of the north wall: no art hangs across the opening. */
   frontGap?: WallGap | null;
+  /** The corner cut out of the building: its stretch of wall is gone (#727). */
+  cutout?: FootprintCutout | undefined;
   storeyHeight?: number;
 }
 
@@ -78,7 +81,7 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
     interiorWalls,
     ...(options.storeyHeight !== undefined ? { storeyHeight: options.storeyHeight } : {}),
   };
-  const room: Room = { width: roomWidth, depth: roomDepth, context, frontGap };
+  const room: Room = { width: roomWidth, depth: roomDepth, context, frontGap, cutout: options.cutout };
 
   const set = chooseSet(roomWidth, roomDepth, rng, maxCost, options.allowOverBudgetSet === true);
   // A set is only chosen when at least one fits by size; it lands on the free
@@ -165,6 +168,7 @@ function planSurprise(layout: RoomLayout, floorIndex: number, budget: number, se
     keepOut: floorKeepOut(layout, floorIndex),
     interiorWalls: floor.interiorWalls ?? [],
     frontGap: entrancePlanOutline(layout, floorIndex),
+    cutout: layout.cutout,
     storeyHeight: storeyHeight(floor),
   });
   return { items: [...kept, ...generated], price: purchasePrice(generated), remaining, hard };
@@ -329,6 +333,7 @@ interface Room {
   depth: number;
   context: CollisionContext;
   frontGap: WallGap | null;
+  cutout: FootprintCutout | undefined;
 }
 
 function floorPosition(
@@ -375,7 +380,7 @@ function wallPosition(
   candidate: CatalogItem,
   existing: readonly FurnitureItem[]
 ): Placement | null {
-  const { width: roomWidth, depth: roomDepth, frontGap } = room;
+  const { width: roomWidth, depth: roomDepth, frontGap, cutout } = room;
   const halfW = roomWidth / 2;
   const halfD = roomDepth / 2;
   const inset = candidate.depth / 2 + WALL_GAP;
@@ -397,6 +402,7 @@ function wallPosition(
     const { x, z } = placement.position;
     // The recess cuts the north wall there: nothing to hang art on (#448).
     if (wall === 0 && frontGap && x + candidate.width / 2 > frontGap.x0 && x - candidate.width / 2 < frontGap.x1) continue;
+    if (entersCutout({ ...candidate, rotation: placement.rotation }, { x, z }, { width: roomWidth, height: roomDepth, cutout })) continue;
     if (!collides({ x, z, width: candidate.width, depth: candidate.depth }, existing)) return placement;
   }
   return null;

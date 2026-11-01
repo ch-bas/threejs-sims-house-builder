@@ -52,10 +52,7 @@ export function clampToFootprint(
     z: Math.min(maxZ, Math.max(-maxZ, position.z)),
   };
   const notch = cutoutRect({ width: roomWidth, height: roomDepth, cutout });
-  if (!notch || !cutout) return clamped;
-  const clear =
-    clamped.x + halfW <= notch.x0 || clamped.x - halfW >= notch.x1 || clamped.z + halfD <= notch.z0 || clamped.z - halfD >= notch.z1;
-  if (clear) return clamped;
+  if (!notch || !cutout || !entersCutout(item, clamped, { width: roomWidth, height: roomDepth, cutout })) return clamped;
   const x = cutout.corner.endsWith('e') ? notch.x0 - halfW : notch.x1 + halfW;
   const z = cutout.corner.startsWith('n') ? notch.z1 + halfD : notch.z0 - halfD;
   // The shorter way out first, each exit kept within the walls: a wing too
@@ -174,6 +171,26 @@ export function entersCutout(
   if (!notch) return false;
   const { halfW, halfD } = rotatedHalfExtents(item);
   return position.x + halfW > notch.x0 && position.x - halfW < notch.x1 && position.z + halfD > notch.z0 && position.z - halfD < notch.z1;
+}
+
+/** The larger part of a rectangle left beside the cut, or null when it all lies inside. Unchanged when clear. */
+export function trimRectToCutout<R extends { x: number; z: number; w: number; d: number }>(
+  rect: R,
+  notch: FootprintRect | null
+): R | null {
+  if (!notch) return rect;
+  const right = rect.x + rect.w;
+  const bottom = rect.z + rect.d;
+  if (right <= notch.x0 || rect.x >= notch.x1 || bottom <= notch.z0 || rect.z >= notch.z1) return rect;
+  const parts = [
+    { x: rect.x, z: rect.z, w: notch.x0 - rect.x, d: rect.d },
+    { x: notch.x1, z: rect.z, w: right - notch.x1, d: rect.d },
+    { x: rect.x, z: rect.z, w: rect.w, d: notch.z0 - rect.z },
+    { x: rect.x, z: notch.z1, w: rect.w, d: bottom - notch.z1 },
+  ].filter((part) => part.w > 0 && part.d > 0);
+  if (parts.length === 0) return null;
+  const best = parts.reduce((kept, part) => (part.w * part.d > kept.w * kept.d ? part : kept));
+  return { ...rect, ...best };
 }
 
 /** The building's floor area in m², before any porch. */

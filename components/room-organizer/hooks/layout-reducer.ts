@@ -7,9 +7,11 @@ import {
   MAX_ITEM_DIMENSION,
   MAX_ROOM_DIMENSION,
 } from '../lib/constants';
+import { clipWallToCutout, fitNewShape, roofCoversCutout, withCutout } from '../lib/cutout';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { clampToFootprint } from '../lib/footprint';
+import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, trimRectToCutout } from '../lib/footprint';
+import { formatMetres } from '../lib/format';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
@@ -60,6 +62,7 @@ import type {
   TerrainSpec,
   WallId,
   WallPattern,
+  FootprintCutout,
 } from '../lib/types';
 
 // ---------------------------------------------------------------------------
@@ -70,6 +73,7 @@ export type LayoutAction =
   | { type: 'setName'; name: string }
   | { type: 'setWidth'; width: number }
   | { type: 'setHeight'; height: number }
+  | { type: 'setCutout'; cutout: FootprintCutout | null }
   // floor-scoped finishes — target the active floor
   | { type: 'setFloorColor'; color: string }
   | { type: 'setFloorPattern'; pattern: FloorPattern }
@@ -159,6 +163,7 @@ export { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT };
 const ENTRANCE_RESYNC_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
   'setWidth',
   'setHeight',
+  'setCutout',
   'setTerrain',
   'setStoreyHeight',
   'addFloor',
@@ -267,6 +272,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // A recessed entrance (#204) owns an interior wall across the back of the
     // recess and, when first added, an ordinary door on it. Both follow the
     // recess as it's resized or moved, onto whichever storey meets the street.
+    // A corner out of the building (#727), on every storey; see lib/cutout.ts.
+    case 'setCutout':
+      return withLayout(state, (layout) => withCutout(layout, action.cutout));
     case 'setEntrance':
       return withLayout(state, (layout) => syncEntrance(layout, action.entrance));
     case 'setFrontage':
@@ -383,6 +391,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     case 'setRoofStyle':
       return withLayout(state, (layout) => {
         if ((layout.roof?.style ?? 'none') === action.style) return layout;
+        if (layout.cutout && !roofCoversCutout(action.style)) return layout;
         return { ...layout, roof: { ...(layout.roof ?? { style: 'none' }), style: action.style } };
       });
     case 'setRoofColor':
@@ -494,7 +503,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           state.layout.width,
           state.layout.height,
           floor.interiorWalls ?? [],
-          activeFrontGap(state)
+          activeFrontGap(state),
+          state.layout.cutout
         );
         const copy: FurnitureItem = settled
           ? { ...source, id: action.newId, ...settled }
@@ -504,7 +514,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
               position:
                 source.category === 'outdoor'
                   ? clampPosition(offset)
-                  : clampToFootprint(source, offset, state.layout.width, state.layout.height),
+                  : clampToFootprint(source, offset, state.layout.width, state.layout.height, state.layout.cutout),
             };
         // A duplicate is a loose copy: it must not join the source's group
         // (#154). Paste remaps groups instead — see lib/clipboard.ts. It is
@@ -537,7 +547,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
               state.layout.width,
               state.layout.height,
               activeInteriorWalls(state),
-              activeFrontGap(state)
+              activeFrontGap(state),
+              state.layout.cutout
             )
           : null;
         return { rotation, ...settled };
@@ -553,7 +564,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           state.layout.width,
           state.layout.height,
           activeInteriorWalls(state),
-          activeFrontGap(state)
+          activeFrontGap(state),
+          state.layout.cutout
         );
         return settled ?? { position };
       });
@@ -576,7 +588,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
                 state.layout.width,
                 state.layout.height,
                 activeInteriorWalls(state),
-                activeFrontGap(state)
+                activeFrontGap(state),
+                state.layout.cutout
               )
             : null;
         return { [action.dimension]: value, ...settled };
@@ -674,7 +687,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
             state.layout.width,
             state.layout.height,
             floor.interiorWalls ?? [],
-            activeFrontGap(state)
+            activeFrontGap(state),
+            state.layout.cutout
           );
           const moved = { ...item, ...(settled ?? { position }) };
           if (sameItem(item, moved)) return item;
@@ -769,7 +783,9 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       if (!wall) return state;
       // No partition runs through the porch, which is outside (#614).
       const taken = new Set([...activeWallIds(state), wall.id]);
-      const pieces = clipWallToPorch(wall, entrancePlanOutline(state.layout, state.activeFloorIndex), taken);
+      const pieces = clipWallToPorch(wall, entrancePlanOutline(state.layout, state.activeFloorIndex), taken).flatMap((piece) =>
+        clipWallToCutout(piece, cutoutRect(state.layout), taken)
+      );
       if (pieces.length === 0) return state;
       return withActiveFloor(state, (floor) =>
         hasRoomFor(floor.interiorWalls, pieces.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
@@ -787,7 +803,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       const walls = action.walls
         .map(clampWall)
         .filter((wall): wall is InteriorWall => wall !== null)
-        .flatMap((wall) => clipWallToPorch(wall, porch, taken)); // not through the porch (#614)
+        .flatMap((wall) => clipWallToPorch(wall, porch, taken)) // not through the porch (#614)
+        .flatMap((wall) => clipWallToCutout(wall, cutoutRect(state.layout), taken));
       if (walls.length === 0) return state;
       return withActiveFloor(state, (floor) =>
         hasRoomFor(floor.interiorWalls, walls.length, MAX_INTERIOR_WALLS_PER_FLOOR, ENTRANCE_WALL_ID)
@@ -1000,7 +1017,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           const fits = isRoomZone(action.zone) && zoneShapeFits(action.zone, rectOutline(state.layout.width, state.layout.height));
           return fits ? { ...floor, zones: [...zones, { ...action.zone, name: capName(action.zone.name) }] } : floor;
         }
-        const rect = clampZoneRect(action.zone, state.layout.width, state.layout.height);
+        const trimmed = trimRectToCutout(action.zone, cutoutRect(state.layout));
+        const rect = trimmed && clampZoneRect(trimmed, state.layout.width, state.layout.height);
         if (!rect || zoneInPorch(rect, entrancePlanOutline(state.layout, state.activeFloorIndex))) return floor;
         return { ...floor, zones: [...zones, { ...action.zone, ...rect, name: capName(action.zone.name) }] };
       });
@@ -1018,7 +1036,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           if (sameZone(current, kept)) return floor;
           return { ...floor, zones: floor.zones.map((zone) => (zone.id === action.id ? kept : zone)) };
         }
-        const rect = clampZoneRect(merged, state.layout.width, state.layout.height);
+        const trimmed = trimRectToCutout(merged, cutoutRect(state.layout));
+        const rect = trimmed && clampZoneRect(trimmed, state.layout.width, state.layout.height);
         if (!rect) return floor;
         // A zone can't move onto the porch; one a later porch swallowed can still be renamed.
         const recess = entrancePlanOutline(state.layout, state.activeFloorIndex);
@@ -1259,8 +1278,30 @@ function hasRoomFor(list: readonly { id: string }[] | undefined, count: number, 
  * change keep their identity.
  */
 function refitFootprint(layout: RoomLayout, width: number, depth: number): RoomLayout {
-  const from = { width: layout.width, depth: layout.height };
-  const to = { width, depth };
+  return resizeWithCutout(layout, width, depth).layout;
+}
+
+/** Why the house can't take this size with its cut, or null (#727). */
+export function resizeRefusal(layout: RoomLayout, width: number, depth: number): string | null {
+  return resizeWithCutout(layout, width, depth).refusal;
+}
+
+/**
+ * The refit, and the cut's say over it: the cut stays its size on its corner,
+ * so a house too small for it is refused, and so is a size that would run it
+ * into the porch or move what it must leave alone.
+ */
+function resizeWithCutout(layout: RoomLayout, width: number, depth: number): { layout: RoomLayout; refusal: string | null } {
+  if (layout.cutout && !cutoutFits(layout.cutout, width, depth)) {
+    return { layout, refusal: `The house has to keep ${formatMetres(MIN_WING_SIZE)} on each wing beside its cut corner.` };
+  }
+  const next = refitFloors(layout, width, depth);
+  return next.cutout ? fitNewShape(layout, next) : { layout: next, refusal: null };
+}
+
+function refitFloors(layout: RoomLayout, width: number, depth: number): RoomLayout {
+  const from = { width: layout.width, depth: layout.height, cutout: layout.cutout };
+  const to = { width, depth, cutout: layout.cutout };
   let changed = false;
   const floors = layout.floors.map((floor) => {
     const next = refitFloor(floor, from, to);
@@ -1273,6 +1314,7 @@ function refitFootprint(layout: RoomLayout, width: number, depth: number): RoomL
 interface Footprint {
   readonly width: number;
   readonly depth: number;
+  readonly cutout: FootprintCutout | undefined;
 }
 
 function refitFloor(floor: FloorLayout, from: Footprint, to: Footprint): FloorLayout {
@@ -1281,7 +1323,7 @@ function refitFloor(floor: FloorLayout, from: Footprint, to: Footprint): FloorLa
   const items = floor.items.map((item) => {
     if (item.id === ENTRANCE_DOOR_ID || !item.position || !isWallMounted(item.type)) return item;
     const position = followExteriorWall(item, item.position, from, to, walls);
-    const settled = settleWallMountedItem(item, position, to.width, to.depth, walls);
+    const settled = settleWallMountedItem(item, position, to.width, to.depth, walls, null, to.cutout);
     if (!settled) return item;
     const next = { ...item, ...settled };
     if (sameItem(item, next)) return item;
@@ -1374,6 +1416,7 @@ function followExteriorWall(
     roomWidth: from.width,
     roomDepth: from.depth,
     interiorWalls,
+    cutout: from.cutout,
   });
   if (snap.wallKind !== 'exterior') return position;
   const dx = (to.width - from.width) / 2;
@@ -1505,6 +1548,7 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previo
   const geometry = entranceGeometry(entrance, {
     width: layout.width,
     depth: layout.height,
+    cutout: layout.cutout,
     floors: layout.floors,
     ...(layout.terrain ? { terrain: layout.terrain } : {}),
   });

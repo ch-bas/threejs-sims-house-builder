@@ -31,6 +31,7 @@ import type {
   TerrainSpec,
   WallId,
   WallPattern,
+  FootprintCutout,
 } from '../lib/types';
 import type { WallPatch } from '../lib/wall-edit';
 import type { WallSide } from '../lib/wall-sides';
@@ -58,6 +59,8 @@ export interface LayoutActions {
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
   setRoofStyle(style: RoofStyle): void;
+  /** Cut a corner out of the building, or fill it back in (#727). */
+  setCutout(cutout: FootprintCutout | null): void;
   setRoofColor(color: string): void;
   /** Roof dormers (#203). `addDormer` returns the new dormer's id. */
   addDormer(dormer: Omit<DormerInput, 'id'>): string;

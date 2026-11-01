@@ -238,8 +238,8 @@ export function useSceneEffects({
   // What the porch keep-out is fitted to (#285) — the effects key on this
   // rather than the whole layout.
   const entranceBuilding = useMemo<KeepOutBuilding>(
-    () => ({ width: layout.width, height: layout.height, terrain: layout.terrain, entrance: layout.entrance, floors: layout.floors }),
-    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors]
+    () => ({ width: layout.width, height: layout.height, terrain: layout.terrain, entrance: layout.entrance, floors: layout.floors, cutout: layout.cutout }),
+    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors, layout.cutout]
   );
 
   // Serialized signatures of exactly the item-derived inputs the structural
@@ -386,6 +386,7 @@ export function useSceneEffects({
       ? entranceGeometry(layout.entrance, {
           width: layout.width,
           depth: layout.height,
+          cutout: layout.cutout,
           floors: layout.floors,
           ...(layout.terrain ? { terrain: layout.terrain } : {}),
         })
@@ -943,6 +944,7 @@ export function useSceneEffects({
       ? entranceGeometry(layout.entrance, {
           width: layout.width,
           depth: layout.height,
+          cutout: layout.cutout,
           floors: layout.floors,
           ...(layout.terrain ? { terrain: layout.terrain } : {}),
         })

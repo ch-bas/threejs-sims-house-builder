@@ -1,5 +1,6 @@
 import { repairHardBudget } from './budget';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
+import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { cutoutFits, isFootprintCutout } from './footprint';
 import { rectOutline } from './room-detect';
@@ -648,7 +649,6 @@ function withoutPorchParts(floor: FloorLayout): FloorLayout {
   return { ...floor, items, ...(walls ? { interiorWalls: walls } : {}) };
 }
 
-/** Whitelist every object (#350) and bring every field within the caps above. */
 /** A polygon the footprint can't hold, or that crosses itself, goes back to its rectangle (#719). */
 function repairZoneShapes(floor: FloorLayout, layout: RoomLayout): FloorLayout {
   if (!floor.zones?.some((zone) => zone.outline)) return floor;
@@ -657,7 +657,17 @@ function repairZoneShapes(floor: FloorLayout, layout: RoomLayout): FloorLayout {
   return zones === floor.zones ? floor : { ...floor, zones };
 }
 
+/**
+ * Whitelist every object (#350) and bring every field within the caps above.
+ * A file can hold anything in a corner it cuts: fitting is what `setCutout`
+ * does, so a loaded L is the same house as one cut here (#727).
+ */
 function repairLayout(layout: RoomLayout): RoomLayout {
+  const repaired = repairFields(layout);
+  return repaired.cutout ? fitFloorsToCutout(repaired) : repaired;
+}
+
+function repairFields(layout: RoomLayout): RoomLayout {
   const patch: Partial<RoomLayout> = {
     name: capText(layout.name, MAX_NAME_LENGTH),
     floors: mapSame(mapSame(layout.floors, repairFloor), (floor) => repairZoneShapes(floor, layout)),
@@ -672,8 +682,9 @@ function repairLayout(layout: RoomLayout): RoomLayout {
     // A porch the street storey is too low for isn't built, so neither are its
     // door and back wall, as on the reducer's re-fit. `door` stays unset: raising
     // the storey brings both back.
-    const context = { width: layout.width, depth: layout.height, floors: layout.floors, ...(layout.terrain ? { terrain: layout.terrain } : {}) };
-    if (entranceProblem(entrance, context) === 'too-low') patch.floors = mapSame(patch.floors ?? layout.floors, withoutPorchParts);
+    const context = { width: layout.width, depth: layout.height, cutout: layout.cutout, floors: layout.floors, ...(layout.terrain ? { terrain: layout.terrain } : {}) };
+    const problem = entranceProblem(entrance, context);
+    if (problem === 'too-low' || problem === 'cutout-clash') patch.floors = mapSame(patch.floors ?? layout.floors, withoutPorchParts);
   }
   // A malformed cut, or one that leaves no wing on this house, is dropped, not
   // refused: the house loads as its rectangle. A pitched roof can't cover an L, so a file that
@@ -681,7 +692,7 @@ function repairLayout(layout: RoomLayout): RoomLayout {
   if (layout.cutout !== undefined) {
     if (!isFootprintCutout(layout.cutout) || !cutoutFits(layout.cutout, layout.width, layout.height)) {
       const { cutout: _dropped, ...rest } = layout;
-      return repairLayout(rest);
+      return repairFields(rest);
     }
     patch.cutout = pick(layout.cutout, CUTOUT_KEYS);
     if (patch.roof && (patch.roof.style === 'gable' || patch.roof.style === 'hipped')) patch.roof = { ...patch.roof, style: 'flat' };

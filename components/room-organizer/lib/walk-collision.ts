@@ -13,15 +13,15 @@
  * over the surfaces of `lib/walk-world`, climbing stairs as a ramp.
  */
 
-import { LOW_PROFILE_MAX_HEIGHT, rotatedHalfExtents } from './footprint';
+import { LOW_PROFILE_MAX_HEIGHT, isInsideBuilding, rotatedHalfExtents, shellWalls, type ShellWall } from './footprint';
 import { isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan, isWallMounted } from './opening-snap';
 import { hasNeighbours } from './site';
 import { floorElevation, interiorWallHeight, storeyHeight } from './storeys';
 import { entranceGeometry, entranceWallCut } from './street';
 import { generateStreet, type StreetSite } from './street-row';
-import { FLOOR_HEIGHT_METERS, type FloorLayout, type FurnitureItem, type InteriorWall, type Vec2, type WallId } from './types';
-import { walkSurfaceAt, type WalkBuilding, type WalkSurface, type WalkSurfaceKind, type WalkWorld } from './walk-world';
+import { FLOOR_HEIGHT_METERS, type FloorLayout, type FootprintCutout, type FurnitureItem, type InteriorWall, type Vec2, type WallId } from './types';
+import { insideWalls, walkSurfaceAt, type WalkBuilding, type WalkSurface, type WalkSurfaceKind, type WalkWorld } from './walk-world';
 
 /** One solid box in the XZ plane, in the `lib/geometry` OBB convention. */
 export interface WalkCollider {
@@ -67,6 +67,8 @@ export interface WalkCollisionOptions {
    */
   roomWidth?: number;
   roomDepth?: number;
+  /** The corner cut out of the building (#727). */
+  cutout?: FootprintCutout | undefined;
   /**
    * Leave stairs out of the colliders: the walkthrough climbs them as a ramp
    * (lib/walk-world) instead of stopping at an opaque box (#446).
@@ -222,13 +224,10 @@ function classifyDoorOwners(
     }
     if (bestId === null) continue;
     if (roomWidth !== undefined && roomDepth !== undefined && Number.isFinite(roomWidth + roomDepth)) {
-      const hw = roomWidth / 2;
-      const hd = roomDepth / 2;
       const exteriorDistance = Math.min(
-        distanceToSegment(x, z, -hw, -hd, hw, -hd),
-        distanceToSegment(x, z, -hw, hd, hw, hd),
-        distanceToSegment(x, z, -hw, -hd, -hw, hd),
-        distanceToSegment(x, z, hw, -hd, hw, hd)
+        ...shellWalls({ width: roomWidth, height: roomDepth, cutout: options.cutout }).map((wall) =>
+          distanceToSegment(x, z, wall.x1, wall.z1, wall.x2, wall.z2)
+        )
       );
       if (exteriorDistance <= EXTERIOR_DOOR_THRESHOLD && exteriorDistance < bestDistance) continue;
     }
@@ -337,7 +336,7 @@ export function resolveWalkerPosition(
 function walkerInsideRoom(position: Readonly<WalkerPosition>, options: WalkCollisionOptions): boolean {
   const { roomWidth, roomDepth } = options;
   if (roomWidth === undefined || roomDepth === undefined) return false;
-  return Math.abs(position.x) <= roomWidth / 2 && Math.abs(position.z) <= roomDepth / 2;
+  return isInsideBuilding({ width: roomWidth, height: roomDepth, cutout: options.cutout }, position.x, position.z);
 }
 
 function pushOut(
@@ -427,23 +426,6 @@ export interface ShellBuilding extends WalkBuilding {
   floors: readonly Pick<FloorLayout, 'height' | 'items' | 'hiddenWalls' | 'interiorWalls'>[];
 }
 
-interface ExteriorWallLine {
-  id: WallId;
-  x1: number;
-  z1: number;
-  x2: number;
-  z2: number;
-}
-
-function exteriorWallLines(halfWidth: number, halfDepth: number): ExteriorWallLine[] {
-  return [
-    { id: 'north', x1: -halfWidth, z1: -halfDepth, x2: halfWidth, z2: -halfDepth },
-    { id: 'south', x1: -halfWidth, z1: halfDepth, x2: halfWidth, z2: halfDepth },
-    { id: 'west', x1: -halfWidth, z1: -halfDepth, x2: -halfWidth, z2: halfDepth },
-    { id: 'east', x1: halfWidth, z1: -halfDepth, x2: halfWidth, z2: halfDepth },
-  ];
-}
-
 /**
  * The exterior wall a door is cut from, or null when it isn't on one. The
  * renderer's rule (three/wall-openings.ts classifyOpeningOwners): the nearest
@@ -454,16 +436,28 @@ export function exteriorDoorWall(
   door: Pick<FurnitureItem, 'type' | 'position'>,
   interiorWalls: readonly InteriorWall[],
   roomWidth: number,
-  roomDepth: number
+  roomDepth: number,
+  cutout?: FootprintCutout
 ): WallId | null {
+  return exteriorDoorShellWall(door, interiorWalls, roomWidth, roomDepth, cutout)?.side ?? null;
+}
+
+/** As `exteriorDoorWall`, the very wall of the shell rather than the side it faces. */
+function exteriorDoorShellWall(
+  door: Pick<FurnitureItem, 'type' | 'position'>,
+  interiorWalls: readonly InteriorWall[],
+  roomWidth: number,
+  roomDepth: number,
+  cutout: FootprintCutout | undefined
+): ShellWall | null {
   if (door.type !== 'door' || !door.position) return null;
   const { x, z } = door.position;
-  let best: WallId | null = null;
+  let best: ShellWall | null = null;
   let bestDistance = Infinity;
-  for (const wall of exteriorWallLines(roomWidth / 2, roomDepth / 2)) {
+  for (const wall of shellWalls({ width: roomWidth, height: roomDepth, cutout })) {
     const distance = distanceToSegment(x, z, wall.x1, wall.z1, wall.x2, wall.z2);
     if (distance > EXTERIOR_DOOR_THRESHOLD || distance >= bestDistance) continue;
-    best = wall.id;
+    best = wall;
     bestDistance = distance;
   }
   if (best === null) return null;
@@ -496,8 +490,7 @@ function subtractGaps(from: number, to: number, gaps: Array<[number, number]>): 
 export function buildShellColliders(building: ShellBuilding, floorIndex: number): WalkCollider[] {
   const floor = building.floors[floorIndex];
   if (!floor) return [];
-  const halfWidth = building.width / 2;
-  const halfDepth = building.depth / 2;
+  const { cutout } = building;
   const interiorWalls = floor.interiorWalls ?? [];
 
   let porch: { x0: number; x1: number; frontZ: number; backZ: number } | null = null;
@@ -505,6 +498,7 @@ export function buildShellColliders(building: ShellBuilding, floorIndex: number)
     const geometry = entranceGeometry(building.entrance, {
       width: building.width,
       depth: building.depth,
+      cutout,
       floors: building.floors,
       ...(building.terrain ? { terrain: building.terrain } : {}),
     });
@@ -517,19 +511,20 @@ export function buildShellColliders(building: ShellBuilding, floorIndex: number)
   const colliders: WalkCollider[] = [];
   const bottom = floorElevation(building.floors, floorIndex);
   const top = floorElevation(building.floors, floorIndex + 1);
-  for (const wall of exteriorWallLines(halfWidth, halfDepth)) {
-    if (floor.hiddenWalls?.includes(wall.id)) continue;
+  for (const wall of shellWalls({ width: building.width, height: building.depth, cutout })) {
+    if (floor.hiddenWalls?.includes(wall.side)) continue;
     const alongX = wall.z1 === wall.z2;
-    const half = alongX ? halfWidth : halfDepth;
+    const low = alongX ? wall.x1 : wall.z1;
+    const high = alongX ? wall.x2 : wall.z2;
     const gaps: Array<[number, number]> = [];
     for (const item of floor.items) {
-      if (!item.position || exteriorDoorWall(item, interiorWalls, building.width, building.depth) !== wall.id) continue;
-      const width = Math.min(item.width, Math.max(0, half * 2 - EXTERIOR_CUT_END_MARGIN));
-      const centre = Math.max(-half + width / 2, Math.min(half - width / 2, alongX ? item.position.x : item.position.z));
+      if (!item.position || exteriorDoorShellWall(item, interiorWalls, building.width, building.depth, cutout)?.id !== wall.id) continue;
+      const width = Math.min(item.width, Math.max(0, high - low - EXTERIOR_CUT_END_MARGIN));
+      const centre = Math.max(low + width / 2, Math.min(high - width / 2, alongX ? item.position.x : item.position.z));
       gaps.push([centre - width / 2, centre + width / 2]);
     }
     if (wall.id === 'north' && porch) gaps.push([porch.x0, porch.x1]);
-    for (const [from, to] of subtractGaps(-half, half, gaps)) {
+    for (const [from, to] of subtractGaps(low, high, gaps)) {
       const mid = (from + to) / 2;
       colliders.push({
         ...(alongX
@@ -626,7 +621,7 @@ function advanceAxis(
 ): void {
   const fromX = walker.x;
   const fromZ = walker.z;
-  const insideRoom = Math.abs(fromX) <= world.halfWidth && Math.abs(fromZ) <= world.halfDepth;
+  const insideRoom = insideWalls(world, fromX, fromZ);
   walker.x += dx;
   walker.z += dz;
   pushOut(colliders, walker, radius, insideRoom, walker.y);
@@ -650,6 +645,7 @@ export function buildSightWalls(building: ShellBuilding): WalkCollider[][] {
     ...buildWalkColliders(floor.items, floor.interiorWalls ?? [], {
       roomWidth: building.width,
       roomDepth: building.depth,
+      cutout: building.cutout,
     }).filter((collider) => collider.wall),
     ...buildShellColliders(building, index),
   ]);
@@ -757,6 +753,7 @@ export function buildWalkerColliders(
     ...buildWalkColliders(floor.items, floor.interiorWalls ?? [], {
       roomWidth: building.width,
       roomDepth: building.depth,
+      cutout: building.cutout,
       stairsAsRamps: true,
       baseY: floorElevation(building.floors, index),
       storeyHeight: storeyHeight(floor),
