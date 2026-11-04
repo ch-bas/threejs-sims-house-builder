@@ -1104,10 +1104,11 @@ export function useSceneEffects({
       clearItemLabels(scene);
       return;
     }
-    renderItemLabels(THREE, scene, activeFloor.items, activeFloorY);
-    // activeFloor.items is read through labelsKey only (#409).
+    renderItemLabels(THREE, scene, activeFloor.items, activeFloorY, activeFloor);
+    // activeFloor.items is read through labelsKey only (#409); the storey
+    // height, which places a hung item's label (#657), through its key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, labelsKey, activeFloorY]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, labelsKey, activeFloorY, activeFloor.height]);
 
   // Roof (#283). Which storey is active only shows or hides it: the roof is
   // built while it is on screen and kept, hidden, below the top storey, so a
