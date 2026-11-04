@@ -1,7 +1,7 @@
 import { LAMP_POOL_SIZE, type LampPoolPlan } from '../lib/night-lights';
 import { fitSunShadow, type ShadowBox, type SunShadowFit, type Vec3 } from '../lib/sun-shadow';
 import { applyOutdoorWeather } from './outdoor';
-import { applyOutdoorLampMask } from './outdoor-lamps';
+import { applyOutdoorLampMask, setOutdoorLampMaskLive } from './outdoor-lamps';
 import { SKY_RADIUS, followCamera, mulberry32, updateSky } from './sky';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -238,10 +238,13 @@ export function prewarmLampPool(renderer: ThreeNS.WebGLRenderer, scene: ThreeNS.
   const pool = lampPool(scene);
   if (!pool || pool.visible) return;
   pool.visible = true;
+  // The outdoor materials' night programs carry the lamp mask (#664).
+  setOutdoorLampMaskLive(true);
   try {
     renderer.compile(scene, camera);
   } finally {
     pool.visible = false;
+    setOutdoorLampMaskLive(false);
   }
 }
 

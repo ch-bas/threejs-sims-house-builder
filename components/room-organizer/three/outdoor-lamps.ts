@@ -13,11 +13,26 @@ const POINT_LIGHT_LINE = 'getPointLightInfo( pointLight, geometryPosition, direc
  */
 const lampReachesOutdoors = { value: new Array<number>(LAMP_POOL_SIZE).fill(0) };
 
+/**
+ * Whether the pool's point lights are in the scene. Without them the mask has
+ * nothing to scale, so an outdoor material compiles exactly as an indoor one
+ * and shares its program: by day the mask costs no shader at all. Flips with
+ * the pool's visibility, which changes the light count, so three looks the
+ * program up again at the same moment.
+ */
+let maskLive = false;
+
 /** Point the shared mask at the lamps `plan` picked; the order is the pool's. */
 export function applyOutdoorLampMask(plan: LampPoolPlan): void {
+  maskLive = plan.lit;
   plan.slots.forEach((slot, index) => {
     lampReachesOutdoors.value[index] = slot.outdoors ? 1 : 0;
   });
+}
+
+/** For a compile with the pool shown ahead of time (`prewarmLampPool`). */
+export function setOutdoorLampMaskLive(live: boolean): void {
+  maskLive = live;
 }
 
 /** three's light chunk with each point light scaled by its slot of the mask. */
@@ -31,7 +46,8 @@ export function maskedLightsChunk(chunk: string): string {
  * A shader flag rather than a shorter range: clamping a lamp to its nearest
  * outside wall would also take the light out of its own room. Costs one float
  * multiply per light and no extra light; the array is the pool's fixed size,
- * so a lamp edit never recompiles this.
+ * so a lamp edit never recompiles this. Only while the lamps are on: by day
+ * the material is left as it was (see `maskLive`).
  */
 export function shutOutIndoorLamps(THREE: ThreeModule, material: ThreeNS.Material): void {
   if (material.userData.indoorLampsShut === true) return;
@@ -41,13 +57,14 @@ export function shutOutIndoorLamps(THREE: ThreeModule, material: ThreeNS.Materia
   const previousKey = material.customProgramCacheKey();
   material.onBeforeCompile = (shader, renderer) => {
     previous.call(material, shader, renderer);
+    if (!maskLive) return;
     shader.uniforms.lampReachesOutdoors = lampReachesOutdoors;
     shader.fragmentShader = `uniform float lampReachesOutdoors[ ${LAMP_POOL_SIZE} ];\n${shader.fragmentShader.replace(
       '#include <lights_fragment_begin>',
       maskedLightsChunk(THREE.ShaderChunk.lights_fragment_begin)
     )}`;
   };
-  material.customProgramCacheKey = () => `${previousKey}|outdoor-lamps`;
+  material.customProgramCacheKey = () => (maskLive ? `${previousKey}|outdoor-lamps` : previousKey);
 }
 
 /** `shutOutIndoorLamps` for every material under `root`. */
