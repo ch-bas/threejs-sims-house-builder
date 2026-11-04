@@ -81,9 +81,13 @@ describe('shared detail textures (#756, #559)', () => {
   });
 
   it('redraws after a release', () => {
-    const first = surfaceMaterial(context, 0xffffff, 'fabric', { detailed: true }).map;
+    // Compare ids: an assertion on the textures themselves formats their
+    // pixel arrays, which takes seconds and timed out on CI.
+    const first = surfaceMaterial(context, 0xffffff, 'fabric', { detailed: true }).map?.uuid;
     releaseDetailTextures();
-    expect(surfaceMaterial(context, 0xffffff, 'fabric', { detailed: true }).map).not.toBe(first);
+    const again = surfaceMaterial(context, 0xffffff, 'fabric', { detailed: true }).map?.uuid;
+    expect(first).toBeDefined();
+    expect(again).not.toBe(first);
   });
 
   it('adds no map without asking, and none for a class without detail', () => {
