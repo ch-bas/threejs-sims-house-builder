@@ -32,6 +32,18 @@ function isSharedGeometry(geometry: ThreeNS.BufferGeometry): boolean {
 }
 
 /**
+ * Textures a module cache hands to many materials, such as the ground maps
+ * and the lit-window texture: `disposeObject` leaves them alone, or every
+ * rebuild would upload them again. Their module frees them at unmount.
+ */
+const sharedTextures = new WeakSet<ThreeNS.Texture>();
+
+export function markSharedTexture<T extends ThreeNS.Texture>(texture: T): T {
+  sharedTextures.add(texture);
+  return texture;
+}
+
+/**
  * Free the GPU resources owned by an object and all its descendants.
  *
  * `scene.remove()` only detaches an object from the graph — geometries,
@@ -63,7 +75,7 @@ function disposeMaterial(material: ThreeNS.Material): void {
   // Dispose every texture slot (map, normalMap, sprite map, …) generically.
   for (const value of Object.values(material)) {
     const texture = value as ThreeNS.Texture | null;
-    if (texture && typeof texture === 'object' && texture.isTexture) texture.dispose();
+    if (texture && typeof texture === 'object' && texture.isTexture && !sharedTextures.has(texture)) texture.dispose();
   }
   material.dispose();
 }

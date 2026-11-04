@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { disposeScene } from './builder-utils';
+import { disposeScene, markSharedTexture, removeAndDispose } from './builder-utils';
 
 describe('disposeScene (#213)', () => {
   it('disposes every geometry, material, texture and instanced buffer, and empties the scene', () => {
@@ -32,5 +32,22 @@ describe('disposeScene (#213)', () => {
       expect(disposed.has(resource)).toBe(true);
     }
     expect(disposed.size).toBe(8);
+  });
+});
+
+describe('shared textures', () => {
+  it('frees the material but not a texture a module cache shares', () => {
+    const scene = new THREE.Scene();
+    const shared = markSharedTexture(new THREE.Texture());
+    const own = new THREE.Texture();
+    const material = new THREE.MeshStandardMaterial({ map: shared, emissiveMap: own });
+    const freed: object[] = [];
+    for (const resource of [shared, own, material]) resource.addEventListener('dispose', () => freed.push(resource));
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(), material);
+    scene.add(mesh);
+    removeAndDispose(scene, mesh);
+    expect(freed).toContain(material);
+    expect(freed).toContain(own);
+    expect(freed).not.toContain(shared);
   });
 });
