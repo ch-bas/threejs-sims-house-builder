@@ -21,6 +21,7 @@ import { buildChair, buildArmchair, buildBench, buildSofa } from './builders/bui
 import { buildBookshelf, buildCabinet } from './builders/builders-storage';
 import { buildDoor, buildWindow, buildStairs } from './builders/builders-structure';
 import { buildTableOrDesk } from './builders/builders-tables';
+import { setBackOpening } from './reveals';
 import type { FurnitureItem } from '../lib/types';
 
 const BUILDERS: Record<string, FurnitureBuilder> = {
@@ -102,7 +103,9 @@ export function createFurnitureModel(
   THREE: ThreeModule,
   item: FurnitureItem,
   hasCollision: boolean,
-  storeyHeight?: number
+  storeyHeight?: number,
+  /** A door or window's set-back into its reveal (`openingSetback`, #758); 0 elsewhere. */
+  revealSetback = 0
 ): ReturnType<FurnitureBuilder> {
   const ctx: BuilderContext = {
     THREE,
@@ -115,5 +118,7 @@ export function createFurnitureModel(
   // Own keys only: a saved type such as "constructor" would otherwise resolve
   // an Object.prototype member and crash the editor on every load (#568).
   const builder = Object.hasOwn(BUILDERS, item.type) ? BUILDERS[item.type] : undefined;
-  return (builder ?? buildFallback)(ctx);
+  const group = (builder ?? buildFallback)(ctx);
+  setBackOpening(group, revealSetback);
+  return group;
 }

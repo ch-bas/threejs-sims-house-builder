@@ -9,10 +9,11 @@ import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
 import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
+import { revealSetbacks } from './reveals';
 import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
 import { stripRelief } from './surface-maps';
-import { computeFloorOpenings, computeWallOpenings } from './wall-openings';
+import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings } from './wall-openings';
 import type { RoomLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -130,11 +131,16 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       });
     }
 
-    // Furniture, placed as the furniture effect places it.
+    // Furniture, placed as the furniture effect places it: doors and windows
+    // in an outer wall set back into its reveal, curtains in front of it (#758).
+    const owners = classifyOpeningOwners(floor.items, width, depth, floor.interiorWalls ?? [], cutout);
+    const revealContext = { width, depth, cutout, hiddenWalls: floor.hiddenWalls, noWalls: tracedGround };
+    const setbacks = revealSetbacks(floor.items, owners, revealContext, storeyH);
     for (const item of floor.items) {
       const position = item.position;
       if (!position) continue;
-      const group = createFurnitureModel(THREE, itemForStorey(item, floor, underRoof(layout, index)), false, storeyH);
+      const setback = setbacks.get(item.id) ?? 0;
+      const group = createFurnitureModel(THREE, itemForStorey(item, floor, underRoof(layout, index)), false, storeyH, setback);
       stripDetailMaps(group);
       group.name = item.name;
       group.userData.type = ROOM_OBJECT_TAGS.Furniture;

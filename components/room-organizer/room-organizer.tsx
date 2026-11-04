@@ -82,7 +82,9 @@ import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
+import { revealSetbacks } from './three/reveals';
 import { roofPeakHeight } from './three/roof';
+import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
 import type { RoomStampSpec } from './lib/room-stamp';
@@ -1098,6 +1100,19 @@ export function RoomOrganizer(): JSX.Element {
         interiorWalls: activeFloor.interiorWalls,
         storeyHeight: activeStoreyHeight,
       }),
+    // Where it will stand: a door or window back in its reveal, curtains out in front of one (#758).
+    revealSetback: (item: FurnitureItem) => {
+      const items = [...activeFloor.items, item];
+      const owners = classifyOpeningOwners(items, layout.width, layout.height, activeFloor.interiorWalls ?? [], layout.cutout);
+      const context = {
+        width: layout.width,
+        depth: layout.height,
+        cutout: layout.cutout,
+        hiddenWalls: activeFloor.hiddenWalls,
+        noWalls: activeFloorIndex === 0 && !!layout.floorPlanImage,
+      };
+      return revealSetbacks(items, owners, context, activeStoreyHeight).get(item.id) ?? 0;
+    },
     // placeDiscrete plays the place cue, or `refused` (hard budget, full floor).
     place: (catalogItem, position, rotation, keep) => {
       const id = placeDiscrete(catalogItem, position, rotation);

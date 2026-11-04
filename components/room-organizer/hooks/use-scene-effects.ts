@@ -49,6 +49,7 @@ import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { applyNightGlow } from '../three/night-glow';
 import { setOutdoorVisible } from '../three/outdoor';
+import { revealSetbacks } from '../three/reveals';
 import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
 import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
@@ -120,6 +121,8 @@ interface PlannedFurniture {
   isActive: boolean;
   /** The wall a door or window is cut into (#659). */
   owner?: OpeningOwner;
+  /** How far a door or window stands back in its reveal (#758). */
+  revealSetback: number;
 }
 
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
@@ -294,6 +297,13 @@ export function useSceneEffects({
         ])
       ),
     [layout.floors]
+  );
+
+  // Which outer walls each storey builds: a door or window in one stands back
+  // in its reveal (#758).
+  const revealWallsKey = useMemo(
+    () => JSON.stringify([!!layout.floorPlanImage, layout.floors.map((floor) => floor.hiddenWalls ?? [])]),
+    [layout.floorPlanImage, layout.floors]
   );
 
   const interiorWallsKey = useMemo(
@@ -608,6 +618,16 @@ export function useSceneEffects({
       // The wall each door and window is cut into: the group follows that
       // wall's visibility in cutaway and walls-down (#659).
       const owners = classifyOpeningOwners(items, layout.width, layout.height, floor?.interiorWalls ?? [], layout.cutout);
+      // Doors and windows in a built outer wall stand back in its reveal, and
+      // curtains over one out in front of it (#758).
+      const revealContext = {
+        width: layout.width,
+        depth: layout.height,
+        cutout: layout.cutout,
+        hiddenWalls: floor?.hiddenWalls,
+        noWalls: index === 0 && !!layout.floorPlanImage,
+      };
+      const setbacks = revealSetbacks(items, owners, revealContext, storeyH);
       items.forEach((item, i) => {
         const collision = collisions[i] === true;
         // Stairs climb to the floor above and openings are fitted into the
@@ -616,10 +636,11 @@ export function useSceneEffects({
         const fitted = itemForStorey(item, floor, underRoof(layout, index));
         const key = furnitureMeshKey(index, item.id);
         const owner = owners.get(item.id);
-        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive, ...(owner ? { owner } : {}) });
+        const revealSetback = setbacks.get(item.id) ?? 0;
+        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive, revealSetback, ...(owner ? { owner } : {}) });
         nextBuildKeys.set(
           key,
-          furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady })
+          furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady, revealSetback })
         );
       });
     }
@@ -637,7 +658,7 @@ export function useSceneEffects({
       if (!spec || buildKey === undefined) continue;
       const stale = meshes.get(key);
       if (stale) removeAndDispose(scene, stale.group);
-      const group = createFurnitureModel(THREE, spec.fitted, spec.collision, spec.storeyH);
+      const group = createFurnitureModel(THREE, spec.fitted, spec.collision, spec.storeyH, spec.revealSetback);
       // Covers builder parts that bypass the shared material() helper (#167).
       if (spec.collision) applyCollisionTint(group);
       if (ghostOtherFloors && !spec.isActive) ghostifyGroup(group);
@@ -701,6 +722,8 @@ export function useSceneEffects({
     // Opening ownership (#659) reads the partitions and the footprint; the
     // wall display is re-applied to the groups it stamps.
     interiorWallsKey, cutoutKey, layout.width, layout.height, wallDisplay,
+    // The reveal set-back reads which outer walls are built (#758).
+    revealWallsKey,
     // A stair's rise reads whether it is under a roof (#654).
     roofStyle,
     // Not read in the body: createFurnitureModel picks the rigged person up
@@ -798,6 +821,8 @@ export function useSceneEffects({
         new THREE.LineBasicMaterial({ color: accent, linewidth: 2 })
       );
       outline.position.y = (band.bottom + band.top) / 2;
+      // Around the frame where it stands, back in its reveal (#758).
+      outline.position.z = (group.userData.revealSetback as number | undefined) ?? 0;
       outline.userData.type = 'selection-outline';
       outline.userData.signature = wanted.signature;
       // Decoration, not a pointer target: the furniture raycast is recursive
@@ -817,6 +842,8 @@ export function useSceneEffects({
     activeFloorIndex, selectedItemId, extraSelectedIds, highlightedIds,
     itemsKey, collisionKey, storeyHeightsKey, allFloors, ghostOtherFloors, peopleModelReady,
     roofStyle, layout.floors.length,
+    // A door or window rebuilt for its reveal (#758) loses its outline too.
+    interiorWallsKey, cutoutKey, layout.width, layout.height, revealWallsKey,
   ]);
 
   // The active storey while the others are ghosted, else -1: its cones stay
