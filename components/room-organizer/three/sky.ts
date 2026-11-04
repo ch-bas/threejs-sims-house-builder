@@ -193,7 +193,8 @@ export function updateSky(THREE: ThreeModule, scene: ThreeNS.Scene, profile: Sky
   }
   const sun = findTagged<ThreeNS.Sprite>(scene, SKY_TAGS.Sun);
   if (sun) {
-    const [x, y, z] = profile.sun.position;
+    // Where the sun really is, not the raised light that rakes the lot.
+    const [x, y, z] = profile.sunDisc;
     const length = Math.hypot(x, y, z) || 1;
     sun.position.set((x / length) * SUN_DISTANCE, (y / length) * SUN_DISTANCE, (z / length) * SUN_DISTANCE);
     sun.material.color.setHex(profile.sun.color);
@@ -211,7 +212,7 @@ function paintDome(THREE: ThreeModule, dome: ThreeNS.Mesh, profile: SkyProfile):
   const horizon = new THREE.Color(profile.background);
   const zenith = new THREE.Color(profile.backgroundTop);
   const glow = new THREE.Color(profile.sun.color);
-  const [sx, sy, sz] = profile.sun.position;
+  const [sx, sy, sz] = profile.sunDisc;
   const sunLength = Math.hypot(sx, sy, sz) || 1;
   const glowStrength = SUN_GLOW * (1 - profile.twilight);
   const paint = new THREE.Color();

@@ -1,3 +1,4 @@
+import { markSharedTexture } from './builder-utils';
 import { mulberry32 } from './sky';
 import { getMaxAnisotropy } from './texture-settings';
 import type * as ThreeNS from 'three';
@@ -18,7 +19,17 @@ const painters: Record<GroundSurface, (ctx: CanvasRenderingContext2D, size: numb
   asphalt: paintAsphalt,
 };
 
+/**
+ * One map per surface and size, shared by every ground material: marked
+ * shared, so a rebuilt lot doesn't upload ~1.4 MB a map again. Freed by
+ * `releaseGroundTextures` at unmount.
+ */
 const cache = new Map<string, ThreeNS.CanvasTexture>();
+
+export function releaseGroundTextures(): void {
+  for (const texture of cache.values()) texture.dispose();
+  cache.clear();
+}
 
 /** A light, near-neutral tile: `material.color` keeps the weather tint (#189). */
 function groundTexture(THREE: ThreeModule, surface: GroundSurface, pixels: number): ThreeNS.CanvasTexture | null {
@@ -32,7 +43,7 @@ function groundTexture(THREE: ThreeModule, surface: GroundSurface, pixels: numbe
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   painters[surface](ctx, pixels, mulberry32(pixels + surface.length));
-  const texture = new THREE.CanvasTexture(canvas);
+  const texture = markSharedTexture(new THREE.CanvasTexture(canvas));
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
@@ -129,32 +140,99 @@ function speckle(ctx: CanvasRenderingContext2D, size: number, random: () => numb
   for (let i = 0; i < count; i += 1) ctx.fillRect(random() * size, random() * size, 1, 1);
 }
 
+export interface GroundSurfaceOptions {
+  /** Pixels across the tile, by quality tier (#760). */
+  pixels?: number;
+  /** Grass only: read the map again far larger to break the tile up. Off on the low tier. */
+  macro?: boolean;
+  /**
+   * Fade into the sky with distance from the camera: the ground past the lot.
+   * The lot's half-diagonal, in metres: the fade starts past its far corner.
+   */
+  fade?: number;
+}
+
 /**
  * Lay `surface` on a ground material (#761): a generated map, tiled by world
  * position so a slope, the skirt and the lot line up with no UV work on any of
  * them, and on grass read again far larger to break the tile up. Two lookups
- * at most, no per-frame work. `material.color` keeps the tint.
+ * at most, no per-frame work. `material.color` keeps the tint. The tile scale
+ * is a uniform, so paving, asphalt and plain grass share one shader program.
  */
 export function layGroundSurface(
   THREE: ThreeModule,
   material: ThreeNS.MeshStandardMaterial,
   surface: GroundSurface,
-  pixels: number = TILE_PIXELS
+  options: GroundSurfaceOptions = {}
 ): void {
-  const map = groundTexture(THREE, surface, pixels);
+  const map = groundTexture(THREE, surface, options.pixels ?? TILE_PIXELS);
   if (!map) return;
   material.map = map;
-  const perMetre = (1 / TILE_METRES[surface]).toFixed(6);
+  const macro = surface === 'grass' && options.macro !== false;
+  const perMetre = { value: 1 / TILE_METRES[surface] };
   material.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader.replace(
+    shader.uniforms.groundPerMetre = perMetre;
+    shader.vertexShader = `uniform float groundPerMetre;\n${shader.vertexShader.replace(
       '#include <project_vertex>',
-      `#include <project_vertex>\n\tvMapUv = ( modelMatrix * vec4( transformed, 1.0 ) ).xz * ${perMetre};`
-    );
-    if (surface !== 'grass') return;
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <map_fragment>',
-      `#include <map_fragment>\n\tdiffuseColor.rgb *= 0.74 + 0.5 * texture2D( map, vMapUv * ${MACRO_SCALE} ).g;`
-    );
+      '#include <project_vertex>\n\tvMapUv = ( modelMatrix * vec4( transformed, 1.0 ) ).xz * groundPerMetre;'
+    )}`;
+    if (macro) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>\n\tdiffuseColor.rgb *= 0.74 + 0.5 * texture2D( map, vMapUv * ${MACRO_SCALE} ).g;`
+      );
+    }
+    if (options.fade !== undefined) fadeShader(shader, options.fade);
   };
-  material.customProgramCacheKey = () => `ground-${surface}`;
+  material.customProgramCacheKey = () => `ground${macro ? '-macro' : ''}${options.fade !== undefined ? '-fade' : ''}`;
+}
+
+/** Nearest the camera at which the ground past the lot starts thinning, in metres. */
+const FADE_MIN_START = 165;
+/** Past the lot's far corner, so the lot itself, which never fades, shows no edge. */
+const FADE_LOT_CLEARANCE = 20;
+/** The fade ends this many times as far out as it starts... */
+const FADE_LENGTH = 1.8;
+/** ...but inside the camera's far plane (1000 m), or the plane cuts it off with an edge. */
+const FADE_MAX_END = 950;
+
+/**
+ * Thin a surface into the sky by its distance from the camera, measured
+ * across the ground, so it goes into the horizon haze along a line level with
+ * the horizon wherever the camera stands. A fade fixed to the lot drew its
+ * round outer edge as a green hump against the sky from far out. It starts
+ * past the lot's far corner from the camera, so the lot never shows a square
+ * edge. Reads only three's own `cameraPosition`: nothing to update per frame.
+ */
+function fadeShader(shader: { uniforms: Record<string, { value: unknown }>; vertexShader: string; fragmentShader: string }, lotReach: number): void {
+  shader.uniforms.groundFadeLot = { value: lotReach };
+  shader.vertexShader = `varying vec2 vGroundFadeXZ;\n${shader.vertexShader.replace(
+    '#include <project_vertex>',
+    '#include <project_vertex>\n\tvGroundFadeXZ = ( modelMatrix * vec4( transformed, 1.0 ) ).xz;'
+  )}`;
+  shader.fragmentShader = `uniform float groundFadeLot;\nvarying vec2 vGroundFadeXZ;\n${shader.fragmentShader.replace(
+    '#include <opaque_fragment>',
+    [
+      `float groundFadeEnd = min( ${FADE_MAX_END.toFixed(1)}, ${FADE_LENGTH.toFixed(2)} * max( ${FADE_MIN_START.toFixed(1)}, length( cameraPosition.xz ) + groundFadeLot + ${FADE_LOT_CLEARANCE.toFixed(1)} ) );`,
+      `diffuseColor.a *= 1.0 - smoothstep( groundFadeEnd / ${FADE_LENGTH.toFixed(2)}, groundFadeEnd, distance( vGroundFadeXZ, cameraPosition.xz ) );`,
+      '#include <opaque_fragment>',
+    ].join('\n\t')
+  )}`;
+}
+
+/** The distance fade of the ground past the lot on a material with no map: the road's tails. */
+export function fadeWithDistance(material: ThreeNS.Material, lotReach: number): void {
+  material.onBeforeCompile = (shader) => fadeShader(shader, lotReach);
+  material.customProgramCacheKey = () => 'ground-fade-only';
+}
+
+/**
+ * How opaque the faded ground is `distance` across the ground from a camera
+ * standing `cameraXZ` across the ground from the lot's middle. Mirrors the shader.
+ */
+export function groundFadeAlpha(distance: number, cameraXZ: number, lotReach: number): number {
+  const end = Math.min(FADE_MAX_END, FADE_LENGTH * Math.max(FADE_MIN_START, cameraXZ + lotReach + FADE_LOT_CLEARANCE));
+  const start = end / FADE_LENGTH;
+  const t = Math.min(1, Math.max(0, (distance - start) / (end - start)));
+  return 1 - t * t * (3 - 2 * t);
 }

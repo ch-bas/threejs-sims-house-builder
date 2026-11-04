@@ -5,6 +5,7 @@ import { qualityProfile, type QualityChoice, type QualityProfile } from '../lib/
 import { ORBIT_FOV_DEG, ORBIT_MAX_POLAR, ORBIT_START, clearOfGround, orbitNear } from '../lib/scene-insets';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
+import { releaseGroundTextures } from '../three/ground-surfaces';
 import { addLights, applyShadowQuality } from '../three/lighting';
 import { releaseRoomLightTexture } from '../three/night-glow';
 import { releasePeopleGeometry } from '../three/people-model';
@@ -217,8 +218,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       // Runs after the scene is freed: placed people and walkers share the
       // cached people.glb geometry, which no disposeObject call frees (#284).
       cleanup.push(() => releasePeopleGeometry());
-      // Likewise the lit-window texture, shared by every pane that uses it
-      // and skipped by disposeObject.
+      // Likewise the ground maps and the lit-window texture, shared by every
+      // material that uses them and skipped by disposeObject.
+      cleanup.push(() => releaseGroundTextures());
       cleanup.push(() => releaseRoomLightTexture());
       // Cleanups run last-in-first-out, so this frees the whole graph (stars,
       // moon, furniture, shell, instanced outdoor meshes, sky background)
