@@ -9,7 +9,7 @@ export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const base = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.35, item.width * 0.42, item.height * 0.1, 16),
-    material(THREE, 0x444444, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 })
+    material(THREE, 0x444444, hasCollision, opacity, { roughness: 0.5, metalness: 1 })
   );
   base.position.y = item.height * 0.05;
   group.add(base);
@@ -17,7 +17,7 @@ export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const stand = mesh(
     THREE,
     new THREE.CylinderGeometry(item.width * 0.1, item.width * 0.1, item.height * 0.7, 12),
-    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 0.4 })
+    material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 1 })
   );
   stand.position.y = item.height * 0.45;
   group.add(stand);
@@ -59,7 +59,7 @@ export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacit
   const cordMat = material(THREE, 0x222222, hasCollision, opacity, { roughness: 0.8 });
   const shadeMat = material(THREE, baseColor, hasCollision, opacity, {
     roughness: 0.6,
-    metalness: 0.3,
+    metalness: 0,
     emissive: baseColor,
     emissiveIntensity: 0.25,
     side: THREE.DoubleSide,
@@ -114,8 +114,8 @@ export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacit
 
 export function buildLamppost({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const metalMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.6 });
-  const glassMat = material(THREE, 0xfff59d, hasCollision, opacity, { roughness: 0.1, metalness: 0.0, emissive: 0xfff176, emissiveIntensity: 0.4 });
+  const metalMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 1 });
+  const glassMat = material(THREE, 0xfff59d, hasCollision, opacity, { roughness: 0.1, metalness: 0, emissive: 0xfff176, emissiveIntensity: 0.4 });
 
   const base = mesh(THREE, new THREE.CylinderGeometry(item.width * 0.4, item.width * 0.5, item.height * 0.05, 12), metalMat);
   base.position.y = item.height * 0.025;
