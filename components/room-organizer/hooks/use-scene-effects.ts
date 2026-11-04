@@ -687,7 +687,7 @@ export function useSceneEffects({
       ),
     [furniturePlan, entranceBuilding, ghostOtherFloors, activeFloorIndex]
   );
-  const contactKey = JSON.stringify(contactPlans);
+  const contactKey = useMemo(() => JSON.stringify(contactPlans), [contactPlans]);
   useEffect(() => {
     invalidate();
     if (!isReady) return;

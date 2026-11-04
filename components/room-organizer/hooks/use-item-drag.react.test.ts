@@ -3,8 +3,11 @@ import { cleanup, renderHook } from '@testing-library/react';
 import * as THREE from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem } from '../lib/__testfixtures__/fixtures';
+import { liftContactPatches } from '../three/contact-shadow';
 import { useItemDrag } from './use-item-drag';
 import type { LayoutActions } from './use-layout-state';
+
+vi.mock('../three/contact-shadow', () => ({ liftContactPatches: vi.fn() }));
 
 describe('useItemDrag — cancelled gestures commit nothing (#207 follow-up)', () => {
   afterEach(cleanup);
@@ -59,6 +62,41 @@ describe('useItemDrag — cancelled gestures commit nothing (#207 follow-up)', (
     expect(actions.bulkSetPositions).not.toHaveBeenCalled();
     expect(actions.setLocked).not.toHaveBeenCalled();
     expect(actions.updateItem).not.toHaveBeenCalled();
+  });
+});
+
+describe('useItemDrag: the floor patches come back on every drop (#754)', () => {
+  afterEach(cleanup);
+
+  it('paints a moved drop where the items landed, even when the reducer changes nothing', () => {
+    const lift = vi.mocked(liftContactPatches);
+    lift.mockClear();
+    const actions = {
+      moveItem: vi.fn(),
+      bulkSetPositions: vi.fn(),
+      setLocked: vi.fn(),
+      updateItem: vi.fn(),
+    } as unknown as LayoutActions;
+    const { result } = renderHook(() =>
+      useItemDrag({
+        activeFloor: makeFloor({ items: [makeItem({ id: 'a', position: { x: 0, z: 0 } })] }),
+        activeFloorIndex: 0,
+        roomWidth: 10,
+        roomDepth: 10,
+        keepOut: [],
+        frontGap: null,
+        actions,
+        allSelectedIds: new Set(['a']),
+      })
+    );
+    result.current.sceneBoxRef.current = { current: new THREE.Scene() };
+    result.current.handleDragStart('a');
+    result.current.handleDrag('a', 2, 3);
+    result.current.handleDragEnd('a');
+    expect(lift).toHaveBeenCalledTimes(2);
+    const [, , lifted, moves] = lift.mock.calls[1]!;
+    expect(lifted.size).toBe(0);
+    expect(moves?.get('a')).toEqual({ x: 2, z: 3 });
   });
 });
 
@@ -229,6 +267,25 @@ describe('useItemDrag: turning the device mid-drag cancels it (#677)', () => {
     expect(group.position.x).toBe(0);
     expect(group.position.z).toBe(0);
     expect(result.current.isDragActive()).toBe(false);
+  });
+
+  it('repaints the floor patches once as the drag turns void, not on every later move (#754)', () => {
+    const lift = vi.mocked(liftContactPatches);
+    lift.mockClear();
+    const { result, group, rotate } = setup();
+    result.current.handleDragStart('a');
+    expect(lift).toHaveBeenCalledTimes(1);
+    expect([...lift.mock.calls[0]![2]]).toEqual(['a']);
+    result.current.handleDrag('a', 1, 1);
+    rotate();
+    for (let i = 0; i < 10; i += 1) {
+      group.position.set(i, 0, 0);
+      result.current.handleDrag('a', i, 0);
+    }
+    expect(lift).toHaveBeenCalledTimes(2);
+    expect(lift.mock.calls[1]![2].size).toBe(0);
+    result.current.handleDragEnd('a');
+    expect(lift).toHaveBeenCalledTimes(2);
   });
 
   it('a release with no move after the turn is cancelled too', () => {

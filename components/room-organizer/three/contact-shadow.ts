@@ -140,11 +140,17 @@ export function buildContactShadow(THREE: ThreeModule, plan: ContactPlan): Three
 
 /**
  * Repaint a storey's map without the items in `lifted`, once as a drag opens:
- * a held item leaves no dark patch behind it. An empty set puts them back when
- * a drag ends without a commit; a commit rebuilds the map anyway. The caller
+ * a held item leaves no dark patch behind it. An empty set puts them back as a
+ * drag ends, at `moves` for the items that were dropped elsewhere, so a drop
+ * the reducer leaves unchanged doesn't keep them lifted. The caller
  * invalidates.
  */
-export function liftContactPatches(scene: ThreeNS.Scene, storey: number, lifted: ReadonlySet<string>): void {
+export function liftContactPatches(
+  scene: ThreeNS.Scene,
+  storey: number,
+  lifted: ReadonlySet<string>,
+  moves?: ReadonlyMap<string, { x: number; z: number }>
+): void {
   for (const obj of scene.children) {
     const painted = paintedPlans.get(obj);
     if (!painted || painted.plan.storey !== storey) continue;
@@ -152,7 +158,11 @@ export function liftContactPatches(scene: ThreeNS.Scene, storey: number, lifted:
     const ctx = (texture?.image as HTMLCanvasElement | undefined)?.getContext('2d');
     if (!texture || !ctx) continue;
     ctx.clearRect(0, 0, painted.size.width, painted.size.height);
-    const blobs = painted.plan.blobs.filter((blob) => !lifted.has(blob.id));
+    const blobs = painted.plan.blobs.flatMap((blob) => {
+      if (lifted.has(blob.id)) return [];
+      const moved = moves?.get(blob.id);
+      return [moved ? { ...blob, x: moved.x, z: moved.z } : blob];
+    });
     paintContactPlan(ctx, { ...painted.plan, blobs }, painted.size);
     texture.needsUpdate = true;
   }
