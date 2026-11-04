@@ -64,6 +64,26 @@ describe('planContactShadow (#754)', () => {
     expect(plan(floors, {}, 1).holes.length).toBeGreaterThan(0);
   });
 
+  it.each([undefined, 'winder'] as const)('grounds %s stairs across their whole footprint', (stairsShape) => {
+    const stairs = item('stairs', { width: 2, depth: 2.6, height: 3, position: { x: 1, z: 0 }, ...(stairsShape ? { stairsShape } : {}) });
+    expect(plan([floor({ items: [stairs] }), floor({ id: 'g' })], {}, 0).blobs).toEqual([
+      { id: 'stairs', x: 1, z: 0, width: 2, depth: 2.6, rotation: 0, raised: false },
+    ]);
+  });
+
+  it('runs no band along a shell wall the user took down, and keys on it', () => {
+    const shown = plan([floor()]);
+    const hidden = plan([floor({ hiddenWalls: ['north'] })]);
+    expect(hidden.walls).toHaveLength(3);
+    expect(hidden.walls.some((wall) => wall.z1 === -4 && wall.z2 === -4)).toBe(false);
+    expect(JSON.stringify(hidden)).not.toBe(JSON.stringify(shown));
+  });
+
+  it('drops both walls on a hidden side of an L', () => {
+    const cutout = { corner: 'ne', width: 4, depth: 3 } as const;
+    expect(plan([floor({ hiddenWalls: ['north'] })], { cutout }).walls).toHaveLength(4);
+  });
+
   it('lifts an upper storey to its elevation', () => {
     const floors = [floor({ height: 2.5 }), floor({ id: 'g' })];
     expect(plan(floors, {}, 0).floorY).toBe(0);
