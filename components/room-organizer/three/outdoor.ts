@@ -1,7 +1,7 @@
 import { cutoutRect } from '../lib/footprint';
 import { GRASS_DROP, LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
-import { layGroundSurface } from './ground-surfaces';
+import { fadeWithDistance, layGroundSurface } from './ground-surfaces';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
 import type { FootprintCutout, Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
@@ -114,7 +114,8 @@ export function setOutdoorVisible(
   // ---- 1. Grass plane (warm suburban green, or as the weather left it) ----
   const weather = (scene.userData[WEATHER_KEY] as Weather | undefined) ?? 'clear';
   const grassMat = new THREE.MeshStandardMaterial({ color: outdoorGroundColor(weather), roughness: 1 });
-  layGroundSurface(THREE, grassMat, 'grass', site.groundTile);
+  const tile = site.groundTile !== undefined ? { pixels: site.groundTile } : {};
+  layGroundSurface(THREE, grassMat, 'grass', tile);
   const grass = terrain
     ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y, cutout), grassMat)
     : new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize, 1, 1), grassMat);
@@ -128,7 +129,7 @@ export function setOutdoorVisible(
   freezeMatrix(grass);
   scene.add(grass);
 
-  scene.add(buildGroundSkirt(THREE, groundSize, (z) => groundAt(z) + GRASS_Y - SKIRT_DROP, outdoorGroundColor(weather), site.groundTile));
+  scene.add(buildGroundSkirt(THREE, groundSize, (z) => groundAt(z) + GRASS_Y - SKIRT_DROP, outdoorGroundColor(weather), tile));
 
   // The sides of the dig where the house cuts into the hill.
   const excavation = terrain ? buildExcavationGeometry(THREE, terrain, halfW, halfD, cutout) : null;
@@ -154,7 +155,7 @@ export function setOutdoorVisible(
   const roadDepth = ROAD_DEPTH;
 
   const sidewalkMat = new THREE.MeshStandardMaterial({ color: PAVING_COLOR, roughness: 0.85 });
-  layGroundSurface(THREE, sidewalkMat, 'paving', site.groundTile);
+  layGroundSurface(THREE, sidewalkMat, 'paving', tile);
   const sidewalk = new THREE.Mesh(
     new THREE.PlaneGeometry(groundSize, sidewalkDepth),
     sidewalkMat
@@ -167,7 +168,7 @@ export function setOutdoorVisible(
   scene.add(sidewalk);
 
   const asphaltMat = new THREE.MeshStandardMaterial({ color: ASPHALT_COLOR, roughness: 0.95 });
-  layGroundSurface(THREE, asphaltMat, 'asphalt', site.groundTile);
+  layGroundSurface(THREE, asphaltMat, 'asphalt', tile);
   const road = new THREE.Mesh(
     new THREE.PlaneGeometry(groundSize, roadDepth),
     asphaltMat
@@ -260,8 +261,12 @@ export function setOutdoorVisible(
   for (const obj of scene.children) if (obj.userData.type === OUTDOOR_TAG) shutOutIndoorLampsUnder(THREE, obj);
 }
 
-/** Distance out from the lot's edge, and how solid the ground still is there. */
-const SKIRT_STEPS: ReadonlyArray<readonly [number, number]> = [[0, 1], [50, 0.92], [140, 0.5], [340, 0]];
+/**
+ * How far the ground runs on past the lot's edge. Further than any camera
+ * sees it: it thins into the sky by distance from the camera (`fade` in
+ * ground-surfaces), so its own edge never shows.
+ */
+const SKIRT_REACH = 1500;
 const SKIRT_SEGMENTS = 64;
 /** Under the grass where they overlap, or the two z-fight (#276). */
 const SKIRT_DROP = 0.02;
@@ -269,22 +274,21 @@ const SKIRT_OVERLAP = 0.5;
 
 /**
  * The ground past the lot (#761): the same lit grass, thinning into the haze
- * under the horizon, so the lot has no square edge and nothing distant is
- * washed out, as a camera-distance fog would do. Solid at the lot's edge and
- * fading on vertex alpha, with no shader change. It follows the weather tint.
+ * under the horizon, so the lot has no square edge. Only this ring fades, by
+ * distance from the camera, so nothing on the lot is washed out as a scene
+ * fog would do. It follows the weather tint.
  */
 function buildGroundSkirt(
   THREE: ThreeModule,
   groundSize: number,
   heightAt: (z: number) => number,
   color: number,
-  groundTile: number | undefined
+  tile: { pixels?: number }
 ): ThreeNS.Mesh {
   const half = groundSize / 2 - SKIRT_OVERLAP;
   const positions: number[] = [];
-  const colors: number[] = [];
   const indices: number[] = [];
-  const rings = SKIRT_STEPS.length;
+  const rings = 2;
   for (let segment = 0; segment <= SKIRT_SEGMENTS; segment += 1) {
     const angle = (segment / SKIRT_SEGMENTS) * Math.PI * 2;
     const cos = Math.cos(angle);
@@ -292,10 +296,7 @@ function buildGroundSkirt(
     // The inner ring sits on the lot's square, the rest fan out from it.
     const reach = half / Math.max(Math.abs(cos), Math.abs(sin));
     const y = heightAt(Math.max(-half, Math.min(half, sin * reach)));
-    for (const [out, alpha] of SKIRT_STEPS) {
-      positions.push(cos * (reach + out), y, sin * (reach + out));
-      colors.push(1, 1, 1, alpha);
-    }
+    for (const out of [0, SKIRT_REACH]) positions.push(cos * (reach + out), y, sin * (reach + out));
     if (segment === SKIRT_SEGMENTS) continue;
     for (let ring = 0; ring < rings - 1; ring += 1) {
       const a = segment * rings + ring;
@@ -305,11 +306,10 @@ function buildGroundSkirt(
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(positions.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
   geometry.setIndex(indices);
-  const material = new THREE.MeshStandardMaterial({ color, roughness: 1, vertexColors: true, transparent: true, depthWrite: false });
-  layGroundSurface(THREE, material, 'grass', groundTile);
+  const material = new THREE.MeshStandardMaterial({ color, roughness: 1, transparent: true, depthWrite: false });
+  layGroundSurface(THREE, material, 'grass', { ...tile, fade: Math.SQRT2 * groundSize / 2 });
   const skirt = new THREE.Mesh(geometry, material);
   skirt.renderOrder = -0.9;
   skirt.raycast = () => undefined;
@@ -325,8 +325,6 @@ const ASPHALT_COLOR = 0x53565a;
 const ASPHALT_TAIL_COLOR = 0x3a3c3f;
 const KERB_HEIGHT = 0.1;
 const KERB_WIDTH = 0.16;
-const ROAD_TAIL_STEPS: ReadonlyArray<readonly [number, number]> = [[0, 1], [50, 0.9], [130, 0.5], [300, 0]];
-
 /** Road and pavement beyond the lot on both sides, one mesh, fading like the skirt. */
 function buildRoadTails(
   THREE: ThreeModule,
@@ -342,30 +340,26 @@ function buildRoadTails(
     paint.setHex(band.color);
     for (const side of [-1, 1]) {
       const base = positions.length / 3;
-      for (const [out, alpha] of ROAD_TAIL_STEPS) {
+      for (const out of [0, SKIRT_REACH]) {
         const x = side * (groundSize / 2 + out);
         for (const z of [band.near, band.far]) {
           positions.push(x, streetY + band.y, z);
-          colors.push(paint.r, paint.g, paint.b, alpha);
+          colors.push(paint.r, paint.g, paint.b);
         }
       }
-      for (let step = 0; step < ROAD_TAIL_STEPS.length - 1; step += 1) {
-        const a = base + step * 2;
-        // Facing up on either side.
-        if (side > 0) indices.push(a, a + 1, a + 2, a + 2, a + 1, a + 3);
-        else indices.push(a, a + 2, a + 1, a + 2, a + 3, a + 1);
-      }
+      // Facing up on either side.
+      if (side > 0) indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
+      else indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
     }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(positions.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
   geometry.setIndex(indices);
-  const tails = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({ roughness: 0.95, vertexColors: true, transparent: true, depthWrite: false })
-  );
+  const material = new THREE.MeshStandardMaterial({ roughness: 0.95, vertexColors: true, transparent: true, depthWrite: false });
+  fadeWithDistance(material, Math.SQRT2 * groundSize / 2);
+  const tails = new THREE.Mesh(geometry, material);
   tails.renderOrder = -0.8;
   tails.frustumCulled = false;
   tails.raycast = () => undefined;

@@ -311,6 +311,12 @@ export interface SkyProfile {
    * `position` is a direction toward it; its length is meaningless.
    */
   sun: { color: number; intensity: number; position: Vec3 };
+  /**
+   * Toward the sun itself, for the sky's disc and glow (#761): the light's
+   * `position` is lifted so a low sun still rakes the lot, which would hang
+   * the disc high in the sky at twilight. Under the horizon outside the day.
+   */
+  sunDisc: Vec3;
   /** `scene.environmentIntensity` for the neutral studio IBL. */
   environment: number;
   /** Horizon colour (bottom of the sky gradient). */
@@ -415,6 +421,15 @@ function computeClearSkyProfile(hour: number): SkyProfile {
   const azimuth = (dayFraction - 0.5) * Math.PI; // -π/2..π/2
   const elevation = sunAboveHorizon ? Math.sin(dayFraction * Math.PI) : 0;
   const position: Vec3 = [Math.sin(azimuth) * 10, elevation * 10 + SUN_LOW_HEIGHT, Math.cos(azimuth) * 5];
+  // The same arc unclamped and unlifted: the lift is the light's alone. At the
+  // top it meets the light's direction.
+  const arc = (hour - 6) / 12;
+  const discAzimuth = (arc - 0.5) * Math.PI;
+  const sunDisc: Vec3 = [
+    Math.sin(discAzimuth) * 10,
+    Math.sin(arc * Math.PI) * (10 + SUN_LOW_HEIGHT),
+    Math.cos(discAzimuth) * 5,
+  ];
 
   // Warmth: high at sunrise/sunset, low at noon (white); the afterglow keeps it.
   const warmth = sunAboveHorizon ? Math.pow(Math.abs(dayFraction - 0.5) * 2, 2) : 1;
@@ -474,6 +489,7 @@ function computeClearSkyProfile(hour: number): SkyProfile {
     sun: moonUp
       ? { color: MOON_COLOR, intensity: MOONLIGHT * moonlight, position: moonDirection(hour) }
       : { color: sunColor, intensity: sunIntensity, position },
+    sunDisc,
     // The studio environment is white and bright: it drops to almost nothing
     // through twilight, or it keeps the night lot lit grey-green (#375).
     environment: fill(NIGHT_ENVIRONMENT, DUSK_ENVIRONMENT, NOON_ENVIRONMENT),

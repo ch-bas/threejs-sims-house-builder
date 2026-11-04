@@ -59,4 +59,17 @@ describe('the world-space sky (#761)', () => {
   it('follows the overcast profile', () => {
     expect(domeColour(skyScene(12, 'rain').dome, 1).getHex()).not.toBe(domeColour(skyScene(12).dome, 1).getHex());
   });
+
+  it('puts the disc where the sun is, not where the lifted light is', () => {
+    const elevation = (hour: number) => {
+      const [x, y, z] = computeSkyProfile(hour).sunDisc;
+      return Math.asin(y / Math.hypot(x, y, z));
+    };
+    expect(elevation(19)).toBeLessThan(0);
+    expect(elevation(5.5)).toBeLessThan(0);
+    expect(elevation(6.5)).toBeLessThan(0.2);
+    // At the top of the arc the disc and the light agree.
+    const noon = computeSkyProfile(12);
+    expect(noon.sunDisc).toEqual(noon.sun.position);
+  });
 });
