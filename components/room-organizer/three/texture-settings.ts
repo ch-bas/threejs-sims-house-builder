@@ -84,3 +84,8 @@ export function getPatternSize(): number {
 export function patternReliefEnabled(): boolean {
   return getPatternSize() > PHONE_PATTERN_SIZE;
 }
+
+/** Doors and windows set into reveals in the outer walls (#758): not on phones. */
+export function revealsEnabled(): boolean {
+  return getPatternSize() > PHONE_PATTERN_SIZE;
+}

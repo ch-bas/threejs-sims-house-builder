@@ -6,8 +6,9 @@ import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } 
 import { removeAndDispose, withOutsideFace } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
 import { shutOutIndoorLamps } from './outdoor-lamps';
+import { buildRevealGeometry, skirtingOpenings } from './reveals';
 import { ROOF_OFF_STOREY_KEY } from './roof';
-import { withMaxAnisotropy } from './texture-settings';
+import { revealsEnabled, withMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
@@ -701,7 +702,8 @@ function buildWalls(
 
     // Dark wood baseboard along the floor of every wall — the build-mode-style
     // trim that grounds the room and hides the floor/wall seam.
-    addBaseboard(THREE, scene, spec, yOffset, ghostOpacity, wallCutouts);
+    addBaseboard(THREE, scene, spec, yOffset, ghostOpacity, skirtingOpenings(wallCutouts));
+    addReveals(THREE, scene, spec, color, wallHeight, ghostOpacity, wallCutouts);
   }
 
   if (yOffset === 0 && ghostOpacity === undefined) {
@@ -746,6 +748,44 @@ interface WallSpec {
 }
 
 const BASEBOARD_COLOR = 0x4a3a2a;
+
+/**
+ * The lining of every door and window cut into this wall (#758): one mesh in
+ * the wall's colour, tagged like the wall so cutaway and walls-down hide it
+ * with the wall, and a shadow caster, since the shade it throws on the frame
+ * is the point.
+ */
+function addReveals(
+  THREE: ThreeModule,
+  scene: ThreeNS.Scene,
+  spec: WallSpec,
+  color: string,
+  wallHeight: number,
+  ghostOpacity: number | undefined,
+  openings: readonly WallOpening[]
+): void {
+  const geometry = revealsEnabled() ? buildRevealGeometry(THREE, openings, spec.width, wallHeight) : null;
+  if (!geometry) return;
+  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
+  if (ghostOpacity !== undefined) {
+    material.transparent = true;
+    material.opacity = ghostOpacity;
+  }
+  const lining = new THREE.Mesh(geometry, material);
+  lining.rotation.y = spec.rotateY;
+  lining.position.set(spec.position[0], spec.position[1], spec.position[2]);
+  lining.name = `Reveal ${spec.id}`;
+  lining.castShadow = ghostOpacity === undefined;
+  lining.receiveShadow = true;
+  lining.userData.type = ROOM_OBJECT_TAGS.Wall;
+  lining.userData.wallId = spec.side;
+  if (spec.plane !== undefined) {
+    lining.userData[WALL_PLANE_KEY] = spec.plane;
+    lining.userData[SHELL_WALL_KEY] = spec.id;
+  }
+  makeStatic(lining);
+  scene.add(lining);
+}
 
 function addBaseboard(
   THREE: ThreeModule,

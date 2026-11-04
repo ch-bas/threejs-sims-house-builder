@@ -1,6 +1,7 @@
 import { STAIR_STEP_COUNT, stairSteps, winderLayout } from '../../lib/stairs';
 import { windowSillHeight } from '../../lib/street';
 import { type BuilderContext, material, mesh } from '../builder-utils';
+import { EXTERIOR_SILL_KEY } from '../reveals';
 import type * as ThreeNS from 'three';
 
 /**
@@ -120,6 +121,8 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     sillMat
   );
   sill.position.set(0, sillHeight, 0);
+  // It stays on the wall plane when the window is set into a reveal (#758).
+  sill.userData[EXTERIOR_SILL_KEY] = true;
   group.add(sill);
 
   return group;

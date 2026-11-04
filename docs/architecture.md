@@ -154,6 +154,7 @@ components/
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
+    │   ├── reveals.ts                   Window and door reveals in the outer walls: linings, and the set-back of the frame (#758)
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
     │   ├── measurement.ts               Distance-tool spheres + line
     │   ├── item-labels.ts               Floating sprite labels above items

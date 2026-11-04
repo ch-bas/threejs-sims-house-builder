@@ -269,6 +269,21 @@ to respect.
   catch a raking light and a glazed tile shines where its grout doesn't.
   Phones get neither map. The colour masters are capped at
   `PATTERN_CACHE_CAPACITY` (12) per cache (#757).
+- **Openings sit in reveals.** Outer walls stay planes, but every door and
+  window cut into one gets a lining in the wall's colour (head, jambs, and a
+  sill board under a window) running `REVEAL_DEPTH` into the house from just
+  behind the wall plane, built and tagged with its wall (so cutaway, walls-down,
+  the ghosted storeys and the GLB follow it). The frame stands back
+  `REVEAL_SETBACK` inside its own group (`openingSetback`, signed by the item's
+  facing), never in its saved position: the plan, collisions and the walker's
+  door gaps don't change, and saved houses load as they were. The window's
+  sill stays on the wall plane and projects outside. Hung decor over a
+  set-back opening (curtains) stands out into the room by just enough to
+  clear the frame and lining (`decorStandOff`), in its group too. The skirting
+  ends half a board inside each jamb, never in the plane of its face. The
+  set-back is part of the furniture build key, the selection outline and the
+  placement ghost follow it, and phones get no reveals at all
+  (`revealsEnabled`) (#758).
 - **Orbit lens.** The orbit camera is 40° (`ORBIT_FOV_DEG`), and the start
   pose, presets, Fit and zoom slider stand back by `ORBIT_LENS_SCALE` from
   their 75° numbers. Walkthrough swaps to 75° on entry and restores it on
