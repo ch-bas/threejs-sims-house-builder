@@ -248,7 +248,9 @@ to respect.
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
-  a sun-facing wall shadow itself.
+  a sun-facing wall shadow itself. A dormer's face and cheeks are built the
+  same way (#782); the gable and hipped roofs are wound outward already, so
+  their DoubleSide material lights the outside correctly.
 - **Orbit lens.** The orbit camera is 40° (`ORBIT_FOV_DEG`), and the start
   pose, presets, Fit and zoom slider stand back by `ORBIT_LENS_SCALE` from
   their 75° numbers. Walkthrough swaps to 75° on entry and restores it on

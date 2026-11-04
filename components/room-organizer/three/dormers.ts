@@ -1,4 +1,5 @@
 import { dormerFrame, dormerOpeningRects, julietRailSpan, type DormerFrame, type DormerOpeningRect } from '../lib/dormers';
+import { withOutsideFace } from './builder-utils';
 import type { DormerSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -55,10 +56,14 @@ function buildDormer(THREE: ThreeModule, dormer: DormerSpec, frame: DormerFrame,
   const { width, faceZ, backZ, bottomY, topY } = frame;
   const height = topY - bottomY;
   const half = width / 2;
+  // The face and cheeks are single-sided sheets back to back, like the outer
+  // walls: a DoubleSide sheet with inward normals shadowed itself facing the
+  // sun (#782). The shadow pass still draws whichever face the light meets.
   const finish = new THREE.MeshStandardMaterial({
     color: dormer.color ?? DEFAULT_FINISH,
     roughness: 0.9,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
+    shadowSide: THREE.DoubleSide,
   });
   const rects = dormerOpeningRects(dormer, width, height);
 
@@ -78,7 +83,7 @@ function buildDormer(THREE: ThreeModule, dormer: DormerSpec, frame: DormerFrame,
     hole.closePath();
     outline.holes.push(hole);
   }
-  const face = new THREE.Mesh(new THREE.ShapeGeometry(outline), finish);
+  const face = new THREE.Mesh(withOutsideFace(THREE, new THREE.ShapeGeometry(outline)), finish);
   face.position.set(0, bottomY, faceZ);
   group.add(face);
 
@@ -90,7 +95,7 @@ function buildDormer(THREE: ThreeModule, dormer: DormerSpec, frame: DormerFrame,
   );
   cheek.computeVertexNormals();
   for (const x of [-half, half]) {
-    const side = new THREE.Mesh(cheek.clone(), finish);
+    const side = new THREE.Mesh(withOutsideFace(THREE, cheek.clone()), finish);
     side.position.x = x;
     group.add(side);
   }
