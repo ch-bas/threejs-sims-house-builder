@@ -6,8 +6,9 @@
  * desktop cap of 2 it shades as many pixels as a 1080p monitor, so every
  * orbit and drag frame costs the most where the GPU is weakest. So the
  * settings come in three tiers, picked from the device class, with a View menu
- * override (#760). Low shades less and holds less; high spends GPU memory on a
- * sharper shadow, which only renders when a caster or the sun moves. Auto keeps the shadow map and anisotropy every
+ * override (#760). Low shades less, holds less and leaves out the costly
+ * scenery; high spends GPU memory on a sharper shadow, which only renders when
+ * a caster or the sun moves. Auto keeps the shadow map and anisotropy every
  * device had before the tiers, so the default picture doesn't change; only an
  * explicit choice moves them.
  */
@@ -40,6 +41,12 @@ export interface QualityProfile {
   groundTile: number;
   /** Most anisotropy a texture may ask for; the GPU's limit still applies. */
   maxAnisotropy: number;
+  /**
+   * Clouds, the fading ground and road past the lot, the kerb and the grass's
+   * second lookup (#761). Off on low: on a phone they cost a millisecond a
+   * frame and ten shader programs.
+   */
+  richScenery: boolean;
 }
 
 /** Phone cap: a 3× phone shades ~44% fewer pixels than at 2, and antialiasing hides the difference. */
@@ -52,10 +59,10 @@ const PHONE_MAX_SHORT_SIDE = 500;
 type TierSettings = Omit<QualityProfile, 'tier' | 'pixelRatio'> & { pixelRatioCap: number };
 
 const TIERS: Record<QualityTier, TierSettings> = {
-  low: { pixelRatioCap: LOW_PIXEL_RATIO_CAP, shadowMapSize: 1024, shadowRadius: 2, groundTile: 256, maxAnisotropy: 4 },
-  medium: { pixelRatioCap: PIXEL_RATIO_CAP, shadowMapSize: 2048, shadowRadius: 3, groundTile: 512, maxAnisotropy: 8 },
+  low: { pixelRatioCap: LOW_PIXEL_RATIO_CAP, shadowMapSize: 1024, shadowRadius: 2, groundTile: 256, maxAnisotropy: 4, richScenery: false },
+  medium: { pixelRatioCap: PIXEL_RATIO_CAP, shadowMapSize: 2048, shadowRadius: 3, groundTile: 512, maxAnisotropy: 8, richScenery: true },
   // Twice the texels, so a wider radius in texels keeps the edge soft.
-  high: { pixelRatioCap: PIXEL_RATIO_CAP, shadowMapSize: 4096, shadowRadius: 4, groundTile: 512, maxAnisotropy: 16 },
+  high: { pixelRatioCap: PIXEL_RATIO_CAP, shadowMapSize: 4096, shadowRadius: 4, groundTile: 512, maxAnisotropy: 16, richScenery: true },
 };
 
 /** What every device had before the tiers: a 2048² map at radius 3, the GPU's full anisotropy. */
@@ -74,7 +81,7 @@ export function autoTier(input: Pick<QualityInput, 'coarsePointer' | 'screenShor
 
 /**
  * The settings for `choice` on this device. Auto takes the device's tier for
- * the pixel ratio and ground tiles, and the pre-tier shadow map and
+ * the pixel ratio, ground tiles and scenery, and the pre-tier shadow map and
  * anisotropy on every device.
  */
 export function qualityProfile(input: QualityInput, choice: QualityChoice = 'auto'): QualityProfile {

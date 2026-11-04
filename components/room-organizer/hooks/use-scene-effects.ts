@@ -936,7 +936,7 @@ export function useSceneEffects({
   // Outdoor
   // Read once per choice: it asks matchMedia.
   const quality = useMemo(() => currentQuality(view.renderQuality), [view.renderQuality]);
-  const { groundTile } = quality;
+  const { groundTile, richScenery } = quality;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -945,6 +945,7 @@ export function useSceneEffects({
     if (!THREE || !scene) return;
     setOutdoorVisible(THREE, scene, view.showOutdoor, layout.width, layout.height, {
       groundTile,
+      richScenery,
       ...(layout.cutout ? { cutout: layout.cutout } : {}),
       ...(layout.terrain ? { terrain: layout.terrain } : {}),
       ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
@@ -953,7 +954,7 @@ export function useSceneEffects({
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage, groundTile]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage, groundTile, richScenery]);
 
   // The street of neighbours (#202, #310). Never touched by applyWallDisplay,
   // so they stay put in every wall-display mode (#201). Keyed on exactly what

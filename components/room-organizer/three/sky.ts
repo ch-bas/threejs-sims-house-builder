@@ -1,3 +1,4 @@
+import { removeAndDispose } from './builder-utils';
 import type { SkyProfile } from './lighting';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -11,6 +12,12 @@ export const SKY_RADIUS = 140;
 
 const DOME_SEGMENTS = 48;
 const DOME_RINGS = 32;
+/** The low tier's dome (#760): a quarter of the triangles, the sun's glow a little broader. */
+const LEAN_DOME_SEGMENTS = 24;
+const LEAN_DOME_RINGS = 12;
+/** On the scene: whether the sky has its clouds and full dome, and what it was last painted with. */
+const RICH_KEY = 'skyRich';
+const PAINTED_KEY = 'skyPainted';
 /** How fast the colour climbs from the horizon: under 1 keeps the pale band low. */
 const HORIZON_FALLOFF = 0.55;
 /** The sun's glow on the sky around it: tightness, and strength at full day. */
@@ -49,8 +56,10 @@ function findTagged<T extends ThreeNS.Object3D>(scene: ThreeNS.Scene, tag: strin
   return scene.children.find((obj) => obj.userData.type === tag) as T | undefined;
 }
 
-function makeDome(THREE: ThreeModule): ThreeNS.Mesh {
-  const geometry = new THREE.SphereGeometry(SKY_RADIUS, DOME_SEGMENTS, DOME_RINGS);
+function makeDome(THREE: ThreeModule, rich: boolean): ThreeNS.Mesh {
+  const geometry = rich
+    ? new THREE.SphereGeometry(SKY_RADIUS, DOME_SEGMENTS, DOME_RINGS)
+    : new THREE.SphereGeometry(SKY_RADIUS, LEAN_DOME_SEGMENTS, LEAN_DOME_RINGS);
   const count = geometry.getAttribute('position').count;
   geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
   // Drawn first and behind everything; the colours are the swatches themselves.
@@ -173,12 +182,15 @@ function makeSunDisc(THREE: ThreeModule): ThreeNS.Sprite {
  * frame beyond the camera follow. All three stay out of the shadow pass.
  */
 export function updateSky(THREE: ThreeModule, scene: ThreeNS.Scene, profile: SkyProfile, weather: Weather): void {
+  scene.userData[PAINTED_KEY] = { profile, weather };
   const canDraw = typeof document !== 'undefined';
+  const rich = scene.userData[RICH_KEY] !== false;
   let dome = findTagged<ThreeNS.Mesh>(scene, SKY_TAGS.Dome);
   if (!dome) {
-    dome = makeDome(THREE);
+    dome = makeDome(THREE, rich);
     scene.add(dome);
-    if (canDraw) scene.add(makeClouds(THREE), makeSunDisc(THREE));
+    if (canDraw) scene.add(makeSunDisc(THREE));
+    if (canDraw && rich) scene.add(makeClouds(THREE));
   }
   paintDome(THREE, dome, profile);
 
@@ -204,6 +216,22 @@ export function updateSky(THREE: ThreeModule, scene: ThreeNS.Scene, profile: Sky
   // Under the dome, and what a PNG capture or a context restore clears to.
   if (scene.background && (scene.background as ThreeNS.Color).isColor) (scene.background as ThreeNS.Color).setHex(profile.background);
   else scene.background = new THREE.Color(profile.background);
+}
+
+/**
+ * The quality tier's sky (#760): `rich` has the clouds and the full dome. A
+ * change rebuilds the sky from what it was last painted with; nothing else
+ * changes it.
+ */
+export function setSkyDetail(THREE: ThreeModule, scene: ThreeNS.Scene, rich: boolean): void {
+  if (scene.userData[RICH_KEY] === rich) return;
+  scene.userData[RICH_KEY] = rich;
+  for (const tag of Object.values(SKY_TAGS)) {
+    const part = findTagged(scene, tag);
+    if (part) removeAndDispose(scene, part);
+  }
+  const painted = scene.userData[PAINTED_KEY] as { profile: SkyProfile; weather: Weather } | undefined;
+  if (painted) updateSky(THREE, scene, painted.profile, painted.weather);
 }
 
 function paintDome(THREE: ThreeModule, dome: ThreeNS.Mesh, profile: SkyProfile): void {
