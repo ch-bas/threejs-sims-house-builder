@@ -225,6 +225,29 @@ describe('window (#362)', () => {
   });
 });
 
+describe('soft furniture edges and kitchen fronts (#755)', () => {
+  it.each(['sofa', 'armchair', 'bed', 'dining-table', 'bookshelf', 'dresser'])('%s: no part is a sharp box', (type) => {
+    for (const part of meshes(build(catalogItem(type)))) expect(part.geometry).not.toBeInstanceOf(THREE.BoxGeometry);
+  });
+
+  it.each(['counter', 'kitchen-sink'])('%s: shows doors and handles on its front', (type) => {
+    const item = catalogItem(type);
+    const parts = meshes(build(item));
+    const front = parts.filter((part) => bounds(part).max.z > item.depth / 2 - 0.02 && bounds(part).max.y < item.height);
+    expect(front.length).toBeGreaterThanOrEqual(2);
+    expect(parts.some((part) => materialOf(part).metalness > 0.5 && bounds(part).max.z > item.depth / 2 - 0.02)).toBe(true);
+  });
+
+  it.each([['armchair', undefined], ['sofa', 'standard'], ['sofa', 'L-shape'], ['sofa', 'U-shape']] as const)('%s %s stands on the floor', (type, sofaShape) => {
+    const item = { ...catalogItem(type), ...(sofaShape ? { sofaShape } : {}) };
+    expect(bounds(build(item)).min.y).toBeCloseTo(0, 5);
+  });
+
+  it('keeps a counter inside its catalog box', () => {
+    expectInsideBox('counter');
+  });
+});
+
 // A tilted box hung 0.36 m over the floor at the foot, stopped 0.2 m short
 // of the landing and stood 0.22 m proud of the treads: a plank beside the
 // stairs. The string is a closed outline now, its top edge on the nosings

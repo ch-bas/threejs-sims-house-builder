@@ -1,15 +1,15 @@
-import { type BuilderContext, material, mesh, cornerPositions } from '../builder-utils';
+import { type BuilderContext, EDGE, material, mesh, cornerPositions, softBox } from '../builder-utils';
 import type * as ThreeNS from 'three';
 
 export function buildTableOrDesk({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 0.1 });
 
-  const top = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.1, item.depth), woodMat);
+  const top = mesh(THREE, softBox(THREE, item.width, item.height * 0.1, item.depth, EDGE.wood), woodMat);
   top.position.y = item.height * 0.95;
   group.add(top);
 
-  const legGeo = new THREE.BoxGeometry(item.width * 0.08, item.height * 0.9, item.depth * 0.08);
+  const legGeo = softBox(THREE, item.width * 0.08, item.height * 0.9, item.depth * 0.08, EDGE.wood);
   for (const [x, y, z] of cornerPositions(item.width * 0.4, item.height * 0.45, item.depth * 0.4)) {
     const leg = mesh(THREE, legGeo, woodMat);
     leg.position.set(x, y, z);
@@ -19,7 +19,7 @@ export function buildTableOrDesk({ THREE, item, hasCollision, baseColor, opacity
   if (item.type === 'desk') {
     const drawer = mesh(
       THREE,
-      new THREE.BoxGeometry(item.width * 0.4, item.height * 0.15, item.depth * 0.8),
+      softBox(THREE, item.width * 0.4, item.height * 0.15, item.depth * 0.8, EDGE.wood),
       woodMat
     );
     drawer.position.set(item.width * 0.25, item.height * 0.7, 0);
