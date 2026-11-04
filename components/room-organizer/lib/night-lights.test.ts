@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { pendantBulbY } from './mount-band';
-import { collectLampLights, isNightLit, LAMP_POOL_SIZE, nearestLamps, nightGlowPlan, planLampPool, type LampLight } from './night-lights';
+import { collectLampLights, isNightLit, LAMP_POOL_SIZE, nearestLamps, nightGlowPlan, planLampPool, roomLampReach, type LampLight } from './night-lights';
 import type { FloorLayout, FurnitureItem } from './types';
 
 function item(type: string, height: number, x = 1, z = 2): FurnitureItem {
@@ -119,6 +119,32 @@ describe('nightGlowPlan (#759)', () => {
     expect(plan.lamps).toEqual([upper.id]);
     expect(plan.dormers).toBe(1);
     expect(nightGlowPlan([floor([upper]), floor([])], house).dormers).toBe(0);
+  });
+});
+
+describe('roomLampReach: the bounce around a walker (#759)', () => {
+  const lamp = (x: number, z: number, outdoors = false): LampLight => ({ x, y: 1.5, z, candela: 10, range: 7, ...(outdoors ? { outdoors } : {}) });
+  const partition = { id: 'p', x1: 0, z1: -5, x2: 0, z2: 5 };
+
+  it('is lit by a lamp in the same room', () => {
+    expect(roomLampReach([lamp(-2, 0)], { x: -3, z: 0 }, [partition])).toBe(1);
+  });
+
+  it('ignores a garden lamp, however near', () => {
+    expect(roomLampReach([lamp(-5, 0, true)], { x: -3, z: 0 }, [])).toBe(0);
+  });
+
+  it('ignores a lamp in the other wing of an L, across the open corner', () => {
+    const notch = { x0: 0.5, x1: 4.5, z0: -3.5, z1: -0.5 };
+    // A window on the notch's own wall, a lamp in the other wing.
+    expect(roomLampReach([lamp(-0.3, -2.6)], { x: 2.5, z: -0.5 }, [], notch)).toBe(0);
+    // In the same wing, along the notch wall: lit.
+    expect(roomLampReach([lamp(1.5, 0.5)], { x: 2.5, z: -0.5 }, [], notch)).toBe(1);
+  });
+
+  it('ignores a lamp in the next room, and one out of reach', () => {
+    expect(roomLampReach([lamp(2, 0)], { x: -2, z: 0 }, [partition])).toBe(0);
+    expect(roomLampReach([lamp(-20, 0)], { x: -2, z: 0 }, [])).toBe(0);
   });
 });
 

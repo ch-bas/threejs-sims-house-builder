@@ -3,6 +3,7 @@ import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } fro
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { planContactShadow } from '../lib/contact-shadow';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
+import { cutoutRect } from '../lib/footprint';
 import {
   diffFurniture,
   furnitureBuildKey,
@@ -13,7 +14,7 @@ import {
 } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
-import { LAMP_POOL_SIZE, collectLampLights, nightGlowPlan, planLampPool, type LampLight, type NightGlowPlan } from '../lib/night-lights';
+import { LAMP_POOL_SIZE, collectLampLights, nightGlowPlan, planLampPool, roomLampReach, type LampLight, type NightGlowPlan } from '../lib/night-lights';
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
 import { boundsSize, planViewFit } from '../lib/plan-view-fit';
 import { hasNeighbours, lowestGround } from '../lib/site';
@@ -56,7 +57,7 @@ import { observeSceneOccluders, planFit } from './scene-occluders';
 import { currentQuality } from './use-three-scene';
 import type { StampGhost } from '../canvas-2d/plan-edit';
 import type { DetectedRoom } from '../lib/room-detect';
-import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
+import type { FloorLayout, FurnitureItem, InteriorWall, RoomLayout, ViewSettings } from '../lib/types';
 import type { SelectedWall } from '../lib/wall-sides';
 import type * as ThreeNS from 'three';
 
@@ -1152,15 +1153,16 @@ export function useSceneEffects({
     layout.width, layout.height, cutoutKey, allFloors, ghostOtherFloors,
   ]);
 
-  // Lit windows, lamp shades and the street's panes (#759), and the bounce of
-  // a lit room around a walker inside. Runs after the effects that build those
-  // meshes and after the lights, and only writes material values, so it is
-  // keyed on what they read plus the rebuilds that hand it new materials.
+  // Lit windows, lamp shades and the street's panes (#759). Runs after the
+  // effects that build those meshes and after the lights, and only writes
+  // material values, so it is keyed on what they read plus the rebuilds that
+  // hand it new materials. A pane seen from inside shows the dark outside:
+  // the walker's, and the orbit camera's over cut or lowered walls.
   const nightGlowKey = useMemo(
     () => JSON.stringify(nightGlowPlan(layout.floors, entranceBuilding)),
     [layout.floors, entranceBuilding]
   );
-  const walkerInLitRoom = walkthroughActive && walkIndoors && lampLevel > 0 && lampsKey !== '[]';
+  const panesSeenFromInside = (walkthroughActive && walkIndoors) || wallDisplay !== 'up';
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -1170,14 +1172,47 @@ export function useSceneEffects({
     applyNightGlow(THREE, scene, {
       plan: JSON.parse(nightGlowKey) as NightGlowPlan,
       level: lampLevel,
-      indoors: walkthroughActive && walkIndoors,
+      indoors: panesSeenFromInside,
     });
-    applyIndoorFill(scene, walkerInLitRoom ? lampLevel : 0);
   }, [
-    isReady, invalidate, threeModuleRef, sceneRef, nightGlowKey, lampLevel, walkthroughActive, walkIndoors, walkerInLitRoom,
+    isReady, invalidate, threeModuleRef, sceneRef, nightGlowKey, lampLevel, panesSeenFromInside,
     view.timeOfDay, itemsKey, collisionKey, ghostOtherFloors, allFloors, activeFloorIndex, layout.roof,
     neighboursKey, peopleModelReady,
   ]);
+
+  // The bounce of a lit room around a walker inside it (#759): a lamp on the
+  // walker's storey within reach and with no partition between, never a
+  // garden lamp. The walker moves without a render, so its room is checked
+  // every 400 ms while walking indoors at night, never per frame; the light
+  // changes only when the answer flips.
+  const walkerLampsKey = walkthroughActive && walkIndoors && lampLevel > 0 ? lampsKey : null;
+  const walkerWallsKey = walkerLampsKey === null ? '' : JSON.stringify(layout.floors[litStorey]?.interiorWalls ?? []);
+  useEffect(() => {
+    if (!isReady) return;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (walkerLampsKey === null) {
+      applyIndoorFill(scene, 0);
+      invalidate();
+      return;
+    }
+    const lamps = JSON.parse(walkerLampsKey) as LampLight[];
+    const walls = JSON.parse(walkerWallsKey) as InteriorWall[];
+    const notch = cutoutRect({ width: layout.width, height: layout.height, cutout: layout.cutout ?? null });
+    let fill = -1;
+    const check = () => {
+      const walker = cameraRef.current?.position;
+      if (!walker) return;
+      const next = roomLampReach(lamps, { x: walker.x, z: walker.z }, walls, notch) > 0 ? lampLevel : 0;
+      if (next === fill) return;
+      fill = next;
+      applyIndoorFill(scene, next);
+      invalidate();
+    };
+    check();
+    const timer = window.setInterval(check, 400);
+    return () => window.clearInterval(timer);
+  }, [isReady, invalidate, sceneRef, cameraRef, walkerLampsKey, walkerWallsKey, lampLevel, layout.width, layout.height, layout.cutout]);
 
   // Measurement markers
   useEffect(() => {

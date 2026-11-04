@@ -1,7 +1,7 @@
-import { isInsideBuilding, type FootprintBuilding } from './footprint';
+import { cutoutRect, isInsideBuilding, type FootprintBuilding, type FootprintRect } from './footprint';
 import { mountBand, pendantBulbY } from './mount-band';
 import { floorElevation, storeyHeight } from './storeys';
-import type { FloorLayout, Vec2 } from './types';
+import type { FloorLayout, InteriorWall, Vec2 } from './types';
 
 /**
  * Catalog items that light their surroundings at night (#215), and how.
@@ -119,6 +119,7 @@ function segmentsCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
  */
 export function nightGlowPlan(floors: readonly FloorLayout[], building: FootprintBuilding): NightGlowPlan {
   const plan: NightGlowPlan = { windows: {}, lamps: [], dormers: 0 };
+  const notch = cutoutRect(building);
   floors.forEach((floor, index) => {
     const indoor = collectLampLights([floor], { activeFloorIndex: 0, showAllFloors: false }, building).filter((lamp) => !lamp.outdoors);
     const walls = floor.interiorWalls ?? [];
@@ -126,19 +127,66 @@ export function nightGlowPlan(floors: readonly FloorLayout[], building: Footprin
       if (!item.position) continue;
       if (isNightLit(item.type)) plan.lamps.push(item.id);
       if (item.type !== 'window') continue;
-      const pane = item.position;
-      plan.windows[item.id] = indoor.reduce((best, lamp) => {
-        const blocked = walls.some((wall) => segmentsCross(lamp, pane, { x: wall.x1, z: wall.z1 }, { x: wall.x2, z: wall.z2 }));
-        return blocked ? best : Math.max(best, windowReach(Math.hypot(lamp.x - pane.x, lamp.z - pane.z), lamp.range));
-      }, 0);
+      plan.windows[item.id] = roomLampReach(indoor, item.position, walls, notch);
     }
     if (index === floors.length - 1 && indoor.length > 0) plan.dormers = 1;
   });
   return plan;
 }
 
+/**
+ * How lit the room is at `at`, 0..1: the best reach of an indoor lamp with no
+ * partition between them, nor the open corner of an L (`notch`, from
+ * `cutoutRect`): from one wing the other's notch walls face the lamp, but
+ * the outside lies between. Outdoor lamps never count: their light stops at
+ * the walls (#664). The lamps are those of `at`'s storey. Doorways in
+ * partitions are ignored, as for the windows.
+ */
+export function roomLampReach(
+  lamps: readonly LampLight[],
+  at: Vec2,
+  walls: readonly InteriorWall[],
+  notch: FootprintRect | null = null
+): number {
+  return lamps.reduce((best, lamp) => {
+    if (lamp.outdoors) return best;
+    const blocked =
+      (notch !== null && crossesRect(lamp, at, notch)) ||
+      walls.some((wall) => segmentsCross(lamp, at, { x: wall.x1, z: wall.z1 }, { x: wall.x2, z: wall.z2 }));
+    return blocked ? best : Math.max(best, lampReach(Math.hypot(lamp.x - at.x, lamp.z - at.z), lamp.range));
+  }, 0);
+}
+
+/** A window sits on the notch's edge: only a pass this far inside the notch counts. */
+const NOTCH_INSET = 0.2;
+
+/** Whether the segment a→b passes through `rect` shrunk by NOTCH_INSET (Liang–Barsky). */
+function crossesRect(a: Vec2, b: Vec2, rect: FootprintRect): boolean {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  let t0 = 0;
+  let t1 = 1;
+  const clips: Array<[number, number]> = [
+    [-dx, a.x - (rect.x0 + NOTCH_INSET)],
+    [dx, rect.x1 - NOTCH_INSET - a.x],
+    [-dz, a.z - (rect.z0 + NOTCH_INSET)],
+    [dz, rect.z1 - NOTCH_INSET - a.z],
+  ];
+  for (const [p, q] of clips) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
 /** Full glow in the near part of a lamp's range, a quarter at its edge, nothing beyond. */
-function windowReach(distance: number, range: number): number {
+function lampReach(distance: number, range: number): number {
   return distance > range ? 0 : Math.min(1, 1.25 - distance / range);
 }
 

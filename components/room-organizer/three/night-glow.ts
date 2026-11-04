@@ -1,3 +1,4 @@
+import { markSharedTexture } from './builder-utils';
 import { ROOF_TAG } from './roof';
 import type { NightGlowPlan } from '../lib/night-lights';
 import type * as ThreeNS from 'three';
@@ -36,8 +37,8 @@ let roomLightCache: ThreeNS.CanvasTexture | null = null;
 /**
  * What a lit room looks like through glass: brighter towards the ceiling, with
  * curtains drawn in at the sides. One small texture for every pane in the
- * street; a flat colour read as a sticker on the wall. Freed with a material,
- * it simply uploads again on next use.
+ * street; a flat colour read as a sticker on the wall. Shared, so removing a
+ * window or rebuilding the street leaves it on the GPU; freed at unmount.
  */
 function roomLightTexture(THREE: ThreeModule): ThreeNS.CanvasTexture | null {
   if (roomLightCache) return roomLightCache;
@@ -63,9 +64,15 @@ function roomLightTexture(THREE: ThreeModule): ThreeNS.CanvasTexture | null {
   curtains.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
   ctx.fillStyle = curtains;
   ctx.fillRect(0, 0, size, size);
-  roomLightCache = new THREE.CanvasTexture(canvas);
+  roomLightCache = markSharedTexture(new THREE.CanvasTexture(canvas));
   roomLightCache.colorSpace = THREE.SRGBColorSpace;
   return roomLightCache;
+}
+
+/** Free the lit-window texture when the editor unmounts. */
+export function releaseRoomLightTexture(): void {
+  roomLightCache?.dispose();
+  roomLightCache = null;
 }
 
 function sceneNightLevel(scene: ThreeNS.Scene): number {

@@ -32,13 +32,16 @@ function isSharedGeometry(geometry: ThreeNS.BufferGeometry): boolean {
 }
 
 /**
- * Textures every item shares, such as the wood and fabric detail (#756).
- * `disposeMaterial` leaves them alone, or each rebuild would re-upload them.
+ * Textures shared by many materials: the furniture's wood and fabric detail
+ * (#756), the ground maps and the lit-window texture. `disposeObject` leaves
+ * them alone, or every rebuild would upload them again; their module frees
+ * them at unmount.
  */
 const sharedTextures = new WeakSet<ThreeNS.Texture>();
 
-export function markSharedTexture(texture: ThreeNS.Texture): void {
+export function markSharedTexture<T extends ThreeNS.Texture>(texture: T): T {
   sharedTextures.add(texture);
+  return texture;
 }
 
 /**
