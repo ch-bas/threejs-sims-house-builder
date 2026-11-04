@@ -208,6 +208,11 @@ to respect.
   the facade's plane. A door flush with a trimmed end has its hole cut to the
   trimmed end too. Rain and snow keep clear of the eaves' overhang as well as
   the footprint, and of the neighbours' columns (`streetDryBoxes`) (#660).
+- **A straight stair carries a closed string per side** (`stringerOutline`):
+  its top edge follows the nosings a lip above them, it is cut level at the
+  floor and ends square under the top nosing. The tilted box it replaces
+  hung over the floor at the foot, stopped short of the landing and stood
+  proud of the treads (#658).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
