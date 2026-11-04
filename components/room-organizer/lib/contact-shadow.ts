@@ -48,11 +48,15 @@ export interface ContactPlan {
   holes: ContactClearing[];
 }
 
-/** Standing on the floor across their whole footprint. */
+/**
+ * Standing on the floor across their whole footprint. A lamp, plant or pot is
+ * narrower than its box, but its box is small, so the patch reads as its foot.
+ * Stairs, straight or winder, fill their whole rectangle down to the floor.
+ */
 const SOLID_TYPES: ReadonlySet<string> = new Set([
   'armchair', 'sofa', 'bed', 'nightstand', 'wardrobe', 'dresser', 'bookshelf', 'cabinet', 'fridge', 'stove',
   'dishwasher', 'kitchen-sink', 'counter', 'toilet', 'bathtub', 'shower', 'bathroom-sink', 'tv', 'plant',
-  'flowerpot', 'lamp', 'floor-lamp',
+  'flowerpot', 'lamp', 'floor-lamp', 'stairs',
 ]);
 
 /** Carried on legs: a weaker, wider patch than something sitting on the floor. */
@@ -82,7 +86,10 @@ export function contactBlob(item: FurnitureItem): ContactBlob | null {
 export function planContactShadow(building: KeepOutBuilding, storey: number): ContactPlan | null {
   const floor = building.floors[storey];
   if (!floor) return null;
-  const shell: ContactLine[] = shellWalls(building).map(({ x1, z1, x2, z2 }) => ({ x1, z1, x2, z2 }));
+  // A shell wall the user took down casts nothing.
+  const shell: ContactLine[] = shellWalls(building)
+    .filter((wall) => !floor.hiddenWalls?.includes(wall.side))
+    .map(({ x1, z1, x2, z2 }) => ({ x1, z1, x2, z2 }));
   const partitions: ContactLine[] = (floor.interiorWalls ?? []).map(({ x1, z1, x2, z2 }) => ({ x1, z1, x2, z2 }));
   const holes = floorKeepOut(building, storey).map((rect): ContactClearing => ({
     x: (rect.x0 + rect.x1) / 2,
