@@ -2,6 +2,7 @@ import { useCallback, useRef, type MutableRefObject } from 'react';
 import { hasCollisions, type KeepOutRect } from '../lib/geometry';
 import { settleWallMountedItem, type WallGap } from '../lib/opening-snap';
 import { storeyHeight } from '../lib/storeys';
+import { liftContactPatches } from '../three/contact-shadow';
 import type { LayoutActions } from './use-layout-state';
 import type { FloorLayout, FootprintCutout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -20,6 +21,8 @@ export interface UseItemDragParams {
   actions: LayoutActions;
   allSelectedIds: ReadonlySet<string>;
 }
+
+const NO_ITEMS: ReadonlySet<string> = new Set();
 
 export interface DragCancelOptions {
   /** Move the fast-path groups back to the session's origins (#292). */
@@ -142,6 +145,17 @@ export function useItemDrag({
     });
   }, []);
 
+  // The held items' floor patches go at the start of the gesture and stay gone
+  // until the drop: once each way, never per move (#754).
+  const setPatchesLifted = useCallback(
+    (ids: ReadonlySet<string>) => {
+      const scene = sceneBoxRef.current?.current;
+      if (scene) liftContactPatches(scene, activeFloorIndex, ids);
+      invalidateBoxRef.current();
+    },
+    [activeFloorIndex]
+  );
+
   /**
    * Once the viewport turns, the session is void: every member goes back to
    * its origin, on each move and on the release, since the front end keeps
@@ -160,10 +174,10 @@ export function useItemDrag({
         group.position.z = origin.z;
         if (memberId === session.primaryId) setDragCollisionTint(group, false);
       }
-      invalidateBoxRef.current();
+      setPatchesLifted(NO_ITEMS);
       return true;
     },
-    [findFurnitureGroup, setDragCollisionTint]
+    [findFurnitureGroup, setDragCollisionTint, setPatchesLifted]
   );
 
   const handleDragStart = useCallback(
@@ -181,8 +195,9 @@ export function useItemDrag({
         origins.set(id, { x: item.position.x, z: item.position.z });
       }
       dragSessionRef.current = { primaryId, origins, latest: new Map(origins), viewportWidth: viewportWidth(), void: false };
+      setPatchesLifted(new Set(origins.keys()));
     },
-    [allSelectedIds, activeFloor.items]
+    [allSelectedIds, activeFloor.items, setPatchesLifted]
   );
 
   const handleDrag = useCallback(
@@ -245,6 +260,7 @@ export function useItemDrag({
         // Single dispatch for the whole gesture; the rebuild effect runs once.
         actions.bulkSetPositions(session.latest);
       }
+      if (session && !moved) setPatchesLifted(NO_ITEMS);
       if (!moved || !session) return;
       // Lock every dragged item after a real drag so it can't be accidentally
       // moved — previously only the primary was locked, so co-dragged items
@@ -273,7 +289,7 @@ export function useItemDrag({
         if (settled) actions.updateItem(movedId, settled);
       }
     },
-    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, cutout, actions, findFurnitureGroup, setDragCollisionTint, voidIfViewportTurned]
+    [activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, frontGap, cutout, actions, findFurnitureGroup, setDragCollisionTint, setPatchesLifted, voidIfViewportTurned]
   );
 
   const handleDragCancel = useCallback(
@@ -301,9 +317,9 @@ export function useItemDrag({
         // A kept group would otherwise wear the red drag tint for good.
         if (memberId === id) setDragCollisionTint(group, false);
       }
-      invalidateBoxRef.current();
+      setPatchesLifted(NO_ITEMS);
     },
-    [activeFloor.items, findFurnitureGroup, setDragCollisionTint]
+    [activeFloor.items, findFurnitureGroup, setDragCollisionTint, setPatchesLifted]
   );
 
   const isDragActive = useCallback(() => dragSessionRef.current !== null, []);
