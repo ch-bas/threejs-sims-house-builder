@@ -1,3 +1,4 @@
+import { isPhone } from '../lib/render-quality';
 import type * as ThreeNS from 'three';
 
 /**
@@ -51,4 +52,13 @@ export function withMaxAnisotropy<T extends ThreeNS.Texture>(texture: T): T {
   if (anisotropic.size >= PRUNE_AT) tracked();
   anisotropic.add(new WeakRef(texture));
   return texture;
+}
+
+/** Whether textures made at runtime should come in their phone size. */
+export function drawsForPhone(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return isPhone({
+    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+    screenShortSide: Math.min(window.screen.width, window.screen.height),
+  });
 }

@@ -52,7 +52,9 @@ components/
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
+    │   ├── contact-shadow.ts            What a storey's baked floor contact map shows: item patches, wall bands, doors and holes wiped (#754)
     │   ├── render-quality.ts            Pixel-ratio cap per device class (phones 1.5, else 2)
+    │   ├── detail-patterns.ts           Tileable grey wood, fabric and leather images for furniture (#756)
     │   ├── reduced-motion.ts            prefers-reduced-motion query and a one-off read for non-React code
     │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
     │   ├── library.ts                   Named-layout library I/O: an index of entries (name, saved-at, item and floor counts) + one blob per house; unreadable entries kept verbatim (#348); ASCII names keep their historical slot, other names get a `u_` Unicode slot (#550); a copy that would leave autosave no room is refused (#565)
@@ -127,7 +129,7 @@ components/
     │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory: furniture type → mesh builder
-    │   ├── builder-utils.ts             Shared types + mesh()/material() helpers, dispose helpers (disposeScene on unmount, #213)
+    │   ├── builder-utils.ts             Shared types + mesh()/material()/softBox() helpers (soft chamfered edges, #755), dispose helpers (disposeScene on unmount, #213)
     │   ├── three-runtime.ts             The named three.js symbols the app uses; the engine's only runtime import (#411)
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
@@ -162,6 +164,8 @@ components/
     │   ├── terrain.ts                   Sloped ground + excavation faces
     │   ├── entrance.ts                  Recessed porch reveals, soffit, steps
     │   ├── baseboard.ts                 Skirting profile + door-gap runs
+    │   ├── contact-shadow.ts            Paints the contact plan to a canvas and shows it on one quad over the floor (#754)
+    │   ├── furniture-materials.ts       Material classes (fabric, wood, metal, …) and shared wood/fabric/leather detail textures (#756)
     │   ├── floor-patterns.ts            Procedural CanvasTexture floors
     │   ├── wall-patterns.ts             Procedural CanvasTexture walls
     │   ├── texture-settings.ts          Renderer anisotropy captured at init, for the CanvasTexture builders

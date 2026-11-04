@@ -1,4 +1,5 @@
 import { ROOF_STYLE_DEFAULT_COLORS } from './constants';
+import { ROOF_EAVE_OVERHANG } from './dormers';
 import { PAVEMENT_DEPTH, groundHeightAt, outdoorGroundSize, roadEdges } from './site';
 import type { Frontage, NeighbourSpec, RoofStyle, TerrainSpec } from './types';
 
@@ -155,6 +156,31 @@ export function windowRow(
 
 const pick = <T>(rng: () => number, list: readonly T[]): T => list[Math.floor(rng() * list.length)]!;
 const between = (rng: () => number, lo: number, hi: number): number => lo + rng() * (hi - lo);
+
+/** A world rectangle rain and snow keep out of (#660). */
+export interface DryBox {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+/**
+ * The columns of the neighbours' houses, eaves included, so weather doesn't
+ * fall through their roofs. From the generator the scenery is built from.
+ */
+export function streetDryBoxes(site: StreetSite): DryBox[] {
+  return generateStreet(site).map((house) => {
+    const overhang = house.roof.style === 'none' ? 0 : ROOF_EAVE_OVERHANG;
+    const backZ = house.frontZ - house.facing * house.depth;
+    return {
+      x0: house.x - house.width / 2 - overhang,
+      x1: house.x + house.width / 2 + overhang,
+      z0: Math.min(house.frontZ, backZ) - overhang,
+      z1: Math.max(house.frontZ, backZ) + overhang,
+    };
+  });
+}
 
 /**
  * Lay the street out. Returns nothing when no neighbour flag is set, and the

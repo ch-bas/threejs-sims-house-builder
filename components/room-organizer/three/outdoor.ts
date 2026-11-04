@@ -1,5 +1,5 @@
 import { cutoutRect } from '../lib/footprint';
-import { LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
+import { GRASS_DROP, LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
 import { fadeWithDistance, layGroundSurface } from './ground-surfaces';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
@@ -106,7 +106,7 @@ export function setOutdoorVisible(
   // Widened to ~10-15mm gaps while keeping the same layering order:
   // grass (lowest) < sidewalk < road < dashes (top). Tufts and stepping
   // stones keep their same relative offset above grass.
-  const GRASS_Y = -0.05;
+  const GRASS_Y = -GRASS_DROP;
   const SIDEWALK_Y = -0.035;
   const ROAD_Y = -0.025;
   const DASH_Y = -0.015;
