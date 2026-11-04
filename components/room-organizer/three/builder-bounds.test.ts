@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { FURNITURE_CATALOG, WINDOW_SILL_HEIGHT } from '../lib/constants';
 import { isWallHung, mountBand, pendantBulbY } from '../lib/mount-band';
+import { STAIR_STEP_COUNT } from '../lib/stairs';
 import { createFurnitureModel } from './furniture-builders';
 import type { FurnitureItem } from '../lib/types';
 
@@ -260,5 +261,46 @@ describe('soft furniture edges and kitchen fronts (#755)', () => {
 
   it('keeps a counter inside its catalog box', () => {
     expectInsideBox('counter');
+  });
+});
+
+// A tilted box hung 0.36 m over the floor at the foot, stopped 0.2 m short
+// of the landing and stood 0.22 m proud of the treads: a plank beside the
+// stairs. The string is a closed outline now, its top edge on the nosings
+// (#658).
+describe('straight stairs stringers (#658)', () => {
+  const item = catalogItem('stairs');
+  const strings = () => meshes(build(item)).filter((m) => m.geometry instanceof THREE.ExtrudeGeometry);
+  const going = item.depth / STAIR_STEP_COUNT;
+  const rise = item.height / STAIR_STEP_COUNT;
+
+  it('stand on the floor, end under the top nosing, and keep to the stair width', () => {
+    const parts = strings();
+    expect(parts).toHaveLength(2);
+    for (const string of parts) {
+      const box = bounds(string);
+      expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
+      expect(box.max.y).toBeLessThanOrEqual(item.height + 0.05);
+      expect(box.min.z).toBeCloseTo(-item.depth / 2, 5);
+      expect(box.max.z).toBeCloseTo(item.depth / 2 - going, 5);
+      expect(Math.abs(box.max.x)).toBeLessThanOrEqual(item.width / 2 + 1e-6);
+      expect(Math.abs(box.min.x)).toBeLessThanOrEqual(item.width / 2 + 1e-6);
+    }
+  });
+
+  it('follow the nosings: the top edge is a lip above each one, never far from it', () => {
+    const group = build(item);
+    const string = meshes(group).find((m) => m.geometry instanceof THREE.ExtrudeGeometry);
+    const x = string!.position.x;
+    for (let i = 0; i < STAIR_STEP_COUNT; i++) {
+      // Just past each nosing; the string ends at the last one, so probe inside it there.
+      const nosingZ = Math.min(-item.depth / 2 + i * going + 0.005, item.depth / 2 - going - 0.005);
+      const nosingY = rise * (i + 1);
+      const ray = new THREE.Raycaster(new THREE.Vector3(x, 10, nosingZ), new THREE.Vector3(0, -1, 0));
+      const hit = ray.intersectObject(group, true).find((h) => h.object === string);
+      expect(hit, `nosing ${i}`).toBeDefined();
+      expect(hit!.point.y).toBeGreaterThanOrEqual(nosingY - 1e-3);
+      expect(hit!.point.y).toBeLessThanOrEqual(nosingY + 0.05);
+    }
   });
 });

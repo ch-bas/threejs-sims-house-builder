@@ -58,6 +58,8 @@ import { groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
+import { streetDryBoxes } from './lib/street-row';
+import { streetSiteOf } from './lib/walk-collision';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt, type SelectedWall, type WallSide } from './lib/wall-sides';
 import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
@@ -1207,6 +1209,17 @@ export function RoomOrganizer(): JSX.Element {
     riggedModelReady: peopleModelReady,
   });
 
+  // Rebuilt with the street, not on every edit: it re-seeds the whole field.
+  const streetKey = JSON.stringify([
+    layout.width, layout.height, layout.roof?.style, layout.terrain, layout.frontage, layout.neighbours,
+    layout.floors.map((floor) => floor.height),
+  ]);
+  const dryBoxes = useMemo(
+    () => streetDryBoxes(streetSiteOf({ ...layout, depth: layout.height })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- streetKey covers what the street reads.
+    [streetKey]
+  );
+
   useWeather({
     weather: view.weather,
     enabled: isReady && !view.view2D,
@@ -1215,6 +1228,9 @@ export function RoomOrganizer(): JSX.Element {
     sceneRef,
     roomWidth: layout.width,
     roomDepth: layout.height,
+    // The eaves keep the ground under them dry too (#660).
+    clearance: layout.roof && layout.roof.style !== 'none' ? ROOF_EAVE_OVERHANG : 0,
+    dryBoxes,
   });
 
   useCameraVision({

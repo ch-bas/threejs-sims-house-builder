@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { outdoorGroundSize } from '../lib/site';
 import { buildWeatherMesh, createWeatherField, removeWeather, stepWeatherField, syncWeatherMesh } from '../three/weather';
 import { useReducedMotion } from './use-reduced-motion';
+import type { DryBox } from '../lib/street-row';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -16,6 +17,10 @@ export interface UseWeatherOptions {
   /** House footprint: sizes the field to the lot and keeps the indoors dry. */
   roomWidth: number;
   roomDepth: number;
+  /** How far the roof overhangs the footprint; kept dry too (#660). 0 with no roof. */
+  clearance: number;
+  /** The neighbours' houses, kept dry the same way (#660). */
+  dryBoxes: readonly DryBox[];
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate: () => void;
 }
@@ -29,7 +34,7 @@ export interface UseWeatherOptions {
  * repaints once so the last frame's particles don't linger.
  */
 export function useWeather(options: UseWeatherOptions): void {
-  const { weather, enabled, threeModuleRef, sceneRef, roomWidth, roomDepth, invalidate } = options;
+  const { weather, enabled, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, invalidate } = options;
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -43,6 +48,8 @@ export function useWeather(options: UseWeatherOptions): void {
       groundSize: outdoorGroundSize(roomWidth, roomDepth),
       roomWidth,
       roomDepth,
+      clearance,
+      dryBoxes,
     });
     const mesh = buildWeatherMesh(THREE, field);
     scene.add(mesh);
@@ -77,5 +84,5 @@ export function useWeather(options: UseWeatherOptions): void {
       removeWeather(scene);
       invalidate();
     };
-  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, invalidate, reducedMotion]);
+  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, invalidate, reducedMotion]);
 }

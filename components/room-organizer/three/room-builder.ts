@@ -59,6 +59,21 @@ export type WallDisplay = 'up' | 'cutaway' | 'down';
  */
 export const OFF_STOREY_KEY = 'offStorey';
 
+/** userData key on a top-level object: the storey it was built for (#446). */
+export const STOREY_KEY = 'storey';
+
+/**
+ * userData key on a notch wall and its baseboards: the shell id (`notch-x`,
+ * `notch-z`). `wallId` is the side it shares a colour with, and an opening is
+ * owned by the shell wall it is cut into (#659).
+ */
+const SHELL_WALL_KEY = 'shellWall';
+
+/** Every storey's shell has a `south`: a wall is only known by its storey too (#659). */
+function wallDisplayKey(tag: unknown, storey: unknown, id: unknown): string {
+  return `${String(tag)}:${String(storey)}:${String(id)}`;
+}
+
 /**
  * userData on the shell parts of an L's two new walls (#727): the x or z of
  * their plane. They face the same way as a whole side of the house but stand
@@ -85,15 +100,15 @@ export function applyWallDisplay(
       changed = true;
     }
   };
-  // Owner visibility by "tag:wallId", for the outline sync pass below.
+  // Owner visibility by tag, storey and id, for the sync pass below.
   const wallVisibility = new Map<string, boolean>();
 
   for (const obj of scene.children) {
     const tag = obj.userData.type as string | undefined;
     if (obj.userData[OFF_STOREY_KEY] === true && (tag === 'interior-wall' || tag === ROOM_OBJECT_TAGS.Wall)) {
       setVisible(obj, false);
-      const id = obj.userData.wallId as string | undefined;
-      if (id) wallVisibility.set(`${tag}:${id}`, false);
+      const id = (obj.userData[SHELL_WALL_KEY] ?? obj.userData.wallId) as string | undefined;
+      if (id) wallVisibility.set(wallDisplayKey(tag, obj.userData[STOREY_KEY], id), false);
       continue;
     }
     if (tag === 'roof') {
@@ -106,7 +121,7 @@ export function applyWallDisplay(
       const visible = mode !== 'down';
       setVisible(obj, visible);
       const id = obj.userData.wallId as string | undefined;
-      if (id) wallVisibility.set(`interior-wall:${id}`, visible);
+      if (id) wallVisibility.set(wallDisplayKey(tag, obj.userData[STOREY_KEY], id), visible);
       continue;
     }
     if (tag !== ROOM_OBJECT_TAGS.Wall) continue;
@@ -142,14 +157,26 @@ export function applyWallDisplay(
       visible = dot < 0;
     }
     setVisible(obj, visible);
-    // A selection outline follows its side's main wall.
-    if (plane === undefined) wallVisibility.set(`${ROOM_OBJECT_TAGS.Wall}:${wallId}`, visible);
+    // A notch wall answers to its shell id, so it never speaks for its side.
+    const id = (obj.userData[SHELL_WALL_KEY] ?? wallId) as string;
+    wallVisibility.set(wallDisplayKey(tag, obj.userData[STOREY_KEY], id), visible);
   }
 
   for (const obj of scene.children) {
-    if (obj.userData.type !== 'wall-selection') continue;
-    const owner = wallVisibility.get(`${obj.userData.ownerTag as string}:${obj.userData.wallId as string}`);
-    if (owner !== undefined) setVisible(obj, owner);
+    const tag = obj.userData.type;
+    if (tag === 'wall-selection') {
+      const owner = wallVisibility.get(wallDisplayKey(obj.userData.ownerTag, obj.userData.ownerStorey, obj.userData.wallId));
+      if (owner !== undefined) setVisible(obj, owner);
+      continue;
+    }
+    // A door or window (a furniture group stamped with its owner wall, #659)
+    // follows that wall on its own storey: cutaway and walls-down used to
+    // leave every frame standing where the wall was. With no such wall built
+    // (a hidden wall, a traced ground floor) it follows the mode; a storey
+    // the walkthrough hides stays hidden either way.
+    if (tag !== ROOM_OBJECT_TAGS.Furniture || obj.userData.ownerTag === undefined) continue;
+    const owner = wallVisibility.get(wallDisplayKey(obj.userData.ownerTag, obj.userData.floorIndex, obj.userData.wallId));
+    setVisible(obj, (owner ?? mode !== 'down') && obj.userData[OFF_STOREY_KEY] !== true);
   }
 
   return changed;
@@ -657,7 +684,10 @@ function buildWalls(
     wall.name = `Wall ${spec.id}`;
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
     wall.userData.wallId = spec.side;
-    if (spec.plane !== undefined) wall.userData[WALL_PLANE_KEY] = spec.plane;
+    if (spec.plane !== undefined) {
+      wall.userData[WALL_PLANE_KEY] = spec.plane;
+      wall.userData[SHELL_WALL_KEY] = spec.id;
+    }
     // Solid walls block the sun like the roof, foundation, and interior walls
     // already do — without this, dawn/dusk light fell on furniture straight
     // through the shell (#132). Ghosted floors (show-all-floors) are
@@ -797,7 +827,10 @@ function addBaseboard(
     base.name = `Baseboard ${spec.id}`;
     base.userData.type = ROOM_OBJECT_TAGS.Wall;
     base.userData.wallId = spec.side;
-    if (spec.plane !== undefined) base.userData[WALL_PLANE_KEY] = spec.plane;
+    if (spec.plane !== undefined) {
+      base.userData[WALL_PLANE_KEY] = spec.plane;
+      base.userData[SHELL_WALL_KEY] = spec.id;
+    }
     makeStatic(base);
     scene.add(base);
   }
