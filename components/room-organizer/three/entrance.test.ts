@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { GRASS_DROP } from '../lib/site';
 import { entranceGeometry } from '../lib/street';
 import { ENTRANCE_WALL_GAP, buildEntrance } from './entrance';
 import { FOUNDATION_OVERHANG, applyWallDisplay } from './room-builder';
@@ -45,7 +46,8 @@ describe('entrance porch (#204)', () => {
     const [, steps] = build({ frontY: 1.2, backY: 0 });
     expect(steps!.userData.type).toBe('floor');
     const box = new THREE.Box3().setFromObject(steps!);
-    expect(box.min.y).toBeCloseTo(1.2);
+    // The bottom riser reaches the grass plane under the ground line (#660).
+    expect(box.min.y).toBeCloseTo(1.2 - GRASS_DROP);
     expect(box.max.y).toBeCloseTo(2.5);
     // The porch storey sits above the plinth: the flight meets the wall plane.
     expect(box.max.z).toBeCloseTo(-4.5);
@@ -58,7 +60,7 @@ describe('entrance porch (#204)', () => {
     // The top step used to share the plinth's top face (y = 0) and the ring's
     // outer edge poked through the step below; the ring is the landing now.
     expect(box.max.y).toBeCloseTo(0);
-    expect(box.min.y).toBeCloseTo(-0.5);
+    expect(box.min.y).toBeCloseTo(-0.5 - GRASS_DROP);
     expect(box.max.z).toBeCloseTo(-4.5 - FOUNDATION_OVERHANG, 5);
     expect(steps!.children.length).toBe(Math.ceil(0.5 / 0.18));
   });

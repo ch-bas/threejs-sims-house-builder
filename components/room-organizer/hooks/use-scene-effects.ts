@@ -16,11 +16,11 @@ import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from 
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
 import { boundsSize, planViewFit } from '../lib/plan-view-fit';
 import { hasNeighbours, lowestGround } from '../lib/site';
-import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
+import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
 import { shadowCasterBounds, type ShadowBox } from '../lib/sun-shadow';
-import { sceneWallDisplay, walkthroughCeiling, walkthroughPit } from '../lib/walkthrough-view';
+import { sceneWallDisplay, walkthroughCeiling, walkthroughPartitionHeight, walkthroughPit } from '../lib/walkthrough-view';
 import { zoneFinishesKey, zoneFloorPatches } from '../lib/zones';
 import { disposeObject, removeAndDispose } from '../three/builder-utils';
 import { addVisionCones, visionConesOccludable } from '../three/camera-vision';
@@ -46,9 +46,9 @@ import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildAtticCeiling, buildRoof, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
-import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
+import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
-import { computeFloorOpenings, computeWallOpenings } from '../three/wall-openings';
+import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
 import { observeSceneOccluders, planFit } from './scene-occluders';
 import type { StampGhost } from '../canvas-2d/plan-edit';
 import type { DetectedRoom } from '../lib/room-detect';
@@ -70,9 +70,6 @@ export function otherFloorGhostOpacity(
   return showAllFloors && !isActive && wallDisplay !== 'up' ? 0.25 : undefined;
 }
 
-/** scene.userData-style key on a top-level object: the storey it was built for (#446). */
-const STOREY_KEY = 'storey';
-
 /** Tag every scene child from `first` on as built for `storey`. */
 function tagStorey(scene: ThreeNS.Scene, first: number, storey: number): void {
   for (let i = first; i < scene.children.length; i++) scene.children[i]!.userData[STOREY_KEY] = storey;
@@ -93,7 +90,9 @@ function applyStoreyRange(scene: ThreeNS.Scene, range: { from: number; to: numbe
     if (obj.userData[OFF_STOREY_KEY] === off) continue;
     obj.userData[OFF_STOREY_KEY] = off;
     const tag = obj.userData.type;
-    if (tag !== ROOM_OBJECT_TAGS.Wall && tag !== 'interior-wall') obj.visible = !off;
+    // Walls and partitions are shown by applyWallDisplay, which owns their
+    // visibility; so are the doors and windows stamped with a wall (#659).
+    if (tag !== ROOM_OBJECT_TAGS.Wall && tag !== 'interior-wall' && obj.userData.ownerTag === undefined) obj.visible = !off;
   }
 }
 
@@ -114,6 +113,8 @@ interface PlannedFurniture {
   floorY: number;
   storeyH: number;
   isActive: boolean;
+  /** The wall a door or window is cut into (#659). */
+  owner?: OpeningOwner;
 }
 
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
@@ -222,6 +223,7 @@ export function useSceneEffects({
   // stairs below a landing and a roofless box from the garden. Walls are up,
   // so nothing is ghosted. Leaving restores the user's own choice.
   const allFloors = view.showAllFloors || walkthroughActive;
+  const roofStyle = layout.roof?.style;
   const ghostOtherFloors = otherFloorGhostOpacity(allFloors, wallDisplay, false) !== undefined;
   // Every storey is built while walking, but indoors only the walker's is
   // drawn, with its neighbours while it is on or near the stairs: a tall
@@ -592,13 +594,18 @@ export function useSceneEffects({
       const isActive = index === activeFloorIndex;
       const floorY = floorElevation(layout.floors, index);
       const storeyH = storeyHeight(floor);
+      // The wall each door and window is cut into: the group follows that
+      // wall's visibility in cutaway and walls-down (#659).
+      const owners = classifyOpeningOwners(items, layout.width, layout.height, floor?.interiorWalls ?? [], layout.cutout);
       items.forEach((item, i) => {
         const collision = collisions[i] === true;
         // Stairs climb to the floor above and openings are fitted into the
-        // storey, so the mesh matches the hole cut for it (#202, #277).
-        const fitted = itemForStorey(item, floor);
+        // storey, so the mesh matches the hole cut for it (#202, #277); a
+        // flight under the roof stops at the attic plate (#654).
+        const fitted = itemForStorey(item, floor, underRoof(layout, index));
         const key = furnitureMeshKey(index, item.id);
-        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive });
+        const owner = owners.get(item.id);
+        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive, ...(owner ? { owner } : {}) });
         nextBuildKeys.set(
           key,
           furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady })
@@ -645,6 +652,13 @@ export function useSceneEffects({
         changed = true;
       }
       group.userData.floorIndex = spec.floorIndex;
+      if (spec.owner) {
+        group.userData.ownerTag = spec.owner.kind === 'interior' ? 'interior-wall' : ROOM_OBJECT_TAGS.Wall;
+        group.userData.wallId = spec.owner.kind === 'interior' ? spec.owner.wallId : spec.owner.wall;
+      } else {
+        delete group.userData.ownerTag;
+        delete group.userData.wallId;
+      }
       group.userData.locked = spec.item.locked === true || !spec.isActive;
       // Inactive-floor groups are excluded from pointer raycasts entirely
       // (see drag-handlers' furnitureList, #122).
@@ -656,6 +670,10 @@ export function useSceneEffects({
     // change aborts (drag-handlers). Recompute the static shadow map only
     // when a shadow caster was added, removed or moved.
     if (changed) applyStoreyRange(scene, storeyRangeRef.current);
+    // A rebuilt or re-owned door or window takes its wall's visibility now,
+    // not on the next orbit (#659).
+    const camera = cameraRef.current;
+    if (camera) applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
     scene.userData[FURNITURE_REVISION_KEY] =
       ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
     if (changed) requestShadowUpdate();
@@ -666,9 +684,14 @@ export function useSceneEffects({
     // floor elevations and itemForStorey's fitting.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef,
+    isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef,
     itemsKey, collisionKey, storeyHeightsKey,
     activeFloorIndex, allFloors, ghostOtherFloors,
+    // Opening ownership (#659) reads the partitions and the footprint; the
+    // wall display is re-applied to the groups it stamps.
+    interiorWallsKey, cutoutKey, layout.width, layout.height, wallDisplay,
+    // A stair's rise reads whether it is under a roof (#654).
+    roofStyle,
     // Not read in the body: createFurnitureModel picks the rigged person up
     // from the model cache, and this re-runs the build once it's filled.
     peopleModelReady,
@@ -709,7 +732,7 @@ export function useSceneEffects({
           : 0xfacc15;
         // Around the built mesh, not floor-to-height: a painting hangs at 0.8 m
         // and a window starts at its sill (#376).
-        const band = mountBand(itemForStorey(item, activeFloor), storeyHeight(activeFloor));
+        const band = mountBand(itemForStorey(item, activeFloor, underRoof(layout, activeFloorIndex)), storeyHeight(activeFloor));
         wanted = { accent, width: item.width, depth: item.depth, band, signature: `${accent}|${item.width}|${item.depth}|${band.bottom}|${band.top}` };
       }
 
@@ -750,6 +773,7 @@ export function useSceneEffects({
     isReady, invalidate, threeModuleRef, sceneRef,
     activeFloorIndex, selectedItemId, extraSelectedIds, highlightedIds,
     itemsKey, collisionKey, storeyHeightsKey, allFloors, ghostOtherFloors, peopleModelReady,
+    roofStyle, layout.floors.length,
   ]);
 
   // The active storey while the others are ghosted, else -1: its cones stay
@@ -891,7 +915,6 @@ export function useSceneEffects({
   // `layout.roof` / `layout.terrain` objects, so a dormer drag or a colour
   // picker tick doesn't rebuild the street (#283).
   const neighboursKey = JSON.stringify(layout.neighbours ?? null);
-  const roofStyle = layout.roof?.style;
   const roofColor = layout.roof?.color;
   const terrainFrontY = layout.terrain?.frontY;
   const terrainBackY = layout.terrain?.backY;
@@ -959,7 +982,9 @@ export function useSceneEffects({
       const firstChild = scene.children.length;
       const isActive = index === activeFloorIndex;
       const floorY = floorElevation(layout.floors, index);
-      const wallHeight = interiorWallHeight(floor);
+      // Walking, partitions reach the ceiling instead of stopping 0.4 m
+      // short of it, which left a slot into the next room (#656).
+      const wallHeight = walkthroughActive ? walkthroughPartitionHeight(floor) : interiorWallHeight(floor);
       const wallHeights =
         entrance && index === entrance.floorIndex
           ? new Map([[
@@ -998,7 +1023,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, walkthroughActive, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
 
   // Which storeys are drawn while walking indoors (#446). Declared after the
   // shell, partition and furniture effects, so a rebuild in the same commit
@@ -1056,6 +1081,7 @@ export function useSceneEffects({
     // outline in lockstep with its wall on every orbit, and a wall already
     // hidden by cutaway must not spawn a visible ghost outline (#133).
     outline.userData.ownerTag = tag;
+    outline.userData.ownerStorey = wallMesh.userData[STOREY_KEY];
     outline.userData.wallId = selectedWall.id;
     outline.visible = wallMesh.visible;
     scene.add(outline);
@@ -1107,10 +1133,11 @@ export function useSceneEffects({
       clearItemLabels(scene);
       return;
     }
-    renderItemLabels(THREE, scene, activeFloor.items, activeFloorY);
-    // activeFloor.items is read through labelsKey only (#409).
+    renderItemLabels(THREE, scene, activeFloor.items, activeFloorY, activeFloor, underRoof(layout, activeFloorIndex));
+    // activeFloor.items is read through labelsKey only (#409); the storey
+    // height, which places a hung item's label (#657), through its key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, labelsKey, activeFloorY]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, labelsKey, activeFloorY, activeFloor.height, roofStyle, layout.floors.length, activeFloorIndex]);
 
   // Roof (#283). Which storey is active only shows or hides it: the roof is
   // built while it is on screen and kept, hidden, below the top storey, so a
