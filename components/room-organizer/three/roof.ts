@@ -4,7 +4,7 @@ import { footprintOutline } from '../lib/footprint';
 import { removeAndDispose } from './builder-utils';
 import { buildDormers, buildDormerWell, dormerWells } from './dormers';
 import { DisposableLruCache } from './texture-lru';
-import { getMaxAnisotropy } from './texture-settings';
+import { withMaxAnisotropy } from './texture-settings';
 import type { FootprintCutout, RoofSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -478,7 +478,7 @@ function buildShingleMaterial(
   // Clone per roof so each surface owns a disposable copy sharing the cached
   // canvas image. (`Texture.clone()` already flags needsUpdate, so no
   // explicit re-upload.) The geometry's UVs are in metres (roofSurfaceUvs).
-  const texture = master.clone();
+  const texture = withMaxAnisotropy(master.clone());
   texture.repeat.set(SHINGLE_TILES_PER_METRE, SHINGLE_TILES_PER_METRE);
 
   return new THREE.MeshStandardMaterial({
@@ -529,7 +529,7 @@ function getShingleTexture(THREE: ThreeModule, color: string): ThreeNS.CanvasTex
   // Albedo CanvasTextures default to NoColorSpace (linear); tag sRGB so it's
   // decoded before lighting instead of rendering washed-out under sRGB output.
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = getMaxAnisotropy();
+  withMaxAnisotropy(texture);
 
   shingleTextureCache.set(color, texture);
   return texture;

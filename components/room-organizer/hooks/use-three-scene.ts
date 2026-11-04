@@ -123,8 +123,8 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     };
   }, []);
 
-  // A changed render quality, without tearing the scene down. Textures already
-  // built keep their anisotropy until their next rebuild.
+  // A changed render quality, without tearing the scene down: the textures
+  // already built, cached ones included, take the new anisotropy cap at once.
   const { renderQuality } = options;
   useEffect(() => {
     const scene = sceneRef.current;
@@ -132,10 +132,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     const canvas = canvasRef.current;
     if (!isReady || !scene || !renderer || !canvas) return;
     const quality = currentQuality(renderQuality);
-    setMaxAnisotropy(Math.min(quality.maxAnisotropy, renderer.capabilities.getMaxAnisotropy()));
+    if (applySceneQuality(scene, renderer, quality)) renderer.shadowMap.needsUpdate = true;
     renderer.setPixelRatio(quality.pixelRatio);
     if (canvas.clientWidth > 0 && canvas.clientHeight > 0) renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-    if (applyShadowQuality(scene, quality.shadowMapSize, quality.shadowRadius)) renderer.shadowMap.needsUpdate = true;
     dirtyRef.current = true;
   }, [isReady, renderQuality, canvasRef]);
 
@@ -292,6 +291,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       });
 
       addLights(THREE, scene);
+      // The tier's anisotropy cap and shadow map: before any scene effect
+      // builds a texture (they read the cap as they go) or a frame draws.
+      applySceneQuality(scene, renderer, currentQuality(handlersRef.current.renderQuality));
 
       // While the GPU context is lost the drawing buffer is gone; rendering
       // into it throws and/or wastes work. Pause the render half of the loop
@@ -435,6 +437,20 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 function aspectOf(canvas: HTMLCanvasElement): number {
   const { clientWidth, clientHeight } = canvas;
   return clientWidth > 0 && clientHeight > 0 ? clientWidth / clientHeight : 1;
+}
+
+/**
+ * Put a quality profile on the scene (#760): the anisotropy cap and the
+ * sun's shadow map. True when the shadow map was resized and
+ * needs a pass. The pixel ratio is the caller's, with the canvas size.
+ */
+function applySceneQuality(
+  scene: ThreeNS.Scene,
+  renderer: ThreeNS.WebGLRenderer,
+  quality: QualityProfile
+): boolean {
+  setMaxAnisotropy(Math.min(quality.maxAnisotropy, renderer.capabilities.getMaxAnisotropy()));
+  return applyShadowQuality(scene, quality.shadowMapSize, quality.shadowRadius);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { DisposableLruCache } from './texture-lru';
-import { getMaxAnisotropy } from './texture-settings';
+import { withMaxAnisotropy } from './texture-settings';
 import type { FloorPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -171,7 +171,7 @@ export function buildFloorMaterial(
   // Clone per material so each floor owns a disposable copy sharing the cached
   // canvas image; per-room `repeat` is set on the clone, not the master.
   // (`Texture.clone()` already flags needsUpdate, so no explicit re-upload.)
-  const texture = master.clone();
+  const texture = withMaxAnisotropy(master.clone());
   texture.repeat.set(
     options.roomWidth * renderer.repeatPerMeter,
     options.roomDepth * renderer.repeatPerMeter
@@ -206,7 +206,7 @@ function getFloorTexture(
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = getMaxAnisotropy();
+  withMaxAnisotropy(texture);
 
   floorTextureCache.set(key, texture);
   return texture;

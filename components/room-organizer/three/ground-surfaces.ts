@@ -1,6 +1,6 @@
 import { markSharedTexture } from './builder-utils';
 import { mulberry32 } from './sky';
-import { getMaxAnisotropy } from './texture-settings';
+import { withMaxAnisotropy } from './texture-settings';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -47,7 +47,7 @@ function groundTexture(THREE: ThreeModule, surface: GroundSurface, pixels: numbe
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.anisotropy = getMaxAnisotropy();
+  withMaxAnisotropy(texture);
   cache.set(key, texture);
   return texture;
 }

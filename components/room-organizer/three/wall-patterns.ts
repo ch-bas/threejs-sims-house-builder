@@ -1,5 +1,5 @@
 import { DisposableLruCache } from './texture-lru';
-import { getMaxAnisotropy } from './texture-settings';
+import { withMaxAnisotropy } from './texture-settings';
 import type { WallPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -194,7 +194,7 @@ export function buildWallMaterial(
   // Clone per material so each wall owns a disposable copy sharing the cached
   // canvas image; per-wall `repeat` is set on the clone, not the master.
   // (`Texture.clone()` already flags needsUpdate, so no explicit re-upload.)
-  const texture = master.clone();
+  const texture = withMaxAnisotropy(master.clone());
   texture.repeat.set(options.width * renderer.repeatPerMeter, options.height * renderer.repeatPerMeter * 0.6);
 
   return new THREE.MeshStandardMaterial({
@@ -227,7 +227,7 @@ function getWallTexture(
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = getMaxAnisotropy();
+  withMaxAnisotropy(texture);
 
   wallTextureCache.set(key, texture);
   return texture;
