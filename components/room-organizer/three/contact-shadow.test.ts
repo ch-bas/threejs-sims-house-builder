@@ -128,6 +128,19 @@ describe('buildContactShadow (#754)', () => {
     expect(calls.filter((call) => call.startsWith('fill:source-over'))).toHaveLength(3);
   });
 
+  it('paints a dropped item back where it landed', () => {
+    const { ctx, calls } = recorder();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
+    const scene = new THREE.Scene();
+    const mesh = buildContactShadow(THREE, plan({ walls: [], doors: [], holes: [], blobs: [plan().blobs[0]!] }))!;
+    scene.add(mesh);
+    liftContactPatches(scene, 0, new Set(['sofa']));
+    calls.length = 0;
+    liftContactPatches(scene, 0, new Set(), new Map([['sofa', { x: 3, z: 0 }]]));
+    // The sofa's first corner, 1 m left of its centre, now at x = 2 m: 2 × 64 + 320 px.
+    expect(calls.filter((call) => call.startsWith('move'))[0]).toBe(`move:${Math.round(2 * 64 + 320 - 16384)}`);
+  });
+
   it('leaves another storey\'s map alone', () => {
     const { ctx, calls } = recorder();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);

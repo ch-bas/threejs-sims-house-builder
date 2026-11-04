@@ -146,11 +146,12 @@ export function useItemDrag({
   }, []);
 
   // The held items' floor patches go at the start of the gesture and stay gone
-  // until the drop: once each way, never per move (#754).
+  // until the drop: once each way, never per move (#754). `moves` paints them
+  // back where they were dropped.
   const setPatchesLifted = useCallback(
-    (ids: ReadonlySet<string>) => {
+    (ids: ReadonlySet<string>, moves?: ReadonlyMap<string, { x: number; z: number }>) => {
       const scene = sceneBoxRef.current?.current;
-      if (scene) liftContactPatches(scene, activeFloorIndex, ids);
+      if (scene) liftContactPatches(scene, activeFloorIndex, ids, moves);
       invalidateBoxRef.current();
     },
     [activeFloorIndex]
@@ -166,6 +167,7 @@ export function useItemDrag({
   const voidIfViewportTurned = useCallback(
     (session: NonNullable<typeof dragSessionRef.current>): boolean => {
       if (!session.void && viewportWidth() === session.viewportWidth) return false;
+      const turning = !session.void;
       session.void = true;
       for (const [memberId, origin] of session.origins) {
         const group = findFurnitureGroup(memberId);
@@ -174,7 +176,10 @@ export function useItemDrag({
         group.position.z = origin.z;
         if (memberId === session.primaryId) setDragCollisionTint(group, false);
       }
-      setPatchesLifted(NO_ITEMS);
+      // The patches come back once, as the session turns void, not on every
+      // later move of the finger.
+      if (turning) setPatchesLifted(NO_ITEMS);
+      else invalidateBoxRef.current();
       return true;
     },
     [findFurnitureGroup, setDragCollisionTint, setPatchesLifted]
@@ -260,7 +265,10 @@ export function useItemDrag({
         // Single dispatch for the whole gesture; the rebuild effect runs once.
         actions.bulkSetPositions(session.latest);
       }
-      if (session && !moved) setPatchesLifted(NO_ITEMS);
+      // Put the patches back on every drop, where the items landed: a drop the
+      // reducer leaves unchanged rebuilds nothing, and a commit's rebuild
+      // paints the same map.
+      if (session) setPatchesLifted(NO_ITEMS, moved ? session.latest : undefined);
       if (!moved || !session) return;
       // Lock every dragged item after a real drag so it can't be accidentally
       // moved — previously only the primary was locked, so co-dragged items
