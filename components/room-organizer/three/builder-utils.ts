@@ -107,6 +107,43 @@ export function disposeScene(scene: ThreeNS.Scene): void {
   scene.background = null;
 }
 
+/**
+ * Add the outside of a wall to its inward-facing sheet. A DoubleSide sheet
+ * shades its back with a flipped normal, but the shadow lookup's normal offset
+ * doesn't flip with it: a wall facing the sun looked up its shadow from behind
+ * itself and shadowed itself. Two faces back to back, each drawn from its own
+ * side only, can't z-fight: only one ever faces the camera. Shell walls and
+ * dormer faces use it (#752, #782).
+ */
+export function withOutsideFace(THREE: ThreeModule, sheet: ThreeNS.BufferGeometry): ThreeNS.BufferGeometry {
+  const inside = sheet.index ? sheet.toNonIndexed() : sheet;
+  const positions = inside.getAttribute('position');
+  const normals = inside.getAttribute('normal');
+  const uvs = inside.getAttribute('uv') as ThreeNS.BufferAttribute | undefined;
+  const count = positions.count;
+  const position = new Float32Array(count * 6);
+  const normal = new Float32Array(count * 6);
+  const uv = uvs ? new Float32Array(count * 4) : null;
+  for (let i = 0; i < count; i++) {
+    // The outside copy winds each triangle the other way: 0, 2, 1.
+    const corner = i + (i % 3 === 1 ? 1 : i % 3 === 2 ? -1 : 0);
+    position.set([positions.getX(i), positions.getY(i), positions.getZ(i)], i * 3);
+    normal.set([normals.getX(i), normals.getY(i), normals.getZ(i)], i * 3);
+    if (uvs && uv) uv.set([uvs.getX(i), uvs.getY(i)], i * 2);
+    const out = count + i;
+    position.set([positions.getX(corner), positions.getY(corner), positions.getZ(corner)], out * 3);
+    normal.set([-normals.getX(corner), -normals.getY(corner), -normals.getZ(corner)], out * 3);
+    if (uvs && uv) uv.set([uvs.getX(corner), uvs.getY(corner)], out * 2);
+  }
+  const both = new THREE.BufferGeometry();
+  both.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  both.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  if (uv) both.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  if (inside !== sheet) inside.dispose();
+  sheet.dispose();
+  return both;
+}
+
 export function mesh(THREE: ThreeModule, geometry: ThreeNS.BufferGeometry, material: ThreeNS.Material): ThreeNS.Mesh {
   const m = new THREE.Mesh(geometry, material);
   m.castShadow = true;
