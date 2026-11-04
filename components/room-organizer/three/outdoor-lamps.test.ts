@@ -1,7 +1,7 @@
 import { ShaderChunk } from 'three';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { LAMP_POOL_SIZE, planLampPool } from '../lib/night-lights';
-import { applyOutdoorLampMask, maskedLightsChunk, shutOutIndoorLamps, shutOutIndoorLampsUnder } from './outdoor-lamps';
+import { applyOutdoorLampMask, maskedLightsChunk, setOutdoorLampMaskLive, shutOutIndoorLamps, shutOutIndoorLampsUnder } from './outdoor-lamps';
 import * as THREE from './three-runtime';
 import type * as ThreeNS from 'three';
 
@@ -18,6 +18,9 @@ function patchedMaterial(): ThreeNS.MeshStandardMaterial {
 }
 
 describe('indoor lamps on outdoor materials (#664)', () => {
+  // The lamps are on unless a test says otherwise.
+  beforeEach(() => setOutdoorLampMaskLive(true));
+
   it('finds the point-light line in the chunk of the three we ship', () => {
     const patched = maskedLightsChunk(ShaderChunk.lights_fragment_begin);
     expect(patched).not.toBe(ShaderChunk.lights_fragment_begin);
@@ -61,5 +64,16 @@ describe('indoor lamps on outdoor materials (#664)', () => {
     shutOutIndoorLampsUnder(THREE, group);
     expect(one.userData.indoorLampsShut).toBe(true);
     expect(two.userData.indoorLampsShut).toBe(true);
+  });
+
+  it('by day, with no point light to mask, compiles and shares as an unpatched material', () => {
+    applyOutdoorLampMask(planLampPool([{ x: 0, y: 1, z: 0, candela: 10, range: 7 }], { x: 0, y: 1, z: 0 }, 0));
+    const patched = patchedMaterial();
+    expect(patched.customProgramCacheKey()).toBe(new THREE.MeshStandardMaterial().customProgramCacheKey());
+    expect(compile(patched).fragmentShader).toBe('#include <lights_fragment_begin>');
+    // The lamps come on: the key changes with the light count, so three compiles the mask then.
+    applyOutdoorLampMask(planLampPool([{ x: 0, y: 1, z: 0, candela: 10, range: 7 }], { x: 0, y: 1, z: 0 }, 1));
+    expect(patched.customProgramCacheKey()).not.toBe(new THREE.MeshStandardMaterial().customProgramCacheKey());
+    expect(compile(patched).fragmentShader).toContain('lampReachesOutdoors');
   });
 });
