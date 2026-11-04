@@ -359,7 +359,7 @@ export function attachDragHandlers({
       return;
     }
 
-    const target = ascendToFurniture(hits[0]?.object);
+    const target = pickFurniture(hits);
     if (!target) return;
 
     const mode: SelectionMode = event.altKey
@@ -410,7 +410,7 @@ export function attachDragHandlers({
     raycaster.setFromCamera(pointer, camera);
     const furniture = furnitureList();
     const hits = handlersRef.current.floorPickOnly ? [] : raycaster.intersectObjects(furniture, true);
-    const target = ascendToFurniture(hits[0]?.object);
+    const target = pickFurniture(hits);
     const id = target ? (target.userData.id as string) : null;
 
     // Only notify on hover changes — a fresh payload per move would
@@ -706,6 +706,21 @@ export function attachDragHandlers({
     canvas.removeEventListener('pointercancel', onPointerCancel);
     canvas.removeEventListener('pointerleave', onPointerLeave);
   };
+}
+
+/**
+ * The item under the pointer: the nearest one drawn. A door or window hidden
+ * with its wall stays selectable, but only when nothing drawn lies along the
+ * ray, so it can't block what is behind it (#659).
+ */
+export function pickFurniture(hits: ReadonlyArray<{ object: ThreeNS.Object3D }>): ThreeNS.Object3D | null {
+  let hidden: ThreeNS.Object3D | null = null;
+  for (const hit of hits) {
+    const root = ascendToFurniture(hit.object);
+    if (root?.visible) return root;
+    hidden ??= root;
+  }
+  return hidden;
 }
 
 function ascendToFurniture(node: ThreeNS.Object3D | undefined): ThreeNS.Object3D | null {
