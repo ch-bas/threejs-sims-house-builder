@@ -168,6 +168,7 @@ components/
     │   ├── furniture-materials.ts       Material classes (fabric, wood, metal, …) and shared wood/fabric/leather detail textures (#756)
     │   ├── floor-patterns.ts            Procedural CanvasTexture floors
     │   ├── wall-patterns.ts             Procedural CanvasTexture walls
+    │   ├── surface-maps.ts              Normal and roughness maps from a pattern's height tile (#757)
     │   ├── texture-settings.ts          Renderer anisotropy captured at init, for the CanvasTexture builders
     │   ├── texture-lru.ts               LRU cache for texture masters (evict + dispose)
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays

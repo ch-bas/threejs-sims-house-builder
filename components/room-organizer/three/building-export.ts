@@ -11,6 +11,7 @@ import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
 import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
+import { stripRelief } from './surface-maps';
 import { computeFloorOpenings, computeWallOpenings } from './wall-openings';
 import type { RoomLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -172,6 +173,14 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     for (const child of [...scratch.children]) roof.add(child);
     if (roof.children.length > 0) root.add(roof);
   }
+
+  // The patterns' relief maps stay in the view: in the file they would be two
+  // more images per pattern for a lighting detail (#757).
+  root.traverse((node) => {
+    const material = (node as ThreeNS.Mesh).material as ThreeNS.Material | ThreeNS.Material[] | undefined;
+    if (!material) return;
+    for (const m of Array.isArray(material) ? material : [material]) stripRelief(m);
+  });
 
   return root;
 }

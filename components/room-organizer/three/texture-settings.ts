@@ -62,3 +62,25 @@ export function drawsForPhone(): boolean {
     screenShortSide: Math.min(window.screen.width, window.screen.height),
   });
 }
+
+/** Pattern tile edge in pixels on phones, and their only detail (#757). */
+export const PHONE_PATTERN_SIZE = 256;
+/** Desktop and tablet: about 400 px a metre on a brick wall, 370 on a wood floor. */
+export const PATTERN_SIZE = 512;
+
+let patternSize: number | null = null;
+
+/**
+ * The floor and wall pattern tile size for this device, read once from the
+ * same inputs as the renderer's quality tier (lib/render-quality): phones
+ * keep 256 px tiles and no relief maps, so they draw no slower than before.
+ */
+export function getPatternSize(): number {
+  if (patternSize === null) patternSize = drawsForPhone() ? PHONE_PATTERN_SIZE : PATTERN_SIZE;
+  return patternSize;
+}
+
+/** Normal and roughness maps on the floor and wall patterns: not on phones. */
+export function patternReliefEnabled(): boolean {
+  return getPatternSize() > PHONE_PATTERN_SIZE;
+}

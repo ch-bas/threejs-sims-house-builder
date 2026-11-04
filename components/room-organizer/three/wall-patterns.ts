@@ -1,5 +1,6 @@
-import { DisposableLruCache } from './texture-lru';
-import { withMaxAnisotropy } from './texture-settings';
+import { applyRelief, reliefMaps, type ReliefSpec } from './surface-maps';
+import { DisposableLruCache, PATTERN_CACHE_CAPACITY } from './texture-lru';
+import { getPatternSize, patternReliefEnabled, withMaxAnisotropy } from './texture-settings';
 import type { WallPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -21,7 +22,23 @@ interface PatternRenderer {
   draw(ctx: CanvasRenderingContext2D, size: number, baseColor: string): void;
   /** How many tiles per meter of wall length. */
   repeatPerMeter: number;
+  /** Height tile for the normal and roughness maps (#757): joints, laps, grooves. */
+  relief?: ReliefSpec;
 }
+
+/** Strokes every brick's outline on the brick tile: the mortar joints. */
+function strokeBricks(ctx: CanvasRenderingContext2D, size: number, lineWidth: number): void {
+  const rows = 16;
+  const rowHeight = size / rows;
+  const brickWidth = size / 6;
+  ctx.lineWidth = lineWidth;
+  for (let r = 0; r < rows; r++) {
+    const offset = (r % 2) * (brickWidth / 2);
+    for (let c = -1; c < 7; c++) ctx.strokeRect(c * brickWidth + offset, r * rowHeight, brickWidth, rowHeight);
+  }
+}
+
+const SIDING_BOARDS = 12;
 
 const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   brick: {
@@ -48,15 +65,18 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
         }
       }
       ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = Math.max(1, size / 192);
-      for (let r = 0; r < rows; r++) {
-        const offset = (r % 2) * (brickWidth / 2);
-        const y = r * rowHeight;
-        for (let c = -1; c < bricksPerRow + 1; c++) {
-          const x = c * brickWidth + offset;
-          ctx.strokeRect(x, y, brickWidth, rowHeight);
-        }
-      }
+      strokeBricks(ctx, size, Math.max(1, size / 192));
+    },
+    relief: {
+      roughness: [0.98, 0.85],
+      strength: 2,
+      draw(ctx, size) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, size, size);
+        // Recessed joints, a little wider than the drawn line.
+        ctx.strokeStyle = '#000';
+        strokeBricks(ctx, size, Math.max(1.5, size / 128));
+      },
     },
   },
   wallpaper: {
@@ -72,7 +92,7 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
           const x = i * spacing + spacing / 2;
           const y = j * spacing + spacing / 2 + (i % 2 === 0 ? 0 : spacing / 2);
           ctx.beginPath();
-          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.arc(x, y, 4 * (size / 256), 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -81,21 +101,22 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   panel: {
     repeatPerMeter: 0.5,
     draw(ctx, size, baseColor) {
+      const k = size / 256;
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
       const panels = 4;
       const w = size / panels;
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 2;
       for (let i = 0; i < panels; i++) {
         const x = i * w;
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 2 * k;
         ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, size);
         ctx.stroke();
         // grain
         ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = k;
         for (let g = 1; g < 4; g++) {
           const gx = x + (g / 4) * w;
           ctx.beginPath();
@@ -103,9 +124,18 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
           ctx.lineTo(gx, size);
           ctx.stroke();
         }
-        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-        ctx.lineWidth = 2;
       }
+    },
+    relief: {
+      roughness: [0.9, 0.6],
+      strength: 2.5,
+      draw(ctx, size) {
+        const k = size / 256;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#000';
+        for (let i = 0; i < 4; i++) ctx.fillRect((i * size) / 4 - k, 0, 3 * k, size);
+      },
     },
   },
   plaster: {
@@ -113,10 +143,10 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
-      for (let i = 0; i < 250; i++) {
+      for (let i = 0; i < 250 * (size / 256) ** 2; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const r = 5 + Math.random() * 15;
+        const r = (5 + Math.random() * 15) * (size / 256);
         const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
         gradient.addColorStop(0, `rgba(255,255,255,${0.04 + Math.random() * 0.05})`);
         gradient.addColorStop(1, 'rgba(255,255,255,0)');
@@ -135,9 +165,8 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
-      const boardCount = 12;
-      const boardHeight = size / boardCount;
-      for (let i = 0; i < boardCount; i += 1) {
+      const boardHeight = size / SIDING_BOARDS;
+      for (let i = 0; i < SIDING_BOARDS; i += 1) {
         const y = i * boardHeight;
         // Soft top highlight on each board.
         const grad = ctx.createLinearGradient(0, y, 0, y + boardHeight);
@@ -148,8 +177,26 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
         ctx.fillRect(0, y, size, boardHeight);
         // Hard shadow line at the bottom of each board (the lap shadow).
         ctx.fillStyle = 'rgba(0,0,0,0.22)';
-        ctx.fillRect(0, y + boardHeight - 1, size, 1.5);
+        ctx.fillRect(0, y + boardHeight - size / 256, size, 1.5 * (size / 256));
       }
+    },
+    relief: {
+      roughness: [0.85, 0.6],
+      strength: 1.5,
+      draw(ctx, size) {
+        // Each board thickens toward its lower edge, then steps back to the
+        // next: a sawtooth down the rows.
+        const boardHeight = size / SIDING_BOARDS;
+        for (let i = 0; i < SIDING_BOARDS; i += 1) {
+          const y = i * boardHeight;
+          const grad = ctx.createLinearGradient(0, y, 0, y + boardHeight);
+          grad.addColorStop(0, '#202020');
+          grad.addColorStop(0.9, '#ffffff');
+          grad.addColorStop(1, '#ffffff');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, y, size, boardHeight);
+        }
+      },
     },
   },
 };
@@ -176,7 +223,7 @@ export interface BuildWallMaterialOptions {
  * evicted masters are disposed, which is safe for live clones (see
  * texture-lru.ts), while cached masters keep the shared GPU image alive.
  */
-const wallTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
+const wallTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>(PATTERN_CACHE_CAPACITY);
 
 export function buildWallMaterial(
   THREE: ThreeModule,
@@ -204,7 +251,7 @@ export function buildWallMaterial(
       roughness: 0.85,
     });
   }
-  const size = 256;
+  const size = getPatternSize();
   const master = getWallTexture(THREE, options.pattern, options.color, size, renderer);
   if (!master) {
     return new THREE.MeshStandardMaterial({
@@ -224,11 +271,15 @@ export function buildWallMaterial(
   texture.repeat.set(options.width * renderer.repeatPerMeter, options.height * renderer.repeatPerMeter);
   texture.offset.y = ((options.yOffset ?? 0) * renderer.repeatPerMeter) % 1;
 
-  return new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshStandardMaterial({
     map: texture,
     side: THREE.DoubleSide,
     roughness: 0.85,
   });
+  // Joints, laps and grooves catch a raking sun (#757). Not on phones.
+  const maps = renderer.relief && patternReliefEnabled() ? reliefMaps(THREE, `wall-${options.pattern}`, size, renderer.relief) : null;
+  if (maps) applyRelief(material, maps, texture);
+  return material;
 }
 
 function getWallTexture(

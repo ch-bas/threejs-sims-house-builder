@@ -16,6 +16,12 @@
  * pattern/colour combos a real layout uses at once. */
 export const TEXTURE_CACHE_CAPACITY = 32;
 
+/**
+ * Cap for the floor and wall pattern masters, which are 512 px on desktop
+ * and tablet (#757): 12 colours of 1.3 MB with mipmaps, about 16 MB a cache.
+ */
+export const PATTERN_CACHE_CAPACITY = 12;
+
 export class DisposableLruCache<T extends { dispose(): void }> {
   /** Map iteration order doubles as recency order: oldest entry first. */
   private readonly entries = new Map<string, T>();

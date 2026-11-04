@@ -260,6 +260,15 @@ to respect.
   past them as a thin verge with a bargeboard, and the underside of a gable
   or hipped roof is a painted soffit. The hipped roof has a fascia on all four
   eaves; every fascia hangs `FASCIA_DROP` below the soffit's plane (#661).
+- **Patterns have relief.** Floor and wall tiles are 512 px on desktop and
+  tablet (256 on phones, the quality tier's test), wood is 14 cm boards with
+  staggered end joints and a tone per board, and wood, tile, brick, siding
+  and panelling paint a height tile on the same layout as their colour. That
+  becomes a tangent-free normal map and a roughness map (`surface-maps.ts`),
+  cached per pattern and size, not per colour, so gaps, grout, joints and laps
+  catch a raking light and a glazed tile shines where its grout doesn't.
+  Phones get neither map. The colour masters are capped at
+  `PATTERN_CACHE_CAPACITY` (12) per cache (#757).
 - **Orbit lens.** The orbit camera is 40° (`ORBIT_FOV_DEG`), and the start
   pose, presets, Fit and zoom slider stand back by `ORBIT_LENS_SCALE` from
   their 75° numbers. Walkthrough swaps to 75° on entry and restores it on
