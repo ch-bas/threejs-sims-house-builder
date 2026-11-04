@@ -58,6 +58,9 @@ export function buildShower({ THREE, item, hasCollision, baseColor, opacity }: B
 
   const cube = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.95, item.depth), glassMat);
   cube.position.y = item.height * 0.525;
+  // Glass: the shadow pass ignores opacity, so the enclosure threw a solid
+  // 2 m block of shade (#551). The tray and the shower head still cast.
+  cube.castShadow = false;
   group.add(cube);
 
   const head = mesh(THREE, new THREE.CylinderGeometry(item.width * 0.12, item.width * 0.12, 0.05, 16), headMat);
