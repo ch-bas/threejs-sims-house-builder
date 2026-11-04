@@ -174,9 +174,11 @@ components/
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays; no alert through walls (#590), depth-tested under another storey or while walking (#552)
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
+    │   ├── ground-surfaces.ts           Generated grass, paving and asphalt tiles, laid by world position with a macro layer on grass (#761)
     │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
     │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664)
-    │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
+    │   ├── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
+    │   └── sky.ts                       World-space sky dome, clouds and sun disc, painted from the sky profile (#761)
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── canvas-2d/opening-symbol.ts      Door swings and window double lines on the plan, minimap and blueprint
     ├── canvas-2d/plan-edit.ts           What only the on-screen plan draws while editing: wall draft, selected wall, zone handles, and their hit tests and drag maths

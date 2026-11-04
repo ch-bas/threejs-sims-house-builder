@@ -189,3 +189,35 @@ describe('mergeStaticGeometries', () => {
     expect(merged.getAttribute('position').count).toBe(36 + 60);
   });
 });
+
+describe('the ground past the lot (#761)', () => {
+  const lot = (site = {}) => {
+    const scene = new THREE.Scene();
+    setOutdoorVisible(THREE, scene, true, 8, 8, site);
+    return scene;
+  };
+  const skirtOf = (scene: THREE.Scene) =>
+    scene.children.find((obj) => obj.userData.role === 'ground' && (obj as THREE.Mesh).geometry.hasAttribute('color')) as THREE.Mesh;
+
+  it('starts solid under the lot edge and fades to nothing, facing up', () => {
+    const skirt = skirtOf(lot());
+    const colour = skirt.geometry.getAttribute('color');
+    const alphas = Array.from({ length: colour.count }, (_, i) => colour.getW(i));
+    expect(Math.max(...alphas)).toBe(1);
+    expect(Math.min(...alphas)).toBe(0);
+    expect((skirt.material as THREE.MeshStandardMaterial).transparent).toBe(true);
+    skirt.geometry.computeVertexNormals();
+    expect(skirt.geometry.getAttribute('normal').getY(0)).toBeGreaterThan(0.9);
+  });
+
+  it('sits under the grass', () => {
+    const skirt = skirtOf(lot());
+    expect(skirt.geometry.getAttribute('position').getY(0)).toBeLessThan(-0.05);
+  });
+
+  it('takes the weather tint with the lawn', () => {
+    const scene = lot();
+    applyOutdoorWeather(scene, 'snow');
+    expect((skirtOf(scene).material as THREE.MeshStandardMaterial).color.getHex()).toBe(new THREE.Color(outdoorGroundColor('snow')).getHex());
+  });
+});

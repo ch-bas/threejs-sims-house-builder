@@ -2,6 +2,7 @@ import { LAMP_POOL_SIZE, type LampPoolPlan } from '../lib/night-lights';
 import { fitSunShadow, type ShadowBox, type SunShadowFit, type Vec3 } from '../lib/sun-shadow';
 import { applyOutdoorWeather } from './outdoor';
 import { applyOutdoorLampMask } from './outdoor-lamps';
+import { SKY_RADIUS, followCamera, mulberry32, updateSky } from './sky';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -94,14 +95,8 @@ export function applyTimeOfDay(
   const profile = computeSkyProfile(time, weather);
   applyOutdoorWeather(scene, weather);
 
-  // Vertical sky gradient (zenith → horizon) instead of a flat colour. The
-  // texture is screen-space, so it reads as atmosphere without a sky dome.
-  const previousBackground = scene.background;
-  scene.background = makeSkyGradientTexture(THREE, profile.backgroundTop, profile.background);
+  updateSky(THREE, scene, profile, weather);
   updateNightSky(THREE, scene, computeNightSky(time));
-  if (previousBackground && (previousBackground as ThreeNS.Texture).isTexture) {
-    (previousBackground as ThreeNS.Texture).dispose();
-  }
   scene.environmentIntensity = profile.environment;
 
   for (const obj of scene.children) {
@@ -485,8 +480,8 @@ export interface NightSky {
 }
 
 /**
- * Star/moon parameters for the sky backdrop (#182). Pure — the drawing lives
- * in makeSkyGradientTexture; this is the testable half. Keyed on the same
+ * Star/moon parameters for the sky (#182). Pure — the drawing lives in
+ * updateNightSky; this is the testable half. Keyed on the same
  * distance-to-sun-event ramp as the sky colours (#145) so stars fade exactly
  * as the twilight glow fades.
  */
@@ -503,64 +498,8 @@ export function computeNightSky(hour: number): NightSky {
   return { starAlpha, moonAlpha, moonT };
 }
 
-/**
- * 1×256 vertical-gradient CanvasTexture used as the screen-space scene
- * background. Rebuilt on every time-of-day change; the previous texture is
- * disposed by the caller.
- */
-function makeSkyGradientTexture(
-  THREE: ThreeModule,
-  top: number,
-  bottom: number
-): ThreeNS.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d')!;
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, hexToCss(top));
-  // Bias the blend toward the horizon colour in the lower third so the
-  // horizon glow sits where the ground line actually is on screen.
-  gradient.addColorStop(0.65, hexToCss(mixHex(top, bottom, 0.7)));
-  gradient.addColorStop(1, hexToCss(bottom));
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
 const STAR_COUNT = 350;
 const STAR_SEED = 20260918;
-/** Radius of the star dome around the camera: well inside the far plane. */
-const SKY_RADIUS = 140;
-
-/** Deterministic PRNG so the starfield is identical every session. */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/**
- * Keep a sky object centred on whichever camera draws it, however far out a
- * big house's framing stands: otherwise the dome ends up below the camera and
- * its stars draw over the lawn. Done per draw, on the object's world matrix, so
- * a camera move costs no rebuild and needs no invalidate of its own.
- */
-export function followCamera(sky: ThreeNS.Object3D): void {
-  sky.onBeforeRender = (_renderer, _scene, camera) => {
-    const world = sky.matrixWorld.elements;
-    world[12] = sky.position.x + camera.position.x;
-    world[13] = sky.position.y + camera.position.y;
-    world[14] = sky.position.z + camera.position.z;
-  };
-}
 
 /**
  * World-space night sky (#182): a Points starfield on a distant upper dome
@@ -720,10 +659,6 @@ function makeMoonTexture(THREE: ThreeModule): ThreeNS.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
-}
-
-function hexToCss(hex: number): string {
-  return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
 function smoothstep01(value: number): number {

@@ -7,10 +7,10 @@ import {
   computeNightSky,
   computeSkyProfile,
   shadowNormalBias,
-  followCamera,
   isLampPrewarmHour,
   prewarmLampPool,
 } from './lighting';
+import { followCamera } from './sky';
 import type * as ThreeNS from 'three';
 
 function channels(hex: number): [number, number, number] {
