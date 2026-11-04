@@ -251,6 +251,15 @@ to respect.
   a sun-facing wall shadow itself. A dormer's face and cheeks are built the
   same way (#782); the gable and hipped roofs are wound outward already, so
   their DoubleSide material lights the outside correctly.
+- **Walls tile square and run on across storeys.** A wall pattern repeats
+  as often per metre up the wall as along it (a 0.6 on v used to stretch
+  every pattern 1.67× upward), brick is drawn as real stretchers, and each
+  storey offsets its pattern by its height above the ground, so courses and
+  laps don't restart at the floor line. A gable's ends are the top storey's
+  wall carried up (same colour, pattern and course offset), its slopes run on
+  past them as a thin verge with a bargeboard, and the underside of a gable
+  or hipped roof is a painted soffit. The hipped roof has a fascia on all four
+  eaves; every fascia hangs `FASCIA_DROP` below the soffit's plane (#661).
 - **Orbit lens.** The orbit camera is 40° (`ORBIT_FOV_DEG`), and the start
   pose, presets, Fit and zoom slider stand back by `ORBIT_LENS_SCALE` from
   their 75° numbers. Walkthrough swaps to 75° on entry and restores it on

@@ -49,7 +49,7 @@ describe('outer wall faces (#752)', () => {
 });
 
 /** Every triangle's winding, in world space: +1 facing away from `centre`, -1 toward it. */
-function windings(mesh: ThreeNS.Mesh, centre: ThreeNS.Vector3): number[] {
+function windings(mesh: ThreeNS.Mesh, centre: ThreeNS.Vector3, keep: (mid: ThreeNS.Vector3) => boolean = () => true): number[] {
   mesh.updateWorldMatrix(true, false);
   const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
   const position = geometry.getAttribute('position');
@@ -60,6 +60,7 @@ function windings(mesh: ThreeNS.Mesh, centre: ThreeNS.Vector3): number[] {
     b.fromBufferAttribute(position, i + 1).applyMatrix4(mesh.matrixWorld);
     c.fromBufferAttribute(position, i + 2).applyMatrix4(mesh.matrixWorld);
     const mid = a.clone().add(b).add(c).divideScalar(3);
+    if (!keep(mid)) continue;
     const n = b.clone().sub(a).cross(c.clone().sub(a));
     signs.push(Math.sign(n.dot(mid.sub(centre))));
   }
@@ -88,7 +89,7 @@ describe('dormer faces (#782)', () => {
     }
   });
 
-  it('winds every gable and hipped roof face outward, so a DoubleSide roof lights its outside', () => {
+  it('winds the gable and hipped roof bodies outward, so a DoubleSide roof lights its outside', () => {
     for (const style of ['gable', 'hipped'] as const) {
       const scene = new THREE.Scene();
       buildRoof(THREE, { scene, width: 10, depth: 8, baseY: 6, spec: { style } });
@@ -97,7 +98,10 @@ describe('dormer faces (#782)', () => {
       const centre = new THREE.Box3().setFromObject(roof).getCenter(new THREE.Vector3());
       // The base sits under the centre: lift it to the solid's centroid height.
       centre.y = 6 + 0.3;
-      expect(windings(roof, centre).every((s) => s > 0)).toBe(true);
+      // The gable's verges, past its end walls at x = ±5, are solids of their own.
+      const signs = windings(roof, centre, (mid) => style === 'hipped' || Math.abs(mid.x) <= 5 + 1e-6);
+      expect(signs.length).toBeGreaterThan(4);
+      expect(signs.every((s) => s > 0)).toBe(true);
     }
   });
 });

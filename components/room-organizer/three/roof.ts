@@ -5,7 +5,8 @@ import { removeAndDispose } from './builder-utils';
 import { buildDormers, buildDormerWell, dormerWells } from './dormers';
 import { DisposableLruCache } from './texture-lru';
 import { withMaxAnisotropy } from './texture-settings';
-import type { FootprintCutout, RoofSpec, RoofStyle } from '../lib/types';
+import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
+import type { FloorLayout, FootprintCutout, RoofSpec, RoofStyle, WallId, WallPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -55,6 +56,26 @@ export interface BuildRoofOptions {
    * unscaled slope, so our own roof always builds at 1.
    */
   pitch?: number;
+  /**
+   * The top storey's walls (#661): a gable end is the wall carried up to the
+   * roof, so it wears that side's colour and pattern. Without it the ends
+   * are the default wall colour.
+   */
+  gableWalls?: GableWalls | undefined;
+}
+
+export interface GableWalls {
+  pattern?: WallPattern | undefined;
+  colors?: Partial<Record<WallId, string>> | undefined;
+  /** The height the walls' pattern starts from: the house's is the ground (0), a neighbour's its block's foot. */
+  patternOriginY?: number | undefined;
+}
+
+/** The walls a gable carries up: the top storey's, or none for any other roof. */
+export function gableWallsOf(style: RoofStyle | undefined, floors: readonly FloorLayout[]): GableWalls | undefined {
+  const top = floors[floors.length - 1];
+  if (style !== 'gable' || !top) return undefined;
+  return { pattern: top.wallPattern, colors: top.wallColors };
 }
 
 export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
@@ -228,9 +249,11 @@ export function setRoofShellHidden(scene: ThreeNS.Scene, hidden: boolean): void 
     if (obj.userData.type !== ROOF_TAG) continue;
     obj.traverse((child) => {
       if (!roofShells.has(child) || !('material' in child)) return;
-      const material = child.material as ThreeNS.Material;
-      material.colorWrite = !hidden;
-      material.depthWrite = !hidden;
+      const materials = child.material as ThreeNS.Material | ThreeNS.Material[];
+      for (const material of Array.isArray(materials) ? materials : [materials]) {
+        material.colorWrite = !hidden;
+        material.depthWrite = !hidden;
+      }
     });
   }
 }
@@ -280,31 +303,68 @@ function buildFlatRoof(
 
 function buildGableRoof(
   THREE: ThreeModule,
-  { width, depth, baseY, pitch = 1 }: BuildRoofOptions,
+  { width, depth, baseY, pitch = 1, gableWalls }: BuildRoofOptions,
   color: string
 ): ThreeNS.Object3D {
   // Ridge runs along the longer axis so the slopes shed water from the long sides.
   const ridgeAlongX = width >= depth;
-  const length = (ridgeAlongX ? width : depth) + EAVE_OVERHANG * 2;
+  const wallLength = ridgeAlongX ? width : depth;
+  const length = wallLength + EAVE_OVERHANG * 2;
   const span = (ridgeAlongX ? depth : width) + EAVE_OVERHANG * 2;
   const peakHeight = roofPeakHeight('gable', width, depth, pitch);
 
-  // Triangle cross-section, extruded to `length`.
+  // Built with the ridge along local z. The body is a triangular prism that
+  // stops at the gable walls, so each end is the wall carried up to the roof
+  // (#661); the slopes then run on past it as a thin verge, whose end is the
+  // bargeboard and whose underside, like the body's, is a painted soffit
+  // rather than shingles.
   const triangle = new THREE.Shape();
   triangle.moveTo(-span / 2, 0);
   triangle.lineTo(span / 2, 0);
   triangle.lineTo(0, peakHeight);
   triangle.closePath();
+  const body = new THREE.ExtrudeGeometry(triangle, { depth: wallLength, bevelEnabled: false });
+  body.translate(0, 0, -wallLength / 2);
 
-  const geometry = new THREE.ExtrudeGeometry(triangle, {
-    depth: length,
-    bevelEnabled: false,
+  const inner = (span / 2) * (1 - VERGE_THICKNESS / peakHeight);
+  const chevron = new THREE.Shape();
+  chevron.moveTo(-span / 2, 0);
+  chevron.lineTo(-inner, 0);
+  chevron.lineTo(0, peakHeight - VERGE_THICKNESS);
+  chevron.lineTo(inner, 0);
+  chevron.lineTo(span / 2, 0);
+  chevron.lineTo(0, peakHeight);
+  chevron.closePath();
+  const verges = [-1, 1].map((sign) => {
+    const verge = new THREE.ExtrudeGeometry(chevron, { depth: EAVE_OVERHANG, bevelEnabled: false });
+    verge.translate(0, 0, sign > 0 ? wallLength / 2 : -wallLength / 2 - EAVE_OVERHANG);
+    return verge;
   });
-  // Centre the extrude along its axis.
-  geometry.translate(0, 0, -length / 2);
 
-  const material = buildShingleMaterial(THREE, color, true);
-  const mesh = new THREE.Mesh(withSurfaceUvs(THREE, geometry), material);
+  // The two gable ends: local −z and +z, which a ridge along x turns to west and east.
+  const ends: [WallId, WallId] = ridgeAlongX ? ['west', 'east'] : ['north', 'south'];
+  const half = wallLength / 2;
+  // Two ends in the same finish share one material, and so one draw.
+  const sameEnds = gableWalls?.colors?.[ends[0]] === gableWalls?.colors?.[ends[1]];
+  const geometry = groupByFace(THREE, [body, ...verges], (normal, centre) => {
+    if (normal.y < -0.5) return GABLE_PART.soffit;
+    if (Math.abs(normal.z) > 0.9) {
+      if (Math.abs(centre.z) > half + EAVE_OVERHANG / 2) return GABLE_PART.barge;
+      // A verge's inner end faces into the body and never shows: dropped.
+      if (Math.sign(normal.z) !== Math.sign(centre.z)) return -1;
+      return centre.z < 0 || sameEnds ? GABLE_PART.endLow : GABLE_PART.endHigh;
+    }
+    return GABLE_PART.shingle;
+  });
+
+  const fasciaColor = darkenHex(color, 0.4);
+  const materials: ThreeNS.Material[] = [];
+  materials[GABLE_PART.shingle] = buildShingleMaterial(THREE, color, true);
+  materials[GABLE_PART.soffit] = soffitMaterial(THREE);
+  materials[GABLE_PART.barge] = new THREE.MeshStandardMaterial({ color: fasciaColor, roughness: 0.7 });
+  materials[GABLE_PART.endLow] = gableEndMaterial(THREE, gableWalls, ends[0], baseY);
+  if (!sameEnds) materials[GABLE_PART.endHigh] = gableEndMaterial(THREE, gableWalls, ends[1], baseY);
+  const mesh = new THREE.Mesh(geometry, materials);
   mesh.position.y = baseY;
   if (ridgeAlongX) mesh.rotation.y = Math.PI / 2;
   mesh.castShadow = true;
@@ -318,9 +378,87 @@ function buildGableRoof(
   group.add(mesh);
   group.name = 'Gable';
   group.userData.type = ROOF_TAG;
-  const fasciaColor = darkenHex(color, 0.4);
   addFascia(THREE, group, length, span, fasciaColor, baseY, ridgeAlongX);
   return group;
+}
+
+/** How deep the verge (the slopes past a gable wall) is, measured plumb. */
+const VERGE_THICKNESS = 0.12;
+const SOFFIT_COLOR = 0xf1ece2;
+
+/** Material slots of a gable roof's mesh, one draw each. */
+const GABLE_PART = { shingle: 0, soffit: 1, barge: 2, endLow: 3, endHigh: 4 } as const;
+
+function soffitMaterial(THREE: ThreeModule): ThreeNS.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: SOFFIT_COLOR, roughness: 0.9 });
+}
+
+/** A gable end in its wall's finish, its courses running on from the wall below (#661). */
+function gableEndMaterial(THREE: ThreeModule, walls: GableWalls | undefined, side: WallId, baseY: number): ThreeNS.Material {
+  const color = walls?.colors?.[side] ?? DEFAULT_WALL_COLOR;
+  const pattern = walls?.pattern ?? 'solid';
+  // The painters need a canvas; without one (tests) a pattern is its colour.
+  if (pattern === 'solid' || typeof document === 'undefined') {
+    return new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
+  }
+  // The roof's UVs are metres with v = 0 at its base: one tile per metre's
+  // repeat, lifted by the eaves height like the top storey's wall.
+  return buildWallMaterial(THREE, { pattern, color, width: 1, height: 1, yOffset: baseY - (walls?.patternOriginY ?? 0) });
+}
+
+/**
+ * Merge geometries into one, with metre UVs, and sort its triangles into one
+ * group per material slot that `slot` picks from each triangle's outward
+ * normal and centre (a negative slot drops the triangle). One mesh, one draw
+ * per slot.
+ */
+function groupByFace(
+  THREE: ThreeModule,
+  parts: readonly ThreeNS.BufferGeometry[],
+  slot: (normal: ThreeNS.Vector3, centre: ThreeNS.Vector3) => number
+): ThreeNS.BufferGeometry {
+  const flats = parts.map((part) => withSurfaceUvs(THREE, part));
+  const buckets: number[][] = [];
+  const normal = new THREE.Vector3();
+  const centre = new THREE.Vector3();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (const flat of flats) {
+    const position = flat.getAttribute('position');
+    const uv = flat.getAttribute('uv');
+    for (let i = 0; i + 2 < position.count; i += 3) {
+      a.fromBufferAttribute(position, i);
+      b.fromBufferAttribute(position, i + 1);
+      c.fromBufferAttribute(position, i + 2);
+      centre.copy(a).add(b).add(c).divideScalar(3);
+      normal.subVectors(c, b).cross(a.clone().sub(b)).normalize();
+      const index = slot(normal, centre);
+      if (index < 0) continue;
+      const bucket = (buckets[index] ??= []);
+      for (let k = i; k < i + 3; k++) bucket.push(position.getX(k), position.getY(k), position.getZ(k), uv.getX(k), uv.getY(k));
+    }
+    flat.dispose();
+  }
+  const vertices = buckets.reduce((sum, bucket) => sum + (bucket ? bucket.length / 5 : 0), 0);
+  const positions = new Float32Array(vertices * 3);
+  const uvs = new Float32Array(vertices * 2);
+  const geometry = new THREE.BufferGeometry();
+  let at = 0;
+  buckets.forEach((bucket, index) => {
+    if (!bucket) return;
+    const count = bucket.length / 5;
+    for (let v = 0; v < count; v++) {
+      positions.set(bucket.slice(v * 5, v * 5 + 3), (at + v) * 3);
+      uvs.set(bucket.slice(v * 5 + 3, v * 5 + 5), (at + v) * 2);
+    }
+    geometry.addGroup(at, count, index);
+    at += count;
+  });
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function buildHippedRoof(
@@ -348,23 +486,41 @@ function buildHippedRoof(
   // (0,1,4)… order winds them inward/down (normals verified by cross-product),
   // which reads inside-out under shadows/AO and vanishes without DoubleSide.
   // Unshared vertices: each slope gets its own flat normal and UVs (#211).
-  const faces = [1, 0, 4, 2, 1, 4, 3, 2, 4, 0, 3, 4];
+  // Then the base, facing down: the soffit under the eaves, so the roof is a
+  // closed body rather than a sheet showing shingles from below (#661).
+  const faces = [1, 0, 4, 2, 1, 4, 3, 2, 4, 0, 3, 4, 0, 1, 2, 0, 2, 3];
   const vertices = new Float32Array(faces.flatMap((i) => corners[i] ?? []));
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-  geometry.computeVertexNormals();
+  const shell = new THREE.BufferGeometry();
+  shell.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  const geometry = groupByFace(THREE, [shell], (normal) => (normal.y < -0.5 ? 1 : 0));
 
-  const material = buildShingleMaterial(THREE, color, true);
-  const mesh = new THREE.Mesh(withSurfaceUvs(THREE, geometry), material);
+  const mesh = new THREE.Mesh(geometry, [buildShingleMaterial(THREE, color, true), soffitMaterial(THREE)]);
   mesh.position.y = baseY;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.name = 'Roof';
   mesh.userData.type = ROOF_TAG;
   roofShells.add(mesh);
-  return mesh;
+
+  // A fascia board along all four eaves (#661): the front and back boards
+  // run over the corners, the side boards stop at them, so no two overlap.
+  const group = new THREE.Group();
+  group.add(mesh);
+  group.name = 'Hipped';
+  group.userData.type = ROOF_TAG;
+  const fasciaColor = darkenHex(color, 0.4);
+  addFascia(THREE, group, w + FASCIA_THICKNESS * 1.4, d, fasciaColor, baseY, true);
+  addFascia(THREE, group, d - FASCIA_THICKNESS * 1.4, w, fasciaColor, baseY, false);
+  return group;
 }
+
+const FASCIA_THICKNESS = 0.1;
+/**
+ * The fascia hangs this far below the roof's base, so its underside never
+ * shares the soffit's plane (#276, #661).
+ */
+const FASCIA_DROP = 0.03;
 
 function addFascia(
   THREE: ThreeModule,
@@ -375,7 +531,7 @@ function addFascia(
   baseY: number,
   ridgeAlongX: boolean
 ): void {
-  const thickness = 0.10;
+  const thickness = FASCIA_THICKNESS;
   const material = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
   // The two fascia boards run along the eaves — one each side of the ridge.
   // `length` is the long axis (parallel to the ridge), `span` is the gable
@@ -389,11 +545,11 @@ function addFascia(
     if (ridgeAlongX) {
       // Ridge runs along world X, so the fascia at z = ±halfSpan also runs
       // along world X — leave rotation at 0.
-      fascia.position.set(0, baseY + thickness / 2, sign * (span / 2));
+      fascia.position.set(0, baseY + thickness / 2 - FASCIA_DROP, sign * (span / 2));
     } else {
       // Ridge runs along world Z. Rotate the board so its length is along Z.
       fascia.rotation.y = Math.PI / 2;
-      fascia.position.set(sign * (span / 2), baseY + thickness / 2, 0);
+      fascia.position.set(sign * (span / 2), baseY + thickness / 2 - FASCIA_DROP, 0);
     }
     fascia.castShadow = true;
     fascia.receiveShadow = true;
