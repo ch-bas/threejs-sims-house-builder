@@ -1,4 +1,5 @@
 import { removeAndDispose } from './builder-utils';
+import type { DryBox } from '../lib/street-row';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -57,15 +58,23 @@ export interface WeatherFieldOptions {
   count?: number;
   floorY?: number;
   ceilingY?: number;
+  /** Kept clear beyond the footprint on every side: the eaves' overhang, so nothing falls through the soffit (#660). */
+  clearance?: number;
+  /** World boxes kept clear as well: the neighbours' houses (#660). */
+  dryBoxes?: readonly DryBox[];
   /** Uniform [0, 1) source; injectable so tests are deterministic. */
   rng?: () => number;
 }
 
+function inDryBox(boxes: readonly DryBox[], x: number, z: number, margin: number): boolean {
+  return boxes.some((box) => x > box.x0 - margin && x < box.x1 + margin && z > box.z0 - margin && z < box.z1 + margin);
+}
+
 /**
  * Scatter the particles uniformly through the field's box, except for the
- * house's column: a particle never starts indoors, and since nothing moves
- * horizontally beyond the snow sway (included in the clearance) none ever
- * drifts in either.
+ * columns of the house and its neighbours: a particle never starts indoors,
+ * and since nothing moves horizontally beyond the snow sway (included in the
+ * clearance) none ever drifts in either.
  */
 export function createWeatherField(options: WeatherFieldOptions): WeatherField {
   const {
@@ -73,12 +82,14 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
     count = WEATHER_PARTICLE_COUNT[kind],
     floorY = WEATHER_FLOOR_Y,
     ceilingY = WEATHER_CEILING_Y,
+    clearance = 0,
+    dryBoxes = [],
     rng = Math.random,
   } = options;
   const halfExtent = groundSize / 2;
   const sway = kind === 'snow' ? SNOW_SWAY : 0;
-  const clearHalfW = roomWidth / 2 + sway;
-  const clearHalfD = roomDepth / 2 + sway;
+  const clearHalfW = roomWidth / 2 + clearance + sway;
+  const clearHalfD = roomDepth / 2 + clearance + sway;
   const [minSpeed, maxSpeed] = kind === 'rain' ? RAIN_SPEED : SNOW_SPEED;
 
   const positions = new Float32Array(count * 3);
@@ -93,7 +104,7 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
     do {
       x = (rng() * 2 - 1) * halfExtent;
       z = (rng() * 2 - 1) * halfExtent;
-    } while (Math.abs(x) < clearHalfW && Math.abs(z) < clearHalfD);
+    } while ((Math.abs(x) < clearHalfW && Math.abs(z) < clearHalfD) || inDryBox(dryBoxes, x, z, sway));
     positions[i * 3] = x;
     positions[i * 3 + 1] = floorY + rng() * (ceilingY - floorY);
     positions[i * 3 + 2] = z;

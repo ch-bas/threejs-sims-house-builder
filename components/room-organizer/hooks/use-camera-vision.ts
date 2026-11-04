@@ -50,8 +50,11 @@ export function useCameraVision({ enabled, invalidate, threeModuleRef, sceneRef,
       if (!hasCones) return;
       // Reduced motion (#436): the clock stands still, so the scan line and
       // the wedge's pulse hold; detection and the alert colour still follow.
-      stepVisionCones(scene, reducedMotion ? 0 : (performance.now() - start) / 1000, sightWallsRef.current);
-      invalidate?.();
+      // A step that moved nothing (the colours settled, nothing came or
+      // went) asks for no frame, so a still cone costs no rendering (#556).
+      if (stepVisionCones(scene, reducedMotion ? 0 : (performance.now() - start) / 1000, sightWallsRef.current)) {
+        invalidate?.();
+      }
     };
     rafId = requestAnimationFrame(tick);
 

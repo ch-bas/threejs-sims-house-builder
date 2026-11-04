@@ -10,6 +10,13 @@ import type { Frontage, NeighbourFlag, NeighbourSide, NeighbourSpec, TerrainSpec
  * a hill: `{ frontY: 2.5, backY: 0 }` puts a 2.5 m basement below the
  * street and at garden level behind.
  */
+/**
+ * The grass plane lies this far under the ground line, with the pavement
+ * and road stacked above it (`three/outdoor.ts`); anything that stands on
+ * the ground starts here, so a step's bottom riser never hovers (#660).
+ */
+export const GRASS_DROP = 0.05;
+
 export const MIN_TERRAIN_Y = -3;
 export const MAX_TERRAIN_Y = 6;
 
