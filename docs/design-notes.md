@@ -213,6 +213,17 @@ to respect.
   floor and ends square under the top nosing. The tilted box it replaces
   hung over the floor at the foot, stopped short of the landing and stood
   proud of the treads (#658).
+- **A flight under the roof stops at the attic plate.** The roof starts at
+  the top of the walls, so a flight no higher than its storey can't reach the
+  slope, at any spot in any style; what it does cross is the attic plate, 1 cm
+  under that line (the top tread by 1 cm, the closed string's lip by 4). So on
+  the top storey of a house with a roof (`underRoof`, one storey included,
+  flat or pitched) `stairRise` stops `ROOF_STAIR_GAP` short of the storey, and
+  every other flight keeps its rise. A cap of a whole headroom left a 1 m wedge
+  in a 3 m storey and a plate at 2 m, for nothing. The scene, the outline, the
+  labels, the GLB export and the walker all read it, so what you see is what
+  the walker climbs; a flight with no floor to reach says so in its controls
+  (`stairGoesNowhere`) (#654).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made

@@ -16,9 +16,9 @@
 import { cutoutRect, type FootprintRect } from './footprint';
 import { groundHeightAt, outdoorGroundSize } from './site';
 import { STAIR_STEP_COUNT, stairSteps, stairToWorld, stairTopNosing, stairwellParts } from './stairs';
-import { stairRise, storeyHeight, floorElevation } from './storeys';
+import { stairRise, storeyHeight, floorElevation, underRoof } from './storeys';
 import { entranceGeometry, entranceSteps, entranceWallCut } from './street';
-import type { EntranceSpec, FloorLayout, FootprintCutout, Frontage, FurnitureItem, TerrainSpec } from './types';
+import type { EntranceSpec, FloorLayout, FootprintCutout, Frontage, FurnitureItem, RoofStyle, TerrainSpec } from './types';
 
 export type WalkSurfaceKind = 'floor' | 'tread' | 'ground';
 
@@ -41,6 +41,8 @@ export interface WalkBuilding {
   frontage?: Frontage | undefined;
   /** The corner cut out of the building (#727): ground, not floor. */
   cutout?: FootprintCutout | undefined;
+  /** A flight under the roof stops at the attic plate (#654). */
+  roof?: { style: RoofStyle; color?: string };
 }
 
 /** A convex polygon in world XZ, with its bounds. */
@@ -162,7 +164,7 @@ export function buildWalkWorld(building: WalkBuilding): WalkWorld {
     const stairs: WalkStair[] = [];
     for (const item of floor.items) {
       if (item.type !== 'stairs' || !item.position) continue;
-      const rise = stairRise(item, floor);
+      const rise = stairRise(item, floor, underRoof(building, floorIndex));
       if (floorIndex + 1 < floors.length) {
         landingStep[floorIndex + 1] = Math.max(landingStep[floorIndex + 1]!, storeyHeight(floor) - rise);
       }
