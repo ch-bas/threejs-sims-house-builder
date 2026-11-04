@@ -44,3 +44,23 @@ describe('the furniture builder registry: inherited keys (#568)', () => {
     expect(group.children.length).toBeGreaterThan(0);
   });
 });
+
+// The shadow pass ignores opacity: a transparent pane that casts throws the
+// same solid shadow as a wall, so the hole the wall cuts for a window let no
+// sun in and the shower stood in a 2 m block of shade (#551).
+describe('glass casts no shadow (#551)', () => {
+  const meshes = (group: THREE.Group): THREE.Mesh[] =>
+    group.children.filter((child): child is THREE.Mesh => (child as THREE.Mesh).isMesh === true);
+  const transparent = (mesh: THREE.Mesh): boolean => (mesh.material as THREE.Material).transparent;
+
+  it.each(['window', 'shower'])('%s: the glass does not cast, the rest does', (type) => {
+    const entry = FURNITURE_CATALOG.find((c) => c.type === type)!;
+    const parts = meshes(createFurnitureModel(THREE, makeItem({ ...entry, id: type }), false));
+    const glass = parts.filter(transparent);
+    const solid = parts.filter((mesh) => !transparent(mesh));
+    expect(glass.length).toBeGreaterThan(0);
+    expect(solid.length).toBeGreaterThan(0);
+    for (const pane of glass) expect(pane.castShadow).toBe(false);
+    for (const part of solid) expect(part.castShadow).toBe(true);
+  });
+});
