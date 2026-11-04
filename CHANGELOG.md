@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.29.0] - 2026-11-04
+
+The **Rendering & performance II** milestone, first wave: a more lifelike house. Furniture has soft edges, real materials and contact shadows; walls and floors are at true scale with relief; windows and doors sit in real reveals; the lot sits in a world with a sky, horizon and textured ground; and nights come alive without costing any extra lights. Phones keep their speed, and a new quality setting lets you trade looks for speed.
+
+### Added
+- Furniture rests on the floor with soft contact shadows under every item, stairs and walls, which lift away while you drag ([#754](https://github.com/ch-bas/threejs-sims-house-builder/issues/754))
+- Furniture has real materials: oiled and lacquered wood, fabric, leather, metal and glass, with fine wood grain and weave ([#756](https://github.com/ch-bas/threejs-sims-house-builder/issues/756))
+- Doors and windows sit back in lined reveals in the outer walls, so the sun shades a real recess; curtains hang clear of them. Not on phones ([#758](https://github.com/ch-bas/threejs-sims-house-builder/issues/758))
+- A sky dome with clouds and a sun that sets, a horizon that fades into haze, and textured grass, paving, asphalt and a kerb ([#761](https://github.com/ch-bas/threejs-sims-house-builder/issues/761))
+- Night comes alive: lit windows seen from outside, glowing lamp shades, soft halos, lit and dark windows along the street, and warm light in the room you walk in ([#759](https://github.com/ch-bas/threejs-sims-house-builder/issues/759))
+- A render quality choice in View options (Auto, Low, Medium, High). Auto keeps the picture you had; Low leaves out the costliest scenery ([#760](https://github.com/ch-bas/threejs-sims-house-builder/issues/760))
+
+### Changed
+- Furniture has softly rounded edges, and kitchen units show doors and handles, drawn in fewer meshes than before ([#755](https://github.com/ch-bas/threejs-sims-house-builder/issues/755))
+- Wood floors have 14 cm boards with staggered joints, and floors and walls catch the light, with sharper patterns, grout and mortar in relief on desktop and tablet ([#757](https://github.com/ch-bas/threejs-sims-house-builder/issues/757))
+- Brick and siding have true proportions and run on across floors; gable ends are built in the wall finish under a verge and soffit, and hipped roofs get soffits and fascias ([#661](https://github.com/ch-bas/threejs-sims-house-builder/issues/661))
+- Straight stairs have a closed string that follows the steps ([#658](https://github.com/ch-bas/threejs-sims-house-builder/issues/658))
+
+### Fixed
+- Window and shower glass no longer cast a solid shadow ([#551](https://github.com/ch-bas/threejs-sims-house-builder/issues/551))
+- Item labels float above the item, not across a window or under a pendant ([#657](https://github.com/ch-bas/threejs-sims-house-builder/issues/657))
+- Security-camera cones no longer redraw the scene when nothing moves, and no longer bleach walls white ([#556](https://github.com/ch-bas/threejs-sims-house-builder/issues/556), [#652](https://github.com/ch-bas/threejs-sims-house-builder/issues/652))
+- Doors and windows hide with their wall in Cut and Down views instead of standing in mid-air, including on an L-shaped house ([#659](https://github.com/ch-bas/threejs-sims-house-builder/issues/659))
+- While walking, partitions reach the ceiling ([#656](https://github.com/ch-bas/threejs-sims-house-builder/issues/656))
+- Partitions drawn to the outer wall no longer flicker through it, and doors at their ends stay open; porch steps reach the ground; rain and snow stay off under the eaves ([#660](https://github.com/ch-bas/threejs-sims-house-builder/issues/660))
+- Stairs on the top storey stop under the roof, and say when they lead nowhere ([#654](https://github.com/ch-bas/threejs-sims-house-builder/issues/654))
+- A party-wall neighbour's roof no longer pokes into your top storey ([#655](https://github.com/ch-bas/threejs-sims-house-builder/issues/655))
+- Indoor lamps no longer light the garden and the neighbours through the walls ([#664](https://github.com/ch-bas/threejs-sims-house-builder/issues/664))
+- A sun-facing dormer no longer shadows itself ([#782](https://github.com/ch-bas/threejs-sims-house-builder/issues/782))
+
 ## [1.28.0] - 2026-11-01
 
 The **Core building** milestone: walls stay editable after you draw them, closed walls become real rooms with their own floors, and a house can be L-shaped. The house also looks better: natural daylight, walls lit by the sun, and a calmer camera lens.
@@ -852,7 +882,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.28.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.29.0...HEAD
+[1.29.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.26.0...v1.27.0
 [1.26.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.25.0...v1.26.0
