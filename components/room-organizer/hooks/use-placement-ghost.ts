@@ -34,6 +34,8 @@ export interface UsePlacementGhostParams {
   floorItems: readonly FurnitureItem[];
   /** Whether the item would collide on the active floor (`hasCollisions` with its context). */
   collides(item: FurnitureItem): boolean;
+  /** Where the item's mesh stands in its group on the active floor (`revealSetbacks`, #758): 0 for most. */
+  revealSetback(item: FurnitureItem): number;
   /** Place the entry for real; false when declined. `keep` = the ghost stays in hand. */
   place(catalogItem: CatalogItem, position: Vec2, rotation: number, keep: boolean): boolean;
   threeModuleRef: MutableRefObject<ThreeModule | null>;
@@ -175,6 +177,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       if (mesh) {
         mesh.group.position.set(live.position.x, current.floorY, live.position.z);
         mesh.group.rotation.y = live.rotation;
+        mesh.setSetback(current.revealSetback(item));
         mesh.setColliding(colliding);
         mesh.group.visible = true;
         current.invalidate();

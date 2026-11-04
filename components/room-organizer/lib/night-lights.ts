@@ -1,6 +1,7 @@
+import { cutoutRect, isInsideBuilding, type FootprintBuilding, type FootprintRect } from './footprint';
 import { mountBand, pendantBulbY } from './mount-band';
 import { floorElevation, storeyHeight } from './storeys';
-import type { FloorLayout } from './types';
+import type { FloorLayout, InteriorWall, Vec2 } from './types';
 
 /**
  * Catalog items that light their surroundings at night (#215), and how.
@@ -44,6 +45,8 @@ export interface LampLight {
   candela: number;
   /** Distance at which the light's contribution reaches zero. */
   range: number;
+  /** Stands outside the walls, so the garden gets its light (#664). */
+  outdoors?: boolean;
 }
 
 /** Which storeys the 3D view draws: the active one, or all of them. */
@@ -55,9 +58,16 @@ export interface RenderedFloors {
 /**
  * Every night light on a rendered storey, with the bulb in world space. A
  * storey that isn't drawn lights nothing, or an upper-floor lamp would wash
- * the empty floor below in amber.
+ * the empty floor below in amber. With `building`, a lamp on the ground
+ * outside the walls is marked `outdoors`, whatever its type: it goes by where
+ * the lamp stands, so a lamppost in an L's cut corner counts and one inside
+ * doesn't (#664).
  */
-export function collectLampLights(floors: readonly FloorLayout[], rendered: RenderedFloors): LampLight[] {
+export function collectLampLights(
+  floors: readonly FloorLayout[],
+  rendered: RenderedFloors,
+  building?: FootprintBuilding
+): LampLight[] {
   return floors.flatMap((floor, index) => {
     if (!rendered.showAllFloors && index !== rendered.activeFloorIndex) return [];
     const floorY = floorElevation(floors, index);
@@ -78,6 +88,7 @@ export function collectLampLights(floors: readonly FloorLayout[], rendered: Rend
           z: item.position.z,
           candela: spec.candela,
           range: spec.range,
+          ...(building && !isInsideBuilding(building, item.position.x, item.position.z) ? { outdoors: true } : {}),
         },
       ];
     });
@@ -85,12 +96,110 @@ export function collectLampLights(floors: readonly FloorLayout[], rendered: Rend
 }
 
 
+export interface NightGlowPlan {
+  /** Window item id to how lit its room is at it, 0..1. Every placed window has an entry. */
+  windows: Record<string, number>;
+  /** Item ids of the lamps, on every storey. */
+  lamps: string[];
+  /** 0..1: the top storey has a lamp on, so the dormers show it. */
+  dormers: number;
+}
+
+function segmentsCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
+  const side = (p: Vec2, q: Vec2, r: Vec2) => (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x);
+  return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
+}
+
+/**
+ * Which windows look lit from outside (#759). Every storey counts, drawn or
+ * not, and it isn't limited to the eight pooled lamps: a window is only a
+ * colour, so an upstairs room stays lit seen from the garden while the walker
+ * is downstairs. A lamp reaches a window within its range unless a partition
+ * stands between them. Doorways in partitions are ignored.
+ */
+export function nightGlowPlan(floors: readonly FloorLayout[], building: FootprintBuilding): NightGlowPlan {
+  const plan: NightGlowPlan = { windows: {}, lamps: [], dormers: 0 };
+  const notch = cutoutRect(building);
+  floors.forEach((floor, index) => {
+    const indoor = collectLampLights([floor], { activeFloorIndex: 0, showAllFloors: false }, building).filter((lamp) => !lamp.outdoors);
+    const walls = floor.interiorWalls ?? [];
+    for (const item of floor.items) {
+      if (!item.position) continue;
+      if (isNightLit(item.type)) plan.lamps.push(item.id);
+      if (item.type !== 'window') continue;
+      plan.windows[item.id] = roomLampReach(indoor, item.position, walls, notch);
+    }
+    if (index === floors.length - 1 && indoor.length > 0) plan.dormers = 1;
+  });
+  return plan;
+}
+
+/**
+ * How lit the room is at `at`, 0..1: the best reach of an indoor lamp with no
+ * partition between them, nor the open corner of an L (`notch`, from
+ * `cutoutRect`): from one wing the other's notch walls face the lamp, but
+ * the outside lies between. Outdoor lamps never count: their light stops at
+ * the walls (#664). The lamps are those of `at`'s storey. Doorways in
+ * partitions are ignored, as for the windows.
+ */
+export function roomLampReach(
+  lamps: readonly LampLight[],
+  at: Vec2,
+  walls: readonly InteriorWall[],
+  notch: FootprintRect | null = null
+): number {
+  return lamps.reduce((best, lamp) => {
+    if (lamp.outdoors) return best;
+    const blocked =
+      (notch !== null && crossesRect(lamp, at, notch)) ||
+      walls.some((wall) => segmentsCross(lamp, at, { x: wall.x1, z: wall.z1 }, { x: wall.x2, z: wall.z2 }));
+    return blocked ? best : Math.max(best, lampReach(Math.hypot(lamp.x - at.x, lamp.z - at.z), lamp.range));
+  }, 0);
+}
+
+/** A window sits on the notch's edge: only a pass this far inside the notch counts. */
+const NOTCH_INSET = 0.2;
+
+/** Whether the segment a→b passes through `rect` shrunk by NOTCH_INSET (Liang–Barsky). */
+function crossesRect(a: Vec2, b: Vec2, rect: FootprintRect): boolean {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  let t0 = 0;
+  let t1 = 1;
+  const clips: Array<[number, number]> = [
+    [-dx, a.x - (rect.x0 + NOTCH_INSET)],
+    [dx, rect.x1 - NOTCH_INSET - a.x],
+    [-dz, a.z - (rect.z0 + NOTCH_INSET)],
+    [dz, rect.z1 - NOTCH_INSET - a.z],
+  ];
+  for (const [p, q] of clips) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+/** Full glow in the near part of a lamp's range, a quarter at its edge, nothing beyond. */
+function lampReach(distance: number, range: number): number {
+  return distance > range ? 0 : Math.min(1, 1.25 - distance / range);
+}
+
 export interface LampPoolSlot {
   x: number;
   y: number;
   z: number;
   intensity: number;
   distance: number;
+  /** Lights outdoor surfaces too; an indoor lamp is kept off them (#664). */
+  outdoors: boolean;
+  /** 0..1 share of the lamp's night intensity, 0 for a dark spare. */
+  level: number;
 }
 
 export interface LampPoolPlan {
@@ -122,8 +231,8 @@ export function planLampPool(
   const slots = Array.from({ length: size }, (_, index): LampPoolSlot => {
     const lamp = nearest[index];
     return lamp
-      ? { x: lamp.x, y: lamp.y, z: lamp.z, intensity: lamp.candela * level, distance: lamp.range }
-      : { x: 0, y: 0, z: 0, intensity: 0, distance: 1 };
+      ? { x: lamp.x, y: lamp.y, z: lamp.z, intensity: lamp.candela * level, distance: lamp.range, outdoors: lamp.outdoors === true, level }
+      : { x: 0, y: 0, z: 0, intensity: 0, distance: 1, outdoors: false, level: 0 };
   });
   return { lit, slots };
 }

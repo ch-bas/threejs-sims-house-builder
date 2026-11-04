@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/chunk-reload';
 import { REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
-import { qualityProfile } from '../lib/render-quality';
+import { qualityProfile, type QualityChoice, type QualityProfile } from '../lib/render-quality';
 import { ORBIT_FOV_DEG, ORBIT_MAX_POLAR, ORBIT_START, clearOfGround, orbitNear } from '../lib/scene-insets';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
-import { addLights } from '../three/lighting';
+import { releaseGroundTextures } from '../three/ground-surfaces';
+import { addLights, applyShadowQuality } from '../three/lighting';
+import { releaseRoomLightTexture } from '../three/night-glow';
 import { releasePeopleGeometry } from '../three/people-model';
 import { clearFloorPlanImageCache } from '../three/room-builder';
+import { setSkyDetail } from '../three/sky';
 import { setMaxAnisotropy } from '../three/texture-settings';
 import type { SceneEventHandlers } from '../three/drag-handlers';
 import type * as ThreeNS from 'three';
@@ -20,6 +23,8 @@ export type { HoverInfo, SelectionMode } from '../three/drag-handlers';
 export interface UseThreeSceneOptions extends SceneEventHandlers {
   /** Ground height at world z, which the orbit camera stays above. */
   groundAt?: (z: number) => number;
+  /** The View menu's render quality (#760). */
+  renderQuality?: QualityChoice | undefined;
   canvasRef: React.RefObject<HTMLCanvasElement>;
 }
 
@@ -119,6 +124,22 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     };
   }, []);
 
+  // A changed render quality, without tearing the scene down: the textures
+  // already built, cached ones included, take the new anisotropy cap at once.
+  const { renderQuality } = options;
+  useEffect(() => {
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    const renderer = rendererRef.current;
+    const canvas = canvasRef.current;
+    if (!isReady || !THREE || !scene || !renderer || !canvas) return;
+    const quality = currentQuality(renderQuality);
+    if (applySceneQuality(THREE, scene, renderer, quality)) renderer.shadowMap.needsUpdate = true;
+    renderer.setPixelRatio(quality.pixelRatio);
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0) renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+    dirtyRef.current = true;
+  }, [isReady, renderQuality, canvasRef]);
+
   // Initialize scene once the module + canvas are ready.
   // The ground moved under a camera nothing else is moving: a new slope.
   const { groundAt } = options;
@@ -172,7 +193,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // speckle with acne and the ground past the shadow camera's far plane
         // reads as shadowed (#187). Coplanar meshes keep their gaps instead.
       });
-      renderer.setPixelRatio(pixelRatio());
+      renderer.setPixelRatio(currentQuality(handlersRef.current.renderQuality).pixelRatio);
       // updateStyle = false everywhere: three would otherwise pin the canvas's
       // inline width/height to pixels, and a 0×0 write while hidden in 2D
       // kept it collapsed for the rest of the session (#363).
@@ -180,6 +201,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
       }
       renderer.shadowMap.enabled = true;
+      // Per-material clipping planes: the party-wall neighbours' roofs stop
+      // at their own wall on our side (#655).
+      renderer.localClippingEnabled = true;
       // r186 removed PCFSoftShadowMap (it fell back to PCF with a warning);
       // PCF softens by the light's `shadow.radius` instead (#379).
       renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -193,12 +217,15 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       renderer.toneMapping = THREE.NeutralToneMapping;
       renderer.toneMappingExposure = 0.9;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
       rendererRef.current = renderer;
       cleanup.push(() => renderer.dispose());
       // Runs after the scene is freed: placed people and walkers share the
       // cached people.glb geometry, which no disposeObject call frees (#284).
       cleanup.push(() => releasePeopleGeometry());
+      // Likewise the ground maps and the lit-window texture, shared by every
+      // material that uses them and skipped by disposeObject.
+      cleanup.push(() => releaseGroundTextures());
+      cleanup.push(() => releaseRoomLightTexture());
       // Cleanups run last-in-first-out, so this frees the whole graph (stars,
       // moon, furniture, shell, instanced outdoor meshes, sky background)
       // while the renderer still tracks their GL handles (#213).
@@ -266,6 +293,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       });
 
       addLights(THREE, scene);
+      // The tier's anisotropy cap, shadow map and sky: before any scene effect
+      // builds a texture (they read the cap as they go) or a frame draws.
+      applySceneQuality(THREE, scene, renderer, currentQuality(handlersRef.current.renderQuality));
 
       // While the GPU context is lost the drawing buffer is gone; rendering
       // into it throws and/or wastes work. Pause the render half of the loop
@@ -323,7 +353,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         if (width === 0 || height === 0) return;
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        renderer.setPixelRatio(pixelRatio());
+        renderer.setPixelRatio(currentQuality(handlersRef.current.renderQuality).pixelRatio);
         renderer.setSize(width, height, false);
         dirtyRef.current = true;
       };
@@ -412,16 +442,36 @@ function aspectOf(canvas: HTMLCanvasElement): number {
 }
 
 /**
- * Device pixel ratio capped per device class: 2 on desktops and tablets,
- * lower on phones (lib/render-quality.ts). Read on every resize, since
- * zoom and monitor moves change it.
+ * Put a quality profile on the scene (#760): the anisotropy cap, the sun's
+ * shadow map and the sky's detail. True when the shadow map was resized and
+ * needs a pass. The pixel ratio is the caller's, with the canvas size.
  */
-function pixelRatio(): number {
-  return qualityProfile({
-    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
-    screenShortSide: Math.min(window.screen.width, window.screen.height),
-    devicePixelRatio: window.devicePixelRatio,
-  }).pixelRatio;
+function applySceneQuality(
+  THREE: ThreeModule,
+  scene: ThreeNS.Scene,
+  renderer: ThreeNS.WebGLRenderer,
+  quality: QualityProfile
+): boolean {
+  setMaxAnisotropy(Math.min(quality.maxAnisotropy, renderer.capabilities.getMaxAnisotropy()));
+  setSkyDetail(THREE, scene, quality.richScenery);
+  return applyShadowQuality(scene, quality.shadowMapSize, quality.shadowRadius);
+}
+
+/**
+ * The quality profile for this device and `choice` (lib/render-quality.ts).
+ * Read on every resize, since zoom and monitor moves change the pixel ratio.
+ */
+export function currentQuality(choice: QualityChoice | undefined): QualityProfile {
+  // The prerender has no device: it reads as a desktop, nothing draws there.
+  if (typeof window === 'undefined') return qualityProfile({ coarsePointer: false, screenShortSide: 0, devicePixelRatio: 1 }, choice);
+  return qualityProfile(
+    {
+      coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+      screenShortSide: Math.min(window.screen.width, window.screen.height),
+      devicePixelRatio: window.devicePixelRatio,
+    },
+    choice
+  );
 }
 
 function supportsWebGL(): boolean {

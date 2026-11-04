@@ -52,7 +52,9 @@ components/
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
+    │   ├── contact-shadow.ts            What a storey's baked floor contact map shows: item patches, wall bands, doors and holes wiped (#754)
     │   ├── render-quality.ts            Pixel-ratio cap per device class (phones 1.5, else 2)
+    │   ├── detail-patterns.ts           Tileable grey wood, fabric and leather images for furniture (#756)
     │   ├── reduced-motion.ts            prefers-reduced-motion query and a one-off read for non-React code
     │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
     │   ├── library.ts                   Named-layout library I/O: an index of entries (name, saved-at, item and floor counts) + one blob per house; unreadable entries kept verbatim (#348); ASCII names keep their historical slot, other names get a `u_` Unicode slot (#550); a copy that would leave autosave no room is refused (#565)
@@ -127,7 +129,7 @@ components/
     │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory: furniture type → mesh builder
-    │   ├── builder-utils.ts             Shared types + mesh()/material() helpers, dispose helpers (disposeScene on unmount, #213)
+    │   ├── builder-utils.ts             Shared types + mesh()/material()/softBox() helpers (soft chamfered edges, #755), dispose helpers (disposeScene on unmount, #213)
     │   ├── three-runtime.ts             The named three.js symbols the app uses; the engine's only runtime import (#411)
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
@@ -152,6 +154,7 @@ components/
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
+    │   ├── reveals.ts                   Window and door reveals in the outer walls: linings, and the set-back of the frame (#758)
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
     │   ├── measurement.ts               Distance-tool spheres + line
     │   ├── item-labels.ts               Floating sprite labels above items
@@ -162,15 +165,22 @@ components/
     │   ├── terrain.ts                   Sloped ground + excavation faces
     │   ├── entrance.ts                  Recessed porch reveals, soffit, steps
     │   ├── baseboard.ts                 Skirting profile + door-gap runs
+    │   ├── contact-shadow.ts            Paints the contact plan to a canvas and shows it on one quad over the floor (#754)
+    │   ├── furniture-materials.ts       Material classes (fabric, wood, metal, …) and shared wood/fabric/leather detail textures (#756)
     │   ├── floor-patterns.ts            Procedural CanvasTexture floors
     │   ├── wall-patterns.ts             Procedural CanvasTexture walls
+    │   ├── surface-maps.ts              Normal and roughness maps from a pattern's height tile (#757)
     │   ├── texture-settings.ts          Renderer anisotropy captured at init, for the CanvasTexture builders
     │   ├── texture-lru.ts               LRU cache for texture masters (evict + dispose)
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays; no alert through walls (#590), depth-tested under another storey or while walking (#552)
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
-    │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
+    │   ├── ground-surfaces.ts           Generated grass, paving and asphalt tiles, laid by world position with a macro layer on grass (#761)
+    │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
+    │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664)
+    │   ├── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
+    │   └── sky.ts                       World-space sky dome, clouds and sun disc, painted from the sky profile (#761)
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── canvas-2d/opening-symbol.ts      Door swings and window double lines on the plan, minimap and blueprint
     ├── canvas-2d/plan-edit.ts           What only the on-screen plan draws while editing: wall draft, selected wall, zone handles, and their hit tests and drag maths

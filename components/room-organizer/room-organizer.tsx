@@ -52,12 +52,15 @@ import { describeLayoutChange } from './lib/history-label';
 import { COARSE_POINTER_QUERY } from './lib/hud-layout';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
+import { loadQualityChoice } from './lib/render-quality';
 import { snapshotBeforeReplace } from './lib/restore-point';
 import { ORBIT_MAX_POLAR } from './lib/scene-insets';
 import { groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
+import { streetDryBoxes } from './lib/street-row';
+import { streetSiteOf } from './lib/walk-collision';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt, type SelectedWall, type WallSide } from './lib/wall-sides';
 import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
@@ -79,7 +82,9 @@ import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
+import { revealSetbacks } from './three/reveals';
 import { roofPeakHeight } from './three/roof';
+import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
 import type { RoomStampSpec } from './lib/room-stamp';
@@ -320,6 +325,12 @@ export function RoomOrganizer(): JSX.Element {
   const handleFloorPointerLeave = useCallback(() => {
     setPointerWorld(null);
   }, []);
+
+  // A quality picked on this device (#760). In an effect: the prerender has no storage.
+  useEffect(() => {
+    const renderQuality = loadQualityChoice();
+    if (renderQuality !== 'auto') setView((v) => ({ ...v, renderQuality }));
+  }, [setView]);
 
   // The zone with handles on the plan (#628). The handles are zone mode's.
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
@@ -1027,6 +1038,7 @@ export function RoomOrganizer(): JSX.Element {
       canvasRef,
       walkthroughActive,
       groundAt: orbitGroundAt,
+      renderQuality: view.renderQuality,
       // The distance tool measures across furniture, so its clicks go to the floor (#341).
       floorPickOnly: view.drawWallMode || view.measurementMode,
       onItemSelect: handleSelect,
@@ -1088,6 +1100,19 @@ export function RoomOrganizer(): JSX.Element {
         interiorWalls: activeFloor.interiorWalls,
         storeyHeight: activeStoreyHeight,
       }),
+    // Where it will stand: a door or window back in its reveal, curtains out in front of one (#758).
+    revealSetback: (item: FurnitureItem) => {
+      const items = [...activeFloor.items, item];
+      const owners = classifyOpeningOwners(items, layout.width, layout.height, activeFloor.interiorWalls ?? [], layout.cutout);
+      const context = {
+        width: layout.width,
+        depth: layout.height,
+        cutout: layout.cutout,
+        hiddenWalls: activeFloor.hiddenWalls,
+        noWalls: activeFloorIndex === 0 && !!layout.floorPlanImage,
+      };
+      return revealSetbacks(items, owners, context, activeStoreyHeight).get(item.id) ?? 0;
+    },
     // placeDiscrete plays the place cue, or `refused` (hard budget, full floor).
     place: (catalogItem, position, rotation, keep) => {
       const id = placeDiscrete(catalogItem, position, rotation);
@@ -1207,6 +1232,17 @@ export function RoomOrganizer(): JSX.Element {
     riggedModelReady: peopleModelReady,
   });
 
+  // Rebuilt with the street, not on every edit: it re-seeds the whole field.
+  const streetKey = JSON.stringify([
+    layout.width, layout.height, layout.roof?.style, layout.terrain, layout.frontage, layout.neighbours,
+    layout.floors.map((floor) => floor.height),
+  ]);
+  const dryBoxes = useMemo(
+    () => streetDryBoxes(streetSiteOf({ ...layout, depth: layout.height })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- streetKey covers what the street reads.
+    [streetKey]
+  );
+
   useWeather({
     weather: view.weather,
     enabled: isReady && !view.view2D,
@@ -1215,6 +1251,9 @@ export function RoomOrganizer(): JSX.Element {
     sceneRef,
     roomWidth: layout.width,
     roomDepth: layout.height,
+    // The eaves keep the ground under them dry too (#660).
+    clearance: layout.roof && layout.roof.style !== 'none' ? ROOF_EAVE_OVERHANG : 0,
+    dryBoxes,
   });
 
   useCameraVision({

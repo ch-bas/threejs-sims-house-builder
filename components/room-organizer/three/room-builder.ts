@@ -3,12 +3,14 @@ import { floorPlanCanvasLayout } from '../lib/floor-plan-fit';
 import { alongSide, cutoutRect, footprintOutline, shellWalls, shellWallSpan, type ShellWallId } from '../lib/footprint';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
-import { removeAndDispose } from './builder-utils';
+import { removeAndDispose, withOutsideFace } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
+import { shutOutIndoorLamps } from './outdoor-lamps';
+import { buildRevealGeometry, skirtingOpenings } from './reveals';
 import { ROOF_OFF_STOREY_KEY } from './roof';
-import { getMaxAnisotropy } from './texture-settings';
+import { revealsEnabled, withMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
-import { buildWallMaterial } from './wall-patterns';
+import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
 import type { ZoneFloorPatch } from '../lib/zones';
 import type * as ThreeNS from 'three';
@@ -59,6 +61,21 @@ export type WallDisplay = 'up' | 'cutaway' | 'down';
  */
 export const OFF_STOREY_KEY = 'offStorey';
 
+/** userData key on a top-level object: the storey it was built for (#446). */
+export const STOREY_KEY = 'storey';
+
+/**
+ * userData key on a notch wall and its baseboards: the shell id (`notch-x`,
+ * `notch-z`). `wallId` is the side it shares a colour with, and an opening is
+ * owned by the shell wall it is cut into (#659).
+ */
+const SHELL_WALL_KEY = 'shellWall';
+
+/** Every storey's shell has a `south`: a wall is only known by its storey too (#659). */
+function wallDisplayKey(tag: unknown, storey: unknown, id: unknown): string {
+  return `${String(tag)}:${String(storey)}:${String(id)}`;
+}
+
 /**
  * userData on the shell parts of an L's two new walls (#727): the x or z of
  * their plane. They face the same way as a whole side of the house but stand
@@ -85,15 +102,15 @@ export function applyWallDisplay(
       changed = true;
     }
   };
-  // Owner visibility by "tag:wallId", for the outline sync pass below.
+  // Owner visibility by tag, storey and id, for the sync pass below.
   const wallVisibility = new Map<string, boolean>();
 
   for (const obj of scene.children) {
     const tag = obj.userData.type as string | undefined;
     if (obj.userData[OFF_STOREY_KEY] === true && (tag === 'interior-wall' || tag === ROOM_OBJECT_TAGS.Wall)) {
       setVisible(obj, false);
-      const id = obj.userData.wallId as string | undefined;
-      if (id) wallVisibility.set(`${tag}:${id}`, false);
+      const id = (obj.userData[SHELL_WALL_KEY] ?? obj.userData.wallId) as string | undefined;
+      if (id) wallVisibility.set(wallDisplayKey(tag, obj.userData[STOREY_KEY], id), false);
       continue;
     }
     if (tag === 'roof') {
@@ -106,7 +123,7 @@ export function applyWallDisplay(
       const visible = mode !== 'down';
       setVisible(obj, visible);
       const id = obj.userData.wallId as string | undefined;
-      if (id) wallVisibility.set(`interior-wall:${id}`, visible);
+      if (id) wallVisibility.set(wallDisplayKey(tag, obj.userData[STOREY_KEY], id), visible);
       continue;
     }
     if (tag !== ROOM_OBJECT_TAGS.Wall) continue;
@@ -142,22 +159,30 @@ export function applyWallDisplay(
       visible = dot < 0;
     }
     setVisible(obj, visible);
-    // A selection outline follows its side's main wall.
-    if (plane === undefined) wallVisibility.set(`${ROOM_OBJECT_TAGS.Wall}:${wallId}`, visible);
+    // A notch wall answers to its shell id, so it never speaks for its side.
+    const id = (obj.userData[SHELL_WALL_KEY] ?? wallId) as string;
+    wallVisibility.set(wallDisplayKey(tag, obj.userData[STOREY_KEY], id), visible);
   }
 
   for (const obj of scene.children) {
-    if (obj.userData.type !== 'wall-selection') continue;
-    const owner = wallVisibility.get(`${obj.userData.ownerTag as string}:${obj.userData.wallId as string}`);
-    if (owner !== undefined) setVisible(obj, owner);
+    const tag = obj.userData.type;
+    if (tag === 'wall-selection') {
+      const owner = wallVisibility.get(wallDisplayKey(obj.userData.ownerTag, obj.userData.ownerStorey, obj.userData.wallId));
+      if (owner !== undefined) setVisible(obj, owner);
+      continue;
+    }
+    // A door or window (a furniture group stamped with its owner wall, #659)
+    // follows that wall on its own storey: cutaway and walls-down used to
+    // leave every frame standing where the wall was. With no such wall built
+    // (a hidden wall, a traced ground floor) it follows the mode; a storey
+    // the walkthrough hides stays hidden either way.
+    if (tag !== ROOM_OBJECT_TAGS.Furniture || obj.userData.ownerTag === undefined) continue;
+    const owner = wallVisibility.get(wallDisplayKey(obj.userData.ownerTag, obj.userData.floorIndex, obj.userData.wallId));
+    setVisible(obj, (owner ?? mode !== 'down') && obj.userData[OFF_STOREY_KEY] !== true);
   }
 
   return changed;
 }
-
-// Warm cream — build-mode build mode walls read as tan/cream by default, never
-// the neutral mid-grey we used to fall back to.
-const DEFAULT_WALL_COLOR = 0xe8dcc4;
 
 export function removeTagged(scene: ThreeNS.Scene, ...tags: RoomObjectTag[]): void {
   const tagSet = new Set<string>(tags);
@@ -371,6 +396,8 @@ function addFoundation(
   foundation.receiveShadow = true;
   foundation.castShadow = true;
   foundation.name = 'Foundation';
+  // Only its outer faces show, and those are outdoors (#664).
+  shutOutIndoorLamps(THREE, material);
   foundation.userData.type = ROOM_OBJECT_TAGS.Floor;
   makeStatic(foundation);
   scene.add(foundation);
@@ -525,7 +552,7 @@ function buildFloorPlanMaterial(
     map.needsUpdate = true;
   }
   map.colorSpace = THREE.SRGBColorSpace;
-  map.anisotropy = getMaxAnisotropy();
+  withMaxAnisotropy(map);
   const displacement = options.floorPlan3DEffect ? new THREE.Texture() : null;
   for (const texture of displacement ? [map, displacement] : [map]) {
     texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -550,7 +577,7 @@ function buildFloorPlanMaterial(
       // placeholder's 1×1 size, and the plan can't be written into it (#521).
       // Swap in a fresh texture, then dispose the placeholder one.
       const previous = material.map ?? map;
-      const fresh = previous.clone();
+      const fresh = withMaxAnisotropy(previous.clone());
       fresh.source = new THREE.TextureSource(fitted);
       fresh.needsUpdate = true;
       previous.removeEventListener('dispose', onDispose);
@@ -575,7 +602,7 @@ function buildFloorPlanMaterial(
   material = new THREE.MeshStandardMaterial({
     map,
     roughness: 0.8,
-    metalness: 0.2,
+    metalness: 0,
     ...(displacement ? { displacementMap: displacement, displacementScale: 0.3 } : {}),
   });
   return material;
@@ -623,12 +650,13 @@ function buildWalls(
 
   for (const spec of wallSpecs) {
     if (hiddenWalls?.includes(spec.side)) continue;
-    const color = colors?.[spec.side] ?? hexFromInt(DEFAULT_WALL_COLOR);
+    const color = colors?.[spec.side] ?? DEFAULT_WALL_COLOR;
     const material = buildWallMaterial(THREE, {
       pattern: pattern ?? 'solid',
       color,
       width: spec.width,
       height: wallHeight,
+      yOffset,
     });
 
     if (ghostOpacity !== undefined) {
@@ -657,7 +685,10 @@ function buildWalls(
     wall.name = `Wall ${spec.id}`;
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
     wall.userData.wallId = spec.side;
-    if (spec.plane !== undefined) wall.userData[WALL_PLANE_KEY] = spec.plane;
+    if (spec.plane !== undefined) {
+      wall.userData[WALL_PLANE_KEY] = spec.plane;
+      wall.userData[SHELL_WALL_KEY] = spec.id;
+    }
     // Solid walls block the sun like the roof, foundation, and interior walls
     // already do — without this, dawn/dusk light fell on furniture straight
     // through the shell (#132). Ghosted floors (show-all-floors) are
@@ -671,7 +702,8 @@ function buildWalls(
 
     // Dark wood baseboard along the floor of every wall — the build-mode-style
     // trim that grounds the room and hides the floor/wall seam.
-    addBaseboard(THREE, scene, spec, yOffset, ghostOpacity, wallCutouts);
+    addBaseboard(THREE, scene, spec, yOffset, ghostOpacity, skirtingOpenings(wallCutouts));
+    addReveals(THREE, scene, spec, color, wallHeight, ghostOpacity, wallCutouts);
   }
 
   if (yOffset === 0 && ghostOpacity === undefined) {
@@ -697,42 +729,6 @@ function buildWalls(
 
 const SNAP_GRID_FLOOR_GAP = 0.003;
 
-/**
- * Add the outside of a wall to its inward-facing sheet. A DoubleSide sheet
- * shades its back with a flipped normal, but the shadow lookup's normal offset
- * doesn't flip with it: a wall facing the sun looked up its shadow from behind
- * itself and shadowed itself. Two faces back to back, each drawn from its own
- * side only, can't z-fight: only one ever faces the camera.
- */
-export function withOutsideFace(THREE: ThreeModule, sheet: ThreeNS.BufferGeometry): ThreeNS.BufferGeometry {
-  const inside = sheet.index ? sheet.toNonIndexed() : sheet;
-  const positions = inside.getAttribute('position');
-  const normals = inside.getAttribute('normal');
-  const uvs = inside.getAttribute('uv');
-  const count = positions.count;
-  const position = new Float32Array(count * 6);
-  const normal = new Float32Array(count * 6);
-  const uv = new Float32Array(count * 4);
-  for (let i = 0; i < count; i++) {
-    // The outside copy winds each triangle the other way: 0, 2, 1.
-    const corner = i + (i % 3 === 1 ? 1 : i % 3 === 2 ? -1 : 0);
-    position.set([positions.getX(i), positions.getY(i), positions.getZ(i)], i * 3);
-    normal.set([normals.getX(i), normals.getY(i), normals.getZ(i)], i * 3);
-    uv.set([uvs.getX(i), uvs.getY(i)], i * 2);
-    const out = count + i;
-    position.set([positions.getX(corner), positions.getY(corner), positions.getZ(corner)], out * 3);
-    normal.set([-normals.getX(corner), -normals.getY(corner), -normals.getZ(corner)], out * 3);
-    uv.set([uvs.getX(corner), uvs.getY(corner)], out * 2);
-  }
-  const both = new THREE.BufferGeometry();
-  both.setAttribute('position', new THREE.BufferAttribute(position, 3));
-  both.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
-  both.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  if (inside !== sheet) inside.dispose();
-  sheet.dispose();
-  return both;
-}
-
 /** Each side's wall mesh turned to face into the house. */
 const WALL_ROTATIONS: Record<WallId, number> = { north: 0, south: Math.PI, west: Math.PI / 2, east: -Math.PI / 2 };
 
@@ -752,6 +748,44 @@ interface WallSpec {
 }
 
 const BASEBOARD_COLOR = 0x4a3a2a;
+
+/**
+ * The lining of every door and window cut into this wall (#758): one mesh in
+ * the wall's colour, tagged like the wall so cutaway and walls-down hide it
+ * with the wall, and a shadow caster, since the shade it throws on the frame
+ * is the point.
+ */
+function addReveals(
+  THREE: ThreeModule,
+  scene: ThreeNS.Scene,
+  spec: WallSpec,
+  color: string,
+  wallHeight: number,
+  ghostOpacity: number | undefined,
+  openings: readonly WallOpening[]
+): void {
+  const geometry = revealsEnabled() ? buildRevealGeometry(THREE, openings, spec.width, wallHeight) : null;
+  if (!geometry) return;
+  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
+  if (ghostOpacity !== undefined) {
+    material.transparent = true;
+    material.opacity = ghostOpacity;
+  }
+  const lining = new THREE.Mesh(geometry, material);
+  lining.rotation.y = spec.rotateY;
+  lining.position.set(spec.position[0], spec.position[1], spec.position[2]);
+  lining.name = `Reveal ${spec.id}`;
+  lining.castShadow = ghostOpacity === undefined;
+  lining.receiveShadow = true;
+  lining.userData.type = ROOM_OBJECT_TAGS.Wall;
+  lining.userData.wallId = spec.side;
+  if (spec.plane !== undefined) {
+    lining.userData[WALL_PLANE_KEY] = spec.plane;
+    lining.userData[SHELL_WALL_KEY] = spec.id;
+  }
+  makeStatic(lining);
+  scene.add(lining);
+}
 
 function addBaseboard(
   THREE: ThreeModule,
@@ -797,7 +831,10 @@ function addBaseboard(
     base.name = `Baseboard ${spec.id}`;
     base.userData.type = ROOM_OBJECT_TAGS.Wall;
     base.userData.wallId = spec.side;
-    if (spec.plane !== undefined) base.userData[WALL_PLANE_KEY] = spec.plane;
+    if (spec.plane !== undefined) {
+      base.userData[WALL_PLANE_KEY] = spec.plane;
+      base.userData[SHELL_WALL_KEY] = spec.id;
+    }
     makeStatic(base);
     scene.add(base);
   }
@@ -1135,8 +1172,4 @@ function isSimplePolygon(points: ReadonlyArray<[number, number]>): boolean {
 function isAxisAlignedRotation(rotation: number): boolean {
   const twist = Math.abs(Math.sin(2 * rotation));
   return twist < 1e-3;
-}
-
-function hexFromInt(value: number): string {
-  return `#${value.toString(16).padStart(6, '0')}`;
 }

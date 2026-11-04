@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls as RealOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FURNITURE_REVISION_KEY, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas, type SceneEventHandlers } from './drag-handlers';
+import { FURNITURE_REVISION_KEY, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, pickFurniture, pointerOnCanvas, type SceneEventHandlers } from './drag-handlers';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const SIZE = 200;
@@ -658,5 +658,28 @@ describe('drag-handlers hold a floor gesture (#724)', () => {
     expect(onEmptyClick).toHaveBeenCalledTimes(1);
     expect(controls.enabled).toBe(true);
     detach();
+  });
+});
+
+describe('pickFurniture: a hidden opening never blocks what is behind it (#659)', () => {
+  const group = (id: string, visible: boolean): THREE.Object3D => ({ visible, parent: null, userData: { type: 'furniture', id } }) as unknown as THREE.Object3D;
+  const leaf = (parent: THREE.Object3D): { object: THREE.Object3D } => ({ object: { parent, userData: {} } as unknown as THREE.Object3D });
+
+  it('skips a hidden door for the sofa behind it', () => {
+    const door = group('door', false);
+    const sofa = group('sofa', true);
+    expect(pickFurniture([leaf(door), leaf(sofa)])).toBe(sofa);
+  });
+
+  it('still selects the hidden door when nothing else is along the ray', () => {
+    const door = group('door', false);
+    expect(pickFurniture([leaf(door)])).toBe(door);
+  });
+
+  it('takes the nearest drawn item, and nothing from no hits', () => {
+    const a = group('a', true);
+    const b = group('b', true);
+    expect(pickFurniture([leaf(a), leaf(b)])).toBe(a);
+    expect(pickFurniture([])).toBeNull();
   });
 });

@@ -1,6 +1,8 @@
 import { LAMP_POOL_SIZE, type LampPoolPlan } from '../lib/night-lights';
 import { fitSunShadow, type ShadowBox, type SunShadowFit, type Vec3 } from '../lib/sun-shadow';
 import { applyOutdoorWeather } from './outdoor';
+import { applyOutdoorLampMask, setOutdoorLampMaskLive } from './outdoor-lamps';
+import { SKY_RADIUS, followCamera, mulberry32, updateSky } from './sky';
 import type { Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -11,6 +13,7 @@ const LIGHTING_TAGS = {
   Directional: 'light:directional',
   Hemisphere: 'light:hemi',
   LampPool: 'light:lamp-pool',
+  Halos: 'light:halos',
   Stars: 'sky:stars',
   Moon: 'sky:moon',
 } as const;
@@ -53,6 +56,9 @@ export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
   pool.userData.type = LIGHTING_TAGS.LampPool;
   pool.visible = false;
   for (let i = 0; i < LAMP_POOL_SIZE; i++) pool.add(new THREE.PointLight(LAMP_COLOR, 0, 1, 2));
+  // After the lights, whose order is the slots'. In the pool, so it shows and
+  // pre-warms along with it.
+  if (typeof document !== 'undefined') pool.add(makeLampHalos(THREE));
   scene.add(pool);
 }
 
@@ -89,14 +95,8 @@ export function applyTimeOfDay(
   const profile = computeSkyProfile(time, weather);
   applyOutdoorWeather(scene, weather);
 
-  // Vertical sky gradient (zenith → horizon) instead of a flat colour. The
-  // texture is screen-space, so it reads as atmosphere without a sky dome.
-  const previousBackground = scene.background;
-  scene.background = makeSkyGradientTexture(THREE, profile.backgroundTop, profile.background);
+  updateSky(THREE, scene, profile, weather);
   updateNightSky(THREE, scene, computeNightSky(time));
-  if (previousBackground && (previousBackground as ThreeNS.Texture).isTexture) {
-    (previousBackground as ThreeNS.Texture).dispose();
-  }
   scene.environmentIntensity = profile.environment;
 
   for (const obj of scene.children) {
@@ -108,10 +108,8 @@ export function applyTimeOfDay(
     } else if (tag === LIGHTING_TAGS.Hemisphere) {
       // Driven with the ambient, or it lit every night with a constant
       // sky-blue fill brighter than all the other lights together (#375).
-      const light = obj as ThreeNS.HemisphereLight;
-      light.color.setHex(profile.hemisphere.sky);
-      light.groundColor.setHex(profile.hemisphere.ground);
-      light.intensity = profile.hemisphere.intensity;
+      obj.userData.sky = profile.hemisphere;
+      applyIndoorFill(scene, (scene.userData[FILL_KEY] as number | undefined) ?? 0);
     } else if (tag === LIGHTING_TAGS.Directional) {
       const light = obj as ThreeNS.DirectionalLight;
       light.color.setHex(profile.sun.color);
@@ -137,6 +135,7 @@ export function applyLampPool(scene: ThreeNS.Scene, plan: LampPoolPlan): void {
   const pool = lampPool(scene);
   if (!pool) return;
   pool.visible = plan.lit;
+  applyOutdoorLampMask(plan);
   pool.children.forEach((child, index) => {
     const light = child as ThreeNS.PointLight;
     const slot = plan.slots[index];
@@ -145,6 +144,88 @@ export function applyLampPool(scene: ThreeNS.Scene, plan: LampPoolPlan): void {
     light.intensity = slot.intensity;
     light.distance = slot.distance;
   });
+  placeLampHalos(pool, plan);
+}
+
+/** The halo's width per metre of the lamp's reach: a street lamp's is the wider. */
+const HALO_SIZE_PER_RANGE = 0.17;
+/** Additive, so this is about how far it lifts the air next to the bulb. */
+const HALO_OPACITY = 0.55;
+
+/** One soft sprite per pool slot, sharing a material and a texture (#759). */
+function makeLampHalos(THREE: ThreeModule): ThreeNS.Group {
+  const halos = new THREE.Group();
+  halos.userData.type = LIGHTING_TAGS.Halos;
+  const material = new THREE.SpriteMaterial({
+    map: makeHaloTexture(THREE),
+    color: LAMP_COLOR,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  for (let i = 0; i < LAMP_POOL_SIZE; i++) {
+    const halo = new THREE.Sprite(material);
+    halo.visible = false;
+    halos.add(halo);
+  }
+  return halos;
+}
+
+function placeLampHalos(pool: ThreeNS.Group, plan: LampPoolPlan): void {
+  const halos = pool.children.find((child) => child.userData.type === LIGHTING_TAGS.Halos);
+  if (!halos) return;
+  let brightest = 0;
+  halos.children.forEach((child, index) => {
+    const slot = plan.slots[index];
+    child.visible = slot !== undefined && slot.intensity > 0;
+    if (!slot || !child.visible) return;
+    child.position.set(slot.x, slot.y, slot.z);
+    child.scale.setScalar(slot.distance * HALO_SIZE_PER_RANGE);
+    brightest = Math.max(brightest, slot.level);
+  });
+  const first = halos.children[0] as ThreeNS.Sprite | undefined;
+  if (first) first.material.opacity = brightest * HALO_OPACITY;
+}
+
+function makeHaloTexture(THREE: ThreeModule): ThreeNS.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  glow.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  glow.addColorStop(0.25, 'rgba(255, 255, 255, 0.4)');
+  glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** The warm bounce of a lit room, the colours its walls throw back. */
+const ROOM_BOUNCE_SKY = 0xffdcb0;
+const ROOM_BOUNCE_GROUND = 0xb08050;
+/** Hemisphere intensity of a fully lit room. */
+const ROOM_BOUNCE = 1.6;
+const FILL_KEY = 'indoorFill';
+
+/**
+ * Bounce light for a walker inside a lit room (#759): with no bounce, anything
+ * turned from a lamp was black beside a bright wall. 0 is the plain sky fill,
+ * and the orbit view always stays there. No light added: it leans the
+ * hemisphere over, and `applyTimeOfDay` keeps it through an hour step.
+ */
+export function applyIndoorFill(scene: ThreeNS.Scene, fill: number): void {
+  scene.userData[FILL_KEY] = fill;
+  const hemisphere = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Hemisphere) as ThreeNS.HemisphereLight | undefined;
+  const sky = hemisphere?.userData.sky as SkyProfile['hemisphere'] | undefined;
+  if (!hemisphere || !sky) return;
+  hemisphere.color.setHex(mixHex(sky.sky, ROOM_BOUNCE_SKY, fill));
+  hemisphere.groundColor.setHex(mixHex(sky.ground, ROOM_BOUNCE_GROUND, fill));
+  hemisphere.intensity = sky.intensity + (ROOM_BOUNCE - sky.intensity) * fill;
 }
 
 /**
@@ -157,10 +238,13 @@ export function prewarmLampPool(renderer: ThreeNS.WebGLRenderer, scene: ThreeNS.
   const pool = lampPool(scene);
   if (!pool || pool.visible) return;
   pool.visible = true;
+  // The outdoor materials' night programs carry the lamp mask (#664).
+  setOutdoorLampMaskLive(true);
   try {
     renderer.compile(scene, camera);
   } finally {
     pool.visible = false;
+    setOutdoorLampMaskLive(false);
   }
 }
 
@@ -172,6 +256,24 @@ export function isLampPrewarmHour(hour: number): boolean {
   const time = ((hour % 24) + 24) % 24;
   const lampsOn = 18 - LAMPS_EARLY_HOURS;
   return time >= lampsOn - LAMP_PREWARM_HOURS && time <= lampsOn;
+}
+
+/**
+ * Size the sun's shadow map for the quality tier (#760). A new size frees the
+ * old map, and three makes the next one on the next shadow pass, which the
+ * caller requests. No-op when nothing changes.
+ */
+export function applyShadowQuality(scene: ThreeNS.Scene, mapSize: number, radius: number): boolean {
+  const light = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Directional) as ThreeNS.DirectionalLight | undefined;
+  if (!light) return false;
+  const { shadow } = light;
+  if (shadow.mapSize.width === mapSize && shadow.radius === radius) return false;
+  shadow.radius = radius;
+  shadow.mapSize.set(mapSize, mapSize);
+  shadow.map?.dispose();
+  shadow.map = null;
+  shadow.normalBias = shadowNormalBias(shadow.camera.right - shadow.camera.left, mapSize);
+  return true;
 }
 
 /** The normal offset of a shadow lookup, floored for small lots. */
@@ -209,6 +311,12 @@ export interface SkyProfile {
    * `position` is a direction toward it; its length is meaningless.
    */
   sun: { color: number; intensity: number; position: Vec3 };
+  /**
+   * Toward the sun itself, for the sky's disc and glow (#761): the light's
+   * `position` is lifted so a low sun still rakes the lot, which would hang
+   * the disc high in the sky at twilight. Under the horizon outside the day.
+   */
+  sunDisc: Vec3;
   /** `scene.environmentIntensity` for the neutral studio IBL. */
   environment: number;
   /** Horizon colour (bottom of the sky gradient). */
@@ -313,6 +421,15 @@ function computeClearSkyProfile(hour: number): SkyProfile {
   const azimuth = (dayFraction - 0.5) * Math.PI; // -π/2..π/2
   const elevation = sunAboveHorizon ? Math.sin(dayFraction * Math.PI) : 0;
   const position: Vec3 = [Math.sin(azimuth) * 10, elevation * 10 + SUN_LOW_HEIGHT, Math.cos(azimuth) * 5];
+  // The same arc unclamped and unlifted: the lift is the light's alone. At the
+  // top it meets the light's direction.
+  const arc = (hour - 6) / 12;
+  const discAzimuth = (arc - 0.5) * Math.PI;
+  const sunDisc: Vec3 = [
+    Math.sin(discAzimuth) * 10,
+    Math.sin(arc * Math.PI) * (10 + SUN_LOW_HEIGHT),
+    Math.cos(discAzimuth) * 5,
+  ];
 
   // Warmth: high at sunrise/sunset, low at noon (white); the afterglow keeps it.
   const warmth = sunAboveHorizon ? Math.pow(Math.abs(dayFraction - 0.5) * 2, 2) : 1;
@@ -372,6 +489,7 @@ function computeClearSkyProfile(hour: number): SkyProfile {
     sun: moonUp
       ? { color: MOON_COLOR, intensity: MOONLIGHT * moonlight, position: moonDirection(hour) }
       : { color: sunColor, intensity: sunIntensity, position },
+    sunDisc,
     // The studio environment is white and bright: it drops to almost nothing
     // through twilight, or it keeps the night lot lit grey-green (#375).
     environment: fill(NIGHT_ENVIRONMENT, DUSK_ENVIRONMENT, NOON_ENVIRONMENT),
@@ -399,8 +517,8 @@ export interface NightSky {
 }
 
 /**
- * Star/moon parameters for the sky backdrop (#182). Pure — the drawing lives
- * in makeSkyGradientTexture; this is the testable half. Keyed on the same
+ * Star/moon parameters for the sky (#182). Pure — the drawing lives in
+ * updateNightSky; this is the testable half. Keyed on the same
  * distance-to-sun-event ramp as the sky colours (#145) so stars fade exactly
  * as the twilight glow fades.
  */
@@ -417,64 +535,8 @@ export function computeNightSky(hour: number): NightSky {
   return { starAlpha, moonAlpha, moonT };
 }
 
-/**
- * 1×256 vertical-gradient CanvasTexture used as the screen-space scene
- * background. Rebuilt on every time-of-day change; the previous texture is
- * disposed by the caller.
- */
-function makeSkyGradientTexture(
-  THREE: ThreeModule,
-  top: number,
-  bottom: number
-): ThreeNS.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d')!;
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, hexToCss(top));
-  // Bias the blend toward the horizon colour in the lower third so the
-  // horizon glow sits where the ground line actually is on screen.
-  gradient.addColorStop(0.65, hexToCss(mixHex(top, bottom, 0.7)));
-  gradient.addColorStop(1, hexToCss(bottom));
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
 const STAR_COUNT = 350;
 const STAR_SEED = 20260918;
-/** Radius of the star dome around the camera: well inside the far plane. */
-const SKY_RADIUS = 140;
-
-/** Deterministic PRNG so the starfield is identical every session. */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/**
- * Keep a sky object centred on whichever camera draws it, however far out a
- * big house's framing stands: otherwise the dome ends up below the camera and
- * its stars draw over the lawn. Done per draw, on the object's world matrix, so
- * a camera move costs no rebuild and needs no invalidate of its own.
- */
-export function followCamera(sky: ThreeNS.Object3D): void {
-  sky.onBeforeRender = (_renderer, _scene, camera) => {
-    const world = sky.matrixWorld.elements;
-    world[12] = sky.position.x + camera.position.x;
-    world[13] = sky.position.y + camera.position.y;
-    world[14] = sky.position.z + camera.position.z;
-  };
-}
 
 /**
  * World-space night sky (#182): a Points starfield on a distant upper dome
@@ -634,10 +696,6 @@ function makeMoonTexture(THREE: ThreeModule): ThreeNS.CanvasTexture {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
-}
-
-function hexToCss(hex: number): string {
-  return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
 function smoothstep01(value: number): number {

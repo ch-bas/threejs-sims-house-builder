@@ -1,16 +1,19 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { lowestGround } from '../lib/site';
-import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
+import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { zoneFloorPatches } from '../lib/zones';
 import { disposeObject } from './builder-utils';
 import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
+import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
-import { buildRoof } from './roof';
+import { revealSetbacks } from './reveals';
+import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
-import { computeFloorOpenings, computeWallOpenings } from './wall-openings';
+import { stripRelief } from './surface-maps';
+import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings } from './wall-openings';
 import type { RoomLayout } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -128,11 +131,17 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       });
     }
 
-    // Furniture, placed as the furniture effect places it.
+    // Furniture, placed as the furniture effect places it: doors and windows
+    // in an outer wall set back into its reveal, curtains in front of it (#758).
+    const owners = classifyOpeningOwners(floor.items, width, depth, floor.interiorWalls ?? [], cutout);
+    const revealContext = { width, depth, cutout, hiddenWalls: floor.hiddenWalls, noWalls: tracedGround };
+    const setbacks = revealSetbacks(floor.items, owners, revealContext, storeyH);
     for (const item of floor.items) {
       const position = item.position;
       if (!position) continue;
-      const group = createFurnitureModel(THREE, itemForStorey(item, floor), false, storeyH);
+      const setback = setbacks.get(item.id) ?? 0;
+      const group = createFurnitureModel(THREE, itemForStorey(item, floor, underRoof(layout, index)), false, storeyH, setback);
+      stripDetailMaps(group);
       group.name = item.name;
       group.userData.type = ROOM_OBJECT_TAGS.Furniture;
       group.userData.id = item.id;
@@ -161,12 +170,23 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
 
   if (layout.roof && layout.roof.style !== 'none') {
     const scratch = new THREE.Scene();
-    buildRoof(THREE, { scene: scratch, width, depth, cutout, baseY: buildingHeight(layout.floors), spec: layout.roof });
+    buildRoof(THREE, {
+      scene: scratch, width, depth, cutout, baseY: buildingHeight(layout.floors), spec: layout.roof,
+      gableWalls: gableWallsOf(layout.roof.style, layout.floors),
+    });
     const roof = new THREE.Group();
     roof.name = 'Roof';
     for (const child of [...scratch.children]) roof.add(child);
     if (roof.children.length > 0) root.add(roof);
   }
+
+  // The patterns' relief maps stay in the view: in the file they would be two
+  // more images per pattern for a lighting detail (#757).
+  root.traverse((node) => {
+    const material = (node as ThreeNS.Mesh).material as ThreeNS.Material | ThreeNS.Material[] | undefined;
+    if (!material) return;
+    for (const m of Array.isArray(material) ? material : [material]) stripRelief(m);
+  });
 
   return root;
 }

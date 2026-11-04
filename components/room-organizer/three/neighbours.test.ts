@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { GRASS_DROP } from '../lib/site';
 import { generateStreet, type StreetHouseSpec } from '../lib/street-row';
 import { NEIGHBOUR_TAG, buildNeighbours, removeNeighbours } from './neighbours';
 import { applyWallDisplay } from './room-builder';
@@ -47,6 +48,12 @@ const instances = (scene: THREE.Scene, part: string) =>
 
 /** World-space centre and scale of every instance of a part. */
 function instanceBoxes(scene: THREE.Scene, part: string): Array<{ position: THREE.Vector3; scale: THREE.Vector3 }> {
+  // A pane is a pane, lit or dark.
+  if (part === 'panes') return [...partBoxes(scene, 'panes'), ...partBoxes(scene, 'litPanes')];
+  return partBoxes(scene, part);
+}
+
+function partBoxes(scene: THREE.Scene, part: string): Array<{ position: THREE.Vector3; scale: THREE.Vector3 }> {
   const mesh = instances(scene, part);
   if (!mesh) return [];
   const matrix = new THREE.Matrix4();
@@ -67,11 +74,11 @@ describe('party-wall neighbours (#202)', () => {
     expect(built.map((obj) => obj.userData.side)).toEqual(['west', 'east']);
     for (const obj of built) {
       // The block: inner face just off our wall plane (x = ±3), from the
-      // plinth depth to our eaves.
+      // plinth depth to where its gable starts, just under our eaves.
       const block = new THREE.Box3().setFromObject(obj.children[0]!);
       expect(Math.min(Math.abs(block.min.x), Math.abs(block.max.x))).toBeCloseTo(3.02);
       expect(block.min.y).toBeCloseTo(-0.25);
-      expect(block.max.y).toBeCloseTo(6.6);
+      expect(block.max.y).toBeCloseTo(6.57);
       // Roofed above our eaves.
       expect(new THREE.Box3().setFromObject(obj).max.y).toBeGreaterThan(7);
     }
@@ -121,8 +128,8 @@ describe('the street (#310)', () => {
     const street = generateStreet({ ...SITE, neighbours: { west: true, east: true, street: true, across: true, seed: 7 } });
     buildNeighbours(THREE, scene, street);
     expect(houses(scene)).toHaveLength(street.length);
-    // Six instanced part sets at most, whatever the number of houses.
-    expect(tagged(scene).length - street.length).toBeLessThanOrEqual(6);
+    // Seven instanced part sets at most, whatever the number of houses.
+    expect(tagged(scene).length - street.length).toBeLessThanOrEqual(7);
     for (const obj of houses(scene)) {
       const masonry = obj.children[0] as THREE.Mesh;
       expect(masonry.isMesh).toBe(true);
@@ -180,8 +187,10 @@ describe('the street (#310)', () => {
     const scene = new THREE.Scene();
     buildNeighbours(THREE, scene, [house({ groundFrontY: -0.6, groundBackY: -0.6 })]);
     const [step] = instanceBoxes(scene, 'steps');
-    expect(step!.scale.y).toBeCloseTo(0.6);
-    expect(step!.position.y).toBeCloseTo(-0.3);
+    // Down to the grass plane under the ground line, never hovering (#660).
+    expect(step!.scale.y).toBeCloseTo(0.6 + GRASS_DROP);
+    expect(step!.position.y - step!.scale.y / 2).toBeCloseTo(-0.6 - GRASS_DROP);
+    expect(step!.position.y + step!.scale.y / 2).toBeCloseTo(0);
   });
 
   it('opens windows in a free-standing side wall only', () => {
@@ -216,5 +225,73 @@ describe('the street (#310)', () => {
     expect(instanceBoxes(scene, 'darkTrim')).toHaveLength(6);
     const [chimney] = instanceBoxes(scene, 'chimneys');
     expect(chimney!.position.y + chimney!.scale.y / 2).toBeGreaterThan(6.8);
+  });
+});
+
+// The attached neighbour's eaves overhang 0.35 m past a 2 cm gap, so its
+// slope, fascia and gutters ran 0.33 m into our top storey (#655).
+describe('neighbour gables (#661)', () => {
+  it('stops the block where a gable roof starts, so the gable ends never share its plane', () => {
+    const scene = new THREE.Scene();
+    buildNeighbours(THREE, scene, [house({ attached: false })]);
+    const block = new THREE.Box3().setFromObject(houses(scene)[0]!.children[0]!);
+    const roof = new THREE.Box3().setFromObject(houses(scene)[0]!.getObjectByName('Roof')!);
+    expect(block.max.y).toBeCloseTo(roof.min.y);
+    expect(block.max.y).toBeLessThan(6);
+
+    const hipped = new THREE.Scene();
+    buildNeighbours(THREE, hipped, [house({ attached: false, roof: { style: 'hipped', color: '#8d6e63', pitch: 1 } })]);
+    expect(new THREE.Box3().setFromObject(houses(hipped)[0]!.children[0]!).max.y).toBeCloseTo(6);
+  });
+});
+
+describe('a party-wall neighbour keeps its roof off ours (#655)', () => {
+  const OURS = { width: 6, depth: 9, floorYs: [0, 3], eavesY: 6, roof: { style: 'hipped' as const } };
+  const roofMeshes = (scene: THREE.Scene, houseIndex: number): THREE.Mesh[] => {
+    const out: THREE.Mesh[] = [];
+    houses(scene)[houseIndex]!.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh && obj.userData.type !== 'roof' && !(obj.parent?.userData.type === 'roof')) return;
+      if ((obj as THREE.Mesh).isMesh) out.push(obj as THREE.Mesh);
+    });
+    return out;
+  };
+
+  it('clips the roof at its wall on our side, keeping the far side whole', () => {
+    const scene = new THREE.Scene();
+    const street = generateStreet({ ...OURS, neighbours: { west: true } });
+    buildNeighbours(THREE, scene, street);
+    const west = street.find((h) => h.side === 'west')!;
+    const wallX = west.x + west.width / 2;
+    const materials = roofMeshes(scene, 0).flatMap((mesh) => (Array.isArray(mesh.material) ? mesh.material : [mesh.material]));
+    expect(materials.length).toBeGreaterThan(0);
+    for (const material of materials) {
+      expect(material.clippingPlanes).toHaveLength(1);
+      const plane = material.clippingPlanes![0]!;
+      // Our side (x > wallX) is cut, the neighbour's own side is kept.
+      expect(plane.distanceToPoint(new THREE.Vector3(wallX + 0.2, 6.5, 0))).toBeLessThan(0);
+      expect(plane.distanceToPoint(new THREE.Vector3(wallX - 0.2, 6.5, 0))).toBeGreaterThan(0);
+      expect(Math.abs(plane.distanceToPoint(new THREE.Vector3(wallX, 6.5, 0)))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('leaves a free-standing house unclipped', () => {
+    const scene = new THREE.Scene();
+    buildNeighbours(THREE, scene, [house({ attached: false })]);
+    for (const mesh of roofMeshes(scene, 0)) {
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        expect(material.clippingPlanes ?? null).toBeNull();
+      }
+    }
+  });
+
+  it('keeps every gutter out of our footprint', () => {
+    const scene = new THREE.Scene();
+    const street = generateStreet({ ...OURS, neighbours: { west: true, east: true } });
+    buildNeighbours(THREE, scene, street);
+    for (const { position, scale } of instanceBoxes(scene, 'darkTrim')) {
+      const halfX = Math.max(scale.x, scale.z) / 2;
+      const inside = position.x + halfX > -OURS.width / 2 && position.x - halfX < OURS.width / 2;
+      expect(inside, `gutter at ${position.x.toFixed(2)} ± ${halfX.toFixed(2)}`).toBe(false);
+    }
   });
 });

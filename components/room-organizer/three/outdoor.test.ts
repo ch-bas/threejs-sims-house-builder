@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { groundFadeAlpha } from './ground-surfaces';
 import { applyOutdoorWeather, mergeStaticGeometries, outdoorGroundColor, setOutdoorVisible } from './outdoor';
 
 const WIDTH = 8;
@@ -187,5 +188,51 @@ describe('mergeStaticGeometries', () => {
     const merged = mergeStaticGeometries(THREE, [new THREE.BoxGeometry(), new THREE.IcosahedronGeometry(1, 0)]);
     expect(merged.index).toBeNull();
     expect(merged.getAttribute('position').count).toBe(36 + 60);
+  });
+});
+
+describe('the ground past the lot (#761)', () => {
+  const lot = (site = {}) => {
+    const scene = new THREE.Scene();
+    setOutdoorVisible(THREE, scene, true, 8, 8, site);
+    return scene;
+  };
+  const skirtOf = (scene: THREE.Scene) =>
+    scene.children.find((obj) => obj.userData.role === 'ground' && ((obj as THREE.Mesh).material as THREE.Material).transparent) as
+      | THREE.Mesh
+      | undefined;
+
+  it('runs on past the far plane, facing up, and fades by distance from the camera', () => {
+    const skirt = skirtOf(lot())!;
+    expect((skirt.material as THREE.MeshStandardMaterial).transparent).toBe(true);
+    skirt.geometry.computeBoundingSphere();
+    expect(skirt.geometry.boundingSphere!.radius).toBeGreaterThan(1000);
+    skirt.geometry.computeVertexNormals();
+    expect(skirt.geometry.getAttribute('normal').getY(0)).toBeGreaterThan(0.9);
+    // Solid around an orbit camera, gone well inside the skirt's own edge.
+    expect(groundFadeAlpha(60, 25, 20)).toBe(1);
+    expect(groundFadeAlpha(300, 25, 20)).toBe(0);
+    // A camera 300 m out: solid past the lot's far corner, gone inside the far plane.
+    expect(groundFadeAlpha(300 + 50, 300, 50)).toBe(1);
+    expect(groundFadeAlpha(990, 300, 50)).toBe(0);
+  });
+
+  it('is left out with the road tails and the kerb on the low tier (#760)', () => {
+    const rich = lot();
+    const lean = lot({ richScenery: false });
+    expect(skirtOf(lean)).toBeUndefined();
+    expect(lean.children.filter((obj) => ((obj as THREE.Mesh).material as THREE.Material | undefined)?.transparent)).toHaveLength(0);
+    expect(rich.children.length - lean.children.length).toBe(3);
+  });
+
+  it('sits under the grass', () => {
+    const skirt = skirtOf(lot())!;
+    expect(skirt.geometry.getAttribute('position').getY(0)).toBeLessThan(-0.05);
+  });
+
+  it('takes the weather tint with the lawn', () => {
+    const scene = lot();
+    applyOutdoorWeather(scene, 'snow');
+    expect((skirtOf(scene)!.material as THREE.MeshStandardMaterial).color.getHex()).toBe(new THREE.Color(outdoorGroundColor('snow')).getHex());
   });
 });

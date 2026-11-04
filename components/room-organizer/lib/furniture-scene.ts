@@ -83,6 +83,8 @@ export interface FurnitureBuildInputs {
   ghosted: boolean;
   /** The rigged people model is loaded; only a person's mesh depends on it. */
   peopleModelReady: boolean;
+  /** A door or window's set-back into its reveal (#758); it moves with the item's wall and facing. */
+  revealSetback?: number;
 }
 
 /**
@@ -91,13 +93,13 @@ export interface FurnitureBuildInputs {
  * collision tint and the ghost fade mutate the materials, so they are part of
  * it (#404).
  */
-export function furnitureBuildKey({ item, collision, storeyHeight, ghosted, peopleModelReady }: FurnitureBuildInputs): string {
+export function furnitureBuildKey({ item, collision, storeyHeight, ghosted, peopleModelReady, revealSetback = 0 }: FurnitureBuildInputs): string {
   const built: Record<string, unknown> = {};
   for (const [field, value] of Object.entries(item)) {
     if (PLACEMENT_FIELDS.has(field) && !(field === 'rotation' && ROTATION_BUILT_TYPES.has(item.type))) continue;
     built[field] = value;
   }
-  return JSON.stringify([built, collision, storeyHeight, ghosted, item.type === 'person' && peopleModelReady]);
+  return JSON.stringify([built, collision, storeyHeight, ghosted, item.type === 'person' && peopleModelReady, revealSetback]);
 }
 
 export interface FurnitureDiff {

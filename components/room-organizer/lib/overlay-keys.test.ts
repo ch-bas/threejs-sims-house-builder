@@ -28,6 +28,8 @@ describe('itemLabelsKey (#409)', () => {
     expect(itemLabelsKey([{ ...sofa, name: 'Couch' }])).not.toBe(before);
     expect(itemLabelsKey([{ ...sofa, position: { x: 1, z: 0 } }])).not.toBe(before);
     expect(itemLabelsKey([{ ...sofa, height: 1.2 }])).not.toBe(before);
+    // A window's label floats over its sill band (#657).
+    expect(itemLabelsKey([{ ...sofa, sillHeight: 1.1 }])).not.toBe(before);
   });
 
   it('skips unplaced items', () => {

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { disposeObject } from './builder-utils';
 import { buildExportBuilding, prepareExportBuilding } from './building-export';
-import { clearFloorPlanImageCache } from './room-builder';
+import { buildRoom, clearFloorPlanImageCache } from './room-builder';
 import type { RoomLayout } from '../lib/types';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -81,5 +81,53 @@ describe('GLB export of a traced floor plan (#373)', () => {
     pending[0]!.onLoad(decodedImage());
     expect(map.version).toBe(version);
     expect(map.image).not.toBeInstanceOf(HTMLImageElement);
+  });
+});
+
+describe('GLB export of the pattern relief (#757)', () => {
+  /** A 2D context that draws nothing but hands back pixel buffers, so the relief maps get made. */
+  function fakeCanvas(): void {
+    const pixels = (w: number, h: number) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
+    const named: Record<string, unknown> = {
+      getImageData: (_x: number, _y: number, w: number, h: number) => pixels(w, h),
+      createImageData: (w: number, h: number) => pixels(w, h),
+      createLinearGradient: () => ({ addColorStop: () => undefined }),
+      createRadialGradient: () => ({ addColorStop: () => undefined }),
+    };
+    const context = new Proxy({}, { get: (_t, key) => (key === 'canvas' ? undefined : (named[key as string] ?? (() => undefined))), set: () => true });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as never);
+  }
+
+  it('leaves the normal and roughness maps out, at the flat roughness', () => {
+    fakeCanvas();
+    const layout = makeLayout({ floors: [makeFloor({ floorPattern: 'wood', wallPattern: 'brick' })] });
+    // The view's materials do carry them.
+    const scratch = new THREE.Scene();
+    buildRoom(THREE, {
+      scene: scratch, width: layout.width, depth: layout.height, floorColor: '#ccc', floorPattern: 'wood', wallPattern: 'brick',
+      floorPlanImage: null, floorPlanOpacity: 1, floorPlanFitMode: 'stretch', floorPlan3DEffect: false,
+    });
+    const relief = (root: THREE.Object3D) => {
+      const out: THREE.MeshStandardMaterial[] = [];
+      root.traverse((node) => {
+        const material = (node as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+        for (const m of material ? (Array.isArray(material) ? material : [material]) : []) {
+          if ((m as THREE.MeshStandardMaterial).map) out.push(m as THREE.MeshStandardMaterial);
+        }
+      });
+      return out;
+    };
+    expect(relief(scratch).some((m) => m.normalMap && m.roughnessMap)).toBe(true);
+
+    const root = buildExportBuilding(THREE, layout);
+    const patterned = relief(root).filter((m) => m.map?.image instanceof HTMLCanvasElement);
+    expect(patterned.length).toBeGreaterThan(0);
+    for (const m of patterned) {
+      expect(m.normalMap).toBeNull();
+      expect(m.roughnessMap).toBeNull();
+      expect(m.roughness).toBeLessThan(1);
+    }
+    disposeObject(scratch);
+    disposeObject(root);
   });
 });

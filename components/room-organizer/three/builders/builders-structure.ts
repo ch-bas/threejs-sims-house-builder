@@ -1,6 +1,7 @@
 import { STAIR_STEP_COUNT, stairSteps, winderLayout } from '../../lib/stairs';
 import { windowSillHeight } from '../../lib/street';
 import { type BuilderContext, material, mesh } from '../builder-utils';
+import { EXTERIOR_SILL_KEY } from '../reveals';
 import type * as ThreeNS from 'three';
 
 /**
@@ -13,7 +14,7 @@ import type * as ThreeNS from 'three';
 export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
-  const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 0.8, roughness: 0.2 });
+  const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 1, roughness: 0.2 });
 
   // Door slab (almost as wide and tall as the wall opening).
   const slab = mesh(
@@ -55,7 +56,7 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   const glassMat = new THREE.MeshStandardMaterial({
     color: baseColor,
     roughness: 0.05,
-    metalness: 0.25,
+    metalness: 0,
     transparent: true,
     opacity: hasCollision ? 0.5 : 0.4,
   });
@@ -71,7 +72,12 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     new THREE.BoxGeometry(item.width * 0.93, item.height * 0.93, item.depth * 0.2),
     glassMat
   );
-  glass.position.set(0, sillHeight + item.height / 2, 0); 
+  glass.position.set(0, sillHeight + item.height / 2, 0);
+  // The wall is cut around the window so the sun comes in (#132); the shadow
+  // pass ignores opacity, so a casting pane would plug 93 % of that hole
+  // again (#551). The frame and mullions still cast, like dormer glass (#369).
+  glass.castShadow = false;
+  glass.userData.litGlass = true;
   group.add(glass);
 
   // Outer frame (4 sides).
@@ -115,6 +121,8 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     sillMat
   );
   sill.position.set(0, sillHeight, 0);
+  // It stays on the wall plane when the window is set into a reveal (#758).
+  sill.userData[EXTERIOR_SILL_KEY] = true;
   group.add(sill);
 
   return group;
@@ -128,11 +136,43 @@ export function buildStairs(ctx: BuilderContext): ThreeNS.Group {
 /** Handrail height above the stairs' pitch line, and the rail's radius. */
 const RAIL_HEIGHT = 0.9;
 const RAIL_RADIUS = 0.03;
+/** A closed string: this thick across the pitch, this far above the nosings, this wide. */
+const STRINGER_DEPTH = 0.25;
+const STRINGER_LIP = 0.03;
+const STRINGER_WIDTH = 0.06;
+
+/**
+ * The outline of a closed string in the stair's (z, y) plane (#658): its
+ * top edge runs along the nosings, a lip above them, from the first nosing
+ * to the last; it is `STRINGER_DEPTH` thick across the pitch, cut level
+ * at the floor, and ends square under the top nosing against the floor
+ * above. A tilted box used to hang 0.36 m over the floor at the foot, stop
+ * short of the landing and stand 0.22 m proud of the treads.
+ */
+export function stringerOutline(depth: number, height: number, stepCount: number): Array<[number, number]> {
+  const hd = depth / 2;
+  const going = depth / stepCount;
+  const rise = height / stepCount;
+  const slope = height / depth;
+  const top = (z: number) => rise + STRINGER_LIP + (z + hd) * slope;
+  // Vertical thickness of a band `STRINGER_DEPTH` thick across the pitch.
+  const drop = STRINGER_DEPTH * Math.hypot(depth, height) / depth;
+  const zEnd = hd - going;
+  // Where the bottom edge meets the floor: the foot is cut level there.
+  const zFoot = Math.min(zEnd, -hd + Math.max(0, drop - rise - STRINGER_LIP) / slope);
+  return [
+    [-hd, 0],
+    [-hd, top(-hd)],
+    [zEnd, top(zEnd)],
+    [zEnd, Math.max(0, top(zEnd) - drop)],
+    [zFoot, 0],
+  ];
+}
 
 function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const stepMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
-  const railMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.5, metalness: 0.6 });
+  const railMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.5, metalness: 1 });
 
   // Item height is the rise to the next floor; build steps that span the depth.
   const stepCount = 14;
@@ -152,14 +192,19 @@ function buildStraightStairs({ THREE, item, hasCollision, baseColor, opacity }: 
     group.add(step);
   }
 
-  // Stringers along each side.
-  const stringerGeo = new THREE.BoxGeometry(0.06, item.height * 0.18, item.depth + 0.1);
+  // A closed string along each side, following the nosings (#658).
+  const outline = stringerOutline(item.depth, item.height, stepCount);
+  const shape = new THREE.Shape();
+  outline.forEach(([z, y], i) => (i === 0 ? shape.moveTo(z, y) : shape.lineTo(z, y)));
+  shape.closePath();
+  // Drawn in the (z, y) plane and extruded across x; the extrusion runs
+  // from x = 0 to −width, so it is centred on its side afterwards.
+  const stringerGeo = new THREE.ExtrudeGeometry(shape, { depth: STRINGER_WIDTH, bevelEnabled: false });
+  stringerGeo.rotateY(-Math.PI / 2);
+  stringerGeo.translate(STRINGER_WIDTH / 2, 0, 0);
   for (const dx of [-1, 1]) {
     const stringer = mesh(THREE, stringerGeo, stepMat);
-    // Run the stringer along the slope.
-    const angle = Math.atan2(item.height, item.depth);
-    stringer.rotation.x = -angle;
-    stringer.position.set(dx * (item.width / 2 - 0.05), item.height / 2, 0);
+    stringer.position.set(dx * (item.width / 2 - STRINGER_WIDTH / 2), 0, 0);
     group.add(stringer);
   }
 

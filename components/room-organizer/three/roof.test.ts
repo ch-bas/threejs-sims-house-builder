@@ -106,12 +106,13 @@ describe('setRoofOnStorey (#283)', () => {
 describe('walkthrough attic ceiling (#487)', () => {
   const DORMER = { id: 'd', side: 'north' as const, width: 2, window: true };
   const atticOf = (scene: THREE.Scene) => scene.children.filter((obj) => obj.userData.type === ATTIC_TAG);
-  const shell = (scene: THREE.Scene): THREE.Material => {
-    let found: THREE.Material | undefined;
+  const shell = (scene: THREE.Scene): { colorWrite: boolean; depthWrite: boolean } => {
+    const found: THREE.Material[] = [];
     scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.name === 'Roof') found = obj.material as THREE.Material;
+      if (obj instanceof THREE.Mesh && obj.name === 'Roof') found.push(...(Array.isArray(obj.material) ? obj.material : [obj.material]));
     });
-    return found!;
+    expect(found.length).toBeGreaterThan(0);
+    return { colorWrite: found.every((m) => m.colorWrite), depthWrite: found.every((m) => m.depthWrite) };
   };
 
   it.each(['flat', 'gable', 'hipped'] as const)('lays a plain plate just under a %s roof, out to the eaves', (style) => {
@@ -151,7 +152,7 @@ describe('walkthrough attic ceiling (#487)', () => {
     buildRoof(THREE, { scene, width: 8, depth: 6, baseY: 3, spec: { style: 'gable', dormers: [DORMER] } });
     const others: THREE.Material[] = [];
     scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.name !== 'Roof') others.push(obj.material as THREE.Material);
+      if (obj instanceof THREE.Mesh && obj.name !== 'Roof') others.push(...(Array.isArray(obj.material) ? obj.material : [obj.material]));
     });
     setRoofShellHidden(scene, true);
     expect(shell(scene).colorWrite).toBe(false);

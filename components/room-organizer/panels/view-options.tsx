@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, type RefObject } from 'react';
 import { useEditorViewActions, useViewSettings } from '../contexts';
+import { onRovingKeyDown } from '../hooks/roving-keys';
+import { QUALITY_CHOICES, saveQualityChoice, type QualityChoice } from '../lib/render-quality';
 import { toggleViewOption, VIEW_OPTION_KEYS, type ViewOptionKey } from '../lib/view-options';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
@@ -46,7 +48,7 @@ export interface ViewOptionsMenuProps {
  * canvas, so the first distance point can be the click that dismisses it.
  */
 export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps): JSX.Element {
-  const view = useViewSettings(...VIEW_OPTION_KEYS);
+  const view = useViewSettings(...VIEW_OPTION_KEYS, 'renderQuality');
   const { setView } = useEditorViewActions();
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +110,49 @@ export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps
           </div>
         </div>
       ))}
+      <QualityPicker
+        choice={view.renderQuality ?? 'auto'}
+        onChoose={(renderQuality) => {
+          saveQualityChoice(renderQuality);
+          setView((current) => ({ ...current, renderQuality }));
+        }}
+      />
+    </div>
+  );
+}
+
+const QUALITY_LABELS: Record<QualityChoice, string> = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High' };
+
+/**
+ * Render quality (#760). Radios rather than a switch: one of four, remembered
+ * on this device. One tab stop; the arrows move and choose (hooks/roving-keys).
+ */
+function QualityPicker({ choice, onChoose }: { choice: QualityChoice; onChoose(next: QualityChoice): void }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
+        Quality
+      </div>
+      <div role="radiogroup" aria-label="Render quality" className="pc-glass--inset" style={{ display: 'flex', gap: 3 }}>
+        {QUALITY_CHOICES.map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={option === choice}
+            tabIndex={option === choice ? 0 : -1}
+            onClick={() => onChoose(option)}
+            onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+              const next = QUALITY_CHOICES[index];
+              if (next) onChoose(next);
+            })}
+            className={`pc-tile${option === choice ? ' pc-tile--active' : ''}`}
+            style={{ flex: 1, padding: '6px 2px', borderRadius: 8, cursor: 'pointer', fontSize: 11 }}
+          >
+            {QUALITY_LABELS[option]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

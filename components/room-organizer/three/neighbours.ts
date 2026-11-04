@@ -1,6 +1,9 @@
 import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
+import { GRASS_DROP } from '../lib/site';
 import { WINDOW_WIDTH, windowCount, windowRow, type StreetFinish, type StreetHouseSpec } from '../lib/street-row';
 import { removeAndDispose } from './builder-utils';
+import { LIT_PANES_PART, litPaneMaterialProps } from './night-glow';
+import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildRoof, roofPeakHeight } from './roof';
 import { buildWallMaterial } from './wall-patterns';
 import type * as ThreeNS from 'three';
@@ -15,8 +18,8 @@ type ThreeModule = typeof import('./three-runtime');
  * through three/roof.ts, a chimney, and a bay or dormer where the spec asks.
  *
  * Draw calls: one merged masonry mesh per house, the roof builder's one to
- * three meshes per house, and six street-wide InstancedMeshes for every
- * repeated part (frames, panes, doors, steps, chimneys, trim). Materials
+ * three meshes per house, and seven street-wide InstancedMeshes for every
+ * repeated part (frames, panes dark and lit, doors, steps, chimneys, trim). Materials
  * are shared across houses with the same finish and colour.
  *
  * Tagged apart from the shell, so the wall-display modes never hide them:
@@ -70,6 +73,7 @@ interface InstanceSet {
 interface StreetParts {
   frames: InstanceSet;
   panes: InstanceSet;
+  litPanes: InstanceSet;
   doors: InstanceSet;
   steps: InstanceSet;
   chimneys: InstanceSet;
@@ -98,6 +102,7 @@ export function buildNeighbours(THREE: ThreeModule, scene: ThreeNS.Scene, houses
   const parts: StreetParts = {
     frames: { matrices: [], colors: null },
     panes: { matrices: [], colors: null },
+    litPanes: { matrices: [], colors: null },
     doors: { matrices: [], colors: [] },
     steps: { matrices: [], colors: null },
     chimneys: { matrices: [], colors: [] },
@@ -117,6 +122,7 @@ export function buildNeighbours(THREE: ThreeModule, scene: ThreeNS.Scene, houses
   const instanced: ReadonlyArray<[keyof StreetParts, ThreeNS.MeshStandardMaterial]> = [
     ['frames', new THREE.MeshStandardMaterial({ color: TRIM_COLOR, roughness: 0.8 })],
     ['panes', new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.3, metalness: 0.2 })],
+    [LIT_PANES_PART, new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.3, metalness: 0.2, ...litPaneMaterialProps(THREE, scene) })],
     ['doors', new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 })],
     ['steps', new THREE.MeshStandardMaterial({ color: STONE_COLOR, roughness: 0.95 })],
     ['chimneys', new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 })],
@@ -146,6 +152,29 @@ export function buildNeighbours(THREE: ThreeModule, scene: ThreeNS.Scene, houses
     mesh.userData.part = part;
     scene.add(mesh);
   }
+  // Across the garden from the lamps indoors, and just as walled off (#664).
+  for (const obj of scene.children) if (obj.userData.type === NEIGHBOUR_TAG) shutOutIndoorLampsUnder(THREE, obj);
+}
+
+/**
+ * Clip a party-wall neighbour's roof at the world plane `x = planeX`,
+ * keeping the side away from us (#655). Every roof mesh owns its material
+ * (the shingle material is cloned per roof), so the plane stays on that
+ * house. The renderer has local clipping on (use-three-scene).
+ */
+function clipAtPartyWall(THREE: ThreeModule, roof: readonly ThreeNS.Object3D[], planeX: number, partySign: 1 | -1): void {
+  // Points with normal · p + constant ≥ 0 are kept: away from us.
+  const plane = new THREE.Plane(new THREE.Vector3(-partySign, 0, 0), partySign * planeX);
+  for (const root of roof) {
+    root.traverse((obj) => {
+      const mesh = obj as ThreeNS.Mesh;
+      if (!mesh.isMesh) return;
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        material.clippingPlanes = [plane];
+        material.clipShadows = true;
+      }
+    });
+  }
 }
 
 function buildHouse(
@@ -155,6 +184,7 @@ function buildHouse(
   parts: StreetParts
 ): ThreeNS.Group {
   const { width: w, depth: d, eavesY, floorYs, groundFrontY, groundBackY } = spec;
+  const seed = Array.from(spec.id).reduce((sum, char) => sum * 31 + char.charCodeAt(0), 7);
   const group = new THREE.Group();
   group.position.set(spec.x, 0, spec.frontZ - spec.facing * (d / 2));
   if (spec.facing > 0) group.rotation.y = Math.PI;
@@ -186,7 +216,11 @@ function buildHouse(
     g.translate(x, y, z);
     masonry.push(g);
   };
-  box(w, eavesY - baseY, d, 0, (baseY + eavesY) / 2, 0);
+  // Under a gable the block stops where the roof starts: the gable ends
+  // carry the facade on up from there, and a block reaching the eaves would
+  // share their plane for the roof's drop and z-fight it (#661, #276).
+  const blockTop = spec.roof.style === 'gable' ? eavesY - ROOF_DROP : eavesY;
+  box(w, blockTop - baseY, d, 0, (baseY + blockTop) / 2, 0);
 
   // Door: the lowest storey whose floor is at (or nearly at) the ground
   // outside — on a hillside that is the one at street level, never a
@@ -198,11 +232,16 @@ function buildHouse(
     const rise = Math.max(0, doorFloorY - groundFrontY);
     place(parts.frames, spec.door.offset, doorFloorY + DOOR_HEIGHT / 2 + 0.05, frontZ - FACE_GAP - 0.02, DOOR_WIDTH + 0.2, DOOR_HEIGHT + 0.1, 0.03);
     place(parts.doors, spec.door.offset, doorFloorY + DOOR_HEIGHT / 2, frontZ - FACE_GAP - 0.03, DOOR_WIDTH, DOOR_HEIGHT, 0.06, 0, spec.door.color);
+    // Stoops reach down to the grass plane under the ground line, like the
+    // porch steps, so they never hover over the pavement (#660).
+    const bottom = groundFrontY - GRASS_DROP;
     if (rise > 0.05) {
       const depth = 0.4 + rise * 1.2;
-      place(parts.steps, spec.door.offset, groundFrontY + rise / 2, frontZ - depth / 2, STEP_WIDTH, rise, depth);
+      const height = rise + GRASS_DROP;
+      place(parts.steps, spec.door.offset, bottom + height / 2, frontZ - depth / 2, STEP_WIDTH, height, depth);
     } else {
-      place(parts.steps, spec.door.offset, groundFrontY + 0.03, frontZ - 0.2, STEP_WIDTH - 0.1, 0.06, 0.4);
+      const height = 0.06 + GRASS_DROP;
+      place(parts.steps, spec.door.offset, bottom + height / 2, frontZ - 0.2, STEP_WIDTH - 0.1, height, 0.4);
     }
   }
 
@@ -217,7 +256,7 @@ function buildHouse(
     box(bw, top - bottom, BAY_DEPTH, bx, (bottom + top) / 2, frontZ - BAY_DEPTH / 2);
     place(parts.darkTrim, bx, top + 0.05, frontZ - BAY_DEPTH / 2 - 0.05, bw + 0.2, 0.1, BAY_DEPTH + 0.1);
     const bayFace = frontZ - BAY_DEPTH;
-    placeWindow(parts, place, bx, groundRow.sillY, bayFace, bw - 0.5, groundRow.height, Math.PI);
+    placeWindow(parts, place, seed, bx, groundRow.sillY, bayFace, bw - 0.5, groundRow.height, Math.PI);
     bay = { x: bx, width: bw };
   }
 
@@ -235,7 +274,7 @@ function buildHouse(
     place(parts.darkTrim, dx, roofY + dh + 0.04, faceZ + DORMER_DEPTH / 2, DORMER_WIDTH + 0.2, 0.08, DORMER_DEPTH + 0.1);
     const paneHeight = Math.min(0.8, dh - roofAtFace - 0.25);
     if (paneHeight >= 0.4) {
-      placeWindow(parts, place, dx, roofY + roofAtFace + 0.12, faceZ, DORMER_WIDTH - 0.4, paneHeight, Math.PI);
+      placeWindow(parts, place, seed, dx, roofY + roofAtFace + 0.12, faceZ, DORMER_WIDTH - 0.4, paneHeight, Math.PI);
     }
   }
 
@@ -269,16 +308,16 @@ function buildHouse(
         }
         switch (face) {
           case 'front':
-            placeWindow(parts, place, along, row.sillY, frontZ, WINDOW_WIDTH, row.height, Math.PI);
+            placeWindow(parts, place, seed, along, row.sillY, frontZ, WINDOW_WIDTH, row.height, Math.PI);
             break;
           case 'back':
-            placeWindow(parts, place, along, row.sillY, d / 2, WINDOW_WIDTH, row.height, 0);
+            placeWindow(parts, place, seed, along, row.sillY, d / 2, WINDOW_WIDTH, row.height, 0);
             break;
           case 'west':
-            placeWindow(parts, place, -w / 2, row.sillY, along, WINDOW_WIDTH, row.height, -Math.PI / 2);
+            placeWindow(parts, place, seed, -w / 2, row.sillY, along, WINDOW_WIDTH, row.height, -Math.PI / 2);
             break;
           case 'east':
-            placeWindow(parts, place, w / 2, row.sillY, along, WINDOW_WIDTH, row.height, Math.PI / 2);
+            placeWindow(parts, place, seed, w / 2, row.sillY, along, WINDOW_WIDTH, row.height, Math.PI / 2);
             break;
         }
       }
@@ -287,9 +326,15 @@ function buildHouse(
 
   // ---- Roof, gutters under its eaves, and the chimney ----
   const roofY = eavesY - ROOF_DROP;
+  // The party-wall neighbour's roof stops at its own wall on our side (#655):
+  // its eaves overhang 0.35 m past a 2 cm gap, so the slope, fascia and
+  // gutter used to run 0.33 m into our top storey. Its local x toward us:
+  // the house faces the road like ours, so west is −x.
+  const partySign = spec.side === 'west' ? 1 : spec.side === 'east' ? -1 : 0;
   if (spec.roof.style !== 'none') {
     // buildRoof adds to (and clears roof-tagged children of) whatever it is
     // given; a scratch group keeps it off the scene's own roof.
+    const before = group.children.length;
     buildRoof(THREE, {
       scene: group as unknown as ThreeNS.Scene,
       width: w,
@@ -297,19 +342,32 @@ function buildHouse(
       baseY: roofY,
       spec: { style: spec.roof.style, color: spec.roof.color },
       pitch: spec.roof.pitch,
+      // The gable ends carry the facade up to the roof (#661), its courses
+      // running on from the block's, whose pattern starts at its foot.
+      gableWalls: {
+        pattern: spec.facade.finish === 'brick' ? 'brick' : spec.facade.finish === 'render' ? 'plaster' : 'solid',
+        colors: { north: spec.facade.color, south: spec.facade.color, east: spec.facade.color, west: spec.facade.color },
+        patternOriginY: baseY,
+      },
     });
+    if (partySign !== 0) clipAtPartyWall(THREE, group.children.slice(before), spec.x + partySign * (w / 2), partySign);
     const gutterY = roofY - GUTTER_HEIGHT / 2;
     const eaveZ = d / 2 + ROOF_EAVE_OVERHANG - GUTTER_DEPTH / 2;
     const eaveX = w / 2 + ROOF_EAVE_OVERHANG - GUTTER_DEPTH / 2;
     const alongX = spec.roof.style === 'hipped' || (spec.roof.style === 'gable' && ridgeAlongX);
     const alongZ = spec.roof.style === 'hipped' || (spec.roof.style === 'gable' && !ridgeAlongX);
     if (alongX) {
+      // Front and back gutters stop at the party wall rather than past it.
+      const length = w + ROOF_EAVE_OVERHANG * (partySign === 0 ? 2 : 1);
+      const centreX = partySign === 0 ? 0 : -partySign * (ROOF_EAVE_OVERHANG / 2);
       for (const sign of [-1, 1] as const) {
-        place(parts.darkTrim, 0, gutterY, sign * eaveZ, w + ROOF_EAVE_OVERHANG * 2, GUTTER_HEIGHT, GUTTER_DEPTH);
+        place(parts.darkTrim, centreX, gutterY, sign * eaveZ, length, GUTTER_HEIGHT, GUTTER_DEPTH);
       }
     }
     if (alongZ) {
+      // No gutter on the party side: that eave is gone.
       for (const sign of [-1, 1] as const) {
+        if (sign === partySign) continue;
         place(parts.darkTrim, sign * eaveX, gutterY, 0, d + ROOF_EAVE_OVERHANG * 2, GUTTER_HEIGHT, GUTTER_DEPTH, Math.PI / 2);
       }
     }
@@ -336,6 +394,7 @@ function buildHouse(
 function placeWindow(
   parts: StreetParts,
   place: (set: InstanceSet, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotY?: number) => void,
+  seed: number,
   x: number,
   sillY: number,
   z: number,
@@ -351,7 +410,17 @@ function placeWindow(
   const [px, pz] = out(FACE_GAP + FRAME_DEPTH / 2 + 0.02);
   const y = sillY + height / 2;
   place(parts.frames, x + fx, y, z + fz, width + FRAME_MARGIN, height + FRAME_MARGIN, FRAME_DEPTH, rotY);
-  place(parts.panes, x + px, y, z + pz, width, height, FRAME_DEPTH, rotY);
+  place(paneLit(x, sillY, z, rotY, seed) ? parts.litPanes : parts.panes, x + px, y, z + pz, width, height, FRAME_DEPTH, rotY);
+}
+
+/** Share of a street's windows with someone home after dark (#759). */
+const LIT_PANE_SHARE = 0.4;
+
+/** Lit or dark for good, by house and spot, so the street doesn't reshuffle on a rebuild. */
+function paneLit(x: number, y: number, z: number, rotY: number, seed: number): boolean {
+  let hash = Math.imul(seed + 1, 0x9e3779b1);
+  for (const value of [x, y, z, rotY]) hash = Math.imul(hash ^ Math.round(value * 100), 0x85ebca6b) ^ (hash >>> 13);
+  return ((hash ^ (hash >>> 16)) >>> 0) % 100 < LIT_PANE_SHARE * 100;
 }
 
 function overlaps(x: number, width: number, otherX: number, otherWidth: number): boolean {

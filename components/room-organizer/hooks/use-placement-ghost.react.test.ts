@@ -41,6 +41,7 @@ function setup(overrides: Partial<UsePlacementGhostParams> = {}) {
     floorItems: [],
     snapCatalogPlacement: (_item, x, z, rotation) => ({ position: { x: Math.round(x), z: Math.round(z) }, rotation }),
     collides: (item) => (item.position?.x ?? 0) > 2,
+    revealSetback: () => 0,
     place,
     threeModuleRef: { current: null },
     sceneRef: { current: null },

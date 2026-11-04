@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
 import { pendantBulbY } from './mount-band';
-import { collectLampLights, isNightLit, LAMP_POOL_SIZE, nearestLamps, planLampPool, type LampLight } from './night-lights';
+import { collectLampLights, isNightLit, LAMP_POOL_SIZE, nearestLamps, nightGlowPlan, planLampPool, roomLampReach, type LampLight } from './night-lights';
 import type { FloorLayout, FurnitureItem } from './types';
 
 function item(type: string, height: number, x = 1, z = 2): FurnitureItem {
@@ -57,6 +57,94 @@ describe('collectLampLights (#215)', () => {
 
   it('skips unplaced items', () => {
     expect(collectLampLights([floor([makeUnplacedItem({ type: 'lamp', height: 1.5 })])], GROUND)).toEqual([]);
+  });
+});
+
+describe('lamps indoors and out (#664)', () => {
+  const house = { width: 8, height: 6, cutout: { corner: 'ne', width: 3, depth: 2 } } as const;
+  const outdoors = (x: number, z: number, type = 'lamppost') =>
+    collectLampLights([floor([item(type, 3.2, x, z)])], GROUND, house)[0]?.outdoors === true;
+
+  it('goes by where the lamp stands, not its type', () => {
+    expect(outdoors(0, -6)).toBe(true);
+    expect(outdoors(0, 0)).toBe(false);
+    expect(outdoors(-6, 0, 'lamp')).toBe(true);
+  });
+
+  it('counts the cut corner of an L as outdoors', () => {
+    expect(outdoors(3, -2.5)).toBe(true);
+  });
+
+  it('carries the flag onto the pool, spares dark and indoors', () => {
+    const plan = planLampPool([{ x: 0, y: 1, z: 0, candela: 1, range: 1, outdoors: true }], { x: 0, y: 1, z: 0 }, 1);
+    expect(plan.slots[0]?.outdoors).toBe(true);
+    expect(plan.slots[1]?.outdoors).toBe(false);
+  });
+});
+
+describe('nightGlowPlan (#759)', () => {
+  const house = { width: 10, height: 8 };
+  const windowAt = (x: number, z: number) => item('window', 1.2, x, z);
+
+  it('lights a window a lamp reaches, more the nearer it is', () => {
+    const near = windowAt(-5, 0);
+    const middle = windowAt(0, -4);
+    const out = windowAt(5, 0);
+    const { windows } = nightGlowPlan([floor([item('lamp', 1.5, -4, 0), near, middle, out])], house);
+    expect(windows[near.id]).toBe(1);
+    expect(windows[middle.id]).toBeGreaterThan(0.25);
+    expect(windows[middle.id]).toBeLessThan(1);
+    expect(windows[out.id]).toBe(0);
+  });
+
+  it('leaves every window dark without a lamp on its own storey', () => {
+    const pane = windowAt(-5, 0);
+    expect(nightGlowPlan([floor([pane]), floor([item('lamp', 1.5, -4, 0)])], house).windows[pane.id]).toBe(0);
+  });
+
+  it('stops at a partition', () => {
+    const pane = windowAt(-5, 0);
+    const room = { ...floor([item('lamp', 1.5, -1, 0), pane]), interiorWalls: [{ id: 'w', x1: -3, z1: -4, x2: -3, z2: 4 }] };
+    expect(nightGlowPlan([room], house).windows[pane.id]).toBe(0);
+  });
+
+  it('ignores a lamppost in the garden', () => {
+    const pane = windowAt(-5, 0);
+    expect(nightGlowPlan([floor([item('lamppost', 3.2, -7, 0), pane])], house).windows[pane.id]).toBe(0);
+  });
+
+  it('lists the lamps of every storey, and lights the dormers from the top one', () => {
+    const upper = item('pendant-light', 0.6, 0, 0);
+    const plan = nightGlowPlan([floor([]), floor([upper])], house);
+    expect(plan.lamps).toEqual([upper.id]);
+    expect(plan.dormers).toBe(1);
+    expect(nightGlowPlan([floor([upper]), floor([])], house).dormers).toBe(0);
+  });
+});
+
+describe('roomLampReach: the bounce around a walker (#759)', () => {
+  const lamp = (x: number, z: number, outdoors = false): LampLight => ({ x, y: 1.5, z, candela: 10, range: 7, ...(outdoors ? { outdoors } : {}) });
+  const partition = { id: 'p', x1: 0, z1: -5, x2: 0, z2: 5 };
+
+  it('is lit by a lamp in the same room', () => {
+    expect(roomLampReach([lamp(-2, 0)], { x: -3, z: 0 }, [partition])).toBe(1);
+  });
+
+  it('ignores a garden lamp, however near', () => {
+    expect(roomLampReach([lamp(-5, 0, true)], { x: -3, z: 0 }, [])).toBe(0);
+  });
+
+  it('ignores a lamp in the other wing of an L, across the open corner', () => {
+    const notch = { x0: 0.5, x1: 4.5, z0: -3.5, z1: -0.5 };
+    // A window on the notch's own wall, a lamp in the other wing.
+    expect(roomLampReach([lamp(-0.3, -2.6)], { x: 2.5, z: -0.5 }, [], notch)).toBe(0);
+    // In the same wing, along the notch wall: lit.
+    expect(roomLampReach([lamp(1.5, 0.5)], { x: 2.5, z: -0.5 }, [], notch)).toBe(1);
+  });
+
+  it('ignores a lamp in the next room, and one out of reach', () => {
+    expect(roomLampReach([lamp(2, 0)], { x: -2, z: 0 }, [partition])).toBe(0);
+    expect(roomLampReach([lamp(-20, 0)], { x: -2, z: 0 }, [])).toBe(0);
   });
 });
 

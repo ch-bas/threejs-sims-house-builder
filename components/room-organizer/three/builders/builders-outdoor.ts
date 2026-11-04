@@ -85,7 +85,7 @@ export function buildPool({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const waterMat = new THREE.MeshStandardMaterial({
     color: baseColor,
     roughness: 0.15,
-    metalness: 0.05,
+    metalness: 0,
     transparent: true,
     opacity: 0.7,
   });
@@ -107,7 +107,7 @@ export function buildPool({ THREE, item, hasCollision, baseColor, opacity }: Bui
 
 export function buildBbq({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 0.5 });
+  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 1 });
   const handleMat = material(THREE, 0x212121, hasCollision, opacity, { roughness: 0.6 });
 
   // Base on wheels
@@ -149,7 +149,7 @@ export function buildBbq({ THREE, item, hasCollision, baseColor, opacity }: Buil
 export function buildMailbox({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const postMat = material(THREE, 0x5d4037, hasCollision, opacity, { roughness: 0.85 });
-  const boxMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 0.3 });
+  const boxMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 0 });
   const flagMat = material(THREE, 0xd32f2f, hasCollision, opacity, { roughness: 0.6 });
 
   const post = mesh(THREE, new THREE.BoxGeometry(0.08, item.height * 0.7, 0.08), postMat);
@@ -176,7 +176,7 @@ export function buildMailbox({ THREE, item, hasCollision, baseColor, opacity }: 
 export function buildBirdbath({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const stoneMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
-  const waterMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.85 });
+  const waterMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.85 });
 
   const base = mesh(THREE, new THREE.CylinderGeometry(item.width * 0.35, item.width * 0.5, item.height * 0.18, 16), stoneMat);
   base.position.y = item.height * 0.09;
@@ -209,7 +209,7 @@ export function buildSteppingStone({ THREE, item, hasCollision, baseColor, opaci
 export function buildGardenBench({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
-  const metalMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.5, metalness: 0.7 });
+  const metalMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.5, metalness: 1 });
 
   const seat = mesh(THREE, new THREE.BoxGeometry(item.width, 0.06, item.depth * 0.65), woodMat);
   seat.position.y = item.height * 0.5;
@@ -257,7 +257,7 @@ export function buildPond({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const waterMat = new THREE.MeshStandardMaterial({
     color: baseColor,
     roughness: 0.15,
-    metalness: 0.1,
+    metalness: 0,
     transparent: true,
     opacity: 0.85,
   });
