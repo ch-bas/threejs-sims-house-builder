@@ -246,6 +246,38 @@ export function softBox(
   return geometry;
 }
 
+/**
+ * One geometry from the static parts of an item that share a material, each
+ * already placed in the item's frame (`geometry.translate`/`rotateX`), so a
+ * unit's doors draw with its carcass in one call (#755). The parts are
+ * indexed with position, normal and uv, as softBox and three's primitives
+ * are, and are freed here.
+ */
+export function mergeParts(THREE: ThreeModule, parts: readonly ThreeNS.BufferGeometry[]): ThreeNS.BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (const part of parts) {
+    const offset = positions.length / 3;
+    const { position, normal, uv } = part.attributes as Record<string, ThreeNS.BufferAttribute | undefined>;
+    if (!position || !normal || !uv || !part.index) throw new Error('mergeParts: an indexed part with position, normal and uv');
+    for (let i = 0; i < position.count; i += 1) {
+      positions.push(position.getX(i), position.getY(i), position.getZ(i));
+      normals.push(normal.getX(i), normal.getY(i), normal.getZ(i));
+      uvs.push(uv.getX(i), uv.getY(i));
+    }
+    for (let i = 0; i < part.index.count; i += 1) indices.push(part.index.getX(i) + offset);
+    part.dispose();
+  }
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  merged.setIndex(indices);
+  return merged;
+}
+
 export function cornerPositions(x: number, y: number, z: number): ReadonlyArray<readonly [number, number, number]> {
   return [
     [x, y, z],

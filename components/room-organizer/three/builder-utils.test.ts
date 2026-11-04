@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
-import { disposeScene, softBox } from './builder-utils';
+import { describe, expect, it, vi } from 'vitest';
+import { disposeScene, mergeParts, softBox } from './builder-utils';
 
 describe('disposeScene (#213)', () => {
   it('disposes every geometry, material, texture and instanced buffer, and empties the scene', () => {
@@ -94,5 +94,23 @@ describe('softBox (#755)', () => {
     const uv = softBox(THREE, 0.08, 2, 0.08, 0.005).getAttribute('uv');
     const us = Array.from({ length: uv.count }, (_, i) => uv.getX(i));
     expect(Math.max(...us) - Math.min(...us)).toBeCloseTo(2, 5);
+  });
+});
+
+describe('mergeParts (#755)', () => {
+  it('keeps every placed part, re-indexed, as one geometry, and frees the parts', () => {
+    const a = softBox(THREE, 1, 1, 1, 0.01).translate(-2, 0, 0);
+    const b = new THREE.BoxGeometry(1, 1, 1).translate(2, 0, 0);
+    const disposed = vi.fn();
+    b.addEventListener('dispose', disposed);
+    const counts = [a, b].map((part) => [part.getAttribute('position').count, part.index!.count] as const);
+    const merged = mergeParts(THREE, [a, b]);
+    expect(merged.getAttribute('position').count).toBe(counts[0]![0] + counts[1]![0]);
+    expect(merged.index!.count).toBe(counts[0]![1] + counts[1]![1]);
+    expect(Math.max(...Array.from(merged.index!.array))).toBe(merged.getAttribute('position').count - 1);
+    merged.computeBoundingBox();
+    expect(merged.boundingBox!.min.x).toBeCloseTo(-2.5, 6);
+    expect(merged.boundingBox!.max.x).toBeCloseTo(2.5, 6);
+    expect(disposed).toHaveBeenCalledTimes(1);
   });
 });
