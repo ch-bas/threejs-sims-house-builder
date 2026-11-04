@@ -177,6 +177,20 @@ to respect.
   back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
   not on every item edit, and the wall-draw preview re-poses one unit box per
   pointer move (#283, #409).
+- **An opening goes with its wall.** Every door and window group is stamped
+  with the wall it is cut into (`ownerTag` + `wallId`, from
+  `classifyOpeningOwners`, the same map the cuts use), and
+  `applyWallDisplay` mirrors that wall's visibility onto it as it does for a
+  selection outline, so cutaway and walls-down never leave a frame standing
+  in mid-air. Walls are looked up by tag, storey and shell id: every storey
+  has a `south`, and a notch wall shares its side's `wallId` for colour, so
+  neither key alone finds the wall an opening is cut into. `applyStoreyRange`
+  leaves such groups to the display, like walls and partitions, and the
+  display keeps a hidden storey's openings hidden even when their wall isn't
+  built; the furniture effect re-applies the display after a rebuild, and keys
+  on the partitions and the footprint because ownership does. A hidden opening
+  stays selectable, as the issue asked, but a pick takes anything drawn along
+  the ray first, so it can't block the item behind it (#659).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
