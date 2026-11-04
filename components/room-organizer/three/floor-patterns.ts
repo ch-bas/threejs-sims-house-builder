@@ -1,5 +1,6 @@
-import { DisposableLruCache } from './texture-lru';
-import { withMaxAnisotropy } from './texture-settings';
+import { applyRelief, reliefMaps, type ReliefSpec } from './surface-maps';
+import { DisposableLruCache, PATTERN_CACHE_CAPACITY } from './texture-lru';
+import { getPatternSize, patternReliefEnabled, withMaxAnisotropy } from './texture-settings';
 import type { FloorPattern } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -17,69 +18,148 @@ interface PatternRenderer {
   draw(ctx: CanvasRenderingContext2D, size: number, baseColor: string): void;
   /** How many times the texture should tile across one meter. */
   repeatPerMeter: number;
+  /** Roughness without relief maps (phones), and the base the maps refine. */
+  roughness: number;
+  /** Height tile for the normal and roughness maps (#757); none on a flat finish. */
+  relief?: ReliefSpec;
+}
+
+/** Boards across one wood tile: 1.4 m a tile, so 14 cm boards (#757). */
+const WOOD_BOARDS = 10;
+const WOOD_REPEAT_PER_METRE = 1 / 1.4;
+
+interface Board {
+  row: number;
+  /** Start and end along the row, in tiles (0..1); a board may wrap past 1. */
+  from: number;
+  to: number;
+  /** Tone multiplier for this board. */
+  tone: number;
+  /** Seed for its grain. */
+  seed: number;
+}
+
+/** A small seeded generator, so the same boards are drawn every time. */
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * The wood tile's boards: rows of 14 cm boards, each row cut by one or two
+ * end joints at staggered places (no two neighbouring rows joint within a
+ * fifth of a tile of each other), a seeded tone per board. Exported for tests.
+ */
+export function woodBoards(): Board[] {
+  const random = seeded(757);
+  const boards: Board[] = [];
+  let previous: number[] = [];
+  for (let row = 0; row < WOOD_BOARDS; row++) {
+    const count = random() < 0.45 ? 2 : 1;
+    let joints: number[] = [];
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const first = random();
+      joints = count === 1 ? [first] : [first, (first + 0.4 + random() * 0.2) % 1];
+      const near = (a: number, b: number) => Math.min(Math.abs(a - b), 1 - Math.abs(a - b)) < 0.2;
+      if (!joints.some((j) => previous.some((p) => near(j, p)))) break;
+    }
+    joints.sort((a, b) => a - b);
+    // Boards run from joint to joint, the last one wrapping round the tile.
+    for (let i = 0; i < joints.length; i++) {
+      const from = joints[i]!;
+      const next = joints[(i + 1) % joints.length]!;
+      boards.push({ row, from, to: next > from ? next : next + 1, tone: 0.8 + random() * 0.3, seed: Math.floor(random() * 1e6) });
+    }
+    previous = joints;
+  }
+  return boards;
+}
+
+/** Each board's spans in pixels on a tile, split where it wraps. */
+function boardSpans(board: Board, size: number): Array<[number, number]> {
+  const a = board.from * size;
+  const b = board.to * size;
+  return b <= size ? [[a, b]] : [[a, size], [0, b - size]];
 }
 
 const PATTERNS: Record<Exclude<FloorPattern, 'solid'>, PatternRenderer> = {
   wood: {
-    repeatPerMeter: 0.55,
+    repeatPerMeter: WOOD_REPEAT_PER_METRE,
+    // Lower than a matt floor, so the environment gives the boards a sheen
+    // at grazing angles (#757).
+    roughness: 0.6,
     draw(ctx, size, baseColor) {
+      const k = size / 256;
+      const rowHeight = size / WOOD_BOARDS;
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
-      const plankCount = 5;
-      const plankHeight = size / plankCount;
-      for (let i = 0; i < plankCount; i++) {
-        // Per-plank shade — wider spread (0.78..1.06) so the planks read
-        // as visibly different boards rather than near-identical strips.
-        const shade = 0.78 + ((i * 37) % 60) / 200;
-        ctx.fillStyle = shadeColor(baseColor, shade);
-        ctx.fillRect(0, i * plankHeight, size, plankHeight);
-
-        // Hard plank seam shadow on top and bottom edges.
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fillRect(0, i * plankHeight, size, 1.5);
-        // Soft grain streaks within each plank.
-        ctx.strokeStyle = 'rgba(0,0,0,0.10)';
-        ctx.lineWidth = 1;
-        const grainCount = 4 + (i % 3);
-        for (let g = 0; g < grainCount; g += 1) {
-          const gy = i * plankHeight + ((g + 1) / (grainCount + 1)) * plankHeight;
-          const sway = (Math.sin(g * 1.7 + i) * size) / 80;
-          ctx.beginPath();
-          ctx.moveTo(0, gy + sway);
-          ctx.bezierCurveTo(
-            size * 0.3,
-            gy - sway,
-            size * 0.7,
-            gy + sway,
-            size,
-            gy - sway
-          );
-          ctx.stroke();
-        }
-
-        // Random plank end-seams across the row.
-        ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-        ctx.lineWidth = 1.5;
-        const seamCount = 2 + (i % 2);
-        for (let s = 1; s <= seamCount; s++) {
-          const x = ((s + i * 0.4) / (seamCount + 1)) * size;
-          ctx.beginPath();
-          ctx.moveTo(x, i * plankHeight);
-          ctx.lineTo(x, (i + 1) * plankHeight);
-          ctx.stroke();
+      for (const board of woodBoards()) {
+        const y = board.row * rowHeight;
+        const grain = seeded(board.seed);
+        for (const [x0, x1] of boardSpans(board, size)) {
+          ctx.fillStyle = shadeColor(baseColor, board.tone);
+          ctx.fillRect(x0, y, x1 - x0, rowHeight);
+          // Soft grain streaks along the board.
+          ctx.strokeStyle = 'rgba(0,0,0,0.10)';
+          ctx.lineWidth = k;
+          for (let g = 0; g < 3; g++) {
+            const gy = y + (0.2 + grain() * 0.6) * rowHeight;
+            const sway = (grain() - 0.5) * rowHeight * 0.3;
+            ctx.beginPath();
+            ctx.moveTo(x0, gy);
+            ctx.bezierCurveTo(x0 + (x1 - x0) * 0.3, gy + sway, x0 + (x1 - x0) * 0.7, gy - sway, x1, gy);
+            ctx.stroke();
+          }
         }
       }
+      // Seams: along every row, and the end joints.
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let row = 0; row < WOOD_BOARDS; row++) ctx.fillRect(0, row * rowHeight, size, 1.5 * k);
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      for (const board of woodBoards()) ctx.fillRect((board.from * size) % size, board.row * rowHeight, 1.5 * k, rowHeight);
+    },
+    relief: {
+      roughness: [0.9, 0.55],
+      strength: 2.5,
+      draw(ctx, size) {
+        const k = size / 256;
+        const rowHeight = size / WOOD_BOARDS;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, size, size);
+        // A slightly eased edge to each board, then the gaps.
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        for (let row = 0; row < WOOD_BOARDS; row++) ctx.fillRect(0, row * rowHeight, size, 3 * k);
+        ctx.fillStyle = '#000';
+        for (let row = 0; row < WOOD_BOARDS; row++) ctx.fillRect(0, row * rowHeight, size, 1.5 * k);
+        for (const board of woodBoards()) ctx.fillRect((board.from * size) % size, board.row * rowHeight, 1.5 * k, rowHeight);
+      },
     },
   },
   tile: {
     repeatPerMeter: 1,
+    roughness: 0.5,
     draw(ctx, size, baseColor) {
+      const k = size / 256;
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
       const cells = 4;
       const cell = size / cells;
+      // A faint tone per tile, as fired tiles vary.
+      for (let i = 0; i < cells; i++) {
+        for (let j = 0; j < cells; j++) {
+          const tone = ((i * 5 + j * 3) % 7) / 6 - 0.5;
+          ctx.fillStyle = tone > 0 ? `rgba(255,255,255,${(tone * 0.08).toFixed(3)})` : `rgba(0,0,0,${(-tone * 0.08).toFixed(3)})`;
+          ctx.fillRect(i * cell, j * cell, cell, cell);
+        }
+      }
       ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 * k;
       for (let i = 0; i <= cells; i++) {
         ctx.beginPath();
         ctx.moveTo(i * cell, 0);
@@ -91,32 +171,60 @@ const PATTERNS: Record<Exclude<FloorPattern, 'solid'>, PatternRenderer> = {
         ctx.stroke();
       }
     },
+    relief: {
+      // Glazed faces, matt grout.
+      roughness: [0.95, 0.2],
+      strength: 3,
+      draw(ctx, size) {
+        const k = size / 256;
+        const cells = 4;
+        const cell = size / cells;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3 * k;
+        for (let i = 0; i <= cells; i++) {
+          ctx.beginPath();
+          ctx.moveTo(i * cell, 0);
+          ctx.lineTo(i * cell, size);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(0, i * cell);
+          ctx.lineTo(size, i * cell);
+          ctx.stroke();
+        }
+      },
+    },
   },
   carpet: {
     repeatPerMeter: 2,
+    roughness: 0.95,
     draw(ctx, size, baseColor) {
+      const k = size / 256;
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
       // Speckle for fibers.
-      for (let i = 0; i < 1200; i++) {
+      for (let i = 0; i < 1200 * k * k; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
         const alpha = 0.06 + Math.random() * 0.12;
         ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(2)})`;
-        ctx.fillRect(x, y, 1.5, 1.5);
+        ctx.fillRect(x, y, 1.5 * k, 1.5 * k);
       }
     },
   },
   concrete: {
     repeatPerMeter: 0.4,
+    roughness: 0.85,
     draw(ctx, size, baseColor) {
+      const k = size / 256;
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
       // Subtle blotches.
       for (let i = 0; i < 35; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const radius = 10 + Math.random() * 30;
+        const radius = (10 + Math.random() * 30) * k;
         const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
         gradient.addColorStop(0, 'rgba(0,0,0,0.08)');
         gradient.addColorStop(1, 'rgba(0,0,0,0)');
@@ -145,7 +253,7 @@ export interface BuildFloorPatternOptions {
  * user-pickable: evicted masters are disposed, which is safe for live clones
  * (see texture-lru.ts), while cached masters keep the shared GPU image alive.
  */
-const floorTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
+const floorTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>(PATTERN_CACHE_CAPACITY);
 
 export function buildFloorMaterial(
   THREE: ThreeModule,
@@ -162,7 +270,7 @@ export function buildFloorMaterial(
   if (!renderer) {
     return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0 });
   }
-  const size = 256;
+  const size = getPatternSize();
   const master = getFloorTexture(THREE, options.pattern, options.color, size, renderer);
   if (!master) {
     return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0 });
@@ -177,11 +285,16 @@ export function buildFloorMaterial(
     options.roomDepth * renderer.repeatPerMeter
   );
 
-  return new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshStandardMaterial({
     map: texture,
-    roughness: options.pattern === 'tile' ? 0.5 : 0.85,
+    roughness: renderer.roughness,
     metalness: 0,
   });
+  // Board gaps and grout catch the light, and a glazed tile shines where its
+  // grout doesn't (#757). Not on phones (texture-settings).
+  const maps = renderer.relief && patternReliefEnabled() ? reliefMaps(THREE, `floor-${options.pattern}`, size, renderer.relief) : null;
+  if (maps) applyRelief(material, maps, texture);
+  return material;
 }
 
 function getFloorTexture(
