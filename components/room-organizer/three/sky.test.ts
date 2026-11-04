@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeSkyProfile } from './lighting';
-import { SKY_RADIUS, updateSky } from './sky';
+import { SKY_RADIUS, setSkyDetail, updateSky } from './sky';
 import * as THREE from './three-runtime';
 import type * as ThreeNS from 'three';
 
@@ -71,5 +71,19 @@ describe('the world-space sky (#761)', () => {
     // At the top of the arc the disc and the light agree.
     const noon = computeSkyProfile(12);
     expect(noon.sunDisc).toEqual(noon.sun.position);
+  });
+
+  it('rebuilds a leaner dome for the low tier, painted the same, and back (#760)', () => {
+    const { scene, dome } = skyScene(0);
+    const rich = dome.geometry.getAttribute('position').count;
+    setSkyDetail(THREE, scene, false);
+    const lean = scene.children.filter((obj) => obj.userData.type === 'sky:dome') as ThreeNS.Mesh[];
+    expect(lean).toHaveLength(1);
+    expect(lean[0]!.geometry.getAttribute('position').count).toBeLessThan(rich / 3);
+    expect(domeColour(lean[0]!, 1).getHex()).toBe(domeColour(dome, 1).getHex());
+    setSkyDetail(THREE, scene, false);
+    expect(scene.children.find((obj) => obj.userData.type === 'sky:dome')).toBe(lean[0]);
+    setSkyDetail(THREE, scene, true);
+    expect((scene.children.find((obj) => obj.userData.type === 'sky:dome') as ThreeNS.Mesh).geometry.getAttribute('position').count).toBe(rich);
   });
 });

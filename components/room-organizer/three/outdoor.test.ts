@@ -217,6 +217,14 @@ describe('the ground past the lot (#761)', () => {
     expect(groundFadeAlpha(990, 300, 50)).toBe(0);
   });
 
+  it('is left out with the road tails and the kerb on the low tier (#760)', () => {
+    const rich = lot();
+    const lean = lot({ richScenery: false });
+    expect(skirtOf(lean)).toBeUndefined();
+    expect(lean.children.filter((obj) => ((obj as THREE.Mesh).material as THREE.Material | undefined)?.transparent)).toHaveLength(0);
+    expect(rich.children.length - lean.children.length).toBe(3);
+  });
+
   it('sits under the grass', () => {
     const skirt = skirtOf(lot())!;
     expect(skirt.geometry.getAttribute('position').getY(0)).toBeLessThan(-0.05);

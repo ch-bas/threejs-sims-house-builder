@@ -10,6 +10,7 @@ import { addLights, applyShadowQuality } from '../three/lighting';
 import { releaseRoomLightTexture } from '../three/night-glow';
 import { releasePeopleGeometry } from '../three/people-model';
 import { clearFloorPlanImageCache } from '../three/room-builder';
+import { setSkyDetail } from '../three/sky';
 import { setMaxAnisotropy } from '../three/texture-settings';
 import type { SceneEventHandlers } from '../three/drag-handlers';
 import type * as ThreeNS from 'three';
@@ -127,12 +128,13 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   // already built, cached ones included, take the new anisotropy cap at once.
   const { renderQuality } = options;
   useEffect(() => {
+    const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
     const renderer = rendererRef.current;
     const canvas = canvasRef.current;
-    if (!isReady || !scene || !renderer || !canvas) return;
+    if (!isReady || !THREE || !scene || !renderer || !canvas) return;
     const quality = currentQuality(renderQuality);
-    if (applySceneQuality(scene, renderer, quality)) renderer.shadowMap.needsUpdate = true;
+    if (applySceneQuality(THREE, scene, renderer, quality)) renderer.shadowMap.needsUpdate = true;
     renderer.setPixelRatio(quality.pixelRatio);
     if (canvas.clientWidth > 0 && canvas.clientHeight > 0) renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     dirtyRef.current = true;
@@ -288,9 +290,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       });
 
       addLights(THREE, scene);
-      // The tier's anisotropy cap and shadow map: before any scene effect
+      // The tier's anisotropy cap, shadow map and sky: before any scene effect
       // builds a texture (they read the cap as they go) or a frame draws.
-      applySceneQuality(scene, renderer, currentQuality(handlersRef.current.renderQuality));
+      applySceneQuality(THREE, scene, renderer, currentQuality(handlersRef.current.renderQuality));
 
       // While the GPU context is lost the drawing buffer is gone; rendering
       // into it throws and/or wastes work. Pause the render half of the loop
@@ -437,16 +439,18 @@ function aspectOf(canvas: HTMLCanvasElement): number {
 }
 
 /**
- * Put a quality profile on the scene (#760): the anisotropy cap and the
- * sun's shadow map. True when the shadow map was resized and
+ * Put a quality profile on the scene (#760): the anisotropy cap, the sun's
+ * shadow map and the sky's detail. True when the shadow map was resized and
  * needs a pass. The pixel ratio is the caller's, with the canvas size.
  */
 function applySceneQuality(
+  THREE: ThreeModule,
   scene: ThreeNS.Scene,
   renderer: ThreeNS.WebGLRenderer,
   quality: QualityProfile
 ): boolean {
   setMaxAnisotropy(Math.min(quality.maxAnisotropy, renderer.capabilities.getMaxAnisotropy()));
+  setSkyDetail(THREE, scene, quality.richScenery);
   return applyShadowQuality(scene, quality.shadowMapSize, quality.shadowRadius);
 }
 

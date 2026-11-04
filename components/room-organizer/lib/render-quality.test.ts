@@ -56,6 +56,13 @@ describe('quality tiers (#760)', () => {
     expect(qualityProfile(phone, 'low').shadowMapSize).toBe(1024);
   });
 
+  it('leaves the costly scenery out on low only', () => {
+    expect(qualityProfile(phone).richScenery).toBe(false);
+    expect(qualityProfile(tablet).richScenery).toBe(true);
+    expect(qualityProfile(desktop).richScenery).toBe(true);
+    expect(qualityProfile(desktop, 'low').richScenery).toBe(false);
+  });
+
   it('lets the choice override the device, and never raises the ratio past the display', () => {
     expect(qualityProfile(phone, 'high').tier).toBe('high');
     expect(qualityProfile(phone, 'high').pixelRatio).toBe(2);

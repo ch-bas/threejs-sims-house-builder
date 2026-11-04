@@ -68,6 +68,11 @@ export interface OutdoorSite {
   frontage?: Frontage;
   /** Pixels across a ground tile, by quality tier (#760). */
   groundTile?: number;
+  /**
+   * The ground and road past the lot, the kerb and the grass's second lookup
+   * (#761). The low quality tier leaves them out (#760); absent is on.
+   */
+  richScenery?: boolean;
 }
 
 export function setOutdoorVisible(
@@ -114,8 +119,9 @@ export function setOutdoorVisible(
   // ---- 1. Grass plane (warm suburban green, or as the weather left it) ----
   const weather = (scene.userData[WEATHER_KEY] as Weather | undefined) ?? 'clear';
   const grassMat = new THREE.MeshStandardMaterial({ color: outdoorGroundColor(weather), roughness: 1 });
+  const rich = site.richScenery !== false;
   const tile = site.groundTile !== undefined ? { pixels: site.groundTile } : {};
-  layGroundSurface(THREE, grassMat, 'grass', tile);
+  layGroundSurface(THREE, grassMat, 'grass', { ...tile, macro: rich });
   const grass = terrain
     ? new THREE.Mesh(buildTerrainGeometry(THREE, terrain, groundSize, halfW, halfD, GRASS_Y, cutout), grassMat)
     : new THREE.Mesh(new THREE.PlaneGeometry(groundSize, groundSize, 1, 1), grassMat);
@@ -129,7 +135,7 @@ export function setOutdoorVisible(
   freezeMatrix(grass);
   scene.add(grass);
 
-  scene.add(buildGroundSkirt(THREE, groundSize, (z) => groundAt(z) + GRASS_Y - SKIRT_DROP, outdoorGroundColor(weather), tile));
+  if (rich) scene.add(buildGroundSkirt(THREE, groundSize, (z) => groundAt(z) + GRASS_Y - SKIRT_DROP, outdoorGroundColor(weather), tile));
 
   // The sides of the dig where the house cuts into the hill.
   const excavation = terrain ? buildExcavationGeometry(THREE, terrain, halfW, halfD, cutout) : null;
@@ -180,24 +186,26 @@ export function setOutdoorVisible(
   freezeMatrix(road);
   scene.add(road);
 
-  // The kerb between them, proud of the road, along the pavement's far edge.
-  const kerbY = streetY + ROAD_Y + KERB_HEIGHT / 2;
-  const kerbZ = -(roadOffset + sidewalkDepth);
-  const kerb = new THREE.Mesh(
-    new THREE.BoxGeometry(groundSize, KERB_HEIGHT, KERB_WIDTH),
-    new THREE.MeshStandardMaterial({ color: 0xb9bab6, roughness: 0.9 })
-  );
-  kerb.position.set(0, kerbY, kerbZ);
-  kerb.receiveShadow = true;
-  kerb.userData.type = OUTDOOR_TAG;
-  freezeMatrix(kerb);
-  scene.add(kerb);
+  if (rich) {
+    // The kerb between them, proud of the road, along the pavement's far edge.
+    const kerbY = streetY + ROAD_Y + KERB_HEIGHT / 2;
+    const kerbZ = -(roadOffset + sidewalkDepth);
+    const kerb = new THREE.Mesh(
+      new THREE.BoxGeometry(groundSize, KERB_HEIGHT, KERB_WIDTH),
+      new THREE.MeshStandardMaterial({ color: 0xb9bab6, roughness: 0.9 })
+    );
+    kerb.position.set(0, kerbY, kerbZ);
+    kerb.receiveShadow = true;
+    kerb.userData.type = OUTDOOR_TAG;
+    freezeMatrix(kerb);
+    scene.add(kerb);
 
-  // Past the lot the road carries on and dissolves with the skirt.
-  scene.add(buildRoadTails(THREE, groundSize, streetY, [
-    { near: -(roadOffset + sidewalkDepth), far: -roadOffset, y: SIDEWALK_Y, color: PAVING_COLOR },
-    { near: -(roadOffset + sidewalkDepth + roadDepth), far: -(roadOffset + sidewalkDepth), y: ROAD_Y, color: ASPHALT_TAIL_COLOR },
-  ]));
+    // Past the lot the road carries on and dissolves with the skirt.
+    scene.add(buildRoadTails(THREE, groundSize, streetY, [
+      { near: -(roadOffset + sidewalkDepth), far: -roadOffset, y: SIDEWALK_Y, color: PAVING_COLOR },
+      { near: -(roadOffset + sidewalkDepth + roadDepth), far: -(roadOffset + sidewalkDepth), y: ROAD_Y, color: ASPHALT_TAIL_COLOR },
+    ]));
+  }
 
   // Yellow centre dashes on the road — one InstancedMesh (1 draw call) for all
   // the identical dashes.
