@@ -91,7 +91,7 @@ export function buildMirror({ THREE, item: authored, hasCollision, baseColor, op
   const item = { ...authored, height };
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5 });
-  const reflectMat = material(THREE, 0xb3e5fc, hasCollision, opacity, { roughness: 0.05, metalness: 0.95 });
+  const reflectMat = material(THREE, 0xb3e5fc, hasCollision, opacity, { roughness: 0.05, metalness: 1 });
 
   // Frame from just off the wall to 0.3 × depth, the glass proud of it.
   const frameDepth = item.depth * 0.8 - HUNG_WALL_GAP;
@@ -114,7 +114,7 @@ export function buildCurtains({ THREE, item: authored, hasCollision, baseColor, 
   const { height } = fitHungDecor(authored, storeyHeight);
   const item = { ...authored, height };
   const group = new THREE.Group();
-  const rodMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 0.7 });
+  const rodMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 1 });
   const fabricMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.95 });
 
   // Rod across the top.
@@ -174,7 +174,7 @@ export function buildWallShelf({ THREE, item: authored, hasCollision, baseColor,
   const item = { ...authored, height };
   const group = new THREE.Group();
   const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
-  const bracketMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.4, metalness: 0.6 });
+  const bracketMat = material(THREE, 0x424242, hasCollision, opacity, { roughness: 0.4, metalness: 1 });
 
   // The whole assembly (board, brackets below it, ornaments above) is modelled
   // around the board's underside at y=0, then hung as one unit — the brackets'
@@ -233,7 +233,7 @@ export function buildWallClock({ THREE, item: authored, hasCollision, baseColor,
   const { mount, height } = fitHungDecor(authored, storeyHeight);
   const item = { ...authored, height };
   const group = new THREE.Group();
-  const frameMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 0.5 });
+  const frameMat = material(THREE, 0x37474f, hasCollision, opacity, { roughness: 0.4, metalness: 1 });
   const faceMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6 });
   const handMat = material(THREE, 0x111111, hasCollision, opacity, { roughness: 0.5 });
 

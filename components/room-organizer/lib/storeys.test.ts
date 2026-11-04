@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { WINDOW_SILL_HEIGHT } from './constants';
 import {
-  CAMERA_CEILING_CLEARANCE,
-  MAX_STOREY_HEIGHT,
-  MIN_STOREY_HEIGHT,
   buildingHeight,
-  OPENING_HEAD_CLEARANCE,
+  CAMERA_CEILING_CLEARANCE,
   clampStoreyHeight,
   fitOpeningToStorey,
   floorElevation,
   interiorWallHeight,
   isStoreyHeight,
+  itemForStorey,
+  MAX_STOREY_HEIGHT,
+  MIN_STOREY_HEIGHT,
+  OPENING_HEAD_CLEARANCE,
+  ROOF_STAIR_GAP,
   stairRise,
   storeyHeight,
+  underRoof,
 } from './storeys';
 import { FLOOR_HEIGHT_METERS } from './types';
 
@@ -105,5 +108,37 @@ describe('fitOpeningToStorey (#277)', () => {
 
   it('never returns a negative height', () => {
     expect(fitOpeningToStorey(door, 0.02).height).toBe(0);
+  });
+});
+
+describe('stairs under the roof (#654)', () => {
+  it('stop just under the attic plate, at every storey height', () => {
+    expect(stairRise({ height: 3 }, {}, true)).toBeCloseTo(3 - ROOF_STAIR_GAP);
+    expect(stairRise({ height: 3 }, { height: 2.4 }, true)).toBeCloseTo(2.4 - ROOF_STAIR_GAP);
+    expect(stairRise({ height: 3 }, { height: 2 }, true)).toBeCloseTo(2 - ROOF_STAIR_GAP);
+  });
+
+  it('leave a flight that already stops short alone', () => {
+    expect(stairRise({ height: 1 }, {}, true)).toBe(1);
+  });
+
+  it('keep the full rise anywhere else', () => {
+    expect(stairRise({ height: 3 }, {}, false)).toBe(3);
+    expect(stairRise({ height: 3 }, {})).toBe(3);
+  });
+
+  it('itemForStorey passes the flag on', () => {
+    const stairs = { id: 's', type: 'stairs', name: 'Stairs', width: 1.2, depth: 2.4, height: 3, color: '#000', icon: '' };
+    expect(itemForStorey(stairs, {}).height).toBe(3);
+    expect(itemForStorey(stairs, {}, true).height).toBeCloseTo(3 - ROOF_STAIR_GAP);
+  });
+
+  it('underRoof is the top storey of a house with a roof, one storey or more', () => {
+    const roof = { style: 'gable' };
+    expect(underRoof({ floors: [{}], roof }, 0)).toBe(true);
+    expect(underRoof({ floors: [{}, {}], roof: { style: 'flat' } }, 1)).toBe(true);
+    expect(underRoof({ floors: [{}, {}], roof }, 0)).toBe(false);
+    expect(underRoof({ floors: [{}], roof: { style: 'none' } }, 0)).toBe(false);
+    expect(underRoof({ floors: [{}] }, 0)).toBe(false);
   });
 });
