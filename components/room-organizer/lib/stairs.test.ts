@@ -10,6 +10,7 @@ import {
   computeFloorOpenings,
   floorOpeningOutline,
   floorStairHeadroom,
+  stairGoesNowhere,
   isHeadroomShort,
   isStairsLeadIn,
   isStairsShape,
@@ -471,5 +472,14 @@ describe('stair headroom (#631)', () => {
         if (isHeadroomShort(clearance)) expect(formatMetres(clearance)).not.toBe(formatMetres(STAIR_HEADROOM));
       }
     }
+  });
+});
+
+describe('a flight with no floor to reach (#654)', () => {
+  it('is any flight on the top storey', () => {
+    const floors = [makeFloor(), makeFloor()];
+    expect(stairGoesNowhere({ floors }, 1)).toBe(true);
+    expect(stairGoesNowhere({ floors }, 0)).toBe(false);
+    expect(stairGoesNowhere({ floors: [makeFloor()] }, 0)).toBe(true);
   });
 });

@@ -292,6 +292,11 @@ export function floorStairHeadroom(
   return stairHeadroom(item, stairRise(item, floor), storeyHeight(floor), ceilinged ? storeyHeight(floorAbove) : Infinity);
 }
 
+/** A flight on the top storey has no floor to reach; the controls say so (#654). */
+export function stairGoesNowhere(layout: Pick<RoomLayout, 'floors'>, floorIndex: number): boolean {
+  return floorIndex === layout.floors.length - 1;
+}
+
 /** Whether a flight's clearance falls short, as shown: to the centimetre, so float noise can't warn "2 m". */
 export function isHeadroomShort(clearance: number): boolean {
   return Math.round(clearance * 100) / 100 < STAIR_HEADROOM;
