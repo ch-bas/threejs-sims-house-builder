@@ -7,7 +7,9 @@
  * orbit and drag frame costs the most where the GPU is weakest. So the
  * settings come in three tiers, picked from the device class, with a View menu
  * override (#760). Low shades less and holds less; high spends GPU memory on a
- * sharper shadow, which only renders when a caster or the sun moves.
+ * sharper shadow, which only renders when a caster or the sun moves. Auto keeps the shadow map and anisotropy every
+ * device had before the tiers, so the default picture doesn't change; only an
+ * explicit choice moves them.
  */
 
 import { safeGetItem, safeSetItem } from './safe-storage';
@@ -47,12 +49,18 @@ const PIXEL_RATIO_CAP = 2;
 /** Short sides at or under this are phones (the largest phones are ~480 CSS px; an iPad mini is 744). */
 const PHONE_MAX_SHORT_SIDE = 500;
 
-const TIERS: Record<QualityTier, Omit<QualityProfile, 'tier' | 'pixelRatio'> & { pixelRatioCap: number }> = {
+type TierSettings = Omit<QualityProfile, 'tier' | 'pixelRatio'> & { pixelRatioCap: number };
+
+const TIERS: Record<QualityTier, TierSettings> = {
   low: { pixelRatioCap: LOW_PIXEL_RATIO_CAP, shadowMapSize: 1024, shadowRadius: 2, groundTile: 256, maxAnisotropy: 4 },
   medium: { pixelRatioCap: PIXEL_RATIO_CAP, shadowMapSize: 2048, shadowRadius: 3, groundTile: 512, maxAnisotropy: 8 },
   // Twice the texels, so a wider radius in texels keeps the edge soft.
   high: { pixelRatioCap: PIXEL_RATIO_CAP, shadowMapSize: 4096, shadowRadius: 4, groundTile: 512, maxAnisotropy: 16 },
 };
+
+/** What every device had before the tiers: a 2048² map at radius 3, the GPU's full anisotropy. */
+const AUTO_SHADOW_MAP_SIZE = 2048;
+const AUTO_SHADOW_RADIUS = 3;
 
 export function isPhone(input: Pick<QualityInput, 'coarsePointer' | 'screenShortSide'>): boolean {
   return input.coarsePointer && input.screenShortSide > 0 && input.screenShortSide <= PHONE_MAX_SHORT_SIDE;
@@ -64,11 +72,18 @@ export function autoTier(input: Pick<QualityInput, 'coarsePointer' | 'screenShor
   return input.coarsePointer ? 'medium' : 'high';
 }
 
+/**
+ * The settings for `choice` on this device. Auto takes the device's tier for
+ * the pixel ratio and ground tiles, and the pre-tier shadow map and
+ * anisotropy on every device.
+ */
 export function qualityProfile(input: QualityInput, choice: QualityChoice = 'auto'): QualityProfile {
   const tier = choice === 'auto' ? autoTier(input) : choice;
   const { pixelRatioCap, ...settings } = TIERS[tier];
   const dpr = input.devicePixelRatio > 0 ? input.devicePixelRatio : 1;
-  return { tier, pixelRatio: Math.min(dpr, pixelRatioCap), ...settings };
+  const profile = { tier, pixelRatio: Math.min(dpr, pixelRatioCap), ...settings };
+  if (choice !== 'auto') return profile;
+  return { ...profile, shadowMapSize: AUTO_SHADOW_MAP_SIZE, shadowRadius: AUTO_SHADOW_RADIUS, maxAnisotropy: Infinity };
 }
 
 const CHOICE_KEY = 'render-quality';

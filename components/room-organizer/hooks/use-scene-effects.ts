@@ -873,7 +873,9 @@ export function useSceneEffects({
   }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, lampLevel, view.timeOfDay, walkthroughActive]);
 
   // Outdoor
-  const groundTile = currentQuality(view.renderQuality).groundTile;
+  // Read once per choice: it asks matchMedia.
+  const quality = useMemo(() => currentQuality(view.renderQuality), [view.renderQuality]);
+  const { groundTile } = quality;
   useEffect(() => {
     invalidate();
     if (!isReady) return;

@@ -7,7 +7,7 @@ import { removeAndDispose } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
 import { shutOutIndoorLamps } from './outdoor-lamps';
 import { ROOF_OFF_STOREY_KEY } from './roof';
-import { getMaxAnisotropy } from './texture-settings';
+import { withMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
@@ -528,7 +528,7 @@ function buildFloorPlanMaterial(
     map.needsUpdate = true;
   }
   map.colorSpace = THREE.SRGBColorSpace;
-  map.anisotropy = getMaxAnisotropy();
+  withMaxAnisotropy(map);
   const displacement = options.floorPlan3DEffect ? new THREE.Texture() : null;
   for (const texture of displacement ? [map, displacement] : [map]) {
     texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -553,7 +553,7 @@ function buildFloorPlanMaterial(
       // placeholder's 1×1 size, and the plan can't be written into it (#521).
       // Swap in a fresh texture, then dispose the placeholder one.
       const previous = material.map ?? map;
-      const fresh = previous.clone();
+      const fresh = withMaxAnisotropy(previous.clone());
       fresh.source = new THREE.TextureSource(fitted);
       fresh.needsUpdate = true;
       previous.removeEventListener('dispose', onDispose);

@@ -47,6 +47,15 @@ describe('quality tiers (#760)', () => {
     expect(low!.pixelRatio).toBeLessThan(medium!.pixelRatio);
   });
 
+  it('keeps the pre-tier shadow map and anisotropy on auto, on every device (#760)', () => {
+    for (const device of [desktop, tablet, phone]) {
+      const auto = qualityProfile(device);
+      expect([auto.shadowMapSize, auto.shadowRadius, auto.maxAnisotropy]).toEqual([2048, 3, Infinity]);
+    }
+    expect(qualityProfile(desktop, 'high').shadowMapSize).toBe(4096);
+    expect(qualityProfile(phone, 'low').shadowMapSize).toBe(1024);
+  });
+
   it('lets the choice override the device, and never raises the ratio past the display', () => {
     expect(qualityProfile(phone, 'high').tier).toBe('high');
     expect(qualityProfile(phone, 'high').pixelRatio).toBe(2);

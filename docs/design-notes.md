@@ -48,11 +48,14 @@ to respect.
   emulation of a 3× phone an orbit frame took 57 ms at 2 and 37 ms at 1.5.
   A PNG export on a phone therefore comes out at the canvas's backing size
   (585×996 on a 390×664 phone). The pixel ratio is the low tier of
-  `lib/render-quality.ts` (#760), whose 1024² shadow map and 256² ground
-  tiles save GPU memory rather than frame time: 1024² measured no faster
-  than 2048². Desktops get 4096² (about 64 MB of depth), which costs only
-  on the passes that redraw it. The settled high-quality frame of #760 is
-  not built.
+  `lib/render-quality.ts` (#760). Auto keeps every device's pre-tier
+  shadow map (2048², radius 3) and full anisotropy, so the default picture
+  doesn't change; only an explicit choice moves them: low's 1024² map and
+  anisotropy 4 save GPU memory rather than frame time (1024² measured no
+  faster than 2048²), high's 4096² (about 64 MB of depth, against 16 MB)
+  costs only on the passes that redraw it. A new anisotropy cap reaches the
+  textures already built, cached ones included (`three/texture-settings.ts`).
+  The settled high-quality frame of #760 is not built.
 - **A press on an item never moves the camera.** The drag handlers take
   `pointerdown` in the capture phase, ahead of OrbitControls, and switch
   the controls off as soon as a drag is armed; a tap hands them back. On
