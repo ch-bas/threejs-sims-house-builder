@@ -152,7 +152,7 @@ export function buildFloorMaterial(
   options: BuildFloorPatternOptions
 ): ThreeNS.MeshStandardMaterial {
   if (options.pattern === 'solid') {
-    return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0.2 });
+    return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0 });
   }
 
   const renderer = PATTERNS[options.pattern];
@@ -160,12 +160,12 @@ export function buildFloorMaterial(
   // saved before that check may still be in the wild — render solid instead
   // of throwing inside the scene build.
   if (!renderer) {
-    return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0.2 });
+    return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0 });
   }
   const size = 256;
   const master = getFloorTexture(THREE, options.pattern, options.color, size, renderer);
   if (!master) {
-    return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0.2 });
+    return new THREE.MeshStandardMaterial({ color: options.color, roughness: 0.8, metalness: 0 });
   }
 
   // Clone per material so each floor owns a disposable copy sharing the cached
@@ -180,7 +180,7 @@ export function buildFloorMaterial(
   return new THREE.MeshStandardMaterial({
     map: texture,
     roughness: options.pattern === 'tile' ? 0.5 : 0.85,
-    metalness: 0.1,
+    metalness: 0,
   });
 }
 

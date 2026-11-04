@@ -12,7 +12,7 @@ import type { FurnitureItem } from './types';
 /** What `renderItemLabels` reads: the text and where the sprite floats. */
 export function itemLabelsKey(items: readonly FurnitureItem[]): string {
   return JSON.stringify(
-    items.filter((item) => item.position).map((item) => [item.id, item.name, item.position?.x, item.position?.z, item.height])
+    items.filter((item) => item.position).map((item) => [item.id, item.name, item.position?.x, item.position?.z, item.height, item.sillHeight])
   );
 }
 

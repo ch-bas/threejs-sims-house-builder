@@ -184,6 +184,67 @@ to respect.
   back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
   not on every item edit, and the wall-draw preview re-poses one unit box per
   pointer move (#283, #409).
+- **An opening goes with its wall.** Every door and window group is stamped
+  with the wall it is cut into (`ownerTag` + `wallId`, from
+  `classifyOpeningOwners`, the same map the cuts use), and
+  `applyWallDisplay` mirrors that wall's visibility onto it as it does for a
+  selection outline, so cutaway and walls-down never leave a frame standing
+  in mid-air. Walls are looked up by tag, storey and shell id: every storey
+  has a `south`, and a notch wall shares its side's `wallId` for colour, so
+  neither key alone finds the wall an opening is cut into. `applyStoreyRange`
+  leaves such groups to the display, like walls and partitions, and the
+  display keeps a hidden storey's openings hidden even when their wall isn't
+  built; the furniture effect re-applies the display after a rebuild, and keys
+  on the partitions and the footprint because ownership does. A hidden opening
+  stays selectable, as the issue asked, but a pick takes anything drawn along
+  the ray first, so it can't block the item behind it (#659).
+- **Walking, partitions reach the ceiling.** From orbit a partition stops
+  0.4 m short of its storey (`interiorWallHeight`), the room divider seen
+  from above. The walkthrough ceiling hangs 1 cm under the plate above, so
+  that left a 0.39 m slot over every partition at eye level, with the next
+  room and its lamp light showing through. While walking, partitions are
+  built to `walkthroughPartitionHeight` (the ceiling line) and rebuilt on
+  the way out; the porch back wall has reached its soffit the same way
+  since #275 (#656).
+- **Nothing hovers, nothing shares a plane with the shell.** The grass plane
+  lies `GRASS_DROP` (5 cm) under the ground line with the pavement and road
+  stacked above it, so the porch steps and the neighbours' stoops reach down
+  to it rather than stopping at the street. A partition end that the snap
+  put on the outline (`onFootprintEdge`) stops `PARTITION_END_GAP` short of
+  the shell, twice the baseboard's own gap, so neither end face lies in
+  the facade's plane. A door flush with a trimmed end has its hole cut to the
+  trimmed end too. Rain and snow keep clear of the eaves' overhang as well as
+  the footprint, and of the neighbours' columns (`streetDryBoxes`) (#660).
+- **A straight stair carries a closed string per side** (`stringerOutline`):
+  its top edge follows the nosings a lip above them, it is cut level at the
+  floor and ends square under the top nosing. The tilted box it replaces
+  hung over the floor at the foot, stopped short of the landing and stood
+  proud of the treads (#658).
+- **A flight under the roof stops at the attic plate.** The roof starts at
+  the top of the walls, so a flight no higher than its storey can't reach the
+  slope, at any spot in any style; what it does cross is the attic plate, 1 cm
+  under that line (the top tread by 1 cm, the closed string's lip by 4). So on
+  the top storey of a house with a roof (`underRoof`, one storey included,
+  flat or pitched) `stairRise` stops `ROOF_STAIR_GAP` short of the storey, and
+  every other flight keeps its rise. A cap of a whole headroom left a 1 m wedge
+  in a 3 m storey and a plate at 2 m, for nothing. The scene, the outline, the
+  labels, the GLB export and the walker all read it, so what you see is what
+  the walker climbs; a flight with no floor to reach says so in its controls
+  (`stairGoesNowhere`) (#654).
+- **Overlays never bleach the house.** The vision cone's wedge, light
+  volume and scan line blend normally: additive layers stacked over a pale
+  wall or floor saturated it to pure white, and a whole wall read as
+  missing from the orbit view. The flat wedge and the scan still draw over
+  the world (so a rug can't hide them), but the light volume is always
+  depth-tested, so a wall between the lens and the viewer hides it (#652).
+- **A party-wall neighbour's roof stops at its wall.** Its eaves overhang
+  `ROOF_EAVE_OVERHANG` past a 2 cm gap, which put its slope, fascia and
+  gutter 0.33 m inside our top storey. The roof meshes of an attached
+  immediate neighbour carry a local clipping plane at that house's own wall
+  on our side (`clipAtPartyWall`; every roof clones its material, so the
+  plane stays on that house, and the renderer has `localClippingEnabled`),
+  the gutter along that eave is not placed, and the front and back gutters
+  end at the wall (#655).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
@@ -608,6 +669,14 @@ to respect.
 10. Every scene-removal path disposes GPU resources (geometries,
     materials, textures, light shadow maps) via a shared
     `disposeObject` helper — scene rebuilds no longer leak GPU memory.
+
+## Furniture surfaces and grounding
+
+Furniture parts are `softBox` geometry: one chamfer per edge, 44 triangles, with each vertex keeping its face's normal so the normals turn across the chamfer and the edge catches a highlight (#755). UVs are in metres along a face's longer side, which is what lets one shared detail texture keep its scale on every part. A cylinder's UVs are 0 to 1, so round parts take a material class without detail. Static parts of one item that share a material are merged with `mergeParts`, so kitchen doors and handles, a sofa's frame and a three-part plinth add no draw calls per part.
+
+`three/furniture-materials.ts` holds the material classes (#756). A part is a metal (1) or it isn't (0). White goods are `painted`, not metal: bare metal only mirrors the dim room and turned the fridge black. The detail images multiply the item's colour, so colour pickers keep working, and they are `DataTexture`s rather than canvases, so builders still run in Node tests. They are shared (`markSharedTexture`), released when the editor unmounts, and left out of GLB exports, which would otherwise grow by about a megabyte and rely on KHR_texture_transform.
+
+Contact occlusion is baked, because screen-space AO cost 40 to 70 ms a frame (#754). `lib/contact-shadow.ts` plans one storey's map and `three/contact-shadow.ts` paints it on a quad 18 mm over the floor, above the rug's top. Stairs ground like any other solid piece; a shell wall the user hid casts no band. A map costs at most 8 MB of canvas on a desktop and 2 MB on a phone: a big storey gets fewer pixels a metre. A drag repaints the map once without the held items, at the start of the gesture, and once more at the drop with them where they landed (or as the drag turns void); nothing happens per move. Ghosted storeys show none. The GLB is built from the layout and has none either. Not built yet: gradient strips up the walls and along the ceiling, which belong with the shell rewrite.
 
 ## Known limitations
 

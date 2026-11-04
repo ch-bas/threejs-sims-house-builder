@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay, walkthroughCeiling, walkthroughPit } from './walkthrough-view';
+import { interiorWallHeight } from './storeys';
+import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay, WALKTHROUGH_CEILING_GAP, walkthroughCeiling, walkthroughPartitionHeight, walkthroughPit } from './walkthrough-view';
 
 describe('sceneWallDisplay', () => {
   it('keeps the chosen mode outside walkthrough', () => {
@@ -70,5 +71,19 @@ describe('leaving EXPLORE (#454)', () => {
 
   it('leaves another mode alone', () => {
     expect(modeAfterExplore('build', 'buy')).toBe('build');
+  });
+});
+
+describe('walkthroughPartitionHeight (#656)', () => {
+  it('reaches the ceiling the walker sees, 1 cm under the plate', () => {
+    expect(walkthroughPartitionHeight({ height: 3 })).toBeCloseTo(2.99);
+    expect(walkthroughPartitionHeight({ height: 2.4 })).toBeCloseTo(2.39);
+    expect(walkthroughPartitionHeight(undefined)).toBeCloseTo(3 - WALKTHROUGH_CEILING_GAP);
+  });
+
+  it('is taller than the orbit partition, which stops 0.4 m short', () => {
+    for (const height of [2.4, 3, 3.5]) {
+      expect(walkthroughPartitionHeight({ height }) - interiorWallHeight({ height })).toBeCloseTo(0.39);
+    }
   });
 });

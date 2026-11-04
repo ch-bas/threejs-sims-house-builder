@@ -1,12 +1,13 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { lowestGround } from '../lib/site';
-import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight } from '../lib/storeys';
+import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { zoneFloorPatches } from '../lib/zones';
 import { disposeObject } from './builder-utils';
 import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
+import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
 import { buildRoof } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
@@ -132,7 +133,8 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     for (const item of floor.items) {
       const position = item.position;
       if (!position) continue;
-      const group = createFurnitureModel(THREE, itemForStorey(item, floor), false, storeyH);
+      const group = createFurnitureModel(THREE, itemForStorey(item, floor, underRoof(layout, index)), false, storeyH);
+      stripDetailMaps(group);
       group.name = item.name;
       group.userData.type = ROOM_OBJECT_TAGS.Furniture;
       group.userData.id = item.id;
