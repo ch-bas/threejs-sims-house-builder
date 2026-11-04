@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  clampToFootprint,
-  cutoutFits,
-  cutoutRect,
-  buildingArea,
-  footprintOutline,
-  isFootprintCutout,
-  isInsideBuilding,
-  shellWalls,
-  shellWallSpan,
-} from './footprint';
+import { buildingArea, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, isFootprintCutout, isInsideBuilding, onFootprintEdge, shellWalls, shellWallSpan } from './footprint';
 import { INTERIOR_WALL_THICKNESS } from './opening-snap';
 import { buildWalkColliders } from './walk-collision';
 import type { FootprintCorner } from './types';
@@ -135,5 +125,27 @@ describe('INTERIOR_WALL_THICKNESS (#451)', () => {
     const [wall] = colliders;
     expect(wall!.hd * 2).toBeCloseTo(INTERIOR_WALL_THICKNESS);
     expect(wall!.hw * 2).toBeCloseTo(4);
+  });
+});
+
+describe('onFootprintEdge (#660)', () => {
+  const box = { width: 8, height: 6 };
+  it('is true on each outer wall and at the corners, false inside and outside', () => {
+    expect(onFootprintEdge(box, -4, 1)).toBe(true);
+    expect(onFootprintEdge(box, 2, 3)).toBe(true);
+    expect(onFootprintEdge(box, 4, -3)).toBe(true);
+    expect(onFootprintEdge(box, -3.9995, 0)).toBe(true);
+    expect(onFootprintEdge(box, -3.99, 0)).toBe(false);
+    expect(onFootprintEdge(box, 0, 0)).toBe(false);
+    expect(onFootprintEdge(box, 5, 0)).toBe(false);
+  });
+
+  it('counts the two walls of the cut corner, not the corner cut away', () => {
+    const cut = { ...box, cutout: { corner: 'ne' as const, width: 2, depth: 2 } };
+    expect(onFootprintEdge(cut, 2, -2)).toBe(true);
+    expect(onFootprintEdge(cut, 2, -2.5)).toBe(true);
+    expect(onFootprintEdge(cut, 3, -1)).toBe(true);
+    expect(onFootprintEdge(cut, 4, -3)).toBe(false);
+    expect(onFootprintEdge(cut, 3, -2.5)).toBe(false);
   });
 });

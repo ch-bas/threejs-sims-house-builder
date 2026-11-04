@@ -59,13 +59,32 @@ export function interiorWallHeight(floor: StoreyFloor | undefined): number {
 }
 
 /**
+ * A flight under the roof stops this far short of the storey's height. The
+ * roof starts at the top of the walls, so a flight can't reach it, but the
+ * attic plate hangs 1 cm under that line, and the top tread and the closed
+ * string's lip would pass through it (#654).
+ */
+export const ROOF_STAIR_GAP = 0.05;
+
+/** Whether storey `floorIndex` has a roof directly over it: the top one, and a roof to speak of. */
+export function underRoof(
+  building: { floors: readonly unknown[]; roof?: { style: string } | undefined },
+  floorIndex: number
+): boolean {
+  return floorIndex === building.floors.length - 1 && building.roof !== undefined && building.roof.style !== 'none';
+}
+
+/**
  * The rise a staircase is built with. Stairs bridge to the storey above,
  * so on a floor with an explicit height they climb exactly that; on a
  * classic storey they keep their own height, but never more than the
  * storey, so an imported 4 m stair can't pierce the floor above (#366).
+ * With the roof over it (`roofed`, see `underRoof`) a flight stops just under
+ * the attic plate; every other flight keeps its rise, on any storey (#654).
  */
-export function stairRise(item: { height: number }, floor: StoreyFloor | undefined): number {
-  return floor?.height ?? Math.min(item.height, storeyHeight(floor));
+export function stairRise(item: { height: number }, floor: StoreyFloor | undefined, roofed = false): number {
+  const rise = floor?.height ?? Math.min(item.height, storeyHeight(floor));
+  return roofed ? Math.min(rise, storeyHeight(floor) - ROOF_STAIR_GAP) : rise;
 }
 
 /**
@@ -110,10 +129,10 @@ export function fitOpeningToStorey(
  * are fitted into it (#277), the camera's height being its wall-mount run.
  * Everything else is built as is.
  */
-export function itemForStorey(item: FurnitureItem, floor: StoreyFloor | undefined): FurnitureItem {
+export function itemForStorey(item: FurnitureItem, floor: StoreyFloor | undefined, roofed = false): FurnitureItem {
   switch (item.type) {
     case 'stairs':
-      return { ...item, height: stairRise(item, floor) };
+      return { ...item, height: stairRise(item, floor, roofed) };
     case 'door':
     case 'security-camera':
       return { ...item, height: fitOpeningToStorey(item, storeyHeight(floor)).height };

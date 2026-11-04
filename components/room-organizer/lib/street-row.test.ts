@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PAVEMENT_DEPTH, groundHeightAt, roadEdges } from './site';
 import {
+  streetDryBoxes,
   MAX_WINDOWS_PER_FACE,
   PARTY_WALL_GAP,
   generateStreet,
@@ -170,5 +171,26 @@ describe('window rules (#280)', () => {
     expect(windowRow(0, 3, 3)).toBeNull();
     // A loft knee wall is too low for a window.
     expect(windowRow(5.5, 6.6, 0)).toBeNull();
+  });
+});
+
+describe('streetDryBoxes (#660)', () => {
+  const site: StreetSite = { width: 8, depth: 6, floorYs: [0], eavesY: 3, roof: { style: 'gable' } };
+
+  it('is empty with no neighbours', () => {
+    expect(streetDryBoxes(site)).toEqual([]);
+  });
+
+  it('covers each neighbour, eaves included', () => {
+    const neighbours = { west: true, east: true };
+    const houses = generateStreet({ ...site, neighbours });
+    const boxes = streetDryBoxes({ ...site, neighbours });
+    expect(boxes).toHaveLength(houses.length);
+    boxes.forEach((box, i) => {
+      const house = houses[i]!;
+      expect(box.x0).toBeLessThan(house.x - house.width / 2);
+      expect(box.x1).toBeGreaterThan(house.x + house.width / 2);
+      expect(box.z1 - box.z0).toBeGreaterThan(house.depth);
+    });
   });
 });

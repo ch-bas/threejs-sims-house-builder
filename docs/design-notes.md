@@ -177,6 +177,67 @@ to respect.
   back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
   not on every item edit, and the wall-draw preview re-poses one unit box per
   pointer move (#283, #409).
+- **An opening goes with its wall.** Every door and window group is stamped
+  with the wall it is cut into (`ownerTag` + `wallId`, from
+  `classifyOpeningOwners`, the same map the cuts use), and
+  `applyWallDisplay` mirrors that wall's visibility onto it as it does for a
+  selection outline, so cutaway and walls-down never leave a frame standing
+  in mid-air. Walls are looked up by tag, storey and shell id: every storey
+  has a `south`, and a notch wall shares its side's `wallId` for colour, so
+  neither key alone finds the wall an opening is cut into. `applyStoreyRange`
+  leaves such groups to the display, like walls and partitions, and the
+  display keeps a hidden storey's openings hidden even when their wall isn't
+  built; the furniture effect re-applies the display after a rebuild, and keys
+  on the partitions and the footprint because ownership does. A hidden opening
+  stays selectable, as the issue asked, but a pick takes anything drawn along
+  the ray first, so it can't block the item behind it (#659).
+- **Walking, partitions reach the ceiling.** From orbit a partition stops
+  0.4 m short of its storey (`interiorWallHeight`), the room divider seen
+  from above. The walkthrough ceiling hangs 1 cm under the plate above, so
+  that left a 0.39 m slot over every partition at eye level, with the next
+  room and its lamp light showing through. While walking, partitions are
+  built to `walkthroughPartitionHeight` (the ceiling line) and rebuilt on
+  the way out; the porch back wall has reached its soffit the same way
+  since #275 (#656).
+- **Nothing hovers, nothing shares a plane with the shell.** The grass plane
+  lies `GRASS_DROP` (5 cm) under the ground line with the pavement and road
+  stacked above it, so the porch steps and the neighbours' stoops reach down
+  to it rather than stopping at the street. A partition end that the snap
+  put on the outline (`onFootprintEdge`) stops `PARTITION_END_GAP` short of
+  the shell, twice the baseboard's own gap, so neither end face lies in
+  the facade's plane. A door flush with a trimmed end has its hole cut to the
+  trimmed end too. Rain and snow keep clear of the eaves' overhang as well as
+  the footprint, and of the neighbours' columns (`streetDryBoxes`) (#660).
+- **A straight stair carries a closed string per side** (`stringerOutline`):
+  its top edge follows the nosings a lip above them, it is cut level at the
+  floor and ends square under the top nosing. The tilted box it replaces
+  hung over the floor at the foot, stopped short of the landing and stood
+  proud of the treads (#658).
+- **A flight under the roof stops at the attic plate.** The roof starts at
+  the top of the walls, so a flight no higher than its storey can't reach the
+  slope, at any spot in any style; what it does cross is the attic plate, 1 cm
+  under that line (the top tread by 1 cm, the closed string's lip by 4). So on
+  the top storey of a house with a roof (`underRoof`, one storey included,
+  flat or pitched) `stairRise` stops `ROOF_STAIR_GAP` short of the storey, and
+  every other flight keeps its rise. A cap of a whole headroom left a 1 m wedge
+  in a 3 m storey and a plate at 2 m, for nothing. The scene, the outline, the
+  labels, the GLB export and the walker all read it, so what you see is what
+  the walker climbs; a flight with no floor to reach says so in its controls
+  (`stairGoesNowhere`) (#654).
+- **Overlays never bleach the house.** The vision cone's wedge, light
+  volume and scan line blend normally: additive layers stacked over a pale
+  wall or floor saturated it to pure white, and a whole wall read as
+  missing from the orbit view. The flat wedge and the scan still draw over
+  the world (so a rug can't hide them), but the light volume is always
+  depth-tested, so a wall between the lens and the viewer hides it (#652).
+- **A party-wall neighbour's roof stops at its wall.** Its eaves overhang
+  `ROOF_EAVE_OVERHANG` past a 2 cm gap, which put its slope, fascia and
+  gutter 0.33 m inside our top storey. The roof meshes of an attached
+  immediate neighbour carry a local clipping plane at that house's own wall
+  on our side (`clipAtPartyWall`; every roof clones its material, so the
+  plane stays on that house, and the renderer has `localClippingEnabled`),
+  the gutter along that eave is not placed, and the front and back gutters
+  end at the wall (#655).
 - **Outer walls.** Each shell wall is one mesh with two single-sided faces back
   to back (`withOutsideFace`), so each lights and shadows from its own side.
   A DoubleSide sheet doesn't flip the shadow lookup's normal offset, which made
