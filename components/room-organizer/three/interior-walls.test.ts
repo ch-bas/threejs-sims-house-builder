@@ -237,4 +237,25 @@ describe('a partition end on the shell stops short of it (#660)', () => {
     }
     expect(area).toBeCloseTo((4 - 0.006) * 2.6 - (0.9 - 0.006) * 2.05, 3);
   });
+
+  it('keeps flush doors at both ends of a wall drawn from shell to shell', () => {
+    const scene = new THREE.Scene();
+    const doors = [-3.55, 3.55].map((x, i) =>
+      makeItem({ id: `door-${i}`, type: 'door', width: 0.9, depth: 0.12, height: 2.05, position: { x, z: 0 } })
+    );
+    renderInteriorWalls(THREE, scene, [{ id: 'iw', x1: -4, z1: 0, x2: 4, z2: 0 }], 0, undefined, {
+      openingCandidates: doors,
+      roomWidth: 8,
+      roomDepth: 8,
+      wallHeight: 2.6,
+      storeyHeight: 3,
+    });
+    const mesh = wallMesh(scene);
+    mesh.updateMatrixWorld();
+    const hits = (x: number) =>
+      new THREE.Raycaster(new THREE.Vector3(x, 1, 2), new THREE.Vector3(0, 0, -1)).intersectObject(mesh).length;
+    expect(hits(-3.55)).toBe(0);
+    expect(hits(3.55)).toBe(0);
+    expect(hits(0)).toBeGreaterThan(0);
+  });
 });

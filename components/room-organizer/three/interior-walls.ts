@@ -96,7 +96,10 @@ export function renderInteriorWalls(
     const trimEnd = building && onFootprintEdge(building, wall.x2, wall.z2) ? PARTITION_END_GAP : 0;
     const meshLength = length - trimStart - trimEnd;
     const shift = (trimStart - trimEnd) / 2;
-    const meshOpenings = shift === 0 ? openings : openings.map((o) => trimmedOpening(o, shift, meshLength));
+    // Clamp whenever an end is trimmed, even when both are and the shift is 0:
+    // a hole flush with the old end would reach past the shorter mesh, the
+    // triangulator would drop it, and the door would be walled over.
+    const meshOpenings = trimStart || trimEnd ? openings.map((o) => trimmedOpening(o, shift, meshLength)) : openings;
 
     const material = new THREE.MeshStandardMaterial({
       color: wall.color ?? 0xe0e0e0,
