@@ -1,4 +1,5 @@
-import { type BuilderContext, EDGE, material, mesh, cornerPositions, lightenHex, softBox } from '../builder-utils';
+import { type BuilderContext, EDGE, mesh, cornerPositions, lightenHex, softBox } from '../builder-utils';
+import { surfaceMaterial } from '../furniture-materials';
 import type * as ThreeNS from 'three';
 
 /** How far an upholstered base's plinth sits in from the seat above it. */
@@ -9,7 +10,7 @@ const PLINTH_INSET = 0.06;
  * seats start 10 cm or more above it, so they hovered with nothing under them.
  */
 function addPlinth(
-  { THREE, hasCollision, opacity }: BuilderContext,
+  ctx: BuilderContext,
   group: ThreeNS.Group,
   width: number,
   depth: number,
@@ -17,18 +18,20 @@ function addPlinth(
   x = 0,
   z = 0
 ): void {
+  const { THREE } = ctx;
   const plinth = mesh(
     THREE,
     softBox(THREE, width - PLINTH_INSET * 2, height, depth - PLINTH_INSET * 2, EDGE.wood),
-    material(THREE, 0x2a211b, hasCollision, opacity, { roughness: 0.7 })
+    surfaceMaterial(ctx, 0x2a211b, 'woodOiled')
   );
   plinth.position.set(x, height / 2, z);
   group.add(plinth);
 }
 
-export function buildChair({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildChair(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const seatMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7, metalness: 0.1 });
+  const seatMat = surfaceMaterial(ctx, baseColor, 'woodOiled', { detailed: true });
 
   const seat = mesh(THREE, softBox(THREE, item.width, item.height * 0.1, item.depth, EDGE.wood), seatMat);
   seat.position.y = item.height * 0.5;
@@ -38,7 +41,7 @@ export function buildChair({ THREE, item, hasCollision, baseColor, opacity }: Bu
   back.position.set(0, item.height * 0.75, -item.depth * 0.45);
   group.add(back);
 
-  const legMat = material(THREE, 0x654321, hasCollision, opacity, { roughness: 0.8 });
+  const legMat = surfaceMaterial(ctx, 0x654321, 'woodOiled');
   const legGeo = new THREE.CylinderGeometry(0.03, 0.03, item.height * 0.5, 8);
   for (const [x, y, z] of cornerPositions(item.width * 0.4, item.height * 0.25, item.depth * 0.4)) {
     const leg = mesh(THREE, legGeo, legMat);
@@ -50,9 +53,9 @@ export function buildChair({ THREE, item, hasCollision, baseColor, opacity }: Bu
 }
 
 export function buildArmchair(ctx: BuilderContext): ThreeNS.Group {
-  const { THREE, item, hasCollision, baseColor, opacity } = ctx;
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
+  const mat = surfaceMaterial(ctx, baseColor, 'leather', { detailed: true });
   addPlinth(ctx, group, item.width, item.depth * 0.85, item.height * 0.15);
 
   const seat = mesh(THREE, softBox(THREE, item.width, item.height * 0.45, item.depth * 0.85, EDGE.upholstery), mat);
@@ -72,9 +75,10 @@ export function buildArmchair(ctx: BuilderContext): ThreeNS.Group {
   return group;
 }
 
-export function buildBench({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildBench(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const mat = surfaceMaterial(ctx, baseColor, 'woodOiled', { detailed: true });
   const seat = mesh(THREE, softBox(THREE, item.width, item.height * 0.18, item.depth, EDGE.wood), mat);
   seat.position.y = item.height * 0.91;
   group.add(seat);
@@ -89,9 +93,9 @@ export function buildBench({ THREE, item, hasCollision, baseColor, opacity }: Bu
 }
 
 export function buildSofa(ctx: BuilderContext): ThreeNS.Group {
-  const { THREE, item, hasCollision, baseColor, opacity } = ctx;
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const sofaMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.8 });
+  const sofaMat = surfaceMaterial(ctx, baseColor, 'fabric', { detailed: true });
 
   const shape = item.sofaShape ?? 'standard';
   const plinthHeight = item.height * 0.17;
@@ -114,7 +118,7 @@ export function buildSofa(ctx: BuilderContext): ThreeNS.Group {
     }
 
     // Seat cushions — one per "person seat" (divide the sofa into pillows).
-    const cushionMat = material(THREE, lightenHex(item.color, 0.15), hasCollision, opacity, { roughness: 0.85 });
+    const cushionMat = surfaceMaterial(ctx, lightenHex(item.color, 0.15), 'fabric', { detailed: true });
     const cushionCount = Math.max(2, Math.min(4, Math.round(item.width / 0.8)));
     const cushionWidth = (item.width * 0.92) / cushionCount;
     for (let i = 0; i < cushionCount; i += 1) {
@@ -135,7 +139,7 @@ export function buildSofa(ctx: BuilderContext): ThreeNS.Group {
     const pillowColors: ReadonlyArray<number> = [0xf2d488, 0xeb9d6b, 0x9ec6c0];
     for (const dx of [-1, 1]) {
       const color = pillowColors[(dx + 1) / 2 % pillowColors.length]!;
-      const pillowMat = material(THREE, color, hasCollision, opacity, { roughness: 0.9 });
+      const pillowMat = surfaceMaterial(ctx, color, 'fabric', { detailed: true });
       const pillow = mesh(
         THREE,
         softBox(THREE, item.width * 0.2, item.height * 0.3, 0.13, EDGE.cushion, { puff: 0.45 }),

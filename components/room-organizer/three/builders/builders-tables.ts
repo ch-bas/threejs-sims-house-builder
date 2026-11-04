@@ -1,9 +1,11 @@
-import { type BuilderContext, EDGE, material, mesh, cornerPositions, softBox } from '../builder-utils';
+import { type BuilderContext, EDGE, mesh, cornerPositions, softBox } from '../builder-utils';
+import { surfaceMaterial } from '../furniture-materials';
 import type * as ThreeNS from 'three';
 
-export function buildTableOrDesk({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildTableOrDesk(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const woodMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.6, metalness: 0.1 });
+  const woodMat = surfaceMaterial(ctx, baseColor, 'woodOiled', { detailed: true });
 
   const top = mesh(THREE, softBox(THREE, item.width, item.height * 0.1, item.depth, EDGE.wood), woodMat);
   top.position.y = item.height * 0.95;
@@ -28,7 +30,7 @@ export function buildTableOrDesk({ THREE, item, hasCollision, baseColor, opacity
     const handle = mesh(
       THREE,
       new THREE.CylinderGeometry(0.02, 0.02, item.width * 0.1, 8),
-      material(THREE, 0x444444, hasCollision, opacity, { metalness: 0.8, roughness: 0.2 })
+      surfaceMaterial(ctx, 0x444444, 'brushedMetal')
     );
     handle.position.set(item.width * 0.25, item.height * 0.7, item.depth * 0.42);
     handle.rotation.z = Math.PI / 2;

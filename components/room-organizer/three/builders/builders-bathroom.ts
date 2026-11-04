@@ -1,10 +1,12 @@
 import { type BuilderContext, material, mesh } from '../builder-utils';
+import { surfaceMaterial } from '../furniture-materials';
 import { addBasinWater, addRectBasin } from './builders-outdoor';
 import type * as ThreeNS from 'three';
 
-export function buildToilet({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildToilet(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.3 });
+  const mat = surfaceMaterial(ctx, baseColor, 'ceramic');
 
   const bowl = mesh(THREE, new THREE.CylinderGeometry(item.width * 0.5, item.width * 0.5, item.height * 0.45, 16), mat);
   bowl.position.y = item.height * 0.225;
@@ -20,10 +22,11 @@ export function buildToilet({ THREE, item, hasCollision, baseColor, opacity }: B
   return group;
 }
 
-export function buildBathtub({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildBathtub(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, hasCollision, baseColor } = ctx;
   const group = new THREE.Group();
-  const mat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.25, metalness: 0.05 });
-  const linerMat = material(THREE, 0xeceff1, hasCollision, opacity, { roughness: 0.4 });
+  const mat = surfaceMaterial(ctx, baseColor, 'ceramic');
+  const linerMat = surfaceMaterial(ctx, 0xeceff1, 'ceramic');
   const waterMat = new THREE.MeshStandardMaterial({
     color: hasCollision ? 0xff0000 : 0x4fc3f7,
     roughness: 0.2,
@@ -48,9 +51,9 @@ export function buildBathtub({ THREE, item, hasCollision, baseColor, opacity }: 
 
 export function buildShower({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
-  const glassMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.1, metalness: 0.1, transparent: true, opacity: hasCollision ? 0.7 : 0.35 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.1, metalness: 0, transparent: true, opacity: hasCollision ? 0.7 : 0.35 });
   const trayMat = material(THREE, 0xeceff1, hasCollision, opacity, { roughness: 0.5 });
-  const headMat = material(THREE, 0xb0bec5, hasCollision, opacity, { metalness: 0.9, roughness: 0.2 });
+  const headMat = material(THREE, 0xb0bec5, hasCollision, opacity, { metalness: 1, roughness: 0.2 });
 
   const tray = mesh(THREE, new THREE.BoxGeometry(item.width, item.height * 0.05, item.depth), trayMat);
   tray.position.y = item.height * 0.025;

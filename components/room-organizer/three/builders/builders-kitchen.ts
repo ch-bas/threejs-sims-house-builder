@@ -1,4 +1,5 @@
 import { type BuilderContext, EDGE, material, mesh, softBox } from '../builder-utils';
+import { surfaceMaterial } from '../furniture-materials';
 import type * as ThreeNS from 'three';
 
 /** A kitchen door: its thickness, the gap around it and the toe kick under it. */
@@ -14,18 +15,19 @@ const FRONT_SETBACK = 0.032;
  * each. `top` is where the fronts stop.
  */
 function addCabinetFronts(
-  { THREE, item, hasCollision, opacity }: BuilderContext,
+  ctx: BuilderContext,
   group: ThreeNS.Group,
   top: number,
   doorMat: ThreeNS.Material
 ): void {
+  const { THREE, item } = ctx;
   const faceZ = item.depth / 2 - FRONT_SETBACK;
   const kick = Math.min(TOE_KICK, top * 0.15);
 
   const reveal = mesh(
     THREE,
     new THREE.BoxGeometry(item.width - 0.002, top, 0.002),
-    material(THREE, 0x2b2b2b, hasCollision, opacity, { roughness: 0.8 })
+    surfaceMaterial(ctx, 0x2b2b2b, 'painted')
   );
   reveal.position.set(0, top / 2, faceZ + 0.001);
   group.add(reveal);
@@ -34,7 +36,7 @@ function addCabinetFronts(
   const pitch = item.width / doors;
   const doorHeight = top - kick - FRONT_GAP;
   const doorGeo = softBox(THREE, pitch - FRONT_GAP, doorHeight, FRONT_THICKNESS, EDGE.wood);
-  const handleMat = material(THREE, 0xb0bec5, hasCollision, opacity, { metalness: 0.9, roughness: 0.3 });
+  const handleMat = surfaceMaterial(ctx, 0xb0bec5, 'brushedMetal');
   const handleGeo = softBox(THREE, Math.min(0.14, pitch * 0.5), 0.012, 0.012, 0.003);
   for (let i = 0; i < doors; i += 1) {
     const x = (i + 0.5 - doors / 2) * pitch;
@@ -48,10 +50,12 @@ function addCabinetFronts(
   }
 }
 
-export function buildFridge({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildFridge(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.35, metalness: 0.6 });
-  const accentMat = material(THREE, 0x424242, hasCollision, opacity, { metalness: 0.8, roughness: 0.3 });
+  // Enamelled steel: a bare metal body only mirrors the dim room and turns black.
+  const bodyMat = surfaceMaterial(ctx, baseColor, 'painted');
+  const accentMat = surfaceMaterial(ctx, 0x424242, 'brushedMetal');
 
   const body = mesh(THREE, softBox(THREE, item.width, item.height, item.depth, EDGE.wood), bodyMat);
   body.position.y = item.height / 2;
@@ -71,11 +75,12 @@ export function buildFridge({ THREE, item, hasCollision, baseColor, opacity }: B
   return group;
 }
 
-export function buildStove({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+export function buildStove(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, hasCollision, baseColor, opacity } = ctx;
   const group = new THREE.Group();
-  const bodyMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5, metalness: 0.5 });
-  const burnerMat = material(THREE, 0x212121, hasCollision, opacity, { roughness: 0.3, metalness: 0.7 });
-  const doorMat = material(THREE, 0x616161, hasCollision, opacity, { roughness: 0.2, metalness: 0.8 });
+  const bodyMat = surfaceMaterial(ctx, baseColor, 'painted');
+  const burnerMat = material(THREE, 0x212121, hasCollision, opacity, { roughness: 0.3, metalness: 1 });
+  const doorMat = material(THREE, 0x616161, hasCollision, opacity, { roughness: 0.2, metalness: 1 });
 
   const body = mesh(THREE, softBox(THREE, item.width, item.height, item.depth, EDGE.wood), bodyMat);
   body.position.y = item.height / 2;
@@ -103,8 +108,8 @@ export function buildStove({ THREE, item, hasCollision, baseColor, opacity }: Bu
 export function buildSink(ctx: BuilderContext): ThreeNS.Group {
   const { THREE, item, hasCollision, baseColor, opacity } = ctx;
   const group = new THREE.Group();
-  const baseMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5 });
-  const metalMat = material(THREE, 0xb0bec5, hasCollision, opacity, { metalness: 0.9, roughness: 0.15 });
+  const baseMat = surfaceMaterial(ctx, baseColor, 'painted');
+  const metalMat = surfaceMaterial(ctx, 0xb0bec5, 'brushedMetal');
 
   const counter = mesh(THREE, softBox(THREE, item.width, item.height * 0.95, item.depth - FRONT_SETBACK, EDGE.wood), baseMat);
   counter.position.set(0, item.height * 0.475, -FRONT_SETBACK / 2);
@@ -133,10 +138,10 @@ export function buildSink(ctx: BuilderContext): ThreeNS.Group {
 }
 
 export function buildCounter(ctx: BuilderContext): ThreeNS.Group {
-  const { THREE, item, hasCollision, baseColor, opacity } = ctx;
+  const { THREE, item, baseColor } = ctx;
   const group = new THREE.Group();
-  const baseMat = material(THREE, 0xf5f5f5, hasCollision, opacity, { roughness: 0.7 });
-  const topMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.4, metalness: 0.1 });
+  const baseMat = surfaceMaterial(ctx, 0xf5f5f5, 'painted');
+  const topMat = surfaceMaterial(ctx, baseColor, 'plastic');
 
   const base = mesh(THREE, softBox(THREE, item.width, item.height * 0.92, item.depth - FRONT_SETBACK, EDGE.wood), baseMat);
   base.position.set(0, item.height * 0.46, -FRONT_SETBACK / 2);
