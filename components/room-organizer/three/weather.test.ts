@@ -40,6 +40,17 @@ describe('weather particle field (#189)', () => {
     }
   });
 
+  it('keeps the eaves dry too: nothing spawns under the overhang (#660)', () => {
+    const field = createWeatherField({ kind: 'rain', ...LOT, clearance: 0.35, count: 4000, rng: seeded(3) });
+    expect(field.clearHalfW).toBeCloseTo(4.35);
+    expect(field.clearHalfD).toBeCloseTo(3.35);
+    for (let i = 0; i < field.count; i++) {
+      const x = field.positions[i * 3]!;
+      const z = field.positions[i * 3 + 2]!;
+      expect(Math.abs(x) < 4.35 && Math.abs(z) < 3.35, `particle ${i} under the eaves at ${x},${z}`).toBe(false);
+    }
+  });
+
   it('rain falls straight and fast; snow falls slowly and sways', () => {
     const rain = createWeatherField({ kind: 'rain', ...LOT, count: 100, rng: seeded(1) });
     const snow = createWeatherField({ kind: 'snow', ...LOT, count: 100, rng: seeded(1) });
@@ -119,5 +130,27 @@ describe('weather particle field (#189)', () => {
     expect(scene.children.some((obj) => obj.userData.type === WEATHER_TAG)).toBe(false);
     expect(scene.children).toHaveLength(1);
     expect(disposed).toBe(2);
+  });
+});
+
+describe('the neighbours stay dry (#660)', () => {
+  it('no particle starts in a neighbour\'s column', () => {
+    const box = { x0: 10, x1: 20, z0: -5, z1: 5 };
+    const field = createWeatherField({ kind: 'rain', groundSize: 60, roomWidth: 8, roomDepth: 8, count: 4000, dryBoxes: [box] });
+    for (let i = 0; i < field.count; i++) {
+      const x = field.positions[i * 3]!;
+      const z = field.positions[i * 3 + 2]!;
+      expect(x > box.x0 && x < box.x1 && z > box.z0 && z < box.z1).toBe(false);
+    }
+  });
+
+  it('snow keeps its sway clear of it as well', () => {
+    const box = { x0: 10, x1: 20, z0: -5, z1: 5 };
+    const field = createWeatherField({ kind: 'snow', groundSize: 60, roomWidth: 8, roomDepth: 8, count: 4000, dryBoxes: [box] });
+    for (let i = 0; i < field.count; i++) {
+      const x = field.restX[i]!;
+      const z = field.positions[i * 3 + 2]!;
+      expect(x > box.x0 - SNOW_SWAY && x < box.x1 + SNOW_SWAY && z > box.z0 - SNOW_SWAY && z < box.z1 + SNOW_SWAY).toBe(false);
+    }
   });
 });
