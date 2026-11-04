@@ -2,6 +2,7 @@ import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
 import { GRASS_DROP } from '../lib/site';
 import { WINDOW_WIDTH, windowCount, windowRow, type StreetFinish, type StreetHouseSpec } from '../lib/street-row';
 import { removeAndDispose } from './builder-utils';
+import { LIT_PANES_PART, litPaneMaterialProps } from './night-glow';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildRoof, roofPeakHeight } from './roof';
 import { buildWallMaterial } from './wall-patterns';
@@ -17,8 +18,8 @@ type ThreeModule = typeof import('./three-runtime');
  * through three/roof.ts, a chimney, and a bay or dormer where the spec asks.
  *
  * Draw calls: one merged masonry mesh per house, the roof builder's one to
- * three meshes per house, and six street-wide InstancedMeshes for every
- * repeated part (frames, panes, doors, steps, chimneys, trim). Materials
+ * three meshes per house, and seven street-wide InstancedMeshes for every
+ * repeated part (frames, panes dark and lit, doors, steps, chimneys, trim). Materials
  * are shared across houses with the same finish and colour.
  *
  * Tagged apart from the shell, so the wall-display modes never hide them:
@@ -72,6 +73,7 @@ interface InstanceSet {
 interface StreetParts {
   frames: InstanceSet;
   panes: InstanceSet;
+  litPanes: InstanceSet;
   doors: InstanceSet;
   steps: InstanceSet;
   chimneys: InstanceSet;
@@ -100,6 +102,7 @@ export function buildNeighbours(THREE: ThreeModule, scene: ThreeNS.Scene, houses
   const parts: StreetParts = {
     frames: { matrices: [], colors: null },
     panes: { matrices: [], colors: null },
+    litPanes: { matrices: [], colors: null },
     doors: { matrices: [], colors: [] },
     steps: { matrices: [], colors: null },
     chimneys: { matrices: [], colors: [] },
@@ -119,6 +122,7 @@ export function buildNeighbours(THREE: ThreeModule, scene: ThreeNS.Scene, houses
   const instanced: ReadonlyArray<[keyof StreetParts, ThreeNS.MeshStandardMaterial]> = [
     ['frames', new THREE.MeshStandardMaterial({ color: TRIM_COLOR, roughness: 0.8 })],
     ['panes', new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.3, metalness: 0.2 })],
+    [LIT_PANES_PART, new THREE.MeshStandardMaterial({ color: GLASS_COLOR, roughness: 0.3, metalness: 0.2, ...litPaneMaterialProps(THREE, scene) })],
     ['doors', new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 })],
     ['steps', new THREE.MeshStandardMaterial({ color: STONE_COLOR, roughness: 0.95 })],
     ['chimneys', new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 })],
@@ -180,6 +184,7 @@ function buildHouse(
   parts: StreetParts
 ): ThreeNS.Group {
   const { width: w, depth: d, eavesY, floorYs, groundFrontY, groundBackY } = spec;
+  const seed = Array.from(spec.id).reduce((sum, char) => sum * 31 + char.charCodeAt(0), 7);
   const group = new THREE.Group();
   group.position.set(spec.x, 0, spec.frontZ - spec.facing * (d / 2));
   if (spec.facing > 0) group.rotation.y = Math.PI;
@@ -247,7 +252,7 @@ function buildHouse(
     box(bw, top - bottom, BAY_DEPTH, bx, (bottom + top) / 2, frontZ - BAY_DEPTH / 2);
     place(parts.darkTrim, bx, top + 0.05, frontZ - BAY_DEPTH / 2 - 0.05, bw + 0.2, 0.1, BAY_DEPTH + 0.1);
     const bayFace = frontZ - BAY_DEPTH;
-    placeWindow(parts, place, bx, groundRow.sillY, bayFace, bw - 0.5, groundRow.height, Math.PI);
+    placeWindow(parts, place, seed, bx, groundRow.sillY, bayFace, bw - 0.5, groundRow.height, Math.PI);
     bay = { x: bx, width: bw };
   }
 
@@ -265,7 +270,7 @@ function buildHouse(
     place(parts.darkTrim, dx, roofY + dh + 0.04, faceZ + DORMER_DEPTH / 2, DORMER_WIDTH + 0.2, 0.08, DORMER_DEPTH + 0.1);
     const paneHeight = Math.min(0.8, dh - roofAtFace - 0.25);
     if (paneHeight >= 0.4) {
-      placeWindow(parts, place, dx, roofY + roofAtFace + 0.12, faceZ, DORMER_WIDTH - 0.4, paneHeight, Math.PI);
+      placeWindow(parts, place, seed, dx, roofY + roofAtFace + 0.12, faceZ, DORMER_WIDTH - 0.4, paneHeight, Math.PI);
     }
   }
 
@@ -299,16 +304,16 @@ function buildHouse(
         }
         switch (face) {
           case 'front':
-            placeWindow(parts, place, along, row.sillY, frontZ, WINDOW_WIDTH, row.height, Math.PI);
+            placeWindow(parts, place, seed, along, row.sillY, frontZ, WINDOW_WIDTH, row.height, Math.PI);
             break;
           case 'back':
-            placeWindow(parts, place, along, row.sillY, d / 2, WINDOW_WIDTH, row.height, 0);
+            placeWindow(parts, place, seed, along, row.sillY, d / 2, WINDOW_WIDTH, row.height, 0);
             break;
           case 'west':
-            placeWindow(parts, place, -w / 2, row.sillY, along, WINDOW_WIDTH, row.height, -Math.PI / 2);
+            placeWindow(parts, place, seed, -w / 2, row.sillY, along, WINDOW_WIDTH, row.height, -Math.PI / 2);
             break;
           case 'east':
-            placeWindow(parts, place, w / 2, row.sillY, along, WINDOW_WIDTH, row.height, Math.PI / 2);
+            placeWindow(parts, place, seed, w / 2, row.sillY, along, WINDOW_WIDTH, row.height, Math.PI / 2);
             break;
         }
       }
@@ -378,6 +383,7 @@ function buildHouse(
 function placeWindow(
   parts: StreetParts,
   place: (set: InstanceSet, x: number, y: number, z: number, sx: number, sy: number, sz: number, rotY?: number) => void,
+  seed: number,
   x: number,
   sillY: number,
   z: number,
@@ -393,7 +399,17 @@ function placeWindow(
   const [px, pz] = out(FACE_GAP + FRAME_DEPTH / 2 + 0.02);
   const y = sillY + height / 2;
   place(parts.frames, x + fx, y, z + fz, width + FRAME_MARGIN, height + FRAME_MARGIN, FRAME_DEPTH, rotY);
-  place(parts.panes, x + px, y, z + pz, width, height, FRAME_DEPTH, rotY);
+  place(paneLit(x, sillY, z, rotY, seed) ? parts.litPanes : parts.panes, x + px, y, z + pz, width, height, FRAME_DEPTH, rotY);
+}
+
+/** Share of a street's windows with someone home after dark (#759). */
+const LIT_PANE_SHARE = 0.4;
+
+/** Lit or dark for good, by house and spot, so the street doesn't reshuffle on a rebuild. */
+function paneLit(x: number, y: number, z: number, rotY: number, seed: number): boolean {
+  let hash = Math.imul(seed + 1, 0x9e3779b1);
+  for (const value of [x, y, z, rotY]) hash = Math.imul(hash ^ Math.round(value * 100), 0x85ebca6b) ^ (hash >>> 13);
+  return ((hash ^ (hash >>> 16)) >>> 0) % 100 < LIT_PANE_SHARE * 100;
 }
 
 function overlaps(x: number, width: number, otherX: number, otherWidth: number): boolean {

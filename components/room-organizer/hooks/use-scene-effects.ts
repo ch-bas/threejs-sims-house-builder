@@ -13,7 +13,7 @@ import {
 } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
 import { mountBand } from '../lib/mount-band';
-import { LAMP_POOL_SIZE, collectLampLights, planLampPool, type LampLight } from '../lib/night-lights';
+import { LAMP_POOL_SIZE, collectLampLights, nightGlowPlan, planLampPool, type LampLight, type NightGlowPlan } from '../lib/night-lights';
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
 import { boundsSize, planViewFit } from '../lib/plan-view-fit';
 import { hasNeighbours, lowestGround } from '../lib/site';
@@ -43,9 +43,10 @@ import {
   renderWallGhosts,
 } from '../three/interior-walls';
 import { clearItemLabels, renderItemLabels } from '../three/item-labels';
-import { applyLampPool, applyTimeOfDay, computeSkyProfile, isLampPrewarmHour, prewarmLampPool } from '../three/lighting';
+import { applyIndoorFill, applyLampPool, applyTimeOfDay, computeSkyProfile, isLampPrewarmHour, prewarmLampPool } from '../three/lighting';
 import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
+import { applyNightGlow } from '../three/night-glow';
 import { setOutdoorVisible } from '../three/outdoor';
 import { buildAtticCeiling, buildRoof, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
 import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
@@ -1146,6 +1147,33 @@ export function useSceneEffects({
     selectedWall, activeFloorIndex, wallDisplay,
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.width, layout.height, cutoutKey, allFloors, ghostOtherFloors,
+  ]);
+
+  // Lit windows, lamp shades and the street's panes (#759), and the bounce of
+  // a lit room around a walker inside. Runs after the effects that build those
+  // meshes and after the lights, and only writes material values, so it is
+  // keyed on what they read plus the rebuilds that hand it new materials.
+  const nightGlowKey = useMemo(
+    () => JSON.stringify(nightGlowPlan(layout.floors, entranceBuilding)),
+    [layout.floors, entranceBuilding]
+  );
+  const walkerInLitRoom = walkthroughActive && walkIndoors && lampLevel > 0 && lampsKey !== '[]';
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+    applyNightGlow(THREE, scene, {
+      plan: JSON.parse(nightGlowKey) as NightGlowPlan,
+      level: lampLevel,
+      indoors: walkthroughActive && walkIndoors,
+    });
+    applyIndoorFill(scene, walkerInLitRoom ? lampLevel : 0);
+  }, [
+    isReady, invalidate, threeModuleRef, sceneRef, nightGlowKey, lampLevel, walkthroughActive, walkIndoors, walkerInLitRoom,
+    view.timeOfDay, itemsKey, collisionKey, ghostOtherFloors, allFloors, activeFloorIndex, layout.roof,
+    neighboursKey, peopleModelReady,
   ]);
 
   // Measurement markers

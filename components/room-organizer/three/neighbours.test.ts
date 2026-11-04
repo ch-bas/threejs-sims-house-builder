@@ -48,6 +48,12 @@ const instances = (scene: THREE.Scene, part: string) =>
 
 /** World-space centre and scale of every instance of a part. */
 function instanceBoxes(scene: THREE.Scene, part: string): Array<{ position: THREE.Vector3; scale: THREE.Vector3 }> {
+  // A pane is a pane, lit or dark.
+  if (part === 'panes') return [...partBoxes(scene, 'panes'), ...partBoxes(scene, 'litPanes')];
+  return partBoxes(scene, part);
+}
+
+function partBoxes(scene: THREE.Scene, part: string): Array<{ position: THREE.Vector3; scale: THREE.Vector3 }> {
   const mesh = instances(scene, part);
   if (!mesh) return [];
   const matrix = new THREE.Matrix4();
@@ -122,8 +128,8 @@ describe('the street (#310)', () => {
     const street = generateStreet({ ...SITE, neighbours: { west: true, east: true, street: true, across: true, seed: 7 } });
     buildNeighbours(THREE, scene, street);
     expect(houses(scene)).toHaveLength(street.length);
-    // Six instanced part sets at most, whatever the number of houses.
-    expect(tagged(scene).length - street.length).toBeLessThanOrEqual(6);
+    // Seven instanced part sets at most, whatever the number of houses.
+    expect(tagged(scene).length - street.length).toBeLessThanOrEqual(7);
     for (const obj of houses(scene)) {
       const masonry = obj.children[0] as THREE.Mesh;
       expect(masonry.isMesh).toBe(true);

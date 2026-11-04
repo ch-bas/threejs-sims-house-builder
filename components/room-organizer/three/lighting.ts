@@ -12,6 +12,7 @@ const LIGHTING_TAGS = {
   Directional: 'light:directional',
   Hemisphere: 'light:hemi',
   LampPool: 'light:lamp-pool',
+  Halos: 'light:halos',
   Stars: 'sky:stars',
   Moon: 'sky:moon',
 } as const;
@@ -54,6 +55,9 @@ export function addLights(THREE: ThreeModule, scene: ThreeNS.Scene): void {
   pool.userData.type = LIGHTING_TAGS.LampPool;
   pool.visible = false;
   for (let i = 0; i < LAMP_POOL_SIZE; i++) pool.add(new THREE.PointLight(LAMP_COLOR, 0, 1, 2));
+  // After the lights, whose order is the slots'. In the pool, so it shows and
+  // pre-warms along with it.
+  if (typeof document !== 'undefined') pool.add(makeLampHalos(THREE));
   scene.add(pool);
 }
 
@@ -109,10 +113,8 @@ export function applyTimeOfDay(
     } else if (tag === LIGHTING_TAGS.Hemisphere) {
       // Driven with the ambient, or it lit every night with a constant
       // sky-blue fill brighter than all the other lights together (#375).
-      const light = obj as ThreeNS.HemisphereLight;
-      light.color.setHex(profile.hemisphere.sky);
-      light.groundColor.setHex(profile.hemisphere.ground);
-      light.intensity = profile.hemisphere.intensity;
+      obj.userData.sky = profile.hemisphere;
+      applyIndoorFill(scene, (scene.userData[FILL_KEY] as number | undefined) ?? 0);
     } else if (tag === LIGHTING_TAGS.Directional) {
       const light = obj as ThreeNS.DirectionalLight;
       light.color.setHex(profile.sun.color);
@@ -147,6 +149,88 @@ export function applyLampPool(scene: ThreeNS.Scene, plan: LampPoolPlan): void {
     light.intensity = slot.intensity;
     light.distance = slot.distance;
   });
+  placeLampHalos(pool, plan);
+}
+
+/** The halo's width per metre of the lamp's reach: a street lamp's is the wider. */
+const HALO_SIZE_PER_RANGE = 0.17;
+/** Additive, so this is about how far it lifts the air next to the bulb. */
+const HALO_OPACITY = 0.55;
+
+/** One soft sprite per pool slot, sharing a material and a texture (#759). */
+function makeLampHalos(THREE: ThreeModule): ThreeNS.Group {
+  const halos = new THREE.Group();
+  halos.userData.type = LIGHTING_TAGS.Halos;
+  const material = new THREE.SpriteMaterial({
+    map: makeHaloTexture(THREE),
+    color: LAMP_COLOR,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  for (let i = 0; i < LAMP_POOL_SIZE; i++) {
+    const halo = new THREE.Sprite(material);
+    halo.visible = false;
+    halos.add(halo);
+  }
+  return halos;
+}
+
+function placeLampHalos(pool: ThreeNS.Group, plan: LampPoolPlan): void {
+  const halos = pool.children.find((child) => child.userData.type === LIGHTING_TAGS.Halos);
+  if (!halos) return;
+  let brightest = 0;
+  halos.children.forEach((child, index) => {
+    const slot = plan.slots[index];
+    child.visible = slot !== undefined && slot.intensity > 0;
+    if (!slot || !child.visible) return;
+    child.position.set(slot.x, slot.y, slot.z);
+    child.scale.setScalar(slot.distance * HALO_SIZE_PER_RANGE);
+    brightest = Math.max(brightest, slot.level);
+  });
+  const first = halos.children[0] as ThreeNS.Sprite | undefined;
+  if (first) first.material.opacity = brightest * HALO_OPACITY;
+}
+
+function makeHaloTexture(THREE: ThreeModule): ThreeNS.CanvasTexture {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  glow.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  glow.addColorStop(0.25, 'rgba(255, 255, 255, 0.4)');
+  glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** The warm bounce of a lit room, the colours its walls throw back. */
+const ROOM_BOUNCE_SKY = 0xffdcb0;
+const ROOM_BOUNCE_GROUND = 0xb08050;
+/** Hemisphere intensity of a fully lit room. */
+const ROOM_BOUNCE = 1.6;
+const FILL_KEY = 'indoorFill';
+
+/**
+ * Bounce light for a walker inside a lit room (#759): with no bounce, anything
+ * turned from a lamp was black beside a bright wall. 0 is the plain sky fill,
+ * and the orbit view always stays there. No light added: it leans the
+ * hemisphere over, and `applyTimeOfDay` keeps it through an hour step.
+ */
+export function applyIndoorFill(scene: ThreeNS.Scene, fill: number): void {
+  scene.userData[FILL_KEY] = fill;
+  const hemisphere = scene.children.find((obj) => obj.userData.type === LIGHTING_TAGS.Hemisphere) as ThreeNS.HemisphereLight | undefined;
+  const sky = hemisphere?.userData.sky as SkyProfile['hemisphere'] | undefined;
+  if (!hemisphere || !sky) return;
+  hemisphere.color.setHex(mixHex(sky.sky, ROOM_BOUNCE_SKY, fill));
+  hemisphere.groundColor.setHex(mixHex(sky.ground, ROOM_BOUNCE_GROUND, fill));
+  hemisphere.intensity = sky.intensity + (ROOM_BOUNCE - sky.intensity) * fill;
 }
 
 /**

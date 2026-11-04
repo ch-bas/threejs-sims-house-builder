@@ -76,6 +76,7 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
   // pass ignores opacity, so a casting pane would plug 93 % of that hole
   // again (#551). The frame and mullions still cast, like dormer glass (#369).
   glass.castShadow = false;
+  glass.userData.litGlass = true;
   group.add(glass);
 
   // Outer frame (4 sides).

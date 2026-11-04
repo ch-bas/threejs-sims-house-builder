@@ -174,6 +174,7 @@ components/
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays; no alert through walls (#590), depth-tested under another storey or while walking (#552)
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
+    │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
     │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664)
     │   └── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
