@@ -1,4 +1,5 @@
 import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
+import { GRASS_DROP } from '../lib/site';
 import { WINDOW_WIDTH, windowCount, windowRow, type StreetFinish, type StreetHouseSpec } from '../lib/street-row';
 import { removeAndDispose } from './builder-utils';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
@@ -151,6 +152,27 @@ export function buildNeighbours(THREE: ThreeModule, scene: ThreeNS.Scene, houses
   for (const obj of scene.children) if (obj.userData.type === NEIGHBOUR_TAG) shutOutIndoorLampsUnder(THREE, obj);
 }
 
+/**
+ * Clip a party-wall neighbour's roof at the world plane `x = planeX`,
+ * keeping the side away from us (#655). Every roof mesh owns its material
+ * (the shingle material is cloned per roof), so the plane stays on that
+ * house. The renderer has local clipping on (use-three-scene).
+ */
+function clipAtPartyWall(THREE: ThreeModule, roof: readonly ThreeNS.Object3D[], planeX: number, partySign: 1 | -1): void {
+  // Points with normal · p + constant ≥ 0 are kept: away from us.
+  const plane = new THREE.Plane(new THREE.Vector3(-partySign, 0, 0), partySign * planeX);
+  for (const root of roof) {
+    root.traverse((obj) => {
+      const mesh = obj as ThreeNS.Mesh;
+      if (!mesh.isMesh) return;
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        material.clippingPlanes = [plane];
+        material.clipShadows = true;
+      }
+    });
+  }
+}
+
 function buildHouse(
   THREE: ThreeModule,
   spec: StreetHouseSpec,
@@ -201,11 +223,16 @@ function buildHouse(
     const rise = Math.max(0, doorFloorY - groundFrontY);
     place(parts.frames, spec.door.offset, doorFloorY + DOOR_HEIGHT / 2 + 0.05, frontZ - FACE_GAP - 0.02, DOOR_WIDTH + 0.2, DOOR_HEIGHT + 0.1, 0.03);
     place(parts.doors, spec.door.offset, doorFloorY + DOOR_HEIGHT / 2, frontZ - FACE_GAP - 0.03, DOOR_WIDTH, DOOR_HEIGHT, 0.06, 0, spec.door.color);
+    // Stoops reach down to the grass plane under the ground line, like the
+    // porch steps, so they never hover over the pavement (#660).
+    const bottom = groundFrontY - GRASS_DROP;
     if (rise > 0.05) {
       const depth = 0.4 + rise * 1.2;
-      place(parts.steps, spec.door.offset, groundFrontY + rise / 2, frontZ - depth / 2, STEP_WIDTH, rise, depth);
+      const height = rise + GRASS_DROP;
+      place(parts.steps, spec.door.offset, bottom + height / 2, frontZ - depth / 2, STEP_WIDTH, height, depth);
     } else {
-      place(parts.steps, spec.door.offset, groundFrontY + 0.03, frontZ - 0.2, STEP_WIDTH - 0.1, 0.06, 0.4);
+      const height = 0.06 + GRASS_DROP;
+      place(parts.steps, spec.door.offset, bottom + height / 2, frontZ - 0.2, STEP_WIDTH - 0.1, height, 0.4);
     }
   }
 
@@ -290,9 +317,15 @@ function buildHouse(
 
   // ---- Roof, gutters under its eaves, and the chimney ----
   const roofY = eavesY - ROOF_DROP;
+  // The party-wall neighbour's roof stops at its own wall on our side (#655):
+  // its eaves overhang 0.35 m past a 2 cm gap, so the slope, fascia and
+  // gutter used to run 0.33 m into our top storey. Its local x toward us:
+  // the house faces the road like ours, so west is −x.
+  const partySign = spec.side === 'west' ? 1 : spec.side === 'east' ? -1 : 0;
   if (spec.roof.style !== 'none') {
     // buildRoof adds to (and clears roof-tagged children of) whatever it is
     // given; a scratch group keeps it off the scene's own roof.
+    const before = group.children.length;
     buildRoof(THREE, {
       scene: group as unknown as ThreeNS.Scene,
       width: w,
@@ -301,18 +334,24 @@ function buildHouse(
       spec: { style: spec.roof.style, color: spec.roof.color },
       pitch: spec.roof.pitch,
     });
+    if (partySign !== 0) clipAtPartyWall(THREE, group.children.slice(before), spec.x + partySign * (w / 2), partySign);
     const gutterY = roofY - GUTTER_HEIGHT / 2;
     const eaveZ = d / 2 + ROOF_EAVE_OVERHANG - GUTTER_DEPTH / 2;
     const eaveX = w / 2 + ROOF_EAVE_OVERHANG - GUTTER_DEPTH / 2;
     const alongX = spec.roof.style === 'hipped' || (spec.roof.style === 'gable' && ridgeAlongX);
     const alongZ = spec.roof.style === 'hipped' || (spec.roof.style === 'gable' && !ridgeAlongX);
     if (alongX) {
+      // Front and back gutters stop at the party wall rather than past it.
+      const length = w + ROOF_EAVE_OVERHANG * (partySign === 0 ? 2 : 1);
+      const centreX = partySign === 0 ? 0 : -partySign * (ROOF_EAVE_OVERHANG / 2);
       for (const sign of [-1, 1] as const) {
-        place(parts.darkTrim, 0, gutterY, sign * eaveZ, w + ROOF_EAVE_OVERHANG * 2, GUTTER_HEIGHT, GUTTER_DEPTH);
+        place(parts.darkTrim, centreX, gutterY, sign * eaveZ, length, GUTTER_HEIGHT, GUTTER_DEPTH);
       }
     }
     if (alongZ) {
+      // No gutter on the party side: that eave is gone.
       for (const sign of [-1, 1] as const) {
+        if (sign === partySign) continue;
         place(parts.darkTrim, sign * eaveX, gutterY, 0, d + ROOF_EAVE_OVERHANG * 2, GUTTER_HEIGHT, GUTTER_DEPTH, Math.PI / 2);
       }
     }

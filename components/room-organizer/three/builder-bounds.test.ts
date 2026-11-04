@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { FURNITURE_CATALOG, WINDOW_SILL_HEIGHT } from '../lib/constants';
 import { isWallHung, mountBand, pendantBulbY } from '../lib/mount-band';
+import { STAIR_STEP_COUNT } from '../lib/stairs';
 import { createFurnitureModel } from './furniture-builders';
 import type { FurnitureItem } from '../lib/types';
 
@@ -221,5 +222,85 @@ describe('window (#362)', () => {
     // The ledge is centred on the sill; nothing reaches the floor.
     expect(box.min.y).toBeGreaterThan(WINDOW_SILL_HEIGHT - 0.05);
     expect(meshes(build(item)).some((m) => materialOf(m).color.getHex() === 0xcccccc)).toBe(false);
+  });
+});
+
+describe('soft furniture edges and kitchen fronts (#755)', () => {
+  it.each(['sofa', 'armchair', 'bed', 'dining-table', 'bookshelf', 'dresser'])('%s: no part is a sharp box', (type) => {
+    for (const part of meshes(build(catalogItem(type)))) expect(part.geometry).not.toBeInstanceOf(THREE.BoxGeometry);
+  });
+
+  it.each(['counter', 'kitchen-sink'])('%s: shows doors and handles on its front', (type) => {
+    const item = catalogItem(type);
+    const parts = meshes(build(item));
+    const front = parts.filter((part) => bounds(part).max.z > item.depth / 2 - 0.02);
+    expect(front.length).toBeGreaterThanOrEqual(2);
+    // The handles stand proud of the doors, in the dark trim.
+    expect(parts.some((part) => materialOf(part).color.getHex() === 0x2b2b2b && bounds(part).max.z > item.depth / 2 - 0.005)).toBe(true);
+  });
+
+  it.each([['counter', 3], ['kitchen-sink', 3], ['bathroom-sink', 3], ['armchair', 2], ['sofa', 5]] as const)('%s: its static parts draw in %i meshes, one per material', (type, count) => {
+    expect(meshes(build(catalogItem(type)))).toHaveLength(count);
+  });
+
+  it.each([['armchair', undefined], ['sofa', 'standard'], ['sofa', 'L-shape'], ['sofa', 'U-shape'], ['counter', undefined], ['kitchen-sink', undefined], ['bathroom-sink', undefined]] as const)('%s %s: no cushion, back or handle leaves the box', (type, sofaShape) => {
+    const item = { ...catalogItem(type), ...(sofaShape ? { sofaShape } : {}) };
+    const box = bounds(build(item));
+    const EPS = 1e-6;
+    expect(box.max.x).toBeLessThanOrEqual(item.width / 2 + (type === 'counter' ? 0.013 : EPS));
+    expect(box.max.z).toBeLessThanOrEqual(item.depth / 2 + (type === 'counter' ? 0.007 : EPS));
+    expect(box.min.z).toBeGreaterThanOrEqual(-item.depth / 2 - (type === 'counter' ? 0.007 : EPS));
+    // A sink's tap rises over its counter; seats stay under their height.
+    if (!type.endsWith('sink')) expect(box.max.y).toBeLessThanOrEqual(item.height + EPS);
+  });
+
+  it.each([['armchair', undefined], ['sofa', 'standard'], ['sofa', 'L-shape'], ['sofa', 'U-shape']] as const)('%s %s stands on the floor', (type, sofaShape) => {
+    const item = { ...catalogItem(type), ...(sofaShape ? { sofaShape } : {}) };
+    expect(bounds(build(item)).min.y).toBeCloseTo(0, 5);
+  });
+
+  it('keeps a counter inside its catalog box', () => {
+    expectInsideBox('counter');
+  });
+});
+
+// A tilted box hung 0.36 m over the floor at the foot, stopped 0.2 m short
+// of the landing and stood 0.22 m proud of the treads: a plank beside the
+// stairs. The string is a closed outline now, its top edge on the nosings
+// (#658).
+describe('straight stairs stringers (#658)', () => {
+  const item = catalogItem('stairs');
+  const strings = () => meshes(build(item)).filter((m) => m.geometry instanceof THREE.ExtrudeGeometry);
+  const going = item.depth / STAIR_STEP_COUNT;
+  const rise = item.height / STAIR_STEP_COUNT;
+
+  it('stand on the floor, end under the top nosing, and keep to the stair width', () => {
+    const parts = strings();
+    expect(parts).toHaveLength(2);
+    for (const string of parts) {
+      const box = bounds(string);
+      expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
+      expect(box.max.y).toBeLessThanOrEqual(item.height + 0.05);
+      expect(box.min.z).toBeCloseTo(-item.depth / 2, 5);
+      expect(box.max.z).toBeCloseTo(item.depth / 2 - going, 5);
+      expect(Math.abs(box.max.x)).toBeLessThanOrEqual(item.width / 2 + 1e-6);
+      expect(Math.abs(box.min.x)).toBeLessThanOrEqual(item.width / 2 + 1e-6);
+    }
+  });
+
+  it('follow the nosings: the top edge is a lip above each one, never far from it', () => {
+    const group = build(item);
+    const string = meshes(group).find((m) => m.geometry instanceof THREE.ExtrudeGeometry);
+    const x = string!.position.x;
+    for (let i = 0; i < STAIR_STEP_COUNT; i++) {
+      // Just past each nosing; the string ends at the last one, so probe inside it there.
+      const nosingZ = Math.min(-item.depth / 2 + i * going + 0.005, item.depth / 2 - going - 0.005);
+      const nosingY = rise * (i + 1);
+      const ray = new THREE.Raycaster(new THREE.Vector3(x, 10, nosingZ), new THREE.Vector3(0, -1, 0));
+      const hit = ray.intersectObject(group, true).find((h) => h.object === string);
+      expect(hit, `nosing ${i}`).toBeDefined();
+      expect(hit!.point.y).toBeGreaterThanOrEqual(nosingY - 1e-3);
+      expect(hit!.point.y).toBeLessThanOrEqual(nosingY + 0.05);
+    }
   });
 });
