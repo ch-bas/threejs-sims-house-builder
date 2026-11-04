@@ -12,9 +12,19 @@ export const CONTACT_SHADOW_TAG = 'contact-shadow';
  */
 export const CONTACT_PLANE_GAP = 0.018;
 
-const PIXELS_PER_METRE = 64;
-const PHONE_PIXELS_PER_METRE = 32;
-const MAX_TEXTURE_SIDE = 2048;
+/**
+ * How finely a map is painted, and the most it may cost: a big storey gets
+ * fewer pixels a metre rather than a bigger canvas. A phone's map is at most
+ * 2 MB of canvas and texture, a desktop's 8 MB, per storey.
+ */
+export interface ContactDensity {
+  pixelsPerMetre: number;
+  maxSide: number;
+  maxPixels: number;
+}
+
+export const DESKTOP_DENSITY: ContactDensity = { pixelsPerMetre: 64, maxSide: 2048, maxPixels: 2048 * 1024 };
+export const PHONE_DENSITY: ContactDensity = { pixelsPerMetre: 32, maxSide: 1024, maxPixels: 1024 * 512 };
 
 /** A soft layer of a patch: how far it blurs, in metres, and how dark it gets. */
 interface Layer {
@@ -35,9 +45,13 @@ export interface ContactCanvas {
   scale: number;
 }
 
-/** Canvas size for a footprint: the wanted density, capped for a huge house. */
-export function contactCanvasSize(width: number, depth: number, pixelsPerMetre: number): ContactCanvas {
-  const scale = Math.min(pixelsPerMetre, MAX_TEXTURE_SIDE / Math.max(width, depth));
+/** Canvas size for a footprint: the wanted density, capped for a big house. */
+export function contactCanvasSize(width: number, depth: number, density: ContactDensity): ContactCanvas {
+  const scale = Math.min(
+    density.pixelsPerMetre,
+    density.maxSide / Math.max(width, depth),
+    Math.sqrt(density.maxPixels / (width * depth))
+  );
   return { width: Math.max(1, Math.ceil(width * scale)), height: Math.max(1, Math.ceil(depth * scale)), scale };
 }
 
@@ -110,7 +124,7 @@ const paintedPlans = new WeakMap<ThreeNS.Object3D, { plan: ContactPlan; size: Co
  * with alpha, which darkens what's under it exactly as a multiply would.
  */
 export function buildContactShadow(THREE: ThreeModule, plan: ContactPlan): ThreeNS.Mesh | null {
-  const size = contactCanvasSize(plan.width, plan.depth, drawsForPhone() ? PHONE_PIXELS_PER_METRE : PIXELS_PER_METRE);
+  const size = contactCanvasSize(plan.width, plan.depth, drawsForPhone() ? PHONE_DENSITY : DESKTOP_DENSITY);
   const canvas = document.createElement('canvas');
   canvas.width = size.width;
   canvas.height = size.height;

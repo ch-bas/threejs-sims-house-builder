@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
-import { buildContactShadow, CONTACT_PLANE_GAP, CONTACT_SHADOW_TAG, contactCanvasSize, liftContactPatches, paintContactPlan, removeContactShadows } from './contact-shadow';
+import { buildContactShadow, CONTACT_PLANE_GAP, CONTACT_SHADOW_TAG, contactCanvasSize, DESKTOP_DENSITY, liftContactPatches, paintContactPlan, PHONE_DENSITY, removeContactShadows } from './contact-shadow';
 import type { ContactPlan } from '../lib/contact-shadow';
 
 const plan = (over: Partial<ContactPlan> = {}): ContactPlan => ({
@@ -43,18 +43,27 @@ function recorder() {
 
 describe('contactCanvasSize (#754)', () => {
   it('uses the density asked for', () => {
-    expect(contactCanvasSize(12, 10, 64)).toMatchObject({ width: 768, height: 640, scale: 64 });
+    expect(contactCanvasSize(12, 10, DESKTOP_DENSITY)).toMatchObject({ width: 768, height: 640, scale: 64 });
+    expect(contactCanvasSize(12, 10, PHONE_DENSITY)).toMatchObject({ width: 384, height: 320, scale: 32 });
   });
 
-  it('caps a huge house instead of allocating a giant canvas', () => {
-    const size = contactCanvasSize(60, 40, 64);
-    expect(size.width).toBeLessThanOrEqual(2048);
-    expect(size.scale).toBeLessThan(64);
+  it.each([[60, 40], [32, 32], [40, 6]])('keeps a %i × %i m storey within its budget', (width, depth) => {
+    for (const density of [DESKTOP_DENSITY, PHONE_DENSITY]) {
+      const size = contactCanvasSize(width, depth, density);
+      expect(Math.max(size.width, size.height)).toBeLessThanOrEqual(density.maxSide + 1);
+      expect(size.width * size.height).toBeLessThanOrEqual(density.maxPixels * 1.01);
+      expect(size.scale).toBeLessThan(density.pixelsPerMetre);
+    }
+  });
+
+  it('gives a phone at most 2 MB of canvas a storey', () => {
+    const size = contactCanvasSize(40, 40, PHONE_DENSITY);
+    expect(size.width * size.height * 4).toBeLessThanOrEqual(2 * 1024 * 1024 * 1.01);
   });
 });
 
 describe('paintContactPlan (#754)', () => {
-  const size = contactCanvasSize(10, 8, 64);
+  const size = contactCanvasSize(10, 8, DESKTOP_DENSITY);
   const filled = (calls: string[], mode: string) => calls.filter((call) => call.startsWith(`fill:${mode}`));
 
   it('wipes doors after the walls, before the furniture, and holes last', () => {
