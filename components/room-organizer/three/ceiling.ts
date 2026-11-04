@@ -1,3 +1,4 @@
+import { WALKTHROUGH_CEILING_GAP } from '../lib/walkthrough-view';
 import { removeAndDispose } from './builder-utils';
 import { buildFloorGeometryWithOpenings, floorHoleOutlines } from './room-builder';
 import type { FloorOpening } from './wall-openings';
@@ -9,7 +10,7 @@ type ThreeModule = typeof import('./three-runtime');
 export const CEILING_TAG = 'walkthrough-ceiling';
 
 /** Below the storey above's floor plate, which "show all floors" also draws (#276). */
-export const CEILING_GAP = 0.01;
+export const CEILING_GAP = WALKTHROUGH_CEILING_GAP;
 
 const CEILING_COLOR = 0xf4f1ea;
 
