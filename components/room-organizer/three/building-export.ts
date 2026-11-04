@@ -9,7 +9,7 @@ import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
 import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
-import { buildRoof } from './roof';
+import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
 import { computeFloorOpenings, computeWallOpenings } from './wall-openings';
 import type { RoomLayout } from '../lib/types';
@@ -163,7 +163,10 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
 
   if (layout.roof && layout.roof.style !== 'none') {
     const scratch = new THREE.Scene();
-    buildRoof(THREE, { scene: scratch, width, depth, cutout, baseY: buildingHeight(layout.floors), spec: layout.roof });
+    buildRoof(THREE, {
+      scene: scratch, width, depth, cutout, baseY: buildingHeight(layout.floors), spec: layout.roof,
+      gableWalls: gableWallsOf(layout.roof.style, layout.floors),
+    });
     const roof = new THREE.Group();
     roof.name = 'Roof';
     for (const child of [...scratch.children]) roof.add(child);

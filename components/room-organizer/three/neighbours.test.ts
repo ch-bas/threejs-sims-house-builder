@@ -74,11 +74,11 @@ describe('party-wall neighbours (#202)', () => {
     expect(built.map((obj) => obj.userData.side)).toEqual(['west', 'east']);
     for (const obj of built) {
       // The block: inner face just off our wall plane (x = ±3), from the
-      // plinth depth to our eaves.
+      // plinth depth to where its gable starts, just under our eaves.
       const block = new THREE.Box3().setFromObject(obj.children[0]!);
       expect(Math.min(Math.abs(block.min.x), Math.abs(block.max.x))).toBeCloseTo(3.02);
       expect(block.min.y).toBeCloseTo(-0.25);
-      expect(block.max.y).toBeCloseTo(6.6);
+      expect(block.max.y).toBeCloseTo(6.57);
       // Roofed above our eaves.
       expect(new THREE.Box3().setFromObject(obj).max.y).toBeGreaterThan(7);
     }
@@ -230,6 +230,21 @@ describe('the street (#310)', () => {
 
 // The attached neighbour's eaves overhang 0.35 m past a 2 cm gap, so its
 // slope, fascia and gutters ran 0.33 m into our top storey (#655).
+describe('neighbour gables (#661)', () => {
+  it('stops the block where a gable roof starts, so the gable ends never share its plane', () => {
+    const scene = new THREE.Scene();
+    buildNeighbours(THREE, scene, [house({ attached: false })]);
+    const block = new THREE.Box3().setFromObject(houses(scene)[0]!.children[0]!);
+    const roof = new THREE.Box3().setFromObject(houses(scene)[0]!.getObjectByName('Roof')!);
+    expect(block.max.y).toBeCloseTo(roof.min.y);
+    expect(block.max.y).toBeLessThan(6);
+
+    const hipped = new THREE.Scene();
+    buildNeighbours(THREE, hipped, [house({ attached: false, roof: { style: 'hipped', color: '#8d6e63', pitch: 1 } })]);
+    expect(new THREE.Box3().setFromObject(houses(hipped)[0]!.children[0]!).max.y).toBeCloseTo(6);
+  });
+});
+
 describe('a party-wall neighbour keeps its roof off ours (#655)', () => {
   const OURS = { width: 6, depth: 9, floorYs: [0, 3], eavesY: 6, roof: { style: 'hipped' as const } };
   const roofMeshes = (scene: THREE.Scene, houseIndex: number): THREE.Mesh[] => {

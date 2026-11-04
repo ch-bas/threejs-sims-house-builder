@@ -49,7 +49,7 @@ import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { applyNightGlow } from '../three/night-glow';
 import { setOutdoorVisible } from '../three/outdoor';
-import { buildAtticCeiling, buildRoof, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
+import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
 import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
@@ -1253,6 +1253,9 @@ export function useSceneEffects({
   // floor switch no longer rebuilds the roof and every dormer. A roof edit
   // made down there rebuilds it on the way back up, not while hidden.
   // Walking indoors, the roof shows only from the storeys next to it.
+  // A gable's ends wear the top storey's walls (#661): only their finish
+  // rebuilds it, and only on a gable roof.
+  const gableWallsKey = JSON.stringify(gableWallsOf(roofStyle, layout.floors) ?? null);
   const roofOnStorey =
     activeFloorIndex === layout.floors.length - 1 ||
     (shownTo >= 0 ? shownTo >= layout.floors.length - 1 : allFloors);
@@ -1273,9 +1276,10 @@ export function useSceneEffects({
     }
 
     const baseY = buildingHeight(layout.floors);
-    const buildKey = JSON.stringify([layout.roof, layout.width, layout.height, baseY, layout.cutout ?? null]);
+    const buildKey = JSON.stringify([layout.roof, layout.width, layout.height, baseY, layout.cutout ?? null, gableWallsKey]);
     if (roofOnStorey && scene.userData[ROOF_BUILD_KEY] !== buildKey) {
-      buildRoof(THREE, { scene, width: layout.width, depth: layout.height, cutout: layout.cutout, baseY, spec: layout.roof });
+      const gableWalls = gableWallsOf(layout.roof.style, layout.floors);
+      buildRoof(THREE, { scene, width: layout.width, depth: layout.height, cutout: layout.cutout, baseY, spec: layout.roof, gableWalls });
       scene.userData[ROOF_BUILD_KEY] = buildKey;
       requestShadowUpdate();
     }
@@ -1287,12 +1291,13 @@ export function useSceneEffects({
     if (camera && applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height)) {
       requestShadowUpdate();
     }
-    // layout.floors is read for the eaves height only (floor count + storey
-    // heights); keying on its identity would rebuild the roof on every item edit.
+    // layout.floors is read for the eaves height (floor count + storey
+    // heights) and a gable's end walls (gableWallsKey); keying on its identity
+    // would rebuild the roof on every item edit.
     // wallDisplay is read for the initial visibility only: the cutaway effect
     // re-applies it on change, so a display flip needn't rebuild the roof.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, cutoutKey, layout.floors.length, storeyHeightsKey, roofOnStorey]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, layout.roof, layout.width, layout.height, cutoutKey, layout.floors.length, storeyHeightsKey, roofOnStorey, gableWallsKey]);
 
   // Walkthrough attic (#487): walking indoors where the top storey shows,
   // the roof's shingled underside gives way to a plain ceiling that opens

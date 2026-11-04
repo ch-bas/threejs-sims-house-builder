@@ -14,6 +14,9 @@ export const WALL_PATTERN_LABELS: Record<WallPattern, string> = {
   siding: 'Siding',
 };
 
+/** An outer wall with no colour of its own: warm cream, never a neutral grey. Gable ends share it. */
+export const DEFAULT_WALL_COLOR = '#e8dcc4';
+
 interface PatternRenderer {
   draw(ctx: CanvasRenderingContext2D, size: number, baseColor: string): void;
   /** How many tiles per meter of wall length. */
@@ -22,16 +25,30 @@ interface PatternRenderer {
 
 const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   brick: {
+    // One tile is 1.25 m: six stretchers of 0.21 m by sixteen courses of
+    // 0.078 m, about a real brick and its joint (#661). The tile used to
+    // be six courses stretched 1.67× up the wall, bricks taller than wide.
     repeatPerMeter: 0.8,
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth = 2;
-      const rows = 6;
+      const rows = 16;
       const rowHeight = size / rows;
-      const bricksPerRow = 4;
+      const bricksPerRow = 6;
       const brickWidth = size / bricksPerRow;
+      for (let r = 0; r < rows; r++) {
+        const offset = (r % 2) * (brickWidth / 2);
+        const y = r * rowHeight;
+        for (let c = -1; c < bricksPerRow + 1; c++) {
+          // A fixed tone per brick; the column wraps, so the tile still tiles.
+          const column = (c + bricksPerRow) % bricksPerRow;
+          const tone = ((r * 7 + column * 13) % 17) / 16 - 0.5;
+          ctx.fillStyle = tone > 0 ? `rgba(255,255,255,${(tone * 0.12).toFixed(3)})` : `rgba(0,0,0,${(-tone * 0.16).toFixed(3)})`;
+          ctx.fillRect(c * brickWidth + offset, y, brickWidth, rowHeight);
+        }
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = Math.max(1, size / 192);
       for (let r = 0; r < rows; r++) {
         const offset = (r % 2) * (brickWidth / 2);
         const y = r * rowHeight;
@@ -112,13 +129,13 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   },
   // Horizontal lap siding — the white-board look of classic
   // suburban houses. Boards are wider than they are tall and have a
-  // subtle shadow line under each.
+  // subtle shadow line under each: twelve to a 2 m tile, 17 cm boards.
   siding: {
     repeatPerMeter: 0.5,
     draw(ctx, size, baseColor) {
       ctx.fillStyle = baseColor;
       ctx.fillRect(0, 0, size, size);
-      const boardCount = 8;
+      const boardCount = 12;
       const boardHeight = size / boardCount;
       for (let i = 0; i < boardCount; i += 1) {
         const y = i * boardHeight;
@@ -142,6 +159,12 @@ export interface BuildWallMaterialOptions {
   color: string;
   width: number;
   height: number;
+  /**
+   * Height of the bottom of the wall above the ground (metres): the pattern
+   * is offset by it, so brick courses and siding laps run on from one
+   * storey to the next instead of restarting at every floor line (#661).
+   */
+  yOffset?: number;
 }
 
 /**
@@ -195,7 +218,11 @@ export function buildWallMaterial(
   // canvas image; per-wall `repeat` is set on the clone, not the master.
   // (`Texture.clone()` already flags needsUpdate, so no explicit re-upload.)
   const texture = withMaxAnisotropy(master.clone());
-  texture.repeat.set(options.width * renderer.repeatPerMeter, options.height * renderer.repeatPerMeter * 0.6);
+  // Square tiles, the same density both ways: the old 0.6 on v stretched
+  // every pattern 1.67× up the wall (#661). The geometry's UVs span 0..1
+  // over `width` × `height` (or are metres, with both at 1).
+  texture.repeat.set(options.width * renderer.repeatPerMeter, options.height * renderer.repeatPerMeter);
+  texture.offset.y = ((options.yOffset ?? 0) * renderer.repeatPerMeter) % 1;
 
   return new THREE.MeshStandardMaterial({
     map: texture,

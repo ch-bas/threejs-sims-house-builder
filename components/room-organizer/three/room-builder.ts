@@ -9,7 +9,7 @@ import { shutOutIndoorLamps } from './outdoor-lamps';
 import { ROOF_OFF_STOREY_KEY } from './roof';
 import { withMaxAnisotropy } from './texture-settings';
 import { mergeHoleRects, openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
-import { buildWallMaterial } from './wall-patterns';
+import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
 import type { FloorPattern, FloorPlanFitMode, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
 import type { ZoneFloorPatch } from '../lib/zones';
 import type * as ThreeNS from 'three';
@@ -182,10 +182,6 @@ export function applyWallDisplay(
 
   return changed;
 }
-
-// Warm cream — build-mode build mode walls read as tan/cream by default, never
-// the neutral mid-grey we used to fall back to.
-const DEFAULT_WALL_COLOR = 0xe8dcc4;
 
 export function removeTagged(scene: ThreeNS.Scene, ...tags: RoomObjectTag[]): void {
   const tagSet = new Set<string>(tags);
@@ -653,12 +649,13 @@ function buildWalls(
 
   for (const spec of wallSpecs) {
     if (hiddenWalls?.includes(spec.side)) continue;
-    const color = colors?.[spec.side] ?? hexFromInt(DEFAULT_WALL_COLOR);
+    const color = colors?.[spec.side] ?? DEFAULT_WALL_COLOR;
     const material = buildWallMaterial(THREE, {
       pattern: pattern ?? 'solid',
       color,
       width: spec.width,
       height: wallHeight,
+      yOffset,
     });
 
     if (ghostOpacity !== undefined) {
@@ -1135,8 +1132,4 @@ function isSimplePolygon(points: ReadonlyArray<[number, number]>): boolean {
 function isAxisAlignedRotation(rotation: number): boolean {
   const twist = Math.abs(Math.sin(2 * rotation));
   return twist < 1e-3;
-}
-
-function hexFromInt(value: number): string {
-  return `#${value.toString(16).padStart(6, '0')}`;
 }

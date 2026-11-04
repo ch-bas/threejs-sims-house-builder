@@ -216,7 +216,11 @@ function buildHouse(
     g.translate(x, y, z);
     masonry.push(g);
   };
-  box(w, eavesY - baseY, d, 0, (baseY + eavesY) / 2, 0);
+  // Under a gable the block stops where the roof starts: the gable ends
+  // carry the facade on up from there, and a block reaching the eaves would
+  // share their plane for the roof's drop and z-fight it (#661, #276).
+  const blockTop = spec.roof.style === 'gable' ? eavesY - ROOF_DROP : eavesY;
+  box(w, blockTop - baseY, d, 0, (baseY + blockTop) / 2, 0);
 
   // Door: the lowest storey whose floor is at (or nearly at) the ground
   // outside — on a hillside that is the one at street level, never a
@@ -338,6 +342,13 @@ function buildHouse(
       baseY: roofY,
       spec: { style: spec.roof.style, color: spec.roof.color },
       pitch: spec.roof.pitch,
+      // The gable ends carry the facade up to the roof (#661), its courses
+      // running on from the block's, whose pattern starts at its foot.
+      gableWalls: {
+        pattern: spec.facade.finish === 'brick' ? 'brick' : spec.facade.finish === 'render' ? 'plaster' : 'solid',
+        colors: { north: spec.facade.color, south: spec.facade.color, east: spec.facade.color, west: spec.facade.color },
+        patternOriginY: baseY,
+      },
     });
     if (partySign !== 0) clipAtPartyWall(THREE, group.children.slice(before), spec.x + partySign * (w / 2), partySign);
     const gutterY = roofY - GUTTER_HEIGHT / 2;
