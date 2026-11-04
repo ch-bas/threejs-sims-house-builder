@@ -665,7 +665,7 @@ to respect.
 
 ## Furniture surfaces and grounding
 
-Furniture parts are `softBox` geometry: one chamfer per edge, 44 triangles, with each vertex keeping its face's normal so the normals turn across the chamfer and the edge catches a highlight (#755). UVs are in metres along a face's longer side, which is what lets one shared detail texture keep its scale on every part. A cylinder's UVs are 0 to 1, so round parts take a material class without detail.
+Furniture parts are `softBox` geometry: one chamfer per edge, 44 triangles, with each vertex keeping its face's normal so the normals turn across the chamfer and the edge catches a highlight (#755). UVs are in metres along a face's longer side, which is what lets one shared detail texture keep its scale on every part. A cylinder's UVs are 0 to 1, so round parts take a material class without detail. Static parts of one item that share a material are merged with `mergeParts`, so kitchen doors and handles, a sofa's frame and a three-part plinth add no draw calls per part.
 
 `three/furniture-materials.ts` holds the material classes (#756). A part is a metal (1) or it isn't (0). White goods are `painted`, not metal: bare metal only mirrors the dim room and turned the fridge black. The detail images multiply the item's colour, so colour pickers keep working, and they are `DataTexture`s rather than canvases, so builders still run in Node tests. They are shared (`markSharedTexture`), released when the editor unmounts, and left out of GLB exports, which would otherwise grow by about a megabyte and rely on KHR_texture_transform.
 

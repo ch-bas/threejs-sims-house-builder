@@ -233,9 +233,25 @@ describe('soft furniture edges and kitchen fronts (#755)', () => {
   it.each(['counter', 'kitchen-sink'])('%s: shows doors and handles on its front', (type) => {
     const item = catalogItem(type);
     const parts = meshes(build(item));
-    const front = parts.filter((part) => bounds(part).max.z > item.depth / 2 - 0.02 && bounds(part).max.y < item.height);
+    const front = parts.filter((part) => bounds(part).max.z > item.depth / 2 - 0.02);
     expect(front.length).toBeGreaterThanOrEqual(2);
-    expect(parts.some((part) => materialOf(part).metalness > 0.5 && bounds(part).max.z > item.depth / 2 - 0.02)).toBe(true);
+    // The handles stand proud of the doors, in the dark trim.
+    expect(parts.some((part) => materialOf(part).color.getHex() === 0x2b2b2b && bounds(part).max.z > item.depth / 2 - 0.005)).toBe(true);
+  });
+
+  it.each([['counter', 3], ['kitchen-sink', 3], ['bathroom-sink', 3], ['armchair', 2], ['sofa', 5]] as const)('%s: its static parts draw in %i meshes, one per material', (type, count) => {
+    expect(meshes(build(catalogItem(type)))).toHaveLength(count);
+  });
+
+  it.each([['armchair', undefined], ['sofa', 'standard'], ['sofa', 'L-shape'], ['sofa', 'U-shape'], ['counter', undefined], ['kitchen-sink', undefined], ['bathroom-sink', undefined]] as const)('%s %s: no cushion, back or handle leaves the box', (type, sofaShape) => {
+    const item = { ...catalogItem(type), ...(sofaShape ? { sofaShape } : {}) };
+    const box = bounds(build(item));
+    const EPS = 1e-6;
+    expect(box.max.x).toBeLessThanOrEqual(item.width / 2 + (type === 'counter' ? 0.013 : EPS));
+    expect(box.max.z).toBeLessThanOrEqual(item.depth / 2 + (type === 'counter' ? 0.007 : EPS));
+    expect(box.min.z).toBeGreaterThanOrEqual(-item.depth / 2 - (type === 'counter' ? 0.007 : EPS));
+    // A sink's tap rises over its counter; seats stay under their height.
+    if (!type.endsWith('sink')) expect(box.max.y).toBeLessThanOrEqual(item.height + EPS);
   });
 
   it.each([['armchair', undefined], ['sofa', 'standard'], ['sofa', 'L-shape'], ['sofa', 'U-shape']] as const)('%s %s stands on the floor', (type, sofaShape) => {
