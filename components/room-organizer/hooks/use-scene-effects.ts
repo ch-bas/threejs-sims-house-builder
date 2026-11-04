@@ -322,8 +322,14 @@ export function useSceneEffects({
   const litAllFloors = view.showAllFloors && !walkthroughActive;
   const litStorey = walkthroughActive && walkLampStorey !== undefined ? walkLampStorey : activeFloorIndex;
   const lampsKey = useMemo(
-    () => JSON.stringify(collectLampLights(layout.floors, { activeFloorIndex: litStorey, showAllFloors: litAllFloors })),
-    [layout.floors, litStorey, litAllFloors]
+    () => JSON.stringify(
+        collectLampLights(
+          layout.floors,
+          { activeFloorIndex: litStorey, showAllFloors: litAllFloors },
+          { width: layout.width, height: layout.height, ...(layout.cutout ? { cutout: layout.cutout } : {}) }
+        )
+      ),
+    [layout.floors, litStorey, litAllFloors, layout.width, layout.height, layout.cutout]
   );
 
   // Wall preview during draw mode. On the plan it is the plan's to draw: the
