@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { stairSteps, stairToWorld } from './stairs';
+import { ROOF_STAIR_GAP } from './storeys';
 import {
   advanceWalker,
   buildShellColliders,
@@ -345,5 +346,22 @@ describe('seeing the storeys either side (#446)', () => {
     // Once near, it holds until the far threshold: no flicker at the edge.
     expect(seesNeighbourStoreys(true, 'floor', STAIRWELL_VIEW_ENTER + 0.2)).toBe(true);
     expect(seesNeighbourStoreys(true, 'floor', STAIRWELL_VIEW_LEAVE + 0.01)).toBe(false);
+  });
+});
+
+describe('walk world — stairs under the roof (#654)', () => {
+  const topTread = (roof?: { style: 'gable' | 'none' }): number => {
+    const world = buildWalkWorld({ width: 8, depth: 8, floors: [{ items: [] }, { items: [STAIRS] }], ...(roof ? { roof } : {}) });
+    const [flight] = world.stairsByFloor[1]!;
+    return flight!.treads.find((tread) => tread.top)!.y - world.elevations[1]!;
+  };
+
+  it('builds the flight to the rise the scene draws, so the walker stops under the attic plate', () => {
+    expect(topTread({ style: 'gable' })).toBeCloseTo(3 - ROOF_STAIR_GAP);
+  });
+
+  it('keeps the full rise with no roof', () => {
+    expect(topTread({ style: 'none' })).toBeCloseTo(3);
+    expect(topTread()).toBeCloseTo(3);
   });
 });

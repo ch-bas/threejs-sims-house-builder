@@ -2,18 +2,19 @@
 
 import { useRoomEditor } from '../contexts';
 import { formatMetres } from '../lib/format';
-import { floorStairHeadroom, isHeadroomShort, STAIR_HEADROOM } from '../lib/stairs';
+import { floorStairHeadroom, isHeadroomShort, STAIR_HEADROOM, stairGoesNowhere } from '../lib/stairs';
 import type { FurnitureItem } from '../lib/types';
 
 /**
  * The warning in a stair's controls when the flight is short of headroom
- * (#631). Says nothing otherwise, and nothing on the top storey, which has
- * no floor above to clear.
+ * (#631), or leads nowhere because the storey is the top one (#654). Says
+ * nothing otherwise.
  */
 export function StairHeadroomNote({ item }: { item: FurnitureItem }): JSX.Element | null {
   const { layout, activeFloorIndex } = useRoomEditor();
   const headroom = floorStairHeadroom(item, layout, activeFloorIndex);
-  if (!headroom || !isHeadroomShort(headroom.clearance)) return null;
+  const nowhere = stairGoesNowhere(layout, activeFloorIndex);
+  if (!nowhere && (!headroom || !isHeadroomShort(headroom.clearance))) return null;
   return (
     <p
       role="status"
@@ -27,7 +28,9 @@ export function StairHeadroomNote({ item }: { item: FurnitureItem }): JSX.Elemen
         background: 'rgba(120, 24, 18, 0.85)',
       }}
     >
-      Only {formatMetres(headroom.clearance)} of headroom on this flight; {formatMetres(STAIR_HEADROOM)} is the minimum.
+      {nowhere || !headroom
+        ? 'This flight leads nowhere: there is no floor above it.'
+        : `Only ${formatMetres(headroom.clearance)} of headroom on this flight; ${formatMetres(STAIR_HEADROOM)} is the minimum.`}
     </p>
   );
 }
