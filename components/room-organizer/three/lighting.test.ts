@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LAMP_POOL_SIZE, planLampPool, type LampLight } from '../lib/night-lights';
 import {
   addLights,
   applyLampPool,
+  applyShadowQuality,
   computeNightSky,
   computeSkyProfile,
   shadowNormalBias,
@@ -331,5 +332,32 @@ describe('lamp pool (#393)', () => {
     prewarmLampPool(renderer, scene, new THREE.PerspectiveCamera());
     expect(seen).toEqual([LAMP_POOL_SIZE]);
     expect(pointLights(scene).drawn).toBe(0);
+  });
+});
+
+describe('shadow quality (#760)', () => {
+  const lit = () => {
+    const scene = new THREE.Scene();
+    addLights(THREE as never, scene);
+    const sun = scene.children.find((obj) => (obj as ThreeNS.DirectionalLight).isDirectionalLight) as ThreeNS.DirectionalLight;
+    return { scene, sun };
+  };
+
+  it('resizes the map, frees the old one and keeps the bias in texels', () => {
+    const { scene, sun } = lit();
+    const freed = { dispose: vi.fn() };
+    sun.shadow.map = freed as never;
+    const bias = sun.shadow.normalBias;
+    expect(applyShadowQuality(scene, 512, 2)).toBe(true);
+    expect(sun.shadow.mapSize.width).toBe(512);
+    expect(sun.shadow.radius).toBe(2);
+    expect(freed.dispose).toHaveBeenCalledOnce();
+    expect(sun.shadow.map).toBeNull();
+    expect(sun.shadow.normalBias).toBeGreaterThan(bias);
+  });
+
+  it('leaves a matching map alone', () => {
+    const { scene, sun } = lit();
+    expect(applyShadowQuality(scene, sun.shadow.mapSize.width, sun.shadow.radius)).toBe(false);
   });
 });

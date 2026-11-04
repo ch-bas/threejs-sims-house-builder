@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/chunk-reload';
 import { REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
-import { qualityProfile } from '../lib/render-quality';
+import { qualityProfile, type QualityChoice, type QualityProfile } from '../lib/render-quality';
 import { ORBIT_FOV_DEG, ORBIT_MAX_POLAR, ORBIT_START, clearOfGround, orbitNear } from '../lib/scene-insets';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
-import { addLights } from '../three/lighting';
+import { addLights, applyShadowQuality } from '../three/lighting';
 import { releasePeopleGeometry } from '../three/people-model';
 import { clearFloorPlanImageCache } from '../three/room-builder';
 import { setMaxAnisotropy } from '../three/texture-settings';
@@ -20,6 +20,8 @@ export type { HoverInfo, SelectionMode } from '../three/drag-handlers';
 export interface UseThreeSceneOptions extends SceneEventHandlers {
   /** Ground height at world z, which the orbit camera stays above. */
   groundAt?: (z: number) => number;
+  /** The View menu's render quality (#760). */
+  renderQuality?: QualityChoice | undefined;
   canvasRef: React.RefObject<HTMLCanvasElement>;
 }
 
@@ -119,6 +121,22 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     };
   }, []);
 
+  // A changed render quality, without tearing the scene down. Textures already
+  // built keep their anisotropy until their next rebuild.
+  const { renderQuality } = options;
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const renderer = rendererRef.current;
+    const canvas = canvasRef.current;
+    if (!isReady || !scene || !renderer || !canvas) return;
+    const quality = currentQuality(renderQuality);
+    setMaxAnisotropy(Math.min(quality.maxAnisotropy, renderer.capabilities.getMaxAnisotropy()));
+    renderer.setPixelRatio(quality.pixelRatio);
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0) renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+    if (applyShadowQuality(scene, quality.shadowMapSize, quality.shadowRadius)) renderer.shadowMap.needsUpdate = true;
+    dirtyRef.current = true;
+  }, [isReady, renderQuality, canvasRef]);
+
   // Initialize scene once the module + canvas are ready.
   // The ground moved under a camera nothing else is moving: a new slope.
   const { groundAt } = options;
@@ -172,7 +190,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // speckle with acne and the ground past the shadow camera's far plane
         // reads as shadowed (#187). Coplanar meshes keep their gaps instead.
       });
-      renderer.setPixelRatio(pixelRatio());
+      renderer.setPixelRatio(currentQuality(handlersRef.current.renderQuality).pixelRatio);
       // updateStyle = false everywhere: three would otherwise pin the canvas's
       // inline width/height to pixels, and a 0×0 write while hidden in 2D
       // kept it collapsed for the rest of the session (#363).
@@ -196,7 +214,6 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       renderer.toneMapping = THREE.NeutralToneMapping;
       renderer.toneMappingExposure = 0.9;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      setMaxAnisotropy(renderer.capabilities.getMaxAnisotropy());
       rendererRef.current = renderer;
       cleanup.push(() => renderer.dispose());
       // Runs after the scene is freed: placed people and walkers share the
@@ -326,7 +343,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         if (width === 0 || height === 0) return;
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        renderer.setPixelRatio(pixelRatio());
+        renderer.setPixelRatio(currentQuality(handlersRef.current.renderQuality).pixelRatio);
         renderer.setSize(width, height, false);
         dirtyRef.current = true;
       };
@@ -415,16 +432,20 @@ function aspectOf(canvas: HTMLCanvasElement): number {
 }
 
 /**
- * Device pixel ratio capped per device class: 2 on desktops and tablets,
- * lower on phones (lib/render-quality.ts). Read on every resize, since
- * zoom and monitor moves change it.
+ * The quality profile for this device and `choice` (lib/render-quality.ts).
+ * Read on every resize, since zoom and monitor moves change the pixel ratio.
  */
-function pixelRatio(): number {
-  return qualityProfile({
-    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
-    screenShortSide: Math.min(window.screen.width, window.screen.height),
-    devicePixelRatio: window.devicePixelRatio,
-  }).pixelRatio;
+export function currentQuality(choice: QualityChoice | undefined): QualityProfile {
+  // The prerender has no device: it reads as a desktop, nothing draws there.
+  if (typeof window === 'undefined') return qualityProfile({ coarsePointer: false, screenShortSide: 0, devicePixelRatio: 1 }, choice);
+  return qualityProfile(
+    {
+      coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+      screenShortSide: Math.min(window.screen.width, window.screen.height),
+      devicePixelRatio: window.devicePixelRatio,
+    },
+    choice
+  );
 }
 
 function supportsWebGL(): boolean {
