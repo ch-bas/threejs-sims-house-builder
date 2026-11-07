@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { outdoorGroundSize } from '../lib/site';
-import { buildWeatherMesh, createWeatherField, removeWeather, stepWeatherField, syncWeatherMesh } from '../three/weather';
+import { buildWeatherMesh, createWeatherField, removeWeather, setWeatherTime } from '../three/weather';
 import { useReducedMotion } from './use-reduced-motion';
 import type { DryBox } from '../lib/street-row';
 import type { TerrainSpec, Weather } from '../lib/types';
@@ -29,8 +29,9 @@ export interface UseWeatherOptions {
 
 /**
  * Rain or snow over the lot (#189). Runs a self-invalidating RAF loop exactly
- * like the NPC walkers: only while weather ≠ clear, stepping the particle
- * field and requesting one repaint per frame, so the render loop stays parked
+ * like the NPC walkers: only while weather ≠ clear, advancing the field's
+ * clock (a uniform; the vertex shader moves the particles, #669) and
+ * requesting one repaint per frame, so the render loop stays parked
  * the moment the weather clears. The overcast lighting and the ground tint
  * are applied by `applyTimeOfDay`, not here. Cleanup disposes the field and
  * repaints once so the last frame's particles don't linger.
@@ -64,7 +65,6 @@ export function useWeather(options: UseWeatherOptions): void {
     // Reduced motion (#436): the particles hang where they were scattered —
     // one paint, no loop.
     if (reducedMotion) {
-      syncWeatherMesh(mesh, field);
       invalidate();
       return () => {
         removeWeather(scene);
@@ -74,14 +74,15 @@ export function useWeather(options: UseWeatherOptions): void {
 
     let rafId = 0;
     let lastTime = performance.now();
+    let seconds = 0;
     const tick = () => {
       rafId = requestAnimationFrame(tick);
       const now = performance.now();
       // Cap the step so a backgrounded tab doesn't teleport the column on return.
       const delta = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
-      stepWeatherField(field, delta);
-      syncWeatherMesh(mesh, field);
+      seconds += delta;
+      setWeatherTime(mesh, seconds);
       invalidate();
     };
     rafId = requestAnimationFrame(tick);

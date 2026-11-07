@@ -6,10 +6,25 @@ import {
   WEATHER_TAG,
   buildWeatherMesh,
   createWeatherField,
+  WEATHER_TIME_WRAP,
   removeWeather,
-  stepWeatherField,
-  syncWeatherMesh,
+  setWeatherTime,
+  weatherPositionAt,
+  type WeatherField,
 } from './weather';
+
+/** Every particle's position `time` seconds in, as xyz triples. */
+function at(field: WeatherField, time: number): Float32Array {
+  const out = new Float32Array(field.count * 3);
+  const p = { x: 0, y: 0, z: 0 };
+  for (let i = 0; i < field.count; i++) {
+    weatherPositionAt(field, i, time, p);
+    out[i * 3] = p.x;
+    out[i * 3 + 1] = p.y;
+    out[i * 3 + 2] = p.z;
+  }
+  return out;
+}
 
 /** Deterministic [0, 1) source so the scatter is the same on every run. */
 function seeded(seed: number): () => number {
@@ -55,19 +70,19 @@ describe('weather particle field (#189)', () => {
   it('rain falls straight and fast; snow falls slowly and sways', () => {
     const rain = createWeatherField({ kind: 'rain', ...LOT, count: 100, rng: seeded(1) });
     const snow = createWeatherField({ kind: 'snow', ...LOT, count: 100, rng: seeded(1) });
-    const rainBefore = Float32Array.from(rain.positions);
-    const snowBefore = Float32Array.from(snow.positions);
-    stepWeatherField(rain, 0.1);
-    stepWeatherField(snow, 0.1);
+    const rainBefore = at(rain, 0);
+    const snowBefore = at(snow, 0);
+    const rainAfter = at(rain, 0.1);
+    const snowAfter = at(snow, 0.1);
     for (let i = 0; i < 100; i++) {
       // x/z untouched for rain, y dropped by speed × dt (or wrapped).
-      expect(rain.positions[i * 3]).toBe(rainBefore[i * 3]);
-      expect(rain.positions[i * 3 + 2]).toBe(rainBefore[i * 3 + 2]);
-      const rainDrop = rainBefore[i * 3 + 1]! - rain.positions[i * 3 + 1]!;
-      const snowDrop = snowBefore[i * 3 + 1]! - snow.positions[i * 3 + 1]!;
+      expect(rainAfter[i * 3]).toBe(rainBefore[i * 3]);
+      expect(rainAfter[i * 3 + 2]).toBe(rainBefore[i * 3 + 2]);
+      const rainDrop = rainBefore[i * 3 + 1]! - rainAfter[i * 3 + 1]!;
+      const snowDrop = snowBefore[i * 3 + 1]! - snowAfter[i * 3 + 1]!;
       if (rainDrop > 0 && snowDrop > 0) expect(rainDrop).toBeGreaterThan(snowDrop * 4);
       // Snow sways about its resting x but never further than the clearance allows.
-      expect(Math.abs(snow.positions[i * 3]! - snow.restX[i]!)).toBeLessThanOrEqual(SNOW_SWAY + 1e-6);
+      expect(Math.abs(snowAfter[i * 3]! - snow.restX[i]!)).toBeLessThanOrEqual(SNOW_SWAY + 1e-6);
     }
   });
 
@@ -75,29 +90,47 @@ describe('weather particle field (#189)', () => {
     const field = createWeatherField({ kind: 'rain', ...LOT, count: 1, rng: seeded(3), floorY: 0, ceilingY: 10 });
     field.positions[1] = 0.5;
     field.speeds[0] = 10;
-    stepWeatherField(field, 0.1); // 0.5 − 1.0 = −0.5 → wraps to 9.5
-    expect(field.positions[1]).toBeCloseTo(9.5, 5);
-    // A big step never leaves a particle under the floor, however far it fell.
-    stepWeatherField(field, 5);
-    expect(field.positions[1]).toBeGreaterThanOrEqual(0);
-    expect(field.positions[1]).toBeLessThanOrEqual(10);
+    expect(at(field, 0)[1]).toBeCloseTo(0.5, 5);
+    expect(at(field, 0.1)[1]).toBeCloseTo(9.5, 5); // 0.5 − 1.0 = −0.5 → wraps to 9.5
+    // However far it fell, it is never under the floor.
+    for (const time of [5.1, 123.4, WEATHER_TIME_WRAP - 0.01]) {
+      expect(at(field, time)[1]).toBeGreaterThanOrEqual(0);
+      expect(at(field, time)[1]).toBeLessThan(10);
+    }
+  });
+
+  it('repeats exactly after one clock period, so the shader clock wraps without a jump', () => {
+    for (const kind of ['rain', 'snow'] as const) {
+      const field = createWeatherField({ kind, ...LOT, count: 300, rng: seeded(17), terrain: { frontY: -2, backY: 1 } });
+      for (const time of [0, 7.3]) {
+        const now = at(field, time);
+        const later = at(field, time + WEATHER_TIME_WRAP);
+        // Float32 speeds leave well under a millimetre.
+        for (let i = 0; i < now.length; i++) expect(Math.abs(later[i]! - now[i]!)).toBeLessThan(1e-3);
+      }
+      // The rounding keeps each speed within a few cm/s of its range.
+      for (let i = 0; i < field.count; i++) {
+        expect(field.speeds[i]).toBeGreaterThan(kind === 'rain' ? 10.9 : 0.85);
+        expect(field.speeds[i]).toBeLessThan(kind === 'rain' ? 15.1 : 1.75);
+      }
+    }
   });
 
   it('keeps the column evenly filled: the set of heights only shifts, never bunches', () => {
     const field = createWeatherField({ kind: 'snow', ...LOT, count: 500, rng: seeded(11), floorY: 0, ceilingY: 20 });
     for (let i = 0; i < field.count; i++) field.speeds[i] = 1;
-    const spread = () => {
+    const spread = (time: number) => {
+      const positions = at(field, time);
       const buckets = new Array<number>(4).fill(0);
-      for (let i = 0; i < field.count; i++) buckets[Math.min(3, Math.floor(field.positions[i * 3 + 1]! / 5))]! += 1;
+      for (let i = 0; i < field.count; i++) buckets[Math.min(3, Math.floor(positions[i * 3 + 1]! / 5))]! += 1;
       return buckets;
     };
-    const before = spread();
-    for (let step = 0; step < 300; step++) stepWeatherField(field, 0.1); // 30 m of fall, 1.5 wraps
-    const after = spread();
+    const before = spread(0);
+    const after = spread(30); // 30 m of fall, 1.5 wraps
     for (let b = 0; b < 4; b++) expect(Math.abs(after[b]! - before[b]!)).toBeLessThan(field.count * 0.15);
   });
 
-  it('builds one non-shadow-casting InstancedMesh and syncs positions into it', () => {
+  it('builds one non-shadow-casting InstancedMesh, uploaded once, that the clock moves (#669)', () => {
     const field = createWeatherField({ kind: 'rain', ...LOT, count: 50, rng: seeded(5) });
     const mesh = buildWeatherMesh(THREE, field);
     expect(mesh.count).toBe(50);
@@ -106,17 +139,36 @@ describe('weather particle field (#189)', () => {
     expect(mesh.frustumCulled).toBe(false);
     expect(mesh.userData.type).toBe(WEATHER_TAG);
 
-    stepWeatherField(field, 0.05);
-    syncWeatherMesh(mesh, field);
+    // The matrices hold the time-0 positions; speed, floor and phase ride along per instance.
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
+    const motion = mesh.geometry.getAttribute('weatherMotion') as THREE.InstancedBufferAttribute;
+    expect(motion.isInstancedBufferAttribute).toBe(true);
     for (let i = 0; i < 50; i++) {
       mesh.getMatrixAt(i, matrix);
       position.setFromMatrixPosition(matrix);
       expect(position.x).toBeCloseTo(field.positions[i * 3]!, 5);
       expect(position.y).toBeCloseTo(field.positions[i * 3 + 1]!, 5);
       expect(position.z).toBeCloseTo(field.positions[i * 3 + 2]!, 5);
+      expect(motion.getX(i)).toBeCloseTo(field.speeds[i]!, 5);
+      expect(motion.getY(i)).toBeCloseTo(field.floors[i]!, 5);
+      expect(motion.getZ(i)).toBeCloseTo(field.phases[i]!, 5);
     }
+
+    // A frame is one uniform write: the instance buffer is never flagged again.
+    const version = mesh.instanceMatrix.version;
+    setWeatherTime(mesh, 12.5);
+    expect(mesh.instanceMatrix.version).toBe(version);
+    const material = mesh.material as THREE.MeshLambertMaterial;
+    const shader = { uniforms: {} as Record<string, THREE.IUniform>, vertexShader: THREE.ShaderLib.lambert.vertexShader };
+    material.onBeforeCompile(shader as never, null as never);
+    expect(shader.uniforms.uWeatherTime?.value).toBe(12.5);
+    setWeatherTime(mesh, WEATHER_TIME_WRAP + 1);
+    expect(shader.uniforms.uWeatherTime?.value).toBeCloseTo(1, 4);
+    // Both hooks it patches exist in three's Lambert shader, and are replaced.
+    expect(shader.vertexShader).toContain('attribute vec3 weatherMotion;');
+    expect(shader.vertexShader).toContain('mod( weatherStartY');
+    expect(shader.vertexShader).not.toContain('#include <project_vertex>');
   });
 
   it('removeWeather takes every weather mesh out of the scene and disposes it', () => {
@@ -168,16 +220,17 @@ describe('the field follows the lot down and up (#595)', () => {
       expect(field.floors[i]).toBeCloseTo(ground - 0.5, 5);
       expect(field.positions[i * 3 + 1]).toBeGreaterThanOrEqual(field.floors[i]!);
     }
-    // One assertion after the loop: 600,000 expect calls timed out on CI.
-    let lowestAboveFloor = Infinity;
-    for (let step = 0; step < 200; step++) {
-      stepWeatherField(field, 0.05);
+    // Ten seconds of fall: every rain particle wraps at least once.
+    const p = { x: 0, y: 0, z: 0 };
+    let underFloor = 0;
+    for (let step = 1; step <= 100; step++) {
       for (let i = 0; i < field.count; i++) {
-        lowestAboveFloor = Math.min(lowestAboveFloor, field.positions[i * 3 + 1]! - field.floors[i]!);
-        if (field.positions[i * 3 + 2]! < -LOT.roomDepth / 2) lowestFront = Math.min(lowestFront, field.positions[i * 3 + 1]!);
+        weatherPositionAt(field, i, step * 0.1, p);
+        if (p.y < field.floors[i]!) underFloor += 1;
+        if (p.z < -LOT.roomDepth / 2) lowestFront = Math.min(lowestFront, p.y);
       }
     }
-    expect(lowestAboveFloor).toBeGreaterThanOrEqual(0);
+    expect(underFloor).toBe(0);
     // The streaks reach the front lawn at -3 m instead of stopping at -0.5 m.
     expect(lowestFront).toBeLessThan(-3);
   });
