@@ -17,7 +17,7 @@ import { mountBand } from '../lib/mount-band';
 import { LAMP_POOL_SIZE, collectLampLights, nightGlowPlan, planLampPool, roomLampReach, type LampLight, type NightGlowPlan } from '../lib/night-lights';
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
 import { boundsSize, planViewFit } from '../lib/plan-view-fit';
-import { hasNeighbours, lowestGround } from '../lib/site';
+import { gardenGroundY, hasNeighbours, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
@@ -116,7 +116,8 @@ interface PlannedFurniture {
   fitted: FurnitureItem;
   collision: boolean;
   floorIndex: number;
-  floorY: number;
+  /** Where it stands: its storey's floor, or the ground under a garden item (#665). */
+  standY: number;
   storeyH: number;
   isActive: boolean;
   /** The wall a door or window is cut into (#659). */
@@ -339,10 +340,16 @@ export function useSceneEffects({
         collectLampLights(
           layout.floors,
           { activeFloorIndex: litStorey, showAllFloors: litAllFloors },
-          { width: layout.width, height: layout.height, ...(layout.cutout ? { cutout: layout.cutout } : {}) }
+          {
+            width: layout.width,
+            height: layout.height,
+            ...(layout.cutout ? { cutout: layout.cutout } : {}),
+            // A garden lamp's bulb rides the slope with its post (#665).
+            ...(layout.terrain ? { terrain: layout.terrain } : {}),
+          }
         )
       ),
-    [layout.floors, litStorey, litAllFloors, layout.width, layout.height, layout.cutout]
+    [layout.floors, litStorey, litAllFloors, layout.width, layout.height, layout.cutout, layout.terrain]
   );
 
   // Wall preview during draw mode. On the plan it is the plan's to draw: the
@@ -585,6 +592,11 @@ export function useSceneEffects({
 
   useEffect(() => () => releaseDetailTextures(), []);
 
+  // The two ground heights, as primitives: the furniture stands garden items
+  // on them (#665) and the street is built on them.
+  const terrainFrontY = layout.terrain?.frontY;
+  const terrainBackY = layout.terrain?.backY;
+
   // Furniture meshes
   useEffect(() => {
     invalidate();
@@ -610,6 +622,13 @@ export function useSceneEffects({
 
     const planned = new Map<string, PlannedFurniture>();
     const nextBuildKeys = new Map<string, string>();
+    // A garden item stands on the ground under it on a sloped site (#665).
+    const site = {
+      width: layout.width,
+      height: layout.height,
+      cutout: layout.cutout,
+      terrain: terrainFrontY !== undefined && terrainBackY !== undefined ? { frontY: terrainFrontY, backY: terrainBackY } : undefined,
+    };
     for (const { index, items, collisions } of furniturePlan) {
       const floor = layout.floors[index];
       const isActive = index === activeFloorIndex;
@@ -637,7 +656,8 @@ export function useSceneEffects({
         const key = furnitureMeshKey(index, item.id);
         const owner = owners.get(item.id);
         const revealSetback = setbacks.get(item.id) ?? 0;
-        planned.set(key, { item, fitted, collision, floorIndex: index, floorY, storeyH, isActive, revealSetback, ...(owner ? { owner } : {}) });
+        const standY = (item.position ? gardenGroundY(item, index, item.position, site) : null) ?? floorY;
+        planned.set(key, { item, fitted, collision, floorIndex: index, standY, storeyH, isActive, revealSetback, ...(owner ? { owner } : {}) });
         nextBuildKeys.set(
           key,
           furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady, revealSetback })
@@ -675,10 +695,10 @@ export function useSceneEffects({
       const rotation = spec.item.rotation ?? 0;
       const scaleX = spec.item.mirrored ? -1 : 1;
       if (
-        group.position.x !== position.x || group.position.y !== spec.floorY || group.position.z !== position.z ||
+        group.position.x !== position.x || group.position.y !== spec.standY || group.position.z !== position.z ||
         group.rotation.y !== rotation || group.scale.x !== scaleX
       ) {
-        group.position.set(position.x, spec.floorY, position.z);
+        group.position.set(position.x, spec.standY, position.z);
         group.rotation.y = rotation;
         group.scale.x = scaleX;
         changed = true;
@@ -726,6 +746,8 @@ export function useSceneEffects({
     revealWallsKey,
     // A stair's rise reads whether it is under a roof (#654).
     roofStyle,
+    // Garden items stand on the ground (#665).
+    terrainFrontY, terrainBackY,
     // Not read in the body: createFurnitureModel picks the rigged person up
     // from the model cache, and this re-runs the build once it's filled.
     peopleModelReady,
@@ -991,8 +1013,6 @@ export function useSceneEffects({
   // picker tick doesn't rebuild the street (#283).
   const neighboursKey = JSON.stringify(layout.neighbours ?? null);
   const roofColor = layout.roof?.color;
-  const terrainFrontY = layout.terrain?.frontY;
-  const terrainBackY = layout.terrain?.backY;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -1269,11 +1289,15 @@ export function useSceneEffects({
       clearItemLabels(scene);
       return;
     }
-    renderItemLabels(THREE, scene, activeFloor.items, activeFloorY, activeFloor, underRoof(layout, activeFloorIndex));
+    const terrain = terrainFrontY !== undefined && terrainBackY !== undefined ? { frontY: terrainFrontY, backY: terrainBackY } : undefined;
+    const site = { width: layout.width, height: layout.height, cutout: layout.cutout, terrain };
+    renderItemLabels(THREE, scene, activeFloor.items, activeFloorY, activeFloor, underRoof(layout, activeFloorIndex), (item) =>
+      item.position ? gardenGroundY(item, activeFloorIndex, item.position, site) : null
+    );
     // activeFloor.items is read through labelsKey only (#409); the storey
     // height, which places a hung item's label (#657), through its key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, labelsKey, activeFloorY, activeFloor.height, roofStyle, layout.floors.length, activeFloorIndex]);
+  }, [isReady, invalidate, threeModuleRef, sceneRef, view.showItemLabels, labelsKey, activeFloorY, activeFloor.height, roofStyle, layout.floors.length, activeFloorIndex, terrainFrontY, terrainBackY, layout.width, layout.height, layout.cutout]);
 
   // Roof (#283). Which storey is active only shows or hides it: the roof is
   // built while it is on screen and kept, hidden, below the top storey, so a

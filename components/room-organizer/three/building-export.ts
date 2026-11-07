@@ -1,6 +1,6 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { lowestGround } from '../lib/site';
+import { gardenGroundY, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { zoneFloorPatches } from '../lib/zones';
@@ -146,7 +146,8 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       group.userData.type = ROOM_OBJECT_TAGS.Furniture;
       group.userData.id = item.id;
       group.userData.floorIndex = index;
-      group.position.set(position.x, floorY, position.z);
+      // A garden item on the ground under it, as the scene stands it (#665).
+      group.position.set(position.x, gardenGroundY(item, index, position, layout) ?? floorY, position.z);
       group.rotation.y = item.rotation ?? 0;
       group.scale.x = item.mirrored ? -1 : 1;
       scratch.add(group);

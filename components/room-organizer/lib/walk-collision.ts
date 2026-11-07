@@ -16,7 +16,7 @@
 import { LOW_PROFILE_MAX_HEIGHT, isInsideBuilding, rotatedHalfExtents, shellWalls, type ShellWall } from './footprint';
 import { isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan, isWallMounted } from './opening-snap';
-import { hasNeighbours } from './site';
+import { gardenGroundY, hasNeighbours } from './site';
 import { floorElevation, interiorWallHeight, storeyHeight } from './storeys';
 import { entranceGeometry, entranceWallCut } from './street';
 import { generateStreet, type StreetSite } from './street-row';
@@ -81,6 +81,11 @@ export interface WalkCollisionOptions {
    */
   baseY?: number;
   storeyHeight?: number;
+  /**
+   * The ground a garden item stands on, where it isn't `baseY` (#665): on a
+   * sloped site the item stands on the slope, and so does its collider.
+   */
+  groundUnder?: (item: FurnitureItem, at: Vec2) => number | null;
 }
 
 /**
@@ -132,6 +137,7 @@ export function buildWalkColliders(
     if (isWallMounted(item.type) || isWallHung(item.type)) continue;
     if (item.height <= LOW_PROFILE_MAX_HEIGHT) continue;
     if (options.stairsAsRamps && item.type === 'stairs') continue;
+    const bottom = options.groundUnder?.(item, item.position) ?? baseY;
     colliders.push(
       boxCollider(
         item.position.x,
@@ -140,8 +146,8 @@ export function buildWalkColliders(
         item.depth,
         item.rotation ?? 0,
         item.category === 'outdoor',
-        baseY,
-        baseY + item.height
+        bottom,
+        bottom + item.height
       )
     );
   }
@@ -757,6 +763,8 @@ export function buildWalkerColliders(
       stairsAsRamps: true,
       baseY: floorElevation(building.floors, index),
       storeyHeight: storeyHeight(floor),
+      groundUnder: (item, at) =>
+        gardenGroundY(item, index, at, { width: building.width, height: building.depth, cutout: building.cutout, terrain: building.terrain }),
     }),
     ...buildShellColliders(building, index),
   ]);

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { makeCatalogItem } from './__testfixtures__/fixtures';
 import { rotatedHalfExtents } from './footprint';
-import { footprintCorners, ghostItem, ghostOutlinePoints, GHOST_ITEM_ID, invertClientToWorld } from './placement-ghost';
+import { footprintCorners, ghostItem, ghostOutlinePoints, GHOST_ITEM_ID, groundUnderPointer, invertClientToWorld } from './placement-ghost';
+import { gardenGroundY } from './site';
+import type { Vec2 } from './types';
 
 describe('placement ghost helpers (#463 d)', () => {
   it('makes the catalogue entry an item at the spot', () => {
@@ -42,5 +44,36 @@ describe('placement ghost helpers (#463 d)', () => {
   it('writes the outline as SVG points', () => {
     const points = ghostOutlinePoints([{ x: 0, z: 0 }, { x: 1, z: 2 }], (w) => ({ x: w.x * 10, y: w.z * 10 }));
     expect(points).toBe('0.0,0.0 10.0,20.0');
+  });
+});
+
+describe('groundUnderPointer: a garden ghost on a slope (#665)', () => {
+  // A 10 × 8 house on a site falling 3 m to the street, seen from the street.
+  const site = { width: 10, height: 8, terrain: { frontY: -3, backY: 2 } };
+  const ground = (position: Vec2) => gardenGroundY({ category: 'outdoor' }, 0, position, site);
+  const eye = { x: 0, y: 16, z: -22 };
+  /** The pointer's ray, through the floor plane (y = 0) at `floorZ`. */
+  const ray = (floorZ: number) => (planeY = 0): Vec2 => {
+    const t = (planeY - eye.y) / (0 - eye.y);
+    return { x: 0, z: eye.z + (floorZ - eye.z) * t };
+  };
+
+  it('finds the lawn under the pointer, not the floor plane', () => {
+    const at = groundUnderPointer(ray(-10), ground)!;
+    // The ray meets y = -3 further out than y = 0.
+    expect(at.z).toBeCloseTo(ray(-10)(-3).z);
+  });
+
+  it('over the plinth, stops at the front wall instead of jumping inside the house', () => {
+    // At y = 0 the ray is in the garden, at y = -3 under the house.
+    expect(ground(ray(-4.5)(-3))).toBeNull();
+    const at = groundUnderPointer(ray(-4.5), ground)!;
+    expect(at.z).toBeLessThanOrEqual(-4);
+    expect(at.z).toBeGreaterThan(-4.01);
+  });
+
+  it('leaves the floor point alone where nothing stands on the ground', () => {
+    expect(groundUnderPointer(ray(-2), ground)).toEqual(ray(-2)());
+    expect(groundUnderPointer(ray(-10), () => null)).toEqual(ray(-10)());
   });
 });

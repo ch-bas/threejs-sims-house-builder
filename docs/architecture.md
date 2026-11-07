@@ -108,7 +108,7 @@ components/
     │   ├── room-detect.ts               Rooms closed by walls: planar faces of the footprint, partitions and keep-out, with areas (#719)
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
-    │   ├── site.ts                      Sloped ground, neighbour flags, lot/road dimensions
+    │   ├── site.ts                      Sloped ground (garden items stand on it, #665), neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
     │   ├── sun-shadow.ts                Shadow-caster box + sun shadow-camera fit (#282)
     │   ├── night-lights.ts              Which items light the night, bulb heights, candela; the lamp pool (#215, #393)

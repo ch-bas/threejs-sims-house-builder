@@ -1,10 +1,11 @@
 import { useCallback, useRef, type MutableRefObject } from 'react';
 import { hasCollisions, type KeepOutRect } from '../lib/geometry';
 import { settleWallMountedItem, type WallGap } from '../lib/opening-snap';
+import { gardenGroundY } from '../lib/site';
 import { storeyHeight } from '../lib/storeys';
 import { liftContactPatches } from '../three/contact-shadow';
 import type { LayoutActions } from './use-layout-state';
-import type { FloorLayout, FootprintCutout } from '../lib/types';
+import type { FloorLayout, FootprintCutout, TerrainSpec } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 export interface UseItemDragParams {
@@ -18,6 +19,8 @@ export interface UseItemDragParams {
   frontGap: WallGap | null;
   /** The corner cut out of the building (#727). */
   cutout?: FootprintCutout | undefined;
+  /** A sloped site: garden items ride the ground as they are dragged (#665). */
+  terrain?: TerrainSpec | undefined;
   actions: LayoutActions;
   allSelectedIds: ReadonlySet<string>;
 }
@@ -96,6 +99,7 @@ export function useItemDrag({
   keepOut,
   frontGap,
   cutout,
+  terrain,
   actions,
   allSelectedIds,
 }: UseItemDragParams): UseItemDragResult {
@@ -121,6 +125,29 @@ export function useItemDrag({
           obj.userData.floorIndex === activeFloorIndex
       ) ?? null,
     [activeFloorIndex]
+  );
+
+  // A garden item on a sloped site stands on the ground under it, as the
+  // furniture effect will stand it (#665): on the fast path it follows the
+  // slope and doesn't pop at the drop. Only the ground floor's items ever do,
+  // so their floor is the datum, y = 0.
+  const standGroup = useCallback(
+    (group: ThreeNS.Object3D, itemId: string, at: { x: number; z: number }) => {
+      if (!terrain || activeFloorIndex !== 0) return;
+      const item = activeFloor.items.find((entry) => entry.id === itemId);
+      if (!item) return;
+      group.position.y = gardenGroundY(item, 0, at, { width: roomWidth, height: roomDepth, cutout, terrain }) ?? 0;
+    },
+    [terrain, activeFloorIndex, activeFloor.items, roomWidth, roomDepth, cutout]
+  );
+  /** Move a group on the fast path. */
+  const placeGroup = useCallback(
+    (group: ThreeNS.Object3D, itemId: string, at: { x: number; z: number }) => {
+      group.position.x = at.x;
+      group.position.z = at.z;
+      standGroup(group, itemId, at);
+    },
+    [standGroup]
   );
 
   // Live collision feedback during the fast-path: tint the dragged group's
@@ -172,8 +199,7 @@ export function useItemDrag({
       for (const [memberId, origin] of session.origins) {
         const group = findFurnitureGroup(memberId);
         if (!group) continue;
-        group.position.x = origin.x;
-        group.position.z = origin.z;
+        placeGroup(group, memberId, origin);
         if (memberId === session.primaryId) setDragCollisionTint(group, false);
       }
       // The patches come back once, as the session turns void, not on every
@@ -182,7 +208,7 @@ export function useItemDrag({
       else invalidateBoxRef.current();
       return true;
     },
-    [findFurnitureGroup, setDragCollisionTint, setPatchesLifted]
+    [findFurnitureGroup, placeGroup, setDragCollisionTint, setPatchesLifted]
   );
 
   const handleDragStart = useCallback(
@@ -215,6 +241,9 @@ export function useItemDrag({
       }
       if (voidIfViewportTurned(session)) return;
       session.latest.set(id, { x, z });
+      // The canvas handler moved the primary across; this stands it on the ground.
+      const primary = findFurnitureGroup(id);
+      if (primary) standGroup(primary, id, { x, z });
 
       // Group drag: translate every other selected group by the same delta.
       // The primary group was already moved by the canvas drag handler.
@@ -227,10 +256,7 @@ export function useItemDrag({
           const next = { x: origin.x + dx, z: origin.z + dz };
           session.latest.set(otherId, next);
           const group = findFurnitureGroup(otherId);
-          if (group) {
-            group.position.x = next.x;
-            group.position.z = next.z;
-          }
+          if (group) placeGroup(group, otherId, next);
         }
       }
 
@@ -239,13 +265,12 @@ export function useItemDrag({
         return moved ? { ...item, position: moved } : item;
       });
       const dragged = candidateItems.find((item) => item.id === id);
-      const primaryGroup = findFurnitureGroup(id);
-      if (dragged && primaryGroup) {
-        setDragCollisionTint(primaryGroup, hasCollisions(dragged, candidateItems, roomWidth, roomDepth, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight }));
+      if (dragged && primary) {
+        setDragCollisionTint(primary, hasCollisions(dragged, candidateItems, roomWidth, roomDepth, { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight }));
       }
       invalidateBoxRef.current();
     },
-    [actions, activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, roomWidth, roomDepth, keepOut, findFurnitureGroup, setDragCollisionTint, voidIfViewportTurned]
+    [actions, activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, roomWidth, roomDepth, keepOut, findFurnitureGroup, placeGroup, standGroup, setDragCollisionTint, voidIfViewportTurned]
   );
 
   const handleDragEnd = useCallback(
@@ -318,16 +343,13 @@ export function useItemDrag({
         // keeps unchanged groups (#404), so put them where the state has
         // them rather than trusting the effect to have run after the last move.
         const stored = restore ? origin : activeFloor.items.find((entry) => entry.id === memberId)?.position;
-        if (stored) {
-          group.position.x = stored.x;
-          group.position.z = stored.z;
-        }
+        if (stored) placeGroup(group, memberId, stored);
         // A kept group would otherwise wear the red drag tint for good.
         if (memberId === id) setDragCollisionTint(group, false);
       }
       setPatchesLifted(NO_ITEMS);
     },
-    [activeFloor.items, findFurnitureGroup, setDragCollisionTint, setPatchesLifted]
+    [activeFloor.items, findFurnitureGroup, placeGroup, setDragCollisionTint, setPatchesLifted]
   );
 
   const isDragActive = useCallback(() => dragSessionRef.current !== null, []);

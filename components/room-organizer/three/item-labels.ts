@@ -47,13 +47,16 @@ export function renderItemLabels(
   items: readonly FurnitureItem[],
   yOffset: number,
   floor?: Pick<FloorLayout, 'height'>,
-  roofed = false
+  roofed = false,
+  /** The ground a garden item stands on, where it isn't `yOffset` (#665). */
+  groundUnder?: (item: FurnitureItem) => number | null
 ): void {
   clearItemLabels(scene);
   for (const item of items) {
     if (!item.position) continue;
     const sprite = createLabelSprite(THREE, item.name);
-    sprite.position.set(item.position.x, itemLabelY(item, floor, yOffset, roofed), item.position.z);
+    const standY = groundUnder?.(item) ?? yOffset;
+    sprite.position.set(item.position.x, itemLabelY(item, floor, standY, roofed), item.position.z);
     sprite.userData.type = LABEL_TAG;
     sprite.userData.itemId = item.id;
     scene.add(sprite);

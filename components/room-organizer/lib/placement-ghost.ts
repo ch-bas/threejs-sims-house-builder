@@ -81,3 +81,40 @@ export function ghostOutlinePoints(corners: readonly Vec2[], toClient: (world: V
     })
     .join(' ');
 }
+
+/**
+ * The point of the ground under the pointer for a garden item on a slope
+ * (#665). `at(planeY)` is where the pointer's ray meets the horizontal plane
+ * at that height (`undefined`: the active floor's); `groundY` is the ground
+ * a garden item stands on there, or null inside the house. The slope is a
+ * plane, so a few passes settle it. Over the plinth the ray meets the floor
+ * plane in the garden but the ground's plane under the house: there is no
+ * ground under the pointer, and the ghost stops at the footprint's edge, on
+ * the line the ray runs along, rather than jumping inside.
+ */
+export function groundUnderPointer(
+  at: (planeY?: number) => Vec2 | null,
+  groundY: (position: Vec2) => number | null
+): Vec2 | null {
+  let point = at();
+  for (let pass = 0; point && pass < 3; pass++) {
+    const y = groundY(point);
+    if (y === null) return point;
+    const next = at(y);
+    if (next && groundY(next) === null) return edgeBetween(point, next, groundY);
+    point = next;
+  }
+  return point;
+}
+
+/** The last point of the garden from `outside` towards `inside`, by bisection. */
+function edgeBetween(outside: Vec2, inside: Vec2, groundY: (position: Vec2) => number | null): Vec2 {
+  let out = outside;
+  let inn = inside;
+  for (let step = 0; step < 24; step++) {
+    const mid = { x: (out.x + inn.x) / 2, z: (out.z + inn.z) / 2 };
+    if (groundY(mid) === null) inn = mid;
+    else out = mid;
+  }
+  return out;
+}

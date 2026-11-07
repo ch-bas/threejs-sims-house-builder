@@ -57,8 +57,11 @@ export interface UseThreeSceneResult {
   cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
   rendererRef: React.MutableRefObject<ThreeNS.WebGLRenderer | null>;
   controlsRef: React.MutableRefObject<OrbitControlsType | null>;
-  /** Convert a client-space pointer position to a world-space floor coordinate. */
-  worldPositionFromClient(clientX: number, clientY: number): { x: number; z: number } | null;
+  /**
+   * Convert a client-space pointer position to a world-space floor coordinate,
+   * on the active floor or at `planeY` (a garden item's ground, #665).
+   */
+  worldPositionFromClient(clientX: number, clientY: number, planeY?: number): { x: number; z: number } | null;
 }
 
 export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResult {
@@ -472,7 +475,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   }, [isReady]);
   // ── end #730 ──────────────────────────────────────────────────────────────
 
-  const worldPositionFromClient = (clientX: number, clientY: number): { x: number; z: number } | null => {
+  const worldPositionFromClient = (clientX: number, clientY: number, planeY?: number): { x: number; z: number } | null => {
     const canvas = canvasRef.current;
     const camera = cameraRef.current;
     const THREE = threeModuleRef.current;
@@ -485,8 +488,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     );
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(pointer, camera);
-    const planeY = handlersRef.current.getDragPlaneY?.() ?? 0;
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(planeY ?? handlersRef.current.getDragPlaneY?.() ?? 0));
     const target = new THREE.Vector3();
     if (!raycaster.ray.intersectPlane(plane, target)) return null;
     return { x: target.x, z: target.z };
