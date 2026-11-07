@@ -8,7 +8,7 @@ import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { createFrameBudget, type DecorativeStep, type FrameBudget } from '../three/frame-budget';
 import { releaseGroundTextures } from '../three/ground-surfaces';
-import { addLights, applyShadowQuality } from '../three/lighting';
+import { addLights, applyShadowQuality, bakeStudioEnvironment, installEnvironment, type SceneEnvironment } from '../three/lighting';
 import { releaseRoomLightTexture } from '../three/night-glow';
 import { releasePeopleGeometry } from '../three/people-model';
 import { clearFloorPlanImageCache } from '../three/room-builder';
@@ -272,21 +272,13 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       // makes MeshStandardMaterial respond with believable specular/diffuse
       // bounce instead of the flat sun+ambient-only look. Intensity is
       // re-scaled by applyTimeOfDay so nights stay dark.
+      // Kept so a context restore can bake it again (#663).
       const RoomEnvironment = roomEnvCtorRef.current;
+      let environment: SceneEnvironment | null = null;
       if (RoomEnvironment) {
-        const pmrem = new THREE.PMREMGenerator(renderer);
-        const roomEnvironment = new RoomEnvironment();
-        const envTarget = pmrem.fromScene(roomEnvironment, 0.04);
-        pmrem.dispose();
-        // The studio scene's own meshes are only needed for the bake (#213).
-        disposeScene(roomEnvironment);
-        scene.environment = envTarget.texture;
+        environment = installEnvironment(scene, () => bakeStudioEnvironment(THREE, renderer, RoomEnvironment));
         scene.environmentIntensity = 0.5;
-        cleanup.push(() => {
-          scene.environment = null;
-          // The render target, not just its texture: its framebuffer is GPU memory too.
-          envTarget.dispose();
-        });
+        cleanup.push(() => environment?.dispose());
       }
 
       const controls = new OrbitControls(camera, renderer.domElement);
@@ -376,6 +368,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         contextLost = false;
         // GPU resources were dropped — force a fresh shadow pass and a repaint.
         renderer.shadowMap.needsUpdate = true;
+        // W3 (#663): the image-based light is a render target, which three
+        // can't restore; bake it again or the whole scene renders dark.
+        environment?.rebake();
         invalidateRef.current();
       };
       canvas.addEventListener('webglcontextlost', onContextLost as EventListener, false);
