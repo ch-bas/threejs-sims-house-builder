@@ -1033,7 +1033,7 @@ export function RoomOrganizer(): JSX.Element {
     (z: number) => groundHeightAt(layout.terrain, z, layout.height / 2),
     [layout.terrain, layout.height]
   );
-  const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
+  const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
@@ -1647,6 +1647,7 @@ export function RoomOrganizer(): JSX.Element {
     >
       <Viewport
         isReady={isReady}
+        shadersWarming={shadersWarming}
         error={error}
         view2D={view.view2D}
         layout={layout}
