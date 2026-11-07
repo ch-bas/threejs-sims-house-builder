@@ -5,11 +5,13 @@ import { findNpcSeats } from '../lib/npc-seats';
 import {
   NPC_REPAINT,
   NPC_SHADOW,
+  NPC_SHADOW_INTERVAL_MS,
   NPC_STILL,
   type NpcSeats,
   type NpcState,
   planRoute,
   planSeat,
+  npcShadowPacer,
   rehomeNpcs,
   stepNpcs,
   wayAheadBlocked,
@@ -457,5 +459,39 @@ describe('rigged walkers on a furnished floor', () => {
       expect(new Set(keys).size).toBe(keys.length);
     }
     expect(sat.size).toBeGreaterThan(1);
+  });
+});
+
+describe('walker shadow pacing (#668)', () => {
+  it('refreshes the shadow map about ten times a second while walkers move, not every frame', () => {
+    const due = npcShadowPacer();
+    let passes = 0;
+    // Two seconds of walking at 120 frames a second.
+    for (let frame = 0; frame < 240; frame++) if (due(frame * (1000 / 120), true)) passes += 1;
+    expect(NPC_SHADOW_INTERVAL_MS).toBe(100);
+    expect(passes).toBeGreaterThanOrEqual(19);
+    expect(passes).toBeLessThanOrEqual(21);
+  });
+
+  it('keeps ten a second when steps come at 30 a second, with jitter', () => {
+    const due = npcShadowPacer();
+    let passes = 0;
+    let now = 0;
+    for (let step = 0; step < 60; step++) {
+      now += 1000 / 30 + (step % 2 === 0 ? -1.5 : 1.5);
+      if (due(now, true)) passes += 1;
+    }
+    expect(passes).toBeGreaterThanOrEqual(19);
+  });
+
+  it('still gives the last pose its shadow once the walkers stop', () => {
+    const due = npcShadowPacer(100);
+    expect(due(0, true)).toBe(true);
+    // Moved again 10 ms later, then stood still: the move is owed, not lost.
+    expect(due(10, true)).toBe(false);
+    expect(due(50, false)).toBe(false);
+    expect(due(100, false)).toBe(true);
+    // Nothing owed any more: no further passes.
+    expect(due(500, false)).toBe(false);
   });
 });
