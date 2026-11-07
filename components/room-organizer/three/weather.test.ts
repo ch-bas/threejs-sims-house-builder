@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { groundHeightAt } from '../lib/site';
 import {
   SNOW_SWAY,
   WEATHER_TAG,
@@ -152,5 +153,38 @@ describe('the neighbours stay dry (#660)', () => {
       const z = field.positions[i * 3 + 2]!;
       expect(x > box.x0 - SNOW_SWAY && x < box.x1 + SNOW_SWAY && z > box.z0 - SNOW_SWAY && z < box.z1 + SNOW_SWAY).toBe(false);
     }
+  });
+});
+
+describe('the field follows the lot down and up (#595)', () => {
+  it('falls to the ground under each particle on a sloping lot, front at -3 m', () => {
+    const terrain = { frontY: -3, backY: 1 };
+    const field = createWeatherField({ kind: 'rain', ...LOT, count: 3000, rng: seeded(21), terrain });
+    let lowestFront = Infinity;
+    for (let i = 0; i < field.count; i++) {
+      const z = field.positions[i * 3 + 2]!;
+      // Half a metre under the ground there, as over level ground.
+      const ground = groundHeightAt(terrain, z, LOT.roomDepth / 2);
+      expect(field.floors[i]).toBeCloseTo(ground - 0.5, 5);
+      expect(field.positions[i * 3 + 1]).toBeGreaterThanOrEqual(field.floors[i]!);
+    }
+    // One assertion after the loop: 600,000 expect calls timed out on CI.
+    let lowestAboveFloor = Infinity;
+    for (let step = 0; step < 200; step++) {
+      stepWeatherField(field, 0.05);
+      for (let i = 0; i < field.count; i++) {
+        lowestAboveFloor = Math.min(lowestAboveFloor, field.positions[i * 3 + 1]! - field.floors[i]!);
+        if (field.positions[i * 3 + 2]! < -LOT.roomDepth / 2) lowestFront = Math.min(lowestFront, field.positions[i * 3 + 1]!);
+      }
+    }
+    expect(lowestAboveFloor).toBeGreaterThanOrEqual(0);
+    // The streaks reach the front lawn at -3 m instead of stopping at -0.5 m.
+    expect(lowestFront).toBeLessThan(-3);
+  });
+
+  it('keeps the level-lot field as it was', () => {
+    const field = createWeatherField({ kind: 'snow', ...LOT, count: 200, rng: seeded(4) });
+    expect(field.floorY).toBe(-0.5);
+    for (let i = 0; i < field.count; i++) expect(field.floors[i]).toBe(-0.5);
   });
 });
