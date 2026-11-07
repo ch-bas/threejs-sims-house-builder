@@ -14,13 +14,15 @@ here or in the README differs from the catalogue.
 app/                                     Next.js shell
 ├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script
 ├── page.tsx                             Loads the editor (client only) and prefetches the 3D engine
-├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside
+├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside (the reset loads on click, #584)
 ├── not-found.tsx                        Branded 404 (out/404.html), with a link back to the builder
 ├── manifest.ts                          Web app manifest (static at build time)
 └── icon.svg, favicon.ico, apple-icon.png, opengraph-image.png
                                          Icons and link-preview image, served by Next under the basePath; rasters from scripts/build-icons.mjs
 docs/                                    This file, the design notes, and the README screenshot
 scripts/
+├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
+├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445)
 ├── build-icons.mjs                      Renders the app/ icon rasters and the preview image from SVG (Playwright, not part of the build)
 └── build-people-glb.mjs                 Rebuilds assets/people.glb from the Universal Animation Library
 components/
@@ -53,10 +55,12 @@ components/
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
     │   ├── contact-shadow.ts            What a storey's baked floor contact map shows: item patches, wall bands, doors and holes wiped (#754)
+    │   ├── shader-warmup.ts             The first frame's hold while the first scene's shaders compile in parallel: once, with a time limit (#730)
     │   ├── render-quality.ts            Pixel-ratio cap per device class (phones 1.5, else 2)
     │   ├── detail-patterns.ts           Tileable grey wood, fabric and leather images for furniture (#756)
     │   ├── reduced-motion.ts            prefers-reduced-motion query and a one-off read for non-React code
     │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
+    │   ├── saved-house.ts               The saved house's key, raw read and download, crash flag and reload marker: what the error screens load before hydration, without the schema (#584)
     │   ├── library.ts                   Named-layout library I/O: an index of entries (name, saved-at, item and floor counts) + one blob per house; unreadable entries kept verbatim (#348); ASCII names keep their historical slot, other names get a `u_` Unicode slot (#550); a copy that would leave autosave no room is refused (#565)
     │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
     │   ├── restore-point.ts             Forced restore point before a whole-layout replacement; "untouched" = equal to INITIAL_LAYOUT
@@ -121,11 +125,13 @@ components/
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode, shared by the 2D plan and the 3D floor canvas (#191)
     │   ├── file-io.ts                   JSON / image / PNG / CSV + schedule / GLB I/O
     │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m"), formatSize, formatAge ("3 min ago", #438)
-    │   └── plan-export/                 2D-plan exporters (#230)
+    │   └── plan-export/                 2D-plan exporters (#230); svg, dxf, print and the blueprint load on click (#589)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
     │       ├── svg.ts                   Vector SVG plan emitter, one floor or the whole building (pure)
     │       ├── dxf.ts                   AutoCAD 2000 DXF plan emitter, one floor or the whole building (pure)
     │       ├── download.ts              Blob download + the one filename rule, exportFileName (DOM)
+    │       ├── print-scale.ts           Print-to-scale maths the options panel and the plan fit read: paper, scale pick, items a sheet keeps (#435)
+    │       ├── print-popup.ts           The print popup: opened inside the click, filled by code loaded after it (#589); prints once loaded (#445)
     │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory: furniture type → mesh builder
@@ -175,7 +181,8 @@ components/
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays; no alert through walls (#590), depth-tested under another storey or while walking (#552)
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
-    │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
+    │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh; the fall runs in the vertex shader, #669)
+    │   ├── frame-budget.ts              One capped, focus-paused frame budget for the decorative loops (#671)
     │   ├── ground-surfaces.ts           Generated grass, paving and asphalt tiles, laid by world position with a macro layer on grass (#761)
     │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
     │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664)
@@ -203,10 +210,10 @@ components/
     │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
     │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits; giving way, sitting, activities
-    │   ├── use-weather.ts               Self-invalidating rain / snow loop
+    │   ├── use-weather.ts               Rain / snow clock on the frame budget
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
-    │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
+    │   ├── use-camera-vision.ts         Vision-cone sweep on the frame budget
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette

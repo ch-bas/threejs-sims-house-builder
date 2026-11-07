@@ -902,6 +902,42 @@ describe('layoutReducer — applyLayout', () => {
     expect(applied.layout.floors).toEqual([INITIAL_GROUND_FLOOR]);
   });
 
+  // Undo, redo and loads go through here; a fresh terrain or floor object
+  // re-runs every effect keyed on it, the outdoor scene among them (#603).
+  it('keeps the terrain and each floor when nothing needs clamping', () => {
+    const terrain = { frontY: -1.2, backY: 0.4 };
+    const floors = [makeFloor({ id: 'a' }), makeFloor({ id: 'b', height: 2.7 })];
+    const incoming = makeLayout({ terrain, floors });
+    const state: LayoutState = { layout: makeLayout(), activeFloorIndex: 0 };
+    const applied = layoutReducer(state, { type: 'applyLayout', layout: incoming });
+    expect(applied.layout.terrain).toBe(terrain);
+    expect(applied.layout.floors).toBe(floors);
+    expect(applied.layout).toEqual(incoming);
+  });
+
+  it('copies only the floor that needs clamping', () => {
+    const floors = [makeFloor({ id: 'a' }), makeFloor({ id: 'b', height: 0.2 }), makeFloor({ id: 'c', floorColor: '' })];
+    const state: LayoutState = { layout: makeLayout(), activeFloorIndex: 0 };
+    const applied = layoutReducer(state, { type: 'applyLayout', layout: makeLayout({ floors, terrain: { frontY: 40, backY: 0 } }) });
+    expect(applied.layout.floors[0]).toBe(floors[0]);
+    expect(applied.layout.floors[1]).toEqual({ ...floors[1], height: 1 });
+    expect(applied.layout.floors[2]!.floorColor).toBe('#c9a57d');
+    expect(applied.layout.terrain).toEqual({ frontY: 6, backY: 0 });
+  });
+
+  it('an undo of a chair move on a slope keeps the terrain', () => {
+    const chair = makeItem({ id: 'c', position: { x: 1, z: 1 } });
+    const before: LayoutState = { layout: makeLayout({ terrain: { frontY: -1, backY: 1 }, floors: [makeFloor({ items: [chair] })] }), activeFloorIndex: 0 };
+    const moved = layoutReducer(before, { type: 'moveItem', id: 'c', x: 2, z: 2 });
+    expect(moved.layout.terrain).toBe(before.layout.terrain);
+    const undone = layoutReducer(moved, { type: 'applyLayout', layout: before.layout });
+    expect(undone.layout.terrain).toBe(before.layout.terrain);
+    expect(undone.layout.floors).toBe(before.layout.floors);
+    const redone = layoutReducer(undone, { type: 'applyLayout', layout: moved.layout });
+    expect(redone.layout.terrain).toBe(before.layout.terrain);
+    expect(redone.layout).toEqual(moved.layout);
+  });
+
   it('clamps activeFloorIndex to the incoming floor count', () => {
     const state: LayoutState = { layout: makeLayout(), activeFloorIndex: 3 };
     const applied = layoutReducer(state, {
