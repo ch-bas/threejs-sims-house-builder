@@ -122,11 +122,13 @@ components/
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode, shared by the 2D plan and the 3D floor canvas (#191)
     │   ├── file-io.ts                   JSON / image / PNG / CSV + schedule / GLB I/O
     │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m"), formatSize, formatAge ("3 min ago", #438)
-    │   └── plan-export/                 2D-plan exporters (#230)
+    │   └── plan-export/                 2D-plan exporters (#230); svg, dxf, print and the blueprint load on click (#589)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
     │       ├── svg.ts                   Vector SVG plan emitter, one floor or the whole building (pure)
     │       ├── dxf.ts                   AutoCAD 2000 DXF plan emitter, one floor or the whole building (pure)
     │       ├── download.ts              Blob download + the one filename rule, exportFileName (DOM)
+    │       ├── print-scale.ts           Print-to-scale maths the options panel and the plan fit read: paper, scale pick, items a sheet keeps (#435)
+    │       ├── print-popup.ts           The print popup: opened inside the click, filled by code loaded after it (#589); prints once loaded (#445)
     │       └── print.ts                 Print-to-scale document: paper, orientation, scale, outdoor and all-floors options (#435, #405); popup → Save-as-PDF
     ├── three/                           Three.js builders, no React
     │   ├── furniture-builders.ts        Registry + factory: furniture type → mesh builder

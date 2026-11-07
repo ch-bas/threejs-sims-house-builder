@@ -54,3 +54,18 @@ describe('first-load JS (#584)', () => {
     }
   );
 });
+
+describe('the editor chunk (#589)', () => {
+  it('loads the print, blueprint, SVG and DXF exporters only when used', () => {
+    const graph = staticGraph('components/room-organizer/index.ts');
+    expect(graph.has('components/room-organizer/room-organizer.tsx')).toBe(true);
+    for (const exporter of [
+      'components/room-organizer/lib/plan-export/svg.ts',
+      'components/room-organizer/lib/plan-export/dxf.ts',
+      'components/room-organizer/lib/plan-export/print.ts',
+      'components/room-organizer/lib/blueprint.ts',
+    ]) {
+      expect(graph.has(exporter), `the editor reaches ${exporter}`).toBe(false);
+    }
+  });
+});
