@@ -38,6 +38,12 @@ const INSIDE_DOOR = 0.9;
 const NUDGE_RADIUS = 1.5;
 const NUDGE_STEP = 0.15;
 const GRID_STEP = 0.25;
+/**
+ * Most cells the roomiest-spot scan takes along a side (#602): a 20 m
+ * house is still scanned every 0.25 m; a bigger one coarsely first, then
+ * finely round the best coarse cell. Each cell tests every collider.
+ */
+const GRID_MAX_STEPS = 80;
 /** Room to spare around the walker, so the first step isn't into something. */
 const SPAWN_MARGIN = 0.05;
 
@@ -93,23 +99,48 @@ function nearestFree(
   return best;
 }
 
-/** The spot on the storey furthest from anything: the largest free floor cell. */
-function roomiest(ctx: WalkSpawnContext, floorIndex: number): { x: number; z: number } | null {
-  const { halfWidth, halfDepth } = ctx.world;
-  let best: { x: number; z: number } | null = null;
-  let bestClearance = -Infinity;
-  for (let x = -halfWidth + GRID_STEP; x < halfWidth; x += GRID_STEP) {
-    for (let z = -halfDepth + GRID_STEP; z < halfDepth; z += GRID_STEP) {
+/**
+ * The roomiest spot of a grid scan over [minX, maxX) × [minZ, maxZ), with
+ * its clearance, or null when no cell is standable.
+ */
+function roomiestOnGrid(
+  ctx: WalkSpawnContext,
+  floorIndex: number,
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
+  step: number
+): { x: number; z: number; clearance: number } | null {
+  let best: { x: number; z: number; clearance: number } | null = null;
+  for (let x = bounds.minX + step; x < bounds.maxX; x += step) {
+    for (let z = bounds.minZ + step; z < bounds.maxZ; z += step) {
       if (!standable(ctx, floorIndex, x, z)) continue;
       // Ties go to the spot nearer the middle of the house.
       const clearance =
         walkClearance(ctx.colliders, x, z, true, ctx.world.elevations[floorIndex]) - Math.hypot(x, z) * 1e-3;
-      if (clearance <= bestClearance) continue;
-      best = { x, z };
-      bestClearance = clearance;
+      if (best && clearance <= best.clearance) continue;
+      best = { x, z, clearance };
     }
   }
   return best;
+}
+
+/** The spot on the storey furthest from anything: the largest free floor cell. */
+function roomiest(ctx: WalkSpawnContext, floorIndex: number): { x: number; z: number } | null {
+  const { halfWidth, halfDepth } = ctx.world;
+  const whole = { minX: -halfWidth, maxX: halfWidth, minZ: -halfDepth, maxZ: halfDepth };
+  const step = Math.max(GRID_STEP, (2 * Math.max(halfWidth, halfDepth)) / GRID_MAX_STEPS);
+  if (step === GRID_STEP) return roomiestOnGrid(ctx, floorIndex, whole, GRID_STEP);
+  // A big house: the best coarse cell, then the finest grid round it. A
+  // floor too full for the coarse grid to find room gets the fine scan.
+  const coarse = roomiestOnGrid(ctx, floorIndex, whole, step);
+  if (!coarse) return roomiestOnGrid(ctx, floorIndex, whole, GRID_STEP);
+  const near = {
+    minX: Math.max(-halfWidth, coarse.x - step),
+    maxX: Math.min(halfWidth, coarse.x + step),
+    minZ: Math.max(-halfDepth, coarse.z - step),
+    maxZ: Math.min(halfDepth, coarse.z + step),
+  };
+  const fine = roomiestOnGrid(ctx, floorIndex, near, GRID_STEP);
+  return fine && fine.clearance > coarse.clearance ? fine : coarse;
 }
 
 function towardCentre(x: number, z: number): [number, number] {
