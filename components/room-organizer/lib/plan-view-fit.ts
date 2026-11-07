@@ -14,7 +14,7 @@
  */
 
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
-import { distanceOutsideWalls } from './plan-export/print';
+import { distanceOutsideWalls } from './plan-export/print-scale';
 import { insetsFromRegion, isSliver, type Insets, type Rect } from './scene-insets';
 import type { FloorLayout, FurnitureItem, RoomLayout } from './types';
 

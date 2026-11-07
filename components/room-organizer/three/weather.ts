@@ -1,6 +1,7 @@
+import { groundHeightAt } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
 import type { DryBox } from '../lib/street-row';
-import type { Weather } from '../lib/types';
+import type { TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -11,15 +12,17 @@ export type Precipitation = Exclude<Weather, 'clear'>;
 
 /**
  * One falling-particle field over the lot (#189): rain as thin fast streaks,
- * snow as slow swaying flakes. The pure half (`createWeatherField` /
- * `stepWeatherField`) owns the particle positions and their wrap; the scene
- * half (`buildWeatherMesh` / `syncWeatherMesh`) copies them into a single
- * InstancedMesh, one draw call for the whole sky.
+ * snow as slow swaying flakes. The pure half (`createWeatherField`) scatters
+ * the particles; each one's motion is then a pure function of time
+ * (`weatherPositionAt`). The scene half (`buildWeatherMesh`) uploads the
+ * field once into a single InstancedMesh, one draw call for the whole sky,
+ * whose vertex shader runs that same function: a frame costs one uniform
+ * write (`setWeatherTime`), not a buffer upload (#669).
  */
 export interface WeatherField {
   kind: Precipitation;
   count: number;
-  /** xyz per particle, world space. */
+  /** xyz per particle at time 0, world space. */
   positions: Float32Array;
   /** Metres per second, downward. */
   speeds: Float32Array;
@@ -28,14 +31,14 @@ export interface WeatherField {
   phases: Float32Array;
   /** Half the side of the square field, centred on the house. */
   halfExtent: number;
-  /** Particles wrap from `floorY` back up to `ceilingY`. */
+  /** Where the ground is level at 0, particles wrap from `floorY` back up to `ceilingY`. */
   floorY: number;
+  /** Each particle's own wrap height: `floorY` over the ground under it (#595). */
+  floors: Float32Array;
   ceilingY: number;
   /** Half-size of the house footprint the field keeps clear, so nothing falls indoors. */
   clearHalfW: number;
   clearHalfD: number;
-  /** Elapsed seconds; drives the snow sway. */
-  time: number;
 }
 
 const WEATHER_PARTICLE_COUNT: Record<Precipitation, number> = { rain: 6000, snow: 4500 };
@@ -44,6 +47,16 @@ const WEATHER_FLOOR_Y = -0.5;
 const WEATHER_CEILING_Y = 22;
 /** Snow sways this far either side of its resting x; the footprint clearance grows by it. */
 export const SNOW_SWAY = 0.35;
+
+/**
+ * The whole field repeats after this many seconds, so the shader's clock
+ * wraps there with no jump, and `speed × time` stays precise in float32:
+ * every particle falls a whole number of its own columns per period, and the
+ * snow sway turns a whole number of times.
+ */
+export const WEATHER_TIME_WRAP = 600;
+/** Snow sway, radians per second: about 0.9, a whole number of turns per period. */
+const SNOW_SWAY_RATE = (2 * Math.PI * Math.round((0.9 * WEATHER_TIME_WRAP) / (2 * Math.PI))) / WEATHER_TIME_WRAP;
 
 const RAIN_SPEED: readonly [number, number] = [11, 15];
 const SNOW_SPEED: readonly [number, number] = [0.9, 1.7];
@@ -56,8 +69,11 @@ export interface WeatherFieldOptions {
   roomWidth: number;
   roomDepth: number;
   count?: number;
+  /** Height of the wrap over level ground; the terrain under each particle moves it (#595). */
   floorY?: number;
   ceilingY?: number;
+  /** The lot's slope: rain falls to the ground under it, however low the lot sits (#595). */
+  terrain?: TerrainSpec | undefined;
   /** Kept clear beyond the footprint on every side: the eaves' overhang, so nothing falls through the soffit (#660). */
   clearance?: number;
   /** World boxes kept clear as well: the neighbours' houses (#660). */
@@ -84,6 +100,7 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
     ceilingY = WEATHER_CEILING_Y,
     clearance = 0,
     dryBoxes = [],
+    terrain,
     rng = Math.random,
   } = options;
   const halfExtent = groundSize / 2;
@@ -96,6 +113,7 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
   const speeds = new Float32Array(count);
   const restX = new Float32Array(count);
   const phases = new Float32Array(count);
+  const floors = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     let x = 0;
     let z = 0;
@@ -105,44 +123,72 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
       x = (rng() * 2 - 1) * halfExtent;
       z = (rng() * 2 - 1) * halfExtent;
     } while ((Math.abs(x) < clearHalfW && Math.abs(z) < clearHalfD) || inDryBox(dryBoxes, x, z, sway));
+    const floor = floorY + groundHeightAt(terrain, z, roomDepth / 2);
+    floors[i] = floor;
     positions[i * 3] = x;
-    positions[i * 3 + 1] = floorY + rng() * (ceilingY - floorY);
+    positions[i * 3 + 1] = floor + rng() * (ceilingY - floor);
     positions[i * 3 + 2] = z;
-    speeds[i] = minSpeed + rng() * (maxSpeed - minSpeed);
+    // Rounded to a whole number of columns per period: at most a few cm/s off.
+    const span = ceilingY - floor;
+    const speed = minSpeed + rng() * (maxSpeed - minSpeed);
+    speeds[i] = (Math.max(1, Math.round((speed * WEATHER_TIME_WRAP) / span)) * span) / WEATHER_TIME_WRAP;
     restX[i] = x;
     phases[i] = rng() * Math.PI * 2;
   }
   return {
-    kind, count, positions, speeds, restX, phases, halfExtent, floorY, ceilingY, clearHalfW, clearHalfD, time: 0,
+    kind, count, positions, speeds, restX, phases, halfExtent, floorY, floors, ceilingY, clearHalfW, clearHalfD,
   };
 }
 
 /**
- * Advance every particle by `delta` seconds. Rain falls straight; snow falls
+ * Where particle `i` is `time` seconds in, into `out`: the CPU twin of the
+ * vertex shader in `buildWeatherMesh`. Rain falls straight; snow falls
  * slowly and sways sideways on a per-flake sine. A particle that drops below
- * the floor wraps back up by the field's full height, so the vertical
+ * its floor wraps back up by its column's full height, so the vertical
  * spacing of the column is preserved and the field never thins out.
  */
-export function stepWeatherField(field: WeatherField, delta: number): void {
-  const { positions, speeds, count, floorY, ceilingY } = field;
-  const span = ceilingY - floorY;
-  field.time += delta;
-  for (let i = 0; i < count; i++) {
-    let y = positions[i * 3 + 1]! - speeds[i]! * delta;
-    while (y < floorY) y += span;
-    positions[i * 3 + 1] = y;
-  }
-  if (field.kind === 'snow') {
-    const { restX, phases, time } = field;
-    for (let i = 0; i < count; i++) {
-      positions[i * 3] = restX[i]! + Math.sin(time * 0.9 + phases[i]!) * SNOW_SWAY;
-    }
-  }
+export function weatherPositionAt(field: WeatherField, i: number, time: number, out: { x: number; y: number; z: number }): void {
+  const floor = field.floors[i]!;
+  const span = field.ceilingY - floor;
+  const fallen = field.positions[i * 3 + 1]! - floor - field.speeds[i]! * time;
+  // GLSL's mod(): always in [0, span), however far it fell.
+  out.y = floor + (fallen - span * Math.floor(fallen / span));
+  const sway = field.kind === 'snow' ? Math.sin(time * SNOW_SWAY_RATE + field.phases[i]!) * SNOW_SWAY : 0;
+  out.x = field.restX[i]! + sway;
+  out.z = field.positions[i * 3 + 2]!;
 }
 
+const WEATHER_VERTEX_HEAD = /* glsl */ `
+attribute vec3 weatherMotion; // speed (m/s down), floor y, sway phase
+uniform float uWeatherTime;
+uniform float uWeatherCeiling;
+uniform float uWeatherSway;
+`;
+
 /**
- * The field's InstancedMesh. Per-instance rotation/scale are baked once
- * here; `syncWeatherMesh` only rewrites the translation column per frame.
+ * three's project_vertex chunk with the fall added after the instance
+ * matrix, in world units: the weatherPositionAt maths. The matrix's
+ * translation is the particle's time-0 position.
+ */
+const WEATHER_PROJECT_VERTEX = /* glsl */ `
+vec4 mvPosition = vec4( transformed, 1.0 );
+#ifdef USE_INSTANCING
+  mvPosition = instanceMatrix * mvPosition;
+  float weatherStartY = instanceMatrix[3].y;
+  float weatherSpan = uWeatherCeiling - weatherMotion.y;
+  float weatherY = weatherMotion.y + mod( weatherStartY - weatherMotion.y - weatherMotion.x * uWeatherTime, weatherSpan );
+  mvPosition.y += weatherY - weatherStartY;
+  mvPosition.x += sin( uWeatherTime * ${SNOW_SWAY_RATE.toFixed(8)} + weatherMotion.z ) * uWeatherSway;
+#endif
+mvPosition = modelViewMatrix * mvPosition;
+gl_Position = projectionMatrix * mvPosition;
+`;
+
+/**
+ * The field's InstancedMesh. The instance matrices (rotation, scale and the
+ * time-0 position) and each particle's speed, floor and sway phase are
+ * uploaded once here; the vertex shader moves the particles from the
+ * `uWeatherTime` uniform, which `setWeatherTime` writes (#669).
  * Never a shadow caster — the shadow map is static and a caster that moves
  * every frame would force it to re-render every frame (#189).
  */
@@ -162,8 +208,27 @@ export function buildWeatherMesh(THREE: ThreeModule, field: WeatherField): Three
     opacity: rain ? 0.55 : 0.95,
     depthWrite: false,
   });
+  const motion = new Float32Array(field.count * 3);
+  for (let i = 0; i < field.count; i++) {
+    motion[i * 3] = field.speeds[i]!;
+    motion[i * 3 + 1] = field.floors[i]!;
+    motion[i * 3 + 2] = field.phases[i]!;
+  }
+  geometry.setAttribute('weatherMotion', new THREE.InstancedBufferAttribute(motion, 3));
+  const uniforms = {
+    uWeatherTime: { value: 0 },
+    uWeatherCeiling: { value: field.ceilingY },
+    uWeatherSway: { value: rain ? 0 : SNOW_SWAY },
+  };
+  material.userData.weatherUniforms = uniforms;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${WEATHER_VERTEX_HEAD}`)
+      .replace('#include <project_vertex>', WEATHER_PROJECT_VERTEX);
+  };
+  material.customProgramCacheKey = () => 'weather-field';
   const mesh = new THREE.InstancedMesh(geometry, material, field.count);
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const dummy = new THREE.Object3D();
   for (let i = 0; i < field.count; i++) {
     dummy.position.set(field.positions[i * 3]!, field.positions[i * 3 + 1]!, field.positions[i * 3 + 2]!);
@@ -191,17 +256,10 @@ export function buildWeatherMesh(THREE: ThreeModule, field: WeatherField): Three
   return mesh;
 }
 
-/** Copy the field's positions into the instance matrices' translation column. */
-export function syncWeatherMesh(mesh: ThreeNS.InstancedMesh, field: WeatherField): void {
-  const matrices = mesh.instanceMatrix.array as Float32Array;
-  const { positions, count } = field;
-  for (let i = 0; i < count; i++) {
-    const m = i * 16;
-    matrices[m + 12] = positions[i * 3]!;
-    matrices[m + 13] = positions[i * 3 + 1]!;
-    matrices[m + 14] = positions[i * 3 + 2]!;
-  }
-  mesh.instanceMatrix.needsUpdate = true;
+/** Move the field to `seconds` in: one uniform write, nothing uploaded (#669). */
+export function setWeatherTime(mesh: ThreeNS.InstancedMesh, seconds: number): void {
+  const uniforms = (mesh.material as ThreeNS.Material).userData.weatherUniforms as { uWeatherTime: { value: number } } | undefined;
+  if (uniforms) uniforms.uWeatherTime.value = seconds % WEATHER_TIME_WRAP;
 }
 
 /** Remove every weather mesh, freeing its geometry, material, and instance buffers. */

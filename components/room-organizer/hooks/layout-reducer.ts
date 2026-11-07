@@ -1442,26 +1442,36 @@ function clampRoomDimension(value: number): number {
   return Math.min(value, MAX_ROOM_DIMENSION);
 }
 
+/**
+ * Defense in depth: even after schema validation, clamp dimensions and floor
+ * count here so any layout reaching the reducer stays within safe bounds.
+ * Copy-on-write: undo, redo and loads come through here, and a fresh
+ * terrain or floor object re-runs every scene effect keyed on it (#603).
+ */
 function normaliseLayout(layout: RoomLayout): RoomLayout {
-  // Defense in depth: even after schema validation, clamp dimensions and floor
-  // count here so any layout reaching the reducer stays within safe bounds.
   const width = clampRoomDimension(layout.width);
   const height = clampRoomDimension(layout.height);
-  const floors =
-    layout.floors.length === 0
-      ? [INITIAL_GROUND_FLOOR]
-      : layout.floors.slice(0, MAX_FLOORS).map((floor) => ({
-          ...floor,
-          floorColor: floor.floorColor || '#c9a57d',
-          ...(floor.height !== undefined ? { height: clampStoreyHeight(floor.height) } : {}),
-        }));
   return {
     ...layout,
     width,
     height,
-    floors,
+    floors: normaliseFloors(layout.floors),
     ...(layout.terrain !== undefined ? { terrain: clampTerrain(layout.terrain) } : {}),
   };
+}
+
+function normaliseFloors(floors: FloorLayout[]): FloorLayout[] {
+  if (floors.length === 0) return [INITIAL_GROUND_FLOOR];
+  let changed = floors.length > MAX_FLOORS;
+  const next = floors.slice(0, MAX_FLOORS).map((floor) => {
+    const floorColor = floor.floorColor || '#c9a57d';
+    const storeyHeight = floor.height !== undefined ? clampStoreyHeight(floor.height) : undefined;
+    if (floorColor === floor.floorColor && storeyHeight === floor.height) return floor;
+    changed = true;
+    return { ...floor, floorColor, ...(storeyHeight !== undefined ? { height: storeyHeight } : {}) };
+  });
+  // The incoming array itself when nothing changed, as each floor is.
+  return changed ? next : floors;
 }
 
 function findEntranceDoor(floors: readonly FloorLayout[]): FurnitureItem | undefined {
@@ -1576,7 +1586,9 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previo
 }
 
 function clampTerrain(terrain: TerrainSpec): TerrainSpec {
-  return { frontY: clampTerrainY(terrain.frontY), backY: clampTerrainY(terrain.backY) };
+  const frontY = clampTerrainY(terrain.frontY);
+  const backY = clampTerrainY(terrain.backY);
+  return frontY === terrain.frontY && backY === terrain.backY ? terrain : { frontY, backY };
 }
 
 function clampActiveIndex(index: number, floorCount: number): number {

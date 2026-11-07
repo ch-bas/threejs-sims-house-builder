@@ -22,6 +22,7 @@ import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '.
 import { hasFloorFinish, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings } from '../zones';
 import {
   buildingFrameBounds,
+  DEFAULT_SVG_MARGIN,
   coverageRings,
   gridLinePositions,
   doorSwing,
@@ -52,6 +53,8 @@ import {
   type ScheduleRow,
 } from './plan-geometry';
 import type { FloorLayout, RoomLayout, Vec2, WallId } from '../types';
+
+export { DEFAULT_SVG_MARGIN } from './plan-geometry';
 
 /** Line colours; defaults match the blueprint / 2D-view look. */
 export interface SvgPlanTheme {
@@ -131,7 +134,6 @@ export interface SvgSheetSize {
 }
 
 const DEFAULT_SVG_PX_PER_METRE = 50;
-export const DEFAULT_SVG_MARGIN = 60;
 
 // Colours match canvas-2d/render.ts: #ddd grid, #666 walls (3px), #bbb dashed
 // hidden walls, #555 interior walls, #333 furniture stroke.

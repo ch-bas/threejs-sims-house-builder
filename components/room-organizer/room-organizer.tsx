@@ -1034,7 +1034,7 @@ export function RoomOrganizer(): JSX.Element {
     (z: number) => groundHeightAt(layout.terrain, z, layout.height / 2),
     [layout.terrain, layout.height]
   );
-  const { isReady, error, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
+  const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
@@ -1223,6 +1223,7 @@ export function RoomOrganizer(): JSX.Element {
     enabled: isReady && view.showNpcs && !view.view2D,
     invalidate,
     requestShadowUpdate,
+    addDecorativeStep,
     threeModuleRef,
     sceneRef,
     roomWidth: layout.width,
@@ -1249,6 +1250,7 @@ export function RoomOrganizer(): JSX.Element {
     weather: view.weather,
     enabled: isReady && !view.view2D,
     invalidate,
+    addDecorativeStep,
     threeModuleRef,
     sceneRef,
     roomWidth: layout.width,
@@ -1256,11 +1258,12 @@ export function RoomOrganizer(): JSX.Element {
     // The eaves keep the ground under them dry too (#660).
     clearance: layout.roof && layout.roof.style !== 'none' ? ROOF_EAVE_OVERHANG : 0,
     dryBoxes,
+    terrain: layout.terrain,
   });
 
   useCameraVision({
     enabled: isReady && view.showCameraVision && !view.view2D,
-    invalidate,
+    addDecorativeStep,
     threeModuleRef,
     sceneRef,
     // Cones don't see through walls (#590).
@@ -1649,6 +1652,7 @@ export function RoomOrganizer(): JSX.Element {
     >
       <Viewport
         isReady={isReady}
+        shadersWarming={shadersWarming}
         error={error}
         view2D={view.view2D}
         layout={layout}
