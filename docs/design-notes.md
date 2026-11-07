@@ -361,6 +361,12 @@ to respect.
   7.8k skinned vertices per person; the editor's unmount frees it with
   `releasePeopleGeometry`. A placed person is picked by its item box
   instead of CPU-skinned triangles (#284).
+  Textures follow the same rule (#559): `disposeObject` frees every texture
+  a material holds, and three counts users per Texture object, not per
+  mesh, so a texture two groups share must be marked (`markSharedTexture`)
+  and freed by its module at unmount, or the first group removed deletes
+  it under the other. The procedural masters live in `DisposableLruCache`s,
+  which hand out clones and are emptied at unmount (`clearTextureCaches`).
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
