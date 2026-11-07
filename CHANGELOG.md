@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.30.0] - 2026-11-07
+
+The **Rendering & performance II** milestone, second wave: the editor is quicker and steadier. Pages load faster, no frames are spent when nothing moves, big houses no longer freeze, and the scene holds together: upper storeys stand on a floor, and garden items follow a sloped site.
+
+### Changed
+- First load is lighter: the error screens no longer pull in the catalogue and schema, so the page's startup code drops from 150 KB to 111 KB gzipped ([#584](https://github.com/ch-bas/threejs-sims-house-builder/issues/584))
+- The print, blueprint, SVG and DXF exports load when you use them instead of on every visit ([#589](https://github.com/ch-bas/threejs-sims-house-builder/issues/589))
+- The editor and 3D engine start downloading with the page instead of after it ([#731](https://github.com/ch-bas/threejs-sims-house-builder/issues/731))
+- The first visit no longer freezes for about two seconds while shaders compile; "Loading the lot…" stays up until the scene has drawn ([#730](https://github.com/ch-bas/threejs-sims-house-builder/issues/730))
+- Rain, walkers and camera cones animate at a steady 30 frames a second and pause while the tab is hidden ([#671](https://github.com/ch-bas/threejs-sims-house-builder/issues/671))
+- Walkers refresh their shadows ten times a second instead of every frame ([#668](https://github.com/ch-bas/threejs-sims-house-builder/issues/668))
+- Rain and snow no longer re-upload every particle each frame ([#669](https://github.com/ch-bas/threejs-sims-house-builder/issues/669))
+- Upper storeys stand on a floor slab: closed when seen from below, and upstairs shade no longer lands on the floor below ([#653](https://github.com/ch-bas/threejs-sims-house-builder/issues/653))
+- The plan draws a stairwell exactly as the floor is cut: stopped at the wall, and one opening for overlapping stairs ([#559](https://github.com/ch-bas/threejs-sims-house-builder/issues/559))
+
+### Fixed
+- The 2D plan no longer draws the hidden 3D scene on every edit ([#667](https://github.com/ch-bas/threejs-sims-house-builder/issues/667))
+- The walkthrough no longer redraws every frame while you stand still ([#666](https://github.com/ch-bas/threejs-sims-house-builder/issues/666))
+- Rain and snow reach the ground on a lowered or sloping lot ([#595](https://github.com/ch-bas/threejs-sims-house-builder/issues/595))
+- Garden items, their lamps' light, labels and walkthrough collisions follow a sloped site instead of floating above it or sinking into it ([#665](https://github.com/ch-bas/threejs-sims-house-builder/issues/665))
+- After a GPU reset the scene keeps its lighting instead of turning dark ([#663](https://github.com/ch-bas/threejs-sims-house-builder/issues/663))
+- Indoor lamps no longer light the house's outer walls, dormers and eaves through them ([#814](https://github.com/ch-bas/threejs-sims-house-builder/issues/814))
+- Sharing a house too big for a link says so at once instead of freezing for seconds ([#611](https://github.com/ch-bas/threejs-sims-house-builder/issues/611))
+- Undo and redo on a sloped site no longer rebuild the garden, street and walls ([#603](https://github.com/ch-bas/threejs-sims-house-builder/issues/603))
+- Entering the walkthrough in a very large house with no outside door no longer freezes ([#602](https://github.com/ch-bas/threejs-sims-house-builder/issues/602))
+
 ## [1.29.0] - 2026-11-04
 
 The **Rendering & performance II** milestone, first wave: a more lifelike house. Furniture has soft edges, real materials and contact shadows; walls and floors are at true scale with relief; windows and doors sit in real reveals; the lot sits in a world with a sky, horizon and textured ground; and nights come alive without costing any extra lights. Phones keep their speed, and a new quality setting lets you trade looks for speed.
@@ -882,7 +908,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.29.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.30.0...HEAD
+[1.30.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.29.0...v1.30.0
 [1.29.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.27.0...v1.28.0
 [1.27.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.26.0...v1.27.0
