@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout, makeUnplacedItem } from '../__testfixtures__/fixtures';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M } from '../constants';
+import { computeFloorOpenings, floorOpeningOutline } from '../stairs';
 import { layoutToDxf } from './dxf';
 import {
   buildingContentBounds,
@@ -21,9 +22,11 @@ import {
   roomDimensions,
   stairCutHatch,
   stairCutTreads,
+  stairwellOutlines,
   visionWedges,
   wallOpeningDimensions,
   type PlacedItem,
+  type PlanPoint,
 } from './plan-geometry';
 import { layoutToSvg } from './svg';
 
@@ -447,5 +450,31 @@ describe('stairCutHatch (#631)', () => {
     expect(layoutToSvg(layout, upper)).not.toContain('class="stair-cut"');
     const lines = (dxf: string) => dxf.split('\n').filter((row) => row.trim() === 'LINE').length;
     expect(lines(layoutToDxf(layout, lower))).toBeGreaterThan(lines(layoutToDxf(makeLayout({ floors: [lower] }), lower)));
+  });
+});
+
+describe('stairwellOutlines draws what the slab cuts (#559)', () => {
+  const stair = (id: string, x: number, z: number) =>
+    makeItem({ id, type: 'stairs', width: 1.2, depth: 2.4, height: 3, position: { x, z }, rotation: 0 });
+  const layoutWith = (...items: ReturnType<typeof stair>[]) =>
+    makeLayout({ width: 8, height: 8, floors: [makeFloor({ items }), makeFloor({ id: 'f1' })] });
+  const xs = (outline: PlanPoint[]) => outline.map((p) => p.x);
+
+  it("keeps a free-standing stair's own outline, corner order and all", () => {
+    const layout = layoutWith(stair('s', 0, 0));
+    const [opening] = computeFloorOpenings(layout.floors[0]);
+    expect(stairwellOutlines(layout, 1)).toEqual([floorOpeningOutline(opening!).map(([x, z]) => ({ x, z }))]);
+  });
+
+  it('stops a stair against a wall inside the wall, as the slab does', () => {
+    const layout = layoutWith(stair('s', 4 - 0.6, 0));
+    const [outline] = stairwellOutlines(layout, 1);
+    expect(Math.max(...xs(outline!))).toBeLessThan(4);
+    expect(Math.max(...xs(outline!))).toBeGreaterThan(3.99);
+  });
+
+  it('draws two overlapping stairs as one void', () => {
+    const layout = layoutWith(stair('a', 0, 0), stair('b', 0.5, 0.5));
+    expect(stairwellOutlines(layout, 1)).toHaveLength(1);
   });
 });

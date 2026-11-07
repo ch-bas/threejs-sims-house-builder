@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../components/room-organizer/lib/__testfixtures__/fixtures';
@@ -10,6 +10,14 @@ import ErrorBoundaryPage from './error';
 
 const renderBoundary = (error: Error & { digest?: string }) =>
   render(createElement(ErrorBoundaryPage, { error, reset: () => {} }));
+
+// Starting fresh loads the persistence module on click (#584).
+async function clickStartFresh(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+}
 
 function chunkError(): Error & { digest?: string } {
   const error = new Error('Loading chunk 805 failed.') as Error & { digest?: string };
@@ -79,7 +87,7 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe(house);
   });
 
-  it('offers start-fresh only when the crash comes back after a reload, and keeps a copy', () => {
+  it('offers start-fresh only when the crash comes back after a reload, and keeps a copy', async () => {
     window.localStorage.setItem(STORAGE_KEY, house);
     boom();
     fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
@@ -87,7 +95,7 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
 
     boom();
     expect(screen.getByText(/broke again right after reloading/i)).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+    await clickStartFresh();
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual([house]);
     expect(window.localStorage.getItem(VERSION_HISTORY_STORAGE_KEY)).toContain('Crashy');
@@ -115,11 +123,11 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     boom();
   };
 
-  it('refuses to reset when storage blocks the copy', () => {
+  it('refuses to reset when storage blocks the copy', async () => {
     crashTwice();
     const setItem = failSetItem('SecurityError');
     try {
-      fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+      await clickStartFresh();
     } finally {
       setItem.mockRestore();
     }
@@ -129,11 +137,11 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('says so and keeps the download when storage fails mid-move', () => {
+  it('says so and keeps the download when storage fails mid-move', async () => {
     crashTwice();
     const setItem = failSetItem('QuotaExceededError');
     try {
-      fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+      await clickStartFresh();
     } finally {
       setItem.mockRestore();
     }
@@ -142,10 +150,10 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps an older recovery copy when starting fresh', () => {
+  it('keeps an older recovery copy when starting fresh', async () => {
     window.localStorage.setItem(RECOVERY_STORAGE_KEY, 'older copy');
     crashTwice();
-    fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+    await clickStartFresh();
     expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual([house, 'older copy']);
   });
 
@@ -156,7 +164,7 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     window.localStorage.setItem(STORAGE_KEY, flushed);
     const setItem = failSetItem('QuotaExceededError');
     try {
-      fireEvent.click(screen.getByRole('button', { name: /start fresh/i }));
+      await clickStartFresh();
     } finally {
       setItem.mockRestore();
     }

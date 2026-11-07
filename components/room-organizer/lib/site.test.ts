@@ -4,6 +4,7 @@ import {
   MAX_TERRAIN_Y,
   MIN_TERRAIN_Y,
   clampTerrainY,
+  gardenGroundY,
   groundHeightAt,
   hasNeighbourOn,
   hasNeighbours,
@@ -79,5 +80,32 @@ describe('site helpers (#202)', () => {
     expect(roadEdges(3, undefined)).toEqual({ near: 10.6, far: expect.closeTo(16.7, 5) });
     expect(roadEdges(3, 'garden')).toEqual(roadEdges(3, undefined));
     expect(roadEdges(3, 'pavement')).toEqual({ near: 3, far: expect.closeTo(9.1, 5) });
+  });
+});
+
+describe('gardenGroundY (#665)', () => {
+  const site = { width: 8, height: 8, terrain: { frontY: -3, backY: 2 } };
+  const tree = { category: 'outdoor' as const };
+
+  it('puts a garden item on the ground under it, front and back', () => {
+    // Beyond the house the ground is flat at the street's and the garden's height.
+    expect(gardenGroundY(tree, 0, { x: -2, z: -6 }, site)).toBeCloseTo(-3);
+    expect(gardenGroundY(tree, 0, { x: 2, z: 7 }, site)).toBeCloseTo(2);
+    // Beside the house it follows the slope.
+    expect(gardenGroundY(tree, 0, { x: 6, z: 0 }, site)).toBeCloseTo(-0.5);
+  });
+
+  it('leaves indoor items, upper storeys, the inside and a site without terrain alone', () => {
+    expect(gardenGroundY({ category: 'seating' }, 0, { x: -2, z: -6 }, site)).toBeNull();
+    expect(gardenGroundY({}, 0, { x: -2, z: -6 }, site)).toBeNull();
+    expect(gardenGroundY(tree, 1, { x: -2, z: -6 }, site)).toBeNull();
+    expect(gardenGroundY(tree, 0, { x: 0, z: 0 }, site)).toBeNull();
+    expect(gardenGroundY(tree, 0, { x: -2, z: -6 }, { width: 8, height: 8 })).toBeNull();
+  });
+
+  it('counts the cut corner of an L as garden', () => {
+    const l = { ...site, cutout: { corner: 'ne' as const, width: 3, depth: 3 } };
+    expect(gardenGroundY(tree, 0, { x: 3, z: -3 }, l)).not.toBeNull();
+    expect(gardenGroundY(tree, 0, { x: -3, z: -3 }, l)).toBeNull();
   });
 });

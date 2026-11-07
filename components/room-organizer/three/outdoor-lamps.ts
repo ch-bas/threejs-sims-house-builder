@@ -35,9 +35,13 @@ export function setOutdoorLampMaskLive(live: boolean): void {
   maskLive = live;
 }
 
-/** three's light chunk with each point light scaled by its slot of the mask. */
-export function maskedLightsChunk(chunk: string): string {
-  return chunk.replace(POINT_LIGHT_LINE, `${POINT_LIGHT_LINE}\n\t\tdirectLight.color *= lampReachesOutdoors[ i ];`);
+/**
+ * three's light chunk with each point light scaled by its slot of the mask:
+ * everywhere, or (`perFace`) on the outside face only.
+ */
+export function maskedLightsChunk(chunk: string, perFace = false): string {
+  const scale = perFace ? 'mix( 1.0, lampReachesOutdoors[ i ], vOutsideFace )' : 'lampReachesOutdoors[ i ]';
+  return chunk.replace(POINT_LIGHT_LINE, `${POINT_LIGHT_LINE}\n\t\tdirectLight.color *= ${scale};`);
 }
 
 /**
@@ -50,6 +54,27 @@ export function maskedLightsChunk(chunk: string): string {
  * the material is left as it was (see `maskLive`).
  */
 export function shutOutIndoorLamps(THREE: ThreeModule, material: ThreeNS.Material): void {
+  maskLamps(THREE, material, false);
+}
+
+/**
+ * Per-vertex attribute: 1 on the outside face of a shell wall or dormer, 0 on
+ * the inside one (`withOutsideFace`). Geometry without it reads 0: indoors.
+ */
+export const OUTSIDE_FACE_ATTRIBUTE = 'outsideFace';
+
+/**
+ * `shutOutIndoorLamps` for the outside face only (#814): a shell wall is one
+ * mesh and one material for both its faces, so an L's notch wall lit the
+ * lamp in the other wing through itself. The faces are told apart by
+ * `OUTSIDE_FACE_ATTRIBUTE`, so the inside keeps every lamp and the wall
+ * stays one draw.
+ */
+export function shutOutIndoorLampsOutside(THREE: ThreeModule, material: ThreeNS.Material): void {
+  maskLamps(THREE, material, true);
+}
+
+function maskLamps(THREE: ThreeModule, material: ThreeNS.Material, perFace: boolean): void {
   if (material.userData.indoorLampsShut === true) return;
   material.userData.indoorLampsShut = true;
   // On top of what the material already patches (ground surfaces, #761).
@@ -59,12 +84,20 @@ export function shutOutIndoorLamps(THREE: ThreeModule, material: ThreeNS.Materia
     previous.call(material, shader, renderer);
     if (!maskLive) return;
     shader.uniforms.lampReachesOutdoors = lampReachesOutdoors;
-    shader.fragmentShader = `uniform float lampReachesOutdoors[ ${LAMP_POOL_SIZE} ];\n${shader.fragmentShader.replace(
+    const lights = maskedLightsChunk(THREE.ShaderChunk.lights_fragment_begin, perFace);
+    shader.fragmentShader = `uniform float lampReachesOutdoors[ ${LAMP_POOL_SIZE} ];\n${perFace ? 'varying float vOutsideFace;\n' : ''}${shader.fragmentShader.replace(
       '#include <lights_fragment_begin>',
-      maskedLightsChunk(THREE.ShaderChunk.lights_fragment_begin)
+      lights
     )}`;
+    if (perFace) {
+      shader.vertexShader = `attribute float ${OUTSIDE_FACE_ATTRIBUTE};\nvarying float vOutsideFace;\n${shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>\n\tvOutsideFace = ${OUTSIDE_FACE_ATTRIBUTE};`
+      )}`;
+    }
   };
-  material.customProgramCacheKey = () => (maskLive ? `${previousKey}|outdoor-lamps` : previousKey);
+  const tag = perFace ? '|outdoor-lamps-outside' : '|outdoor-lamps';
+  material.customProgramCacheKey = () => (maskLive ? `${previousKey}${tag}` : previousKey);
 }
 
 /** `shutOutIndoorLamps` for every material under `root`. */

@@ -202,6 +202,8 @@ export function attachDragHandlers({
   // move so the item keeps its place under the pointer (#292).
   let grabOffsetX = 0;
   let grabOffsetZ = 0;
+  // The height of the plane the drag moves on, set at the grab (#665).
+  let grabPlaneY = 0;
   // The press kept a multi-selection (#291); a release without a drag
   // narrows it to the pressed item.
   let selectOnRelease = false;
@@ -393,7 +395,12 @@ export function attachDragHandlers({
     selectOnRelease = keepSelection;
     grabOffsetX = 0;
     grabOffsetZ = 0;
-    dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
+    // At the height the item stands: its storey's floor, or the ground under
+    // a garden item on a slope (#665), so it stays under the pointer. Held
+    // for the whole drag: a plane that followed the item would jump with it
+    // where it crosses the footprint's edge and fling it away.
+    grabPlaneY = target.position.y;
+    dragPlane.constant = -grabPlaneY;
     if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
       grabOffsetX = target.position.x - intersection.x;
       grabOffsetZ = target.position.z - intersection.z;
@@ -490,7 +497,8 @@ export function attachDragHandlers({
     if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
-    dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
+    // Where the item stood at the grab (#665).
+    dragPlane.constant = -grabPlaneY;
     // A ray at or above the horizon misses the plane — hold the last frame.
     if (!raycaster.ray.intersectPlane(dragPlane, intersection)) return;
 

@@ -1,7 +1,8 @@
 import { cutoutRect, isInsideBuilding, type FootprintBuilding, type FootprintRect } from './footprint';
 import { mountBand, pendantBulbY } from './mount-band';
+import { gardenGroundY } from './site';
 import { floorElevation, storeyHeight } from './storeys';
-import type { FloorLayout, InteriorWall, Vec2 } from './types';
+import type { FloorLayout, InteriorWall, TerrainSpec, Vec2 } from './types';
 
 /**
  * Catalog items that light their surroundings at night (#215), and how.
@@ -61,12 +62,13 @@ export interface RenderedFloors {
  * the empty floor below in amber. With `building`, a lamp on the ground
  * outside the walls is marked `outdoors`, whatever its type: it goes by where
  * the lamp stands, so a lamppost in an L's cut corner counts and one inside
- * doesn't (#664).
+ * doesn't (#664). With its `terrain`, a garden lamp's bulb rides the slope
+ * with the post (#665).
  */
 export function collectLampLights(
   floors: readonly FloorLayout[],
   rendered: RenderedFloors,
-  building?: FootprintBuilding
+  building?: FootprintBuilding & { terrain?: TerrainSpec | undefined }
 ): LampLight[] {
   return floors.flatMap((floor, index) => {
     if (!rendered.showAllFloors && index !== rendered.activeFloorIndex) return [];
@@ -81,10 +83,11 @@ export function collectLampLights(
         item.type === 'pendant-light'
           ? pendantBulbY(item, storey)
           : mountBand(item).bottom + item.height * spec.bulb;
+      const standY = (building ? gardenGroundY(item, index, item.position, building) : null) ?? floorY;
       return [
         {
           x: item.position.x,
-          y: floorY + bulbY,
+          y: standY + bulbY,
           z: item.position.z,
           candela: spec.candela,
           range: spec.range,

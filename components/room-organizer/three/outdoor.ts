@@ -4,6 +4,7 @@ import { removeAndDispose } from './builder-utils';
 import { fadeWithDistance, layGroundSurface } from './ground-surfaces';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
+import { DisposableLruCache } from './texture-lru';
 import type { FootprintCutout, Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -485,11 +486,13 @@ const TREE_KINDS: readonly TreeKind[] = [
   { id: 'pine',  trunkColor: 0x3e2e1d, leafColor: 0x2b5a2a, leafColorAlt: 0x3d7838, trunkRadius: 0.13, trunkHeight: 1.2, crownRadius: 0.90, crownShape: 'pine' },
 ];
 
-// Cache the birch-bark texture so we generate the canvas only once per session.
-let birchBarkTextureCache: ThreeNS.CanvasTexture | null = null;
+// Cache the birch-bark texture so we generate the canvas only once per
+// editor; `clearTextureCaches` drops it at unmount (#559).
+const birchBarkTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>(1);
 
 function getBirchBarkTexture(THREE: ThreeModule): ThreeNS.CanvasTexture | null {
-  if (birchBarkTextureCache) return birchBarkTextureCache;
+  const cached = birchBarkTextureCache.get('birch');
+  if (cached) return cached;
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
   canvas.width = 64;
@@ -526,7 +529,7 @@ function getBirchBarkTexture(THREE: ThreeModule): ThreeNS.CanvasTexture | null {
   texture.wrapT = THREE.RepeatWrapping;
   // Tag sRGB (CanvasTextures default to linear) so the bark isn't washed out.
   texture.colorSpace = THREE.SRGBColorSpace;
-  birchBarkTextureCache = texture;
+  birchBarkTextureCache.set('birch', texture);
   return texture;
 }
 

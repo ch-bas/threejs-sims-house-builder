@@ -3,6 +3,7 @@ import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
 import { footprintOutline } from '../lib/footprint';
 import { removeAndDispose } from './builder-utils';
 import { buildDormers, buildDormerWell, dormerWells } from './dormers';
+import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { DisposableLruCache } from './texture-lru';
 import { withMaxAnisotropy } from './texture-settings';
 import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
@@ -81,6 +82,18 @@ export function gableWallsOf(style: RoofStyle | undefined, floors: readonly Floo
 export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
   removeRoof(options.scene);
   if (options.spec.style === 'none') return;
+  const first = options.scene.children.length;
+  buildRoofParts(THREE, options);
+  // The roof is outdoors: a lamp under the eaves lit its soffit and fascia
+  // through the wall (#814). A dormer is seen from the attic too, so it
+  // masks its own parts (`buildDormers`): face and cheeks by face, the top
+  // whole; its frames and glass face away from a lamp in the room below.
+  for (const part of options.scene.children.slice(first)) {
+    if (part.userData.dormerId === undefined) shutOutIndoorLampsUnder(THREE, part);
+  }
+}
+
+function buildRoofParts(THREE: ThreeModule, options: BuildRoofOptions): void {
 
   const color = options.spec.color ?? defaultRoofColor(options.spec.style);
 
@@ -99,6 +112,8 @@ export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {
     case 'hipped':
       options.scene.add(buildHippedRoof(THREE, options, color));
       break;
+    case 'none':
+      return;
   }
 
   // Dormers (#203) stand on the gable / hipped slopes; flat roofs have none.

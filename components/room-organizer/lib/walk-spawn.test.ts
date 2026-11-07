@@ -115,3 +115,40 @@ describe('walkArrival — floor changes while walking (#446)', () => {
     expect([arrival.x, arrival.z, arrival.dirX, arrival.dirZ]).toEqual([-2, -2, 0, 0]);
   });
 });
+
+describe('walkSpawn — a big house with no door (#602)', () => {
+  /** The schema's largest footprint, `count` scattered pieces, no door. */
+  function sprawling(count: number, size = 100): ShellBuilding {
+    let seed = 11;
+    const rnd = (): number => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const items = Array.from({ length: count }, (_, i) =>
+      item({ id: `p${i}`, type: 'table', width: 1.5, depth: 1, position: { x: (rnd() - 0.5) * (size - 2), z: (rnd() - 0.5) * (size - 2) } })
+    );
+    return { width: size, depth: size, floors: [{ items }] };
+  }
+
+  it('finds the roomiest spot of a 100 m house without a long freeze', () => {
+    const ctx = context(sprawling(300), 0);
+    const started = performance.now();
+    const spawn = walkSpawn(ctx, 0);
+    // The full 0.25 m scan took ~1.3 s here and several seconds on CI; the
+    // coarse scan takes about 0.1 s, but shared CI runners are slow and
+    // noisy (305 ms seen), so the bound only has to catch the old freeze.
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(walkClearance(ctx.colliders, spawn.x, spawn.z, true, 0)).toBeGreaterThan(3);
+  });
+
+  it('the spot is as roomy as the finest scan finds, within a grid step', () => {
+    for (const size of [30, 60]) {
+      const ctx = context(sprawling(size * 2, size), 0);
+      const spawn = walkSpawn(ctx, 0);
+      let best = 0;
+      for (let x = -size / 2 + 0.25; x < size / 2; x += 0.25) {
+        for (let z = -size / 2 + 0.25; z < size / 2; z += 0.25) {
+          best = Math.max(best, walkClearance(ctx.colliders, x, z, true, 0));
+        }
+      }
+      expect(walkClearance(ctx.colliders, spawn.x, spawn.z, true, 0)).toBeGreaterThan(best - 0.25);
+    }
+  });
+});

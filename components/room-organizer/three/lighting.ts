@@ -1,5 +1,6 @@
 import { LAMP_POOL_SIZE, type LampPoolPlan } from '../lib/night-lights';
 import { fitSunShadow, type ShadowBox, type SunShadowFit, type Vec3 } from '../lib/sun-shadow';
+import { disposeScene } from './builder-utils';
 import { applyOutdoorWeather } from './outdoor';
 import { applyOutdoorLampMask, setOutdoorLampMaskLive } from './outdoor-lamps';
 import { SKY_RADIUS, followCamera, mulberry32, updateSky } from './sky';
@@ -17,6 +18,55 @@ const LIGHTING_TAGS = {
   Stars: 'sky:stars',
   Moon: 'sky:moon',
 } as const;
+
+/** The scene's image-based light, which a lost GPU context takes with it (#663). */
+export interface SceneEnvironment {
+  /**
+   * Bake it again, after a context restore: the old target's texels died
+   * with the context. The old target is dropped, not disposed: its GL
+   * objects went with the context, and deleting them on the new one only
+   * logs INVALID_OPERATION.
+   */
+  rebake(): void;
+  dispose(): void;
+}
+
+/**
+ * Light `scene` from what `bake` renders, and keep the target to bake again.
+ * A render target is drawn, not uploaded, so three can't restore it with the
+ * context; without a fresh bake `scene.environment` points at an empty
+ * texture and every material renders dark.
+ */
+export function installEnvironment(scene: ThreeNS.Scene, bake: () => ThreeNS.WebGLRenderTarget): SceneEnvironment {
+  let target = bake();
+  scene.environment = target.texture;
+  return {
+    rebake() {
+      target = bake();
+      scene.environment = target.texture;
+    },
+    dispose() {
+      scene.environment = null;
+      // The render target, not just its texture: its framebuffer is GPU memory too.
+      target.dispose();
+    },
+  };
+}
+
+/** The neutral studio environment, prefiltered for `renderer`. */
+export function bakeStudioEnvironment(
+  THREE: ThreeModule,
+  renderer: ThreeNS.WebGLRenderer,
+  RoomEnvironment: new () => ThreeNS.Scene
+): ThreeNS.WebGLRenderTarget {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const studio = new RoomEnvironment();
+  const target = pmrem.fromScene(studio, 0.04);
+  pmrem.dispose();
+  // The studio scene's own meshes are only needed for the bake (#213).
+  disposeScene(studio);
+  return target;
+}
 
 /** Shadow casters before the first layout-driven fit: the lot of the default house. */
 const DEFAULT_SHADOW_BOX: ShadowBox = { min: [-24, 0, -24], max: [24, 12, 24] };

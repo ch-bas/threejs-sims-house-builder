@@ -126,6 +126,17 @@ describe('buildExportBuilding (#373)', () => {
     disposeObject(root);
   });
 
+  it('stands a garden item on a sloped site on the ground, as the scene does (#665)', () => {
+    const layout = { ...twoStoreys(), terrain: { frontY: -3, backY: 1 } };
+    const root = buildExportBuilding(THREE, layout);
+    const tree = root.getObjectByName('Oak Tree')!;
+    // Beside the house, half way down its depth: the middle of the slope.
+    expect(tree.position.y).toBeCloseTo(-1);
+    // Indoors the floor stays the datum.
+    expect(root.getObjectByName('Sofa')!.position.y).toBe(0);
+    disposeObject(root);
+  });
+
   it('keeps every wall, solid and visible, and leaves out the snap grid', () => {
     const root = buildExportBuilding(THREE, twoStoreys());
     for (const storey of storeys(root)) {

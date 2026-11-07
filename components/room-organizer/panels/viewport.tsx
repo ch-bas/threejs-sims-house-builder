@@ -23,6 +23,8 @@ export interface HoverState {
 
 export interface ViewportProps {
   isReady: boolean;
+  /** #730: the 3D view's first frame waits for its shaders; the loading overlay stays meanwhile. */
+  shadersWarming?: boolean;
   error: string | null;
   view2D: boolean;
   layout: RoomLayout;
@@ -58,7 +60,8 @@ export interface ViewportProps {
 }
 
 export function Viewport(props: ViewportProps): JSX.Element {
-  const showLoading = !props.isReady && !props.error;
+  // The 2D plan needs no shaders: it shows as soon as the editor is ready.
+  const showLoading = !props.error && (!props.isReady || (props.shadersWarming === true && !props.view2D));
   const showError = Boolean(props.error);
   // Named images for assistive technology (#436); the lot badge's fallback name.
   const houseName = props.layout.name || 'Untitled Home';
@@ -140,7 +143,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
         {showLoading && <LoadingOverlay />}
         {showError && <ErrorOverlay message={props.error ?? ''} />}
 
-        {props.isReady && !showError && <ViewportOverlays {...props} />}
+        {props.isReady && !showLoading && !showError && <ViewportOverlays {...props} />}
       </div>
     </div>
   );

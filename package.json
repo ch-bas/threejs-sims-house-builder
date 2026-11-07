@@ -1,6 +1,6 @@
 {
   "name": "threejs-sims-house-builder",
-  "version": "1.29.0",
+  "version": "1.30.0",
   "description": "A lightweight, open-source 3D house builder that runs entirely in the browser using Three.js.",
   "author": "Bassem Chagra",
   "license": "MIT",
@@ -19,7 +19,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "postbuild": "node scripts/add-csp.mjs",
+    "postbuild": "node scripts/add-preloads.mjs && node scripts/add-csp.mjs",
     "start": "npx --yes serve@14 out",
     "lint": "eslint --ext .ts,.tsx app components lib",
     "typecheck": "next typegen && tsc --noEmit",

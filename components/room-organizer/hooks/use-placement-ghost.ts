@@ -5,6 +5,7 @@ import {
   GHOST_ROTATION_STEP,
   ghostItem,
   ghostOutlinePoints,
+  groundUnderPointer,
   invertClientToWorld,
 } from '../lib/placement-ghost';
 import { isTypingTarget } from '../lib/walk-input';
@@ -26,7 +27,7 @@ export interface UsePlacementGhostParams {
   view2D: boolean;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   canvas2DRef: RefObject<HTMLCanvasElement | null>;
-  worldPositionFromClient(clientX: number, clientY: number): Vec2 | null;
+  worldPositionFromClient(clientX: number, clientY: number, planeY?: number): Vec2 | null;
   clientToWorld2D(clientX: number, clientY: number): Vec2 | null;
   /** use-item-placement's catalogue snap: walls for openings, the toggles otherwise. */
   snapCatalogPlacement(catalogItem: CatalogItem, x: number, z: number, rotation: number): { position: Vec2; rotation: number };
@@ -44,6 +45,8 @@ export interface UsePlacementGhostParams {
   /** World Y and height of the active storey. */
   floorY: number;
   storeyHeight: number;
+  /** The ground under a garden item on a sloped site, where it will stand (#665); null for the floor. */
+  groundY?(item: FurnitureItem): number | null;
 }
 
 export interface UsePlacementGhostResult {
@@ -132,8 +135,16 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     const p = paramsRef.current;
     const canvas = (view2D ? p.canvas2DRef : p.canvasRef).current;
     if (!canvas) return undefined;
-    const toWorld = (clientX: number, clientY: number): Vec2 | null =>
-      view2D ? paramsRef.current.clientToWorld2D(clientX, clientY) : paramsRef.current.worldPositionFromClient(clientX, clientY);
+    const toWorld = (clientX: number, clientY: number): Vec2 | null => {
+      const current = paramsRef.current;
+      if (view2D) return current.clientToWorld2D(clientX, clientY);
+      // A garden item on a slope stands on the ground: find the point of it
+      // under the pointer, not the floor's (#665).
+      return groundUnderPointer(
+        (planeY) => current.worldPositionFromClient(clientX, clientY, planeY),
+        (position) => current.groundY?.(ghostItem(ghost, position, 0)) ?? null
+      );
+    };
 
     // A new pick starts at the middle of the view; a rebuild of the same
     // pick (view switch, floor change) keeps its spot and turn.
@@ -175,7 +186,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       const item = ghostItem(ghost, live.position, live.rotation);
       const colliding = current.collides(item);
       if (mesh) {
-        mesh.group.position.set(live.position.x, current.floorY, live.position.z);
+        mesh.group.position.set(live.position.x, current.groundY?.(item) ?? current.floorY, live.position.z);
         mesh.group.rotation.y = live.rotation;
         mesh.setSetback(current.revealSetback(item));
         mesh.setColliding(colliding);

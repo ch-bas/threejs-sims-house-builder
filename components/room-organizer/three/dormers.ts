@@ -1,5 +1,6 @@
 import { dormerFrame, dormerOpeningRects, julietRailSpan, type DormerFrame, type DormerOpeningRect } from '../lib/dormers';
 import { withOutsideFace } from './builder-utils';
+import { shutOutIndoorLamps, shutOutIndoorLampsOutside } from './outdoor-lamps';
 import type { DormerSpec, RoofStyle } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -65,6 +66,8 @@ function buildDormer(THREE: ThreeModule, dormer: DormerSpec, frame: DormerFrame,
     side: THREE.FrontSide,
     shadowSide: THREE.DoubleSide,
   });
+  // A lamp in the room lights the inside of the face, not the outside (#814).
+  shutOutIndoorLampsOutside(THREE, finish);
   const rects = dormerOpeningRects(dormer, width, height);
 
   // Face: the vertical front, with a hole per opening.
@@ -88,21 +91,24 @@ function buildDormer(THREE: ThreeModule, dormer: DormerSpec, frame: DormerFrame,
   group.add(face);
 
   // Cheeks: the triangles between the face, the flat top and the slope.
-  const cheek = new THREE.BufferGeometry();
-  cheek.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute([0, bottomY, faceZ, 0, topY, faceZ, 0, topY, backZ], 3)
-  );
-  cheek.computeVertexNormals();
+  // `withOutsideFace` takes the inside sheet, so each cheek is wound to face
+  // into the dormer: +x on the west cheek, −x on the east one (#814).
   for (const x of [-half, half]) {
-    const side = new THREE.Mesh(withOutsideFace(THREE, cheek.clone()), finish);
+    const cheek = new THREE.BufferGeometry();
+    const corners = [0, bottomY, faceZ, 0, topY, faceZ, 0, topY, backZ];
+    // Reversed winding: the second and third corners swap.
+    const wound = x < 0 ? corners : [...corners.slice(0, 3), ...corners.slice(6, 9), ...corners.slice(3, 6)];
+    cheek.setAttribute('position', new THREE.Float32BufferAttribute(wound, 3));
+    cheek.computeVertexNormals();
+    const side = new THREE.Mesh(withOutsideFace(THREE, cheek), finish);
     side.position.x = x;
     group.add(side);
   }
-  cheek.dispose();
 
   // Flat top, overhanging the face and cheeks a little.
   const topMat = new THREE.MeshStandardMaterial({ color: roofColor, roughness: 0.85 });
+  // Its overhanging edge faces out over a lamp in the room below (#814).
+  shutOutIndoorLamps(THREE, topMat);
   const topRun = backZ - faceZ + TOP_OVERHANG;
   const top = new THREE.Mesh(new THREE.BoxGeometry(width + TOP_OVERHANG * 2, TOP_THICKNESS, topRun), topMat);
   top.position.set(0, topY + TOP_THICKNESS / 2, faceZ - TOP_OVERHANG + topRun / 2);

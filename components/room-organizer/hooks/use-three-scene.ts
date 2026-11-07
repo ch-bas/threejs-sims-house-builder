@@ -3,20 +3,26 @@ import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/
 import { REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
 import { qualityProfile, type QualityChoice, type QualityProfile } from '../lib/render-quality';
 import { ORBIT_FOV_DEG, ORBIT_MAX_POLAR, ORBIT_START, clearOfGround, orbitNear } from '../lib/scene-insets';
+import { holdForShaderWarmup } from '../lib/shader-warmup';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
+import { createFrameBudget, type DecorativeStep, type FrameBudget } from '../three/frame-budget';
 import { releaseGroundTextures } from '../three/ground-surfaces';
-import { addLights, applyShadowQuality } from '../three/lighting';
+import { addLights, applyShadowQuality, bakeStudioEnvironment, installEnvironment, type SceneEnvironment } from '../three/lighting';
 import { releaseRoomLightTexture } from '../three/night-glow';
 import { releasePeopleGeometry } from '../three/people-model';
 import { clearFloorPlanImageCache } from '../three/room-builder';
 import { setSkyDetail } from '../three/sky';
+import { clearTextureCaches } from '../three/texture-lru';
 import { setMaxAnisotropy } from '../three/texture-settings';
 import type { SceneEventHandlers } from '../three/drag-handlers';
 import type * as ThreeNS from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/controls/OrbitControls.js';
 
 type ThreeModule = typeof import('../three/three-runtime');
+
+/** #730: the longest the first frame waits for shaders compiling in parallel. */
+const SHADER_WARMUP_LIMIT_MS = 4000;
 
 export type { HoverInfo, SelectionMode } from '../three/drag-handlers';
 
@@ -30,6 +36,8 @@ export interface UseThreeSceneOptions extends SceneEventHandlers {
 
 export interface UseThreeSceneResult {
   isReady: boolean;
+  /** #730: the first frame waits for the first scene's shaders; keep the loading state up. */
+  shadersWarming: boolean;
   error: string | null;
   /** Mark the scene dirty so the next animation frame renders. */
   invalidate: () => void;
@@ -39,13 +47,22 @@ export interface UseThreeSceneResult {
    * — NOT for pure camera orbit, which never changes cast shadows.
    */
   requestShadowUpdate: () => void;
+  /**
+   * Run a decorative animation step on the render loop's frame budget
+   * (#671): at most 30 times a second while nothing else draws, paused while
+   * the page is hidden. Returns its removal.
+   */
+  addDecorativeStep: (step: DecorativeStep) => () => void;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
   rendererRef: React.MutableRefObject<ThreeNS.WebGLRenderer | null>;
   controlsRef: React.MutableRefObject<OrbitControlsType | null>;
-  /** Convert a client-space pointer position to a world-space floor coordinate. */
-  worldPositionFromClient(clientX: number, clientY: number): { x: number; z: number } | null;
+  /**
+   * Convert a client-space pointer position to a world-space floor coordinate,
+   * on the active floor or at `planeY` (a garden item's ground, #665).
+   */
+  worldPositionFromClient(clientX: number, clientY: number, planeY?: number): { x: number; z: number } | null;
 }
 
 export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResult {
@@ -57,6 +74,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   // Render-on-demand: the RAF loop only renders when OrbitControls report
   // movement or something marked the scene dirty. Starts dirty for frame 1.
   const dirtyRef = useRef(true);
+  // #730: true until the first scene's shaders have compiled; the loop holds
+  // frames meanwhile, so none renders a half-built scene ahead of the compile.
+  const warmingShadersRef = useRef(true);
+  const [shadersWarming, setShadersWarming] = useState(true);
   const invalidateRef = useRef(() => {
     dirtyRef.current = true;
   });
@@ -70,6 +91,20 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     if (renderer) renderer.shadowMap.needsUpdate = true;
     dirtyRef.current = true;
   });
+
+  // Decorative loops (#671): one budget per editor, made on first use so the
+  // prerender never touches window; the render loop below ticks it.
+  const frameBudgetRef = useRef<FrameBudget | null>(null);
+  const frameBudget = (): FrameBudget =>
+    (frameBudgetRef.current ??= createFrameBudget({ document }));
+  const addDecorativeStepRef = useRef((step: DecorativeStep) => frameBudget().add(step));
+  useEffect(
+    () => () => {
+      frameBudgetRef.current?.dispose();
+      frameBudgetRef.current = null;
+    },
+    []
+  );
 
   const threeModuleRef = useRef<ThreeModule | null>(null);
   const orbitCtorRef = useRef<typeof OrbitControlsType | null>(null);
@@ -233,26 +268,20 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       // The fitted floor-plan composites are module-level and can be 64 MB
       // apiece; nothing else drops them once the editor is gone.
       cleanup.push(() => clearFloorPlanImageCache());
+      // W3 (#559): so are the pattern, shingle, label and bark masters' canvases.
+      cleanup.push(() => clearTextureCaches());
 
       // Image-based lighting from a neutral studio environment. This is what
       // makes MeshStandardMaterial respond with believable specular/diffuse
       // bounce instead of the flat sun+ambient-only look. Intensity is
       // re-scaled by applyTimeOfDay so nights stay dark.
+      // Kept so a context restore can bake it again (#663).
       const RoomEnvironment = roomEnvCtorRef.current;
+      let environment: SceneEnvironment | null = null;
       if (RoomEnvironment) {
-        const pmrem = new THREE.PMREMGenerator(renderer);
-        const roomEnvironment = new RoomEnvironment();
-        const envTarget = pmrem.fromScene(roomEnvironment, 0.04);
-        pmrem.dispose();
-        // The studio scene's own meshes are only needed for the bake (#213).
-        disposeScene(roomEnvironment);
-        scene.environment = envTarget.texture;
+        environment = installEnvironment(scene, () => bakeStudioEnvironment(THREE, renderer, RoomEnvironment));
         scene.environmentIntensity = 0.5;
-        cleanup.push(() => {
-          scene.environment = null;
-          // The render target, not just its texture: its framebuffer is GPU memory too.
-          envTarget.dispose();
-        });
+        cleanup.push(() => environment?.dispose());
       }
 
       const controls = new OrbitControls(camera, renderer.domElement);
@@ -314,8 +343,16 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // into the polar cone before every render (#114). Walkthrough marks
         // frames dirty itself, so skipping update() here loses nothing.
         const controlsMoved = handlersRef.current.walkthroughActive ? false : controls.update();
-        if (contextLost) return;
+        // #730: no frame until the first scene's shaders are compiled (below).
+        if (contextLost || warmingShadersRef.current) return;
+        // Decorative loops (#671): every frame while this one draws anyway,
+        // otherwise at their own capped rate.
+        if (frameBudgetRef.current?.tick(performance.now(), controlsMoved || dirtyRef.current)) dirtyRef.current = true;
         if (!controlsMoved && !dirtyRef.current) return;
+        // The 2D plan hides the canvas (0×0): nobody sees the frame, so keep
+        // it owed, shadow pass included, and draw it when the canvas shows
+        // again, which the resize observer also marks dirty (#667).
+        if (canvas.clientWidth === 0 || canvas.clientHeight === 0) return;
         dirtyRef.current = false;
         renderer.render(scene, camera);
       };
@@ -334,6 +371,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         contextLost = false;
         // GPU resources were dropped — force a fresh shadow pass and a repaint.
         renderer.shadowMap.needsUpdate = true;
+        // W3 (#663): the image-based light is a render target, which three
+        // can't restore; bake it again or the whole scene renders dark.
+        environment?.rebake();
         invalidateRef.current();
       };
       canvas.addEventListener('webglcontextlost', onContextLost as EventListener, false);
@@ -402,7 +442,38 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     };
   }, [isModuleLoaded, canvasRef]);
 
-  const worldPositionFromClient = (clientX: number, clientY: number): { x: number; z: number } | null => {
+  // ── #730: compile the first scene's shaders off the main thread ──────────
+  // Cold, the first render linked every program on the main thread: a 1.9 s
+  // freeze with the HUD already up. Once the scene effects (a child
+  // component, so their effects ran first) have built the scene, compileAsync
+  // starts the programs and waits on KHR_parallel_shader_compile; the first
+  // frame is held, under the loading overlay (`shadersWarming`), until it
+  // settles, fails or SHADER_WARMUP_LIMIT_MS pass (lib/shader-warmup.ts),
+  // and then renders as before. Without the extension it settles at once and
+  // the first render compiles, as it always did.
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (!isReady || !renderer || !scene || !camera) return undefined;
+    warmingShadersRef.current = true;
+    setShadersWarming(true);
+    return holdForShaderWarmup(
+      () => renderer.compileAsync(scene, camera),
+      () => {
+        warmingShadersRef.current = false;
+        dirtyRef.current = true;
+        // The loop draws the first frame on the next animation frame, which
+        // can still block on the shadow programs compileAsync doesn't cover:
+        // lift the overlay a frame after that, never over a bare canvas.
+        requestAnimationFrame(() => requestAnimationFrame(() => setShadersWarming(false)));
+      },
+      SHADER_WARMUP_LIMIT_MS
+    );
+  }, [isReady]);
+  // ── end #730 ──────────────────────────────────────────────────────────────
+
+  const worldPositionFromClient = (clientX: number, clientY: number, planeY?: number): { x: number; z: number } | null => {
     const canvas = canvasRef.current;
     const camera = cameraRef.current;
     const THREE = threeModuleRef.current;
@@ -415,8 +486,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     );
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(pointer, camera);
-    const planeY = handlersRef.current.getDragPlaneY?.() ?? 0;
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(planeY ?? handlersRef.current.getDragPlaneY?.() ?? 0));
     const target = new THREE.Vector3();
     if (!raycaster.ray.intersectPlane(plane, target)) return null;
     return { x: target.x, z: target.z };
@@ -424,9 +494,11 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
   return {
     isReady,
+    shadersWarming,
     error,
     invalidate: invalidateRef.current,
     requestShadowUpdate: requestShadowUpdateRef.current,
+    addDecorativeStep: addDecorativeStepRef.current,
     threeModuleRef,
     sceneRef,
     cameraRef,

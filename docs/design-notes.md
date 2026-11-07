@@ -347,6 +347,18 @@ to respect.
   WebGL context is restored automatically if the GPU drops it. The weather
   loop is the same shape: it runs only while rain or snow is on, and its
   particles never cast shadows, so the static shadow map stays static.
+  The decorative loops (weather, walkers, the camera cones' sweep) share
+  one frame budget (`three/frame-budget.ts`, #671) ticked by the render
+  loop: 30 steps a second, every frame while the frame draws anyway, none
+  while the page is hidden. An unfocused but visible window keeps
+  animating on purpose (a second monitor, a shared screen), so #671's
+  pause on blur was left out. New walkers are posed once outside the
+  budget, so they never wait for it in a T-pose. Walkers refresh the
+  shadow map about ten times a second (#668); the rain and snow fall runs
+  in the vertex shader from a time uniform that wraps every 600 s without
+  a jump (#669); a locked walkthrough draws only
+  on a look or a step (#666); and nothing draws while the 2D plan hides the
+  canvas (#667).
 - **Instanced outdoor scenery.** The suburban lot's high-count scatter
   (grass tufts, shrubs, flowers, road dashes, stepping stones) renders
   through `InstancedMesh` — hundreds of elements collapse to a handful of
@@ -361,6 +373,12 @@ to respect.
   7.8k skinned vertices per person; the editor's unmount frees it with
   `releasePeopleGeometry`. A placed person is picked by its item box
   instead of CPU-skinned triangles (#284).
+  Textures follow the same rule (#559): `disposeObject` frees every texture
+  a material holds, and three counts users per Texture object, not per
+  mesh, so a texture two groups share must be marked (`markSharedTexture`)
+  and freed by its module at unmount, or the first group removed deletes
+  it under the other. The procedural masters live in `DisposableLruCache`s,
+  which hand out clones and are emptied at unmount (`clearTextureCaches`).
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
@@ -528,7 +546,15 @@ to respect.
   top storey. Out on the lot the whole
   house and its roof show. Only the walker's storey is lit, since point
   lights cast no shadow. The #359 ceiling plate stays under the storey
-  above (a floor plate is invisible from below); its stairwell shafts go.
+  above, where the storey isn't drawn; its stairwell shafts go. Every upper
+  storey stands on a slab (#653, `addFloorSlab`): the underside and edges
+  of a 4 cm extrusion of the floor's outline, cut by the same stairwells,
+  set 1 cm inside the outer walls so its edge can't z-fight the storey
+  below, with no lid (the floor is its top). It casts the sun, so upstairs
+  shade no longer lands on the floor below, and is shallow enough that hung
+  decor (5 cm under the ceiling) stays clear of it. It sits 3 cm under the
+  walkthrough plate, a step too small to see when the storey above comes
+  into view near the stairs.
   Under the roof the walker gets the attic ceiling (#487, `buildAtticCeiling`
   in `three/roof.ts`): a plaster plate just below the roof base, out to the
   eaves, instead of the roof's shingled underside, opening into a lined well

@@ -1,4 +1,5 @@
-import type { Frontage, NeighbourFlag, NeighbourSide, NeighbourSpec, TerrainSpec } from './types';
+import { isInsideBuilding, type FootprintBuilding } from './footprint';
+import type { Frontage, FurnitureItem, NeighbourFlag, NeighbourSide, NeighbourSpec, TerrainSpec, Vec2 } from './types';
 
 /**
  * Sloped sites and party-wall neighbours (#202).
@@ -39,6 +40,23 @@ export function groundHeightAt(terrain: TerrainSpec | undefined, z: number, half
   if (halfDepth <= 0) return terrain.frontY;
   const t = Math.min(1, Math.max(0, (z + halfDepth) / (2 * halfDepth)));
   return terrain.frontY + (terrain.backY - terrain.frontY) * t;
+}
+
+/**
+ * The ground a garden item stands on at `at` (#665): an outdoor item on the
+ * ground floor, outside the house, follows the slope as the lawn under it
+ * does. Null for anything else, which stands on its storey's floor, and on a
+ * site without terrain, where the ground is the ground floor's datum.
+ */
+export function gardenGroundY(
+  item: Pick<FurnitureItem, 'category'>,
+  floorIndex: number,
+  at: Vec2,
+  site: FootprintBuilding & { terrain?: TerrainSpec | undefined }
+): number | null {
+  if (floorIndex !== 0 || item.category !== 'outdoor' || !site.terrain) return null;
+  if (isInsideBuilding(site, at.x, at.z)) return null;
+  return groundHeightAt(site.terrain, at.z, site.height / 2);
 }
 
 /** Lowest ground anywhere around the house — how deep its plinth must reach. */

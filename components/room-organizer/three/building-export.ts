@@ -1,6 +1,6 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { lowestGround } from '../lib/site';
+import { gardenGroundY, lowestGround } from '../lib/site';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { zoneFloorPatches } from '../lib/zones';
@@ -9,6 +9,7 @@ import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
 import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
+import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
 import { revealSetbacks } from './reveals';
 import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
@@ -146,7 +147,8 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       group.userData.type = ROOM_OBJECT_TAGS.Furniture;
       group.userData.id = item.id;
       group.userData.floorIndex = index;
-      group.position.set(position.x, floorY, position.z);
+      // A garden item on the ground under it, as the scene stands it (#665).
+      group.position.set(position.x, gardenGroundY(item, index, position, layout) ?? floorY, position.z);
       group.rotation.y = item.rotation ?? 0;
       group.scale.x = item.mirrored ? -1 : 1;
       scratch.add(group);
@@ -186,6 +188,8 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     const material = (node as ThreeNS.Mesh).material as ThreeNS.Material | ThreeNS.Material[] | undefined;
     if (!material) return;
     for (const m of Array.isArray(material) ? material : [material]) stripRelief(m);
+    // Which face of a wall is outdoors is a lighting detail of the view (#814).
+    (node as ThreeNS.Mesh).geometry.deleteAttribute(OUTSIDE_FACE_ATTRIBUTE);
   });
 
   return root;

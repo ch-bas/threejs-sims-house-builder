@@ -190,3 +190,21 @@ describe('planLampPool (#393)', () => {
     expect(nearest!.x).toBe(1);
   });
 });
+
+describe('a garden lamp on a sloped site (#665)', () => {
+  const site = { width: 8, height: 6, terrain: { frontY: -3, backY: 0 } };
+  const post = (x: number, z: number) => makeItem({ id: 'post', type: 'lamppost', category: 'outdoor', height: 3.2, position: { x, z } });
+
+  it('hangs its bulb over the post where the post stands, on the ground', () => {
+    const [flat] = collectLampLights([floor([post(0, -6)])], GROUND, { width: 8, height: 6 });
+    const [front] = collectLampLights([floor([post(0, -6)])], GROUND, site);
+    expect(front!.y).toBeCloseTo(flat!.y - 3);
+  });
+
+  it('leaves a lamp indoors on its floor', () => {
+    const lamp = makeItem({ id: 'l', type: 'floor-lamp', category: 'outdoor', height: 1.7, position: { x: 0, z: 0 } });
+    const [flat] = collectLampLights([floor([lamp])], GROUND, { width: 8, height: 6 });
+    const [sloped] = collectLampLights([floor([lamp])], GROUND, site);
+    expect(sloped!.y).toBe(flat!.y);
+  });
+});

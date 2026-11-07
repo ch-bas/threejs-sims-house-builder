@@ -402,3 +402,51 @@ describe('share rounding never changes what the editor computes (#192)', () => {
     expect(roundLayoutForShare(layout).floors[0]!.items[0]).toBe(stairs);
   });
 });
+
+describe('encodeShareUrl — a house too big to share is refused cheaply (#611)', () => {
+  /** One storey of `count` free-dragged items on a 100 m plot, the schema's largest. */
+  function crowded(count: number): RoomLayout {
+    let seed = 7;
+    const rnd = (): number => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const items = Array.from({ length: count }, (_, i) =>
+      makeItem({
+        id: `c${i}`,
+        position: { x: (rnd() - 0.5) * 98, z: (rnd() - 0.5) * 98 },
+        rotation: rnd() * Math.PI,
+      })
+    );
+    return makeLayout({ width: 100, height: 100, floors: [makeFloor({ items })] });
+  }
+
+  it('answers for 2,000 items without rounding them all against each other', async () => {
+    const layout = crowded(2000);
+    const started = performance.now();
+    const { url } = await encodeShareUrl(layout, ORIGIN);
+    // The full rounding pass alone took ~700 ms here; generous for slow CI.
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(isShareUrlReasonablySized(url)).toBe(false);
+  });
+
+  it('a house that fits still gets the exact, rounded link', async () => {
+    for (const count of [50, 200]) {
+      const layout = crowded(count);
+      const { url } = await encodeShareUrl(layout, ORIGIN);
+      const json = JSON.stringify(roundLayoutForShare(layout));
+      const expected = `${ORIGIN}${PREFIX}2.${deflateRawSync(Buffer.from(json)).toString('base64url')}`;
+      expect(url).toBe(expected);
+    }
+  });
+
+  it('a house just over the cap is still measured on its rounded link', async () => {
+    // About 20 characters an item: these straddle the 12,000 cap.
+    for (const count of [570, 575, 580, 585, 590, 620]) {
+      const layout = crowded(count);
+      const json = JSON.stringify(roundLayoutForShare(layout));
+      const exact = `${ORIGIN}${PREFIX}2.${deflateRawSync(Buffer.from(json)).toString('base64url')}`;
+      const { url } = await encodeShareUrl(layout, ORIGIN);
+      expect(isShareUrlReasonablySized(url)).toBe(isShareUrlReasonablySized(exact));
+      // Up to a little past the cap, the link is the exact one.
+      if (exact.length < 12_400) expect(url).toBe(exact);
+    }
+  });
+});
