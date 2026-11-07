@@ -25,8 +25,8 @@ const controlsStub = vi.hoisted(() => {
     removeEventListener(type: string, fn: () => void): void {
       this.listeners.get(type)?.delete(fn);
     }
-    emit(type: 'lock' | 'unlock'): void {
-      this.isLocked = type === 'lock';
+    emit(type: 'lock' | 'unlock' | 'change'): void {
+      if (type !== 'change') this.isLocked = type === 'lock';
       for (const fn of this.listeners.get(type) ?? []) fn();
     }
     unlock(): void {
@@ -305,5 +305,29 @@ describe('useWalkthrough — sitting (#463b)', () => {
     key('keydown', 'KeyE', 'e');
     frames(30);
     expect(result.current.seated).toBe(false);
+  });
+});
+
+describe('useWalkthrough — render on demand (#666)', () => {
+  it('draws nothing while the locked walker stands still, and one frame per look or step', async () => {
+    const invalidate = vi.fn();
+    const { lock, controls } = await setup(building([FRONT_DOOR]), { invalidate });
+    lock();
+    frames(10);
+    invalidate.mockClear();
+    frames(60);
+    expect(invalidate).not.toHaveBeenCalled();
+    // PointerLockControls reports each mouse-look as a change.
+    act(() => controls.emit('change'));
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    invalidate.mockClear();
+    key('keydown', 'KeyW', 'w');
+    frames(3);
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    key('keyup', 'KeyW', 'w');
+    frames(30);
+    invalidate.mockClear();
+    frames(30);
+    expect(invalidate).not.toHaveBeenCalled();
   });
 });
