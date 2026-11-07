@@ -168,13 +168,16 @@ describe('the field follows the lot down and up (#595)', () => {
       expect(field.floors[i]).toBeCloseTo(ground - 0.5, 5);
       expect(field.positions[i * 3 + 1]).toBeGreaterThanOrEqual(field.floors[i]!);
     }
+    // One assertion after the loop: 600,000 expect calls timed out on CI.
+    let lowestAboveFloor = Infinity;
     for (let step = 0; step < 200; step++) {
       stepWeatherField(field, 0.05);
       for (let i = 0; i < field.count; i++) {
-        expect(field.positions[i * 3 + 1]).toBeGreaterThanOrEqual(field.floors[i]!);
+        lowestAboveFloor = Math.min(lowestAboveFloor, field.positions[i * 3 + 1]! - field.floors[i]!);
         if (field.positions[i * 3 + 2]! < -LOT.roomDepth / 2) lowestFront = Math.min(lowestFront, field.positions[i * 3 + 1]!);
       }
     }
+    expect(lowestAboveFloor).toBeGreaterThanOrEqual(0);
     // The streaks reach the front lawn at -3 m instead of stopping at -0.5 m.
     expect(lowestFront).toBeLessThan(-3);
   });
