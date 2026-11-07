@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { clampDormer, dormerPresetFields } from '../lib/dormers';
 import { buildDormerWell, dormerWells } from './dormers';
+import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
 import { buildRoof, removeRoof, ROOF_TAG } from './roof';
 import type { DormerSpec } from '../lib/types';
 
@@ -122,5 +123,33 @@ describe('dormer wells under the attic ceiling (#487)', () => {
     expect(box.max.y).toBeGreaterThan(well!.frame.topY - 0.05);
     // Two sides, the back, the cap and the strip under the face.
     expect(lining.children).toHaveLength(5);
+  });
+});
+
+describe('dormer faces and cheeks know their outside (#814)', () => {
+  it('flags the outside face of the face and of both cheeks, by its normal', () => {
+    const scene = new THREE.Scene();
+    buildRoof(THREE, { scene, width: 10, depth: 8, baseY: 6, spec: { style: 'gable', dormers: DORMERS } });
+    scene.updateMatrixWorld(true);
+    let sheets = 0;
+    for (const group of dormerGroups(scene)) {
+      const centre = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3());
+      group.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        const outside = mesh.isMesh ? mesh.geometry.getAttribute(OUTSIDE_FACE_ATTRIBUTE) : undefined;
+        if (!outside) return;
+        sheets += 1;
+        const away = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()).sub(centre);
+        const normals = mesh.geometry.getAttribute('normal');
+        const toWorld = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+        for (let i = 0; i < normals.count; i++) {
+          const normal = new THREE.Vector3().fromBufferAttribute(normals, i).applyMatrix3(toWorld);
+          // The outside face points away from the dormer's middle, the inside one into it.
+          expect(Math.sign(normal.dot(away))).toBe(outside.getX(i) === 1 ? 1 : -1);
+        }
+      });
+    }
+    // A face and two cheeks per dormer.
+    expect(sheets).toBe(6);
   });
 });

@@ -9,6 +9,7 @@ import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
 import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
+import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
 import { revealSetbacks } from './reveals';
 import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
@@ -187,6 +188,8 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     const material = (node as ThreeNS.Mesh).material as ThreeNS.Material | ThreeNS.Material[] | undefined;
     if (!material) return;
     for (const m of Array.isArray(material) ? material : [material]) stripRelief(m);
+    // Which face of a wall is outdoors is a lighting detail of the view (#814).
+    (node as ThreeNS.Mesh).geometry.deleteAttribute(OUTSIDE_FACE_ATTRIBUTE);
   });
 
   return root;

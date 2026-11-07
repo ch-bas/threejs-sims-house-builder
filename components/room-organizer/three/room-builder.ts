@@ -5,7 +5,7 @@ import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose, withOutsideFace } from './builder-utils';
 import { buildFloorMaterial } from './floor-patterns';
-import { shutOutIndoorLamps } from './outdoor-lamps';
+import { shutOutIndoorLamps, shutOutIndoorLampsOutside } from './outdoor-lamps';
 import { buildRevealGeometry, skirtingOpenings } from './reveals';
 import { ROOF_OFF_STOREY_KEY } from './roof';
 import { revealsEnabled, withMaxAnisotropy } from './texture-settings';
@@ -762,6 +762,9 @@ function buildWalls(
     // The shadow pass still has to draw whichever face the light meets.
     material.side = THREE.FrontSide;
     material.shadowSide = THREE.DoubleSide;
+    // The lamps indoors light the inside face only: an L's notch wall faces
+    // the lamp in the other wing across the corner (#814).
+    shutOutIndoorLampsOutside(THREE, material);
 
     const wall = new THREE.Mesh(geometry, material);
     wall.rotation.y = spec.rotateY;

@@ -1,3 +1,4 @@
+import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
 
@@ -124,6 +125,8 @@ export function withOutsideFace(THREE: ThreeModule, sheet: ThreeNS.BufferGeometr
   const position = new Float32Array(count * 6);
   const normal = new Float32Array(count * 6);
   const uv = uvs ? new Float32Array(count * 4) : null;
+  // 0 on the inside face, 1 on the outside (#814).
+  const outside = new Float32Array(count * 2).fill(1, count);
   for (let i = 0; i < count; i++) {
     // The outside copy winds each triangle the other way: 0, 2, 1.
     const corner = i + (i % 3 === 1 ? 1 : i % 3 === 2 ? -1 : 0);
@@ -139,6 +142,7 @@ export function withOutsideFace(THREE: ThreeModule, sheet: ThreeNS.BufferGeometr
   both.setAttribute('position', new THREE.BufferAttribute(position, 3));
   both.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
   if (uv) both.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  both.setAttribute(OUTSIDE_FACE_ATTRIBUTE, new THREE.BufferAttribute(outside, 1));
   if (inside !== sheet) inside.dispose();
   sheet.dispose();
   return both;
