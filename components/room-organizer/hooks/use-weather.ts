@@ -4,6 +4,7 @@ import { buildWeatherMesh, createWeatherField, removeWeather, setWeatherTime } f
 import { useReducedMotion } from './use-reduced-motion';
 import type { DryBox } from '../lib/street-row';
 import type { TerrainSpec, Weather } from '../lib/types';
+import type { FrameBudget } from '../three/frame-budget';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('../three/three-runtime');
@@ -25,19 +26,21 @@ export interface UseWeatherOptions {
   terrain?: TerrainSpec | undefined;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate: () => void;
+  /** The scene's frame budget for decorative loops (#671). */
+  addDecorativeStep: FrameBudget['add'];
 }
 
 /**
- * Rain or snow over the lot (#189). Runs a self-invalidating RAF loop exactly
- * like the NPC walkers: only while weather ≠ clear, advancing the field's
- * clock (a uniform; the vertex shader moves the particles, #669) and
- * requesting one repaint per frame, so the render loop stays parked
- * the moment the weather clears. The overcast lighting and the ground tint
+ * Rain or snow over the lot (#189). A step on the scene's frame budget
+ * (#671), like the walkers: only while weather ≠ clear, advancing the field's
+ * clock (a uniform; the vertex shader moves the particles, #669) and asking
+ * for a repaint each step, so the render loop stays parked the moment the
+ * weather clears. The overcast lighting and the ground tint
  * are applied by `applyTimeOfDay`, not here. Cleanup disposes the field and
  * repaints once so the last frame's particles don't linger.
  */
 export function useWeather(options: UseWeatherOptions): void {
-  const { weather, enabled, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, invalidate } = options;
+  const { weather, enabled, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, invalidate, addDecorativeStep } = options;
   // Keyed on the two heights, not the terrain object, which a save or an
   // undo hands over afresh.
   const frontY = options.terrain?.frontY;
@@ -72,25 +75,17 @@ export function useWeather(options: UseWeatherOptions): void {
       };
     }
 
-    let rafId = 0;
-    let lastTime = performance.now();
     let seconds = 0;
-    const tick = () => {
-      rafId = requestAnimationFrame(tick);
-      const now = performance.now();
-      // Cap the step so a backgrounded tab doesn't teleport the column on return.
-      const delta = Math.min(0.1, (now - lastTime) / 1000);
-      lastTime = now;
+    const removeStep = addDecorativeStep((delta) => {
       seconds += delta;
       setWeatherTime(mesh, seconds);
-      invalidate();
-    };
-    rafId = requestAnimationFrame(tick);
+      return true;
+    });
 
     return () => {
-      cancelAnimationFrame(rafId);
+      removeStep();
       removeWeather(scene);
       invalidate();
     };
-  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, frontY, backY, invalidate, reducedMotion]);
+  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, frontY, backY, invalidate, addDecorativeStep, reducedMotion]);
 }

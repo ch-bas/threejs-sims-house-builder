@@ -175,7 +175,8 @@ components/
     │   ├── signal-overlay.ts            Wi-Fi / CCTV ring overlays
     │   ├── camera-vision.ts             Directional CCTV vision-cone overlays; no alert through walls (#590), depth-tested under another storey or while walking (#552)
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
-    │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh)
+    │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh; the fall runs in the vertex shader, #669)
+    │   ├── frame-budget.ts              One capped, focus-paused frame budget for the decorative loops (#671)
     │   ├── ground-surfaces.ts           Generated grass, paving and asphalt tiles, laid by world position with a macro layer on grass (#761)
     │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
     │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664)
@@ -203,10 +204,10 @@ components/
     │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
     │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits; giving way, sitting, activities
-    │   ├── use-weather.ts               Self-invalidating rain / snow loop
+    │   ├── use-weather.ts               Rain / snow clock on the frame budget
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
-    │   ├── use-camera-vision.ts         Vision-cone sweep animation loop
+    │   ├── use-camera-vision.ts         Vision-cone sweep on the frame budget
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette

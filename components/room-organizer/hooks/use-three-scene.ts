@@ -5,6 +5,7 @@ import { qualityProfile, type QualityChoice, type QualityProfile } from '../lib/
 import { ORBIT_FOV_DEG, ORBIT_MAX_POLAR, ORBIT_START, clearOfGround, orbitNear } from '../lib/scene-insets';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
+import { createFrameBudget, type DecorativeStep, type FrameBudget } from '../three/frame-budget';
 import { releaseGroundTextures } from '../three/ground-surfaces';
 import { addLights, applyShadowQuality } from '../three/lighting';
 import { releaseRoomLightTexture } from '../three/night-glow';
@@ -39,6 +40,12 @@ export interface UseThreeSceneResult {
    * — NOT for pure camera orbit, which never changes cast shadows.
    */
   requestShadowUpdate: () => void;
+  /**
+   * Run a decorative animation step on the render loop's frame budget
+   * (#671): at most 30 times a second while nothing else draws, paused while
+   * the page is hidden. Returns its removal.
+   */
+  addDecorativeStep: (step: DecorativeStep) => () => void;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
@@ -70,6 +77,20 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     if (renderer) renderer.shadowMap.needsUpdate = true;
     dirtyRef.current = true;
   });
+
+  // Decorative loops (#671): one budget per editor, made on first use so the
+  // prerender never touches window; the render loop below ticks it.
+  const frameBudgetRef = useRef<FrameBudget | null>(null);
+  const frameBudget = (): FrameBudget =>
+    (frameBudgetRef.current ??= createFrameBudget({ document }));
+  const addDecorativeStepRef = useRef((step: DecorativeStep) => frameBudget().add(step));
+  useEffect(
+    () => () => {
+      frameBudgetRef.current?.dispose();
+      frameBudgetRef.current = null;
+    },
+    []
+  );
 
   const threeModuleRef = useRef<ThreeModule | null>(null);
   const orbitCtorRef = useRef<typeof OrbitControlsType | null>(null);
@@ -315,6 +336,9 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // frames dirty itself, so skipping update() here loses nothing.
         const controlsMoved = handlersRef.current.walkthroughActive ? false : controls.update();
         if (contextLost) return;
+        // Decorative loops (#671): every frame while this one draws anyway,
+        // otherwise at their own capped rate.
+        if (frameBudgetRef.current?.tick(performance.now(), controlsMoved || dirtyRef.current)) dirtyRef.current = true;
         if (!controlsMoved && !dirtyRef.current) return;
         // The 2D plan hides the canvas (0×0): nobody sees the frame, so keep
         // it owed, shadow pass included, and draw it when the canvas shows
@@ -431,6 +455,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     error,
     invalidate: invalidateRef.current,
     requestShadowUpdate: requestShadowUpdateRef.current,
+    addDecorativeStep: addDecorativeStepRef.current,
     threeModuleRef,
     sceneRef,
     cameraRef,

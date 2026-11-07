@@ -32,6 +32,7 @@ import { lookForSeed } from '../three/people-outfits';
 import { useReducedMotion } from './use-reduced-motion';
 import type { KeepOutRect } from '../lib/geometry';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
+import type { FrameBudget } from '../three/frame-budget';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('../three/three-runtime');
@@ -198,6 +199,8 @@ export interface UseNpcsOptions {
   riggedModelReady?: boolean;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate?: () => void;
+  /** The scene's frame budget the walk runs on (#671). */
+  addDecorativeStep: FrameBudget['add'];
   /**
    * Recompute the static shadow map. NPCs cast shadows, so while they're
    * actually walking their shadows must keep updating — but only then.
@@ -215,7 +218,7 @@ export interface UseNpcsOptions {
 export function useNpcs(options: UseNpcsOptions): void {
   const {
     enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, items, interiorWalls = EMPTY_WALLS, keepOut,
-    floorY, riggedModelReady = false, invalidate, requestShadowUpdate,
+    floorY, riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep,
   } = options;
   const reducedMotion = useReducedMotion();
   const stateRef = useRef<NpcState[]>([]);
@@ -270,30 +273,31 @@ export function useNpcs(options: UseNpcsOptions): void {
     }
     stateRef.current = npcs;
 
-    let rafId = 0;
-    let lastTime = performance.now();
     const shadowDue = npcShadowPacer();
-    const tick = () => {
-      // Reduced motion (#436): one frame poses the walkers where they
-      // spawned, and then they stand still — no loop, no wandering.
-      if (!reducedMotion) rafId = requestAnimationFrame(tick);
-      const now = performance.now();
-      const delta = reducedMotion ? 0 : Math.min(0.1, (now - lastTime) / 1000);
-      lastTime = now;
+    // One step of the walk, on the scene's frame budget (#671); true asks for a repaint.
+    const step = (delta: number): boolean => {
       const currentNav = navRef.current;
-      if (!currentNav) return;
+      if (!currentNav) return false;
       // Repaint only when a pose changed, and recompute the 2048² shadow map
       // only when a walker moved: a rigged figure idles (breathes) every
       // frame, and re-rendering every caster for that pinned the GPU (#400).
       // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
       const change = stepNpcs(stateRef.current, delta, currentNav, floorY, Math.random, seatsRef.current);
-      if (reducedMotion || shadowDue(now, change === NPC_SHADOW)) requestShadowUpdate?.();
-      if (change !== NPC_STILL || reducedMotion) invalidate?.();
+      if (reducedMotion || shadowDue(performance.now(), change === NPC_SHADOW)) requestShadowUpdate?.();
+      return change !== NPC_STILL || reducedMotion;
     };
-    rafId = requestAnimationFrame(tick);
+    // Pose the new walkers and their shadows now, outside the budget: a
+    // paused one (a hidden tab adopting another tab's house) would leave
+    // them unposed and shadowless until it runs.
+    step(0);
+    requestShadowUpdate?.();
+    invalidate?.();
+    // Reduced motion (#436): that pose is all; they stand where they
+    // spawned, with no loop and no wandering.
+    const removeStep = reducedMotion ? () => {} : addDecorativeStep(step);
 
     return () => {
-      cancelAnimationFrame(rafId);
+      removeStep();
       for (const npc of stateRef.current) {
         npc.anim?.mixer.stopAllAction();
         scene.remove(npc.group);
@@ -306,7 +310,7 @@ export function useNpcs(options: UseNpcsOptions): void {
       requestShadowUpdate?.();
       invalidate?.();
     };
-  }, [enabled, hasRoom, count, riggedModelReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, reducedMotion]);
+  }, [enabled, hasRoom, count, riggedModelReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, reducedMotion]);
 }
 
 function createNpc(
