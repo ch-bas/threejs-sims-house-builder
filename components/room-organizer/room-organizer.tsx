@@ -55,7 +55,7 @@ import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap
 import { loadQualityChoice } from './lib/render-quality';
 import { snapshotBeforeReplace } from './lib/restore-point';
 import { ORBIT_MAX_POLAR } from './lib/scene-insets';
-import { groundHeightAt } from './lib/site';
+import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
@@ -594,6 +594,7 @@ export function RoomOrganizer(): JSX.Element {
     keepOut,
     frontGap,
     cutout: layout.cutout,
+    terrain: layout.terrain,
     actions,
     allSelectedIds,
   });
@@ -1125,6 +1126,7 @@ export function RoomOrganizer(): JSX.Element {
     sceneRef,
     invalidate,
     floorY: activeFloorY,
+    groundY: (item) => (item.position ? gardenGroundY(item, activeFloorIndex, item.position, layout) : null),
     storeyHeight: activeStoreyHeight,
   });
   // A mode switch (Design, Furnish, Explore) puts the ghost down too.

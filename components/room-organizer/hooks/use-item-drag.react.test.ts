@@ -306,3 +306,49 @@ describe('useItemDrag: turning the device mid-drag cancels it (#677)', () => {
     expect(actions.bulkSetPositions).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('useItemDrag: a garden item rides a sloped site (#665)', () => {
+  afterEach(cleanup);
+
+  it('stands the dragged and the co-dragged groups on the ground under them, and back on a cancel', () => {
+    const actions = { moveItem: vi.fn(), bulkSetPositions: vi.fn(), setLocked: vi.fn(), updateItem: vi.fn() } as unknown as LayoutActions;
+    const floor = makeFloor({
+      items: [
+        makeItem({ id: 'tree', category: 'outdoor', position: { x: -2, z: -7 } }),
+        makeItem({ id: 'bench', category: 'outdoor', position: { x: 2, z: -6 } }),
+      ],
+    });
+    const scene = new THREE.Scene();
+    for (const item of floor.items) {
+      const group = new THREE.Group();
+      group.userData = { type: 'furniture', id: item.id, floorIndex: 0 };
+      group.position.set(item.position!.x, -3, item.position!.z);
+      scene.add(group);
+    }
+    const group = (id: string) => scene.children.find((obj) => obj.userData.id === id)!;
+    const { result } = renderHook(() =>
+      useItemDrag({
+        activeFloor: floor,
+        activeFloorIndex: 0,
+        roomWidth: 8,
+        roomDepth: 8,
+        keepOut: [],
+        frontGap: null,
+        terrain: { frontY: -3, backY: 1 },
+        actions,
+        allSelectedIds: new Set(['tree', 'bench']),
+      })
+    );
+    result.current.sceneBoxRef.current = { current: scene };
+    result.current.handleDragStart('tree');
+    // Round the side of the house, half way down its depth: the slope's middle.
+    group('tree').position.set(-6, -3, -1);
+    result.current.handleDrag('tree', -6, -1);
+    expect(group('tree').position.y).toBeCloseTo(-3 + 4 * (3 / 8));
+    // The same move carries the bench into the house: back on the floor.
+    expect(group('bench').position.y).toBe(0);
+    result.current.handleDragCancel('tree', { restore: true });
+    expect(group('tree').position.y).toBeCloseTo(-3);
+    expect(group('bench').position.y).toBeCloseTo(-3);
+  });
+});

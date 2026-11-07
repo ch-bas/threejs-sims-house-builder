@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildSightWalls, buildWalkColliders, resolveWalkerPosition, resolveWalkerStep, sightBlocked } from './walk-collision';
+import { makeFloor, makeItem } from './__testfixtures__/fixtures';
+import { buildSightWalls, buildWalkColliders, buildWalkerColliders, resolveWalkerPosition, resolveWalkerStep, sightBlocked, walkClearance } from './walk-collision';
 import type { FurnitureCategory, FurnitureItem, InteriorWall } from './types';
 
 const RADIUS = 0.3;
@@ -285,5 +286,27 @@ describe('sightBlocked and buildSightWalls (#566, #590)', () => {
 
   it('ignores the wall the start point is inside, like a camera hung on it', () => {
     expect(sightBlocked(walls([]), 0, 0.02, 0, 2)).toBe(false);
+  });
+});
+
+describe('garden colliders on a sloped site (#665)', () => {
+  const bench = makeItem({ id: 'bench', type: 'garden-bench', category: 'outdoor', width: 1.5, depth: 0.6, height: 0.9, position: { x: 0, z: 6 } });
+  const building = (terrain?: { frontY: number; backY: number }) => ({
+    width: 8,
+    depth: 8,
+    floors: [makeFloor({ items: [bench] })],
+    ...(terrain ? { terrain } : {}),
+  });
+
+  it('a bench on a garden 2 m up blocks a walker standing on that garden', () => {
+    const [ground] = buildWalkerColliders(building({ frontY: 0, backY: 2 }));
+    expect(walkClearance(ground!, 0, 6, false, 2)).toBe(0);
+    // Well under the garden, the bench is out of the way.
+    expect(walkClearance(ground!, 0, 6, false, -1.5)).toBeGreaterThan(0);
+  });
+
+  it('stands at the datum on a level site', () => {
+    const [ground] = buildWalkerColliders(building());
+    expect(walkClearance(ground!, 0, 6, false, 0)).toBe(0);
   });
 });

@@ -54,4 +54,12 @@ describe('item labels float above the built mesh (#657)', () => {
     expect(sprite.position.x).toBe(1);
     expect(sprite.position.z).toBe(2);
   });
+
+  it("floats over a garden item from the ground it stands on (#665)", () => {
+    const scene = new THREE.Scene();
+    const clock = catalogItem('wall-clock');
+    renderItemLabels(T, scene, [clock], 0, { height: 3 }, false, () => -3);
+    const sprite = scene.children.find((child) => child.userData.itemId === clock.id)!;
+    expect(sprite.position.y).toBeCloseTo(itemLabelY(clock, { height: 3 }, -3));
+  });
 });
