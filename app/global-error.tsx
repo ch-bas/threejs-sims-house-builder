@@ -1,21 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   clearChunkReloadGuard,
   isChunkLoadError,
   reloadOnceForChunkError,
 } from '../components/room-organizer/lib/chunk-reload';
-import {
-  downloadRawLayout,
-  noteEditorCrashed,
-  readStoredLayoutRaw,
-  resetStoredLayout,
-} from '../components/room-organizer/lib/persistence';
+import { downloadRawLayout, noteEditorCrashed, readStoredLayoutRaw } from '../components/room-organizer/lib/saved-house';
 
 // Global error boundary — catches errors thrown in the root layout itself (and
 // in app/error.tsx), so it must render its own <html>/<body>. Starting fresh
 // keeps a copy of the saved house first, like app/error.tsx (#336).
+
+// Loaded on click, as in app/error.tsx (#584).
+function loadPersistence() {
+  return import('../components/room-organizer/lib/persistence');
+}
 
 export default function GlobalError({ error }: { error: Error & { digest?: string }; reset: () => void }): JSX.Element {
   // Before the crashed editor's cleanup runs (#568), as in app/error.tsx.
@@ -38,9 +38,23 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
   const [resetProblem, setResetProblem] = useState<string | null>(null);
   // Read before the reset: on a failed move this is the only copy left.
   const [lostRaw, setLostRaw] = useState<string | null>(null);
-  const resetSavedLayout = () => {
+  const resetting = useRef(false);
+  const resetSavedLayout = async () => {
+    if (resetting.current) return;
+    resetting.current = true;
+    // The reset needs the schema; it loads on click, not with this screen,
+    // which every page fetches before hydration (#584).
+    let persistence: Awaited<ReturnType<typeof loadPersistence>>;
+    try {
+      persistence = await loadPersistence();
+    } catch {
+      resetting.current = false;
+      setResetProblem('Couldn’t load what starting fresh needs, so nothing was changed. Check your connection and try again.');
+      return;
+    }
     const raw = readStoredLayoutRaw();
-    const outcome = resetStoredLayout();
+    const outcome = persistence.resetStoredLayout();
+    resetting.current = false;
     // Nothing stored (or storage unreadable): nothing to lose, just reload.
     if (outcome === 'refused' && raw === null) {
       window.location.reload();
@@ -99,7 +113,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
           {!lostRaw && (
           <button
             type="button"
-            onClick={chunkFailure ? retryChunkLoad : resetSavedLayout}
+            onClick={chunkFailure ? retryChunkLoad : () => void resetSavedLayout()}
             style={{
               appearance: 'none',
               cursor: 'pointer',

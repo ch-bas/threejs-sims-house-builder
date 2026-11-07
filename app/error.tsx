@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   clearChunkReloadGuard,
   isChunkLoadError,
@@ -11,11 +11,19 @@ import {
   downloadRawLayout,
   noteEditorCrashed,
   noteReloadAttempt,
-  parseLayoutJson,
   readStoredLayoutRaw,
-  resetStoredLayout,
-} from '../components/room-organizer/lib/persistence';
-import { snapshotBeforeReplace } from '../components/room-organizer/lib/restore-point';
+} from '../components/room-organizer/lib/saved-house';
+
+// Only the light helpers load with this screen, which every page fetches
+// before hydration (#584). Starting fresh needs the schema and the History
+// list, so it loads them when clicked; after a crash of the editor they are
+// already in memory.
+function loadResetModules() {
+  return Promise.all([
+    import('../components/room-organizer/lib/persistence'),
+    import('../components/room-organizer/lib/restore-point'),
+  ]);
+}
 
 // Route-level error boundary. Most render errors are not the saved house's
 // fault — a GPU hiccup, a bad library entry — so a plain reload comes first
@@ -71,7 +79,8 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   const chunkFailure = isChunkLoadError(error);
   const [storedRaw, setStoredRaw] = useState(() => (chunkFailure ? null : readStoredLayoutRaw()));
   const [suspectSave] = useState(() => !chunkFailure && crashRecurredAfterReload());
-  const [resetFailure, setResetFailure] = useState<'refused' | 'lost' | null>(null);
+  const [resetFailure, setResetFailure] = useState<'refused' | 'lost' | 'unavailable' | null>(null);
+  const resetting = useRef(false);
 
   const retryChunkLoad = () => {
     clearChunkReloadGuard();
@@ -86,7 +95,21 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
     window.location.reload();
   };
 
-  const startFresh = () => {
+  const startFresh = async () => {
+    if (resetting.current) return;
+    resetting.current = true;
+    let modules: Awaited<ReturnType<typeof loadResetModules>>;
+    try {
+      modules = await loadResetModules();
+    } catch {
+      // Nothing was touched: the house is still where it was.
+      resetting.current = false;
+      setResetFailure('unavailable');
+      return;
+    }
+    // A retry after a failed load: the old reason no longer applies.
+    setResetFailure(null);
+    const [{ parseLayoutJson, resetStoredLayout }, { snapshotBeforeReplace }] = modules;
     // This screen first rendered before the crashed editor's unmount flush
     // wrote its last edits; read the house as it is stored now, and keep
     // that for the download if the reset can't finish.
@@ -94,6 +117,7 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
     if (latest !== null) setStoredRaw(latest);
     const outcome = resetStoredLayout();
     if (outcome !== 'moved') {
+      resetting.current = false;
       setResetFailure(outcome);
       return;
     }
@@ -148,15 +172,18 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
           <p role="alert" style={{ ...bodyStyle, color: 'var(--pc-danger, #f87171)' }}>
             {resetFailure === 'refused'
               ? 'Couldn’t keep a copy of your house (storage is full or blocked), so nothing was deleted. Download it to keep it safe.'
-              : 'The browser’s storage failed while moving your house, so this page now holds the only copy. Download it before you leave.'}
+              : resetFailure === 'unavailable'
+                ? 'Couldn’t load what starting fresh needs, so nothing was changed. Download your house to keep it safe, then reload.'
+                : 'The browser’s storage failed while moving your house, so this page now holds the only copy. Download it before you leave.'}
           </p>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
           <button type="button" onClick={chunkFailure ? retryChunkLoad : reload} style={primaryButton}>
             Reload
           </button>
-          {offerReset && !resetFailure && (
-            <button type="button" onClick={startFresh} style={secondaryButton}>
+          {/* After a failed load nothing was touched: starting fresh may be retried. */}
+          {offerReset && (resetFailure === null || resetFailure === 'unavailable') && (
+            <button type="button" onClick={() => void startFresh()} style={secondaryButton}>
               Start fresh, keep a copy
             </button>
           )}
