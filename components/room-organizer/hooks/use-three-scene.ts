@@ -316,6 +316,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         const controlsMoved = handlersRef.current.walkthroughActive ? false : controls.update();
         if (contextLost) return;
         if (!controlsMoved && !dirtyRef.current) return;
+        // The 2D plan hides the canvas (0×0): nobody sees the frame, so keep
+        // it owed, shadow pass included, and draw it when the canvas shows
+        // again, which the resize observer also marks dirty (#667).
+        if (canvas.clientWidth === 0 || canvas.clientHeight === 0) return;
         dirtyRef.current = false;
         renderer.render(scene, camera);
       };
