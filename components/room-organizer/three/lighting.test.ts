@@ -6,6 +6,7 @@ import {
   applyLampPool,
   applyShadowQuality,
   computeNightSky,
+  installEnvironment,
   computeSkyProfile,
   shadowNormalBias,
   isLampPrewarmHour,
@@ -359,5 +360,30 @@ describe('shadow quality (#760)', () => {
   it('leaves a matching map alone', () => {
     const { scene, sun } = lit();
     expect(applyShadowQuality(scene, sun.shadow.mapSize.width, sun.shadow.radius)).toBe(false);
+  });
+});
+
+describe('installEnvironment (#663)', () => {
+  const fakeTarget = () => {
+    const target = new THREE.WebGLRenderTarget(1, 1);
+    const dispose = vi.spyOn(target, 'dispose');
+    return { target, dispose };
+  };
+
+  it('bakes again on a context restore and lights the scene with the fresh bake', () => {
+    const scene = new THREE.Scene();
+    const bakes = [fakeTarget(), fakeTarget()];
+    let next = 0;
+    const environment = installEnvironment(scene, () => bakes[next++]!.target);
+    expect(scene.environment).toBe(bakes[0]!.target.texture);
+    environment.rebake();
+    expect(next).toBe(2);
+    expect(scene.environment).toBe(bakes[1]!.target.texture);
+    // The stale target's GL objects died with the context: nothing to delete.
+    expect(bakes[0]!.dispose).not.toHaveBeenCalled();
+    expect(bakes[1]!.dispose).not.toHaveBeenCalled();
+    environment.dispose();
+    expect(scene.environment).toBeNull();
+    expect(bakes[1]!.dispose).toHaveBeenCalledTimes(1);
   });
 });
