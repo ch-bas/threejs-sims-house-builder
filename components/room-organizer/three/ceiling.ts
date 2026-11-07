@@ -1,6 +1,6 @@
 import { WALKTHROUGH_CEILING_GAP } from '../lib/walkthrough-view';
 import { removeAndDispose } from './builder-utils';
-import { buildFloorGeometryWithOpenings, floorHoleOutlines } from './room-builder';
+import { CEILING_PLASTER_COLOR, buildFloorGeometryWithOpenings, floorHoleOutlines } from './room-builder';
 import type { FloorOpening } from './wall-openings';
 import type { FootprintCutout } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -11,8 +11,6 @@ export const CEILING_TAG = 'walkthrough-ceiling';
 
 /** Below the storey above's floor plate, which "show all floors" also draws (#276). */
 export const CEILING_GAP = WALKTHROUGH_CEILING_GAP;
-
-const CEILING_COLOR = 0xf4f1ea;
 
 export interface CeilingOptions {
   scene: ThreeNS.Scene;
@@ -49,7 +47,7 @@ export function buildCeiling(THREE: ThreeModule, options: CeilingOptions): Three
   const group = new THREE.Group();
   group.userData.type = CEILING_TAG;
   const plaster = (side: ThreeNS.Side) =>
-    new THREE.MeshStandardMaterial({ color: CEILING_COLOR, roughness: 0.95, side });
+    new THREE.MeshStandardMaterial({ color: CEILING_PLASTER_COLOR, roughness: 0.95, side });
 
   if (above) {
     // Laid out like the floor plate (normal up) and drawn double-sided for
