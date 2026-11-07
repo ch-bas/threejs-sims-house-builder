@@ -1,3 +1,4 @@
+import { mergeHoleRects } from '../lib/floor-holes';
 import { alongSide, shellWalls, shellWallSpan, type ShellWall, type ShellWallId } from '../lib/footprint';
 import { fitOpeningToStorey } from '../lib/storeys';
 import type { FootprintCutout, FurnitureItem, InteriorWall, WallId } from '../lib/types';
@@ -8,6 +9,8 @@ import type { FootprintCutout, FurnitureItem, InteriorWall, WallId } from '../li
  * re-exported so scene code keeps importing them from here.
  */
 export { computeFloorOpenings, type FloorOpening } from '../lib/stairs';
+/** It lives in lib now (#559): the plan's stairwells merge with it too. */
+export { mergeHoleRects };
 
 export interface WallOpening {
   /** Item id that this opening originates from (for cleanup / debugging). */
@@ -118,48 +121,6 @@ export function classifyOpeningOwners(
     if (best) owners.set(item.id, best.owner);
   }
   return owners;
-}
-
-/**
- * Merge overlapping/touching axis-aligned hole rectangles so no two holes on a
- * wall overlap — overlapping holes are illegal for earcut and produce phantom
- * fill or self-intersecting triangles. Rectangles are `[x0, y0, x1, y1]`.
- * Returns a disjoint set covering the same area (rectangle union via a sweep
- * that unions any pair whose AABBs intersect, iterated to a fixed point).
- */
-export function mergeHoleRects(
-  rects: ReadonlyArray<readonly [number, number, number, number]>
-): Array<[number, number, number, number]> {
-  const merged: Array<[number, number, number, number]> = rects.map(
-    (r) => [r[0], r[1], r[2], r[3]] as [number, number, number, number]
-  );
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let i = 0; i < merged.length; i++) {
-      for (let j = i + 1; j < merged.length; j++) {
-        const a = merged[i]!;
-        const b = merged[j]!;
-        // AABB overlap test (touching edges count as overlapping so adjacent
-        // holes fuse into one clean rectangle instead of leaving a zero-width
-        // sliver of wall that earcut can choke on).
-        const overlap = a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
-        if (!overlap) continue;
-        // Union into the bounding rectangle. For like-height openings on a wall
-        // (equal y0/y1) this is an exact interval union; otherwise the bounding
-        // box slightly over-cuts, which is safe (no phantom fill) and rare.
-        a[0] = Math.min(a[0], b[0]);
-        a[1] = Math.min(a[1], b[1]);
-        a[2] = Math.max(a[2], b[2]);
-        a[3] = Math.max(a[3], b[3]);
-        merged.splice(j, 1);
-        changed = true;
-        j--;
-      }
-    }
-  }
-  return merged;
 }
 
 /**

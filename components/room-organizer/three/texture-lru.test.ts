@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DisposableLruCache, TEXTURE_CACHE_CAPACITY } from './texture-lru';
+import { DisposableLruCache, TEXTURE_CACHE_CAPACITY, clearTextureCaches } from './texture-lru';
 
 class FakeTexture {
   disposed = false;
@@ -90,5 +90,23 @@ describe('DisposableLruCache', () => {
     expect(cache.size).toBe(TEXTURE_CACHE_CAPACITY);
     expect(textures[0]?.disposed).toBe(true);
     expect(textures[1]?.disposed).toBe(false);
+  });
+});
+
+describe('clearTextureCaches (#559)', () => {
+  it('disposes and drops every entry of every cache, which still works after', () => {
+    const one = new DisposableLruCache<FakeTexture>(4);
+    const two = new DisposableLruCache<FakeTexture>(4);
+    const a = new FakeTexture();
+    const b = new FakeTexture();
+    one.set('a', a);
+    two.set('b', b);
+    clearTextureCaches();
+    expect([a.disposed, b.disposed]).toEqual([true, true]);
+    expect([one.size, two.size]).toEqual([0, 0]);
+    expect(one.get('a')).toBeUndefined();
+    const c = new FakeTexture();
+    one.set('c', c);
+    expect(one.get('c')).toBe(c);
   });
 });

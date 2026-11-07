@@ -13,6 +13,7 @@ import { releaseRoomLightTexture } from '../three/night-glow';
 import { releasePeopleGeometry } from '../three/people-model';
 import { clearFloorPlanImageCache } from '../three/room-builder';
 import { setSkyDetail } from '../three/sky';
+import { clearTextureCaches } from '../three/texture-lru';
 import { setMaxAnisotropy } from '../three/texture-settings';
 import type { SceneEventHandlers } from '../three/drag-handlers';
 import type * as ThreeNS from 'three';
@@ -267,6 +268,8 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
       // The fitted floor-plan composites are module-level and can be 64 MB
       // apiece; nothing else drops them once the editor is gone.
       cleanup.push(() => clearFloorPlanImageCache());
+      // W3 (#559): so are the pattern, shingle, label and bark masters' canvases.
+      cleanup.push(() => clearTextureCaches());
 
       // Image-based lighting from a neutral studio environment. This is what
       // makes MeshStandardMaterial respond with believable specular/diffuse

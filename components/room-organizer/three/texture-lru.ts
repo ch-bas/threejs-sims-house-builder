@@ -22,12 +22,32 @@ export const TEXTURE_CACHE_CAPACITY = 32;
  */
 export const PATTERN_CACHE_CAPACITY = 12;
 
+/** Every cache made, for `clearTextureCaches`. They are module-level and few. */
+const caches = new Set<{ clear(): void }>();
+
+/**
+ * Empty every texture cache (#559): when the editor unmounts. Only clones are
+ * on the GPU, but each master holds its canvas, up to 32 a cache, for as long
+ * as the page lives otherwise.
+ */
+export function clearTextureCaches(): void {
+  for (const cache of caches) cache.clear();
+}
+
 export class DisposableLruCache<T extends { dispose(): void }> {
   /** Map iteration order doubles as recency order: oldest entry first. */
   private readonly entries = new Map<string, T>();
 
   constructor(private readonly capacity: number = TEXTURE_CACHE_CAPACITY) {
     if (capacity < 1) throw new Error('DisposableLruCache capacity must be >= 1');
+    caches.add(this);
+  }
+
+  /** Dispose and drop every entry. */
+  clear(): void {
+    const values = [...this.entries.values()];
+    this.entries.clear();
+    for (const value of values) value.dispose();
   }
 
   /** Returns the cached value (marking it most-recently-used) or undefined. */

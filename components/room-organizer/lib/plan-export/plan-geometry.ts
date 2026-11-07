@@ -10,6 +10,7 @@
  */
 
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from '../constants';
+import { floorHoleOutlines } from '../floor-holes';
 import { shellWalls, shellWallSpan, type ShellWallId } from '../footprint';
 import { isOpening, isWallMounted } from '../opening-snap';
 import { computeFloorOpenings, floorOpeningOutline, floorStairHeadroom, stairPlanSymbol, stairTreadLines } from '../stairs';
@@ -270,13 +271,32 @@ export function stairArrow(item: PlacedItem): { shaft: PlanPoint[]; head: PlanSe
 
 /**
  * The stairwell holes in a floor's plane, as closed world outlines (#290):
- * the openings the stairs on the floor below cut, from the same maths the 3D
- * floor is built with. Empty for the ground floor (or an index off the
- * building), whose slab nothing cuts.
+ * the holes the 3D slab is cut with (`floorHoleOutlines`, #559), so a stair
+ * against a wall stops at the wall and two stairs that overlap draw one
+ * void, as in 3D. A hole that is exactly a stair's own outline keeps that
+ * outline's corner order, so its dashes don't move. Empty for the ground
+ * floor (or an index off the building), whose slab nothing cuts.
  */
-export function stairwellOutlines(layout: Pick<RoomLayout, 'floors'>, floorIndex: number): PlanPoint[][] {
+export function stairwellOutlines(
+  layout: Pick<RoomLayout, 'floors' | 'width' | 'height' | 'cutout'>,
+  floorIndex: number
+): PlanPoint[][] {
   const floorBelow = floorIndex > 0 ? layout.floors[floorIndex - 1] : undefined;
-  return computeFloorOpenings(floorBelow).map((opening) => floorOpeningOutline(opening).map(([x, z]) => ({ x, z })));
+  const openings = computeFloorOpenings(floorBelow);
+  if (openings.length === 0) return [];
+  const own = openings.map(floorOpeningOutline);
+  return floorHoleOutlines(layout.width, layout.height, openings, layout.cutout).map((hole) => {
+    // Shape space is [x, -z]: back to the world, and back to the world's winding.
+    const world = hole.map(([x, y]): [number, number] => [x, -y]).reverse();
+    const outline = own.find((candidate) => samePoints(candidate, world)) ?? world;
+    return outline.map(([x, z]) => ({ x, z }));
+  });
+}
+
+/** Whether two outlines have the same corners, in any order. */
+function samePoints(a: ReadonlyArray<readonly [number, number]>, b: ReadonlyArray<readonly [number, number]>): boolean {
+  const near = (p: readonly [number, number], q: readonly [number, number]) => Math.abs(p[0] - q[0]) < 1e-9 && Math.abs(p[1] - q[1]) < 1e-9;
+  return a.length === b.length && a.every((p) => b.some((q) => near(p, q))) && b.every((q) => a.some((p) => near(p, q)));
 }
 
 /**
