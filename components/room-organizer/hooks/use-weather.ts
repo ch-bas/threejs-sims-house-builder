@@ -3,7 +3,7 @@ import { outdoorGroundSize } from '../lib/site';
 import { buildWeatherMesh, createWeatherField, removeWeather, stepWeatherField, syncWeatherMesh } from '../three/weather';
 import { useReducedMotion } from './use-reduced-motion';
 import type { DryBox } from '../lib/street-row';
-import type { Weather } from '../lib/types';
+import type { TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('../three/three-runtime');
@@ -21,6 +21,8 @@ export interface UseWeatherOptions {
   clearance: number;
   /** The neighbours' houses, kept dry the same way (#660). */
   dryBoxes: readonly DryBox[];
+  /** The lot's slope: the particles fall to the ground under them (#595). */
+  terrain?: TerrainSpec | undefined;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate: () => void;
 }
@@ -35,6 +37,10 @@ export interface UseWeatherOptions {
  */
 export function useWeather(options: UseWeatherOptions): void {
   const { weather, enabled, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, invalidate } = options;
+  // Keyed on the two heights, not the terrain object, which a save or an
+  // undo hands over afresh.
+  const frontY = options.terrain?.frontY;
+  const backY = options.terrain?.backY;
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -50,6 +56,7 @@ export function useWeather(options: UseWeatherOptions): void {
       roomDepth,
       clearance,
       dryBoxes,
+      ...(frontY !== undefined && backY !== undefined ? { terrain: { frontY, backY } } : {}),
     });
     const mesh = buildWeatherMesh(THREE, field);
     scene.add(mesh);
@@ -84,5 +91,5 @@ export function useWeather(options: UseWeatherOptions): void {
       removeWeather(scene);
       invalidate();
     };
-  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, invalidate, reducedMotion]);
+  }, [enabled, weather, threeModuleRef, sceneRef, roomWidth, roomDepth, clearance, dryBoxes, frontY, backY, invalidate, reducedMotion]);
 }

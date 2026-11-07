@@ -1,6 +1,7 @@
+import { groundHeightAt } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
 import type { DryBox } from '../lib/street-row';
-import type { Weather } from '../lib/types';
+import type { TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -28,8 +29,10 @@ export interface WeatherField {
   phases: Float32Array;
   /** Half the side of the square field, centred on the house. */
   halfExtent: number;
-  /** Particles wrap from `floorY` back up to `ceilingY`. */
+  /** Where the ground is level at 0, particles wrap from `floorY` back up to `ceilingY`. */
   floorY: number;
+  /** Each particle's own wrap height: `floorY` over the ground under it (#595). */
+  floors: Float32Array;
   ceilingY: number;
   /** Half-size of the house footprint the field keeps clear, so nothing falls indoors. */
   clearHalfW: number;
@@ -56,8 +59,11 @@ export interface WeatherFieldOptions {
   roomWidth: number;
   roomDepth: number;
   count?: number;
+  /** Height of the wrap over level ground; the terrain under each particle moves it (#595). */
   floorY?: number;
   ceilingY?: number;
+  /** The lot's slope: rain falls to the ground under it, however low the lot sits (#595). */
+  terrain?: TerrainSpec | undefined;
   /** Kept clear beyond the footprint on every side: the eaves' overhang, so nothing falls through the soffit (#660). */
   clearance?: number;
   /** World boxes kept clear as well: the neighbours' houses (#660). */
@@ -84,6 +90,7 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
     ceilingY = WEATHER_CEILING_Y,
     clearance = 0,
     dryBoxes = [],
+    terrain,
     rng = Math.random,
   } = options;
   const halfExtent = groundSize / 2;
@@ -96,6 +103,7 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
   const speeds = new Float32Array(count);
   const restX = new Float32Array(count);
   const phases = new Float32Array(count);
+  const floors = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     let x = 0;
     let z = 0;
@@ -105,31 +113,33 @@ export function createWeatherField(options: WeatherFieldOptions): WeatherField {
       x = (rng() * 2 - 1) * halfExtent;
       z = (rng() * 2 - 1) * halfExtent;
     } while ((Math.abs(x) < clearHalfW && Math.abs(z) < clearHalfD) || inDryBox(dryBoxes, x, z, sway));
+    const floor = floorY + groundHeightAt(terrain, z, roomDepth / 2);
+    floors[i] = floor;
     positions[i * 3] = x;
-    positions[i * 3 + 1] = floorY + rng() * (ceilingY - floorY);
+    positions[i * 3 + 1] = floor + rng() * (ceilingY - floor);
     positions[i * 3 + 2] = z;
     speeds[i] = minSpeed + rng() * (maxSpeed - minSpeed);
     restX[i] = x;
     phases[i] = rng() * Math.PI * 2;
   }
   return {
-    kind, count, positions, speeds, restX, phases, halfExtent, floorY, ceilingY, clearHalfW, clearHalfD, time: 0,
+    kind, count, positions, speeds, restX, phases, halfExtent, floorY, floors, ceilingY, clearHalfW, clearHalfD, time: 0,
   };
 }
 
 /**
  * Advance every particle by `delta` seconds. Rain falls straight; snow falls
  * slowly and sways sideways on a per-flake sine. A particle that drops below
- * the floor wraps back up by the field's full height, so the vertical
+ * its floor wraps back up by its column's full height, so the vertical
  * spacing of the column is preserved and the field never thins out.
  */
 export function stepWeatherField(field: WeatherField, delta: number): void {
-  const { positions, speeds, count, floorY, ceilingY } = field;
-  const span = ceilingY - floorY;
+  const { positions, speeds, count, floors, ceilingY } = field;
   field.time += delta;
   for (let i = 0; i < count; i++) {
+    const floor = floors[i]!;
     let y = positions[i * 3 + 1]! - speeds[i]! * delta;
-    while (y < floorY) y += span;
+    while (y < floor) y += ceilingY - floor;
     positions[i * 3 + 1] = y;
   }
   if (field.kind === 'snow') {
