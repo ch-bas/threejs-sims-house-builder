@@ -185,7 +185,7 @@ components/
     │   ├── frame-budget.ts              One capped, focus-paused frame budget for the decorative loops (#671)
     │   ├── ground-surfaces.ts           Generated grass, paving and asphalt tiles, laid by world position with a macro layer on grass (#761)
     │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
-    │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664)
+    │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664); the roof, and the outside face of shell walls and dormers (#814)
     │   ├── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
     │   └── sky.ts                       World-space sky dome, clouds and sun disc, painted from the sky profile (#761)
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
