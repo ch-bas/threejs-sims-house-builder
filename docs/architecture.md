@@ -14,7 +14,7 @@ here or in the README differs from the catalogue.
 app/                                     Next.js shell
 ├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script
 ├── page.tsx                             Loads the editor (client only) and prefetches the 3D engine
-├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside
+├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside (the reset loads on click, #584)
 ├── not-found.tsx                        Branded 404 (out/404.html), with a link back to the builder
 ├── manifest.ts                          Web app manifest (static at build time)
 └── icon.svg, favicon.ico, apple-icon.png, opengraph-image.png
@@ -57,6 +57,7 @@ components/
     │   ├── detail-patterns.ts           Tileable grey wood, fabric and leather images for furniture (#756)
     │   ├── reduced-motion.ts            prefers-reduced-motion query and a one-off read for non-React code
     │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
+    │   ├── saved-house.ts               The saved house's key, raw read and download, crash flag and reload marker: what the error screens load before hydration, without the schema (#584)
     │   ├── library.ts                   Named-layout library I/O: an index of entries (name, saved-at, item and floor counts) + one blob per house; unreadable entries kept verbatim (#348); ASCII names keep their historical slot, other names get a `u_` Unicode slot (#550); a copy that would leave autosave no room is refused (#565)
     │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
     │   ├── restore-point.ts             Forced restore point before a whole-layout replacement; "untouched" = equal to INITIAL_LAYOUT
