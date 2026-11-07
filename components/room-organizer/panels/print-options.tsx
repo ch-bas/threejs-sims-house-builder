@@ -5,9 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useRoomEditor } from '../contexts';
+import { printInPopup } from '../lib/plan-export/print-popup';
 import {
   DEFAULT_PRINT_OPTIONS,
-  openPlanPrintWindow,
   PAPER_SIZES,
   printScaleLabel,
   resolvePrintScale,
@@ -15,7 +15,7 @@ import {
   type PaperSize,
   type PrintOptions,
   type PrintOrientation,
-} from '../lib/plan-export/print';
+} from '../lib/plan-export/print-scale';
 
 /**
  * The print-to-scale button and its options (#435, #405, #424): paper,
@@ -151,7 +151,13 @@ export function PrintPlanControl(): JSX.Element {
             </p>
           )}
           <Button
-            onClick={() => openPlanPrintWindow(layout, activeFloor, effective)}
+            onClick={() =>
+              printInPopup('the plan', async () => {
+                // The print document and the SVG emitter load on the click (#589).
+                const { writePlanPrint } = await import('../lib/plan-export/print');
+                return (popup) => writePlanPrint(popup, layout, activeFloor, effective);
+              })
+            }
             size="sm"
             className="w-full text-xs"
           >

@@ -1,14 +1,14 @@
 import { ensureFloorPlanImageDecoded, render2DTopDown } from '../canvas-2d/render';
 import { furnitureSpend } from './budget';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
-import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
 import { buildingArea } from './footprint';
 import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
 import { COARSE_POINTER_QUERY } from './hud-layout';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
-import { distanceOutsideWalls, printWhenLoaded } from './plan-export/print';
+import { abandonPrintPopup, openPrintPopup, printWhenLoaded } from './plan-export/print-popup';
+import { distanceOutsideWalls } from './plan-export/print-scale';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
@@ -126,14 +126,15 @@ export function floorArea(layout: EntranceBuilding, floorIndex: number): number 
 export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorLayout): Promise<void> {
   // Open the popup first, synchronously inside the click: browsers only
   // allow window.open() during the user gesture, and the decode below yields.
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    notify('Pop-ups are blocked — allow pop-ups for this site to print the blueprint.', 'error');
-    return;
-  }
-  // The popup only needs the opener's handle on it, not the reverse (#455).
-  printWindow.opener = null;
+  const printWindow = openPrintPopup('the blueprint');
+  if (printWindow) await writeBlueprint(printWindow, layout, floor);
+}
 
+/**
+ * Draw the blueprint into a popup the caller opened inside the click, which
+ * can then load this module first (#589), and print it once loaded.
+ */
+export async function writeBlueprint(printWindow: Window, layout: RoomLayout, floor: FloorLayout): Promise<void> {
   try {
     const html = await blueprintHtml(layout, floor);
     printWindow.document.write(html);
@@ -142,8 +143,7 @@ export async function openBlueprintPrintWindow(layout: RoomLayout, floor: FloorL
   } catch (error) {
     // Never leave a blank tab behind (#619).
     console.error('Blueprint failed', error);
-    printWindow.close();
-    notify('The blueprint couldn’t be drawn. Close some tabs and try again.', 'error');
+    abandonPrintPopup(printWindow, 'The blueprint couldn’t be drawn. Close some tabs and try again.');
   }
 }
 
