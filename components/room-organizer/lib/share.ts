@@ -52,18 +52,43 @@ export interface EncodeShareUrlResult {
   strippedFloorPlan: boolean;
 }
 
+/**
+ * How far past the cap the cheap estimate may land and still be measured
+ * exactly (#611). The estimate's JSON is never longer than the real link's,
+ * so only deflate's small swings separate the two.
+ */
+const CHEAP_ESTIMATE_SLACK = 1.05;
+
+/**
+ * The share link for a layout. A house whose link can't fit gets back a
+ * link over the cap that is only good for saying so: rounding every item
+ * against every other is O(n²) per storey, seconds for thousands of items
+ * (#611), so a cheap estimate is measured first.
+ */
 export async function encodeShareUrl(
   layout: RoomLayout,
   origin: string
 ): Promise<EncodeShareUrlResult> {
   const stripped = layout.floorPlanImage !== undefined;
-  const shareable: RoomLayout = roundLayoutForShare(layout);
-  delete shareable.floorPlanImage;
+  // Every item rounded, with none given back its exact place: the shortest
+  // JSON the real link can have.
+  const estimate = await encodeShareable(roundLayoutBlindly(layout), origin);
+  if (estimate.length > MAX_REASONABLE_URL_LENGTH * CHEAP_ESTIMATE_SLACK) {
+    return { url: estimate, strippedFloorPlan: stripped };
+  }
+  return { url: await encodeShareable(roundLayoutForShare(layout), origin), strippedFloorPlan: stripped };
+}
 
+async function encodeShareable(layout: RoomLayout, origin: string): Promise<string> {
+  const shareable: RoomLayout = { ...layout };
+  delete shareable.floorPlanImage;
   const json = JSON.stringify(shareable);
   const compressed = await deflateRaw(new TextEncoder().encode(json));
-  const encoded = `${V2_PREFIX}${bytesToBase64Url(compressed)}`;
-  return { url: `${origin}${HASH_PREFIX}${encoded}`, strippedFloorPlan: stripped };
+  return `${origin}${HASH_PREFIX}${V2_PREFIX}${bytesToBase64Url(compressed)}`;
+}
+
+function roundLayoutBlindly(layout: RoomLayout): RoomLayout {
+  return { ...layout, floors: layout.floors.map((floor) => ({ ...floor, items: floor.items.map(roundItem) })) };
 }
 
 const QUARTER_TURN = Math.PI / 2;
