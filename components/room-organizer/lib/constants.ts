@@ -1,6 +1,7 @@
 import type { CatalogItem, CategoryMeta, FloorLayout, RoofSpec, RoofStyle, RoomLayout } from './types';
 
-export const STORAGE_KEY = 'standalone-room-organizer-layout';
+// Defined beside the error screens' light helpers (#584).
+export { STORAGE_KEY } from './saved-house';
 export const AUTOSAVE_DEBOUNCE_MS = 1500;
 export const GRID_SIZE_METERS = 0.5;
 export const DEFAULT_BUDGET = 25_000;

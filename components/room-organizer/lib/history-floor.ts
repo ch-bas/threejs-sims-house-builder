@@ -15,10 +15,10 @@ import type { FloorLayout, RoomLayout } from './types';
 // addition), the old index is kept, clamped, as before.
 
 /**
- * The same storey: one object, or a copy with every field equal. A restore
- * passes through the reducer's normalisation, which copies each floor while
- * keeping its fields, so identity alone would see every storey as changed on
- * the next undo.
+ * The same storey: one object, or a copy with every field equal. The
+ * reducer's normalisation keeps an unchanged floor's identity (#603), but a
+ * floor it had to clamp, or one rebuilt from a saved or shared house, is a
+ * copy, so identity alone could still see an unchanged storey as changed.
  */
 export function sameFloor(a: FloorLayout, b: FloorLayout): boolean {
   if (a === b) return true;
