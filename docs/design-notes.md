@@ -528,7 +528,15 @@ to respect.
   top storey. Out on the lot the whole
   house and its roof show. Only the walker's storey is lit, since point
   lights cast no shadow. The #359 ceiling plate stays under the storey
-  above (a floor plate is invisible from below); its stairwell shafts go.
+  above, where the storey isn't drawn; its stairwell shafts go. Every upper
+  storey stands on a slab (#653, `addFloorSlab`): the underside and edges
+  of a 4 cm extrusion of the floor's outline, cut by the same stairwells,
+  set 1 cm inside the outer walls so its edge can't z-fight the storey
+  below, with no lid (the floor is its top). It casts the sun, so upstairs
+  shade no longer lands on the floor below, and is shallow enough that hung
+  decor (5 cm under the ceiling) stays clear of it. It sits 3 cm under the
+  walkthrough plate, a step too small to see when the storey above comes
+  into view near the stairs.
   Under the roof the walker gets the attic ceiling (#487, `buildAtticCeiling`
   in `three/roof.ts`): a plaster plate just below the roof base, out to the
   eaves, instead of the roof's shingled underside, opening into a lined well

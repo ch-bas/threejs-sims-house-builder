@@ -273,6 +273,8 @@ export function buildRoom(THREE: ThreeModule, input: RoomBuilderOptions): void {
   makeStatic(floor);
   options.scene.add(floor);
 
+  if (yOffset > 0) addFloorSlab(THREE, options, yOffset, isGhost ? options.ghostOpacity : undefined);
+
   // A traced ground floor is the drawing: nothing is laid over it.
   if (!options.floorPlanImage) {
     options.zonePatches?.forEach((patch) => addZoneFloorPatch(THREE, options, patch));
@@ -303,6 +305,88 @@ export function buildRoom(THREE: ThreeModule, input: RoomBuilderOptions): void {
       options.cutout
     );
   }
+}
+
+/**
+ * Depth of an upper storey's slab under its floor (#653). Shallow enough that
+ * decor hung to its clearance under the ceiling (`HUNG_CEILING_CLEARANCE`,
+ * 5 cm) stays in the room below.
+ */
+export const FLOOR_SLAB_DEPTH = 0.04;
+/** The slab stands this far inside the outer walls, so its edge can't z-fight the storey below's (#276). */
+export const FLOOR_SLAB_WALL_GAP = 0.01;
+/** Ceiling plaster: the slab's underside, and the walkthrough's ceiling. */
+export const CEILING_PLASTER_COLOR = 0xf4f1ea;
+
+/**
+ * The slab under an upper storey's floor (#653): its underside and edges, cut
+ * by the same stairwells as the floor. The floor was a plane seen only from
+ * above, so from below the storey floated with the sky showing through, and
+ * the sun lit the storey below through it. No top: the floor is the top, and
+ * a coplanar lid would z-fight it. FrontSide, so three's shadow pass draws the
+ * back faces, the underside among them: the floor's own top never shadows
+ * itself, and the storey below gets the upstairs shade.
+ */
+function addFloorSlab(THREE: ThreeModule, options: RoomBuilderOptions, yOffset: number, ghostOpacity: number | undefined): void {
+  const gap = FLOOR_SLAB_WALL_GAP;
+  const shape = new THREE.Shape();
+  // In the floor plate's shape space, [x, -z]; the holes are clamped inside
+  // the slab's own outline, as the plate's are inside the floor's.
+  footprintOutline({ width: options.width, height: options.depth, cutout: options.cutout }, -gap).forEach(({ x, z }, index) => {
+    if (index === 0) shape.moveTo(x, -z);
+    else shape.lineTo(x, -z);
+  });
+  shape.closePath();
+  for (const outline of floorHoleOutlines(options.width - 2 * gap, options.depth - 2 * gap, options.floorOpenings ?? [], options.cutout)) {
+    const hole = new THREE.Path();
+    hole.moveTo(outline[0]![0], outline[0]![1]);
+    for (const [x, y] of outline.slice(1)) hole.lineTo(x, y);
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+  const solid = new THREE.ExtrudeGeometry(shape, { depth: FLOOR_SLAB_DEPTH, bevelEnabled: false });
+  // Stand it up as the plinth is: shape y becomes world −z again.
+  solid.rotateX(-Math.PI / 2);
+  const geometry = withoutUpwardFaces(THREE, solid);
+
+  const material = new THREE.MeshStandardMaterial({ color: CEILING_PLASTER_COLOR, roughness: 0.95 });
+  if (ghostOpacity !== undefined) {
+    material.transparent = true;
+    material.opacity = ghostOpacity;
+  }
+  const slab = new THREE.Mesh(geometry, material);
+  slab.position.y = yOffset - FLOOR_SLAB_DEPTH;
+  // A ghosted storey is translucent scenery and throws no solid shadow.
+  slab.castShadow = ghostOpacity === undefined;
+  slab.receiveShadow = true;
+  slab.name = 'Floor slab';
+  slab.userData.type = ROOM_OBJECT_TAGS.Floor;
+  makeStatic(slab);
+  options.scene.add(slab);
+}
+
+/** `geometry` without its upward-facing triangles: an extrusion without its lid. */
+export function withoutUpwardFaces(THREE: ThreeModule, geometry: ThreeNS.BufferGeometry): ThreeNS.BufferGeometry {
+  const flat = geometry.index ? geometry.toNonIndexed() : geometry;
+  const positions = flat.getAttribute('position');
+  const kept: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (let i = 0; i + 2 < positions.count; i += 3) {
+    a.fromBufferAttribute(positions, i);
+    b.fromBufferAttribute(positions, i + 1);
+    c.fromBufferAttribute(positions, i + 2);
+    const normal = c.clone().sub(b).cross(a.clone().sub(b)).normalize();
+    if (normal.y > 0.5) continue;
+    kept.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  }
+  const result = new THREE.BufferGeometry();
+  result.setAttribute('position', new THREE.Float32BufferAttribute(kept, 3));
+  result.computeVertexNormals();
+  if (flat !== geometry) flat.dispose();
+  geometry.dispose();
+  return result;
 }
 
 /** A zone's floor clears the slab by this much, or the two z-fight (#276). */

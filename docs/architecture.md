@@ -151,7 +151,7 @@ components/
     │   │   └── builders-structure.ts    Door, window, stairs
     │   ├── people-model.ts              people.glb loader, cloning (shared geometry), box picking, clip names
     │   ├── people-outfits.ts            Body regions from skin weights, outfits, hair on the head bone
-    │   ├── room-builder.ts              Floor + walls (yOffset, ghosting)
+    │   ├── room-builder.ts              Floor + walls (yOffset, ghosting); an upper storey's slab under its floor (#653)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
     │   ├── reveals.ts                   Window and door reveals in the outer walls: linings, and the set-back of the frame (#758)
