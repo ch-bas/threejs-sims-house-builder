@@ -3,6 +3,7 @@ import { isChunkLoadError, markAppReady, reloadOnceForChunkError } from '../lib/
 import { REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
 import { qualityProfile, type QualityChoice, type QualityProfile } from '../lib/render-quality';
 import { ORBIT_FOV_DEG, ORBIT_MAX_POLAR, ORBIT_START, clearOfGround, orbitNear } from '../lib/scene-insets';
+import { holdForShaderWarmup } from '../lib/shader-warmup';
 import { disposeScene } from '../three/builder-utils';
 import { attachDragHandlers } from '../three/drag-handlers';
 import { createFrameBudget, type DecorativeStep, type FrameBudget } from '../three/frame-budget';
@@ -19,6 +20,9 @@ import type { OrbitControls as OrbitControlsType } from 'three/examples/jsm/cont
 
 type ThreeModule = typeof import('../three/three-runtime');
 
+/** #730: the longest the first frame waits for shaders compiling in parallel. */
+const SHADER_WARMUP_LIMIT_MS = 4000;
+
 export type { HoverInfo, SelectionMode } from '../three/drag-handlers';
 
 export interface UseThreeSceneOptions extends SceneEventHandlers {
@@ -31,6 +35,8 @@ export interface UseThreeSceneOptions extends SceneEventHandlers {
 
 export interface UseThreeSceneResult {
   isReady: boolean;
+  /** #730: the first frame waits for the first scene's shaders; keep the loading state up. */
+  shadersWarming: boolean;
   error: string | null;
   /** Mark the scene dirty so the next animation frame renders. */
   invalidate: () => void;
@@ -64,6 +70,10 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   // Render-on-demand: the RAF loop only renders when OrbitControls report
   // movement or something marked the scene dirty. Starts dirty for frame 1.
   const dirtyRef = useRef(true);
+  // #730: true until the first scene's shaders have compiled; the loop holds
+  // frames meanwhile, so none renders a half-built scene ahead of the compile.
+  const warmingShadersRef = useRef(true);
+  const [shadersWarming, setShadersWarming] = useState(true);
   const invalidateRef = useRef(() => {
     dirtyRef.current = true;
   });
@@ -335,7 +345,8 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // into the polar cone before every render (#114). Walkthrough marks
         // frames dirty itself, so skipping update() here loses nothing.
         const controlsMoved = handlersRef.current.walkthroughActive ? false : controls.update();
-        if (contextLost) return;
+        // #730: no frame until the first scene's shaders are compiled (below).
+        if (contextLost || warmingShadersRef.current) return;
         // Decorative loops (#671): every frame while this one draws anyway,
         // otherwise at their own capped rate.
         if (frameBudgetRef.current?.tick(performance.now(), controlsMoved || dirtyRef.current)) dirtyRef.current = true;
@@ -430,6 +441,37 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     };
   }, [isModuleLoaded, canvasRef]);
 
+  // ── #730: compile the first scene's shaders off the main thread ──────────
+  // Cold, the first render linked every program on the main thread: a 1.9 s
+  // freeze with the HUD already up. Once the scene effects (a child
+  // component, so their effects ran first) have built the scene, compileAsync
+  // starts the programs and waits on KHR_parallel_shader_compile; the first
+  // frame is held, under the loading overlay (`shadersWarming`), until it
+  // settles, fails or SHADER_WARMUP_LIMIT_MS pass (lib/shader-warmup.ts),
+  // and then renders as before. Without the extension it settles at once and
+  // the first render compiles, as it always did.
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (!isReady || !renderer || !scene || !camera) return undefined;
+    warmingShadersRef.current = true;
+    setShadersWarming(true);
+    return holdForShaderWarmup(
+      () => renderer.compileAsync(scene, camera),
+      () => {
+        warmingShadersRef.current = false;
+        dirtyRef.current = true;
+        // The loop draws the first frame on the next animation frame, which
+        // can still block on the shadow programs compileAsync doesn't cover:
+        // lift the overlay a frame after that, never over a bare canvas.
+        requestAnimationFrame(() => requestAnimationFrame(() => setShadersWarming(false)));
+      },
+      SHADER_WARMUP_LIMIT_MS
+    );
+  }, [isReady]);
+  // ── end #730 ──────────────────────────────────────────────────────────────
+
   const worldPositionFromClient = (clientX: number, clientY: number): { x: number; z: number } | null => {
     const canvas = canvasRef.current;
     const camera = cameraRef.current;
@@ -452,6 +494,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
 
   return {
     isReady,
+    shadersWarming,
     error,
     invalidate: invalidateRef.current,
     requestShadowUpdate: requestShadowUpdateRef.current,

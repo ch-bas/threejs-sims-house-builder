@@ -131,8 +131,10 @@ describe('walkSpawn — a big house with no door (#602)', () => {
     const ctx = context(sprawling(300), 0);
     const started = performance.now();
     const spawn = walkSpawn(ctx, 0);
-    // The full 0.25 m scan took ~1.3 s; generous for slow CI machines.
-    expect(performance.now() - started).toBeLessThan(250);
+    // The full 0.25 m scan took ~1.3 s here and several seconds on CI; the
+    // coarse scan takes about 0.1 s, but shared CI runners are slow and
+    // noisy (305 ms seen), so the bound only has to catch the old freeze.
+    expect(performance.now() - started).toBeLessThan(1000);
     expect(walkClearance(ctx.colliders, spawn.x, spawn.z, true, 0)).toBeGreaterThan(3);
   });
 
