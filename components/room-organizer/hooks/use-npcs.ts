@@ -152,6 +152,31 @@ export const NPC_REPAINT = 1;
 export const NPC_SHADOW = 2;
 type NpcChange = typeof NPC_STILL | typeof NPC_REPAINT | typeof NPC_SHADOW;
 
+/**
+ * Walkers refresh the shadow map at most this often (#668): about 0.12 m of
+ * walking between passes, instead of a 2048² pass at display rate.
+ */
+export const NPC_SHADOW_INTERVAL_MS = 100;
+/** Frames arrive with jitter: a pass this close to the interval is on time. */
+const NPC_SHADOW_SLACK_MS = 8;
+
+/**
+ * Paces the walkers' shadow passes: call it every frame with whether a caster
+ * moved; true when this frame should recompute the shadow map. A move inside
+ * the interval stays owed, so the last pose always gets its shadow.
+ */
+export function npcShadowPacer(intervalMs = NPC_SHADOW_INTERVAL_MS): (now: number, moved: boolean) => boolean {
+  let owed = false;
+  let last = Number.NEGATIVE_INFINITY;
+  return (now, moved) => {
+    if (moved) owed = true;
+    if (!owed || now - last < intervalMs - NPC_SHADOW_SLACK_MS) return false;
+    owed = false;
+    last = now;
+    return true;
+  };
+}
+
 export interface UseNpcsOptions {
   enabled: boolean;
   count?: number;
@@ -247,6 +272,7 @@ export function useNpcs(options: UseNpcsOptions): void {
 
     let rafId = 0;
     let lastTime = performance.now();
+    const shadowDue = npcShadowPacer();
     const tick = () => {
       // Reduced motion (#436): one frame poses the walkers where they
       // spawned, and then they stand still — no loop, no wandering.
@@ -259,8 +285,9 @@ export function useNpcs(options: UseNpcsOptions): void {
       // Repaint only when a pose changed, and recompute the 2048² shadow map
       // only when a walker moved: a rigged figure idles (breathes) every
       // frame, and re-rendering every caster for that pinned the GPU (#400).
+      // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
       const change = stepNpcs(stateRef.current, delta, currentNav, floorY, Math.random, seatsRef.current);
-      if (change === NPC_SHADOW || reducedMotion) requestShadowUpdate?.();
+      if (reducedMotion || shadowDue(now, change === NPC_SHADOW)) requestShadowUpdate?.();
       if (change !== NPC_STILL || reducedMotion) invalidate?.();
     };
     rafId = requestAnimationFrame(tick);
