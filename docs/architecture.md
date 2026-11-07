@@ -21,6 +21,8 @@ app/                                     Next.js shell
                                          Icons and link-preview image, served by Next under the basePath; rasters from scripts/build-icons.mjs
 docs/                                    This file, the design notes, and the README screenshot
 scripts/
+├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
+├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445)
 ├── build-icons.mjs                      Renders the app/ icon rasters and the preview image from SVG (Playwright, not part of the build)
 └── build-people-glb.mjs                 Rebuilds assets/people.glb from the Universal Animation Library
 components/
