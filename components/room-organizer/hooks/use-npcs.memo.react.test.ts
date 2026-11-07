@@ -31,7 +31,7 @@ describe('walker nav rebuilds (#452 review)', () => {
         const floor = s.layout.floors[s.activeFloorIndex]!;
         useNpcs({
           enabled: true, threeModuleRef, sceneRef, roomWidth: s.layout.width, roomDepth: s.layout.height,
-          items: floor.items, interiorWalls: floor.interiorWalls, keepOut, floorY: 0,
+          items: floor.items, interiorWalls: floor.interiorWalls, keepOut, floorY: 0, addDecorativeStep: () => () => {},
         });
       },
       { initialProps: { s: state } }

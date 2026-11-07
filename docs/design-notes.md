@@ -347,6 +347,18 @@ to respect.
   WebGL context is restored automatically if the GPU drops it. The weather
   loop is the same shape: it runs only while rain or snow is on, and its
   particles never cast shadows, so the static shadow map stays static.
+  The decorative loops (weather, walkers, the camera cones' sweep) share
+  one frame budget (`three/frame-budget.ts`, #671) ticked by the render
+  loop: 30 steps a second, every frame while the frame draws anyway, none
+  while the page is hidden. An unfocused but visible window keeps
+  animating on purpose (a second monitor, a shared screen), so #671's
+  pause on blur was left out. New walkers are posed once outside the
+  budget, so they never wait for it in a T-pose. Walkers refresh the
+  shadow map about ten times a second (#668); the rain and snow fall runs
+  in the vertex shader from a time uniform that wraps every 600 s without
+  a jump (#669); a locked walkthrough draws only
+  on a look or a step (#666); and nothing draws while the 2D plan hides the
+  canvas (#667).
 - **Instanced outdoor scenery.** The suburban lot's high-count scatter
   (grass tufts, shrubs, flowers, road dashes, stepping stones) renders
   through `InstancedMesh` — hundreds of elements collapse to a handful of

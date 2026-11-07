@@ -7,18 +7,16 @@ import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
-import { openBlueprintPrintWindow } from '../lib/blueprint';
 import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
 import { DEFAULT_BUDGET } from '../lib/constants';
-import { notifyWithUndo, removedMessage, removedNames } from '../lib/editor-notices';
+import { notify, notifyWithUndo, removedMessage, removedNames } from '../lib/editor-notices';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { type AutoOrganizeStrategy } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { buildingExportFileName, downloadTextFile, planExportFileName } from '../lib/plan-export/download';
-import { buildingToDxf, layoutToDxf } from '../lib/plan-export/dxf';
-import { buildingToSvg, layoutToSvg } from '../lib/plan-export/svg';
+import { printInPopup } from '../lib/plan-export/print-popup';
 import { storeyHeight } from '../lib/storeys';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { runSurprise } from '../lib/surprise';
@@ -31,6 +29,26 @@ export interface ActionsPanelProps {
   onImport(file: File): Promise<boolean>;
   onExportGlb(): void;
   onShareLink(): void;
+}
+
+interface PlanFile {
+  name: string;
+  mime: string;
+  text: string;
+}
+
+/**
+ * Download a plan export whose emitter loads on the click (#589): the SVG
+ * and DXF code isn't part of the editor's first load.
+ */
+function downloadPlanFile(make: () => Promise<PlanFile>): void {
+  make().then(
+    ({ name, mime, text }) => downloadTextFile(name, mime, text),
+    (error: unknown) => {
+      console.error('Plan export failed', error);
+      notify('Couldn’t export the plan. Check your connection and try again.', 'error');
+    }
+  );
 }
 
 export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
@@ -263,7 +281,12 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 plan — the blueprint included (#437). The SVG lists the
                 floor's items under the plan (#424). */}
             <Button
-              onClick={() => openBlueprintPrintWindow(layout, activeFloor)}
+              onClick={() =>
+                printInPopup('the blueprint', async () => {
+                  const { writeBlueprint } = await import('../lib/blueprint');
+                  return (popup) => writeBlueprint(popup, layout, activeFloor);
+                })
+              }
               variant="outline"
               size="sm"
               className="text-xs"
@@ -272,11 +295,14 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             </Button>
             <Button
               onClick={() =>
-                downloadTextFile(
-                  planExportFileName(layout, activeFloor, 'svg'),
-                  'image/svg+xml',
-                  layoutToSvg(layout, activeFloor, { schedule: true, openingDimensions: true })
-                )
+                downloadPlanFile(async () => ({
+                  name: planExportFileName(layout, activeFloor, 'svg'),
+                  mime: 'image/svg+xml',
+                  text: (await import('../lib/plan-export/svg')).layoutToSvg(layout, activeFloor, {
+                    schedule: true,
+                    openingDimensions: true,
+                  }),
+                }))
               }
               variant="outline"
               size="sm"
@@ -287,11 +313,11 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
             </Button>
             <Button
               onClick={() =>
-                downloadTextFile(
-                  planExportFileName(layout, activeFloor, 'dxf'),
-                  'application/dxf',
-                  layoutToDxf(layout, activeFloor, { openingDimensions: true })
-                )
+                downloadPlanFile(async () => ({
+                  name: planExportFileName(layout, activeFloor, 'dxf'),
+                  mime: 'application/dxf',
+                  text: (await import('../lib/plan-export/dxf')).layoutToDxf(layout, activeFloor, { openingDimensions: true }),
+                }))
               }
               variant="outline"
               size="sm"
@@ -306,11 +332,14 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               <>
                 <Button
                   onClick={() =>
-                    downloadTextFile(
-                      buildingExportFileName(layout, 'svg'),
-                      'image/svg+xml',
-                      buildingToSvg(layout, { schedule: true, openingDimensions: true })
-                    )
+                    downloadPlanFile(async () => ({
+                      name: buildingExportFileName(layout, 'svg'),
+                      mime: 'image/svg+xml',
+                      text: (await import('../lib/plan-export/svg')).buildingToSvg(layout, {
+                        schedule: true,
+                        openingDimensions: true,
+                      }),
+                    }))
                   }
                   variant="outline"
                   size="sm"
@@ -321,11 +350,11 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 </Button>
                 <Button
                   onClick={() =>
-                    downloadTextFile(
-                      buildingExportFileName(layout, 'dxf'),
-                      'application/dxf',
-                      buildingToDxf(layout, { openingDimensions: true })
-                    )
+                    downloadPlanFile(async () => ({
+                      name: buildingExportFileName(layout, 'dxf'),
+                      mime: 'application/dxf',
+                      text: (await import('../lib/plan-export/dxf')).buildingToDxf(layout, { openingDimensions: true }),
+                    }))
                   }
                   variant="outline"
                   size="sm"

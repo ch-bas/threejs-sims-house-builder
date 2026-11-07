@@ -16,6 +16,12 @@ import { computeFloorOpenings, floorOpeningOutline, floorStairHeadroom, stairPla
 import { entrancePlanOutline, planFloorIndex } from '../street';
 import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../types';
 
+/**
+ * The annotation band around an SVG plan, in px. Here rather than in svg.ts
+ * so the print-scale maths can read it without loading the exporter (#589).
+ */
+export const DEFAULT_SVG_MARGIN = 60;
+
 /** A placed item: `position` narrowed to non-optional. */
 export type PlacedItem = FurnitureItem & { position: NonNullable<FurnitureItem['position']> };
 

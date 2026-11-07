@@ -497,6 +497,11 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       cleanup.push(() => controls?.removeEventListener('lock', onLock));
       controls.addEventListener('unlock', onUnlock);
       cleanup.push(() => controls?.removeEventListener('unlock', onUnlock));
+      // Mouse-look turns the camera outside the step loop: each look is one
+      // frame, and a walker standing still draws nothing (#666).
+      const onLook = () => invalidateRef.current?.();
+      controls.addEventListener('change', onLook);
+      cleanup.push(() => controls?.removeEventListener('change', onLook));
       // A keyup fired in another window never reaches us: Alt/Cmd-Tab (blur)
       // and any pointer-lock release strand held codes in `pressed`, and the
       // walker auto-marches on return until the key is tapped again (#216).
@@ -526,9 +531,9 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
 
         const isLocked = Boolean(controls?.isLocked);
         if (!isLocked && !session.touch) return;
-        // Mouse-look mutates the camera outside this loop, so render every
-        // frame while pointer lock is engaged; touch renders when it changes.
-        let dirty = isLocked;
+        // Mouse-look and touch-look invalidate from their own handlers; this
+        // loop draws only for what it moves itself (#666).
+        let dirty = false;
         const walker = session.walker;
 
         if (transition.active) {
