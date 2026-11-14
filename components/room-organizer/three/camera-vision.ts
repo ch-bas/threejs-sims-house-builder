@@ -52,7 +52,7 @@ const UNDETECTABLE_TYPES: ReadonlySet<string> = new Set([
   'window',
   'rug',
 ]);
-/** Tag used by use-npcs for wandering pedestrians. */
+/** Tag used by use-npcs for the walkers. */
 const NPC_TAG = 'npc';
 
 interface VisionConeUserData {
@@ -153,6 +153,9 @@ const COLOR_SETTLE = 1 / 512;
  * `sightWalls` (per storey, `buildSightWalls`): a target behind a wall or a
  * partition of the cone's storey doesn't trip it (#590).
  *
+ * `player` (#585): the first-person walker's feet while walking, a target
+ * like any walker; null otherwise.
+ *
  * Returns whether anything visible moved. With the clock stopped (reduced
  * motion, #436) and the alert state steady, the colours settle within a
  * few frames and every later step returns false, so the on-demand renderer
@@ -161,7 +164,8 @@ const COLOR_SETTLE = 1 / 512;
 export function stepVisionCones(
   scene: ThreeNS.Scene,
   elapsedSeconds: number,
-  sightWalls?: readonly (readonly WalkCollider[] | undefined)[]
+  sightWalls?: readonly (readonly WalkCollider[] | undefined)[],
+  player: Readonly<{ x: number; y: number; z: number }> | null = null
 ): boolean {
   let changed = false;
   // Candidate targets, collected once per frame and shared by every cone:
@@ -192,9 +196,9 @@ export function stepVisionCones(
     let scanHit = false;
     const walls = sightWalls?.[data.floorIndex];
 
-    const testTarget = (obj: ThreeNS.Object3D): void => {
-      const dx = obj.position.x - child.position.x;
-      const dz = obj.position.z - child.position.z;
+    const testTarget = (x: number, z: number): void => {
+      const dx = x - child.position.x;
+      const dz = z - child.position.z;
       // World→cone-local rotation; the cone fans around local +Z.
       const localX = cosYaw * dx - sinYaw * dz;
       const localZ = sinYaw * dx + cosYaw * dz;
@@ -206,7 +210,7 @@ export function stepVisionCones(
       const slack = Math.atan2(TARGET_RADIUS, Math.max(distance, 0.5));
       if (Math.abs(angle) > data.fov / 2 + slack) return;
       // One segment test per target in the wedge; the camera's own wall is skipped.
-      if (walls && sightBlocked(walls, child.position.x, child.position.z, obj.position.x, obj.position.z)) return;
+      if (walls && sightBlocked(walls, child.position.x, child.position.z, x, z)) return;
       detected = true;
       if (Math.abs(angle - scanAngle) <= data.scanFov / 2 + slack) scanHit = true;
     };
@@ -215,12 +219,14 @@ export function stepVisionCones(
       if (obj.userData.floorIndex !== data.floorIndex) continue;
       const id = obj.userData.id as string | undefined;
       if (!id || id === data.ownerId || !data.detectableIds.has(id)) continue;
-      testTarget(obj);
+      testTarget(obj.position.x, obj.position.z);
     }
     for (const npc of npcs) {
-      // NPCs wander the active floor; match by height against the cone base.
-      if (Math.abs(npc.position.y - child.position.y) < 1.5) testTarget(npc);
+      // A walker parked on a storey that isn't drawn is not there (#580);
+      // the others match by height against the cone base.
+      if (npc.visible && Math.abs(npc.position.y - child.position.y) < 1.5) testTarget(npc.position.x, npc.position.z);
     }
+    if (player && Math.abs(player.y - child.position.y) < 1.5) testTarget(player.x, player.z);
 
     // --- Animate: ease colours toward idle/alert, pulse, and scan-blip. ---
     const targetColor = detected ? data.alertColor : data.idleColor;

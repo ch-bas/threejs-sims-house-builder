@@ -9,9 +9,11 @@ import { useActiveFloorIndex, useBudgetRemaining } from '../hooks/use-layout-sto
 import { useRefusal } from '../hooks/use-refusal';
 import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
+import { catalogDragKey, withVariant } from '../lib/catalog-variants';
 import { CCTV_MODELS } from '../lib/cctv-models';
 import { CATEGORIES, CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { CctvMenu } from './cctv-menu';
+import { useVariantPicks, VariantDots } from './variant-dots';
 import type { CatalogItem, CategoryMeta, FurnitureCategory } from '../lib/types';
 
 type FilterKey = 'all' | FurnitureCategory;
@@ -35,6 +37,7 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
   // Hard budget (#463e): tiles over what's left grey out; null when off.
   const remaining = useBudgetRemaining();
   const refuse = useRefusal();
+  const { pickOf, setPick } = useVariantPicks();
   const [filter, setFilter] = useState<FilterKey>('all');
   // The search lives in the editor view store, shared with the 3D highlight;
   // subscribing here keeps a keystroke from re-rendering the drawer (#148).
@@ -82,7 +85,9 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
           </p>
         ) : (
           <div ref={gridRef} className="grid grid-cols-3 gap-2 max-h-[460px] overflow-y-auto pr-1">
-            {filtered.map((item, index) => {
+            {filtered.map((entry, index) => {
+              // The tile places the colour its dots picked (#621).
+              const item = withVariant(entry, pickOf(entry));
               const blockedReason =
                 catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
               const add = () => {
@@ -92,8 +97,11 @@ export function FurnitureCatalogPanel({ onAdd }: FurnitureCatalogPanelProps): JS
               };
               return (
                 <CatalogTile
-                  key={catalogKey(item)}
+                  key={catalogKey(entry)}
                   item={item}
+                  entry={entry}
+                  picked={pickOf(entry)}
+                  onPick={(pick) => setPick(entry, pick)}
                   blockedReason={blockedReason}
                   onAdd={add}
                   roving={tileProps(index, add)}
@@ -170,7 +178,12 @@ function CategoryButton({ active, icon, label, count, onClick }: CategoryButtonP
 }
 
 interface CatalogTileProps {
+  /** The entry in the picked colour: what the tile places. */
   item: CatalogItem;
+  /** The catalogue entry itself, with its colours (#621). */
+  entry: CatalogItem;
+  picked: number;
+  onPick(index: number): void;
   /** Why the tile can't place on the active floor; it stays focusable so the roving grid keeps working. */
   blockedReason: string | null;
   onAdd(): void;
@@ -179,9 +192,11 @@ interface CatalogTileProps {
   overBudget?: boolean;
 }
 
-function CatalogTile({ item, blockedReason, onAdd, roving, overBudget }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, entry, picked, onPick, blockedReason, onAdd, roving, overBudget }: CatalogTileProps): JSX.Element {
   const blocked = blockedReason !== null;
-  return (
+  // The colour the tile places, named (#621): "Sofa, Rust, $650".
+  const colour = entry.variants?.[picked]?.name;
+  const tile = (
     <button
       type="button"
       // A click or tap picks the item up as a placement ghost (#463 d).
@@ -195,6 +210,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving, overBudget }: Catalog
         onAdd();
       }}
       aria-disabled={blocked || undefined}
+      {...(colour ? { 'aria-label': `${item.name}, ${colour}, ${overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}` } : {})}
       title={
         blocked
           ? `${item.name} — ${blockedReason}`
@@ -205,7 +221,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving, overBudget }: Catalog
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';
         // The full key, not the bare type: Stairs and Winder Stairs share one (#370).
-        event.dataTransfer.setData(CATALOG_DRAG_MIME, catalogKey(item));
+        event.dataTransfer.setData(CATALOG_DRAG_MIME, catalogDragKey(entry, picked));
         event.dataTransfer.setData('text/plain', item.name);
       }}
       className={`group relative flex flex-col items-stretch overflow-hidden rounded-xl border bg-card transition-all shadow-sm ${
@@ -224,6 +240,13 @@ function CatalogTile({ item, blockedReason, onAdd, roving, overBudget }: Catalog
         </p>
       </div>
     </button>
+  );
+  if (!entry.variants) return tile;
+  return (
+    <div className="pc-variant-tile">
+      {tile}
+      <VariantDots entry={entry} picked={picked} onPick={onPick} />
+    </div>
   );
 }
 

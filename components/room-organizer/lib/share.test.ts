@@ -138,6 +138,12 @@ describe('encodeShareUrl — floor-plan stripping', () => {
     expect(decoded!.floorPlanImage).toBeUndefined();
   });
 
+  it('strips the image calibration with the image (#726)', async () => {
+    const layout = makeLayout({ floorPlanImage: 'data:image/png;base64,AAAA', floorPlanTransform: { scale: 0.01, offsetX: 0, offsetZ: 0 } });
+    const decoded = await decodeShareUrl(hashOf((await encodeShareUrl(layout, ORIGIN)).url));
+    expect(decoded && 'floorPlanTransform' in decoded).toBe(false);
+  });
+
   it('does not mutate the source layout when stripping', async () => {
     const layout = makeLayout({ floorPlanImage: 'data:image/png;base64,AAAA' });
     await encodeShareUrl(layout, ORIGIN);

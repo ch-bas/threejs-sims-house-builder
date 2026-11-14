@@ -289,6 +289,40 @@ span.pc-tile:hover:not(:disabled) { background: rgba(255, 255, 255, 0.10); }
 }
 .pc-budget-switch[aria-checked='true'] .pc-budget-switch__track { background: var(--pc-cyan-glow-deep); }
 .pc-budget-switch[aria-checked='true'] .pc-budget-switch__knob { transform: translateX(10px); }
+/* The house's funds (#609), while the hard budget is on: on the switch's
+   line at the right, sized to its content. It stacks over the switch, so
+   the switch's touch target (globals.css) never takes a tap meant for it. */
+.pc-funds-field {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0 auto;
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: var(--pc-tr-caps);
+  text-transform: uppercase;
+  color: var(--pc-paper-soft);
+}
+.pc-mode-panel[data-hard-budget] .pc-budget-switch { bottom: 4px; }
+.pc-funds-field__input {
+  box-sizing: border-box;
+  min-height: 24px;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.30);
+  color: var(--pc-paper);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.pc-funds-field__input:focus-visible { outline: 2px solid var(--pc-cyan-glow); outline-offset: 1px; }
 
 /* ===========================================================
    Mode toggle pill cell

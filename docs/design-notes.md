@@ -381,8 +381,33 @@ to respect.
   which hand out clones and are emptied at unmount (`clearTextureCaches`).
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
+- **Doors swing for the walker (#605).** A door's leaf and handle hang in a
+  pivot group on the hinge jamb (`DOOR_LEAF_NAME`), shut at rest, so the
+  plan, the exports, the GLB and DESIGN never see it open. In EXPLORE the
+  walk loop steps `three/door-leaves.ts`: within 1.8 m of a door's centre
+  on the walker's storey the leaf opens over 0.45 s, swinging away from
+  the walker, and shuts again behind. It is never less open than the
+  walker's distance asks, fully open inside 0.9 m, so a sprinter never
+  passes through a closed leaf; the collider's door gap is unchanged.
+  Only the pivot's `rotation.y` moves (kept groups, #404); the shadow map
+  is redrawn once the leaves stop. Leaving the walk shuts every door.
+- **Photo mode hides, it doesn't remove (#626).** View options → Photo
+  mode (a button in the View heading's row, so the menu keeps its height)
+  sets `html[data-photo]`: CSS makes everything in `.pc-world` but the 3D
+  canvas and the shutter `visibility: hidden`, so no box moves and the
+  scene occluders keep their size. The projection shift that keeps the
+  house clear of the HUD and the snap grid are dropped while it is on and
+  put back after, so the shot is centred. The canvas only orbits meanwhile
+  (`orbitOnly` in the scene handlers), and a capture-phase key guard
+  (`photoKeyPasses`) lets through only the shutter's Tab, Enter and Space
+  and, while walking, the walk's keys; Escape leaves and focus goes back
+  to View options. A photo is one frame at twice the screen's pixel
+  ratio (longer edge capped at 4096 px, 3072 on a phone), read with
+  `toBlob` in the same task and the size put back, so the renderer still
+  runs without `preserveDrawingBuffer`. The View menu caps its height
+  below the top-right pills and scrolls inside past that.
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
-  rasterises the active storey into 0.2 m cells a walker (radius 0.22 m)
+  rasterises a storey into 0.2 m cells a walker (radius 0.22 m)
   can stand in: the walkthrough's colliders (furniture, partitions with
   their door gaps) block, and so do the stairs and the storey's keep-out
   (porch, stairwell holes), each collider marking only the cells in its
@@ -400,6 +425,50 @@ to respect.
   per-walker typed arrays of 32 waypoints; a longer route is continued
   from its last waypoint toward the destination it set out for. The
   search reuses the nav's scratch, so the frame loop allocates nothing.
+- **Walkers belong to a storey, not to the active floor (#580).** Each
+  storey's walkers, nav and seats are kept by floor id and spawned the
+  first time that storey is shown: the active one, and its neighbours
+  while the walk is indoors near a stairwell (from outside only the active
+  one: the others' rooms are barely seen, and every figure costs a phone
+  draw calls). Walkers are seeded per storey, so storeys don't hold
+  clones. A storey that
+  stops being drawn parks its walkers (hidden, not stepped, ignored by the
+  camera cones); a floor switch, a climb in EXPLORE or a storey-height edit
+  (which lifts them with their floor) never respawns anyone. Only deleting
+  the storey, leaving it no free floor, or turning walkers off removes them.
+- **The player is one more person (#585).** `lib/npc-bodies` is a small
+  hand-off object `useSceneLife` makes once: the walkthrough writes the
+  player's feet and seat into it every frame, the walkers' step moves one
+  box per walker (its width, from its floor to above its head) in place.
+  The player's resolve appends those boxes to its storey's colliders (an
+  array rebuilt only when walkers come or go), so a walker is solid, and
+  one on another storey is passed under. The walkers treat the player as
+  another walker in the look-ahead, never step into it (they wait, then
+  route round), skip stops where it stands, and don't head for the seat it
+  sits in. One sitter per seat both ways: hips within 0.55 m share a seat,
+  so a three-seat sofa still takes the player in the middle and a walker at
+  each end. The camera cones test the player's feet like a walker's. A
+  walker held on the straight stretch into or out of a seat stands (no
+  walk cycle, no shadow passes) and after two seconds steps out to the
+  nearest free floor clear of the player. New walkers spawn clear of the
+  player, and a parked one standing on the player stays hidden until it
+  moves off.
+- **Walkers have needs (#617).** `lib/npc-needs` gives each walker hunger,
+  energy and fun that run down (150, 240 and 120 s from met to empty) and
+  a table of what meets them: standing in front of the fridge, the stove
+  or the bookshelf, sitting in the sofa or on the end of the bed, or in a
+  seat facing a TV (in front of a TV no seat faces). At each stop a walker
+  first asks `pickNeedSpot` for somewhere: a weighted pick, urgency
+  squared over distance, among spots it can reach that no walker or the
+  player holds, leaving out the need it is meeting there. Only a need
+  under half counts, so a sated walker wanders as before. Using something
+  plays the reach clip at the fridge or the stove, takes a book, or sits
+  longer; a use that runs its course meets the need. A bed seats one
+  party: the player sits in its middle, a walker on its end only 0.55 m
+  away, so the player on a bed keeps walkers off it and the other way
+  round (`bedId` in `lib/npc-bodies`). The spots are built
+  with the seats when the floor's items change, never per frame. Still to
+  come: the garden (the nav grid is indoors only) and a mood marker.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`

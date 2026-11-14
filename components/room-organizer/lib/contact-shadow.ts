@@ -56,12 +56,12 @@ export interface ContactPlan {
 const SOLID_TYPES: ReadonlySet<string> = new Set([
   'armchair', 'sofa', 'bed', 'nightstand', 'wardrobe', 'dresser', 'bookshelf', 'cabinet', 'fridge', 'stove',
   'dishwasher', 'kitchen-sink', 'counter', 'toilet', 'bathtub', 'shower', 'bathroom-sink', 'tv', 'plant',
-  'flowerpot', 'lamp', 'floor-lamp', 'stairs',
+  'flowerpot', 'lamp', 'floor-lamp', 'stairs', 'microwave', 'washer',
 ]);
 
 /** Carried on legs: a weaker, wider patch than something sitting on the floor. */
 const RAISED_TYPES: ReadonlySet<string> = new Set([
-  'table', 'dining-table', 'coffee-table', 'side-table', 'desk', 'chair', 'dining-chair', 'bench',
+  'table', 'dining-table', 'coffee-table', 'side-table', 'desk', 'chair', 'dining-chair', 'bench', 'bar-stool',
 ]);
 
 /** How far a doorway's clearing reaches either side of its wall. */

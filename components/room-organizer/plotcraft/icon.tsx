@@ -9,6 +9,11 @@
 import type { ReactNode, SVGProps } from 'react';
 
 export type PlotcraftIconName =
+  // Catalogue staples (#621)
+  | 'washer'
+  | 'microwave'
+  | 'fan'
+  | 'stool'
   // From the kit
   | 'wall'
   | 'window'
@@ -424,6 +429,37 @@ const PATHS: Record<PlotcraftIconName, ReactNode> = {
       <path d="M7 18h10" />
     </>
   ),
+  washer: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="1.5" />
+      <path d="M4 7h16" />
+      <circle cx="12" cy="14" r="4.5" />
+      <path d="M7 5h2" />
+    </>
+  ),
+  microwave: (
+    <>
+      <rect x="3" y="6" width="18" height="12" rx="1.5" />
+      <rect x="5.5" y="8.5" width="9" height="7" rx=".5" />
+      <path d="M17.5 9h1M17.5 12h1M17.5 15h1" />
+    </>
+  ),
+  fan: (
+    <>
+      <circle cx="12" cy="12" r="1.6" />
+      <path d="M12 10.4c-1-3 0-6 2.5-6.5s2 3-2.5 6.5z" />
+      <path d="M13.4 12.8c3.1-.6 5.8 1 5.6 3.5s-3.3 1.4-5.6-3.5z" />
+      <path d="M10.6 12.8c-2.1 2.3-5.2 2.9-6.2.6s2.6-2.5 6.2-.6z" />
+    </>
+  ),
+  stool: (
+    <>
+      <ellipse cx="12" cy="5" rx="5" ry="1.8" />
+      <path d="M12 7v12" />
+      <path d="M8.5 14h7" />
+      <path d="M8 20h8" />
+    </>
+  ),
   fridge: (
     <>
       <rect x="6" y="3" width="12" height="18" rx="1.5" />
@@ -637,7 +673,7 @@ export function Icon({ name, size = 24, ...props }: IconProps): JSX.Element {
 const TYPE_TO_ICON: Record<string, PlotcraftIconName> = {
   // seating
   chair: 'chair', 'dining-chair': 'chair', armchair: 'armchair',
-  sofa: 'sofa', bench: 'bench',
+  sofa: 'sofa', bench: 'bench', 'bar-stool': 'stool',
   // tables
   table: 'table', 'dining-table': 'table', 'coffee-table': 'table',
   'side-table': 'table', desk: 'desk',
@@ -647,11 +683,11 @@ const TYPE_TO_ICON: Record<string, PlotcraftIconName> = {
   bookshelf: 'bookshelf', cabinet: 'cabinet',
   // kitchen
   stove: 'stove', fridge: 'fridge', dishwasher: 'cabinet',
-  'kitchen-sink': 'sink', counter: 'table',
+  'kitchen-sink': 'sink', counter: 'table', microwave: 'microwave',
   // bathroom
-  toilet: 'toilet', bathtub: 'bath', shower: 'shower', 'bathroom-sink': 'sink',
+  toilet: 'toilet', bathtub: 'bath', shower: 'shower', 'bathroom-sink': 'sink', washer: 'washer',
   // electronics
-  tv: 'tv', computer: 'computer', lamp: 'lamp', 'floor-lamp': 'light',
+  tv: 'tv', computer: 'computer', lamp: 'lamp', 'floor-lamp': 'light', 'ceiling-fan': 'fan',
   router: 'router', wifi: 'wifi', cctv: 'cctv', 'security-camera': 'vision',
   // decor
   plant: 'plant', flowerpot: 'vase', vase: 'vase',

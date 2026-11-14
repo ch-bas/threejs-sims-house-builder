@@ -1,6 +1,6 @@
-import { bookSale, budgetSpent, isHardBudgetOn } from '../lib/budget';
+import { bookSale, budgetOf, budgetSpent, isHardBudgetOn, withFunds } from '../lib/budget';
+import { catalogFields } from '../lib/catalog-variants';
 import {
-  DEFAULT_BUDGET,
   DEFAULT_ROOF,
   FURNITURE_CATALOG,
   MAX_FLOORS,
@@ -10,6 +10,7 @@ import {
 import { clipWallToCutout, fitNewShape, roofCoversCutout, withCutout } from '../lib/cutout';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { floorKeepOut } from '../lib/floor-keep-out';
+import { repairFloorPlanTransform } from '../lib/floor-plan-fit';
 import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
 import { formatMetres } from '../lib/format';
 import { remapGroupIds } from '../lib/groups';
@@ -50,6 +51,7 @@ import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanTransform,
   Frontage,
   FurnitureItem,
   InteriorWall,
@@ -86,6 +88,7 @@ export type LayoutAction =
   | { type: 'removeItem'; id: string }
   | { type: 'sellItems'; ids: readonly string[] }
   | { type: 'setHardBudget'; on: boolean }
+  | { type: 'setFunds'; amount: number }
   | { type: 'updateItem'; id: string; patch: Partial<FurnitureItem> }
   | { type: 'duplicateItem'; sourceId: string; newId: string }
   | { type: 'rotateItem'; id: string }
@@ -119,6 +122,7 @@ export type LayoutAction =
   | { type: 'setFloorPlan'; image: string | null }
   | { type: 'setFloorPlanOpacity'; opacity: number }
   | { type: 'setFloorPlanFitMode'; mode: FloorPlanFitMode }
+  | { type: 'setFloorPlanTransform'; transform: FloorPlanTransform | null }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
   | { type: 'addDormer'; dormer: DormerInput }
@@ -196,7 +200,7 @@ const DOOR_REMOVAL_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
 function overHardBudget(prev: LayoutState, next: LayoutState, action: LayoutAction): boolean {
   if (!isHardBudgetOn(next.layout) || action.type === 'applyLayout' || next.layout.floors === prev.layout.floors) return false;
   const spent = budgetSpent(next.layout);
-  return spent > DEFAULT_BUDGET && spent > budgetSpent(prev.layout);
+  return spent > budgetOf(next.layout) && spent > budgetSpent(prev.layout);
 }
 
 /** A zone's finish in a patch: null clears it, back to the storey's (#720). */
@@ -361,18 +365,38 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // -- floor plan ---------------------------------------------------------
     case 'setFloorPlan': {
       const { image } = action;
+      // A calibration belongs to its image (#726): another image, or none, drops it.
       if (image === null) {
         return withLayout(state, (layout) => {
-          if (layout.floorPlanImage === undefined) return layout;
+          if (layout.floorPlanImage === undefined && layout.floorPlanTransform === undefined) return layout;
           const next = { ...layout };
           delete next.floorPlanImage;
+          delete next.floorPlanTransform;
           return next;
         });
       }
-      return withLayout(state, (layout) =>
-        layout.floorPlanImage === image ? layout : { ...layout, floorPlanImage: image }
-      );
+      return withLayout(state, (layout) => {
+        if (layout.floorPlanImage === image) return layout;
+        const next = { ...layout, floorPlanImage: image };
+        delete next.floorPlanTransform;
+        return next;
+      });
     }
+    case 'setFloorPlanTransform':
+      return withLayout(state, (layout) => {
+        if (action.transform === null) {
+          if (layout.floorPlanTransform === undefined) return layout;
+          const next = { ...layout };
+          delete next.floorPlanTransform;
+          return next;
+        }
+        // Through the schema's repair, so the store never holds what a load would drop.
+        const transform = repairFloorPlanTransform(action.transform);
+        if (!transform || !layout.floorPlanImage) return layout;
+        const current = layout.floorPlanTransform;
+        if (current && current.scale === transform.scale && current.offsetX === transform.offsetX && current.offsetZ === transform.offsetZ) return layout;
+        return { ...layout, floorPlanTransform: transform };
+      });
     // Clamped like every other channel the schema bounds (#418).
     case 'setFloorPlanOpacity':
       return withLayout(state, (layout) => {
@@ -432,7 +456,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // unreadable on the next load (#593).
       if (action.position && !isFinitePosition(action.position)) return state;
       const newItem: FurnitureItem = {
-        ...action.catalogItem,
+        // The entry's colour list stays in the catalogue (#621).
+        ...catalogFields(action.catalogItem),
         id: action.id,
         locked: true,
         position: clampPosition(action.position ?? { x: 0, z: 0 }),
@@ -477,11 +502,19 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withLayout(state, (layout) => {
         if (isHardBudgetOn(layout) === action.on) return layout;
         const writeOff = layout.budget?.writeOff ?? 0;
-        if (action.on) return { ...layout, budget: { writeOff } };
-        if (writeOff > 0) return { ...layout, budget: { writeOff, enabled: false } };
+        // The funds (#609) stay through both switches.
+        const amount = layout.budget?.amount;
+        const funds = amount !== undefined ? { amount } : {};
+        if (action.on) return { ...layout, budget: { writeOff, ...funds } };
+        if (writeOff > 0 || amount !== undefined) return { ...layout, budget: { writeOff, enabled: false, ...funds } };
         const { budget: _off, ...rest } = layout;
         return rest;
       });
+
+    case 'setFunds':
+      // Lowering the funds under what is already spent is allowed, like
+      // switching the hard budget on over a spent house: it buys nothing.
+      return withLayout(state, (layout) => withFunds(layout, action.amount));
 
     case 'updateItem':
       return patchItem(state, action.id, () => action.patch);
@@ -1449,7 +1482,11 @@ function clampRoomDimension(value: number): number {
  * Copy-on-write: undo, redo and loads come through here, and a fresh
  * terrain or floor object re-runs every scene effect keyed on it (#603).
  */
-function normaliseLayout(layout: RoomLayout): RoomLayout {
+function normaliseLayout(input: RoomLayout): RoomLayout {
+  // A calibration belongs to its image (#726). Restore points keep it without
+  // the image, for the History panel to re-attach both; a house that arrives
+  // without its image leaves it behind here, on every whole-house load.
+  const layout = input.floorPlanTransform && !input.floorPlanImage ? withoutKey(input, 'floorPlanTransform') : input;
   const width = clampRoomDimension(layout.width);
   const height = clampRoomDimension(layout.height);
   return {
@@ -1459,6 +1496,12 @@ function normaliseLayout(layout: RoomLayout): RoomLayout {
     floors: normaliseFloors(layout.floors),
     ...(layout.terrain !== undefined ? { terrain: clampTerrain(layout.terrain) } : {}),
   };
+}
+
+function withoutKey<K extends keyof RoomLayout>(layout: RoomLayout, key: K): RoomLayout {
+  const next = { ...layout };
+  delete next[key];
+  return next;
 }
 
 function normaliseFloors(floors: FloorLayout[]): FloorLayout[] {
@@ -1486,7 +1529,7 @@ function findEntranceDoor(floors: readonly FloorLayout[]): FurnitureItem | undef
 function catalogEntranceDoor(): FurnitureItem | undefined {
   const catalogDoor = FURNITURE_CATALOG.find((item) => item.type === 'door');
   // Structure, not furniture: it adds nothing to the furniture bill (#382).
-  return catalogDoor && { ...catalogDoor, id: ENTRANCE_DOOR_ID, locked: true, price: 0 };
+  return catalogDoor && { ...catalogFields(catalogDoor), id: ENTRANCE_DOOR_ID, locked: true, price: 0 };
 }
 
 function findEntranceWall(floors: readonly FloorLayout[]): InteriorWall | undefined {

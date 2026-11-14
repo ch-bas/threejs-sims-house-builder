@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { resizeRefusal } from '../hooks/layout-reducer';
+import { startPlanCalibration, usePlanCalibration, type CalibrationPhase } from '../hooks/plan-calibration';
+import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
 import { useRefusal } from '../hooks/use-refusal';
 import { DEFAULT_FLOOR_PLAN_OPACITY, MAX_ROOM_DIMENSION } from '../lib/constants';
@@ -128,11 +130,102 @@ const FIT_MODE_HINTS: Record<FloorPlanFitMode, string> = {
   contain: '🖼️ Shows full image, may have gaps',
 };
 
-export interface RoomSettingsPanelProps {
-  onFloorPlanUpload(file: File): void;
+/** The traced image's size in pixels, or null when it can't be decoded. */
+async function imageSize(url: string): Promise<{ width: number; height: number } | null> {
+  const image = new Image();
+  image.src = url;
+  try {
+    await image.decode();
+  } catch {
+    return null;
+  }
+  return image.naturalWidth > 0 && image.naturalHeight > 0 ? { width: image.naturalWidth, height: image.naturalHeight } : null;
 }
 
-export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps): JSX.Element {
+/**
+ * The traced plan's scale (#726): measure a known length on it in the 2D
+ * plan, then drag it into place. Calibrated, it keeps its proportions and
+ * the fit mode stands aside; "Fit to the house" goes back to it.
+ */
+function TracingScale({ onStart }: { onStart?(): void }): JSX.Element {
+  const { layout, activeFloorIndex, actions, history } = useRoomEditor();
+  const { setView } = useEditorViewActions();
+  const exploring = useExploring();
+  const refuse = useRefusal();
+  const calibrating = usePlanCalibration() !== null;
+  const transform = layout.floorPlanTransform;
+
+  const start = async (phase: CalibrationPhase) => {
+    const url = layout.floorPlanImage;
+    if (!url || exploring) return;
+    const size = await imageSize(url);
+    // Read the house again after the wait: the image may be gone or replaced.
+    if (!size || layoutStore.getState().layout.floorPlanImage !== url) {
+      refuse("The floor plan image couldn't be read");
+      return;
+    }
+    if (activeFloorIndex !== 0) actions.setActiveFloorIndex(0);
+    setView((v) => ({ ...v, view2D: true, drawZoneMode: false, drawWallMode: false, measurementMode: false }));
+    startPlanCalibration(size, phase);
+    onStart?.();
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {transform
+          ? `Calibrated: 1 m is ${Math.round(1 / transform.scale)} image pixels.`
+          : 'Measure a known length on the plan to scale it, then drag it into place.'}
+      </p>
+      <div className="flex gap-2">
+        <Button
+          onClick={() => void start('points')}
+          disabled={exploring || calibrating}
+          title={exploring ? NOT_WHILE_EXPLORING : 'Click two points on the plan and type the length between them'}
+          variant="outline"
+          size="sm"
+          className="flex-1 text-xs"
+        >
+          📏 {transform ? 'Measure again' : 'Calibrate scale'}
+        </Button>
+        {transform && (
+          <Button
+            onClick={() => void start('move')}
+            disabled={exploring || calibrating}
+            title={exploring ? NOT_WHILE_EXPLORING : 'Drag the plan into place in the 2D view'}
+            variant="outline"
+            size="sm"
+            className="flex-1 text-xs"
+          >
+            ✋ Move
+          </Button>
+        )}
+      </div>
+      {transform && (
+        <Button
+          onClick={() => {
+            history.commitNow();
+            actions.setFloorPlanTransform(null);
+          }}
+          disabled={exploring}
+          variant="outline"
+          size="sm"
+          className="w-full text-xs"
+        >
+          Fit to the house instead
+        </Button>
+      )}
+    </div>
+  );
+}
+
+export interface RoomSettingsPanelProps {
+  onFloorPlanUpload(file: File): void;
+  /** Calibrating happens on the plan the drawer covers: fold it away (#726). */
+  onCalibrateStart?(): void;
+}
+
+export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomSettingsPanelProps): JSX.Element {
   const { layout, activeFloor, actions } = useRoomEditor();
   const refuse = useRefusal();
   const view = useViewSettings('floorPlan3DEffect');
@@ -269,6 +362,9 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
                   Creates height variations based on the floor plan image brightness
                 </p>
 
+                <TracingScale {...(onCalibrateStart ? { onStart: onCalibrateStart } : {})} />
+
+                {!layout.floorPlanTransform && (
                 <div>
                   <Label htmlFor={fitModeId} className="text-xs">
                     Fit Mode
@@ -287,6 +383,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload }: RoomSettingsPanelProps)
                     {FIT_MODE_HINTS[layout.floorPlanFitMode ?? 'stretch']}
                   </p>
                 </div>
+                )}
 
                 <Button onClick={() => actions.setFloorPlan(null)} variant="outline" size="sm" className="w-full text-xs">
                   Remove Floor Plan

@@ -936,3 +936,21 @@ describe('the footprint cut-out (#727)', () => {
     expect(parsed?.roof).toEqual({ style: 'flat', color: '#123456' });
   });
 });
+
+describe('floorPlanTransform (#726)', () => {
+  const transform = { scale: 0.02, offsetX: 1, offsetZ: -0.5 };
+
+  it('loads a calibration as stored, and a house without one unchanged', () => {
+    const plain = makeLayout();
+    expect(parseStoredLayout(plain)).toEqual(plain);
+    expect(parseStoredLayout({ ...plain, floorPlanTransform: transform })?.floorPlanTransform).toEqual(transform);
+  });
+
+  it('drops a broken calibration and keeps the house', () => {
+    for (const bad of [{ scale: -1, offsetX: 0, offsetZ: 0 }, { scale: 0.01 }, 'big', null]) {
+      const parsed = parseStoredLayout({ ...makeLayout(), floorPlanTransform: bad });
+      expect(parsed, JSON.stringify(bad)).not.toBeNull();
+      expect(parsed && 'floorPlanTransform' in parsed).toBe(false);
+    }
+  });
+});

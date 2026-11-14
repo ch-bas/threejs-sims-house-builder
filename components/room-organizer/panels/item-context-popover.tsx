@@ -6,6 +6,7 @@ import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { placedItemVariants } from '../lib/catalog-variants';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
 import { lockedNote } from '../lib/editor-notices';
@@ -104,11 +105,14 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
     exploring ? NOT_WHILE_EXPLORING : item.locked ? lockedHint : undefined;
   const lockedOff = exploring || item.locked === true;
   const lockedHere = item.locked === true && !exploring;
+  const variants = placedItemVariants(FURNITURE_CATALOG, item);
   const colorPicker = (
     <ColorSwatchPicker
       variant="glass"
       value={item.color}
-      swatches={COLOR_SWATCHES.slice(0, 8)}
+      // The entry's own colours first (#621); eight dots in all.
+      named={variants}
+      swatches={COLOR_SWATCHES.slice(0, Math.max(0, 8 - variants.length))}
       recent={recentColors.slice(0, 6)}
       // Guarded too: a disabled fieldset stops the browser's clicks, not a
       // dispatched event.

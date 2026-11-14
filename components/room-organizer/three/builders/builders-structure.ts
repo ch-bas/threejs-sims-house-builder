@@ -1,3 +1,4 @@
+import { DOOR_LEAF_NAME } from '../../lib/door-swing';
 import { STAIR_STEP_COUNT, stairSteps, winderLayout } from '../../lib/stairs';
 import { windowSillHeight } from '../../lib/street';
 import { type BuilderContext, material, mesh } from '../builder-utils';
@@ -11,22 +12,39 @@ import type * as ThreeNS from 'three';
  * the storey (`fitOpeningToStorey`, #277), so on a 2 m storey the door is
  * the 1.95 m of its hole rather than 2.05 m through the ceiling.
  */
+/** Between a door's open leaf and its jamb: no shared face to z-fight. */
+const DOOR_LEAF_JAMB_GAP = 0.004;
+
 export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
   const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 1, roughness: 0.2 });
 
-  // Door slab (almost as wide and tall as the wall opening).
+  const frameThickness = 0.06;
+  // The leaf turns on its hinge jamb (local −X; a mirrored door's group is
+  // flipped, so +X) in a pivot of its own, which EXPLORE swings open (#605,
+  // three/door-leaves.ts). At rest it is shut, as the plan, the exports and
+  // DESIGN show it. The pivot stands half a leaf's thickness inside the
+  // jamb's face, plus a gap, so the leaf swung square clears the frame and
+  // never shares its face (#276).
+  const leafWidth = item.width * 0.95;
+  const leafThickness = item.depth * 0.5;
+  const hingeX = -item.width / 2 + frameThickness + leafThickness / 2 + DOOR_LEAF_JAMB_GAP;
+  const pivot = new THREE.Group();
+  pivot.name = DOOR_LEAF_NAME;
+  pivot.position.set(hingeX, 0, 0);
+  group.add(pivot);
+
+  // Door slab (almost as wide and tall as the wall opening), where it always stood.
   const slab = mesh(
     THREE,
-    new THREE.BoxGeometry(item.width * 0.95, item.height * 0.97, item.depth * 0.5),
+    new THREE.BoxGeometry(leafWidth, item.height * 0.97, leafThickness),
     frameMat
   );
-  slab.position.set(0, item.height / 2, 0);
-  group.add(slab);
+  slab.position.set(-hingeX, item.height / 2, 0);
+  pivot.add(slab);
 
   // Frame around the slab — three thin boxes (left, right, top).
-  const frameThickness = 0.06;
   const sideGeo = new THREE.BoxGeometry(frameThickness, item.height, item.depth);
   for (const dx of [-1, 1]) {
     const side = mesh(THREE, sideGeo, frameMat);
@@ -41,10 +59,10 @@ export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: Bui
   lintel.position.set(0, item.height - frameThickness / 2, 0);
   group.add(lintel);
 
-  // Handle.
+  // Handle, on the leaf.
   const handle = mesh(THREE, new THREE.SphereGeometry(0.04, 12, 10), handleMat);
-  handle.position.set(item.width * 0.35, item.height * 0.5, item.depth * 0.28);
-  group.add(handle);
+  handle.position.set(item.width * 0.35 - hingeX, item.height * 0.5, item.depth * 0.28);
+  pivot.add(handle);
 
   return group;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { prefersReducedMotion } from '../lib/reduced-motion';
+import { type BodiesCache, type NpcBody, type NpcHandOff, seatTakenByWalker, withNpcBodies } from '../lib/npc-bodies';
+import { prefersReducedMotion, REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
 import { WALK_FOV_DEG } from '../lib/scene-insets';
 import { groundHeightAt } from '../lib/site';
 import {
@@ -20,6 +21,7 @@ import {
   walkLampStorey,
   type WalkWorld,
 } from '../lib/walk-world';
+import { createDoorSwinger } from '../three/door-leaves';
 import type { StreetSite } from '../lib/street-row';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -31,6 +33,7 @@ type ThreeModule = typeof import('../three/three-runtime');
 const NO_ITEMS: readonly FurnitureItem[] = [];
 const NO_COLLIDERS: readonly WalkCollider[] = [];
 const NO_STOREYS: readonly (readonly WalkCollider[])[] = [];
+const NO_BODIES: readonly NpcBody[] = [];
 
 /** The building the walker moves through: storeys, shell and the street around it. */
 export interface WalkthroughBuilding extends ShellBuilding, Pick<StreetSite, 'neighbours' | 'roof'> {}
@@ -53,12 +56,21 @@ export interface UseWalkthroughOptions {
   onFloorChange?(index: number): void;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate?: () => void;
+  // L2 doors (#605): the scene whose door leaves swing, and the shadow pass
+  // once they stop.
+  sceneRef?: React.MutableRefObject<ThreeNS.Scene | null>;
+  requestShadowUpdate?: () => void;
   /**
    * Called when the user presses Escape a second time (while pointer lock is
    * already released) to leave walkthrough entirely (see #67). The first Esc is
    * browser-reserved and only exits pointer lock.
    */
   onExit?: () => void;
+  /**
+   * Shared with the walkers (#585): the walk publishes where the player
+   * stands and sits, and bumps into the walkers' bodies.
+   */
+  npcs?: NpcHandOff;
 }
 
 export interface UseWalkthroughResult {
@@ -156,6 +168,9 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     onFloorChange,
     invalidate,
     onExit,
+    npcs,
+    sceneRef,
+    requestShadowUpdate,
   } = options;
 
   const [lockRefused, setLockRefused] = useState(false);
@@ -186,15 +201,19 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   const itemsRef = useRef(floor?.items ?? NO_ITEMS);
   const walkSpeedRef = useRef(walkSpeed);
   const invalidateRef = useRef(invalidate);
+  const requestShadowUpdateRef = useRef(requestShadowUpdate);
   const onExitRef = useRef(onExit);
   const onFloorChangeRef = useRef(onFloorChange);
   const activeFloorRef = useRef(activeFloorIndex);
+  const npcsRef = useRef(npcs);
+  npcsRef.current = npcs;
   worldRef.current = world;
   collidersRef.current = colliders;
   buildingRef.current = building;
   itemsRef.current = floor?.items ?? NO_ITEMS;
   walkSpeedRef.current = walkSpeed;
   invalidateRef.current = invalidate;
+  requestShadowUpdateRef.current = requestShadowUpdate;
   onExitRef.current = onExit;
   onFloorChangeRef.current = onFloorChange;
   activeFloorRef.current = activeFloorIndex;
@@ -248,6 +267,15 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     camera.fov = WALK_FOV_DEG;
     camera.updateProjectionMatrix();
     let rafId = 0;
+    // L2 doors (#605): doors open as the walker comes up to them and shut
+    // behind; all shut again on exit.
+    const doorScene = sceneRef?.current ?? null;
+    const doors = doorScene ? createDoorSwinger(doorScene, () => requestShadowUpdateRef.current?.()) : null;
+    // Read live: the system setting may change mid-walk.
+    const reducedMotionQuery = typeof window.matchMedia === 'function' ? window.matchMedia(REDUCED_MOTION_QUERY) : null;
+    cleanup.push(() => {
+      if (doors?.shutAll()) invalidateRef.current?.();
+    });
 
     // Scratch, reused every frame so the loop allocates nothing (#156).
     const forward = new THREE.Vector3();
@@ -264,6 +292,31 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     const toQuaternion = camera.quaternion.clone();
     // Sitting down / standing up eases the camera between two poses.
     const transition = { active: false, t: 0 };
+
+    // --- Walkers (#585): the player is a person to them, and they to it. ---
+    const bodiesCache: BodiesCache = new WeakMap();
+    const seatSpot: { x: number; z: number; bedId: string | null } = { x: Number.NaN, z: Number.NaN, bedId: null };
+    const publishPlayer = (): void => {
+      const player = npcsRef.current?.player;
+      if (!player) return;
+      const walker = session.walker;
+      player.present = true;
+      player.x = walker.x;
+      player.z = walker.z;
+      player.y = walker.y;
+      player.floorIndex = walker.floorIndex;
+      player.seatX = session.seated ? seatSpot.x : Number.NaN;
+      player.seatZ = session.seated ? seatSpot.z : Number.NaN;
+      player.bedId = session.seated ? seatSpot.bedId : null;
+    };
+    // A bed seats one party: the player in the middle or walkers on its end (#617).
+    const walkerSitsAt = (seat: FurnitureItem, x: number, z: number): boolean =>
+      seatTakenByWalker(npcsRef.current?.bodies ?? NO_BODIES, session.walker.floorIndex, x, z, seat.type === 'bed' ? seat.id : null);
+    cleanup.push(() => {
+      const player = npcsRef.current?.player;
+      if (player) player.present = false;
+    });
+    // --- end walkers ---
 
     const eyeFor = (walker: WalkerState): number => {
       const height = worldRef.current?.storeyHeights[walker.floorIndex] ?? 3;
@@ -319,6 +372,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       if (pose.dirX !== 0 || pose.dirZ !== 0) {
         camera.lookAt(walker.x + pose.dirX, session.eyeY, walker.z + pose.dirZ);
       }
+      publishPlayer();
       invalidateRef.current?.();
     };
 
@@ -351,6 +405,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       const stand = session.seated;
       if (!stand) return;
       session.seated = null;
+      publishPlayer();
       setSeated(false);
       // Back where the walker stood, still looking where it looked.
       fromPosition.copy(camera.position);
@@ -376,8 +431,14 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       const pose = seat
         ? seatPose(seat, items, floorY, { colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS })
         : null;
-      if (!pose) return;
+      if (!pose || !seat) return;
+      // A walker sits there already (#585).
+      if (walkerSitsAt(seat, pose.x, pose.z)) return;
       session.seated = { x: walker.x, z: walker.z };
+      seatSpot.x = pose.x;
+      seatSpot.z = pose.z;
+      seatSpot.bedId = seat.type === 'bed' ? seat.id : null;
+      publishPlayer();
       setSeated(true);
       startTransition(pose.x, pose.eyeY, pose.z, pose.lookX, pose.lookY, pose.lookZ);
     };
@@ -534,6 +595,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         lastTime = now;
 
         const isLocked = Boolean(controls?.isLocked);
+        // L2 doors (#605): a step of the swing, ahead of the lock check, so a
+        // leaf swinging as the lock is released finishes and its shadow
+        // settles. Draws only when a leaf moves.
+        if (doors?.step(session.walker, delta, reducedMotionQuery?.matches === true)) invalidateRef.current?.();
         if (!isLocked && !session.touch) return;
         // Mouse-look and touch-look invalidate from their own handlers; this
         // loop draws only for what it moves itself (#666).
@@ -575,7 +640,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           const moveX = (forward.x * -dz + right.x * dx) * scale * distance;
           const moveZ = (forward.z * -dz + right.z * dx) * scale * distance;
           const world = worldRef.current;
-          if (world) advanceWalker(world, collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS, walker, moveX, moveZ, WALKER_RADIUS);
+          // The walkers' bodies block too (#585).
+          const solid = withNpcBodies(collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS, npcsRef.current?.bodies ?? NO_BODIES, bodiesCache);
+          if (world) advanceWalker(world, solid, walker, moveX, moveZ, WALKER_RADIUS);
+          publishPlayer();
           dirty = true;
           updateView(session.nearStairs);
           // Climbing onto the other storey makes it the active floor (#446).
@@ -622,10 +690,13 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
                 }
               : {}),
           });
-          const id = seat?.id ?? null;
+          // A seat a walker sits on offers no prompt (#585).
+          const spot = seat ? seatPose(seat, itemsRef.current, 0) : null;
+          const free = seat && !(spot && walkerSitsAt(seat, spot.x, spot.z)) ? seat : null;
+          const id = free?.id ?? null;
           if (id !== session.seatTargetId) {
             session.seatTargetId = id;
-            setSeatName(seat?.name ?? null);
+            setSeatName(free?.name ?? null);
           }
         }
 
@@ -668,7 +739,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       invalidateRef.current?.();
       if (orbit) orbit.enabled = true;
     };
-  }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef]);
+  }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef, sceneRef]);
 
   // The active floor changed. An echo of the walker's own climb is ignored;
   // anything else (PgUp/PgDn, the floor pills) moves the walker onto that

@@ -237,7 +237,8 @@ export function Viewport(props: ViewportProps): JSX.Element {
         <canvas
           ref={props.canvasRef}
           aria-label={`3D view of ${houseName}`}
-          className={props.view2D ? 'hidden' : ''}
+          // pc-scene-canvas: what photo mode keeps on screen (#626).
+          className={props.view2D ? 'pc-scene-canvas hidden' : 'pc-scene-canvas'}
           style={{
             width: '100%',
             height: '100%',

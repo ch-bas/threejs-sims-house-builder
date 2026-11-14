@@ -8,6 +8,7 @@ export type FurnitureType =
   | 'dining-chair'
   | 'bench'
   | 'sofa'
+  | 'bar-stool'
   | 'table'
   | 'dining-table'
   | 'coffee-table'
@@ -23,6 +24,7 @@ export type FurnitureType =
   | 'floor-lamp'
   | 'lamppost'
   | 'pendant-light'
+  | 'ceiling-fan'
   | 'plant'
   | 'tree'
   | 'pine-tree'
@@ -46,11 +48,13 @@ export type FurnitureType =
   | 'dishwasher'
   | 'kitchen-sink'
   | 'counter'
+  | 'microwave'
   | 'bbq'
   | 'toilet'
   | 'bathtub'
   | 'shower'
   | 'bathroom-sink'
+  | 'washer'
   | 'rug'
   | 'painting'
   | 'vase'
@@ -82,6 +86,18 @@ export type SofaShape = 'standard' | 'L-shape' | 'U-shape';
 export type StairsShape = 'straight' | 'winder';
 
 export type FloorPlanFitMode = 'stretch' | 'cover' | 'contain';
+
+/**
+ * A traced plan calibrated from a known length (#726): the image keeps its
+ * proportions at `scale` metres per image pixel, its centre at
+ * (`offsetX`, `offsetZ`) in world metres (room-centred). Absent, the image
+ * fills the footprint by `floorPlanFitMode`.
+ */
+export interface FloorPlanTransform {
+  scale: number;
+  offsetX: number;
+  offsetZ: number;
+}
 
 export type FurnitureCategory =
   | 'seating'
@@ -158,9 +174,23 @@ export interface FurnitureItem {
 
 export type CameraPreset = 'iso' | 'top' | 'front' | 'corner';
 
+/**
+ * A colour a catalogue entry comes in (#621): the tile's swatch dots pick
+ * one before placing, and the item popover offers them again. Colour only:
+ * every builder already reads `color`, so a variant needs no new item field.
+ */
+export interface CatalogVariant {
+  name: string;
+  color: string;
+  /** The variant's own price; absent is the entry's. */
+  price?: number;
+}
+
 export type CatalogItem = Omit<FurnitureItem, 'id' | 'position' | 'rotation' | 'price' | 'category'> & {
   price: number;
   category: FurnitureCategory;
+  /** The colours on offer, the first one the entry's own; never copied onto a placed item. */
+  variants?: readonly CatalogVariant[];
 };
 
 export type WallId = 'north' | 'south' | 'east' | 'west';
@@ -326,6 +356,8 @@ export interface HardBudget {
   writeOff: number;
   /** `false`: switched off after use; the write-off is kept for when it comes back on. */
   enabled?: false;
+  /** The house's funds (#609); absent means DEFAULT_BUDGET. Kept while the hard budget is off. */
+  amount?: number;
 }
 
 /**
@@ -355,6 +387,8 @@ export interface RoomLayout {
   floorPlanImage?: string;
   floorPlanOpacity?: number;
   floorPlanFitMode?: FloorPlanFitMode;
+  /** The traced plan's calibration (#726); wins over the fit mode. */
+  floorPlanTransform?: FloorPlanTransform;
   /** Sloped site; absent is flat ground at the ground-floor level. */
   terrain?: TerrainSpec;
   neighbours?: NeighbourSpec;

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { type PlayerBody, createNpcBody, createNpcHandOff } from '../lib/npc-bodies';
+import { findNeedSpots } from '../lib/npc-needs';
 import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath } from '../lib/npc-path';
 import { findNpcSeats } from '../lib/npc-seats';
 import {
@@ -9,6 +11,7 @@ import {
   NPC_STILL,
   type NpcSeats,
   type NpcState,
+  planNeed,
   planRoute,
   planSeat,
   npcShadowPacer,
@@ -68,6 +71,10 @@ function walker(overrides: Partial<NpcState> = {}, to = { x: 2, z: 0 }): NpcStat
     arrivalHeading: Number.NaN,
     standHeading: Number.NaN,
     stuck: 0,
+    body: createNpcBody(0, 0, 0, 0),
+    needs: { hunger: 1, energy: 1, fun: 1 },
+    seeking: null,
+    using: null,
     ...overrides,
   };
 }
@@ -238,6 +245,8 @@ describe('walkers on a furnished floor (#452)', () => {
     rehomeNpcs([npc], nav, 0, seeded(3));
     expect(gapTo(sofa, npc.position.x, npc.position.z)).toBeGreaterThanOrEqual(NPC_RADIUS);
     expect(npc.group.position.x).toBe(npc.position.x);
+    // Its body goes with it, step or no step (reduced motion).
+    expect(npc.body.collider).toMatchObject({ cx: npc.position.x, cz: npc.position.z });
     expect(npc.pathLength).toBeGreaterThan(0);
   });
 
@@ -465,6 +474,257 @@ describe('rigged walkers on a furnished floor', () => {
     }
     expect(sat.size).toBeGreaterThan(1);
   }, 30_000);
+});
+
+describe('walkers and the player (#585)', () => {
+  function player(x: number, z: number, overrides: Partial<PlayerBody> = {}): PlayerBody {
+    return { ...createNpcHandOff().player, present: true, x, z, ...overrides };
+  }
+
+  it('sees the player ahead as it sees another walker', () => {
+    const npc = walker({}, { x: 2, z: 0 });
+    expect(wayAheadBlocked(npc, [npc], player(0.6, 0.1))).toBe(true);
+    expect(wayAheadBlocked(npc, [npc], player(-0.6, 0))).toBe(false);
+    expect(wayAheadBlocked(npc, [npc], null)).toBe(false);
+  });
+
+  it('never walks through a player standing in its way, nor one who steps in from the side', () => {
+    const random = seeded(585);
+    for (const [px, pz] of [[1, 0], [0.3, 0.35]] as const) {
+      const npc = walker({ position: { x: -1, z: 0 } }, { x: 2, z: 0 });
+      const you = player(px, pz);
+      for (let t = 0; t < 6; t += FRAME) {
+        stepNpcs([npc], FRAME, OPEN, 0, random, undefined, you);
+        expect(Math.hypot(npc.position.x - you.x, npc.position.z - you.z)).toBeGreaterThan(NPC_RADIUS + 0.3 - 0.06);
+      }
+    }
+  });
+
+  it('keeps its body where it is, with the seat it sits in', () => {
+    const npc = walker({ position: { x: 1, z: -1 }, pause: 3 });
+    stepNpcs([npc], FRAME, OPEN, 1.5);
+    expect(npc.body.collider).toMatchObject({ cx: 1, cz: -1, bottom: 1.5 });
+    expect(Number.isNaN(npc.body.seatX)).toBe(true);
+  });
+
+  it("doesn't pick a stop where the player stands", () => {
+    const random = seeded(17);
+    for (let trial = 0; trial < 40; trial++) {
+      const npc = walker({ position: { x: -3, z: -3 }, pathLength: 0 });
+      planRoute(npc, OPEN, random, [npc], player(1, 1));
+      expect(Math.hypot(npc.goal.x - 1, npc.goal.z - 1)).toBeGreaterThanOrEqual(0.9);
+    }
+  });
+
+  describe('seats', () => {
+    const chair = furniture('chair', 'chair', 0, 0, 0.5, 0.5);
+    const nav = makeNav([chair]);
+    const seats = seatsOf([chair]);
+    const seat = seats.get('chair:0')!;
+    const sitting = () => player(seat.x, seat.z + 0.6, { seatX: seat.x, seatZ: seat.z });
+
+    it("doesn't head for the seat the player sits in", () => {
+      const npc = seatedRig({ position: { x: 0, z: 2 }, pathLength: 0 });
+      expect(planSeat(npc, nav, seats, seeded(1), [npc], sitting())).toBe(false);
+      expect(planSeat(npc, nav, seats, seeded(1), [npc], player(3, 3))).toBe(true);
+    });
+
+    it('gives up the seat it was heading for when the player sits in it first', () => {
+      const npc = seatedRig({ position: { x: 0, z: 2 }, pathLength: 0 });
+      expect(planSeat(npc, nav, seats, seeded(1))).toBe(true);
+      stepNpcs([npc], FRAME, nav, 0, seeded(1), seats, sitting());
+      expect(npc.seat).toBeNull();
+    });
+
+    // Probe A: the player stands on the approach point of the chair a walker sits in.
+    for (const mode of ['leaveSeat', 'settle'] as const) {
+      it(`a player in the way of ${mode === 'leaveSeat' ? 'getting out of' : 'getting into'} a seat holds the walker, standing and shadowless, then it steps round`, () => {
+        const atSeat = { x: seat.x, z: seat.z + 0.2 };
+        const npc = seatedRig(
+          mode === 'leaveSeat'
+            ? { seat, mode, position: { ...atSeat }, target: { x: seat.approachX, z: seat.approachZ } }
+            : { seat, mode, position: { x: seat.approachX, z: seat.approachZ - 0.05 }, target: { ...atSeat } }
+        );
+        const you = player(mode === 'leaveSeat' ? seat.approachX : atSeat.x, mode === 'leaveSeat' ? seat.approachZ : atSeat.z - 0.05);
+        if (mode === 'settle') you.z = npc.position.z - 0.35;
+        const random = seeded(8);
+        const held: number[] = [];
+        let t = 0;
+        for (; t < 6 && npc.mode !== 'pause'; t += FRAME) {
+          const change = stepNpcs([npc], FRAME, nav, 0, random, seats, you);
+          if (t > 0.5 && t < 2) held.push(change);
+        }
+        // Waiting, it stands (no walk cycle) and asks for no shadow passes.
+        expect(held.length).toBeGreaterThan(0);
+        expect(held.every((change) => change !== NPC_SHADOW)).toBe(true);
+        // Out within the timeout and a few strides, seat given up, clear of the player.
+        expect(t).toBeLessThan(2 + 3);
+        expect(npc.mode).toBe('pause');
+        expect(npc.seat).toBeNull();
+        expect(Math.hypot(npc.position.x - you.x, npc.position.z - you.z)).toBeGreaterThan(NPC_RADIUS + 0.3 - 0.02);
+      });
+    }
+
+    it('publishes the seat it sits in, for the player to find taken', () => {
+      const npc = seatedRig({ seat, mode: 'seated', pause: 30, position: { x: seat.x, z: seat.z + 0.2 } });
+      stepNpcs([npc], FRAME, nav, 0, seeded(1), seats);
+      expect(npc.body.seatX).toBe(seat.x);
+      expect(npc.body.seatZ).toBe(seat.z);
+    });
+  });
+});
+
+describe('walkers with needs (#617)', () => {
+  const fridge = { ...furniture('fridge', 'fridge', 2.5, -3.4, 0.7, 0.7), height: 1.8 };
+  const sofa = furniture('sofa', 'sofa', -2, -3, 2, 0.9);
+  const tv = { ...furniture('tv', 'tv', -2, 0.5, 1.5, 0.4, Math.PI), height: 0.5 };
+  const shelf = { ...furniture('shelf', 'bookshelf', 3.4, 2, 1, 0.3, -Math.PI / 2), height: 2 };
+  const items = [fridge, sofa, tv, shelf];
+  const nav = makeNav(items);
+  const seatList = findNpcSeats(items);
+  const seats = seatsOf(items);
+  const spots = findNeedSpots(items, seatList);
+
+  /** A rigged walker standing in the middle with these needs, about to choose where to go. */
+  function needy(needs: NpcState['needs']): NpcState {
+    const npc = seatedRig({ position: { x: 0, z: 0 }, pathLength: 0, needs });
+    const mixer = npc.anim!.mixer;
+    const once = (name: string) => {
+      const action = mixer.clipAction(new THREE.AnimationClip(name, 1, []));
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      return action;
+    };
+    npc.anim!.interact = once('interact');
+    npc.anim!.pickUp = once('pick-up');
+    return npc;
+  }
+
+  /** Step until `done` or `seconds` run out; the modes it went through. */
+  function live(npc: NpcState, seconds: number, done: () => boolean, random = seeded(617)): Set<string> {
+    const modes = new Set<string>();
+    for (let t = 0; t < seconds && !done(); t += FRAME) {
+      stepNpcs([npc], FRAME, nav, 0, random, seats, null, spots);
+      modes.add(npc.mode);
+    }
+    return modes;
+  }
+
+  it('a hungry walker goes to the fridge, reaches in, and is fed', () => {
+    const npc = needy({ hunger: 0.05, energy: 0.9, fun: 0.9 });
+    let usedFridge = false;
+    let gap = Number.POSITIVE_INFINITY;
+    live(npc, 30, () => {
+      if (!usedFridge && npc.using === 'hunger' && npc.anim!.current === npc.anim!.interact) {
+        usedFridge = true;
+        gap = gapTo(fridge, npc.position.x, npc.position.z);
+      }
+      return usedFridge && npc.mode === 'walk';
+    });
+    expect(usedFridge).toBe(true);
+    expect(gap).toBeLessThan(0.6);
+    expect(npc.needs.hunger).toBeGreaterThan(0.5);
+  });
+
+  it('a tired walker rests in the sofa, and gets up rested', () => {
+    const npc = needy({ hunger: 0.9, energy: 0.05, fun: 0.9 });
+    let rested = false;
+    live(npc, 60, () => {
+      if (npc.mode === 'seated' && npc.using === 'energy') rested = true;
+      return rested && npc.mode === 'leaveSeat';
+    });
+    expect(rested).toBe(true);
+    expect(npc.seat?.itemId).toBe('sofa');
+    expect(npc.needs.energy).toBeGreaterThan(0.9);
+  });
+
+  it('a bored walker watches the TV from the sofa facing it, or takes a book', () => {
+    const uses = new Set<string>();
+    for (let trial = 0; trial < 6; trial++) {
+      const npc = needy({ hunger: 0.9, energy: 0.9, fun: 0.02 });
+      const random = seeded(trial + 1);
+      live(npc, 40, () => npc.using === 'fun' && (npc.mode === 'seated' || npc.anim!.current === npc.anim!.pickUp), random);
+      expect(npc.using).toBe('fun');
+      uses.add(npc.mode === 'seated' ? `seat:${npc.seat!.itemId}` : 'shelf');
+    }
+    expect(uses).toEqual(new Set(['seat:sofa', 'shelf']));
+  });
+
+  it("doesn't head for the fridge another walker stands at, or the place the player sits", () => {
+    const npc = needy({ hunger: 0.05, energy: 0.05, fun: 0.9 });
+    const fridgeSpot = spots.find((spot) => spot.itemId === 'fridge')!;
+    const atFridge = walker({ position: { x: fridgeSpot.x, z: fridgeSpot.z }, pause: 5 });
+    const sofaSpots = spots.filter((spot) => spot.itemId === 'sofa');
+    const sitter = { ...createNpcHandOff().player, present: true, x: 0, z: 0 };
+    for (let trial = 0; trial < 20; trial++) {
+      const random = seeded(trial);
+      const seatOf = sofaSpots[trial % sofaSpots.length]!.seatKey!;
+      const taken = seats.get(seatOf)!;
+      const you = { ...sitter, seatX: taken.x, seatZ: taken.z };
+      if (planNeed(npc, nav, seats, spots, random, [npc, atFridge], you)) {
+        expect(npc.seat?.key).not.toBe(seatOf);
+        expect(Math.hypot(npc.goal.x - fridgeSpot.x, npc.goal.z - fridgeSpot.z)).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
+  // Deterministic and CPU-bound (10,800 frames), like the furnished-floor run above.
+  it('a household lives in the house: every need gets met, and nobody walks into anything', () => {
+    const random = seeded(4617);
+    const npcs: NpcState[] = [];
+    for (let i = 0; i < 4; i++) {
+      const cell = nav.free[Math.floor(random() * nav.freeCount)]!;
+      const npc = needy({ hunger: random(), energy: random(), fun: random() });
+      npc.position = { x: cellX(nav, cell), z: cellZ(nav, cell) };
+      npcs.push(npc);
+    }
+    const met = new Set<string>();
+    const slack = 0.02;
+    for (let frame = 0; frame < 180 * 60; frame++) {
+      stepNpcs(npcs, FRAME, nav, 0, random, seats, null, spots);
+      for (const npc of npcs) {
+        if (npc.using) met.add(npc.using);
+        const seatedIn = npc.mode !== 'walk' && npc.mode !== 'pause' && npc.mode !== 'blocked' ? npc.seat?.itemId : undefined;
+        for (const blocker of items) {
+          if (blocker.id === seatedIn) continue;
+          expect(gapTo(blocker, npc.position.x, npc.position.z)).toBeGreaterThan(NPC_RADIUS - slack);
+        }
+      }
+      const keys = npcs.filter((npc) => npc.mode === 'seated').map((npc) => npc.seat!.key);
+      expect(new Set(keys).size).toBe(keys.length);
+    }
+    expect(met).toEqual(new Set(['hunger', 'energy', 'fun']));
+  }, 30_000);
+
+  it('leaves the whole bed to the player sitting on it', () => {
+    const bed = { ...furniture('bed', 'bed', 0, -1, 2, 1.6), height: 0.6 };
+    const bedItems = [bed];
+    const bedNav = makeNav(bedItems);
+    const bedSeats = seatsOf(bedItems);
+    const bedSpots = findNeedSpots(bedItems, findNpcSeats(bedItems));
+    // The player sits in the middle of the bed, 0.55 m behind the foot slots.
+    const you = { ...createNpcHandOff().player, present: true, x: 0, z: 0.5, seatX: 0, seatZ: -1, bedId: 'bed' };
+    for (let trial = 0; trial < 10; trial++) {
+      const npc = needy({ hunger: 1, energy: 0.05, fun: 1 });
+      npc.position = { x: 0, z: 2 };
+      expect(planNeed(npc, bedNav, bedSeats, bedSpots, seeded(trial), [npc], you)).toBe(false);
+      expect(planSeat(npc, bedNav, bedSeats, seeded(trial), [npc], you)).toBe(false);
+    }
+    expect(planSeat(needy({ hunger: 1, energy: 1, fun: 1 }), bedNav, bedSeats, seeded(1), [], { ...you, bedId: null, seatX: Number.NaN })).toBe(true);
+  });
+
+  it('wanders as before while every need is met', () => {
+    const npc = needy({ hunger: 1, energy: 1, fun: 1 });
+    expect(planNeed(npc, nav, seats, spots, seeded(1))).toBe(false);
+    expect(npc.seeking).toBeNull();
+  });
+
+  it('needs run down while it walks', () => {
+    const npc = rigged({ needs: { hunger: 1, energy: 1, fun: 1 } });
+    for (let frame = 0; frame < 60; frame++) stepNpcs([npc], FRAME, OPEN, 0);
+    expect(npc.needs.fun).toBeLessThan(1);
+    expect(npc.needs.hunger).toBeLessThan(1);
+  });
 });
 
 describe('walker shadow pacing (#668)', () => {

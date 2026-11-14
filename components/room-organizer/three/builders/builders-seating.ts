@@ -166,3 +166,29 @@ export function buildSofa(ctx: BuilderContext): ThreeNS.Group {
   }
   return group;
 }
+
+/** A bar stool's seat cushion, in metres. */
+const STOOL_SEAT_THICKNESS = 0.05;
+
+/**
+ * A bar stool (#621): a round seat in the item's colour on a steel column,
+ * with a footrest ring and a base plate. The seat's top is the item's top
+ * (`lib/seat-surface`).
+ */
+export function buildBarStool(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
+  const group = new THREE.Group();
+  const radius = Math.min(item.width, item.depth) / 2;
+  const seatThickness = Math.min(STOOL_SEAT_THICKNESS, item.height * 0.1);
+  const seat = new THREE.CylinderGeometry(radius * 0.85, radius * 0.8, seatThickness, 24).translate(0, item.height - seatThickness / 2, 0);
+  group.add(mesh(THREE, seat, surfaceMaterial(ctx, baseColor, 'leather')));
+
+  const steel = [
+    new THREE.CylinderGeometry(radius * 0.75, radius * 0.8, 0.02, 24).translate(0, 0.01, 0),
+    new THREE.CylinderGeometry(0.025, 0.025, item.height - seatThickness - 0.02, 10).translate(0, 0.02 + (item.height - seatThickness - 0.02) / 2, 0),
+    // The footrest: a flat ring a third of the way up.
+    new THREE.CylinderGeometry(radius * 0.6, radius * 0.6, 0.015, 24, 1, true).translate(0, item.height * 0.33, 0),
+  ];
+  group.add(mesh(THREE, mergeParts(THREE, steel), surfaceMaterial(ctx, 0x9e9e9e, 'brushedMetal')));
+  return group;
+}

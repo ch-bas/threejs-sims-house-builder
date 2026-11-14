@@ -84,9 +84,19 @@ export const FURNITURE_CATALOG = [
   // Seating
   { type: 'chair', category: 'seating', name: 'Chair', width: 0.5, depth: 0.5, height: 0.8, color: '#8B4513', icon: '🪑', price: 75 },
   { type: 'dining-chair', category: 'seating', name: 'Dining Chair', width: 0.45, depth: 0.45, height: 0.9, color: '#5D4037', icon: '🪑', price: 95 },
-  { type: 'armchair', category: 'seating', name: 'Armchair', width: 0.9, depth: 0.9, height: 0.85, color: '#6D4C41', icon: '💺', price: 280 },
-  { type: 'sofa', category: 'seating', name: 'Sofa', width: 2.0, depth: 0.9, height: 0.8, color: '#4A5568', icon: '🛋️', price: 650 },
+  {
+    type: 'armchair', category: 'seating', name: 'Armchair', width: 0.9, depth: 0.9, height: 0.85, color: '#6D4C41', icon: '💺', price: 280,
+    variants: [{ name: 'Tan', color: '#6D4C41' }, { name: 'Dove grey', color: '#78909C' }, { name: 'Mustard', color: '#C9A227' }],
+  },
+  {
+    type: 'sofa', category: 'seating', name: 'Sofa', width: 2.0, depth: 0.9, height: 0.8, color: '#4A5568', icon: '🛋️', price: 650,
+    variants: [{ name: 'Slate', color: '#4A5568' }, { name: 'Sand', color: '#C8B49A' }, { name: 'Forest', color: '#2E5E4E' }, { name: 'Rust', color: '#A0522D' }],
+  },
   { type: 'bench', category: 'seating', name: 'Bench', width: 1.4, depth: 0.4, height: 0.45, color: '#795548', icon: '🪵', price: 150 },
+  {
+    type: 'bar-stool', category: 'seating', name: 'Bar Stool', width: 0.4, depth: 0.4, height: 0.75, color: '#37474F', icon: '🪑', price: 85,
+    variants: [{ name: 'Charcoal', color: '#37474F' }, { name: 'Oak', color: '#B5895A' }, { name: 'Red', color: '#B23A3A' }],
+  },
 
   // Tables
   { type: 'table', category: 'tables', name: 'Table', width: 1.5, depth: 0.8, height: 0.75, color: '#CD853F', icon: '🟫', price: 220 },
@@ -96,7 +106,10 @@ export const FURNITURE_CATALOG = [
   { type: 'desk', category: 'tables', name: 'Desk', width: 1.2, depth: 0.6, height: 0.75, color: '#8B4513', icon: '🖥️', price: 320 },
 
   // Bedroom
-  { type: 'bed', category: 'bedroom', name: 'Double Bed', width: 2.0, depth: 1.6, height: 0.6, color: '#E8E8E8', icon: '🛏️', price: 800 },
+  {
+    type: 'bed', category: 'bedroom', name: 'Double Bed', width: 2.0, depth: 1.6, height: 0.6, color: '#E8E8E8', icon: '🛏️', price: 800,
+    variants: [{ name: 'Linen', color: '#E8E8E8' }, { name: 'Sage', color: '#A5B8A0' }, { name: 'Navy', color: '#34495E' }],
+  },
   { type: 'nightstand', category: 'bedroom', name: 'Nightstand', width: 0.5, depth: 0.4, height: 0.6, color: '#8B4513', icon: '🕯️', price: 120 },
   { type: 'wardrobe', category: 'bedroom', name: 'Wardrobe', width: 1.4, depth: 0.6, height: 2.1, color: '#6D4C41', icon: '🚪', price: 540 },
   { type: 'dresser', category: 'bedroom', name: 'Dresser', width: 1.2, depth: 0.5, height: 0.9, color: '#8B4513', icon: '🗄️', price: 380 },
@@ -106,23 +119,41 @@ export const FURNITURE_CATALOG = [
   { type: 'cabinet', category: 'storage', name: 'Cabinet', width: 0.9, depth: 0.4, height: 1.6, color: '#5D4037', icon: '🗃️', price: 310 },
 
   // Kitchen
-  { type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200 },
+  {
+    type: 'fridge', category: 'kitchen', name: 'Refrigerator', width: 0.7, depth: 0.7, height: 1.8, color: '#E0E0E0', icon: '🧊', price: 1200,
+    variants: [{ name: 'White', color: '#E0E0E0' }, { name: 'Steel', color: '#90A4AE' }, { name: 'Black', color: '#263238' }],
+  },
   { type: 'stove', category: 'kitchen', name: 'Stove', width: 0.7, depth: 0.65, height: 0.9, color: '#424242', icon: '🍳', price: 850 },
   { type: 'dishwasher', category: 'kitchen', name: 'Dishwasher', width: 0.6, depth: 0.6, height: 0.85, color: '#9E9E9E', icon: '🍽️', price: 700 },
   { type: 'kitchen-sink', category: 'kitchen', name: 'Kitchen Sink', width: 0.9, depth: 0.6, height: 0.9, color: '#BDBDBD', icon: '🚰', price: 450 },
   { type: 'counter', category: 'kitchen', name: 'Counter', width: 1.2, depth: 0.6, height: 0.9, color: '#D7CCC8', icon: '🟫', price: 280 },
+  // Items have no elevation (lib/geometry), so the microwave comes on its own
+  // base cupboard rather than floating at worktop height.
+  {
+    type: 'microwave', category: 'kitchen', name: 'Microwave', width: 0.6, depth: 0.5, height: 1.25, color: '#B0BEC5', icon: '📟', price: 260,
+    variants: [{ name: 'Silver', color: '#B0BEC5' }, { name: 'Black', color: '#263238' }, { name: 'White', color: '#FAFAFA' }],
+  },
 
   // Bathroom
   { type: 'toilet', category: 'bathroom', name: 'Toilet', width: 0.4, depth: 0.7, height: 0.8, color: '#FAFAFA', icon: '🚽', price: 220 },
   { type: 'bathtub', category: 'bathroom', name: 'Bathtub', width: 1.7, depth: 0.8, height: 0.55, color: '#FAFAFA', icon: '🛁', price: 950 },
   { type: 'shower', category: 'bathroom', name: 'Shower', width: 0.9, depth: 0.9, height: 2.1, color: '#E1F5FE', icon: '🚿', price: 680 },
   { type: 'bathroom-sink', category: 'bathroom', name: 'Bathroom Sink', width: 0.6, depth: 0.45, height: 0.85, color: '#FAFAFA', icon: '🪞', price: 280 },
+  {
+    type: 'washer', category: 'bathroom', name: 'Washing Machine', width: 0.6, depth: 0.6, height: 0.85, color: '#FAFAFA', icon: '🧺', price: 550,
+    variants: [{ name: 'White', color: '#FAFAFA' }, { name: 'Graphite', color: '#455A64' }],
+  },
 
   // Electronics
   { type: 'tv', category: 'electronics', name: 'TV Stand', width: 1.5, depth: 0.4, height: 0.5, color: '#2C3E50', icon: '📺', price: 600 },
   { type: 'computer', category: 'electronics', name: 'Computer', width: 0.5, depth: 0.5, height: 0.5, color: '#37474F', icon: '🖥️', price: 950 },
   { type: 'lamp', category: 'electronics', name: 'Lamp', width: 0.3, depth: 0.3, height: 1.5, color: '#FFD700', icon: '💡', price: 110 },
   { type: 'floor-lamp', category: 'electronics', name: 'Floor Lamp', width: 0.35, depth: 0.35, height: 1.7, color: '#FFB300', icon: '🪔', price: 180 },
+  // Hangs from the ceiling like the pendant light (lib/mount-band); the colour is the blades'.
+  {
+    type: 'ceiling-fan', category: 'electronics', name: 'Ceiling Fan', width: 1.2, depth: 1.2, height: 0.45, color: '#8D6E63', icon: '🌀', price: 160,
+    variants: [{ name: 'Walnut', color: '#8D6E63' }, { name: 'White', color: '#ECEFF1' }, { name: 'Black', color: '#263238' }],
+  },
   { type: 'wifi', category: 'electronics', name: 'Wi-Fi AP', width: 0.2, depth: 0.2, height: 0.1, color: '#0088FF', icon: '📶', price: 140, isWiFiAccessPoint: true, signalRange: 10 },
   { type: 'router', category: 'electronics', name: 'Router', width: 0.3, depth: 0.2, height: 0.1, color: '#1a1a1a', icon: '🌐', price: 160 },
   // LEGACY variant: this is the original electronics-category "CCTV" (a simple

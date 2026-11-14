@@ -20,6 +20,8 @@ export interface UseItemPlacementParams {
   roomDepth: number;
   /** Current furniture value across the whole building, for the budget guard. */
   buildingCost: number;
+  /** The house's funds (#609); the soft confirm asks past them. Default DEFAULT_BUDGET. */
+  budget?: number;
   /**
    * Hard budget (#463e): true, after telling the player, when a purchase of
    * `price` is over what's left. It is refused before the soft confirm.
@@ -89,6 +91,7 @@ export function useItemPlacement({
   roomWidth,
   roomDepth,
   buildingCost,
+  budget = DEFAULT_BUDGET,
   actions,
   view,
   allSelectedIds,
@@ -283,12 +286,12 @@ export function useItemPlacement({
       // silently proceeding (and instead of hard-blocking: it's a sandbox).
       const price = catalogItem.price ?? 0;
       if (refusePurchase?.(price)) return '';
-      if (price > 0 && buildingCost + price > DEFAULT_BUDGET) {
+      if (price > 0 && buildingCost + price > budget) {
         // Asked in the app (#649): nothing is added until the player agrees.
         void askConfirm({
           title:
             `This ${CURRENCY_SYMBOL}${price.toLocaleString()} purchase puts you over the ` +
-            `${CURRENCY_SYMBOL}${DEFAULT_BUDGET.toLocaleString()} budget. Place it anyway?`,
+            `${CURRENCY_SYMBOL}${budget.toLocaleString()} budget. Place it anyway?`,
           confirmLabel: 'Place it anyway',
         }).then((proceed) => {
           if (!proceed) return;
@@ -300,7 +303,7 @@ export function useItemPlacement({
       }
       return placeNow(catalogItem, position, rotation);
     },
-    [buildingCost, refusePurchase, placeNow]
+    [buildingCost, budget, refusePurchase, placeNow]
   );
 
   const lastSnapWall = useCallback(() => snapWallRef.current, []);

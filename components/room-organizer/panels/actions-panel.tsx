@@ -7,9 +7,8 @@ import { useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
-import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn } from '../lib/budget';
+import { HARD_BUDGET_SELL_BACK_NOTE, budgetOf, isHardBudgetOn } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
-import { DEFAULT_BUDGET } from '../lib/constants';
 import { notify, notifyWithUndo, removedMessage, removedNames } from '../lib/editor-notices';
 import { downloadInventoryCsv, downloadLayoutAsJson, downloadScheduleCsv } from '../lib/file-io';
 import { floorKeepOut } from '../lib/floor-keep-out';
@@ -138,7 +137,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               // spends what the rest of the building leaves of the budget: the
               // hard budget refuses before asking, the soft one asks before
               // going over (#136, #581).
-              void runSurprise(layoutStore.getState().layout, activeFloorIndex, DEFAULT_BUDGET, {
+              const house = layoutStore.getState().layout;
+              void runSurprise(house, activeFloorIndex, budgetOf(house), {
                 confirm: askConfirm,
                 playCue,
                 replaceItems: (items) => actions.replaceItems(items),

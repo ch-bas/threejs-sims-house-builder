@@ -289,6 +289,7 @@ const DrawerBody = memo(function DrawerBody({
 
           <RoomSettingsPanel
             onFloorPlanUpload={handleFloorPlanUpload}
+            onCalibrateStart={onCollapse}
           />
 
           <WallsPanel />

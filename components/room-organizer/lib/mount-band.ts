@@ -15,6 +15,7 @@ const HUNG_TYPES: ReadonlySet<string> = new Set([
   'wall-clock',
   'curtains',
   'pendant-light',
+  'ceiling-fan',
 ]);
 
 /** Whether an item hangs above the floor (on a wall or from the ceiling). */
@@ -24,7 +25,7 @@ export function isWallHung(type: string): boolean {
 
 /** Whether an item hangs from the ceiling rather than on a wall. */
 export function isCeilingHung(type: string): boolean {
-  return type === 'pendant-light';
+  return type === 'pendant-light' || type === 'ceiling-fan';
 }
 
 /** Vertical extent of an item's mesh above its floor, in metres. */
@@ -138,7 +139,9 @@ export function mountBand(
         top: fitted.height,
       };
     }
+    // A ceiling fan hangs from its downrod the way a pendant hangs from its cord (#621).
     case 'pendant-light':
+    case 'ceiling-fan':
       return { bottom: storeyHeight - pendantDrop(item, storeyHeight), top: storeyHeight };
     case 'window': {
       const sill = windowSillHeight(item);

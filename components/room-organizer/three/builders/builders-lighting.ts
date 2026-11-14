@@ -1,6 +1,7 @@
 import { mountBand, PENDANT_SHADE_FRACTION, pendantBulbY } from '../../lib/mount-band';
 import { FLOOR_HEIGHT_METERS } from '../../lib/types';
-import { type BuilderContext, material, mesh } from '../builder-utils';
+import { type BuilderContext, EDGE, material, mergeParts, mesh, softBox } from '../builder-utils';
+import { surfaceMaterial } from '../furniture-materials';
 import type * as ThreeNS from 'three';
 
 export function buildLamp({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
@@ -109,6 +110,57 @@ export function buildPendantLight({ THREE, item, hasCollision, baseColor, opacit
   bulb.position.y = pendantBulbY(item, ceiling) - band.bottom;
   hung.add(bulb);
 
+  return group;
+}
+
+/** How many blades a ceiling fan has. */
+const FAN_BLADES = 5;
+
+/**
+ * A ceiling fan (#621) hangs from its storey's ceiling like the pendant: a
+ * canopy, a downrod, the motor and the blades in the item's colour, all
+ * inside the band `mountBand` gives it. The blades stay inside the item's
+ * width; they don't turn (a still fan costs nothing per frame).
+ */
+export function buildCeilingFan(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, hasCollision, baseColor, opacity, storeyHeight } = ctx;
+  const group = new THREE.Group();
+  const metalMat = material(THREE, 0x8a8a8a, hasCollision, opacity, { roughness: 0.35, metalness: 1 });
+  const bladeMat = surfaceMaterial(ctx, baseColor, 'woodLacquered', { detailed: true });
+
+  const ceiling = storeyHeight ?? FLOOR_HEIGHT_METERS;
+  const band = mountBand(item, ceiling);
+  const drop = band.top - band.bottom;
+  const hung = new THREE.Group();
+  hung.position.y = band.bottom;
+  group.add(hung);
+
+  const radius = Math.min(item.width, item.depth) / 2;
+  const canopyGap = Math.min(PENDANT_CANOPY_GAP, drop * 0.05);
+  const canopyHeight = Math.min(0.05, drop * 0.12);
+  const motorHeight = Math.min(0.12, drop * 0.3);
+  const bladeThickness = Math.min(0.012, drop * 0.04);
+  const metal = [
+    new THREE.CylinderGeometry(0.06, 0.07, canopyHeight, 16).translate(0, drop - canopyGap - canopyHeight / 2, 0),
+    new THREE.CylinderGeometry(0.1, 0.12, motorHeight, 20).translate(0, bladeThickness + motorHeight / 2, 0),
+  ];
+  const rodLength = drop - canopyGap - canopyHeight - bladeThickness - motorHeight;
+  if (rodLength > 0) {
+    metal.push(new THREE.CylinderGeometry(0.012, 0.012, rodLength, 8).translate(0, bladeThickness + motorHeight + rodLength / 2, 0));
+  }
+  hung.add(mesh(THREE, mergeParts(THREE, metal), metalMat));
+
+  // Each blade runs from the motor out to just inside the item's circle.
+  const inner = 0.08;
+  const bladeWidth = Math.min(0.13, radius * 0.4);
+  const outer = Math.sqrt(Math.max(0, radius * radius - (bladeWidth / 2) ** 2)) - 0.005;
+  const length = Math.max(0.05, outer - inner);
+  const blades = Array.from({ length: FAN_BLADES }, (_, index) =>
+    softBox(THREE, length, bladeThickness, bladeWidth, EDGE.wood)
+      .translate(inner + length / 2, bladeThickness / 2 + motorHeight * 0.3, 0)
+      .rotateY((index / FAN_BLADES) * Math.PI * 2)
+  );
+  hung.add(mesh(THREE, mergeParts(THREE, blades), bladeMat));
   return group;
 }
 

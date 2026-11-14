@@ -76,6 +76,29 @@ describe('camera vision cones and walls (#590)', () => {
     expect(alerted(scene, buildSightWalls(building([PARTITION], [CAMERA])))).toBe(false);
   });
 
+  it('does not alert on a walker parked on a storey that is not drawn (#580)', () => {
+    const scene = sceneWith([CAMERA]);
+    const walker = new THREE.Group();
+    walker.userData.type = 'npc';
+    walker.position.set(0.5, 0, 1.5);
+    walker.visible = false;
+    scene.add(walker);
+    expect(alerted(scene)).toBe(false);
+  });
+
+  it('alerts on the player walking into view, but not behind a wall or on another storey (#585)', () => {
+    const scene = sceneWith([CAMERA]);
+    const step = (player: { x: number; y: number; z: number } | null, walls?: Parameters<typeof stepVisionCones>[2]) => {
+      stepVisionCones(scene, 0, walls, player);
+      const wedge = (cone(scene).userData.vision as { wedge: THREE.Mesh }).wedge;
+      return (wedge.material as THREE.MeshBasicMaterial).opacity > 0.2;
+    };
+    expect(step(null)).toBe(false);
+    expect(step({ x: 0.5, y: 0, z: 1.5 })).toBe(true);
+    expect(step({ x: 0.5, y: 0, z: 1.5 }, buildSightWalls(building([PARTITION], [CAMERA])))).toBe(false);
+    expect(step({ x: 0.5, y: 3, z: 1.5 })).toBe(false);
+  });
+
   it('a camera on a wall still sees the room it faces', () => {
     // Hung on the partition itself, facing away from it.
     const onWall = { ...CAMERA, position: { x: 0, z: 0.02 } };
