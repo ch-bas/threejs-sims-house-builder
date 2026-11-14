@@ -76,6 +76,16 @@ describe('camera vision cones and walls (#590)', () => {
     expect(alerted(scene, buildSightWalls(building([PARTITION], [CAMERA])))).toBe(false);
   });
 
+  it('does not alert on a walker parked on a storey that is not drawn (#580)', () => {
+    const scene = sceneWith([CAMERA]);
+    const walker = new THREE.Group();
+    walker.userData.type = 'npc';
+    walker.position.set(0.5, 0, 1.5);
+    walker.visible = false;
+    scene.add(walker);
+    expect(alerted(scene)).toBe(false);
+  });
+
   it('a camera on a wall still sees the room it faces', () => {
     // Hung on the partition itself, facing away from it.
     const onWall = { ...CAMERA, position: { x: 0, z: 0.02 } };

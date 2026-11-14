@@ -382,7 +382,7 @@ to respect.
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
-  rasterises the active storey into 0.2 m cells a walker (radius 0.22 m)
+  rasterises a storey into 0.2 m cells a walker (radius 0.22 m)
   can stand in: the walkthrough's colliders (furniture, partitions with
   their door gaps) block, and so do the stairs and the storey's keep-out
   (porch, stairwell holes), each collider marking only the cells in its
@@ -400,6 +400,17 @@ to respect.
   per-walker typed arrays of 32 waypoints; a longer route is continued
   from its last waypoint toward the destination it set out for. The
   search reuses the nav's scratch, so the frame loop allocates nothing.
+- **Walkers belong to a storey, not to the active floor (#580).** Each
+  storey's walkers, nav and seats are kept by floor id and spawned the
+  first time that storey is shown: the active one, and its neighbours
+  while the walk is indoors near a stairwell (from outside only the active
+  one: the others' rooms are barely seen, and every figure costs a phone
+  draw calls). Walkers are seeded per storey, so storeys don't hold
+  clones. A storey that
+  stops being drawn parks its walkers (hidden, not stepped, ignored by the
+  camera cones); a floor switch, a climb in EXPLORE or a storey-height edit
+  (which lifts them with their floor) never respawns anyone. Only deleting
+  the storey, leaving it no free floor, or turning walkers off removes them.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
