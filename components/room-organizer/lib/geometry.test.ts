@@ -9,6 +9,7 @@ import {
   hasCollisions,
   itemInBounds,
   itemsOverlap,
+  openingUnderDecor,
   snapToGrid,
 } from './geometry';
 
@@ -324,5 +325,42 @@ describe('footprintArea (#164)', () => {
     expect(footprintArea([desk, onDesk])).toBeCloseTo(1.4 * 0.7, 10);
     const onFloor = makeItem({ id: 'plant', type: 'plant', width: 0.5, depth: 0.5, position: { x: 3, z: 3 } });
     expect(footprintArea([desk, onFloor])).toBeCloseTo(1.4 * 0.7 + 0.25, 10);
+  });
+});
+
+describe('openingUnderDecor (#778)', () => {
+  const door = makeItem({ id: 'door', type: 'door', category: 'structure', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, position: { x: 0, z: -4 }, rotation: 0 });
+  const window = makeItem({ id: 'win', type: 'window', category: 'structure', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, position: { x: 0, z: -4 }, rotation: 0 });
+  const decor = (type: string, x: number, z = -3.95, rotation = 0) =>
+    makeItem({ id: type, type, category: 'decor', name: type, width: 0.8, depth: 0.1, height: type === 'curtains' ? 2.4 : 0.6, position: { x, z }, rotation });
+
+  it('finds the door a picture hangs over, on either face of its wall', () => {
+    expect(openingUnderDecor(decor('painting', 0.5), [door])).toBe(door);
+    expect(openingUnderDecor(decor('painting', 0.5, -4.05, Math.PI), [door])).toBe(door);
+  });
+
+  it('lets decor beside the frame, on another wall or turned across it be', () => {
+    expect(openingUnderDecor(decor('painting', 0.85), [door])).toBeNull();
+    expect(openingUnderDecor(decor('painting', 0, -2.5), [door])).toBeNull();
+    expect(openingUnderDecor(decor('painting', 0, -3.95, Math.PI / 2), [door])).toBeNull();
+    // A shelf on a parallel partition 0.35 m off is on another wall.
+    expect(openingUnderDecor(decor('wall-shelf', 0, -3.65), [door])).toBeNull();
+  });
+
+  it('finds a picture over a door on a diagonal wall, turned a hair off it', () => {
+    const turn = Math.PI / 4;
+    const slanted = { ...door, position: { x: 0, z: 0 }, rotation: turn };
+    // On the wall face: half the wall plus half the picture out along the opening's +z.
+    const off = 0.08 + 0.05;
+    const picture = { ...decor('painting', 0.3 * Math.cos(turn) + off * Math.sin(turn), -0.3 * Math.sin(turn) + off * Math.cos(turn)), rotation: turn + 5e-4 };
+    expect(openingUnderDecor(picture, [slanted])).toBe(slanted);
+    expect(openingUnderDecor({ ...picture, rotation: turn + 0.05 }, [slanted])).toBeNull();
+  });
+
+  it('lets curtains hang over a window, not a door, and ignores a ceiling light', () => {
+    expect(openingUnderDecor(decor('curtains', 0), [window])).toBeNull();
+    expect(openingUnderDecor(decor('curtains', 0), [door])).toBe(door);
+    expect(openingUnderDecor(decor('wall-shelf', 0), [window])).toBe(window);
+    expect(openingUnderDecor(decor('pendant-light', 0), [door])).toBeNull();
   });
 });

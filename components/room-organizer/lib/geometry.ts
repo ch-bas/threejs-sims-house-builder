@@ -1,6 +1,6 @@
 import { LOW_PROFILE_MAX_HEIGHT, rotatedHalfExtents, shellWalls } from './footprint';
 import { isCeilingHung, isWallHung, mountBand } from './mount-band';
-import { isOpening, isWallMounted } from './opening-snap';
+import { INTERIOR_WALL_THICKNESS, isOpening, isWallMounted } from './opening-snap';
 import { interiorWallHeight } from './storeys';
 import { buildWalkColliders, type WalkCollider } from './walk-collision';
 import type { FootprintCutout, FurnitureItem, InteriorWall, Vec2 } from './types';
@@ -188,6 +188,64 @@ function pairCollides(a: FurnitureItem, b: FurnitureItem, storeyHeight: number |
   if (isIntendedStack(a, b)) return false;
   if ((isWallHung(a.type) || isWallHung(b.type)) && !bandsOverlap(a, b, storeyHeight)) return false;
   return itemsOverlap(a, b);
+}
+
+/** How far past the wall face hung decor may stand off and still count as hanging on it. */
+const DECOR_ON_OPENING_SLOP = 0.05;
+/** Decor turned this little off the opening's wall (radians, either way round) is on that wall. */
+const DECOR_ON_OPENING_TURN = 1e-3;
+
+/**
+ * The door or window among `items` that wall decor would cover (#778): on
+ * the same wall line, overlapping it along the wall and in height. Curtains
+ * over a window are hung there on purpose. Not a collision (decor and the
+ * wall layer never collide, so a picture can be placed beside a frame); the
+ * rule for moves that carry or shift decor without the player placing it.
+ */
+export function openingUnderDecor(item: FurnitureItem, items: readonly FurnitureItem[], storeyHeight?: number): FurnitureItem | null {
+  if (!item.position || !isWallHung(item.type) || isCeilingHung(item.type)) return null;
+  const { x, z } = item.position;
+  for (const opening of items) {
+    if (!opening.position || !isOpening(opening.type) || opening.id === item.id) continue;
+    if (item.type === 'curtains' && opening.type === 'window') continue;
+    const rotation = opening.rotation ?? 0;
+    if (Math.abs(Math.sin(rotation - (item.rotation ?? 0))) > Math.sin(DECOR_ON_OPENING_TURN)) continue;
+    const dx = x - opening.position.x;
+    const dz = z - opening.position.z;
+    const along = Math.abs(dx * Math.cos(rotation) - dz * Math.sin(rotation));
+    const across = Math.abs(dx * Math.sin(rotation) + dz * Math.cos(rotation));
+    if (along >= (item.width + opening.width) / 2 - 1e-6) continue;
+    // Decor hangs with its back on a wall face, either face: its centre is
+    // half its depth past the face, which is no further from the opening's
+    // centre than half the wall or half the frame.
+    const face = Math.max(opening.depth, INTERIOR_WALL_THICKNESS) / 2;
+    if (across > face + item.depth / 2 + DECOR_ON_OPENING_SLOP) continue;
+    if (bandsOverlap(item, opening, storeyHeight)) return opening;
+  }
+  return null;
+}
+
+/**
+ * Wall decor and a door or window that an edit brought together (#778): a
+ * wall move carrying them, or a corner cut moving them out. `before` and
+ * `after` are one storey's items, index for index, and an unchanged item
+ * keeps its identity. A pair that already met stays allowed.
+ */
+export function decorNewlyOverOpening(
+  before: readonly FurnitureItem[],
+  after: readonly FurnitureItem[],
+  storeyHeight?: number
+): { decor: FurnitureItem; opening: FurnitureItem } | null {
+  const covers = (decor: FurnitureItem, opening: FurnitureItem): boolean => openingUnderDecor(decor, [opening], storeyHeight) !== null;
+  for (let i = 0; i < after.length; i++) {
+    if (after[i] === before[i]) continue;
+    for (let j = 0; j < after.length; j++) {
+      const [decor, opening] = isOpening(after[i]!.type) ? [j, i] : [i, j];
+      if (j === i || !covers(after[decor]!, after[opening]!) || covers(before[decor]!, before[opening]!)) continue;
+      return { decor: after[decor]!, opening: after[opening]! };
+    }
+  }
+  return null;
 }
 
 /**

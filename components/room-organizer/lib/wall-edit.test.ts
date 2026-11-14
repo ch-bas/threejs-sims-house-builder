@@ -244,6 +244,36 @@ describe('planWallMove (#718)', () => {
     expect(planWallMove(floor, [{ id: 'e', x1: 2, z1: 1, x2: 2, z2: 1.05 }], context)).toEqual({ refusal: expect.stringContaining('short') });
   });
 
+  it('refuses a shortening that slides a picture over a door (#778)', () => {
+    const picture = makeItem({ id: 'pic', type: 'painting', name: 'Painting', width: 0.8, depth: 0.05, position: { x: 1.9, z: -0.4 }, rotation: -Math.PI / 2 });
+    const hung = makeFloor({ interiorWalls: room, items: [door, picture] });
+    expect(planWallMove(hung, [{ id: 'e', x1: 2, z1: -0.3, x2: 2, z2: 2 }], context)).toEqual({
+      refusal: 'Painting would end up over Door: move one first.',
+    });
+    // A door clamped under a picture at the other end is the same thing.
+    const atEnd = makeFloor({ interiorWalls: room, items: [door, { ...picture, position: { x: 1.9, z: -0.6 } }] });
+    expect(planWallMove(atEnd, [{ id: 'e', x1: 2, z1: -1, x2: 2, z2: 0.2 }], context)).toEqual({ refusal: expect.stringContaining('over Door') });
+    // Room to spare: both ride and stay apart.
+    expect(planWallMove(hung, slid, context)).not.toHaveProperty('refusal');
+  });
+
+  it('refuses it for a picture on the far face of the wall from the door too', () => {
+    const farFace = makeItem({ id: 'pic', type: 'painting', name: 'Painting', width: 0.8, depth: 0.05, position: { x: 2.1, z: -0.4 }, rotation: Math.PI / 2 });
+    const hung = makeFloor({ interiorWalls: room, items: [door, farFace] });
+    expect(planWallMove(hung, [{ id: 'e', x1: 2, z1: -0.3, x2: 2, z2: 2 }], context)).toEqual({
+      refusal: 'Painting would end up over Door: move one first.',
+    });
+  });
+
+  it('lets curtains ride over a window, and a picture that was already over a door', () => {
+    const window = makeItem({ id: 'win', type: 'window', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, position: { x: 2, z: 0.5 }, rotation: -Math.PI / 2 });
+    const curtains = makeItem({ id: 'cur', type: 'curtains', name: 'Curtains', width: 1.4, depth: 0.2, height: 2.4, position: { x: 1.8, z: -0.1 }, rotation: -Math.PI / 2 });
+    const shorter = [{ id: 'e', x1: 2, z1: -0.3, x2: 2, z2: 2 }];
+    expect(planWallMove(makeFloor({ interiorWalls: room, items: [window, curtains] }), shorter, context)).not.toHaveProperty('refusal');
+    const over = makeItem({ id: 'pic', type: 'painting', name: 'Painting', width: 0.8, depth: 0.05, position: { x: 1.9, z: 0.5 }, rotation: -Math.PI / 2 });
+    expect(planWallMove(makeFloor({ interiorWalls: room, items: [door, over] }), slid, context)).not.toHaveProperty('refusal');
+  });
+
   it('ignores the entrance door', () => {
     const entrance = makeItem({ id: ENTRANCE_DOOR_ID, type: 'door', width: 0.9, position: { x: 2, z: 0.5 } });
     const plan = planWallMove(makeFloor({ interiorWalls: room, items: [entrance] }), slid, context);

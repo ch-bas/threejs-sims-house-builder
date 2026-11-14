@@ -1,7 +1,9 @@
 import { clipWallToCutout } from './cutout';
 import { cutoutRect, shellWalls } from './footprint';
+import { decorNewlyOverOpening } from './geometry';
 import { isCeilingHung, isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, isOpening, isWallMounted, projectOntoSegment, settleWallMountedItem, snapOpeningToWall } from './opening-snap';
+import { storeyHeight } from './storeys';
 import { clipWallToPorch, ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, type EntrancePlanOutline } from './street';
 import { MIN_WALL_LENGTH, reachInLot, snapWallEndpoint, WALL_GRID } from './wall-snap';
 import type { FloorLayout, FootprintCutout, FurnitureItem, InteriorWall, Vec2, WallId } from './types';
@@ -391,7 +393,10 @@ function followWalls(
       openings.set(next.id, [...onWall, { name: item.name, half: item.width / 2, from: carried.from, along: carried.along }]);
     }
   }
-  return { items: changed ? items : [...floor.items] };
+  if (!changed) return { items: [...floor.items] };
+  const covered = decorNewlyOverOpening(floor.items, items, storeyHeight(floor));
+  if (covered) return { refusal: `${covered.decor.name} would end up over ${covered.opening.name}: move one first.` };
+  return { items };
 }
 
 export type WallMovePlan = { walls: InteriorWall[]; items: FurnitureItem[] } | { refusal: string };
