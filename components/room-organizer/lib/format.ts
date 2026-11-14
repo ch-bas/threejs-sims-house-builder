@@ -69,6 +69,17 @@ export function formatSize(width: number, depth: number, decimals?: number, unit
   return `${formatMetres(width, decimals, unit)} × ${formatMetres(depth, decimals, unit)}`;
 }
 
+/**
+ * A footprint in a narrow readout, the header's Room chip (#939): as
+ * `formatSize` in metres, and without the inner spaces in feet and inches
+ * (19'8" × 16'5"), so the header stays one row at 1440 px.
+ */
+export function formatSizeCompact(width: number, depth: number, unit: LengthUnit = displayUnit): string {
+  if (unit === 'metric') return formatSize(width, depth, undefined, unit);
+  const tight = (metres: number) => formatFeetAndInches(metres, false).replace("' ", "'");
+  return `${tight(width)} × ${tight(depth)}`;
+}
+
 /** "12.5 m²", or "135 sq ft": an area given in square metres. */
 export function formatArea(squareMetres: number, unit: LengthUnit = displayUnit): string {
   if (unit === 'imperial') return `${formatAmount(areaInUnit(squareMetres, unit))} sq ft`;
