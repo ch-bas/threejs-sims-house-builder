@@ -9,6 +9,7 @@ import { CATEGORIES, CURRENCY_SYMBOL } from '../lib/constants';
 import { buildingArea } from '../lib/footprint';
 import { formatArea } from '../lib/format';
 import { footprintArea, itemCountByCategory } from '../lib/geometry';
+import { householdLacks, NEED_KINDS, NEED_LACK_LABELS } from '../lib/npc-needs';
 import { floorRooms, hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
 import { houseRoomScores, ROOM_CHECKS, ROOM_TYPE_LABELS, roomCheckLabel, type RoomType } from '../lib/room-score';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entrancePlanOutline } from '../lib/street';
@@ -74,6 +75,22 @@ export function StatisticsPanel(): JSX.Element {
       })),
     [heldLayout, heldFloorIndex, collidingIds]
   );
+  // What the walkers go without, storey by storey (#906): they keep to
+  // their storey, so each one needs its own. From the held editor too.
+  const lackRows = useMemo(() => {
+    const several = heldLayout.floors.length > 1;
+    return householdLacks(heldLayout)
+      .filter((storey) => storey.lacks.length > 0)
+      .map((storey) => {
+        const floor = heldLayout.floors[storey.floorIndex];
+        // A storey with nothing for them yet says so, not four lacks in a row.
+        const text = storey.lacks.length === NEED_KINDS.length ? 'nothing yet' : storey.lacks.map((need) => NEED_LACK_LABELS[need]).join(', ');
+        return {
+          key: floor?.id ?? String(storey.floorIndex),
+          text: several ? `${floor?.name ?? ''}: ${text}` : `${text.charAt(0).toUpperCase()}${text.slice(1)}`,
+        };
+      });
+  }, [heldLayout]);
   const scoredRows = scoreRows.filter((row): row is (typeof scoreRows)[number] & { type: RoomType } => row.type !== null);
   // The rooms the walls close on each floor (#719), named after the zone
   // over them. A floor with no partitions is one room, which says nothing.
@@ -201,6 +218,24 @@ export function StatisticsPanel(): JSX.Element {
             )}
           </div>
         )}
+
+        <div className="pt-2 border-t space-y-1" role="group" aria-label="Household">
+          <p className="text-muted-foreground">Household</p>
+          {lackRows.length === 0 ? (
+            <p>
+              Walkers find somewhere to eat, rest and wash, and something to do{heldLayout.floors.length > 1 ? ' on every floor' : ''}.
+            </p>
+          ) : (
+            <>
+              <p>Walkers would go without:</p>
+              {lackRows.map((row) => (
+                <p key={row.key} className="font-medium">
+                  {row.text}
+                </p>
+              ))}
+            </>
+          )}
+        </div>
 
         {layout.floors.length > 1 && (
           <div className="pt-2 border-t space-y-1">

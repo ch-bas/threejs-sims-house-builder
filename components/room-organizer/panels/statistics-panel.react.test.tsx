@@ -108,3 +108,49 @@ describe('Statistics room scores while the drawer is closed (#613)', () => {
     expect(screen.getByRole('group', { name: 'Room scores' }).textContent).toContain('Back · Bedroom');
   });
 });
+
+describe('Statistics household (#906)', () => {
+  const at = (id: string, type: string, x: number, z: number) => makeItem({ id, type, width: 0.6, depth: 0.6, position: { x, z } });
+  const show = (floors: ReturnType<typeof makeFloor>[]) => {
+    const layout = makeLayout({ id: 'house-test', width: 10, height: 8, floors });
+    layoutStore.setState({ layout, activeFloorIndex: 0 });
+    render(
+      <RoomEditorProvider value={{ collidingIds: new Set<string>(), layout, activeFloorIndex: 0 } as unknown as RoomEditorContextValue}>
+        <StatisticsPanel />
+      </RoomEditorProvider>
+    );
+    return screen.getByRole('group', { name: 'Household' });
+  };
+
+  it('says what each storey lacks', () => {
+    const block = show([
+      makeFloor({ id: 'g', name: 'Ground floor', items: [at('fridge', 'fridge', 0, 0), at('sofa', 'sofa', 2, 2), at('shelf', 'bookshelf', -2, 2)] }),
+      makeFloor({ id: 'u', name: 'First floor', items: [at('bed', 'bed', 0, 0)] }),
+    ]);
+    expect(block.textContent).toContain('Walkers would go without:');
+    expect(block.textContent).toContain('Ground floor: nowhere to wash');
+    expect(block.textContent).toContain('First floor: nowhere to eat, nothing to do, nowhere to wash');
+  });
+
+  it('says "nothing yet" for an empty storey, and a toilet alone is nowhere to wash', () => {
+    const block = show([
+      makeFloor({ id: 'g', name: 'Ground floor', items: [at('fridge', 'fridge', 0, 0), at('sofa', 'sofa', 2, 2), at('shelf', 'bookshelf', -2, 2), at('toilet', 'toilet', 3, -3)] }),
+      makeFloor({ id: 'u', name: 'First floor', items: [] }),
+    ]);
+    expect(block.textContent).toContain('Ground floor: nowhere to wash');
+    expect(block.textContent).toContain('First floor: nothing yet');
+  });
+
+  it('on one storey, says it plainly; and says when nothing is missing', () => {
+    expect(show([makeFloor({ id: 'g', name: 'Ground', items: [at('basin', 'bathroom-sink', 0, 0)] })]).textContent).toContain(
+      'Nowhere to eat, nowhere to rest, nothing to do'
+    );
+    cleanup();
+    expect(show([makeFloor({ id: 'g', name: 'Ground', items: [] })]).textContent).toContain('Walkers would go without:Nothing yet');
+    cleanup();
+    const full = [at('fridge', 'fridge', 0, 0), at('sofa', 'sofa', 2, 2), at('shelf', 'bookshelf', -2, 2), at('basin', 'bathroom-sink', 3, -3)];
+    const met = show([makeFloor({ id: 'g', name: 'Ground', items: full })]).textContent;
+    expect(met).toContain('Walkers find somewhere to eat, rest and wash, and something to do.');
+    expect(met).not.toContain('go without');
+  });
+});

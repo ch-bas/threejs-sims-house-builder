@@ -512,6 +512,18 @@ to respect.
   hips) keeps 0.1 m from every other item and partition. A chair tucked
   under a table, or three along one side, would put the feet under the
   table: it keeps its blocked front and the walkers pass it over.
+- **The house says what its walkers lack (#906).** `householdLacks` runs
+  `findNpcSeats` and `findNeedSpots` per storey over the items standing on
+  the building (walkers stay indoors and keep to their storey), and
+  `unmetNeeds` names the needs no spot meets (a toilet alone is not
+  somewhere to wash: that takes a basin, a shower or a bath). Statistics
+  shows them as a Household block, led by "Walkers would go without:"
+  ("First floor: nowhere to eat, nowhere to wash"; a storey with nothing
+  for them, "First floor: nothing yet"), from
+  the held editor layout like the room scores, so it costs nothing while
+  the drawer is closed and nothing at runtime. Reachability is not checked:
+  a fridge boxed in by furniture still counts. The thought bubbles and the
+  walker card are the next step.
 - **Walkers keep the clock (#907).** `lib/npc-schedule` reads the view's
   hour: from 23:00 to 07:00 rest counts as pressing even when met (a bias
   that raises `NEED_URGENT` for that need), and a rest at night, in a bed

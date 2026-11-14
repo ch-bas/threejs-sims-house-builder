@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem } from './__testfixtures__/fixtures';
 import {
+  NEED_LACK_LABELS,
   NEED_URGENT,
   type NeedSpot,
   type NpcNeeds,
   decayNeeds,
   findNeedSpots,
+  householdLacks,
   needOfType,
   pickNeedSpot,
   randomNeeds,
   refillNeed,
   scoreNeedSpot,
+  unmetNeeds,
   urgency,
 } from './npc-needs';
 import { findNpcSeats } from './npc-seats';
@@ -226,5 +229,52 @@ describe('pickNeedSpot', () => {
       return Array.from({ length: 20 }, () => pickNeedSpot(needs(0.2, 0.2, 0.2), all, 0, 0, always, random)?.key);
     };
     expect(run()).toEqual(run());
+  });
+});
+
+describe('what the household lacks (#906)', () => {
+  const at = (id: string, type: string, x: number, z: number, rotation = 0): FurnitureItem =>
+    makeItem({ id, type, width: type === 'bed' ? 2 : 0.6, depth: type === 'bed' ? 1.6 : 0.6, height: 0.8, position: { x, z }, rotation });
+  const spotsOf = (items: FurnitureItem[]) => findNeedSpots(items, findNpcSeats(items));
+
+  it('lists the needs no spot meets, in a fixed order', () => {
+    expect(unmetNeeds([])).toEqual(['hunger', 'energy', 'fun', 'hygiene']);
+    expect(unmetNeeds(spotsOf([at('f', 'fridge', 0, 0), at('t', 'bathroom-sink', 2, 0)]))).toEqual(['energy', 'fun']);
+    expect(unmetNeeds(spotsOf([at('f', 'fridge', 0, 0), at('b', 'bed', 2, 2), at('s', 'bookshelf', -2, 0), at('t', 'shower', 2, -2)]))).toEqual([]);
+    // A toilet alone is not somewhere to wash.
+    expect(unmetNeeds(spotsOf([at('t', 'toilet', 2, -2)]))).toContain('hygiene');
+    expect(unmetNeeds(spotsOf([at('t', 'toilet', 2, -2), at('b', 'bathtub', -2, 2)]))).not.toContain('hygiene');
+    // A chair and a table meet nothing; neither does an item type named like a prototype key.
+    expect(unmetNeeds(spotsOf([at('c', 'chair', 0, 0), at('x', 'constructor', 1, 1)]))).toHaveLength(4);
+  });
+
+  it('says it in words', () => {
+    expect(['hunger', 'energy', 'fun', 'hygiene'].map((need) => NEED_LACK_LABELS[need as keyof typeof NEED_LACK_LABELS])).toEqual([
+      'nowhere to eat',
+      'nowhere to rest',
+      'nothing to do',
+      'nowhere to wash',
+    ]);
+  });
+
+  it('per storey: a fridge upstairs feeds nobody downstairs, and the garden counts for nothing', () => {
+    const { position: _position, ...unplaced } = at('unplaced', 'toilet', 0, 0);
+    const building = {
+      width: 8,
+      height: 6,
+      floors: [
+        { items: [at('b', 'bed', 0, 0), at('garden-fridge', 'fridge', 6, 0), unplaced] },
+        { items: [at('f', 'fridge', 0, 0), at('tv', 'tv', 2, 2)] },
+      ],
+    };
+    expect(householdLacks(building)).toEqual([
+      { floorIndex: 0, lacks: ['hunger', 'fun', 'hygiene'] },
+      { floorIndex: 1, lacks: ['energy', 'hygiene'] },
+    ]);
+  });
+
+  it('a corner cut is outside too', () => {
+    const building = { width: 8, height: 6, cutout: { corner: 'ne' as const, width: 3, depth: 2 }, floors: [{ items: [at('f', 'fridge', 3.5, -2.5)] }] };
+    expect(householdLacks(building)[0]!.lacks).toContain('hunger');
   });
 });
