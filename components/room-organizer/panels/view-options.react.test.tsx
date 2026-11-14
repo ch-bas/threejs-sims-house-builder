@@ -15,7 +15,7 @@ function setup(onClose = vi.fn()) {
       <ViewOptionsMenu id="menu" anchorRef={createRef<HTMLElement>()} onClose={onClose} />
     </EditorViewProvider>
   );
-  return { latest: () => store.getState().view, onClose };
+  return { latest: () => store.getState().view, store, onClose };
 }
 
 describe('ViewOptionsMenu (#341)', () => {
@@ -41,5 +41,22 @@ describe('ViewOptionsMenu (#341)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('picks the length unit (#725), one radio checked at a time', () => {
+    const { store } = setup();
+    const units = screen.getByRole('radiogroup', { name: 'Length units' });
+    const imperial = screen.getByRole('radio', { name: 'Feet and inches' });
+    expect(units.contains(imperial)).toBe(true);
+    expect(screen.getByRole('radio', { name: 'Metres' }).getAttribute('aria-checked')).toBe('true');
+    try {
+      fireEvent.click(imperial);
+      expect(store.getState().lengthUnit).toBe('imperial');
+      expect(imperial.getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByRole('radio', { name: 'Metres' }).getAttribute('aria-checked')).toBe('false');
+    } finally {
+      store.getState().actions.setLengthUnit('metric');
+      localStorage.clear();
+    }
   });
 });
