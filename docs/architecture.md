@@ -23,6 +23,7 @@ docs/                                    This file, the design notes, and the RE
 scripts/
 ├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
 ├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445)
+├── add-csp.d.mts                        Types of add-csp.mjs's exports, for its test
 ├── build-icons.mjs                      Renders the app/ icon rasters and the preview image from SVG (Playwright, not part of the build)
 └── build-people-glb.mjs                 Rebuilds assets/people.glb from the Universal Animation Library
 components/

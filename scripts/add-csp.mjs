@@ -19,11 +19,10 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-
-const outDir = path.resolve(process.argv[2] ?? 'out');
+import { pathToFileURL } from 'node:url';
 
 /** The policy for one page, given the hash sources of its inline scripts. */
-function policy(scriptHashes) {
+export function policy(scriptHashes) {
   return [
     "default-src 'self'",
     `script-src 'self' ${scriptHashes.join(' ')}`.trimEnd(),
@@ -60,7 +59,12 @@ function sha256Source(text) {
   return `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
 }
 
-function addPolicy(html, file) {
+/**
+ * Adds the policy meta to one exported page, replacing one added before.
+ * Throws when the page has an inline event handler, no <head>, or a script
+ * ahead of the charset. Returns the new HTML and the number of hashes.
+ */
+export function addPolicy(html, file) {
   const page = html.replace(CSP_META_RE, '');
   const hashes = [];
   for (const [, attrs, body] of page.matchAll(SCRIPT_RE)) {
@@ -89,10 +93,15 @@ function addPolicy(html, file) {
   return { html: page.slice(0, at) + meta + page.slice(at), hashes: hashes.length };
 }
 
-const files = await htmlFiles(outDir);
-if (files.length === 0) throw new Error(`No HTML files under ${outDir}; run next build first.`);
-for (const file of files) {
-  const { html, hashes } = addPolicy(await readFile(file, 'utf8'), path.relative(outDir, file));
-  await writeFile(file, html);
-  process.stdout.write(`CSP: ${path.relative(process.cwd(), file)} (${hashes} inline script hash${hashes === 1 ? '' : 'es'})\n`);
+async function main() {
+  const outDir = path.resolve(process.argv[2] ?? 'out');
+  const files = await htmlFiles(outDir);
+  if (files.length === 0) throw new Error(`No HTML files under ${outDir}; run next build first.`);
+  for (const file of files) {
+    const { html, hashes } = addPolicy(await readFile(file, 'utf8'), path.relative(outDir, file));
+    await writeFile(file, html);
+    process.stdout.write(`CSP: ${path.relative(process.cwd(), file)} (${hashes} inline script hash${hashes === 1 ? '' : 'es'})\n`);
+  }
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
