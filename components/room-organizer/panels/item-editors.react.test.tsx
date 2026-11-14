@@ -7,12 +7,14 @@ import { SelectionProvider, type SelectionContextValue } from '../contexts/selec
 import { createEditorViewStore } from '../hooks/editor-view-store';
 import { NOT_WHILE_EXPLORING } from '../hooks/use-exploring';
 import { makeFloor, makeItem, makeLayout, makeViewSettings } from '../lib/__testfixtures__/fixtures';
+import { subscribeNotices, type Notice } from '../lib/editor-notices';
+import { setDisplayUnit, type LengthUnit } from '../lib/format';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { ItemContextPopover } from './item-context-popover';
 import { ItemResizePanel } from './item-resize-panel';
 import type { FurnitureItem, GameMode } from '../lib/types';
 
-function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: GameMode = 'build', floorAboveHeight = 2.8) {
+function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: GameMode = 'build', floorAboveHeight = 2.8, lengthUnit: LengthUnit = 'metric') {
   const actions = {
     toggleMirror: vi.fn(),
     setSofaShape: vi.fn(),
@@ -26,7 +28,7 @@ function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: Ga
     setSillHeight: vi.fn(),
   };
   const callbacks = { onRemove: vi.fn(), onDuplicate: vi.fn(), onRotate: vi.fn(), onToggleCameraBracket: vi.fn(), onClose: vi.fn() };
-  const store = createEditorViewStore(makeViewSettings());
+  const store = createEditorViewStore(makeViewSettings(), { lengthUnit });
   store.getState().actions.setGameMode(mode);
   const lower = makeFloor({ id: 'lower', height: 2.8, items: [item] });
   const layout = makeLayout({ floors: [lower, makeFloor({ id: 'upper', height: floorAboveHeight })], roof: { style: 'flat', color: '#888888' } });
@@ -74,6 +76,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  setDisplayUnit('metric');
 });
 
 describe('item editors: a locked sofa offers no reshape (#636)', () => {
@@ -224,5 +227,39 @@ describe('the bottom sheet (#675)', () => {
     const calls = renderEditor('popover', makeItem({ id: 's', type: 'sofa', name: 'Sofa', locked: true }), 'buy');
     fireEvent.click(screen.getByRole('button', { name: 'Demolish' }));
     expect(calls.onRemove).toHaveBeenCalledWith('s');
+  });
+});
+
+describe('item position in feet and inches (#725)', () => {
+  it('shows X and Z in feet and inches and moves the item to a typed length', () => {
+    const chair = makeItem({ id: 'c', type: 'armchair', name: 'Chair', position: { x: 1, z: -0.5 } });
+    const actions = renderEditor('panel', chair, 'build', 2.8, 'imperial');
+    const x = screen.getByLabelText('X (ft)') as HTMLInputElement;
+    expect(x.value).toBe(`3' 3"`);
+    expect((screen.getByLabelText('Z (ft)') as HTMLInputElement).value).toBe(`-1' 8"`);
+    fireEvent.change(x, { target: { value: `4'6"` } });
+    expect(actions.moveItem).toHaveBeenCalledTimes(1);
+    const [id, movedX, movedZ] = actions.moveItem.mock.calls[0] as [string, number, number];
+    expect(id).toBe('c');
+    expect(movedX).toBeCloseTo(4 * 0.3048 + 6 * 0.0254, 9);
+    expect(movedZ).toBe(-0.5);
+  });
+
+  it('says so when a typed position cannot be read, rather than snapping back in silence', () => {
+    const chair = makeItem({ id: 'c', type: 'armchair', name: 'Chair', position: { x: 1, z: -0.5 } });
+    const actions = renderEditor('panel', chair, 'build', 2.8, 'imperial');
+    const notices: Notice[] = [];
+    const stop = subscribeNotices((notice) => notices.push(notice));
+    try {
+      const x = screen.getByLabelText('X (ft)') as HTMLInputElement;
+      fireEvent.change(x, { target: { value: '3,5' } });
+      fireEvent.blur(x);
+      expect(actions.moveItem).not.toHaveBeenCalled();
+      expect(x.value).toBe(`3' 3"`);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]?.message).toContain(`"3,5" isn't a length`);
+    } finally {
+      stop();
+    }
   });
 });

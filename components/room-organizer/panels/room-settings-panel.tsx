@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
+import { useEditorViewActions, useLengthUnit, useRoomEditor, useViewSettings } from '../contexts';
 import { resizeRefusal } from '../hooks/layout-reducer';
 import { startPlanCalibration, usePlanCalibration, type CalibrationPhase } from '../hooks/plan-calibration';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
@@ -16,9 +16,10 @@ import { DEFAULT_FLOOR_PLAN_OPACITY, MAX_ROOM_DIMENSION } from '../lib/constants
 import { cutoutRefusal, itemsInCorner, outdoorItemsTakenIn, zonesInCorner } from '../lib/cutout';
 import { notifyWithUndo } from '../lib/editor-notices';
 import { MIN_CUTOUT_SIZE, MIN_WING_SIZE } from '../lib/footprint';
+import { formatMetres, imperialStep, lengthInputValue, lengthRefusal, lengthUnitName, parseLength } from '../lib/format';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { MAX_STOREY_HEIGHT, MIN_STOREY_HEIGHT, storeyHeight } from '../lib/storeys';
-import type { FloorPlanFitMode, FootprintCorner, FootprintCutout } from '../lib/types';
+import { FLOOR_HEIGHT_METERS, type FloorPlanFitMode, type FootprintCorner, type FootprintCutout } from '../lib/types';
 
 const ROOM_INPUT_MIN = 2;
 const ROOM_INPUT_MAX = 20;
@@ -152,6 +153,7 @@ function TracingScale({ onStart }: { onStart?(): void }): JSX.Element {
   const { setView } = useEditorViewActions();
   const exploring = useExploring();
   const refuse = useRefusal();
+  const unit = useLengthUnit();
   const calibrating = usePlanCalibration() !== null;
   const transform = layout.floorPlanTransform;
 
@@ -174,7 +176,9 @@ function TracingScale({ onStart }: { onStart?(): void }): JSX.Element {
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
         {transform
-          ? `Calibrated: 1 m is ${Math.round(1 / transform.scale)} image pixels.`
+          ? unit === 'imperial'
+            ? `Calibrated: 1 ft is ${Math.round(0.3048 / transform.scale)} image pixels.`
+            : `Calibrated: 1 m is ${Math.round(1 / transform.scale)} image pixels.`
           : 'Measure a known length on the plan to scale it, then drag it into place.'}
       </p>
       <div className="flex gap-2">
@@ -228,6 +232,7 @@ export interface RoomSettingsPanelProps {
 export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomSettingsPanelProps): JSX.Element {
   const { layout, activeFloor, actions } = useRoomEditor();
   const refuse = useRefusal();
+  const unit = useLengthUnit();
   const view = useViewSettings('floorPlan3DEffect');
   const { setView } = useEditorViewActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -264,7 +269,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
           />
         </div>
         <div>
-          <Label htmlFor={widthId}>Width (metres)</Label>
+          <Label htmlFor={widthId}>Width ({lengthUnitName(unit)})</Label>
           <RoomDimensionInput
             id={widthId}
             value={layout.width}
@@ -276,7 +281,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
           />
         </div>
         <div>
-          <Label htmlFor={heightId}>Depth (metres)</Label>
+          <Label htmlFor={heightId}>Depth ({lengthUnitName(unit)})</Label>
           <RoomDimensionInput
             id={heightId}
             value={layout.height}
@@ -289,7 +294,7 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
         </div>
         <FootprintShape />
         <div>
-          <Label htmlFor={storeyId}>Storey height (metres)</Label>
+          <Label htmlFor={storeyId}>Storey height ({lengthUnitName(unit)})</Label>
           <div className="flex items-center gap-2">
             <RoomDimensionInput
               id={storeyId}
@@ -305,14 +310,15 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
                 size="sm"
                 className="text-xs shrink-0"
                 onClick={() => actions.setStoreyHeight(null)}
-                title="Back to the standard 3 m storey"
+                title={`Back to the standard ${formatMetres(FLOOR_HEIGHT_METERS, undefined, unit)} storey`}
               >
                 Reset
               </Button>
             )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {activeFloor.name}, floor to floor. Try 2.5 for a basement or 1.1 for a loft knee wall.
+            {activeFloor.name}, floor to floor. Try {unit === 'imperial' ? formatMetres(2.5, undefined, unit) : '2.5'} for a basement or{' '}
+            {unit === 'imperial' ? formatMetres(1.1, undefined, unit) : '1.1'} for a loft knee wall.
           </p>
         </div>
         <div>
@@ -434,8 +440,17 @@ export interface RoomDimensionInputProps {
  * live, so clearing the field or passing through "1" on the way to "12"
  * leaves the room alone. Blur or Enter commits the draft clamped to the
  * declared range; an empty or unparseable draft restores the current value.
+ *
+ * In feet and inches (#725) it is a text field showing 8' 2": it reads
+ * 12'6", 12.5 ft or 3.5 m, commits on blur or Enter only (12' passes
+ * through 1 on the way), and the arrows step six inches or one.
  */
-export function RoomDimensionInput({
+export function RoomDimensionInput(props: RoomDimensionInputProps): JSX.Element {
+  const unit = useLengthUnit();
+  return unit === 'imperial' ? <ImperialDimensionInput {...props} /> : <MetricDimensionInput {...props} />;
+}
+
+function MetricDimensionInput({
   id,
   value,
   onCommit,
@@ -479,6 +494,61 @@ export function RoomDimensionInput({
       onBlur={finish}
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur();
+      }}
+    />
+  );
+}
+
+function ImperialDimensionInput({
+  id,
+  value,
+  onCommit,
+  min = ROOM_INPUT_MIN,
+  max = ROOM_INPUT_MAX,
+  step = 0.5,
+}: RoomDimensionInputProps): JSX.Element {
+  const [draft, setDraft] = useState<string | null>(null);
+  const refuse = useRefusal();
+  const shown = lengthInputValue(value, 'imperial');
+  const commit = (metres: number) => {
+    const clamped = Math.min(max, Math.max(min, metres));
+    if (clamped !== value) onCommit(clamped);
+  };
+
+  const finish = () => {
+    // The text as shown is rounded to the inch: leaving it untouched must
+    // not move the value by that rounding (#279).
+    if (draft !== null && draft.trim() !== shown && draft.trim() !== '') {
+      const parsed = parseLength(draft, 'imperial');
+      // Never a silent snap back: say what it couldn't read.
+      if (parsed === null) refuse(lengthRefusal(draft, 'imperial'));
+      else commit(parsed);
+    }
+    setDraft(null);
+  };
+
+  return (
+    <Input
+      id={id}
+      type="text"
+      autoComplete="off"
+      spellCheck={false}
+      value={draft ?? shown}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={finish}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.currentTarget.blur();
+          return;
+        }
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        // A spinner's arrows: one step from the value, applied at once; one
+        // step per press, as a held key's repeats could land on the next field.
+        event.preventDefault();
+        if (event.repeat) return;
+        const from = draft === null ? value : (parseLength(draft, 'imperial') ?? value);
+        commit(from + (event.key === 'ArrowUp' ? 1 : -1) * imperialStep(step));
+        setDraft(null);
       }}
     />
   );

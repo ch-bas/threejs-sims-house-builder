@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asLengthUnit, formatAge, formatAmount, formatArea, formatMetres, formatMoney, formatSize, getDisplayUnit, lengthInputValue, lengthUnitSymbol, parseLength, setDisplayUnit } from './format';
+import { asLengthUnit, formatAge, formatAmount, formatArea, formatMetres, formatMoney, formatSize, getDisplayUnit, imperialStep, lengthInputValue, lengthSliderStep, lengthUnitName, lengthUnitSymbol, lengthRefusal, parseLength, setDisplayUnit } from './format';
 
 describe('formatMetres', () => {
   it('puts a space before the unit', () => {
@@ -106,6 +106,18 @@ describe('parseLength (#725)', () => {
     [`12'6`, 12 * foot + 6 * inch],
     [`12'6''`, 12 * foot + 6 * inch],
     [`12′ 6″`, 12 * foot + 6 * inch],
+    [`12’ 6”`, 12 * foot + 6 * inch],
+    [`12‘ 6“`, 12 * foot + 6 * inch],
+    [`12’6’’`, 12 * foot + 6 * inch],
+    [`12'-6"`, 12 * foot + 6 * inch],
+    [`12' - 6"`, 12 * foot + 6 * inch],
+    [`12' 6 1/2"`, 12 * foot + 6.5 * inch],
+    [`6 1/2"`, 6.5 * inch],
+    [`1/2"`, 0.5 * inch],
+    [`12' 11"`, 12 * foot + 11 * inch],
+    ['1,000 ft', 1000 * foot],
+    ['12,500 cm', 125],
+    ['1,000,000 mm', 1000],
     [`12'`, 12 * foot],
     ['12.5 ft', 12.5 * foot],
     ['12.5ft', 12.5 * foot],
@@ -115,7 +127,6 @@ describe('parseLength (#725)', () => {
     ['150 in', 150 * inch],
     [`6''`, 6 * inch],
     ['3.5 m', 3.5],
-    ['3,5 m', 3.5],
     ['350 cm', 3.5],
     ['3500 mm', 3.5],
     ['.5 m', 0.5],
@@ -131,7 +142,18 @@ describe('parseLength (#725)', () => {
     expect(parseLength('10', 'imperial')).toBeCloseTo(10 * foot, 9);
   });
 
-  it.each(['', 'abc', '12 yards', `12'6"7`, '1.2.3', 'm', `'6"`, '--2'])('refuses %j', (text) => {
+  it('reads a lone decimal comma in metres only, and never guesses in feet', () => {
+    expect(parseLength('3,5 m', 'metric')).toBe(3.5);
+    expect(parseLength('3,5', 'metric')).toBe(3.5);
+    expect(parseLength('3,5 m', 'imperial')).toBeNull();
+    expect(parseLength('12,5 ft', 'imperial')).toBeNull();
+    expect(parseLength('1,000.5 ft', 'imperial')).toBeNull();
+    expect(parseLength('1,2,3', 'metric')).toBeNull();
+    // Three digits after a comma group thousands, in either unit.
+    expect(parseLength('3,500', 'metric')).toBe(3500);
+  });
+
+  it.each(['', 'abc', '12 yards', `12'6"7`, '1.2.3', 'm', `'6"`, '--2', `12'13"`, `12' 12"`, '1/0"', `12'--6"`])('refuses %j', (text) => {
     expect(parseLength(text, 'metric')).toBeNull();
     expect(parseLength(text, 'imperial')).toBeNull();
   });
@@ -141,5 +163,27 @@ describe('parseLength (#725)', () => {
       expect(parseLength(lengthInputValue(metres, 'metric'), 'metric')).toBeCloseTo(metres, 2);
       expect(Math.abs((parseLength(lengthInputValue(metres, 'imperial'), 'imperial') ?? NaN) - metres)).toBeLessThanOrEqual(inch / 2);
     }
+  });
+});
+
+describe('length field helpers (#725)', () => {
+  it('names the unit and steps six inches or one', () => {
+    expect(lengthUnitName('metric')).toBe('metres');
+    expect(lengthUnitName('imperial')).toBe('feet');
+    expect(imperialStep(0.5)).toBeCloseTo(0.1524, 9);
+    expect(imperialStep(0.1)).toBeCloseTo(0.0254, 9);
+  });
+
+  it('steps a length slider in whole inches in feet and inches', () => {
+    expect(lengthSliderStep(0.5, 'metric')).toBe(0.5);
+    expect(lengthSliderStep(0.1, 'imperial')).toBeCloseTo(3 * 0.0254, 9);
+    expect(lengthSliderStep(0.05, 'imperial')).toBeCloseTo(0.0254, 9);
+  });
+});
+
+describe('lengthRefusal (#725)', () => {
+  it('quotes what was typed and offers forms in the unit', () => {
+    expect(lengthRefusal(`12'13"`, 'imperial')).toBe(`"12'13"" isn't a length this field can read: try 12' 6", 12.5 ft or 3.8 m.`);
+    expect(lengthRefusal('abc', 'metric')).toContain('3.8 m');
   });
 });

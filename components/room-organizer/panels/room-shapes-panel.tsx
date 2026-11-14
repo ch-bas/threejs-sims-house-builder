@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useLengthUnit } from '../contexts';
-import { formatMetres } from '../lib/format';
+import { formatMetres, lengthSliderStep } from '../lib/format';
 import { ROOM_SHAPES, type RoomShapeId } from '../lib/room-shapes';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
@@ -185,7 +185,7 @@ function SizeRow({ label, name, value, min, max, onChange }: SizeRowProps): JSX.
         aria-label={name}
         min={min}
         max={max}
-        step={0.5}
+        step={lengthSliderStep(0.5, unit)}
         value={value}
         aria-valuetext={formatMetres(value, 1, unit)}
         onChange={(e) => onChange(parseFloat(e.target.value))}
