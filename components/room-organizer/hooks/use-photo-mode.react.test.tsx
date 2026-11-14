@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { autoAnswerConfirms } from '../lib/__testfixtures__/confirm';
+import { askConfirm, cancelPendingConfirms, confirmOpen } from '../lib/confirm-dialog';
+import { openAlbum, resetAlbumForTests } from '../lib/photo-album';
 import { enterPhotoMode, isPhotoMode, leavePhotoMode } from '../lib/photo-mode';
+import { ConfirmDialogHost } from '../panels/confirm-dialog';
 import { PhotoBar } from '../panels/photo-bar';
 import { usePhotoMode, type UsePhotoModeOptions } from './use-photo-mode';
 import type * as ThreeNS from 'three';
@@ -9,6 +13,8 @@ import type * as ThreeNS from 'three';
 afterEach(() => {
   cleanup();
   act(() => leavePhotoMode());
+  cancelPendingConfirms();
+  resetAlbumForTests();
 });
 
 /** A renderer that records what it was asked, with a canvas that encodes a fixed blob. */
@@ -40,6 +46,8 @@ function Harness(props: Partial<UsePhotoModeOptions> & { renderer: ThreeNS.WebGL
   const photo = usePhotoMode({
     available: true,
     houseName: 'My Home',
+    houseId: 'house-1',
+    readConditions: () => ({ hour: 9.5, weather: 'rain' }),
     rendererRef: { current: props.renderer },
     sceneRef: { current: {} as ThreeNS.Scene },
     cameraRef: { current: {} as ThreeNS.PerspectiveCamera },
@@ -51,7 +59,7 @@ function Harness(props: Partial<UsePhotoModeOptions> & { renderer: ThreeNS.WebGL
   return (
     <div className="pc-world">
       <span>{photo.active ? 'on' : 'off'}</span>
-      {photo.active && <PhotoBar onTake={photo.take} onDone={photo.leave} />}
+      {photo.active && <PhotoBar onTake={photo.take} onKeep={photo.keep} houseId="house-1" houseName="My Home" onDone={photo.leave} />}
     </div>
   );
 }
@@ -134,7 +142,7 @@ describe('photo mode (#626)', () => {
     const scene = { children: [grid] };
     function Shift() {
       usePhotoMode({
-        available: true, houseName: 'x', rendererRef: { current: null },
+        available: true, houseName: 'x', houseId: undefined, readConditions: () => ({ hour: 12, weather: 'clear' }), rendererRef: { current: null },
         sceneRef: { current: scene as unknown as ThreeNS.Scene },
         cameraRef: { current: camera as unknown as ThreeNS.PerspectiveCamera },
         invalidate: () => {}, walking: false, onEnter: () => {},
@@ -190,5 +198,143 @@ describe('photo mode (#626)', () => {
     click.mockRestore();
     URL.createObjectURL = createObjectURL;
     URL.revokeObjectURL = revokeObjectURL;
+  });
+
+  it('keeps a photo in the house’s album with the scene’s hour and weather, and deletes it after asking (#912)', async () => {
+    const { renderer } = fakeRenderer(new Blob(['png'], { type: 'image/png' }));
+    render(<Harness renderer={renderer} />);
+    act(() => enterPhotoMode());
+    await act(async () => {
+      screen.getByRole('button', { name: 'Save to album' }).click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Kept until the tab closes'));
+    const albumButton = await screen.findByRole('button', { name: 'Album, 1 photo' });
+    act(() => albumButton.click());
+    expect(albumButton.getAttribute('aria-expanded')).toBe('true');
+    const album = await screen.findByRole('region', { name: 'Album' });
+    expect(album.textContent).toContain('just now');
+    expect(album.textContent).toContain('09:30 · Rain');
+    // jsdom can't decode images: the album has no IndexedDB and keeps the PNG for the session.
+    expect(album.textContent).toContain('these photos go when the tab closes');
+    const answers = autoAnswerConfirms(true);
+    await act(async () => {
+      screen.getByRole('button', { name: 'Delete photo taken just now' }).click();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(answers.asked[0]?.danger).toBe(true);
+    answers.stop();
+    expect(await screen.findByRole('button', { name: 'Album, 0 photos' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Album' }).textContent).toContain('No photos of this house yet');
+    // The row is gone: focus goes to the album, not to <body>.
+    expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Album' }));
+  });
+
+  it('closes the album on Escape before leaving photo mode (#912)', async () => {
+    render(<Harness renderer={fakeRenderer(null).renderer} />);
+    act(() => enterPhotoMode());
+    const albumButton = screen.getByRole('button', { name: /^Album/ });
+    act(() => albumButton.click());
+    expect(await screen.findByRole('region', { name: 'Album' })).not.toBeNull();
+    press('Escape');
+    expect(screen.queryByRole('region', { name: 'Album' })).toBeNull();
+    expect(isPhotoMode()).toBe(true);
+    expect(document.activeElement).toBe(albumButton);
+    press('Escape');
+    expect(isPhotoMode()).toBe(false);
+  });
+
+  it('leaves Escape to a question asked in photo mode (#912)', () => {
+    render(<Harness renderer={fakeRenderer(null).renderer} />);
+    act(() => enterPhotoMode());
+    let answer: boolean | null = null;
+    void askConfirm({ title: 'Delete this photo?', danger: true }).then((value) => {
+      answer = value;
+    });
+    const behind = vi.fn();
+    window.addEventListener('keydown', behind);
+    press('Escape');
+    window.removeEventListener('keydown', behind);
+    // Nothing in the hook stopped it: it travels on to the question.
+    expect(behind).toHaveBeenCalledTimes(1);
+    expect(isPhotoMode()).toBe(true);
+    expect(answer).toBeNull();
+  });
+
+  it('keeps undo and paste from the house when a backdrop click leaves focus on <body> under a question (#912 review)', () => {
+    render(
+      <>
+        <Harness renderer={fakeRenderer(null).renderer} />
+        <ConfirmDialogHost />
+      </>,
+    );
+    act(() => enterPhotoMode());
+    act(() => {
+      void askConfirm({ title: 'The album keeps 30 photos of each house', danger: true });
+    });
+    const backdrop = document.querySelector<HTMLElement>('[data-confirm-dialog]');
+    expect(backdrop).not.toBeNull();
+    // A click on the backdrop inside the grace window answers nothing, and
+    // in a browser leaves focus on <body>.
+    act(() => backdrop?.click());
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    expect(document.activeElement).toBe(document.body);
+    expect(confirmOpen()).toBe(true);
+    const editor = vi.fn();
+    window.addEventListener('keydown', editor);
+    const undo = press('z', document.body, { ctrlKey: true });
+    const paste = press('v', document.body, { ctrlKey: true });
+    press(']', document.body);
+    press('PageUp', document.body);
+    window.removeEventListener('keydown', editor);
+    expect(editor).not.toHaveBeenCalled();
+    expect(undo.defaultPrevented).toBe(true);
+    expect(paste.defaultPrevented).toBe(true);
+    expect(confirmOpen()).toBe(true);
+    expect(isPhotoMode()).toBe(true);
+  });
+
+  it('withdraws the album’s question and saves nothing when photo mode ends during a save (#912 review)', async () => {
+    const store = await openAlbum();
+    for (let i = 0; i < 30; i++) {
+      await store.put({ id: `old-${i}`, houseId: 'house-1', takenAt: i, hour: 12, weather: 'clear', image: new ArrayBuffer(1), imageType: 'image/jpeg', thumb: null });
+    }
+    render(
+      <>
+        <Harness renderer={fakeRenderer(new Blob(['png'], { type: 'image/png' })).renderer} />
+        <ConfirmDialogHost />
+      </>,
+    );
+    act(() => enterPhotoMode());
+    await act(async () => {
+      screen.getByRole('button', { name: 'Save to album' }).click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await waitFor(() => expect(confirmOpen()).toBe(true));
+    act(() => leavePhotoMode());
+    await waitFor(() => expect(confirmOpen()).toBe(false));
+    const kept = await store.listHouse('house-1');
+    expect(kept).toHaveLength(30);
+    expect(kept[0]?.id).toBe('old-0');
+  });
+
+  it('hands focus back to “Save to album” after the album’s question (#912 review)', async () => {
+    const store = await openAlbum();
+    for (let i = 0; i < 30; i++) {
+      await store.put({ id: `old-${i}`, houseId: 'house-1', takenAt: i, hour: 12, weather: 'clear', image: new ArrayBuffer(1), imageType: 'image/jpeg', thumb: null });
+    }
+    render(<Harness renderer={fakeRenderer(new Blob(['png'], { type: 'image/png' })).renderer} />);
+    act(() => enterPhotoMode());
+    const keep = screen.getByRole('button', { name: 'Save to album' });
+    const answers = autoAnswerConfirms(false);
+    await act(async () => {
+      keep.click();
+      // The answered question hands focus to the (disabled) button, which drops it.
+      (document.activeElement as HTMLElement | null)?.blur();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    answers.stop();
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Not kept'));
+    expect(document.activeElement).toBe(keep);
   });
 });

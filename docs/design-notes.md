@@ -406,6 +406,28 @@ to respect.
   `toBlob` in the same task and the size put back, so the renderer still
   runs without `preserveDrawingBuffer`. The View menu caps its height
   below the top-right pills and scrolls inside past that.
+- **The photo album is IndexedDB's only tenant (#912).** "Save to album"
+  keeps a JPEG copy of the shot (quality 0.9, at most 2048 px on the long
+  edge; "Take photo" still downloads the full-size PNG) and a 320 px
+  thumbnail per house, with the scene's hour and weather, in
+  `lib/photo-album.ts`: never localStorage, restore points or backups.
+  Records hold an `ArrayBuffer` and a data-URL thumbnail, never a Blob:
+  Safari's private windows open IndexedDB but refuse to store Blobs, and
+  the page policy allows `data:` images, not `blob:` ones. When the
+  database fails for anything but the quota, the album moves to memory
+  for the session and says so; a `VersionError` (a newer page in another
+  tab) says "close the other tabs" instead. The connection is dropped on
+  `versionchange`/`close` and reopened on the next use, and a quota abort
+  is read from the request when WebKit leaves `transaction.error` empty.
+  A house keeps 30; the 31st asks first, then the oldest go after the new
+  one is written, so a full disk loses nothing. Albums follow `layout.id`,
+  so copies of a house (which share the id) share one album. Other tabs
+  hear of saves and deletes over a BroadcastChannel. The module loads with
+  `import()` when photo mode shows the bar. A question asked in photo mode
+  shows over the shot and owns its keys; with one open, every other key
+  outside the dialog stops at the guard (focus can be on `<body>` after a
+  backdrop click), and leaving photo mode withdraws it and stops the save.
+  Escape closes an open album before it leaves (`claimPhotoEscape`).
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
   rasterises a storey into 0.2 m cells a walker (radius 0.22 m)
   can stand in: the walkthrough's colliders (furniture, partitions with
