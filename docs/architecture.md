@@ -193,6 +193,7 @@ components/
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── canvas-2d/opening-symbol.ts      Door swings and window double lines on the plan, minimap and blueprint
     ├── canvas-2d/plan-edit.ts           What only the on-screen plan draws while editing: wall draft, selected wall, zone handles, and their hit tests and drag maths
+    ├── canvas-2d/plan-zoom.ts           The on-screen plan's view zoom and pan (pinch, wheel, double tap back to the fit): view state over the fit, kept per canvas
     ├── canvas-2d/stairs-symbol.ts       Stair treads + climb arrow, stairwell voids on the floor above
     ├── plotcraft/icon.tsx               PlotCraft SVG icon set for UI panels (no icon library)
     ├── plotcraft/tokens.css             PlotCraft design tokens (colours, type, spacing, glass) and HUD classes
