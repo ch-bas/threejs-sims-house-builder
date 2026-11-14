@@ -72,6 +72,32 @@ export const STOREY_KEY = 'storey';
  */
 const SHELL_WALL_KEY = 'shellWall';
 
+/**
+ * A shell wall's face meshes, not its reveal linings or boards. A WeakSet,
+ * not a userData flag: GLTFExporter writes userData into the file's extras.
+ */
+const wallFaces = new WeakSet<ThreeNS.Object3D>();
+
+/** The id a wall answers to in applyWallDisplay: a notch wall's own, else its side. */
+export function wallDisplayId(obj: ThreeNS.Object3D): string | undefined {
+  return (obj.userData[SHELL_WALL_KEY] ?? obj.userData.wallId) as string | undefined;
+}
+
+/**
+ * The face meshes of one side of the shell on one storey: the side's own wall
+ * and, on an L, the notch wall that faces the same way and shares its colour
+ * (#783). The selection outline draws round all of them, as paint covers all.
+ */
+export function shellWallFaces(scene: ThreeNS.Scene, side: string, storey: number): ThreeNS.Mesh[] {
+  return scene.children.filter(
+    (obj): obj is ThreeNS.Mesh =>
+      obj.userData.type === ROOM_OBJECT_TAGS.Wall &&
+      wallFaces.has(obj) &&
+      obj.userData.wallId === side &&
+      obj.userData[STOREY_KEY] === storey
+  );
+}
+
 /** Every storey's shell has a `south`: a wall is only known by its storey too (#659). */
 function wallDisplayKey(tag: unknown, storey: unknown, id: unknown): string {
   return `${String(tag)}:${String(storey)}:${String(id)}`;
@@ -773,6 +799,7 @@ function buildWalls(
     wall.name = `Wall ${spec.id}`;
     wall.userData.type = ROOM_OBJECT_TAGS.Wall;
     wall.userData.wallId = spec.side;
+    wallFaces.add(wall);
     if (spec.plane !== undefined) {
       wall.userData[WALL_PLANE_KEY] = spec.plane;
       wall.userData[SHELL_WALL_KEY] = spec.id;
