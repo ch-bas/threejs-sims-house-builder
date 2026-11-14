@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
+import { isInsideBuilding } from './footprint';
 import { MIN_FOOTPRINT_PX, MIN_REGION_PX, ORBIT_FOV_DEG, ORBIT_LENS_SCALE, ORBIT_MAX_POLAR, WALK_FOV_DEG, clearOfGround, focusOffset, frameBox, orbitNear, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
 import type { FrameInput, Rect } from './scene-insets';
 
@@ -167,6 +168,17 @@ describe('focusOffset (#753)', () => {
     const building = { width: 10, height: 8, cutout: { corner: 'ne', width: 4, depth: 3 } } as const;
     const [x] = focusOffset({ x: 4, z: -3 }, 1, { storeyHeight: 3, building, walls: [] });
     expect(x).toBeGreaterThan(0);
+  });
+});
+
+describe('focusOffset on an L (#783)', () => {
+  it('never puts the camera for a garden item in a deep notch inside the other wing', () => {
+    // The notch runs x 1..5, z -4..2; the south wing is on its +z side.
+    const building = { width: 10, height: 8, cutout: { corner: 'ne', width: 4, depth: 6 } } as const;
+    const target = { x: 2, z: 1.5 };
+    const [x, , z] = focusOffset(target, 1, { storeyHeight: 3, building, walls: [] });
+    expect(isInsideBuilding(building, target.x + x, target.z + z)).toBe(false);
+    expect(z).toBeLessThan(0);
   });
 });
 
