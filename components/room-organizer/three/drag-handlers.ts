@@ -693,9 +693,11 @@ export function attachDragHandlers({
   // OrbitControls' (bubble) pointerdown, so a press on an item can switch
   // the controls off before they see it.
   // A pointerup the page never sees (the window lost focus mid-gesture) must
-  // not leave a wall held. Called off, as on the plan.
+  // not leave a wall held or an item stuck to the pointer. Called off, as on
+  // the plan; a moved item goes back, as a release over the HUD does (#779).
   const onWindowBlur = (): void => {
     if (held) abortGesture(false);
+    else if (dragTarget) abortGesture(dragStarted);
   };
   doc.defaultView?.addEventListener('blur', onWindowBlur);
 
