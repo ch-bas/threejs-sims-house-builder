@@ -75,3 +75,18 @@ const TOUCH_TIPS: readonly WelcomeTip[] = [
 export function welcomeTips(touch: boolean): readonly WelcomeTip[] {
   return touch ? TOUCH_TIPS : POINTER_TIPS;
 }
+
+/**
+ * The scroll offset that shows a panel whole between the top of a scroller
+ * and the footer pinned at its foot (#751), its top first when it is too
+ * tall for that. Rects in viewport pixels; the same offset when it shows.
+ */
+export function revealAboveFooter(
+  scrollTop: number,
+  panel: { top: number; bottom: number },
+  view: { top: number; bottom: number }
+): number {
+  if (panel.bottom > view.bottom) return scrollTop + Math.max(0, Math.min(panel.bottom - view.bottom, panel.top - view.top));
+  if (panel.top < view.top) return scrollTop - (view.top - panel.top);
+  return scrollTop;
+}
