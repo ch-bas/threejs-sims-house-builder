@@ -1,7 +1,7 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { isInsideBuilding } from './footprint';
-import { MIN_FOOTPRINT_PX, MIN_REGION_PX, ORBIT_FOV_DEG, ORBIT_LENS_SCALE, ORBIT_MAX_POLAR, WALK_FOV_DEG, clearOfGround, focusOffset, frameBox, orbitNear, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
+import { MIN_FOOTPRINT_PX, MIN_REGION_PX, ORBIT_FOV_DEG, ORBIT_LENS_SCALE, ORBIT_MAX_POLAR, WALK_FOV_DEG, clearOfGround, focusCoverFor, focusOffset, frameBox, orbitNear, frameInRegion, houseFrameBox, isCompactViewport, isSliver, regionViewOffset, visibleRegion } from './scene-insets';
 import type { FrameInput, Rect } from './scene-insets';
 
 const rect = (left: number, top: number, right: number, bottom: number): Rect => ({ left, top, right, bottom });
@@ -171,7 +171,7 @@ describe('focusOffset (#753)', () => {
   });
 });
 
-describe('focusOffset on an L (#783)', () => {
+describe('focusOffset on an L and under the open sky (#783)', () => {
   it('never puts the camera for a garden item in a deep notch inside the other wing', () => {
     // The notch runs x 1..5, z -4..2; the south wing is on its +z side.
     const building = { width: 10, height: 8, cutout: { corner: 'ne', width: 4, depth: 6 } } as const;
@@ -179,6 +179,72 @@ describe('focusOffset on an L (#783)', () => {
     const [x, , z] = focusOffset(target, 1, { storeyHeight: 3, building, walls: [] });
     expect(isInsideBuilding(building, target.x + x, target.z + z)).toBe(false);
     expect(z).toBeLessThan(0);
+  });
+
+  it('keeps the plain diagonal under the open sky when nothing is in the way', () => {
+    const open = { storeyHeight: 3, building: { width: 10, height: 8 }, walls: [], open: true };
+    expect(focusOffset({ x: 0, z: 0 }, 1, open)).toEqual(focusOffset({ x: 0, z: 0 }, 1, null));
+  });
+
+  it('turns to a clear diagonal under the open sky', () => {
+    // A wall just south-east of the item blocks the plain diagonal only.
+    const walls = [{ x1: 0, z1: 1, x2: 3, z2: 1 }];
+    const [x, y, z] = focusOffset({ x: 0, z: 0 }, 1, { storeyHeight: 3, building: { width: 10, height: 8 }, walls, open: true });
+    expect(y).toBeCloseTo(3.2);
+    expect(Math.hypot(x, z)).toBeCloseTo(2.4 * Math.SQRT2);
+    expect(z).toBeLessThan(0);
+  });
+
+  it('stays inside a walled room under the open sky, above the walls', () => {
+    const walls = [{ x1: 2, z1: 1, x2: 5, z2: 1 }, { x1: 2, z1: 1, x2: 2, z2: 4 }];
+    const target = { x: 3.4, z: 2.9 };
+    const [x, y, z] = focusOffset(target, 1, { storeyHeight: 3, building: { width: 10, height: 8 }, walls, open: true });
+    expect(target.x + x).toBeGreaterThan(2);
+    expect(target.x + x).toBeLessThan(5);
+    expect(target.z + z).toBeGreaterThan(1);
+    expect(target.z + z).toBeLessThan(4);
+    expect(y).toBeCloseTo(3.2);
+  });
+});
+
+describe('focusCoverFor (#783)', () => {
+  const base = { storeyHeight: 3, building: { width: 10, height: 8 }, walls: [{ x1: 0, z1: 1, x2: 3, z2: 1 }], hiddenSides: [], noShell: false };
+
+  it('keeps cutaway and walls-down on the plain diagonal, as before', () => {
+    expect(focusCoverFor({ ...base, covered: false, wallDisplay: 'cutaway' })).toBeNull();
+    expect(focusCoverFor({ ...base, covered: false, wallDisplay: 'down' })).toBeNull();
+    // A wall that would turn an open-sky focus leaves the cutaway one alone.
+    const cover = focusCoverFor({ ...base, covered: false, wallDisplay: 'cutaway' });
+    expect(focusOffset({ x: 0, z: 0 }, 1, cover)).toEqual([2.4, 3.2, 2.4]);
+  });
+
+  it('frames open to the sky only with the walls fully up, and covered under a roof', () => {
+    expect(focusCoverFor({ ...base, covered: false, wallDisplay: 'up' })).toMatchObject({ open: true });
+    const covered = focusCoverFor({ ...base, covered: true, wallDisplay: 'up' });
+    expect(covered).not.toBeNull();
+    expect(covered?.open).toBeUndefined();
+  });
+
+  it('leaves out the shell walls that are not built', () => {
+    expect(focusCoverFor({ ...base, covered: false, wallDisplay: 'up' })?.shell).toBeUndefined();
+    const hidden = focusCoverFor({ ...base, covered: false, wallDisplay: 'up', hiddenSides: ['east'] });
+    expect(hidden?.shell?.map((wall) => wall.x1 === wall.x2 && wall.x1 > 0)).not.toContain(true);
+    expect(hidden?.shell).toHaveLength(3);
+    expect(focusCoverFor({ ...base, covered: false, wallDisplay: 'up', noShell: true })?.shell).toEqual([]);
+  });
+
+  it('sees a garden item through a hidden wall, and an open-sky item past a missing shell', () => {
+    // Close by the east wall outside: the away diagonals cross nothing, so check the hidden one is ignored.
+    const building = { width: 10, height: 8, cutout: { corner: 'ne', width: 4, depth: 6 } } as const;
+    const shown = focusCoverFor({ ...base, building, walls: [], covered: true, wallDisplay: 'up' });
+    const traced = focusCoverFor({ ...base, building, walls: [], covered: true, wallDisplay: 'up', noShell: true });
+    const target = { x: 2, z: 1.5 };
+    // With the shell up the notch's own walls turn the view; with none built, the away diagonal stands.
+    expect(focusOffset(target, 1, traced)).toEqual([2.4, 3.2, 2.4]);
+    expect(focusOffset(target, 1, shown)[2]).toBeLessThan(0);
+    // Open to the sky, an item by a missing east wall keeps the plain diagonal.
+    const open = focusCoverFor({ ...base, walls: [], covered: false, wallDisplay: 'up', hiddenSides: ['east'] });
+    expect(focusOffset({ x: 4, z: 0 }, 1, open)).toEqual([2.4, 3.2, 2.4]);
   });
 });
 
