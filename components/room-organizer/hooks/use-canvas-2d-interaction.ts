@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { draggedZoneRect, hitInteriorWall, wallEndAt, ZONE_GRIP_CURSORS, zoneAt, zoneGripAt, type ZoneGrip } from '../canvas-2d/plan-edit';
 import { NO_PLAN_ZOOM, panPlan, pinchPlan, planZoomOf, setPlanZoom, zoomPlanAbout, type PlanZoom } from '../canvas-2d/plan-zoom';
-import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
+import { canvasToWorld, get2DViewTransform, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { movedFloorPlan } from '../lib/floor-plan-fit';
@@ -178,6 +178,8 @@ export interface UseCanvas2DInteractionParams {
   onZoneSelect?(id: string | null): void;
   /** Detected rooms with no zone, in zone mode: a tap on one names it (#719). */
   roomsToName?: readonly DetectedRoom[];
+  /** The committed room scores (#905), kept on the ghost repaint. */
+  roomScores?: Render2DOptions['roomScores'];
 }
 
 export interface UseCanvas2DInteractionResult {
@@ -447,7 +449,7 @@ export function useCanvas2DInteraction(
 
     const paintGhost = (): void => {
       rafId = null;
-      const { layout: committed, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId, selectedWallId, roomsToName } = paramsRef.current;
+      const { layout: committed, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId, selectedWallId, roomsToName, roomScores } = paramsRef.current;
       const layout = imageDrag ? { ...committed, floorPlanTransform: imageDrag.latest } : committed;
       const session = gesture?.started ? gesture : null;
       const wallMove = wallHold?.started ? paramsRef.current.wallMovePreview?.() : null;
@@ -483,6 +485,7 @@ export function useCanvas2DInteraction(
         padding: fit.padding,
         hudRects: fit.hudRects,
         zoom: planZoomOf(canvas),
+        roomScores,
         hasCollision: (item) =>
           hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: wallMove?.walls ?? activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
       });

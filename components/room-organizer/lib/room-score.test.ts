@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { measureCpu } from './__testfixtures__/cpu-time';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { ROOM_CHECKS, classifyRoom, houseRoomScores, onZoneEdge, roomCheckLabel, scoreZone } from './room-score';
+import { ROOM_CHECKS, activeStoreyRoomScores, classifyRoom, houseRoomScores, moreStarsHint, onZoneEdge, roomCheckLabel, roomScoreLine, scoreZone } from './room-score';
 import type { FurnitureItem, RoomZone } from './types';
 
 const at = (id: string, type: string, x: number, z: number, extra: Partial<FurnitureItem> = {}): FurnitureItem =>
@@ -170,5 +170,32 @@ describe('roomCheckLabel (#725)', () => {
     expect(roomCheckLabel(decor, 'metric')).toBe('more decor (a piece per 10 m²)');
     expect(roomCheckLabel(decor, 'imperial')).toBe('more decor (a piece per 108 sq ft)');
     expect(roomCheckLabel(window, 'imperial')).toBe(window.label);
+  });
+});
+
+describe('the plan line and the chip hint (#905)', () => {
+  it('writes the room type and its stars out of five', () => {
+    expect(roomScoreLine({ type: 'kitchen', stars: 3 })).toBe('Kitchen · ★★★☆☆');
+    expect(roomScoreLine({ type: 'living', stars: 0 })).toBe('Living room · ☆☆☆☆☆');
+    expect(roomScoreLine({ type: 'bedroom', stars: ROOM_CHECKS.length })).toBe('Bedroom · ★★★★★');
+    expect(roomScoreLine({ type: null, stars: 0 })).toBeNull();
+  });
+
+  it('lists what a room lacks, in check order and in the unit shown', () => {
+    expect(moreStarsHint(['lamp', 'window'], 'metric')).toBe('For more stars: a window on its walls, a lamp for the night');
+    expect(moreStarsHint(['decor'], 'imperial')).toBe(`For more stars: ${roomCheckLabel(ROOM_CHECKS[0]!, 'imperial')}`);
+    expect(moreStarsHint([], 'metric')).toBeNull();
+  });
+
+  it("scores only the active storey's zones, by id, with the editor's collisions", () => {
+    const bedroom: RoomZone = { id: 'b', name: 'Bedroom', color: '#fff', x: -3, z: -3, w: 4, d: 4 };
+    const bed = at('bed', 'bed', -1, -1, { width: 1.6, depth: 2 });
+    const layout = makeLayout({
+      floors: [makeFloor({ zones: [{ ...bedroom, id: 'g' }], items: [{ ...bed, id: 'gb' }] }), makeFloor({ id: 'up', zones: [bedroom], items: [bed] })],
+    });
+    const scores = activeStoreyRoomScores(layout, { floorIndex: 1, ids: new Set(['bed']) });
+    expect([...scores.keys()]).toEqual(['b']);
+    expect(scores.get('b')).toMatchObject({ type: 'bedroom' });
+    expect(scores.get('b')!.missing).toContain('clear');
   });
 });

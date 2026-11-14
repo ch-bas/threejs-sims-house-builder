@@ -159,6 +159,8 @@ export interface UseSceneEffectsParams {
   /** The zone showing handles on the plan (#628). */
   selectedZoneId: string | null;
   roomsToName: readonly DetectedRoom[];
+  /** The active storey's room scores, written under the zone names on the plan (#905). */
+  roomScores?: Render2DOptions['roomScores'];
   wallDraft: { x: number; z: number } | null;
   /** The room stamp in hand (#724). */
   stampGhost: StampGhost | null;
@@ -202,6 +204,7 @@ export function useSceneEffects({
   selectedWall,
   selectedZoneId,
   roomsToName,
+  roomScores,
   wallDraft,
   stampGhost,
   stampArmed,
@@ -1478,6 +1481,7 @@ export function useSceneEffects({
         // The plan's view zoom (#678), which the pointer handlers read too.
         zoom: planZoomOf(canvas),
         unit: lengthUnit,
+        roomScores,
       });
     };
 
@@ -1521,7 +1525,7 @@ export function useSceneEffects({
       removeRepaintHandler();
       if (paint2DRef.current === paint) paint2DRef.current = null;
     };
-  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, view.showFloorBelow, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds, lengthUnit]);
+  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, view.showFloorBelow, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds, lengthUnit, roomScores]);
 
   // The dock folding, the tray opening or a panel mounting moves the plan's
   // free area: repaint. Keyed on the view alone, so a layout edit doesn't

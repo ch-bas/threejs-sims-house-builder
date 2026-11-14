@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
+import { useEffect, useMemo, useState } from 'react';
+import { useEditorViewActions, useLengthUnit, useRoomEditor, useViewSettings } from '../contexts';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { subscribeZoneNameRequests } from '../lib/editor-notices';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
+import { activeStoreyRoomScores, moreStarsHint, roomScoreLine } from '../lib/room-score';
 import { Icon } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
 
@@ -15,10 +16,11 @@ import { ChipButton, ChipNameField } from './chip-controls';
  * drawn it names it (#374): the plan adds the zone under its default name
  * and asks here, so drawing never stops on a blocking prompt: Enter renames
  * it, Escape keeps the default. The name field goes away by itself when the
- * zone does (undo, floor switch).
+ * zone does (undo, floor switch). With a zone selected, it says what room
+ * the furniture makes of it and what it lacks for more stars (#905).
  */
-export function ZoneNameChip(): JSX.Element | null {
-  const { activeFloor, actions } = useRoomEditor();
+export function ZoneNameChip({ selectedZoneId }: { selectedZoneId: string | null }): JSX.Element | null {
+  const { layout, activeFloor, activeFloorIndex, actions, collidingIds } = useRoomEditor();
   const view = useViewSettings('drawZoneMode', 'view2D');
   const { setView } = useEditorViewActions();
   // A finger taps and there is no Escape key on a phone.
@@ -27,17 +29,32 @@ export function ZoneNameChip(): JSX.Element | null {
 
   useEffect(() => subscribeZoneNameRequests(setZoneId), []);
 
+  const unit = useLengthUnit();
+  const showScore = view.drawZoneMode && view.view2D && selectedZoneId !== null;
+  const score = useMemo(
+    () => (showScore ? activeStoreyRoomScores(layout, { floorIndex: activeFloorIndex, ids: collidingIds }).get(selectedZoneId) : undefined),
+    [showScore, layout, activeFloorIndex, collidingIds, selectedZoneId]
+  );
+  const scoreLine = score ? roomScoreLine(score) : null;
+  const hint = score && scoreLine ? moreStarsHint(score.missing, unit) : null;
+
   const zone = zoneId ? activeFloor.zones?.find((entry) => entry.id === zoneId) : undefined;
   if (!zoneId || !zone) {
     if (!view.drawZoneMode || !view.view2D) return null;
     return (
       <div className="pc-top-chip" style={CHIP_SLOT} role="status">
-        <div className="pc-glass pc-glass--dark" style={{ ...CHIP_BODY, color: 'var(--pc-sky)' }}>
+        <div className="pc-glass pc-glass--dark" style={{ ...CHIP_BODY, color: 'var(--pc-sky)', ...(scoreLine ? { borderRadius: 16, justifyContent: 'center' } : {}) }}>
           <Icon name="tag" size={14} />
           {touch ? 'Drag to add, tap to adjust' : 'Drag to add a zone · click one to adjust · Esc to stop'}
           <ChipButton title="Stop drawing zones" onClick={() => setView((v) => ({ ...v, drawZoneMode: false }))}>
             Done
           </ChipButton>
+          {scoreLine && (
+            <span style={SCORE_LINE}>
+              {scoreLine}
+              {hint ? ` · ${hint}` : ''}
+            </span>
+          )}
         </div>
       </div>
     );
@@ -71,6 +88,14 @@ const CHIP_SLOT: React.CSSProperties = {
   transform: 'translateX(-50%)',
   zIndex: 31,
   maxWidth: 'calc(100vw - 32px)',
+};
+
+/** The selected room's type, stars and what it lacks, on a line of its own (#905). */
+const SCORE_LINE: React.CSSProperties = {
+  flexBasis: '100%',
+  color: 'var(--pc-paper)',
+  fontWeight: 500,
+  textAlign: 'center',
 };
 
 const CHIP_BODY: React.CSSProperties = {
