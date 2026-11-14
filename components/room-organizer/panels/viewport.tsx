@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
 import { formatSize } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
+import { cycleItem, selectionAnnouncement } from '../lib/item-cycle';
 import { Icon, iconForItem } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
 import { Minimap } from './minimap';
@@ -57,7 +58,15 @@ export interface ViewportProps {
   canvasRef: React.RefObject<HTMLCanvasElement>;
   canvas2DRef: React.RefObject<HTMLCanvasElement>;
   onCatalogDrop?(clientX: number, clientY: number, type: string): void;
+  /** Tab on the focused scene picked this item (#650): select it as a click would. */
+  onKeyboardSelect?(id: string): void;
+  /** A keyboard placement is pending or a catalogue ghost is in hand: Tab and Enter are theirs. */
+  placing?: boolean;
 }
+
+const SCENE_KEYS_HINT_ID = 'pc-scene-keys-hint';
+/** A focus this soon (ms) after a press on the scene came from that press, a finger's included. */
+const POINTER_FOCUS_MS = 1000;
 
 export function Viewport(props: ViewportProps): JSX.Element {
   // The 2D plan needs no shaders: it shows as soon as the editor is ready.
@@ -75,6 +84,106 @@ export function Viewport(props: ViewportProps): JSX.Element {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   };
+  // Keyboard selection (#650): Tab and Shift+Tab on the focused scene step
+  // through the floor's items in plan order and say which, in the status
+  // region below; past either end Tab leaves the scene. Enter takes focus
+  // into the item's popover, which leaves it on the scene while stepping.
+  const [announcement, setAnnouncement] = useState<{ id: string; text: string } | null>(null);
+  // The selection changed some other way: the line would describe what isn't.
+  const selectedId = props.selectedItem?.id ?? null;
+  useEffect(() => {
+    setAnnouncement((current) => (current && current.id !== selectedId ? null : current));
+  }, [selectedId]);
+  // Only the keyboard focuses the scene: a press with a mouse or a finger
+  // leaves focus where a click on the old, unfocusable canvas did (on the
+  // page). So a selection made by pointer opens its popover with focus inside
+  // and a key closing it goes to the panels toggle (#638), with no ring on
+  // the scene; and the popover can always leave a focused scene its focus.
+  const { canvasRef, canvas2DRef } = props;
+  const focusable = props.onKeyboardSelect !== undefined;
+  useEffect(() => {
+    if (!focusable) return undefined;
+    const canvases = [canvasRef.current, canvas2DRef.current].filter((canvas): canvas is HTMLCanvasElement => canvas !== null);
+    let pressedAt = -Infinity;
+    // The scene last pressed, while nothing has taken focus since: Tab there
+    // steps from it as if it had kept focus, as a click on it suggests.
+    let pressed: HTMLCanvasElement | null = null;
+    /** The focus below is the keyboard's. */
+    let keyFocus = false;
+    const onPress = (event: Event): void => {
+      pressedAt = event.timeStamp;
+      const canvas = event.currentTarget as HTMLCanvasElement;
+      if (document.activeElement === canvas) canvas.blur();
+      pressed = canvas;
+    };
+    const onPressElsewhere = (event: Event): void => {
+      if (!canvases.includes(event.target as HTMLCanvasElement)) pressed = null;
+    };
+    const onFocusElsewhere = (event: Event): void => {
+      if (!canvases.includes(event.target as HTMLCanvasElement)) pressed = null;
+    };
+    const onTabAfterPress = (event: KeyboardEvent): void => {
+      if (event.key !== 'Tab' || !pressed || !pressed.isConnected || getComputedStyle(pressed).display === 'none') return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      keyFocus = true;
+      pressed.focus({ preventScroll: true });
+      keyFocus = false;
+      pressed = null;
+      sceneKeyRef.current(event);
+    };
+    document.addEventListener('pointerdown', onPressElsewhere, true);
+    document.addEventListener('focusin', onFocusElsewhere);
+    document.addEventListener('keydown', onTabAfterPress);
+    // A finger's focus comes with the compatibility mousedown after its release.
+    const onFocus = (event: Event): void => {
+      if (!keyFocus && event.timeStamp - pressedAt < POINTER_FOCUS_MS) (event.currentTarget as HTMLCanvasElement).blur();
+    };
+    for (const canvas of canvases) {
+      canvas.addEventListener('pointerdown', onPress, true);
+      canvas.addEventListener('focus', onFocus);
+    }
+    return () => {
+      for (const canvas of canvases) {
+        canvas.removeEventListener('pointerdown', onPress, true);
+        canvas.removeEventListener('focus', onFocus);
+      }
+      document.removeEventListener('pointerdown', onPressElsewhere, true);
+      document.removeEventListener('focusin', onFocusElsewhere);
+      document.removeEventListener('keydown', onTabAfterPress);
+    };
+  }, [focusable, canvasRef, canvas2DRef]);
+  type SceneKey = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey' | 'repeat' | 'preventDefault' | 'stopPropagation'>;
+  const handleSceneKey = (event: SceneKey) => {
+    if (props.walkHud || props.placing || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === 'Enter') {
+      if (event.repeat || !props.selectedItem) return;
+      const popover = document.querySelector<HTMLElement>('.pc-item-popover');
+      if (!popover) return;
+      event.preventDefault();
+      event.stopPropagation();
+      popover.focus();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const next = cycleItem(props.activeFloor.items, props.selectedItem?.id ?? null, event.shiftKey ? -1 : 1);
+    if (!next) return;
+    event.preventDefault();
+    // A held Tab steps once: focus stays on the scene meanwhile.
+    if (event.repeat) return;
+    props.onKeyboardSelect?.(next.id);
+    setAnnouncement({ id: next.id, text: selectionAnnouncement(props.activeFloor.items, next.id) });
+  };
+  const sceneKeyRef = useRef(handleSceneKey);
+  sceneKeyRef.current = handleSceneKey;
+  // Focusable, the scene is a widget that takes keys (Tab steps, arrows
+  // nudge, R turns, Delete sells): `application` makes a screen reader pass
+  // them through instead of reading the page with them, which it would do on
+  // an `img`. Its label stays the picture's name.
+  const sceneKeys = focusable
+    ? { tabIndex: 0, role: 'application', onKeyDown: handleSceneKey, 'aria-describedby': SCENE_KEYS_HINT_ID, 'data-scene-canvas': '' }
+    : { role: 'img' };
+
   const handleDrop = (event: React.DragEvent<HTMLCanvasElement>) => {
     if (!props.onCatalogDrop) return;
     const type = event.dataTransfer.getData(CATALOG_DRAG_MIME);
@@ -111,7 +220,6 @@ export function Viewport(props: ViewportProps): JSX.Element {
          */}
         <canvas
           ref={props.canvas2DRef}
-          role="img"
           aria-label={`Floor plan of ${houseName}, ${props.activeFloor.name}`}
           // pc-plan-canvas: no text selection from a plan drag (#442).
           className={props.view2D ? 'pc-plan-canvas' : 'pc-plan-canvas hidden'}
@@ -124,10 +232,10 @@ export function Viewport(props: ViewportProps): JSX.Element {
           }}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
+          {...sceneKeys}
         />
         <canvas
           ref={props.canvasRef}
-          role="img"
           aria-label={`3D view of ${houseName}`}
           className={props.view2D ? 'hidden' : ''}
           style={{
@@ -138,7 +246,18 @@ export function Viewport(props: ViewportProps): JSX.Element {
           }}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
+          {...sceneKeys}
         />
+        {props.onKeyboardSelect && (
+          <>
+            <p id={SCENE_KEYS_HINT_ID} className="sr-only">
+              Tab and Shift+Tab step through the items on this floor. Enter opens the selected one.
+            </p>
+            <p role="status" className="sr-only">
+              {announcement?.text ?? ''}
+            </p>
+          </>
+        )}
 
         {showLoading && <LoadingOverlay />}
         {showError && <ErrorOverlay message={props.error ?? ''} />}

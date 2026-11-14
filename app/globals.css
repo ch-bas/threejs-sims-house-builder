@@ -1779,3 +1779,14 @@ body:has(.pc-wall-hint) .pc-status-toasts {
     transform: translate(-50%, -50%);
   }
 }
+
+/* Keyboard selection on the scene (P2, polish wave 2) */
+/* The 3D view and the 2D plan take focus for Tab to step through the items
+   (#650): a ring inside the edge shows it. A click never shows it. */
+canvas[data-scene-canvas]:focus-visible {
+  outline: 3px solid var(--pc-cyan-glow);
+  outline-offset: -3px;
+}
+canvas[data-scene-canvas]:focus:not(:focus-visible) {
+  outline: none;
+}
