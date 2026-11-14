@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
+import { offerFirstSteps } from '../hooks/use-first-steps';
 import { useLoadTemplate } from '../hooks/use-load-template';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
 import { parseLayoutJson } from '../lib/persistence';
@@ -50,6 +51,8 @@ export function WelcomeBanner(): JSX.Element | null {
 
   const dismiss = useCallback(() => {
     safeSetItem(STORAGE_KEY, '1');
+    // Whatever the start, the First steps card follows it (#721).
+    offerFirstSteps();
     setVisible(false);
   }, []);
 

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetFirstStepsForTests } from '../hooks/use-first-steps';
 import { ROOM_TEMPLATES } from '../lib/constants';
 import { INITIAL_LAYOUT } from '../lib/initial-layout';
 import { opensOnStartChooser, WelcomeBanner } from './welcome-banner';
@@ -15,6 +16,7 @@ describe('WelcomeBanner start chooser (#721)', () => {
   beforeEach(() => {
     window.localStorage.clear();
     loadTemplate.mockClear();
+    resetFirstStepsForTests();
   });
   afterEach(() => {
     cleanup();
@@ -37,6 +39,8 @@ describe('WelcomeBanner start chooser (#721)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(loadTemplate).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(DISMISSED)).toBe('1');
+    // The First steps card follows any start.
+    expect(JSON.parse(window.localStorage.getItem('standalone-room-organizer-first-steps')!).card).toBe('offered');
   });
 
   it('loads the picked template through the load path and closes', () => {

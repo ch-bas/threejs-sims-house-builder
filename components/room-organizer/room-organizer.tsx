@@ -54,6 +54,7 @@ import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
+import { FirstStepsCard } from './panels/first-steps-card';
 import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
@@ -1091,6 +1092,12 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Welcome modal — auto-shows once, dismissible */}
       <WelcomeBanner />
+      {/* Getting started (#721): offered once the start chooser is answered */}
+      <FirstStepsCard
+        placeCatalogItem={stablePlaceFromCatalog}
+        onShareLink={stableShareLink}
+        onSelectedWallChange={setSelectedWall}
+      />
 
       {/* Keyboard-placement key hint (#168) */}
       <PlacementHint active={placingId !== null} ghost={ghost} onCancel={placementGhost.cancel} />

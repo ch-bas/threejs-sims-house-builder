@@ -73,7 +73,7 @@ components/
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements with count progress; `achievementsEarned` (loaded / edit)
-    │   ├── first-steps.ts               The First steps card's five steps: progress from edits like achievements (loads do none), per-step tips, offered/dismissed flag (#721)
+    │   ├── first-steps.ts               The Getting started card's five steps: progress from edits like achievements (loads do none), per-step tips, the stored record (card state, a boolean per step) (#721)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
@@ -254,6 +254,8 @@ components/
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
+    │   ├── use-first-steps.ts           Getting started session: steps done (edits, `markFirstStep` for walk and share), stored with the offered/dismissed card (#721)
+    │   ├── use-set-game-mode.ts         DESIGN / FURNISH / EXPLORE switch with what it brings along (mode panel, First steps card)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
@@ -324,6 +326,7 @@ components/
         ├── print-options.tsx            Print / PDF button and its folding options (paper, orientation, scale, outdoor, every floor)
         ├── shortcuts-panel.tsx
         ├── welcome-banner.tsx           First-run start chooser: start empty, a template (with its plan), or a random one (#721)
+        ├── first-steps-card.tsx         Getting started checklist: each step arms its tool, the next one shows its tips; a thin occluding line on phones (#721)
         ├── minimap.tsx
         ├── plan-thumb.tsx
         ├── achievements-panel.tsx

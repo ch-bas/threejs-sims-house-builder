@@ -10,6 +10,7 @@ import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl } from '../lib/share';
 import { browserShareChannels, deliverShareLink } from '../lib/share-delivery';
 import { markLayoutLoaded } from './use-achievements';
+import { markFirstStep } from './use-first-steps';
 import { layoutStore } from './use-layout-store';
 import type { LayoutActions } from './use-layout-state';
 import type { RoomLayout } from '../lib/types';
@@ -93,6 +94,8 @@ export function useImportExport({
     const outcome = await deliverShareLink(encodeShareUrl(layout, origin), browserShareChannels()).finally(() => {
       sharing.current = false;
     });
+    // The link left the page, or is there to copy: shared, as First steps count it (#721).
+    if (outcome.kind !== 'cancelled' && outcome.kind !== 'too-large') markFirstStep('share');
     const leftOut = 'The floor-plan image was left out to keep it short.';
     switch (outcome.kind) {
       case 'cancelled':
