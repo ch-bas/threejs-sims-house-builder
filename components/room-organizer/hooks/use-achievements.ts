@@ -26,6 +26,11 @@ export function markLayoutLoaded(): void {
   loadedLayouts.add(layoutStore.getState().layout);
 }
 
+/** Whether `markLayoutLoaded` marked this layout: the First steps read it too (#721). */
+export function isLoadedLayout(layout: RoomLayout): boolean {
+  return loadedLayouts.has(layout);
+}
+
 export function useAchievements(layout: RoomLayout): UseAchievementsResult {
   const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => loadUnlocked());
   const [pending, setPending] = useState<readonly Achievement[]>([]);
@@ -37,7 +42,7 @@ export function useAchievements(layout: RoomLayout): UseAchievementsResult {
     const before = lastRef.current;
     if (before === layout) return;
     lastRef.current = layout;
-    const change = before === null || loadedLayouts.has(layout) ? 'loaded' : 'edit';
+    const change = before === null || isLoadedLayout(layout) ? 'loaded' : 'edit';
     const earned = achievementsEarned(change, before, layout, unlockedRef.current);
     if (earned.length === 0) return;
     const next = new Set(unlockedRef.current);
