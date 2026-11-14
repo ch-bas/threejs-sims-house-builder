@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.34.0] - 2026-11-14
+
+The **Polish: desktop & mobile** milestone, third wave: the first minute and the shared link. A first visit offers a starting point and a Getting started card, a shared link opens as a read-only tour you can keep a copy of, and the whole app can work in feet and inches.
+
+### Added
+- Feet and inches: View options has an m | ft switch, remembered per browser; every on-screen length and area follows it, length fields take `12'6"`, `12'-6"`, `6 1/2"`, `12.5 ft` or `3.5 m`, and the SVG, print and blueprint follow it while DXF stays in metres ([#725](https://github.com/ch-bas/threejs-sims-house-builder/issues/725))
+- A first visit offers a starting point: start empty, one of the seven templates, or a surprise template; then a Getting started card (draw a room, add a door, furnish, walk through, share) arms each tool and remembers what's done ([#721](https://github.com/ch-bas/threejs-sims-house-builder/issues/721))
+- A shared link opens as a read-only tour (name, floors, camera, Walk through, Keep a copy, Build your own) without touching your own house; Keep a copy keeps your house as a recovered copy first, and refuses rather than lose it ([#722](https://github.com/ch-bas/threejs-sims-house-builder/issues/722))
+- A Share button in the header, beside the save status ([#722](https://github.com/ch-bas/threejs-sims-house-builder/issues/722))
+
+### Fixed
+- A drag in EXPLORE only selects: furniture can no longer be moved while exploring ([#722](https://github.com/ch-bas/threejs-sims-house-builder/issues/722))
+- A crash while viewing a shared house reopens your own house instead of looping, and never offers to set your save aside ([#722](https://github.com/ch-bas/threejs-sims-house-builder/issues/722))
+
 ## [1.33.0] - 2026-11-14
 
 The **Living house** milestone, first wave: the house feels lived in and gives you goals. Walkers keep to their storey, step round you and go where their needs send them; doors swing open as you walk up; rooms know what they are and earn stars; each house has the funds you choose; the catalogue comes in colours; a photo mode saves the view without the HUD; and a traced floor plan can be scaled from a known length.
@@ -973,7 +987,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.33.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.34.0...HEAD
+[1.34.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.33.0...v1.34.0
 [1.33.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.32.0...v1.33.0
 [1.32.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.31.0...v1.32.0
 [1.31.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.30.0...v1.31.0
