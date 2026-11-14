@@ -1,3 +1,5 @@
+import { CURRENCY_SYMBOL } from './constants';
+
 /**
  * The one way the UI writes lengths and ages (#438): a space before the unit,
  * as in "2.00 m", and ages spelled so they can't be read as metres.
@@ -32,4 +34,20 @@ export function formatAge(ms: number, options: { seconds?: boolean } = {}): stri
   if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} h ago`;
   const days = Math.floor(ms / 86_400_000);
   return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
+/** "25,000": a whole amount, grouped the same way whatever the browser's locale (#609). */
+export function formatAmount(value: number): string {
+  return Math.round(value).toLocaleString('en-GB');
+}
+
+/**
+ * "$1,200", "−$1,200", or with `signed` "+$960". With `compact`, a million
+ * and up shortens to "$1.25M", so a big amount fits a narrow readout.
+ */
+export function formatMoney(amount: number, options: { signed?: boolean; compact?: boolean } = {}): string {
+  const sign = amount < 0 ? '−' : options.signed ? '+' : '';
+  const size = Math.abs(amount);
+  const text = options.compact && size >= 1_000_000 ? `${Number((size / 1_000_000).toFixed(2))}M` : formatAmount(size);
+  return `${sign}${CURRENCY_SYMBOL}${text}`;
 }

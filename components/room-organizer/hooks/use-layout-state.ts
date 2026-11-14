@@ -87,6 +87,8 @@ export interface LayoutActions {
   sellItems(ids: readonly string[]): void;
   /** Switch the hard budget (#463e) on or off. */
   setHardBudget(on: boolean): void;
+  /** Set the house's funds (#609); clamped to whole units in range. */
+  setFunds(amount: number): void;
   duplicateItem(id: string): string;
   rotateItem(id: string): void;
   moveItem(id: string, x: number, z: number): void;

@@ -4,8 +4,8 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useRoomEditor } from '../contexts';
 import { useActiveFloorIndex, useLayout } from '../hooks/use-layout-store';
-import { budgetSpent, furnitureSpend } from '../lib/budget';
-import { CATEGORIES, CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
+import { budgetOf, budgetSpent, furnitureSpend } from '../lib/budget';
+import { CATEGORIES, CURRENCY_SYMBOL } from '../lib/constants';
 import { buildingArea } from '../lib/footprint';
 import { footprintArea, itemCountByCategory } from '../lib/geometry';
 import { floorRooms, hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
@@ -16,7 +16,7 @@ export function StatisticsPanel(): JSX.Element {
   // `layout` from the store selector; `collidingIds` stays on the context.
   const layout = useLayout();
   const { collidingIds } = useRoomEditor();
-  const budget = DEFAULT_BUDGET;
+  const budget = budgetOf(layout);
   // Collisions are checked on the active floor only; everything else here
   // covers the whole house, and the labels say which is which (#438).
   const collisionsOnActiveFloor = collidingIds.size;

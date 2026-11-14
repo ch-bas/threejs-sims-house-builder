@@ -1,12 +1,15 @@
 'use client';
 
-import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useEdgeVar } from '../hooks/use-edge-var';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
-import { useBudgetRemaining, useLayoutActions } from '../hooks/use-layout-store';
+import { useBudgetRemaining, useFunds, useLayoutActions } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { useRefusal } from '../hooks/use-refusal';
+import { MAX_FUNDS, MIN_FUNDS, readFunds } from '../lib/budget';
 import { CURRENCY_SYMBOL } from '../lib/constants';
+import { formatAmount, formatMoney } from '../lib/format';
 import { canVibrate, saveHapticsChoice } from '../lib/haptics';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
@@ -55,7 +58,8 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   );
   // Hard budget (#463e): the readout shows what's left to spend instead.
   const remaining = useBudgetRemaining();
-  const fundsDelta = useFundsDelta(remaining);
+  const funds = useFunds();
+  const fundsDelta = useFundsDelta(remaining, funds);
   const { setHardBudget } = useLayoutActions();
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   // Docked on a phone, the action row folds behind ⋯ except Undo and Redo
@@ -94,7 +98,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
             className="pc-funds-delta"
             style={{ color: fundsDelta.amount > 0 ? 'var(--pc-confirm-green)' : 'var(--pc-demolish-ink)' }}
           >
-            {formatMoney(fundsDelta.amount, true)}
+            {formatMoney(fundsDelta.amount, { signed: true, compact: true })}
           </span>
         )}
         <div
@@ -106,13 +110,14 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
             ...(remaining !== null && remaining < 0 ? { color: 'var(--pc-demolish-ink)' } : {}),
           }}
         >
-          {remaining === null ? `${CURRENCY_SYMBOL}${totalCost.toLocaleString()}` : formatMoney(remaining, false)}
+          {formatMoney(remaining ?? totalCost, { compact: true })}
         </div>
         <div
           className="pc-hud-header"
           style={{ fontSize: 9, opacity: 0.8, marginTop: 2 }}
         >
-          {remaining === null ? 'Cost' : 'Funds Left'}
+          {/* "Funds" folds away on a phone while the funds field shares the line (#609). */}
+          {remaining === null ? 'Cost' : <><span className="pc-funds-left-word">Funds </span>Left</>}
         </div>
         <button
           type="button"
@@ -132,6 +137,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           </span>
           Hard budget
         </button>
+        {remaining !== null && <FundsField disabled={exploring} />}
       </div>
 
       <div
@@ -315,34 +321,127 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   );
 }
 
-/** `$1,200`, `−$1,200`, or with `signed` `+$960`. */
-function formatMoney(amount: number, signed: boolean): string {
-  const sign = amount < 0 ? '−' : signed ? '+' : '';
-  return `${sign}${CURRENCY_SYMBOL}${Math.abs(amount).toLocaleString()}`;
+/**
+ * The house's funds (#609), shown while the hard budget is on, on the
+ * switch's line: what Funds Left counts down from. Typed in and set on
+ * Enter or when the field loses focus; Escape puts it back. A typed amount
+ * that isn't plain is refused and the funds stay as they were.
+ */
+function FundsField({ disabled }: { disabled: boolean }): JSX.Element {
+  const funds = useFunds();
+  const { setFunds } = useLayoutActions();
+  const { history } = useRoomEditor();
+  const refuse = useRefusal();
+  // The text being typed, or null while the field shows the funds.
+  const [draft, setDraft] = useState<string | null>(null);
+  const draftRef = useRef<string | null>(null);
+  const justFocused = useRef(false);
+  const selectOnRender = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (!selectOnRender.current) return;
+    selectOnRender.current = false;
+    inputRef.current?.select();
+  }, [draft]);
+  const edit = (text: string | null): void => {
+    draftRef.current = text;
+    setDraft(text);
+  };
+  const commit = (): void => {
+    const text = draftRef.current;
+    edit(null);
+    const entry = text === null ? null : readFunds(text);
+    if (entry === null) return;
+    if ('refusal' in entry) {
+      refuse(entry.refusal);
+      return;
+    }
+    if (entry.funds === funds) return;
+    // A discrete edit: its own undo step, never merged with the next one.
+    history.commitNow();
+    setFunds(entry.funds);
+    if (entry.note !== null) refuse(entry.note);
+  };
+  const shown = draft ?? formatAmount(funds);
+  const hint = `Funds: what the house may spend, ${formatMoney(MIN_FUNDS)} to ${formatMoney(MAX_FUNDS)}`;
+  return (
+    <label className="pc-funds-field" title={disabled ? NOT_WHILE_EXPLORING : hint}>
+      <span aria-hidden className="pc-funds-field__currency">
+        <span className="pc-funds-field__of">of </span>
+        {CURRENCY_SYMBOL}
+      </span>
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        spellCheck={false}
+        aria-label="Funds"
+        // Setting the funds writes `layout.budget`: a house edit (#700).
+        disabled={disabled}
+        className="pc-funds-field__input"
+        value={shown}
+        onFocus={() => {
+          // Selected once the plain number is in: a new value moves the caret.
+          selectOnRender.current = true;
+          justFocused.current = true;
+          edit(String(funds));
+        }}
+        // The click that focused the field would put the caret in and drop
+        // the selection, and typing would add to the old amount.
+        onMouseUp={(event) => {
+          if (justFocused.current) event.preventDefault();
+          justFocused.current = false;
+        }}
+        onChange={(event) => edit(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== 'Escape') return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.repeat) return;
+          if (event.key === 'Escape') edit(null);
+          else commit();
+          event.currentTarget.blur();
+        }}
+        // As wide as what it holds, up to "100,000,000".
+        style={{ width: fieldWidth(shown), ...(disabled ? DISABLED_TILE : {}) }}
+      />
+    </label>
+  );
 }
 
 const FUNDS_DELTA_MS = 1600;
 
+/** The field's width for `text`: a digit is about 1ch, a comma half that, plus padding and border. */
+function fieldWidth(text: string): string {
+  const digits = Math.min(12, Math.max(4, text.replace(/[^\d]/g, '').length));
+  const marks = Math.min(4, text.length - text.replace(/[^\d]/g, '').length);
+  return `calc(${digits + marks / 2}ch + 12px)`;
+}
+
 /**
  * The last change to the funds, shown for a moment beside them: a sale
  * floats up green, a purchase red (#463e). Null while the hard budget is
- * off, and not when it is switched on — nothing was bought or sold.
+ * off, and not when it is switched on, nor when the funds themselves are
+ * set or that is undone (#609): nothing was bought or sold.
  */
-function useFundsDelta(remaining: number | null): { amount: number; key: number } | null {
+function useFundsDelta(remaining: number | null, funds: number): { amount: number; key: number } | null {
   const [delta, setDelta] = useState<{ amount: number; key: number } | null>(null);
-  const previous = useRef(remaining);
+  const previous = useRef({ remaining, funds });
   useEffect(() => {
     const before = previous.current;
-    previous.current = remaining;
+    previous.current = { remaining, funds };
     if (remaining === null) {
       setDelta(null);
       return undefined;
     }
-    if (before === null || before === remaining) return undefined;
-    setDelta((current) => ({ amount: remaining - before, key: (current?.key ?? 0) + 1 }));
+    const prior = before.remaining;
+    if (prior === null || prior === remaining || before.funds !== funds) return undefined;
+    setDelta((current) => ({ amount: remaining - prior, key: (current?.key ?? 0) + 1 }));
     const timer = window.setTimeout(() => setDelta(null), FUNDS_DELTA_MS);
     return () => window.clearTimeout(timer);
-  }, [remaining]);
+  }, [remaining, funds]);
   return delta;
 }
 

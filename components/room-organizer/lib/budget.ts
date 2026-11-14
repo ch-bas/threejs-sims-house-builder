@@ -1,4 +1,5 @@
 import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from './constants';
+import { formatMoney } from './format';
 import { ENTRANCE_DOOR_ID } from './street';
 import type { FurnitureItem, HardBudget, RoomLayout } from './types';
 
@@ -41,6 +42,64 @@ export function furnitureSpend(layout: Pick<RoomLayout, 'floors'>): number {
   return sum;
 }
 
+/** The lowest and highest funds a house may set (#609), in whole currency units. */
+export const MIN_FUNDS = 100;
+export const MAX_FUNDS = 100_000_000;
+
+/**
+ * The house's funds (#609): what the header, Statistics, Surprise and the
+ * hard budget measure spending against. A house that never set them has
+ * DEFAULT_BUDGET, so every older save keeps its 25,000.
+ */
+export function budgetOf(layout: Pick<RoomLayout, 'budget'>): number {
+  return layout.budget?.amount ?? DEFAULT_BUDGET;
+}
+
+/** `amount` as funds a house may hold: whole units within MIN_FUNDS..MAX_FUNDS, or null when it isn't a number. */
+export function clampFunds(amount: number): number | null {
+  if (!Number.isFinite(amount)) return null;
+  return Math.min(MAX_FUNDS, Math.max(MIN_FUNDS, Math.round(amount)));
+}
+
+/** What the funds field makes of typed text: the funds to set, with a note when they were clamped, or why not. */
+export type FundsEntry = { readonly funds: number; readonly note: string | null } | { readonly refusal: string };
+
+/**
+ * Typed funds (#609): a plain whole amount, optionally after the currency
+ * sign, grouped with commas or spaces ("8,000", "$8 000"). Anything else
+ * ("1e20", "5k", "-300", "8000.5") is refused rather than guessed at, and an
+ * amount outside MIN_FUNDS..MAX_FUNDS is clamped and says so. Null for an
+ * empty field: nothing to set.
+ */
+export function readFunds(text: string): FundsEntry | null {
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  const plain = trimmed.startsWith(CURRENCY_SYMBOL) ? trimmed.slice(CURRENCY_SYMBOL.length).trim() : trimmed;
+  if (!/^\d[\d,\s]*$/.test(plain)) return { refusal: `Funds take a plain amount, like ${formatMoney(8000)}` };
+  const value = Number(plain.replace(/[,\s]/g, ''));
+  if (value > MAX_FUNDS) return { funds: MAX_FUNDS, note: `Funds go up to ${formatMoney(MAX_FUNDS)}` };
+  if (value < MIN_FUNDS) return { funds: MIN_FUNDS, note: `Funds start at ${formatMoney(MIN_FUNDS)}` };
+  return { funds: value, note: null };
+}
+
+/**
+ * `layout` with its funds set to `amount` (#609), or `layout` itself when
+ * nothing changes. The default is never stored, and a budget field left
+ * holding nothing (off, no write-off, default funds) is dropped, so a house
+ * that sets 25,000 again looks the way it did before.
+ */
+export function withFunds<T extends Pick<RoomLayout, 'budget'>>(layout: T, amount: number): T {
+  const funds = clampFunds(amount);
+  if (funds === null || funds === budgetOf(layout)) return layout;
+  const { amount: _old, ...base } = layout.budget ?? { writeOff: 0, enabled: false as const };
+  const budget: HardBudget = funds === DEFAULT_BUDGET ? base : { ...base, amount: funds };
+  if (budget.amount === undefined && budget.enabled === false && budget.writeOff === 0) {
+    const { budget: _none, ...rest } = layout;
+    return rest as T;
+  }
+  return { ...layout, budget };
+}
+
 /** True while the hard budget is switched on. */
 export function isHardBudgetOn(layout: Pick<RoomLayout, 'budget'>): boolean {
   return layout.budget !== undefined && layout.budget.enabled !== false;
@@ -61,7 +120,7 @@ export function budgetSpent(layout: Pick<RoomLayout, 'floors' | 'budget'>): numb
 
 /** What is left to spend under the hard budget, or null when it is off. */
 export function budgetRemaining(layout: Pick<RoomLayout, 'floors' | 'budget'>): number | null {
-  return isHardBudgetOn(layout) ? DEFAULT_BUDGET - budgetSpent(layout) : null;
+  return isHardBudgetOn(layout) ? budgetOf(layout) - budgetSpent(layout) : null;
 }
 
 /** Price of buying `items` (copies, a paste, a set); the porch door is free. */
@@ -144,7 +203,7 @@ export function bookSale<T extends Pick<RoomLayout, 'budget'>>(
 ): T {
   const loss = hardBudgetLoss(layout, items);
   if (loss === 0 || !layout.budget) return layout;
-  return { ...layout, budget: { writeOff: Math.min(MAX_WRITE_OFF, layout.budget.writeOff + loss) } };
+  return { ...layout, budget: { ...layout.budget, writeOff: Math.min(MAX_WRITE_OFF, layout.budget.writeOff + loss) } };
 }
 
 /** A template load under the hard budget (#691): the house to apply, or why not. */
@@ -154,7 +213,7 @@ export type TemplateLoad<T> =
 
 /**
  * `template` as it replaces `current` (#691). The budget is the player's, not
- * the template's: `current.budget` carries over, enabled flag and write-off,
+ * the template's: `current.budget` carries over, enabled flag, write-off and funds,
  * and a house that never had one gets none. Under the hard budget a template
  * is a purchase like any other: the outgoing furniture sells back at
  * SELL_BACK_RATE, the same as Clear floor (#534), and a template whose
@@ -169,7 +228,7 @@ export function loadTemplateUnderBudget<T extends RoomLayout>(current: RoomLayou
   const layout = { ...rest, budget } as T;
   if (!isHardBudgetOn(current)) return { layout, refusal: null, writtenOff: 0 };
   const price = purchasePrice(template.floors.flatMap((floor) => floor.items));
-  const left = DEFAULT_BUDGET - budget.writeOff;
+  const left = budgetOf(current) - budget.writeOff;
   if (price > 0 && price > left) {
     return {
       layout: null,
@@ -194,19 +253,32 @@ function isWriteOff(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_WRITE_OFF;
 }
 
+/** Stored funds the schema accepts as they are (#609). */
+function isFunds(value: unknown): value is number {
+  return typeof value === 'number' && clampFunds(value) === value;
+}
+
 /**
  * The hard-budget field as loaded from a save, file or link. It REPAIRS,
  * never refuses (see lib/schema.ts): a non-object means never used, a
  * write-off that isn't a sane amount is clamped, `enabled` other than
- * `false` means on, unknown keys are dropped. Returns `value` itself when
- * it is already clean.
+ * `false` means on, funds that aren't a number fall back to the default
+ * and are otherwise clamped to whole units in range (#609), unknown keys
+ * are dropped. Returns `value` itself when it is already clean.
  */
 export function repairHardBudget(value: unknown): HardBudget | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const { writeOff: raw, enabled } = value as { writeOff?: unknown; enabled?: unknown };
+  const { writeOff: raw, enabled, amount } = value as { writeOff?: unknown; enabled?: unknown; amount?: unknown };
   const off = enabled === false;
-  const clean = Object.keys(value).length === (off ? 2 : 1) && isWriteOff(raw);
+  const hasAmount = 'amount' in value;
+  const clean =
+    Object.keys(value).length === 1 + (off ? 1 : 0) + (hasAmount ? 1 : 0) && isWriteOff(raw) && (!hasAmount || isFunds(amount));
   if (clean) return value as HardBudget;
   const writeOff = typeof raw === 'number' && Number.isFinite(raw) ? Math.min(MAX_WRITE_OFF, Math.max(0, raw)) : 0;
-  return off ? { writeOff, enabled: false } : { writeOff };
+  const funds = typeof amount === 'number' ? clampFunds(amount) : null;
+  return {
+    writeOff,
+    ...(off ? { enabled: false as const } : {}),
+    ...(funds !== null ? { amount: funds } : {}),
+  };
 }

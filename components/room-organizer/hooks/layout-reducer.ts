@@ -1,7 +1,6 @@
-import { bookSale, budgetSpent, isHardBudgetOn } from '../lib/budget';
+import { bookSale, budgetOf, budgetSpent, isHardBudgetOn, withFunds } from '../lib/budget';
 import { catalogFields } from '../lib/catalog-variants';
 import {
-  DEFAULT_BUDGET,
   DEFAULT_ROOF,
   FURNITURE_CATALOG,
   MAX_FLOORS,
@@ -89,6 +88,7 @@ export type LayoutAction =
   | { type: 'removeItem'; id: string }
   | { type: 'sellItems'; ids: readonly string[] }
   | { type: 'setHardBudget'; on: boolean }
+  | { type: 'setFunds'; amount: number }
   | { type: 'updateItem'; id: string; patch: Partial<FurnitureItem> }
   | { type: 'duplicateItem'; sourceId: string; newId: string }
   | { type: 'rotateItem'; id: string }
@@ -200,7 +200,7 @@ const DOOR_REMOVAL_ACTIONS: ReadonlySet<LayoutAction['type']> = new Set([
 function overHardBudget(prev: LayoutState, next: LayoutState, action: LayoutAction): boolean {
   if (!isHardBudgetOn(next.layout) || action.type === 'applyLayout' || next.layout.floors === prev.layout.floors) return false;
   const spent = budgetSpent(next.layout);
-  return spent > DEFAULT_BUDGET && spent > budgetSpent(prev.layout);
+  return spent > budgetOf(next.layout) && spent > budgetSpent(prev.layout);
 }
 
 /** A zone's finish in a patch: null clears it, back to the storey's (#720). */
@@ -502,11 +502,19 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withLayout(state, (layout) => {
         if (isHardBudgetOn(layout) === action.on) return layout;
         const writeOff = layout.budget?.writeOff ?? 0;
-        if (action.on) return { ...layout, budget: { writeOff } };
-        if (writeOff > 0) return { ...layout, budget: { writeOff, enabled: false } };
+        // The funds (#609) stay through both switches.
+        const amount = layout.budget?.amount;
+        const funds = amount !== undefined ? { amount } : {};
+        if (action.on) return { ...layout, budget: { writeOff, ...funds } };
+        if (writeOff > 0 || amount !== undefined) return { ...layout, budget: { writeOff, enabled: false, ...funds } };
         const { budget: _off, ...rest } = layout;
         return rest;
       });
+
+    case 'setFunds':
+      // Lowering the funds under what is already spent is allowed, like
+      // switching the hard budget on over a spent house: it buys nothing.
+      return withLayout(state, (layout) => withFunds(layout, action.amount));
 
     case 'updateItem':
       return patchItem(state, action.id, () => action.patch);
