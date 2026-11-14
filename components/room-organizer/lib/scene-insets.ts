@@ -376,6 +376,39 @@ function wallCrossing(from: { x: number; z: number }, step: { x: number; z: numb
 }
 
 /**
+ * A garden item is seen from outside the house: the diagonal away from the
+ * middle first, then the others, taking the first whose view crosses no
+ * shell wall. In an L's deep notch the away side can be the other wing
+ * (#783). With none clear, the one that backs furthest before a wall.
+ */
+function gardenFocusOffset(
+  target: { x: number; z: number },
+  back: number,
+  up: number,
+  building: FootprintBuilding,
+  awayX: number,
+  awayZ: number
+): Vec3 {
+  const walls = shellWalls(building);
+  const margin = FOCUS_ROOM_MARGIN / back;
+  let best = { x: awayX * back, z: awayZ * back };
+  let bestReach = 0;
+  for (const [x, z] of [[awayX, awayZ], [awayX, -awayZ], [-awayX, awayZ], [-awayX, -awayZ]] as const) {
+    const step = { x: x * back, z: z * back };
+    const share = walls.reduce((nearest, wall) => {
+      const crossing = wallCrossing(target, step, wall);
+      return crossing === null ? nearest : Math.min(nearest, crossing - margin);
+    }, 1);
+    if (share >= 1 && !isInsideBuilding(building, target.x + step.x, target.z + step.z)) return [step.x, up, step.z];
+    if (share > bestReach) {
+      bestReach = share;
+      best = { x: step.x * share, z: step.z * share };
+    }
+  }
+  return [best.x, up, best.z];
+}
+
+/**
  * Where focus-on-item puts the camera, relative to the item on its floor. The
  * distance fits the item's largest side. With a roof or a storey above, an
  * item indoors is seen from inside its room: of the four diagonals, the one
@@ -390,7 +423,7 @@ export function focusOffset(target: { x: number; z: number }, size: number, cove
   if (!cover) return [back, up, back];
   const awayX = target.x < 0 ? -1 : 1;
   const awayZ = target.z < 0 ? -1 : 1;
-  if (!isInsideBuilding(cover.building, target.x, target.z)) return [awayX * back, up, awayZ * back];
+  if (!isInsideBuilding(cover.building, target.x, target.z)) return gardenFocusOffset(target, back, up, cover.building, awayX, awayZ);
 
   const walls = [...shellWalls(cover.building), ...cover.walls];
   const margin = FOCUS_ROOM_MARGIN / back;
