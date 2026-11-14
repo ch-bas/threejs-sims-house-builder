@@ -20,7 +20,10 @@ vi.mock('./use-layout-persistence', () => ({
     return { saveStatus: {}, remoteLayout: persistence.remoteLayout, clearRemoteLayout: () => calls.push('clearRemote') };
   },
 }));
-vi.mock('../lib/restore-point', () => ({ snapshotBeforeReplace: () => calls.push('snapshot') }));
+vi.mock('../lib/restore-point', () => ({
+  snapshotBeforeReplace: (outgoing: { name: string } | null) => calls.push(`snapshot:${outgoing?.name ?? 'none'}`),
+}));
+vi.mock('../lib/editor-notices', () => ({ notify: (message: string) => calls.push(`notify:${message}`) }));
 vi.mock('./use-achievements', () => ({ markLayoutLoaded: () => calls.push('markLoaded') }));
 
 function options(): UseHouseLoadingOptions {
@@ -29,7 +32,6 @@ function options(): UseHouseLoadingOptions {
     actions: { applyLayout: () => calls.push('apply') },
     commitHistoryNow: () => calls.push('commit'),
     clearHistory: () => calls.push('clearHistory'),
-    undoHistory: vi.fn(),
     clearTransientSelection: () => calls.push('clearSelection'),
   };
 }
@@ -44,7 +46,7 @@ describe('useHouseLoading: the load rules, in order', () => {
     persistence.remoteLayout = makeLayout({ name: 'Other tab' });
     const { result } = renderHook(() => useHouseLoading(options()));
     act(() => result.current.adoptRemoteLayout());
-    expect(calls).toEqual(['snapshot', 'commit', 'apply', 'markLoaded', 'clearSelection', 'clearRemote']);
+    expect(calls).toEqual(['snapshot:My Home', 'commit', 'apply', 'markLoaded', 'clearSelection', 'clearRemote']);
   });
 
   it('with nothing to adopt, nothing happens', () => {
@@ -53,12 +55,26 @@ describe('useHouseLoading: the load rules, in order', () => {
     expect(calls).toEqual([]);
   });
 
-  it('a share link opened over the house is a replacement; the first load sets the history baseline', () => {
+  it('Keep a copy, once saved and its predecessor copied aside, is the rest of a replacement; the first load sets the history baseline', () => {
     renderHook(() => useHouseLoading(options()));
-    act(() => persistence.options?.onOpenShared?.(makeLayout({ name: 'Shared' })));
-    expect(calls).toEqual(['snapshot', 'commit', 'apply', 'markLoaded', 'clearSelection']);
+    // The stored house's restore point was taken by the persistence.
+    act(() => persistence.options?.onKeepTourCopy?.(makeLayout({ name: 'Shared' }), true));
+    expect(calls).toEqual([
+      'commit',
+      'apply',
+      'markLoaded',
+      'clearSelection',
+      'clearHistory',
+      expect.stringMatching(/^notify:Kept a copy of “Shared”.*kept as a recovered copy in Manage → Saved Layouts → History\.$/) as unknown,
+    ]);
     calls.length = 0;
     act(() => persistence.options?.onHydrate(makeLayout({ name: 'Saved' })));
     expect(calls).toEqual(['apply', 'markLoaded', 'clearSelection', 'clearHistory']);
+  });
+
+  it('Keep a copy names History only when it holds the previous house', () => {
+    renderHook(() => useHouseLoading(options()));
+    act(() => persistence.options?.onKeepTourCopy?.(makeLayout({ name: 'Shared' }), false));
+    expect(calls.at(-1)).toBe('notify:Kept a copy of “Shared”: it saves here now.');
   });
 });

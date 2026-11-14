@@ -9,6 +9,7 @@ import {
 import {
   crashRecurredAfterReload,
   downloadRawLayout,
+  leaveCrashedTour,
   noteEditorCrashed,
   noteReloadAttempt,
   readStoredLayoutRaw,
@@ -77,8 +78,11 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   // A persistent chunk failure is a deploy problem, not a corrupt save —
   // offering a reset for it would move the user's house aside for nothing (#143).
   const chunkFailure = isChunkLoadError(error);
+  // A crash in a shared-link tour is the toured house's (#722): its link is
+  // dropped so a reload opens the visitor's own, which is never suspected.
+  const [tourCrash] = useState(() => !chunkFailure && leaveCrashedTour());
   const [storedRaw, setStoredRaw] = useState(() => (chunkFailure ? null : readStoredLayoutRaw()));
-  const [suspectSave] = useState(() => !chunkFailure && crashRecurredAfterReload());
+  const [suspectSave] = useState(() => !chunkFailure && !tourCrash && crashRecurredAfterReload());
   const [resetFailure, setResetFailure] = useState<'refused' | 'lost' | 'unavailable' | null>(null);
   const resetting = useRef(false);
 
@@ -88,7 +92,8 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   };
 
   const reload = () => {
-    noteReloadAttempt();
+    // After a tour the reload opens a different house: nothing to suspect.
+    if (!tourCrash) noteReloadAttempt();
     // Hard reload rather than the soft `reset()`: the layout lives in a
     // module-level store, so a soft remount would keep the crash-causing
     // state in memory.
@@ -135,7 +140,10 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   const offerReset = suspectSave && storedRaw !== null;
 
   let message: string;
-  if (chunkFailure) {
+  if (tourCrash) {
+    message =
+      'The shared house hit an error and couldn’t be shown. Your own house is untouched: reloading opens it.';
+  } else if (chunkFailure) {
     message =
       'Some of the app’s files couldn’t be fetched — a fresh deploy may be rolling out. Reloading usually fixes it, and your saved house is untouched.';
   } else if (offerReset) {

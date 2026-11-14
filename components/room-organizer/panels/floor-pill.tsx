@@ -1,7 +1,7 @@
 'use client';
 
 import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
-import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
+import { useExploring, useNotWhileExploring } from '../hooks/use-exploring';
 import { MAX_FLOORS } from '../lib/constants';
 import { Icon } from '../plotcraft/icon';
 import { DISABLED_TILE } from './wall-display-pill';
@@ -19,6 +19,7 @@ export function FloorPill(): JSX.Element {
   const canAdd = floors.length < MAX_FLOORS;
   // Adding a floor edits the house: not while exploring (#643).
   const exploring = useExploring();
+  const notWhileExploring = useNotWhileExploring();
   // Top floor first — matches real-world expectations and FloorSwitcher.
   const orderedIndices = Array.from(
     { length: floors.length },
@@ -98,7 +99,7 @@ export function FloorPill(): JSX.Element {
         type="button"
         onClick={() => actions.addFloor()}
         disabled={!canAdd || exploring}
-        title={exploring ? NOT_WHILE_EXPLORING : canAdd ? 'Add a floor' : `Maximum ${MAX_FLOORS} floors`}
+        title={exploring ? notWhileExploring : canAdd ? 'Add a floor' : `Maximum ${MAX_FLOORS} floors`}
         aria-label="Add floor"
         className="pc-tile"
         style={{

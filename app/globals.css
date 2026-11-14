@@ -2024,3 +2024,93 @@ html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line {
     width: min(380px, 45vw);
   }
 }
+
+/* Shared-link tour (#722): the name top left, the actions in a bar at the
+   bottom. On a phone the top belongs to the pills, so the name heads the bar. */
+.pc-tour-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: calc(100vw - 32px);
+}
+.pc-tour-bar__box {
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+}
+.pc-tour-bar__name,
+.pc-tour-plan {
+  display: none;
+}
+/* The 2D switch rides in the bar where the walls pill drops its own. */
+@media (max-width: 768px), (max-width: 1100px) and (max-height: 500px) {
+  .pc-tile.pc-tour-plan {
+    display: inline-block;
+    flex: 0 0 auto;
+  }
+}
+.pc-tour-button {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: var(--pc-tr-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .pc-tour-button {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+}
+@media (max-width: 768px), (max-height: 500px) {
+  .pc-tour-name {
+    display: none;
+  }
+  .pc-tour-bar {
+    left: 16px;
+    right: 16px;
+    transform: none;
+    max-width: none;
+  }
+  .pc-tour-bar__box {
+    flex-wrap: wrap;
+    border-radius: 22px;
+  }
+  .pc-tour-bar__name {
+    display: block;
+    flex-basis: 100%;
+    padding: 4px 10px 2px;
+    font-family: var(--pc-font-display);
+    font-weight: 800;
+    font-size: 14px;
+    color: var(--pc-paper);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pc-tour-button {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: normal;
+    padding: 4px 8px;
+    line-height: 1.2;
+  }
+}
+@media (max-height: 500px) {
+  /* A landscape phone: the name shares the row, so the bar stays one tap high. */
+  .pc-tour-bar__box {
+    flex-wrap: nowrap;
+  }
+  .pc-tour-bar__name {
+    flex: 0 1 auto;
+    max-width: 30%;
+    padding: 0 6px 0 10px;
+  }
+}
