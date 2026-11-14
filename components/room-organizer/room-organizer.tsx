@@ -55,7 +55,7 @@ import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { loadQualityChoice } from './lib/render-quality';
 import { snapshotBeforeReplace } from './lib/restore-point';
-import { ORBIT_MAX_POLAR } from './lib/scene-insets';
+import { ORBIT_MAX_POLAR, focusCoverFor } from './lib/scene-insets';
 import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
@@ -1353,6 +1353,10 @@ export function RoomOrganizer(): JSX.Element {
     roofStyle !== 'none' &&
     sceneWallDisplay(view.wallDisplay, walkthroughActive) === 'up' &&
     (view.showAllFloors || walkthroughActive || activeFloorIndex === layout.floors.length - 1);
+  // Open to the sky, walls fully up can still hide a focused item (#783).
+  const sceneWalls = sceneWallDisplay(view.wallDisplay, walkthroughActive);
+  // A traced ground floor builds no shell walls.
+  const tracedGround = !!layout.floorPlanImage;
   const roofPeak = roofShows ? roofPeakHeight(roofStyle, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),
@@ -1526,7 +1530,15 @@ export function RoomOrganizer(): JSX.Element {
         focusOn(selectedItem.position, {
           floorY: isInsideBuilding(building, x, z) || activeFloorIndex > 0 ? activeFloorY : orbitGroundAt(z),
           size: Math.max(selectedItem.width, selectedItem.depth, selectedItem.height),
-          cover: covered ? { storeyHeight: activeStoreyHeight, building, walls: activeFloor.interiorWalls ?? [] } : null,
+          cover: focusCoverFor({
+            covered,
+            wallDisplay: sceneWalls,
+            storeyHeight: activeStoreyHeight,
+            building,
+            walls: activeFloor.interiorWalls ?? [],
+            hiddenSides: activeFloor.hiddenWalls ?? [],
+            noShell: tracedGround && activeFloorIndex === 0,
+          }),
         });
       },
       advanceTime: (deltaHours: number) => {
@@ -1586,6 +1598,9 @@ export function RoomOrganizer(): JSX.Element {
       selectedItem,
       focusOn,
       roofShows,
+      sceneWalls,
+      tracedGround,
+      activeFloor.hiddenWalls,
       view.showAllFloors,
       activeStoreyHeight,
       orbitGroundAt,
