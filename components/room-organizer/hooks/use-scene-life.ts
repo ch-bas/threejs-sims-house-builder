@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
+import { createNpcHandOff } from '../lib/npc-bodies';
 import { streetDryBoxes } from '../lib/street-row';
 import { streetSiteOf } from '../lib/walk-collision';
 import { modeAfterExplore, rememberModeBeforeExplore } from '../lib/walkthrough-view';
@@ -85,6 +86,9 @@ export function useSceneLife({
     [layout.width, layout.height, layout.floors, layout.terrain, layout.entrance, layout.frontage, layout.cutout, layout.neighbours, walkRoofStyle, walkRoofColor]
   );
 
+  // The player and the walkers, to each other (#585).
+  const [npcHandOff] = useState(createNpcHandOff);
+
   const walk = useWalkthrough({
     enabled: isReady && walkthroughActive,
     invalidate,
@@ -96,6 +100,7 @@ export function useSceneLife({
     activeFloorIndex,
     onFloorChange,
     onExit: exitWalkthrough,
+    npcs: npcHandOff,
   });
 
   // people.glb is fetched only once a person is placed or the walkers are on.
@@ -129,6 +134,7 @@ export function useSceneLife({
     shownFrom: npcShownFrom,
     shownTo: npcShownTo,
     riggedModelReady: peopleModelReady,
+    handOff: npcHandOff,
   });
 
   // Rebuilt with the street, not on every edit: it re-seeds the whole field.
@@ -164,6 +170,7 @@ export function useSceneLife({
     sceneRef,
     // Cones don't see through walls (#590).
     building: walkBuilding,
+    player: npcHandOff.player,
   });
 
   return { walk, exitWalkthrough, peopleModelReady };

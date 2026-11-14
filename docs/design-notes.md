@@ -411,6 +411,23 @@ to respect.
   camera cones); a floor switch, a climb in EXPLORE or a storey-height edit
   (which lifts them with their floor) never respawns anyone. Only deleting
   the storey, leaving it no free floor, or turning walkers off removes them.
+- **The player is one more person (#585).** `lib/npc-bodies` is a small
+  hand-off object `useSceneLife` makes once: the walkthrough writes the
+  player's feet and seat into it every frame, the walkers' step moves one
+  box per walker (its width, from its floor to above its head) in place.
+  The player's resolve appends those boxes to its storey's colliders (an
+  array rebuilt only when walkers come or go), so a walker is solid, and
+  one on another storey is passed under. The walkers treat the player as
+  another walker in the look-ahead, never step into it (they wait, then
+  route round), skip stops where it stands, and don't head for the seat it
+  sits in. One sitter per seat both ways: hips within 0.55 m share a seat,
+  so a three-seat sofa still takes the player in the middle and a walker at
+  each end. The camera cones test the player's feet like a walker's. A
+  walker held on the straight stretch into or out of a seat stands (no
+  walk cycle, no shadow passes) and after two seconds steps out to the
+  nearest free floor clear of the player. New walkers spawn clear of the
+  player, and a parked one standing on the player stays hidden until it
+  moves off.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
