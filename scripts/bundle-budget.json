@@ -1,0 +1,9 @@
+{
+  "note": "Gzip bytes the static export may ship (scripts/check-bundle.mjs, #732). Raising a budget is a review decision: run `npm run check:bundle -- --update` and commit this file with the change that needs it.",
+  "headroom": 0.03,
+  "budget": {
+    "firstLoadJs": 575488,
+    "largestChunk": 239616,
+    "css": 14336
+  }
+}
