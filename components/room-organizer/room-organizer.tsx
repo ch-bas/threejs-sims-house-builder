@@ -23,6 +23,7 @@ import { useKeyboardPlacement } from './hooks/use-keyboard-placement';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useSaveStatus, type SaveStatus, type SaveStatusStore } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
+import { usePhotoMode, usePhotoModeActive } from './hooks/use-photo-mode';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
@@ -57,6 +58,7 @@ import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
+import { PhotoBar } from './panels/photo-bar';
 import { PlacementHint } from './panels/placement-hint';
 import { SidebarDrawer } from './panels/sidebar-drawer';
 import { StatusToastHost } from './panels/status-toast';
@@ -496,10 +498,13 @@ export function RoomOrganizer(): JSX.Element {
     (z: number) => groundHeightAt(layout.terrain, z, layout.height / 2),
     [layout.terrain, layout.height]
   );
+  // L2 photo (#626): the canvas only orbits while the HUD is hidden.
+  const photoActive = usePhotoModeActive();
   const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
+      orbitOnly: photoActive,
       groundAt: orbitGroundAt,
       renderQuality: view.renderQuality,
       // The distance tool measures across furniture, so its clicks go to the floor (#341).
@@ -686,6 +691,21 @@ export function RoomOrganizer(): JSX.Element {
     sceneRef,
     cameraRef,
     onImported: clearTransientSelection,
+  });
+
+  // L2 photo (#626): HUD-less capture of the 3D view.
+  const photo = usePhotoMode({
+    available: isReady && !view.view2D,
+    houseName: layout.name,
+    rendererRef,
+    sceneRef,
+    cameraRef,
+    invalidate,
+    walking: walkthroughActive,
+    onEnter: () => {
+      deselectAll();
+      setHover(null);
+    },
   });
 
   // Advance the time-of-day at roughly 1 in-game hour per second when on.
@@ -1060,6 +1080,9 @@ export function RoomOrganizer(): JSX.Element {
         onArmStamp={armStamp}
         onCancelStamp={cancelStamp}
       />
+
+      {/* L2 photo (#626): the shutter, the one HUD photo mode keeps. */}
+      {photo.active && <PhotoBar onTake={photo.take} onDone={photo.leave} />}
 
       {/* Touch mode toggle — visible on mobile only */}
       <TouchModeToggle controlsRef={controlsRef} isReady={isReady} onFit={fitToRoom} />

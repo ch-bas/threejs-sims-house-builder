@@ -146,6 +146,7 @@ components/
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
+    │   ├── photo-mode.ts                Photo mode switch (enter/leave/subscribe) and the photo's size and file name (#626)
     │   ├── confirm-dialog.ts            askConfirm(): the in-app question queue that replaces window.confirm (#649)
     │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
@@ -237,6 +238,7 @@ components/
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
+    │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob (#626)
     │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
     │   ├── use-npcs.ts                  Animated walkers per storey (keyed by floor id, parked while not drawn): spawn, route-following step, re-route on floor edits; giving way, sitting, activities
@@ -322,6 +324,7 @@ components/
         ├── achievement-toast.tsx        Unlock toasts, one at a time: above the mode panel on desktop, the toast slot on small screens
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement or a ghost is pending (Cancel for touch)
+        ├── photo-bar.tsx                Photo mode's shutter: Take photo and Done, the one HUD left on screen (#626)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── confirm-dialog.tsx           The askConfirm() modal: focus trap, Enter confirms, Escape cancels (#649)
         ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), then the inline name field

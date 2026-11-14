@@ -39,6 +39,11 @@ export interface SceneEventHandlers {
    */
   walkthroughActive?: boolean;
   /**
+   * Photo mode (#626): the canvas only orbits. Nothing is selected, dragged
+   * or hovered while the HUD that would show it is hidden.
+   */
+  orbitOnly?: boolean;
+  /**
    * Wall-draw mode: every press is a floor point for onEmptyClick — furniture
    * and walls don't claim it, and furniture shows no hover affordance (#349).
    */
@@ -376,7 +381,7 @@ export function attachDragHandlers({
   const onPointerDown = (event: PointerEvent): void => {
     // In walkthrough mode the canvas click only engages pointer lock — it must
     // not select furniture, open a popover or start a drag (see #67).
-    if (handlersRef.current.walkthroughActive) return;
+    if (handlersRef.current.walkthroughActive || handlersRef.current.orbitOnly) return;
     // The synthetic press below, replaying the first finger to the controls.
     if (replaying) return;
     // A third finger on a twist changes nothing.
@@ -495,7 +500,7 @@ export function attachDragHandlers({
   let lastHoverId: string | null = null;
   const updateHover = (event: PointerEvent): void => {
     // No hover affordance while walkthrough owns the camera (see #67).
-    if (handlersRef.current.walkthroughActive) return;
+    if (handlersRef.current.walkthroughActive || handlersRef.current.orbitOnly) return;
     const hoverCallback = handlersRef.current.onItemHover;
     if (!hoverCallback) return;
     setPointerFromEvent(event);
