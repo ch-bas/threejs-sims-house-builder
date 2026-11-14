@@ -6,6 +6,7 @@ import {
   snapToNeighbors,
   snapToWall as snapPositionToWall,
 } from '../lib/geometry';
+import { NO_WALLS, wallContact, wallLineKey, type WallContact } from '../lib/haptics';
 import { isOpening, settleWallMountedItem, snapOpeningToWall, snapWallMountedItem, type WallGap } from '../lib/opening-snap';
 import { ghostItem } from '../lib/placement-ghost';
 import type { LayoutActions } from './use-layout-state';
@@ -56,6 +57,11 @@ export interface UseItemPlacementResult {
    * wall it snapped to, as the drop will settle it (#601).
    */
   snapPosition(itemId: string, x: number, z: number): { x: number; z: number; rotation?: number };
+  /**
+   * The walls the last `snapPosition` left the item against, with snap to
+   * wall on, or the wall an opening settled on; none otherwise (#687).
+   */
+  lastSnapWall(): WallContact;
   getDragPlaneY(): number;
   /**
    * Where a catalogue entry dropped at x/z would land, for the placement
@@ -100,6 +106,9 @@ export function useItemPlacement({
     [gapX0, gapX1, cutout]
   );
 
+  // The walls the last snapPosition left the item against, for the snap haptic (#687).
+  const snapWallRef = useRef<WallContact>(NO_WALLS);
+
   /** Grid, neighbour and wall snaps for a free-standing item, as the toggles ask. */
   const snapFree = useCallback(
     (item: FurnitureItem, x: number, z: number, excludeIds?: ReadonlySet<string>) => {
@@ -126,6 +135,9 @@ export function useItemPlacement({
           roomDepth,
           cutout,
         });
+        // Against the face, whichever snap put it there: the grid can land
+        // it flush before the wall snap has anything to move.
+        snapWallRef.current = wallContact(result, item, { width: roomWidth, height: roomDepth, cutout });
       }
       return result;
     },
@@ -136,12 +148,15 @@ export function useItemPlacement({
     (itemId: string, x: number, z: number) => {
       const result = { x, z };
       const item = activeFloor.items.find((entry) => entry.id === itemId);
+      snapWallRef.current = NO_WALLS;
 
       // Doors and windows have to live on a wall — there's no such thing as
       // a "free-floating" opening. Force-snap them regardless of the toggle.
       if (item && isOpening(item.type)) {
         const settled = settleWallMountedItem(item, result, roomWidth, roomDepth, activeFloor.interiorWalls ?? [], gap.frontGap, gap.cutout);
         if (settled) {
+          const wall = wallLineKey(settled.position, settled.rotation ?? item.rotation ?? 0);
+          snapWallRef.current = { touching: [wall], near: [wall] };
           return { ...settled.position, ...(settled.rotation === undefined ? {} : { rotation: settled.rotation }) };
         }
       }
@@ -288,5 +303,7 @@ export function useItemPlacement({
     [buildingCost, refusePurchase, placeNow]
   );
 
-  return { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem };
+  const lastSnapWall = useCallback(() => snapWallRef.current, []);
+
+  return { snapPosition, lastSnapWall, getDragPlaneY, snapCatalogPlacement, placeCatalogItem };
 }

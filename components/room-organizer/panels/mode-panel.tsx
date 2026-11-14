@@ -5,7 +5,10 @@ import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } f
 import { useEdgeVar } from '../hooks/use-edge-var';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useBudgetRemaining, useLayoutActions } from '../hooks/use-layout-store';
+import { useMediaQuery } from '../hooks/use-media-query';
 import { CURRENCY_SYMBOL } from '../lib/constants';
+import { canVibrate, saveHapticsChoice } from '../lib/haptics';
+import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { ViewOptionsMenu } from './view-options';
@@ -35,7 +38,10 @@ const MODES: ReadonlyArray<{
 
 export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Element {
   const { layout, history } = useRoomEditor();
-  const view = useViewSettings('showCameraVision', 'showMinimap', 'showNpcs', 'snapToGrid', 'soundsEnabled', 'view2D');
+  const view = useViewSettings('showCameraVision', 'showMinimap', 'showNpcs', 'snapToGrid', 'soundsEnabled', 'hapticsEnabled', 'view2D');
+  // Only where a buzz can happen: a touch-first device with the API (#687).
+  const coarsePointer = useMediaQuery(COARSE_POINTER_QUERY);
+  const hapticsSwitch = coarsePointer && canVibrate();
   const { setAutoCycleLighting, toggle } = useEditorViewActions();
   const gameMode = useEditorView((state) => state.gameMode);
   const exploring = useExploring();
@@ -252,6 +258,17 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           active={view.soundsEnabled}
           onClick={() => toggle('soundsEnabled')}
         />
+        {hapticsSwitch && (
+          <ActionButton
+            label={view.hapticsEnabled ? 'Turn off vibration' : 'Turn on vibration'}
+            icon="vibrate"
+            active={view.hapticsEnabled}
+            onClick={() => {
+              saveHapticsChoice(!view.hapticsEnabled);
+              toggle('hapticsEnabled');
+            }}
+          />
+        )}
         <ActionButton
           label={in3D(view.showCameraVision ? 'Hide camera cones' : 'Show camera cones')}
           icon="vision"

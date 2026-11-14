@@ -92,6 +92,7 @@ components/
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
+    │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
     │   ├── wall-edit.ts                 Moving drawn walls: slide, end moves, corners that follow, what rides along (#718)
     │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule

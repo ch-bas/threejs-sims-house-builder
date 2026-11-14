@@ -48,6 +48,7 @@ import { isInsideBuilding } from './lib/footprint';
 import { formatMetres } from './lib/format';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
+import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
 import { COARSE_POINTER_QUERY } from './lib/hud-layout';
 import { randomSuffix } from './lib/ids';
@@ -150,6 +151,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   wallDisplay: 'cutaway',
   measurementMode: false,
   soundsEnabled: false,
+  hapticsEnabled: true,
   drawWallMode: false,
   drawZoneMode: false,
   showHeatmap: false,
@@ -197,11 +199,13 @@ export function RoomOrganizer(): JSX.Element {
   const exploring = useStore(viewStore, (state) => state.gameMode === 'live');
   const designing = useStore(viewStore, (state) => state.gameMode === 'build');
 
+  // The one call site per event: the sound, and on a touch device the buzz (#687).
   const playCue = useCallback(
     (cue: SoundCue) => {
       if (view.soundsEnabled) playSound(cue);
+      if (view.hapticsEnabled) cueHaptic(cue);
     },
-    [view.soundsEnabled]
+    [view.soundsEnabled, view.hapticsEnabled]
   );
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedWall, setSelectedWall] = useState<SelectedWall | null>(null);
@@ -330,6 +334,8 @@ export function RoomOrganizer(): JSX.Element {
   useEffect(() => {
     const renderQuality = loadQualityChoice();
     if (renderQuality !== 'auto') setView((v) => ({ ...v, renderQuality }));
+    // The haptics switch, likewise per device (#687).
+    if (!loadHapticsChoice()) setView((v) => ({ ...v, hapticsEnabled: false }));
   }, [setView]);
 
   // The zone with handles on the plan (#628). The handles are zone mode's.
@@ -895,7 +901,7 @@ export function RoomOrganizer(): JSX.Element {
   // Set once the keyboard placement and the ghost exist, below.
   const placedAfterConfirmRef = useRef<(id: string, catalogItem: CatalogItem) => void>(() => {});
 
-  const { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
+  const { snapPosition: snapPlacement, lastSnapWall, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
     activeFloor,
     activeFloorY,
     roomWidth: layout.width,
@@ -911,6 +917,26 @@ export function RoomOrganizer(): JSX.Element {
     // place call returned '' (#649).
     onPlacedAfterConfirm: (id: string, catalogItem: CatalogItem) => placedAfterConfirmRef.current(id, catalogItem),
   });
+
+  // A drag, in either view, buzzes once as the item snaps onto a wall (#687):
+  // every move's snap goes through here, and every drag starts through
+  // startItemDrag, which forgets the last drag's wall.
+  const [snapTicker] = useState(createSnapTicker);
+  const snapPosition = useCallback(
+    (id: string, x: number, z: number) => {
+      const snapped = snapPlacement(id, x, z);
+      if (snapTicker.next(lastSnapWall()) && view.hapticsEnabled) haptic('snap');
+      return snapped;
+    },
+    [snapPlacement, lastSnapWall, snapTicker, view.hapticsEnabled]
+  );
+  const startItemDrag = useCallback(
+    (id: string) => {
+      snapTicker.reset();
+      handleDragStart(id);
+    },
+    [snapTicker, handleDragStart]
+  );
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
 
@@ -1010,7 +1036,7 @@ export function RoomOrganizer(): JSX.Element {
     onItemSelect: handleSelect,
     onDeselect: deselectAll,
     snapPosition,
-    onItemDragStart: handleDragStart,
+    onItemDragStart: startItemDrag,
     onItemDrag: handleDrag,
     onItemDragEnd: handleDragEnd,
     onItemDragCancel: handleDragCancel,
@@ -1044,7 +1070,7 @@ export function RoomOrganizer(): JSX.Element {
       floorPickOnly: view.drawWallMode || view.measurementMode,
       onItemSelect: handleSelect,
       selectedIds: allSelectedIds,
-      onItemDragStart: handleDragStart,
+      onItemDragStart: startItemDrag,
       onItemDrag: handleDrag,
       onItemDragEnd: handleDragEnd,
       onItemDragCancel: handleDragCancel,
