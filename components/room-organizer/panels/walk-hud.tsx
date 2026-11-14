@@ -4,6 +4,7 @@ import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useViewSettings } from '../contexts';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
+import { readStick } from '../lib/walk-input';
 import { Icon } from '../plotcraft/icon';
 
 export interface WalkHudProps {
@@ -17,10 +18,16 @@ export interface WalkHudProps {
   floorName: string;
   /** PgUp / PgDn have somewhere to go (#446). */
   multiFloor: boolean;
-  /** The touch stick: x right, y forward, each in [−1, 1]. */
-  onStick(x: number, y: number): void;
+  /** A storey above / below the walker's, for the touch floor buttons (#688). */
+  canFloorUp: boolean;
+  canFloorDown: boolean;
+  /** The touch stick: x right, y forward, each in [−1, 1]; full throw sprints (#688). */
+  onStick(x: number, y: number, sprint: boolean): void;
   onToggleSit(): void;
   onExit(): void;
+  /** What PgUp / PgDn and `[` / `]` do, for the touch buttons (#688). */
+  onChangeFloor(delta: number): void;
+  onAdvanceTime(deltaHours: number): void;
 }
 
 /**
@@ -80,13 +87,32 @@ function DesktopWalkHud({ locked, lockRefused, seatName, seated, floorName, mult
   );
 }
 
-function TouchWalkHud({ seatName, seated, floorName, onStick, onToggleSit, onExit }: WalkHudProps): JSX.Element {
+function TouchWalkHud({ seatName, seated, floorName, multiFloor, canFloorUp, canFloorDown, onStick, onToggleSit, onExit, onChangeFloor, onAdvanceTime }: WalkHudProps): JSX.Element {
   const canSit = seated || seatName !== null;
   return (
     <>
-      <StatusBar floorName={floorName} hint="Drag to look" onExit={onExit} />
+      <StatusBar floorName={floorName} hint="Drag to look" onExit={onExit} onAdvanceTime={onAdvanceTime} />
       <Reticle prompt={null} promptKey="" />
       <Stick onStick={onStick} />
+      {multiFloor && (
+        <div
+          role="group"
+          aria-label="Floor"
+          className="pc-walk-floors absolute"
+          style={{
+            left: `calc(16px + ${STICK_SIZE + 12}px + env(safe-area-inset-left, 0px))`,
+            zIndex: 26,
+            height: STICK_SIZE,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: 8,
+          }}
+        >
+          <RoundButton label="Floor up" icon="arrowU" disabled={!canFloorUp} onPress={() => onChangeFloor(1)} />
+          <RoundButton label="Floor down" icon="arrowD" disabled={!canFloorDown} onPress={() => onChangeFloor(-1)} />
+        </div>
+      )}
       {canSit && (
         <button
           type="button"
@@ -134,40 +160,64 @@ const ACTION_POSITION: CSSProperties = {
 
 const STICK_SIZE = 116;
 const KNOB_SIZE = 48;
-/** A push under this fraction of the throw is a resting thumb, not a step. */
-const STICK_DEAD_ZONE = 0.12;
 
-/** A thumb stick: drag the knob, the walker walks that way, harder for a fuller throw. */
-function Stick({ onStick }: { onStick(x: number, y: number): void }): JSX.Element {
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
+/** A 44px round glass button of the touch walk HUD (#688). A held key presses it once. */
+function RoundButton({ label, icon, disabled = false, onPress }: { label: string; icon: 'arrowU' | 'arrowD'; disabled?: boolean; onPress(): void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onPress}
+      onKeyDown={(event) => {
+        if (event.repeat) event.preventDefault();
+      }}
+      className="pc-glass pc-glass--dark"
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--pc-cyan-glow)',
+        border: '1.5px solid var(--pc-cyan-glow)',
+        opacity: disabled ? 0.4 : 1,
+      }}
+    >
+      <Icon name={icon} size={18} />
+    </button>
+  );
+}
+
+/** A thumb stick: drag the knob, the walker walks that way, harder for a fuller throw; at the rim it sprints (#688). */
+function Stick({ onStick }: { onStick(x: number, y: number, sprint: boolean): void }): JSX.Element {
+  const [knob, setKnob] = useState({ x: 0, y: 0, sprint: false });
   const pointerRef = useRef<number | null>(null);
+  // The last reading's sprint, read before React re-renders between moves.
+  const sprintRef = useRef(false);
   const reach = (STICK_SIZE - KNOB_SIZE) / 2;
 
   const move = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    let dx = event.clientX - (rect.left + rect.width / 2);
-    let dy = event.clientY - (rect.top + rect.height / 2);
-    const length = Math.hypot(dx, dy);
-    if (length > reach) {
-      dx = (dx / length) * reach;
-      dy = (dy / length) * reach;
-    }
-    setKnob({ x: dx, y: dy });
-    const push = Math.min(1, length / reach);
-    if (push < STICK_DEAD_ZONE) onStick(0, 0);
-    else onStick(dx / reach, -dy / reach);
+    const reading = readStick(event.clientX - (rect.left + rect.width / 2), event.clientY - (rect.top + rect.height / 2), reach, sprintRef.current);
+    sprintRef.current = reading.sprint;
+    setKnob({ x: reading.knobX, y: reading.knobY, sprint: reading.sprint });
+    onStick(reading.x, reading.y, reading.sprint);
   };
   const release = () => {
     pointerRef.current = null;
-    setKnob({ x: 0, y: 0 });
-    onStick(0, 0);
+    sprintRef.current = false;
+    setKnob({ x: 0, y: 0, sprint: false });
+    onStick(0, 0, false);
   };
 
   return (
     <div
       data-walk-stick=""
       role="group"
-      aria-label="Walk: drag to move"
+      aria-label="Walk: drag to move, to the rim to sprint"
+      data-sprint={knob.sprint ? '' : undefined}
       className="pc-glass pc-glass--dark pc-walk-stick absolute"
       onPointerDown={(event) => {
         if (pointerRef.current !== null) return;
@@ -202,7 +252,8 @@ function Stick({ onStick }: { onStick(x: number, y: number): void }): JSX.Elemen
           width: KNOB_SIZE,
           height: KNOB_SIZE,
           borderRadius: '50%',
-          background: 'rgba(127, 243, 255, 0.22)',
+          // Filled at the rim: the walker sprints.
+          background: knob.sprint ? 'rgba(127, 243, 255, 0.55)' : 'rgba(127, 243, 255, 0.22)',
           border: '1.5px solid var(--pc-cyan-glow)',
           boxShadow: 'var(--pc-halo-cyan-soft)',
           transform: `translate(${knob.x}px, ${knob.y}px)`,
@@ -213,8 +264,8 @@ function Stick({ onStick }: { onStick(x: number, y: number): void }): JSX.Elemen
   );
 }
 
-/** Floor and clock, top centre; on touch also the look hint and a way out. */
-function StatusBar({ floorName, hint, onExit }: { floorName: string; hint?: string; onExit?(): void }): JSX.Element {
+/** Floor and clock, top centre; on touch also the look hint, a way out, and the clock moves on an hour a tap (#688). */
+function StatusBar({ floorName, hint, onExit, onAdvanceTime }: { floorName: string; hint?: string; onExit?(): void; onAdvanceTime?(deltaHours: number): void }): JSX.Element {
   const { timeOfDay } = useViewSettings('timeOfDay');
   const hours = Math.floor(timeOfDay);
   const minutes = Math.floor((timeOfDay - hours) * 60);
@@ -229,11 +280,42 @@ function StatusBar({ floorName, hint, onExit }: { floorName: string; hint?: stri
         <Icon name="stairs" size={14} />
         <span style={{ color: 'var(--pc-paper)' }}>{floorName}</span>
         <Dot />
-        <SunMoon night={night} />
-        <span style={{ color: 'var(--pc-paper)', fontVariantNumeric: 'tabular-nums' }}>
-          <span className="sr-only">Time </span>
-          {clock}
-        </span>
+        {onAdvanceTime ? (
+          <button
+            type="button"
+            onClick={() => onAdvanceTime(1)}
+            onKeyDown={(event) => {
+              if (event.repeat) event.preventDefault();
+            }}
+            aria-label={`One hour later, now ${clock}`}
+            className="pc-walk-clock"
+            style={{
+              pointerEvents: 'auto',
+              height: 32,
+              padding: '0 10px',
+              borderRadius: 16,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.18)',
+              color: 'var(--pc-cyan-glow)',
+              font: 'inherit',
+            }}
+          >
+            <SunMoon night={night} />
+            <span style={{ color: 'var(--pc-paper)', fontVariantNumeric: 'tabular-nums' }}>{clock}</span>
+            <Icon name="fastfwd" size={12} />
+          </button>
+        ) : (
+          <>
+            <SunMoon night={night} />
+            <span style={{ color: 'var(--pc-paper)', fontVariantNumeric: 'tabular-nums' }}>
+              <span className="sr-only">Time </span>
+              {clock}
+            </span>
+          </>
+        )}
         {hint && (
           <>
             <Dot />

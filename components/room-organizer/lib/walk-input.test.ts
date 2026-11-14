@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WALK_MAX_FRAME_SECONDS, interacts, isTypingTarget, releasesHeldKeys, startsWalking, walkFrameSeconds } from './walk-input';
+import { WALK_MAX_FRAME_SECONDS, interacts, isTypingTarget, readStick, releasesHeldKeys, startsWalking, walkFrameSeconds } from './walk-input';
 
 const key = (code: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => ({
   code,
@@ -98,5 +98,36 @@ describe('isTypingTarget (#558)', () => {
     expect(isTypingTarget(element('BUTTON'))).toBe(false);
     expect(isTypingTarget({} as EventTarget)).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+});
+
+describe('readStick (#688)', () => {
+  const reach = 100;
+  it('rests inside the dead zone', () => {
+    expect(readStick(2, -2, reach)).toEqual({ x: 0, y: 0, knobX: 2, knobY: -2, sprint: false });
+  });
+
+  it('walks in proportion to the push, reaching full speed at 0.8 of the throw', () => {
+    expect(readStick(0, -40, reach).y).toBeCloseTo(0.5);
+    expect(readStick(0, -80, reach).y).toBeCloseTo(1);
+    expect(readStick(0, -79, reach).y).toBeCloseTo(79 / 80);
+    const between = readStick(60, -60, reach);
+    expect(Math.hypot(between.x, between.y)).toBeCloseTo(1);
+    expect(readStick(0, -90, reach)).toMatchObject({ y: 1, sprint: false });
+  });
+
+  it('switches the sprint on only at the rim', () => {
+    expect(readStick(96, 0, reach).sprint).toBe(false);
+    expect(readStick(97, 0, reach).sprint).toBe(true);
+    const past = readStick(0, 300, reach);
+    expect(past).toMatchObject({ sprint: true, knobX: 0, knobY: reach });
+    expect(past.y).toBeCloseTo(-1);
+  });
+
+  it('holds the sprint until the thumb eases back under 0.88', () => {
+    expect(readStick(90, 0, reach, true).sprint).toBe(true);
+    expect(readStick(88, 0, reach, true).sprint).toBe(true);
+    expect(readStick(87, 0, reach, true).sprint).toBe(false);
+    expect(readStick(90, 0, reach, false).sprint).toBe(false);
   });
 });

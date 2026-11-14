@@ -245,6 +245,28 @@ describe('useWalkthrough — walking (#446)', () => {
   });
 });
 
+describe('useWalkthrough — the stick sprints (#688)', () => {
+  it('walks twice as far at full throw as the same push without the sprint', async () => {
+    const walked = async (sprint: boolean): Promise<number> => {
+      const { camera, canvas, result } = await setup(building([FRONT_DOOR]));
+      pointer(canvas, 'pointerdown', { pointerType: 'touch', pointerId: 7, clientX: 10, clientY: 10 });
+      pointer(window, 'pointerup', { pointerType: 'touch', pointerId: 7, clientX: 10, clientY: 10 });
+      const start = camera.position.clone();
+      act(() => result.current.setStick(0, 1, sprint));
+      frames(4);
+      act(() => result.current.setStick(0, 0));
+      const distance = camera.position.distanceTo(start);
+      cleanup();
+      frameQueue = [];
+      return distance;
+    };
+    const walk = await walked(false);
+    const sprint = await walked(true);
+    expect(walk).toBeGreaterThan(0.05);
+    expect(sprint / walk).toBeCloseTo(2, 1);
+  });
+});
+
 describe('useWalkthrough — sitting (#463b)', () => {
   it('offers the sofa, sits facing the TV with E, and stands back up on a step', async () => {
     const { camera, lock, result, facing } = await setup(building([FRONT_DOOR, SOFA, TV]));

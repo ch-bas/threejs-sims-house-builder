@@ -81,8 +81,8 @@ export interface UseWalkthroughResult {
   nearStairs: boolean;
   /** The storey whose lamps light the walker: the one above from its top tread (#446). */
   lampStorey: number;
-  /** The touch stick (#446): x right, y forward, each in [−1, 1]. */
-  setStick(x: number, y: number): void;
+  /** The touch stick (#446): x right, y forward, each in [−1, 1]; full throw sprints (#688). */
+  setStick(x: number, y: number, sprint?: boolean): void;
   /** Sit on the seat in reach, or stand up (`E`, or the HUD's button on touch). */
   toggleSit(): void;
 }
@@ -111,6 +111,8 @@ interface WalkSession {
   eyeY: number;
   stickX: number;
   stickY: number;
+  /** The stick is at full throw: a sprint, as Shift is (#688). */
+  stickSprint: boolean;
   /** Walking by touch: no pointer lock, the stick and drags drive the walker. */
   touch: boolean;
   /** Where the walker stood before sitting, or null while standing. */
@@ -202,6 +204,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     eyeY: 0,
     stickX: 0,
     stickY: 0,
+    stickSprint: false,
     touch: false,
     seated: null,
     seatTargetId: null,
@@ -332,6 +335,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     session.pendingFloors.length = 0;
     session.stickX = 0;
     session.stickY = 0;
+    session.stickSprint = false;
     session.seatTargetId = null;
     if (initial) placeAt(walkSpawn(initial, initial.floorIndex));
 
@@ -562,7 +566,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         } else if (len > 0 && !session.seated && !transition.active) {
           // The stick is analogue: a light push walks slowly.
           const scale = len > 1 ? 1 / len : 1;
-          const sprint = pressed.has('ShiftLeft') || pressed.has('ShiftRight');
+          const sprint = pressed.has('ShiftLeft') || pressed.has('ShiftRight') || session.stickSprint;
           const distance = walkSpeedRef.current * (sprint ? 2 : 1) * delta;
           camera.getWorldDirection(forward);
           forward.y = 0;
@@ -685,10 +689,11 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     arriveRef.current?.(activeFloorIndex);
   }, [enabled, activeFloorIndex]);
 
-  const setStick = useCallback((x: number, y: number) => {
+  const setStick = useCallback((x: number, y: number, sprint = false) => {
     const session = sessionRef.current;
     session.stickX = x;
     session.stickY = y;
+    session.stickSprint = sprint && (x !== 0 || y !== 0);
     if (x !== 0 || y !== 0) session.touch = true;
     invalidateRef.current?.();
   }, []);
