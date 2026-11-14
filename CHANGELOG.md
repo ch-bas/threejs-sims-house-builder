@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.33.0] - 2026-11-14
+
+The **Living house** milestone, first wave: the house feels lived in and gives you goals. Walkers keep to their storey, step round you and go where their needs send them; doors swing open as you walk up; rooms know what they are and earn stars; each house has the funds you choose; the catalogue comes in colours; a photo mode saves the view without the HUD; and a traced floor plan can be scaled from a known length.
+
+### Added
+- Walkers get hungry, tired and bored, and go to the fridge or stove, the sofa or bed, or the TV or bookshelf ([#617](https://github.com/ch-bas/threejs-sims-house-builder/issues/617))
+- In EXPLORE, doors swing open as you walk up to them and shut behind you ([#605](https://github.com/ch-bas/threejs-sims-house-builder/issues/605))
+- Photo mode (View options): hide the HUD, frame the shot and save a PNG of the 3D view at twice screen resolution ([#626](https://github.com/ch-bas/threejs-sims-house-builder/issues/626))
+- Statistics names the room each zone's furniture makes and gives it 0–5 stars (decor, a window, a lamp, no collisions, room to move), with what would add more ([#613](https://github.com/ch-bas/threejs-sims-house-builder/issues/613))
+- Each house has its own funds, set beside the Hard budget switch; the header, Statistics, Surprise and the hard budget measure spending against them, and older houses keep 25,000 ([#609](https://github.com/ch-bas/threejs-sims-house-builder/issues/609))
+- Catalogue tiles offer colours before you place: the sofa, armchair, bed and fridge come in several, and there are a microwave, a washing machine, a bar stool and a ceiling fan ([#621](https://github.com/ch-bas/threejs-sims-house-builder/issues/621))
+- Room settings can scale an uploaded floor plan: tap two points a known distance apart on the 2D plan, type the length, then drag the plan into place ([#726](https://github.com/ch-bas/threejs-sims-house-builder/issues/726))
+
+### Fixed
+- Walkers belong to their storey: switching floors, climbing the stairs in EXPLORE or changing a storey's height no longer makes them vanish and respawn ([#580](https://github.com/ch-bas/threejs-sims-house-builder/issues/580))
+- In EXPLORE, you and the walkers no longer pass through each other or share a seat, and security cameras now spot you ([#585](https://github.com/ch-bas/threejs-sims-house-builder/issues/585))
+
 ## [1.32.0] - 2026-11-14
 
 The **Project health** milestone: the app is safer to ship and easier to work on. Builds are reproducible and need no network, CI watches the download size and loads the built site in a browser, scripts may only come from the app's own path, the licences of everything shipped are published, and the editor's largest file is split into focused hooks.
@@ -956,7 +973,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.32.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.33.0...HEAD
+[1.33.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.32.0...v1.33.0
 [1.32.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.31.0...v1.32.0
 [1.31.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.29.0...v1.30.0
