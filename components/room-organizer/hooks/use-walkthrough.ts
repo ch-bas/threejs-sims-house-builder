@@ -118,6 +118,11 @@ export interface UseWalkthroughResult {
   setStick(x: number, y: number, sprint?: boolean): void;
   /** Sit on the seat in reach, switch the lamp in reach, or stand up (`E`, or the HUD's button on touch). */
   toggleSit(): void;
+  /**
+   * Metres the walker has moved over the ground this walk, read live: the
+   * footsteps are paced by it (#911). Blocked steps don't count.
+   */
+  walkedDistance(): number;
 }
 
 /** Shoulder-width walker: wide enough that the camera's near plane never pokes
@@ -154,6 +159,8 @@ interface WalkSession {
   /** The lamp in reach (#910), and whether it showed as on. */
   lampTargetId: string | null;
   lampOn: boolean;
+  /** Metres moved this walk (#911). */
+  walked: number;
   outside: boolean;
   nearStairs: boolean;
   /** The floor the walker last reported, and the reports React hasn't echoed yet. */
@@ -258,6 +265,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     seatTargetId: null,
     lampTargetId: null,
     lampOn: false,
+    walked: 0,
     outside: false,
     nearStairs: false,
     reportedFloor: 0,
@@ -685,7 +693,10 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           const world = worldRef.current;
           // The walkers' bodies block too (#585).
           const solid = withNpcBodies(collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS, npcsRef.current?.bodies ?? NO_BODIES, bodiesCache);
+          const fromX = walker.x;
+          const fromZ = walker.z;
           if (world) advanceWalker(world, solid, walker, moveX, moveZ, WALKER_RADIUS);
+          session.walked += Math.hypot(walker.x - fromX, walker.z - fromZ);
           publishPlayer();
           dirty = true;
           updateView(session.nearStairs);
@@ -823,6 +834,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     invalidateRef.current?.();
   }, []);
   const toggleSit = useCallback(() => toggleSitRef.current?.(), []);
+  const walkedDistance = useCallback(() => sessionRef.current.walked, []);
 
-  return { lockRefused, locked, seatName: seated ? null : seatName, lamp: seated ? null : lamp, seated, outside, nearStairs, lampStorey, setStick, toggleSit };
+  return { lockRefused, locked, seatName: seated ? null : seatName, lamp: seated ? null : lamp, seated, outside, nearStairs, lampStorey, setStick, toggleSit, walkedDistance };
 }

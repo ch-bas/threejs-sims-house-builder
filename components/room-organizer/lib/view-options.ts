@@ -50,3 +50,21 @@ export function withViewInvariants(view: ViewSettings): ViewSettings {
   if (view.drawZoneMode && !view.view2D) return { ...view, drawZoneMode: false };
   return view;
 }
+
+/**
+ * The dock's sound tile (#911) steps through three settings: off, the UI
+ * cues, and the cues with EXPLORE's ambience (rain, footsteps). Muting turns
+ * both off, so the ambience never plays with the sounds muted.
+ */
+export function nextSoundSetting(view: ViewSettings): ViewSettings {
+  if (!view.soundsEnabled) return { ...view, soundsEnabled: true, ambienceEnabled: false };
+  if (!view.ambienceEnabled) return { ...view, ambienceEnabled: true };
+  return { ...view, soundsEnabled: false, ambienceEnabled: false };
+}
+
+/** What a press on the sound tile does next, for its label. */
+export function soundTileLabel(view: Pick<ViewSettings, 'soundsEnabled' | 'ambienceEnabled'>): string {
+  if (!view.soundsEnabled) return 'Enable sounds';
+  if (!view.ambienceEnabled) return 'Add ambience: rain and footsteps in EXPLORE';
+  return 'Mute sounds and ambience';
+}
