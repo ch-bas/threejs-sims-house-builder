@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-11-14
+
+The **Polish: desktop & mobile** milestone, second wave: touch and keyboard work the way you expect. The 2D plan zooms, a selected item turns with two fingers, phones buzz on a placement or a refusal, items can be reached from the keyboard, and a wall move can no longer leave a picture hanging over a door.
+
+### Added
+- The 2D plan can be zoomed and panned: pinch or use two fingers, drag empty floor once zoomed in, double-tap empty floor to fit it again, or use the mouse wheel ([#678](https://github.com/ch-bas/threejs-sims-house-builder/issues/678))
+- Two fingers on a selected, unlocked item turn it in 15° steps; one undo takes the whole turn back, and a pinch still moves the camera ([#689](https://github.com/ch-bas/threejs-sims-house-builder/issues/689))
+- On Android phones and tablets, placing an item, snapping it onto a wall and a refused action give a short vibration, with a switch beside the sound switch ([#687](https://github.com/ch-bas/threejs-sims-house-builder/issues/687))
+- Items can be selected from the keyboard: with the 3D view or the plan focused, Tab and Shift+Tab step through the floor's items, a status line names the selection, and Enter moves into its popover ([#650](https://github.com/ch-bas/threejs-sims-house-builder/issues/650))
+- Touch walkthrough: push the stick to its rim to sprint, use the floor buttons beside the stick, and tap the clock to move the time on an hour ([#688](https://github.com/ch-bas/threejs-sims-house-builder/issues/688))
+
+### Changed
+- On a short touch tablet, choosing the wall tool brings the whole Room Stamp panel into view above the build tools ([#751](https://github.com/ch-bas/threejs-sims-house-builder/issues/751))
+- Selecting a wall of an L-shaped house outlines every face that side's paint covers, the notch wall included ([#783](https://github.com/ch-bas/threejs-sims-house-builder/issues/783))
+- The item popover says why an item shows red: the porch, a stairwell, a partition, the room's edge or another item ([#627](https://github.com/ch-bas/threejs-sims-house-builder/issues/627))
+
+### Fixed
+- A wall on the 2D plan moves with a single touch drag, even before it is selected; the corner cut's hint now says a flat roof or none ([#786](https://github.com/ch-bas/threejs-sims-house-builder/issues/786))
+- Switching to another window mid-drag no longer leaves the item stuck to the pointer: the drag is undone ([#779](https://github.com/ch-bas/threejs-sims-house-builder/issues/779))
+- Moving or shortening a wall is refused when it would leave a picture, mirror, shelf or clock over a door or window; cutting a corner moves such decor along its wall to a clear spot ([#778](https://github.com/ch-bas/threejs-sims-house-builder/issues/778))
+- The Storage & backup meter updates as soon as you save or delete a layout, and once after a backup restore ([#711](https://github.com/ch-bas/threejs-sims-house-builder/issues/711))
+- Focusing on a garden item in an L's corner no longer puts the camera inside the other wing, and with the walls up and no roof focus turns away from a wall that would hide the item ([#783](https://github.com/ch-bas/threejs-sims-house-builder/issues/783))
+- A door or window dragged quickly past the end of its wall stops at that end instead of where the last move left it ([#783](https://github.com/ch-bas/threejs-sims-house-builder/issues/783))
+
 ## [1.30.0] - 2026-11-07
 
 The **Rendering & performance II** milestone, second wave: the editor is quicker and steadier. Pages load faster, no frames are spent when nothing moves, big houses no longer freeze, and the scene holds together: upper storeys stand on a floor, and garden items follow a sloped site.
@@ -908,7 +932,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.30.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.31.0...HEAD
+[1.31.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.29.0...v1.30.0
 [1.29.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.28.0...v1.29.0
 [1.28.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.27.0...v1.28.0
