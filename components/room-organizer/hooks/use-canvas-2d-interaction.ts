@@ -330,9 +330,15 @@ export function useCanvas2DInteraction(
       downClientY: number;
       threshold: number;
       started: boolean;
+      /**
+       * A wall this press is only now selecting, selected at the release
+       * (#786): selecting opens the paint sheet, which on a phone covers the
+       * finger, and the drag would go on over the HUD and be called off.
+       */
+      select?: { id: string; side: WallSide };
     }
     let wallHold: WallHold | null = null;
-    const holdWall = (gesture: HeldGesture, event: PointerEvent): void => {
+    const holdWall = (gesture: HeldGesture, event: PointerEvent, select?: WallHold['select']): void => {
       wallHold = {
         pointerId: event.pointerId,
         gesture,
@@ -340,6 +346,7 @@ export function useCanvas2DInteraction(
         downClientY: event.clientY,
         threshold: dragThresholdPx(event.pointerType),
         started: false,
+        ...(select ? { select } : {}),
       };
     };
     // The fit, measured at each press: the gesture maps the pointer and
@@ -621,9 +628,16 @@ export function useCanvas2DInteraction(
         // The panel a new selection opens refits the plan. On a press that
         // also holds the wall the fit is frozen till the release, so the wall
         // stays under the pointer.
-        const slide = wall && p.onWallGrab?.({ wallId: wall.id, grip: 'body', x: world.x, z: world.z, fresh: wall.id !== p.selectedWallId });
+        const fresh = wall !== null && wall.id !== p.selectedWallId;
+        const slide = wall && p.onWallGrab?.({ wallId: wall.id, grip: 'body', x: world.x, z: world.z, fresh });
         // The side of the line the press landed on is the face to paint (#720).
-        if (wall) p.onInteriorWallSelect?.(wall.id, wallSideAt(wall, world));
+        const side = wall ? wallSideAt(wall, world) : null;
+        if (slide && fresh && wall && side) {
+          // Selected at the release, under a finger that is done (#786).
+          holdWall(slide, event, { id: wall.id, side });
+          return;
+        }
+        if (wall && side) p.onInteriorWallSelect?.(wall.id, side);
         else p.onInteriorWallSelect?.(null);
         if (slide) holdWall(slide, event);
         return;
@@ -812,8 +826,10 @@ export function useCanvas2DInteraction(
     const endGesture = (event: PointerEvent): void => {
       lockedPress = null;
       if (wallHold && event.pointerId === wallHold.pointerId) {
-        const { gesture: wallGesture, started } = wallHold;
+        const { gesture: wallGesture, started, select } = wallHold;
         wallHold = null;
+        // Before the gesture ends: the move it commits keeps the wall selected.
+        if (select && event.type === 'pointerup') paramsRef.current.onInteriorWallSelect?.(select.id, select.side);
         releaseCapture(event.pointerId);
         if (rafId !== null) {
           cancelAnimationFrame(rafId);
@@ -896,16 +912,22 @@ export function useCanvas2DInteraction(
       if (gesture && event.pointerId === gesture.pointerId) abortGesture(true);
     };
 
-    const onPointerLeave = (): void => {
-      lockedPress = null;
+    const onPointerLeave = (event: PointerEvent): void => {
+      // Only the pointer that left counts: a mouse the page thinks is over
+      // the plan leaves it when a sheet opens there, mid-touch (#786).
+      const own = (held: { pointerId: number } | null): boolean => held !== null && held.pointerId === event.pointerId;
+      if (lockedPress?.pointerId === event.pointerId) lockedPress = null;
       // A started drag holds pointer capture and stays alive off-canvas;
       // only an armed-but-unstarted gesture is abandoned here.
-      if (gesture && !gesture.started) gesture = null;
-      if (zoneGesture && !zoneGesture.started) zoneGesture = null;
-      if (zoneEdit && !zoneEdit.started) zoneEdit = null;
-      if (wallHold && !wallHold.started) {
-        wallHold.gesture.end(false);
+      if (own(gesture) && !gesture!.started) gesture = null;
+      if (own(zoneGesture) && !zoneGesture!.started) zoneGesture = null;
+      if (own(zoneEdit) && !zoneEdit!.started) zoneEdit = null;
+      if (own(wallHold) && !wallHold!.started) {
+        const { select } = wallHold!;
+        wallHold!.gesture.end(false);
         wallHold = null;
+        // The press still picked the wall.
+        if (select) paramsRef.current.onInteriorWallSelect?.(select.id, select.side);
       }
       if (!zoneEdit?.started) setZoneCursor('');
       if (!wallPress && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPointerLeave?.();

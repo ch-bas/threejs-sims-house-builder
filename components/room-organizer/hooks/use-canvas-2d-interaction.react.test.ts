@@ -573,7 +573,48 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab });
       fire('pointerdown', 1, 0.05);
       expect(onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }));
+      fire('pointerup', 1, 0.05);
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', 'a');
+    });
+
+    it('a drag on a wall not yet selected moves it, and selects it only at the release (#786)', () => {
+      // Selecting opens the paint sheet, which on a phone covers the finger:
+      // selected at the press, the drag went on over the HUD and was called off.
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab: () => gesture });
+      fire('pointerdown', 1, 0.05, 'touch');
+      expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1', expect.any(String));
+      fire('pointermove', 1, 1, 'touch');
+      fire('pointermove', 1, 1.5, 'touch');
+      expect(gesture.move).toHaveBeenCalledTimes(2);
+      fire('pointerup', 1, 1.5, 'touch');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', 'a');
+      expect(gesture.end).toHaveBeenCalledWith(true);
+    });
+
+    it('another pointer leaving the plan leaves a held wall alone (#786)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const { fire, params } = select({ selectedWallId: null, onWallGrab: () => gesture });
+      fire('pointerdown', 1, 0.05, 'touch');
+      const leave = new MouseEvent('pointerleave', { clientX: 0, clientY: 0 });
+      Object.defineProperty(leave, 'pointerId', { value: 2 });
+      Object.defineProperty(leave, 'pointerType', { value: 'mouse' });
+      params.canvasRef.current!.dispatchEvent(leave);
+      fire('pointermove', 1, 1, 'touch');
+      fire('pointerup', 1, 1, 'touch');
+      expect(gesture.move).toHaveBeenCalledTimes(1);
+      expect(gesture.end).toHaveBeenCalledTimes(1);
+      expect(gesture.end).toHaveBeenCalledWith(true);
+    });
+
+    it('a cancelled press on a wall not yet selected selects nothing (#786)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab: () => gesture });
+      fire('pointerdown', 1, 0.05, 'touch');
+      fire('pointermove', 1, 1, 'touch');
+      fire('pointercancel', 1, 1, 'touch');
+      expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1', expect.any(String));
+      expect(gesture.end).toHaveBeenLastCalledWith(false);
     });
 
     it('a press on a selected end grabs that end, ahead of the item under it (#718)', () => {
