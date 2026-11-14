@@ -9,7 +9,7 @@ import { subscribeHouseReplaced } from '../lib/restore-point';
 
 // A Record, not a list, so a template added to ROOM_TEMPLATES without a label
 // here fails the typecheck instead of silently missing from the select (#343).
-const TEMPLATE_LABELS: Readonly<Record<RoomTemplateKey, string>> = {
+export const TEMPLATE_LABELS: Readonly<Record<RoomTemplateKey, string>> = {
   bedroom: '🛏️ Bedroom',
   livingRoom: '🛋️ Living Room',
   office: '💼 Home Office',
@@ -19,7 +19,15 @@ const TEMPLATE_LABELS: Readonly<Record<RoomTemplateKey, string>> = {
   twoStory: '🏡 Two-Story Home',
 };
 
-const TEMPLATE_OPTIONS = (Object.keys(TEMPLATE_LABELS) as RoomTemplateKey[]).map((key) => ({
+/** Every template, in the select's order (the start chooser shows them too, #721). */
+export const TEMPLATE_KEYS = Object.keys(TEMPLATE_LABELS) as RoomTemplateKey[];
+
+/** A template's name without its emoji. */
+export function templateName(key: RoomTemplateKey): string {
+  return TEMPLATE_LABELS[key].replace(/^\S+\s/, '');
+}
+
+const TEMPLATE_OPTIONS = TEMPLATE_KEYS.map((key) => ({
   key,
   label: TEMPLATE_LABELS[key],
 }));
@@ -38,7 +46,7 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
   useEffect(() => subscribeHouseReplaced(() => setStatus(null)), []);
   const load = (key: RoomTemplateKey) => {
     void onLoadTemplate(ROOM_TEMPLATES[key]).then((loaded) => {
-      if (loaded) setStatus(`Loaded the ${TEMPLATE_LABELS[key].replace(/^\S+\s/, '')} template. Undo brings back the house it replaced.`);
+      if (loaded) setStatus(`Loaded the ${templateName(key)} template. Undo brings back the house it replaced.`);
     });
   };
   return (

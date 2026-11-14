@@ -8,16 +8,16 @@ import { useEvent } from '../hooks/use-event';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useFloorKeepOut } from '../hooks/use-floor-keep-out';
 import { layoutStore } from '../hooks/use-layout-store';
+import { useLoadTemplate } from '../hooks/use-load-template';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { alignSelection, distributeSelection } from '../lib/alignment';
-import { HARD_BUDGET_SELL_BACK_NOTE, isHardBudgetOn, loadTemplateUnderBudget, purchasePrice, purchaseRefusal, SELL_BACK_RATE } from '../lib/budget';
+import { purchasePrice, purchaseRefusal } from '../lib/budget';
 import { collisionMessage } from '../lib/collision-reason';
-import { CURRENCY_SYMBOL } from '../lib/constants';
 import { notify, notifyRefused } from '../lib/editor-notices';
 import { readImageAsDataUrl } from '../lib/file-io';
 import { placeSetInFreeSpace, setForStorey } from '../lib/furniture-sets';
 import { sameLayoutContent } from '../lib/persistence';
-import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
+import { snapshotBeforeReplace } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
 import { storeyHeight } from '../lib/storeys';
 import { entrancePlanOutline } from '../lib/street';
@@ -242,6 +242,7 @@ const DrawerBody = memo(function DrawerBody({
   const exploring = useExploring();
   const keepOut = useFloorKeepOut(layout, activeFloorIndex);
   const { selectedItem, selectOnly, allSelectedIds } = useSelection();
+  const loadTemplate = useLoadTemplate();
   // Bumped when the storage card deletes or restores saved layouts, so the
   // Saved Layouts panel re-reads its list (#615, #620).
   const [libraryRevision, setLibraryRevision] = useState(0);
@@ -405,40 +406,7 @@ const DrawerBody = memo(function DrawerBody({
           />
 
           <EditLock locked={exploring}>
-          <TemplatesPanel
-            onLoadTemplate={async (template) => {
-              // The hard budget and its write-off stay the player's; under it
-              // a template is a purchase, refused before asking (#691).
-              const label = `${template.name} template`;
-              const asked = loadTemplateUnderBudget(layout, template, label);
-              if (asked.refusal !== null) {
-                notifyRefused(asked.refusal, playCue);
-                return false;
-              }
-              const note = isHardBudgetOn(layout) ? HARD_BUDGET_SELL_BACK_NOTE : '';
-              if (!(await confirmReplace(layout, `the ${label}`, { note }))) return false;
-              // Read again after the answer: another tab's version may have
-              // been adopted while it asked, and its budget is what counts.
-              const current = layoutStore.getState().layout;
-              const load = loadTemplateUnderBudget(current, template, label);
-              if (load.refusal !== null) {
-                notifyRefused(load.refusal, playCue);
-                return false;
-              }
-              snapshotBeforeReplace(current);
-              history.commitNow();
-              actions.applyLayout({
-                ...load.layout,
-                floors: load.layout.floors.map((floor) => ({ ...floor, items: [...floor.items] })),
-              });
-              markLayoutLoaded();
-              if (load.writtenOff > 0) {
-                notify(`The furniture it replaced sold back at ${Math.round(SELL_BACK_RATE * 100)}%: ${CURRENCY_SYMBOL}${load.writtenOff.toLocaleString()} written off.`, 'info');
-              }
-              selectOnly(null);
-              return true;
-            }}
-          />
+          <TemplatesPanel onLoadTemplate={loadTemplate} />
 
           <LibraryPanel
             key={libraryRevision}
