@@ -1,6 +1,6 @@
 import { CURRENCY_SYMBOL, DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import { totalCost } from './geometry';
-import { houseRoomScores, ROOM_CHECKS, type HouseRoomScore, type KnownCollisions, type RoomType } from './room-score';
+import { furnishedRooms, ROOM_CHECKS, type HouseRoomScore, type KnownCollisions, type RoomType } from './room-score';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from './street';
 import type { RoomLayout } from './types';
 
@@ -210,10 +210,10 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     description: 'Gave every furnished room a lamp for the night.',
     icon: '🦉',
     isMet: (layout) => {
-      const rooms = scoredRooms(layout);
+      const rooms = furnishedRooms(layout);
       return rooms.length > 0 && rooms.every(hasLamp);
     },
-    progress: (layout) => scoredRooms(layout).filter(hasLamp).length,
+    progress: (layout) => furnishedRooms(layout).filter(hasLamp).length,
   },
 ];
 
@@ -268,45 +268,28 @@ function countType(layout: RoomLayout, type: string): number {
   return allItems(layout).filter((item) => item.type === type).length;
 }
 
-/**
- * A house's zones that the furniture makes a room of, typed and scored
- * (`houseRoomScores`, #903). Kept per layout, so the four room goals share
- * one pass; `houseRoomScores` keeps each storey by identity, so an edit
- * re-scores only the storey it changed.
- */
-const roomScoreCache = new WeakMap<RoomLayout, readonly HouseRoomScore[]>();
-
-function scoredRooms(layout: RoomLayout, known?: KnownCollisions): readonly HouseRoomScore[] {
-  let rooms = roomScoreCache.get(layout);
-  if (!rooms) {
-    rooms = houseRoomScores(layout, known).filter((room) => room.type !== null);
-    roomScoreCache.set(layout, rooms);
-  }
-  return rooms;
-}
-
 /** Scores `layout` with what the editor knew of its active storey, before a goal asks without it. */
 function primeRooms(layout: RoomLayout, known: KnownCollisions | undefined): void {
-  if (known) scoredRooms(layout, known);
+  if (known) furnishedRooms(layout, known);
 }
 
 const ROOM_GOAL_IDS: readonly string[] = ['real-kitchen', 'five-stars', 'home-sweet-home', 'night-owl'];
 
 function roomsOfType(layout: RoomLayout, type: RoomType): number {
-  return scoredRooms(layout).filter((room) => room.type === type).length;
+  return furnishedRooms(layout).filter((room) => room.type === type).length;
 }
 
 function bestStars(layout: RoomLayout): number {
-  return scoredRooms(layout).reduce((best, room) => Math.max(best, room.stars), 0);
+  return furnishedRooms(layout).reduce((best, room) => Math.max(best, room.stars), 0);
 }
 
 function fiveStarRooms(layout: RoomLayout): number {
-  return scoredRooms(layout).filter((room) => room.stars >= ROOM_CHECKS.length).length;
+  return furnishedRooms(layout).filter((room) => room.stars >= ROOM_CHECKS.length).length;
 }
 
 /** The rooms Home Sweet Home counts: the four kinds, at its stars or more. */
 function homeRooms(layout: RoomLayout): readonly HouseRoomScore[] {
-  return scoredRooms(layout).filter((room) => room.type !== null && HOME_ROOMS.includes(room.type) && room.stars >= HOME_MIN_STARS);
+  return furnishedRooms(layout).filter((room) => room.type !== null && HOME_ROOMS.includes(room.type) && room.stars >= HOME_MIN_STARS);
 }
 
 function homeRoomsMet(layout: RoomLayout): number {

@@ -99,6 +99,7 @@ components/
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
     │   ├── catalog-variants.ts          Colour variants (#621): the entry in a picked colour, drag keys, a placed item's colours
     │   ├── budget.ts                    Hard budget (#463e): the house's funds (#609), spend, funds left, 80 % sell-back, purchase refusal, over-budget tile reason, schema repair
+    │   ├── challenges.ts                Challenge briefs (#909): five lots with funds and goals read from the room scores, spend and storeys; the starting house, live progress, `layout.challenge` repair
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)
@@ -136,7 +137,7 @@ components/
     │   ├── room-stamp.ts                The room stamp as a held placement: snapped position, drag to size, the walls a drop adds (#724)
     │   ├── room-detect.ts               Rooms closed by walls: planar faces of the footprint, partitions and keep-out, with areas (#719)
     │   ├── room-shapes.ts               Predefined room shape presets
-    │   ├── room-score.ts                Room types from a zone's furniture and a five-check score (decor, window, lamp, no collisions, space) for Statistics (#613) and the plan's stars line and the zone chip's hint (#905)
+    │   ├── room-score.ts                Room types from a zone's furniture and a five-check score (decor, window, lamp, no collisions, space) for Statistics (#613), the room goals (#903), the plan's stars line and the zone chip's hint (#905)
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground (garden items stand on it, #665), neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
@@ -255,6 +256,7 @@ components/
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
+    │   ├── use-start-challenge.ts       A challenge brief's empty house through the whole-house load path (#909)
     │   ├── use-first-steps.ts           Getting started session: steps done (edits, `markFirstStep` for walk and share), stored with the offered/dismissed card (#721)
     │   ├── use-set-game-mode.ts         DESIGN / FURNISH / EXPLORE switch with what it brings along (mode panel, First steps card)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
@@ -305,7 +307,8 @@ components/
         ├── item-resize-panel.tsx
         ├── stair-headroom-note.tsx      Warning in the stairs controls when a flight is short of headroom
         ├── align-panel.tsx
-        ├── templates-panel.tsx
+        ├── templates-panel.tsx          Template select and the Challenges list (#909)
+        ├── challenge-chip.tsx           The brief's checklist, pinned under the house card, ticking off live; none in a tour or on a walk, hidden under a top chip (#909)
         ├── themes-panel.tsx
         ├── library-panel.tsx
         ├── recovery-entry.tsx           History rows for kept recovery copies: restore, download, delete
