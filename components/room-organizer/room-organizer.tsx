@@ -9,7 +9,6 @@ import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
 import { useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
-import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
@@ -24,17 +23,14 @@ import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useLayoutPersistence, useSaveStatus, type SaveStatus, type SaveStatusStore } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
 import { layoutStore } from './hooks/use-layout-store';
-import { useNpcs } from './hooks/use-npcs';
-import { usePeopleModel } from './hooks/use-people-model';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
+import { useSceneLife } from './hooks/use-scene-life';
 import { useSelectionActions } from './hooks/use-selection-actions';
 import { useThreeScene } from './hooks/use-three-scene';
-import { useWalkthrough, type WalkthroughBuilding } from './hooks/use-walkthrough';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
-import { useWeather } from './hooks/use-weather';
 import { furnitureSpend } from './lib/budget';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { collisionMessage } from './lib/collision-reason';
@@ -52,9 +48,7 @@ import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { entrancePlanOutline } from './lib/street';
-import { streetDryBoxes } from './lib/street-row';
-import { streetSiteOf } from './lib/walk-collision';
-import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
+import { sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt } from './lib/wall-sides';
 import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
@@ -79,7 +73,7 @@ import { roofPeakHeight } from './three/roof';
 import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
-import type { CatalogItem, FurnitureItem, GameMode, RoomLayout, ViewSettings } from './lib/types';
+import type { CatalogItem, FurnitureItem, RoomLayout, ViewSettings } from './lib/types';
 
 /** A stable "none" for the plan's memoised rooms to name. */
 const NO_ROOMS: readonly DetectedRoom[] = [];
@@ -131,7 +125,7 @@ export function RoomOrganizer(): JSX.Element {
   // reads every view field but the time of day, so an auto-cycle tick
   // re-renders only what shows the hour, not this whole tree (#148).
   const [viewStore] = useState(() => createEditorViewStore(INITIAL_VIEW_SETTINGS));
-  const { setView, toggle, setGameMode } = viewStore.getState().actions;
+  const { setView, toggle } = viewStore.getState().actions;
   const view = useStore(viewStore, useShallow(viewExceptTime));
   const autoCycleLighting = useStore(viewStore, (state) => state.autoCycleLighting);
 
@@ -646,59 +640,19 @@ export function RoomOrganizer(): JSX.Element {
   useEffect(() => endGhost(), [gameMode, endGhost]);
 
 
-  // The mode EXPLORE was entered from, so leaving it goes back there (#454).
-  // Read from the store, not rendered: a mode switch needn't re-render this.
-  const modeBeforeExploreRef = useRef<GameMode>(viewStore.getState().gameMode);
-  useEffect(
-    () =>
-      viewStore.subscribe((state) => {
-        modeBeforeExploreRef.current = rememberModeBeforeExplore(modeBeforeExploreRef.current, state.gameMode);
-      }),
-    [viewStore]
-  );
-  const exitWalkthrough = useCallback(() => {
-    setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
-    setGameMode((mode) => modeAfterExplore(mode, modeBeforeExploreRef.current));
-  }, [setView, setGameMode]);
-
-  // What the walker moves through (#446): every storey (stairs join them),
-  // the shell and the street outside. Only read while walking.
-  const walkRoofStyle = layout.roof?.style;
-  const walkRoofColor = layout.roof?.color;
-  const walkBuilding = useMemo<WalkthroughBuilding>(
-    () => ({
-      width: layout.width,
-      depth: layout.height,
-      floors: layout.floors,
-      terrain: layout.terrain,
-      entrance: layout.entrance,
-      frontage: layout.frontage,
-      cutout: layout.cutout,
-      ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
-      ...(walkRoofStyle ? { roof: { style: walkRoofStyle, ...(walkRoofColor ? { color: walkRoofColor } : {}) } } : {}),
-    }),
-    [layout.width, layout.height, layout.floors, layout.terrain, layout.entrance, layout.frontage, layout.cutout, layout.neighbours, walkRoofStyle, walkRoofColor]
-  );
-
-  const walk = useWalkthrough({
-    enabled: isReady && walkthroughActive,
-    invalidate,
-    canvasRef,
-    threeModuleRef,
-    cameraRef,
-    orbitRef: controlsRef,
-    building: walkBuilding,
+  const { walk, exitWalkthrough, peopleModelReady } = useSceneLife({
+    viewStore,
+    view,
+    walkthroughActive,
+    layout,
+    activeFloor,
     activeFloorIndex,
+    activeFloorY,
+    keepOut,
     onFloorChange: actions.setActiveFloorIndex,
-    onExit: exitWalkthrough,
+    canvasRef,
+    scene: { isReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, cameraRef, controlsRef },
   });
-
-  // people.glb is fetched only once a person is placed or the walkers are on.
-  const layoutHasPeople = useMemo(
-    () => layout.floors.some((floor) => floor.items.some((item) => item.type === 'person')),
-    [layout.floors]
-  );
-  const peopleModelReady = usePeopleModel(threeModuleRef, isReady, layoutHasPeople || view.showNpcs);
 
   // Called from a child so that a time-of-day tick or a search keystroke,
   // which the scene effects read, re-renders that child alone (#148).
@@ -730,57 +684,6 @@ export function RoomOrganizer(): JSX.Element {
     walkNearStairs: walk.nearStairs,
     walkLampStorey: walk.lampStorey,
   };
-
-  useNpcs({
-    enabled: isReady && view.showNpcs && !view.view2D,
-    invalidate,
-    requestShadowUpdate,
-    addDecorativeStep,
-    threeModuleRef,
-    sceneRef,
-    roomWidth: layout.width,
-    roomDepth: layout.height,
-    items: activeFloor.items,
-    interiorWalls: activeFloor.interiorWalls,
-    keepOut,
-    floorY: activeFloorY,
-    riggedModelReady: peopleModelReady,
-  });
-
-  // Rebuilt with the street, not on every edit: it re-seeds the whole field.
-  const streetKey = JSON.stringify([
-    layout.width, layout.height, layout.roof?.style, layout.terrain, layout.frontage, layout.neighbours,
-    layout.floors.map((floor) => floor.height),
-  ]);
-  const dryBoxes = useMemo(
-    () => streetDryBoxes(streetSiteOf({ ...layout, depth: layout.height })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- streetKey covers what the street reads.
-    [streetKey]
-  );
-
-  useWeather({
-    weather: view.weather,
-    enabled: isReady && !view.view2D,
-    invalidate,
-    addDecorativeStep,
-    threeModuleRef,
-    sceneRef,
-    roomWidth: layout.width,
-    roomDepth: layout.height,
-    // The eaves keep the ground under them dry too (#660).
-    clearance: layout.roof && layout.roof.style !== 'none' ? ROOF_EAVE_OVERHANG : 0,
-    dryBoxes,
-    terrain: layout.terrain,
-  });
-
-  useCameraVision({
-    enabled: isReady && view.showCameraVision && !view.view2D,
-    addDecorativeStep,
-    threeModuleRef,
-    sceneRef,
-    // Cones don't see through walls (#590).
-    building: walkBuilding,
-  });
 
   // The roof as camera framing sees it: on screen only with the walls up,
   // on the top storey or with every storey shown (as the roof effect shows it;
