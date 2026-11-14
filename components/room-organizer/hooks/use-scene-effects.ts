@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, type RefObject, type MutableRefObject } from 'react';
+import { onPlanZoom, planZoomOf } from '../canvas-2d/plan-zoom';
 import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { planContactShadow } from '../lib/contact-shadow';
@@ -51,7 +52,7 @@ import { applyNightGlow } from '../three/night-glow';
 import { setOutdoorVisible } from '../three/outdoor';
 import { revealSetbacks } from '../three/reveals';
 import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
-import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged } from '../three/room-builder';
+import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
 import { observeSceneOccluders, planFit } from './scene-occluders';
@@ -1154,32 +1155,39 @@ export function useSceneEffects({
     if (!selectedWall) return undefined;
 
     const tag = selectedWall.kind === 'interior' ? 'interior-wall' : 'wall';
-    const wallMesh = scene.children.find(
-      (obj) => obj.userData.type === tag && obj.userData.wallId === selectedWall.id
-    ) as ThreeNS.Mesh | undefined;
-    if (!wallMesh) return undefined;
+    // A side of the shell is every face it paints: on an L the notch wall
+    // too, which the click may have picked (#783).
+    const wallMeshes: ThreeNS.Mesh[] =
+      selectedWall.kind === 'interior'
+        ? scene.children.filter(
+          (obj): obj is ThreeNS.Mesh => obj.userData.type === tag && obj.userData.wallId === selectedWall.id
+        ).slice(0, 1)
+        : shellWallFaces(scene, selectedWall.id, activeFloorIndex);
+    if (wallMeshes.length === 0) return undefined;
 
-    const edges = new THREE.EdgesGeometry(wallMesh.geometry);
     const material = new THREE.LineBasicMaterial({
       color: 0x7ff3ff,
       transparent: true,
       opacity: 0.95,
       depthTest: false,
     });
-    const outline = new THREE.LineSegments(edges, material);
-    outline.position.copy(wallMesh.position);
-    outline.rotation.copy(wallMesh.rotation);
-    outline.scale.copy(wallMesh.scale);
-    outline.renderOrder = 999;
-    outline.userData.type = 'wall-selection';
-    // Owner reference + initial visibility: applyWallDisplay keeps the
-    // outline in lockstep with its wall on every orbit, and a wall already
-    // hidden by cutaway must not spawn a visible ghost outline (#133).
-    outline.userData.ownerTag = tag;
-    outline.userData.ownerStorey = wallMesh.userData[STOREY_KEY];
-    outline.userData.wallId = selectedWall.id;
-    outline.visible = wallMesh.visible;
-    scene.add(outline);
+    const outlines = wallMeshes.map((wallMesh) => {
+      const outline = new THREE.LineSegments(new THREE.EdgesGeometry(wallMesh.geometry), material);
+      outline.position.copy(wallMesh.position);
+      outline.rotation.copy(wallMesh.rotation);
+      outline.scale.copy(wallMesh.scale);
+      outline.renderOrder = 999;
+      outline.userData.type = 'wall-selection';
+      // Owner reference + initial visibility: applyWallDisplay keeps the
+      // outline in lockstep with its wall on every orbit, and a wall already
+      // hidden by cutaway must not spawn a visible ghost outline (#133).
+      outline.userData.ownerTag = tag;
+      outline.userData.ownerStorey = wallMesh.userData[STOREY_KEY];
+      outline.userData.wallId = wallDisplayId(wallMesh);
+      outline.visible = wallMesh.visible;
+      scene.add(outline);
+      return outline;
+    });
     // The ends of a wall that can move (#718).
     const movable = selectedWall.kind === 'interior' && selectedWall.id !== ENTRANCE_WALL_ID;
     const wall = movable && wallDisplay !== 'down' ? activeFloor.interiorWalls?.find((entry) => entry.id === selectedWall.id) : undefined;
@@ -1187,8 +1195,10 @@ export function useSceneEffects({
     invalidate();
 
     return () => {
-      scene.remove(outline);
-      edges.dispose();
+      for (const outline of outlines) {
+        scene.remove(outline);
+        outline.geometry.dispose();
+      }
       material.dispose();
       clearWallHandles(scene);
     };
@@ -1201,6 +1211,9 @@ export function useSceneEffects({
     selectedWall, activeFloorIndex, wallDisplay,
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.width, layout.height, cutoutKey, allFloors, ghostOtherFloors,
+    // The rest of the shell rebuild's keys: any rebuild makes new wall meshes.
+    layout.terrain, layout.entrance, layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
+    view.floorPlan3DEffect, shellActiveKey,
   ]);
 
   // Lit windows, lamp shades and the street's panes (#759). Runs after the
@@ -1451,6 +1464,8 @@ export function useSceneEffects({
         insets,
         padding,
         hudRects,
+        // The plan's view zoom (#678), which the pointer handlers read too.
+        zoom: planZoomOf(canvas),
       });
     };
 
@@ -1460,6 +1475,14 @@ export function useSceneEffects({
 
     const observer = new ResizeObserver(paint);
     observer.observe(canvas);
+    // The view zoom (#678) repaints here, with every overlay above: once a frame.
+    let zoomFrame: number | null = null;
+    const stopZoom = onPlanZoom(canvas, () => {
+      zoomFrame ??= requestAnimationFrame(() => {
+        zoomFrame = null;
+        paint();
+      });
+    });
 
     // The ResizeObserver watches the content box, which doesn't change when
     // only devicePixelRatio does (window dragged between 1× and 2× monitors),
@@ -1481,6 +1504,8 @@ export function useSceneEffects({
     return () => {
       dprQuery?.removeEventListener('change', onDprChange);
       observer.disconnect();
+      stopZoom();
+      if (zoomFrame !== null) cancelAnimationFrame(zoomFrame);
       removeRepaintHandler();
       if (paint2DRef.current === paint) paint2DRef.current = null;
     };

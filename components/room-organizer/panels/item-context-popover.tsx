@@ -91,7 +91,10 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // After the effect above: closing unhides the dock, which may hold the tile
   // that focus returns to (#638). Selected on the scene there is nothing to
   // return to, so a keyboard close goes to the panels toggle.
-  useDialogFocus(item !== null, dialogRef, { returnHome: 'keyboard' });
+  // A scene the keyboard is stepping through keeps focus (#650); Enter there
+  // brings it in. Only the keyboard focuses the scene (viewport.tsx), so a
+  // selection made with a click or a tap still brings focus in.
+  useDialogFocus(item !== null, dialogRef, { returnHome: 'keyboard', yieldTo: '[data-scene-canvas]' });
   const underDrawer = useMediaQuery(DRAWER_FULL_SCREEN_QUERY);
   if (!item) return <></>;
   const { onClose } = props;

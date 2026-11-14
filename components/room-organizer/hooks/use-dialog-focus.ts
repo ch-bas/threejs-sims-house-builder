@@ -34,6 +34,12 @@ export interface UseDialogFocusOptions {
    * scene or on a button must not move focus anywhere.
    */
   returnHome?: boolean | 'keyboard';
+  /**
+   * Leave focus where it is when the element holding it matches this
+   * selector: the scene keeps it while the keyboard steps through its items
+   * (#650), and Enter there takes it in.
+   */
+  yieldTo?: string;
 }
 
 interface OpenDialog {
@@ -88,6 +94,15 @@ function takeHeldReturn(): HTMLElement | null {
   heldReturn = null;
   return held;
 }
+
+/** `matches`, false where the selector isn't supported (an older engine, a test DOM). */
+const matchesSafely = (element: Element, selector: string): boolean => {
+  try {
+    return element.matches(selector);
+  } catch {
+    return false;
+  }
+};
 
 const canTakeFocus = (element: HTMLElement): boolean =>
   element.isConnected && !element.matches(':disabled') && (element.checkVisibility?.() ?? true);
@@ -174,6 +189,7 @@ export function useDialogFocus(
     takeFocus = false,
     companions = false,
     returnHome = false,
+    yieldTo,
   }: UseDialogFocusOptions = {}
 ): void {
   const onEscapeRef = useRef(onEscape);
@@ -205,6 +221,7 @@ export function useDialogFocus(
     const focusTimer = window.setTimeout(() => {
       const active = document.activeElement;
       if (!container.isConnected || container.contains(active)) return;
+      if (yieldTo && active && matchesSafely(active, yieldTo)) return;
       const insideModal = openDialogs.some((dialog) => dialog !== self && dialog.trap && dialog.container.contains(active));
       if (!takeFocus && insideModal) return;
       (initialFocusRef?.current ?? container).focus({ preventScroll: true });
@@ -251,7 +268,7 @@ export function useDialogFocus(
       if (openDialogs.some((dialog) => dialog.trap)) return;
       focusHome()?.focus({ preventScroll: true });
     };
-  }, [open, containerRef, initialFocusRef, trap, takeFocus, companions, returnHome]);
+  }, [open, containerRef, initialFocusRef, trap, takeFocus, companions, returnHome, yieldTo]);
 }
 
 /**

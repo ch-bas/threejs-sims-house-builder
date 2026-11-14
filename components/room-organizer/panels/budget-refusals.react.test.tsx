@@ -6,12 +6,14 @@ import { createEditorViewStore } from '../hooks/editor-view-store';
 import { layoutStore } from '../hooks/use-layout-store';
 import { makeFloor, makeItem, makeLayout, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { subscribeNotices, type Notice } from '../lib/editor-notices';
+import { cueHaptic } from '../lib/haptics';
 import { playSound } from '../lib/sounds';
 import { CatalogStrip } from './catalog-strip';
 import { FloorSwitcher } from './floor-switcher';
 import type { ReactNode } from 'react';
 
 vi.mock('../lib/sounds', () => ({ playSound: vi.fn() }));
+vi.mock('../lib/haptics', () => ({ cueHaptic: vi.fn() }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,6 +30,7 @@ beforeEach(() => {
   notices = [];
   stopNotices = subscribeNotices((notice) => notices.push(notice));
   vi.mocked(playSound).mockClear();
+  vi.mocked(cueHaptic).mockClear();
 });
 
 afterEach(() => {
@@ -47,8 +50,8 @@ function seed(spent: number, beds = 18): void {
   });
 }
 
-function withView(children: ReactNode, sounds = true) {
-  const store = createEditorViewStore(makeViewSettings({ soundsEnabled: sounds }));
+function withView(children: ReactNode, sounds = true, haptics = true) {
+  const store = createEditorViewStore(makeViewSettings({ soundsEnabled: sounds, hapticsEnabled: haptics }));
   return <EditorViewProvider store={store}>{children}</EditorViewProvider>;
 }
 
@@ -86,6 +89,23 @@ describe('Duplicate floor under the hard budget (#588)', () => {
     });
     expect(playSound).not.toHaveBeenCalled();
     expect(notices).toHaveLength(1);
+  });
+
+  it('buzzes once with the refused cue, unless vibration is off (#687)', () => {
+    seed(14_400);
+    render(withView(<FloorSwitcher />, false));
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Clone/ }));
+    });
+    expect(vi.mocked(cueHaptic).mock.calls).toEqual([['refused']]);
+    cleanup();
+    vi.mocked(cueHaptic).mockClear();
+    render(withView(<FloorSwitcher />, true, false));
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Clone/ }));
+    });
+    expect(cueHaptic).not.toHaveBeenCalled();
+    expect(vi.mocked(playSound).mock.calls).toEqual([['refused']]);
   });
 });
 

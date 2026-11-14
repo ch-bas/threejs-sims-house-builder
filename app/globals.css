@@ -1753,3 +1753,40 @@ html[data-plan-gesture] * {
 body:has(.pc-wall-hint) .pc-status-toasts {
   top: 216px !important;
 }
+
+/* P4 walk HUD (polish wave 2) */
+/* The touch walk's floor buttons stand beside the stick, on its line (#688). */
+.pc-walk-floors {
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 768px) and (min-height: 501px) {
+  .pc-walk-floors {
+    bottom: calc(100% - var(--pc-mode-top, 100%) + 16px);
+  }
+}
+/* The clock in the walk status bar is a 44px tap on a touch screen. */
+@media (pointer: coarse) {
+  .pc-walk-clock {
+    position: relative;
+  }
+  .pc-walk-clock::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Keyboard selection on the scene (P2, polish wave 2) */
+/* The 3D view and the 2D plan take focus for Tab to step through the items
+   (#650): a ring inside the edge shows it. A click never shows it. */
+canvas[data-scene-canvas]:focus-visible {
+  outline: 3px solid var(--pc-cyan-glow);
+  outline-offset: -3px;
+}
+canvas[data-scene-canvas]:focus:not(:focus-visible) {
+  outline: none;
+}

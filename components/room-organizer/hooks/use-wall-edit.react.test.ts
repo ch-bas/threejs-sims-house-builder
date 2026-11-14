@@ -71,6 +71,23 @@ describe('useWallEdit (#718)', () => {
     expect(setup({ selectedWallId: null }).result.current.grabWall(grab)).toBeNull();
   });
 
+  it('a wall not yet selected commits at the release, which selects it (#786)', () => {
+    const { result, params } = setup({ selectedWallId: null });
+    const gesture = result.current.grabWall({ ...grab, fresh: true })!;
+    gesture.move(0, 1, false);
+    gesture.end(true);
+    expect(params.onMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('a wall not yet selected commits nothing once another wall was selected meanwhile', () => {
+    const { result, params, rerender } = setup({ selectedWallId: null });
+    const gesture = result.current.grabWall({ ...grab, fresh: true })!;
+    gesture.move(0, 1, false);
+    rerender({ ...params, selectedWallId: 'other' });
+    gesture.end(true);
+    expect(params.onMove).not.toHaveBeenCalled();
+  });
+
   it('refuses at the release, with the reason in the preview till then', () => {
     const twin: InteriorWall = { id: 't', x1: -2, z1: 1, x2: 2, z2: 1 };
     const { result, params } = setup({ activeFloor: makeFloor({ interiorWalls: [wall, twin] }) });
@@ -80,5 +97,19 @@ describe('useWallEdit (#718)', () => {
     gesture.end(true);
     expect(params.onRefused).toHaveBeenCalledTimes(1);
     expect(params.onMove).not.toHaveBeenCalled();
+  });
+
+  it('a hosted wall dragged fast past its host stops at the host\'s end, not where the last move left it (#783)', () => {
+    const host: InteriorWall = { id: 'h', x1: -1, z1: 0, x2: 1, z2: 0 };
+    const hosted: InteriorWall = { id: 'g', x1: 0, z1: 0, x2: 0, z2: 2 };
+    const { result } = setup({ activeFloor: makeFloor({ interiorWalls: [host, hosted] }), selectedWallId: 'g' });
+    const gesture = result.current.grabWall({ wallId: 'g', grip: 'body', x: 0, z: 1 })!;
+    gesture.move(3, 1, false);
+    const moved = result.current.wallMovePreview()?.walls.find((wall) => wall.id === 'g');
+    expect(moved?.x1).toBeCloseTo(1, 1);
+    expect(moved?.x2).toBeCloseTo(1, 1);
+    // Back inside the host, it follows the pointer again.
+    gesture.move(0.5, 1, false);
+    expect(result.current.wallMovePreview()?.walls.find((wall) => wall.id === 'g')?.x1).toBeCloseTo(0.5, 1);
   });
 });

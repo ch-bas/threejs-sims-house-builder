@@ -4,7 +4,7 @@ import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixture
 import { buildExportBuilding } from './building-export';
 import { buildCeiling } from './ceiling';
 import { buildAtticCeiling, buildRoof } from './roof';
-import { applyWallDisplay, buildFloorGeometryWithOpenings, buildRoom, floorHoleOutlines } from './room-builder';
+import { applyWallDisplay, buildFloorGeometryWithOpenings, buildRoom, floorHoleOutlines, shellWallFaces, wallDisplayId } from './room-builder';
 import { buildExcavationGeometry, buildTerrainGeometry } from './terrain';
 import { computeWallOpenings } from './wall-openings';
 import type { FootprintCutout, RoomLayout } from '../lib/types';
@@ -72,6 +72,17 @@ describe('the shell of an L (#727)', () => {
     const notch = scene.getObjectByName('Wall notch-x') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
     expect(notch.material.color.getHexString()).toBe('ff0000');
     expect(notch.userData.wallId).toBe('north');
+  });
+
+  it('finds every face of a side for the selection outline, the notch wall too (#783)', () => {
+    const scene = new THREE.Scene();
+    buildRoom(THREE, { ...base, scene, cutout });
+    scene.children.forEach((child) => { child.userData.storey = 0; });
+    const faces = shellWallFaces(scene, 'north', 0);
+    expect(faces.map((face) => face.name)).toEqual(['Wall north', 'Wall notch-x']);
+    expect(faces.map(wallDisplayId)).toEqual(['north', 'notch-x']);
+    expect(shellWallFaces(scene, 'south', 0).map((face) => face.name)).toEqual(['Wall south']);
+    expect(shellWallFaces(scene, 'north', 1)).toEqual([]);
   });
 
   it('runs the plinth round the L, overhanging the notch walls', () => {

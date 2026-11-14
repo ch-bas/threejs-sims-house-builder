@@ -61,6 +61,21 @@ export interface SceneEventHandlers {
    * The React side must discard its drag session so nothing is committed.
    */
   onItemDragCancel?: (id: string, options?: { restore?: boolean }) => void;
+  /**
+   * A second finger on a pressed item (#689): whether the item may turn
+   * under a two-finger twist (selected, unlocked, not hung on a wall). When
+   * it can't, or this is absent, the two fingers are the camera's pinch.
+   */
+  canTwistItem?: (id: string) => boolean;
+  /**
+   * One 15° step of a twist: `radians` is signed, positive turns anticlockwise
+   * seen from above. `first` is the gesture's first step, for its one cue.
+   */
+  onItemTwist?: (id: string, radians: number, first: boolean) => void;
+  /** The fingers became a twist, before its first step: one undo entry starts. */
+  onItemTwistStart?: (id: string) => void;
+  /** The twist let go; `turned` is false when it ended where it began. */
+  onItemTwistEnd?: (id: string, turned: boolean) => void;
   onItemHover?: (info: HoverInfo | null) => void;
   onEmptyClick?: (x: number, z: number) => void;
   /** `from` is where the wall was seen from: the viewer's side is the face clicked (#720). */
@@ -105,6 +120,56 @@ export const FURNITURE_REVISION_KEY = 'furnitureRevision';
 // routinely exceeds the mouse radius, so touch gets a wider one (#292).
 const DRAG_THRESHOLD_PX = 4;
 const TOUCH_DRAG_THRESHOLD_PX = 10;
+/** A twist turns the item in steps of this, as Shift+R does (#689). */
+export const TWIST_STEP = Math.PI / 12;
+// Two fingers on an item are undecided until they twist past this while
+// their span and midpoint hold nearly still, which makes them a twist, or
+// spread, pinch or slide past these, which hands them to the camera. A turn
+// that comes with a real span change or slide is a camera pinch: zooming
+// fingers rarely move in a straight line.
+const TWIST_DECIDE = (10 * Math.PI) / 180;
+const TWIST_SPAN_RATIO = 0.08;
+const TWIST_SLIDE_PX = 16;
+const PINCH_DECIDE_RATIO = 0.15;
+const PAN_DECIDE_PX = 24;
+
+/**
+ * What two fingers that landed on an item have done since they landed:
+ * 'twist' once they turned past the decision angle, 'camera' once they
+ * spread, pinched or slid first, else 'undecided'. Points are client pixels.
+ */
+export function readTwoFingers(
+  start: readonly [{ x: number; y: number }, { x: number; y: number }],
+  now: readonly [{ x: number; y: number }, { x: number; y: number }]
+): { kind: 'twist' | 'camera' | 'undecided'; angle: number } {
+  const angle = twistAngle(start, now);
+  const span = (pair: typeof start): number => Math.hypot(pair[1].x - pair[0].x, pair[1].y - pair[0].y);
+  const spanChange = Math.abs(span(now) / Math.max(span(start), 1) - 1);
+  const slide = Math.hypot(
+    (now[0].x + now[1].x - start[0].x - start[1].x) / 2,
+    (now[0].y + now[1].y - start[0].y - start[1].y) / 2
+  );
+  if (Math.abs(angle) >= TWIST_DECIDE) {
+    // The turn wins only when it clearly dominates.
+    return { kind: spanChange < TWIST_SPAN_RATIO && slide < TWIST_SLIDE_PX ? 'twist' : 'camera', angle };
+  }
+  if (spanChange >= PINCH_DECIDE_RATIO || slide >= PAN_DECIDE_PX) return { kind: 'camera', angle };
+  return { kind: 'undecided', angle };
+}
+
+/** The turn from the first finger to the second, in screen radians (clockwise positive), within ±π. */
+export function twistAngle(
+  start: readonly [{ x: number; y: number }, { x: number; y: number }],
+  now: readonly [{ x: number; y: number }, { x: number; y: number }]
+): number {
+  const before = Math.atan2(start[1].y - start[0].y, start[1].x - start[0].x);
+  const after = Math.atan2(now[1].y - now[0].y, now[1].x - now[0].x);
+  let turn = after - before;
+  while (turn > Math.PI) turn -= 2 * Math.PI;
+  while (turn < -Math.PI) turn += 2 * Math.PI;
+  return turn;
+}
+
 /** How far a press reaches for a wall's end handle: a 44 px target under a finger. */
 const HANDLE_REACH_PX = 14;
 const HANDLE_REACH_TOUCH_PX = 22;
@@ -222,6 +287,22 @@ export function attachDragHandlers({
   // drag, with the moves handed over instead of moving a mesh here.
   let held: { gesture: HeldGesture; started: boolean } | null = null;
 
+  // Two fingers on an item (#689). `ids` are the two pointers, `start` where
+  // they were when the second landed, `last` where they are, `turn` the
+  // accumulated screen turn and `steps` the 15° steps already applied.
+  type Point = { x: number; y: number };
+  let twist: {
+    itemId: string;
+    ids: [number, number];
+    start: [Point, Point];
+    last: [Point, Point];
+    turn: number;
+    steps: number;
+    decided: boolean;
+    /** A step has been applied: the next one plays no cue. */
+    stepped: boolean;
+  } | null = null;
+
   const setPointerFromEvent = (event: { clientX: number; clientY: number }): void => {
     const rect = canvas.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -298,10 +379,14 @@ export function attachDragHandlers({
     if (handlersRef.current.walkthroughActive) return;
     // The synthetic press below, replaying the first finger to the controls.
     if (replaying) return;
-    // A second finger while the first one is on an item is a pinch, not a
-    // drag: hand both fingers to the camera.
+    // A third finger on a twist changes nothing.
+    if (twist) return;
+    // A second finger while the first one is on an item: a twist of an item
+    // that can turn, decided by what the fingers do next, or a pinch: hand
+    // both fingers to the camera.
     if (activePointerId !== null) {
-      if (event.pointerId !== activePointerId) handOverToPinch(event);
+      if (event.pointerId === activePointerId) return;
+      if (!startTwist(event)) handOverToPinch(event);
       return;
     }
     // A later finger of a multi-touch gesture the camera already owns (a
@@ -430,6 +515,10 @@ export function attachDragHandlers({
   };
 
   const onPointerMove = (event: PointerEvent): void => {
+    if (twist) {
+      moveTwist(event);
+      return;
+    }
     if (event.pointerId === activePointerId) {
       lastClientX = event.clientX;
       lastClientY = event.clientY;
@@ -609,7 +698,120 @@ export function attachDragHandlers({
     }
   };
 
+  /**
+   * Two fingers on an item that can turn: hold them, undecided, until they
+   * twist (the item turns in 15° steps) or pinch, spread or slide (the camera
+   * gets both, as before). A drag the first finger had started goes back
+   * first. False leaves the second finger to the pinch hand-over.
+   */
+  const startTwist = (second: PointerEvent): boolean => {
+    if (held || !dragTarget || second.pointerType !== 'touch') return false;
+    const itemId = dragTarget.userData.id as string;
+    if (!handlersRef.current.onItemTwist || handlersRef.current.canTwistItem?.(itemId) !== true) return false;
+    const firstId = activePointerId;
+    if (firstId === null) return false;
+    const first = { x: lastClientX, y: lastClientY };
+    if (dragStarted) abortGesture(true);
+    else resetDragState();
+    controls.enabled = false;
+    const at = { x: second.clientX, y: second.clientY };
+    twist = { itemId, ids: [firstId, second.pointerId], start: [first, at], last: [first, at], turn: 0, steps: 0, decided: false, stepped: false };
+    for (const id of twist.ids) {
+      try {
+        canvas.setPointerCapture(id);
+      } catch {
+        // Capture can throw if the pointer is already gone; safe to ignore.
+      }
+    }
+    return true;
+  };
+
+  const moveTwist = (event: PointerEvent): void => {
+    if (!twist) return;
+    const index = twist.ids.indexOf(event.pointerId);
+    if (index < 0) return;
+    const now: [Point, Point] = [twist.last[0], twist.last[1]];
+    now[index] = { x: event.clientX, y: event.clientY };
+    twist.turn += twistAngle(twist.last, now);
+    twist.last = now;
+    if (!twist.decided) {
+      const read = readTwoFingers(twist.start, now);
+      if (read.kind === 'camera') {
+        handTwistToCamera(event.pointerType);
+        return;
+      }
+      if (read.kind !== 'twist') return;
+      twist.decided = true;
+      handlersRef.current.onItemTwistStart?.(twist.itemId);
+    }
+    // One step per call, so a fast flick still turns by whole steps in order.
+    const steps = Math.round(twist.turn / TWIST_STEP);
+    while (twist.steps !== steps) {
+      const direction = Math.sign(steps - twist.steps);
+      twist.steps += direction;
+      // A clockwise turn on screen is clockwise seen from above: negative about +Y.
+      handlersRef.current.onItemTwist?.(twist.itemId, -direction * TWIST_STEP, !twist.stepped);
+      twist.stepped = true;
+    }
+  };
+
+  /**
+   * Let go of both fingers. One may still be down: the controls never saw
+   * its press, so its later moves don't orbit.
+   */
+  const endTwist = (): void => {
+    if (!twist) return;
+    if (twist.decided) handlersRef.current.onItemTwistEnd?.(twist.itemId, twist.steps !== 0);
+    for (const id of twist.ids) {
+      try {
+        canvas.releasePointerCapture(id);
+      } catch {
+        // Ignore if capture was never held or already released.
+      }
+    }
+    twist = null;
+    handBackControls();
+  };
+
+  /**
+   * The two fingers pinched or slid before they turned: the camera's gesture
+   * after all. Both presses are replayed to the controls from where the
+   * fingers are now, as handOverToPinch does for the first.
+   */
+  const handTwistToCamera = (pointerType: string): void => {
+    if (!twist) return;
+    const { ids, last } = twist;
+    endTwist();
+    if (handlersRef.current.walkthroughActive) return;
+    controls.enabled = true;
+    replaying = true;
+    try {
+      ids.forEach((pointerId, index) => {
+        canvas.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            pointerId,
+            pointerType,
+            isPrimary: index === 0,
+            clientX: last[index]!.x,
+            clientY: last[index]!.y,
+            button: 0,
+            buttons: 1,
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+      });
+    } finally {
+      replaying = false;
+    }
+  };
+
   const endGesture = (event: PointerEvent): void => {
+    if (twist) {
+      // Either finger up ends the twist; its steps are already in.
+      if (twist.ids.includes(event.pointerId)) endTwist();
+      return;
+    }
     if (event.pointerId !== activePointerId && activePointerId !== null) return;
     if (held) {
       const { gesture, started: moved } = held;
@@ -667,6 +869,10 @@ export function attachDragHandlers({
   // The browser took the pointer (OS gesture, palm rejection, a system
   // dialog): undo the drag rather than commit and lock it (#292).
   const onPointerCancel = (event: PointerEvent): void => {
+    if (twist) {
+      if (twist.ids.includes(event.pointerId)) endTwist();
+      return;
+    }
     if (activePointerId === null || event.pointerId !== activePointerId) return;
     abortGesture(true);
   };
@@ -693,9 +899,12 @@ export function attachDragHandlers({
   // OrbitControls' (bubble) pointerdown, so a press on an item can switch
   // the controls off before they see it.
   // A pointerup the page never sees (the window lost focus mid-gesture) must
-  // not leave a wall held. Called off, as on the plan.
+  // not leave a wall held or an item stuck to the pointer. Called off, as on
+  // the plan; a moved item goes back, as a release over the HUD does (#779).
   const onWindowBlur = (): void => {
-    if (held) abortGesture(false);
+    if (twist) endTwist();
+    else if (held) abortGesture(false);
+    else if (dragTarget) abortGesture(dragStarted);
   };
   doc.defaultView?.addEventListener('blur', onWindowBlur);
 
@@ -706,6 +915,7 @@ export function attachDragHandlers({
   canvas.addEventListener('pointerleave', onPointerLeave);
 
   return () => {
+    endTwist();
     releaseHeldControls();
     doc.defaultView?.removeEventListener('blur', onWindowBlur);
     canvas.removeEventListener('pointerdown', onPointerDown, true);

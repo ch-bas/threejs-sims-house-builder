@@ -48,13 +48,14 @@ import { isInsideBuilding } from './lib/footprint';
 import { formatMetres } from './lib/format';
 import { hasCollisions } from './lib/geometry';
 import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
+import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
 import { COARSE_POINTER_QUERY } from './lib/hud-layout';
 import { randomSuffix } from './lib/ids';
 import { reseatWallMountedItem, settleWallMountedItem } from './lib/opening-snap';
 import { loadQualityChoice } from './lib/render-quality';
 import { snapshotBeforeReplace } from './lib/restore-point';
-import { ORBIT_MAX_POLAR } from './lib/scene-insets';
+import { ORBIT_MAX_POLAR, focusCoverFor } from './lib/scene-insets';
 import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
@@ -150,6 +151,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   wallDisplay: 'cutaway',
   measurementMode: false,
   soundsEnabled: false,
+  hapticsEnabled: true,
   drawWallMode: false,
   drawZoneMode: false,
   showHeatmap: false,
@@ -197,11 +199,13 @@ export function RoomOrganizer(): JSX.Element {
   const exploring = useStore(viewStore, (state) => state.gameMode === 'live');
   const designing = useStore(viewStore, (state) => state.gameMode === 'build');
 
+  // The one call site per event: the sound, and on a touch device the buzz (#687).
   const playCue = useCallback(
     (cue: SoundCue) => {
       if (view.soundsEnabled) playSound(cue);
+      if (view.hapticsEnabled) cueHaptic(cue);
     },
-    [view.soundsEnabled]
+    [view.soundsEnabled, view.hapticsEnabled]
   );
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedWall, setSelectedWall] = useState<SelectedWall | null>(null);
@@ -330,6 +334,8 @@ export function RoomOrganizer(): JSX.Element {
   useEffect(() => {
     const renderQuality = loadQualityChoice();
     if (renderQuality !== 'auto') setView((v) => ({ ...v, renderQuality }));
+    // The haptics switch, likewise per device (#687).
+    if (!loadHapticsChoice()) setView((v) => ({ ...v, hapticsEnabled: false }));
   }, [setView]);
 
   // The zone with handles on the plan (#628). The handles are zone mode's.
@@ -687,6 +693,50 @@ export function RoomOrganizer(): JSX.Element {
     [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera, playCue, refuseLocked]
   );
 
+  // Shift+R's 15° turn and each step of a two-finger twist (#689), which
+  // plays its cue on the first step only (`cue`).
+  const rotateItemByHandler = useCallback(
+    (id: string, radians: number, cue = true) => {
+      if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
+        const unlocked = unlockedSelectedIds();
+        if (unlocked.size === 0) {
+          refuseLocked(allSelectedIds.size);
+          return;
+        }
+        if (!selectionTurns(activeFloor.items, unlocked)) {
+          playCue('refused');
+          return;
+        }
+        actions.rotateSelection(unlocked, radians);
+        if (cue) playCue('rotate');
+        return;
+      }
+      const item = activeFloor.items.find((entry) => entry.id === id);
+      if (!item) return;
+      if (item.locked) {
+        refuseLocked(item.name);
+        return;
+      }
+      // In [0, 2π): a twist turns both ways.
+      const turn = Math.PI * 2;
+      const next = ((((item.rotation ?? 0) + radians) % turn) + turn) % turn;
+      actions.setRotation(id, next);
+      reseatCamera(id, next);
+      if (cue) playCue('rotate');
+    },
+    [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera, playCue, refuseLocked]
+  );
+  // A twist is only offered for what it would turn: otherwise the two
+  // fingers stay the camera's pinch, never a refusal (#689).
+  const canTwistItem = useCallback(
+    (id: string) => {
+      if (exploring) return false;
+      const turning = allSelectedIds.size > 1 && allSelectedIds.has(id) ? unlockedSelectedIds() : new Set([id]);
+      return selectionTurns(activeFloor.items, turning);
+    },
+    [exploring, allSelectedIds, unlockedSelectedIds, activeFloor.items]
+  );
+
   // Toggle a camera's stand-off bracket. Enabling it keeps the current facing
   // and lifts the camera onto the arm; disabling it snaps the camera back flush
   // and re-locks facing to the wall's inward normal.
@@ -895,7 +945,7 @@ export function RoomOrganizer(): JSX.Element {
   // Set once the keyboard placement and the ghost exist, below.
   const placedAfterConfirmRef = useRef<(id: string, catalogItem: CatalogItem) => void>(() => {});
 
-  const { snapPosition, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
+  const { snapPosition: snapPlacement, lastSnapWall, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
     activeFloor,
     activeFloorY,
     roomWidth: layout.width,
@@ -912,7 +962,35 @@ export function RoomOrganizer(): JSX.Element {
     onPlacedAfterConfirm: (id: string, catalogItem: CatalogItem) => placedAfterConfirmRef.current(id, catalogItem),
   });
 
+  // A drag, in either view, buzzes once as the item snaps onto a wall (#687):
+  // every move's snap goes through here, and every drag starts through
+  // startItemDrag, which forgets the last drag's wall.
+  const [snapTicker] = useState(createSnapTicker);
+  const snapPosition = useCallback(
+    (id: string, x: number, z: number) => {
+      const snapped = snapPlacement(id, x, z);
+      if (snapTicker.next(lastSnapWall()) && view.hapticsEnabled) haptic('snap');
+      return snapped;
+    },
+    [snapPlacement, lastSnapWall, snapTicker, view.hapticsEnabled]
+  );
+  const startItemDrag = useCallback(
+    (id: string) => {
+      snapTicker.reset();
+      handleDragStart(id);
+    },
+    [snapTicker, handleDragStart]
+  );
+
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
+  // #650: Tab on the focused scene picked an item; a selected wall lets go, as on a click.
+  const selectFromKeyboard = useCallback(
+    (id: string) => {
+      handleInteriorWallSelect(null);
+      handleSelect(id, 'replace');
+    },
+    [handleInteriorWallSelect, handleSelect]
+  );
 
   // Every catalog add (tile click, keyboard, drag-drop) comes through here,
   // so each chimes once (#460). '' = declined or refused: nothing was added.
@@ -1010,7 +1088,7 @@ export function RoomOrganizer(): JSX.Element {
     onItemSelect: handleSelect,
     onDeselect: deselectAll,
     snapPosition,
-    onItemDragStart: handleDragStart,
+    onItemDragStart: startItemDrag,
     onItemDrag: handleDrag,
     onItemDragEnd: handleDragEnd,
     onItemDragCancel: handleDragCancel,
@@ -1044,10 +1122,15 @@ export function RoomOrganizer(): JSX.Element {
       floorPickOnly: view.drawWallMode || view.measurementMode,
       onItemSelect: handleSelect,
       selectedIds: allSelectedIds,
-      onItemDragStart: handleDragStart,
+      onItemDragStart: startItemDrag,
       onItemDrag: handleDrag,
       onItemDragEnd: handleDragEnd,
       onItemDragCancel: handleDragCancel,
+      canTwistItem,
+      // One gesture, one undo entry and one cue, however it pauses (#689).
+      onItemTwistStart: history.holdGesture,
+      onItemTwist: (id: string, radians: number, first: boolean) => rotateItemByHandler(id, radians, first),
+      onItemTwistEnd: (_id: string, turned: boolean) => history.releaseGesture(turned),
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
       onWallSelect: ({ wallId, kind, from }) => {
@@ -1278,6 +1361,10 @@ export function RoomOrganizer(): JSX.Element {
     roofStyle !== 'none' &&
     sceneWallDisplay(view.wallDisplay, walkthroughActive) === 'up' &&
     (view.showAllFloors || walkthroughActive || activeFloorIndex === layout.floors.length - 1);
+  // Open to the sky, walls fully up can still hide a focused item (#783).
+  const sceneWalls = sceneWallDisplay(view.wallDisplay, walkthroughActive);
+  // A traced ground floor builds no shell walls.
+  const tracedGround = !!layout.floorPlanImage;
   const roofPeak = roofShows ? roofPeakHeight(roofStyle, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),
@@ -1359,6 +1446,15 @@ export function RoomOrganizer(): JSX.Element {
     return true;
   }, [layout.width, layout.height, layout.cutout, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
 
+  // `[` / `]` and PgUp / PgDn, and the touch walk HUD's clock and floor buttons (#688).
+  const advanceTime = useEvent((deltaHours: number) => {
+    setView((v) => ({ ...v, timeOfDay: (((v.timeOfDay + deltaHours) % 24) + 24) % 24 }));
+  });
+  const changeFloor = useEvent((delta: number) => {
+    const next = activeFloorIndex + delta;
+    if (next < 0 || next >= layout.floors.length) return;
+    actions.setActiveFloorIndex(next);
+  });
   const shortcutHandlers = useMemo(
     () => ({
       removeItem: (id: string) => {
@@ -1373,32 +1469,7 @@ export function RoomOrganizer(): JSX.Element {
       copySelection: copySelectionToClipboard,
       pasteClipboard: pasteFromClipboard,
       rotateItem: rotateItemHandler,
-      rotateItemBy: (id: string, radians: number) => {
-        if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
-          const unlocked = unlockedSelectedIds();
-          if (unlocked.size === 0) {
-            refuseLocked(allSelectedIds.size);
-            return;
-          }
-          if (!selectionTurns(activeFloor.items, unlocked)) {
-            playCue('refused');
-            return;
-          }
-          actions.rotateSelection(unlocked, radians);
-          playCue('rotate');
-          return;
-        }
-        const item = activeFloor.items.find((entry) => entry.id === id);
-        if (!item) return;
-        if (item.locked) {
-          refuseLocked(item.name);
-          return;
-        }
-        const next = ((item.rotation ?? 0) + radians) % (Math.PI * 2);
-        actions.setRotation(id, next);
-        reseatCamera(id, next);
-        playCue('rotate');
-      },
+      rotateItemBy: rotateItemByHandler,
       moveItem: (id: string, x: number, z: number) => {
         // Arrow nudges settle wall-mounted items back onto their wall the way
         // drag release does — a nudged door slides along its wall instead of
@@ -1476,17 +1547,19 @@ export function RoomOrganizer(): JSX.Element {
         focusOn(selectedItem.position, {
           floorY: isInsideBuilding(building, x, z) || activeFloorIndex > 0 ? activeFloorY : orbitGroundAt(z),
           size: Math.max(selectedItem.width, selectedItem.depth, selectedItem.height),
-          cover: covered ? { storeyHeight: activeStoreyHeight, building, walls: activeFloor.interiorWalls ?? [] } : null,
+          cover: focusCoverFor({
+            covered,
+            wallDisplay: sceneWalls,
+            storeyHeight: activeStoreyHeight,
+            building,
+            walls: activeFloor.interiorWalls ?? [],
+            hiddenSides: activeFloor.hiddenWalls ?? [],
+            noShell: tracedGround && activeFloorIndex === 0,
+          }),
         });
       },
-      advanceTime: (deltaHours: number) => {
-        setView((v) => ({ ...v, timeOfDay: (((v.timeOfDay + deltaHours) % 24) + 24) % 24 }));
-      },
-      changeFloor: (delta: number) => {
-        const next = activeFloorIndex + delta;
-        if (next < 0 || next >= layout.floors.length) return;
-        actions.setActiveFloorIndex(next);
-      },
+      advanceTime,
+      changeFloor,
       toggleSidebar: () => setSidebarCollapsed((c) => !c),
       removeInteriorWall: (id: string) => {
         if (id === ENTRANCE_WALL_ID) {
@@ -1529,19 +1602,22 @@ export function RoomOrganizer(): JSX.Element {
       layout.width,
       layout.height,
       layout.cutout,
-      unlockedSelectedIds,
-      setView,
       toggle,
       history.undo,
       history.redo,
       selectedItem,
       focusOn,
       roofShows,
+      sceneWalls,
+      tracedGround,
+      activeFloor.hiddenWalls,
       view.showAllFloors,
       activeStoreyHeight,
       orbitGroundAt,
+      advanceTime,
+      changeFloor,
       rotateItemHandler,
-      reseatCamera,
+      rotateItemByHandler,
       playCue,
       refuseLocked,
       wallDraft,
@@ -1676,9 +1752,13 @@ export function RoomOrganizer(): JSX.Element {
                 seated: walk.seated,
                 floorName: activeFloor.name,
                 multiFloor: layout.floors.length > 1,
+                canFloorUp: activeFloorIndex < layout.floors.length - 1,
+                canFloorDown: activeFloorIndex > 0,
                 onStick: walk.setStick,
                 onToggleSit: walk.toggleSit,
                 onExit: exitWalkthrough,
+                onChangeFloor: changeFloor,
+                onAdvanceTime: advanceTime,
               }
             : null
         }
@@ -1730,6 +1810,9 @@ export function RoomOrganizer(): JSX.Element {
           if (!newId) return;
           selectOnly(newId);
         }}
+        // Keyboard selection on the scene (#650): as a click on the item would.
+        onKeyboardSelect={selectFromKeyboard}
+        placing={placingId !== null || ghost !== null}
       />
 
       <DevDiagnostics isReady={isReady} rendererRef={rendererRef} sceneRef={sceneRef} />

@@ -360,6 +360,39 @@ export interface FocusCover {
   building: FootprintBuilding;
   /** The storey's partitions. */
   walls: readonly PlanWall[];
+  /**
+   * Nothing above, but the walls stand (#783): the camera keeps its height
+   * over them, and only turns away from a wall that would hide the item.
+   */
+  open?: boolean;
+  /**
+   * The shell walls built on the storey, when some are not (a hidden side,
+   * a traced ground floor): the garden and open-sky views see past the rest.
+   */
+  shell?: readonly PlanWall[];
+}
+
+/**
+ * The context focus-on-item frames in, or null for the plain diagonal. A
+ * roof or a storey above covers the item; with neither, only walls fully up
+ * can hide it: cutaway and walls-down keep the plain view (#783).
+ */
+export function focusCoverFor(input: {
+  covered: boolean;
+  wallDisplay: 'up' | 'cutaway' | 'down';
+  storeyHeight: number;
+  building: FootprintBuilding;
+  walls: readonly PlanWall[];
+  hiddenSides: readonly string[];
+  /** No shell walls are built (a traced ground floor). */
+  noShell: boolean;
+}): FocusCover | null {
+  const { covered, wallDisplay, storeyHeight, building, walls, hiddenSides, noShell } = input;
+  const all = shellWalls(building);
+  const built = noShell ? [] : all.filter((wall) => !hiddenSides.includes(wall.side));
+  const shell = built.length === all.length ? {} : { shell: built };
+  if (covered) return { storeyHeight, building, walls, ...shell };
+  return wallDisplay === 'up' ? { storeyHeight, building, walls, open: true, ...shell } : null;
 }
 
 /** Share of the way from `from` along `step` at which it meets `wall`, or null. */
@@ -376,12 +409,46 @@ function wallCrossing(from: { x: number; z: number }, step: { x: number; z: numb
 }
 
 /**
+ * A garden item is seen from outside the house: the diagonal away from the
+ * middle first, then the others, taking the first whose view crosses no
+ * built shell wall, so it never ends inside a wing. In an L's deep notch the away side can be the other wing
+ * (#783). With none clear, the one that backs furthest before a wall.
+ */
+function gardenFocusOffset(
+  target: { x: number; z: number },
+  back: number,
+  up: number,
+  walls: readonly PlanWall[],
+  awayX: number,
+  awayZ: number
+): Vec3 {
+  const margin = FOCUS_ROOM_MARGIN / back;
+  let best = { x: awayX * back, z: awayZ * back };
+  let bestReach = 0;
+  for (const [x, z] of [[awayX, awayZ], [awayX, -awayZ], [-awayX, awayZ], [-awayX, -awayZ]] as const) {
+    const step = { x: x * back, z: z * back };
+    const share = walls.reduce((nearest, wall) => {
+      const crossing = wallCrossing(target, step, wall);
+      return crossing === null ? nearest : Math.min(nearest, crossing - margin);
+    }, 1);
+    if (share >= 1) return [step.x, up, step.z];
+    if (share > bestReach) {
+      bestReach = share;
+      best = { x: step.x * share, z: step.z * share };
+    }
+  }
+  return [best.x, up, best.z];
+}
+
+/**
  * Where focus-on-item puts the camera, relative to the item on its floor. The
  * distance fits the item's largest side. With a roof or a storey above, an
  * item indoors is seen from inside its room: of the four diagonals, the one
  * that backs furthest away before a wall, the open side first on a tie. A
- * tight room leaves the camera close and steep. A garden item is seen from
- * the side away from the house.
+ * tight room leaves the camera close and steep. Open to the sky with the
+ * walls up, it keeps its height and takes a diagonal no wall hides the item
+ * from, or failing that stays over the room. A garden item is seen from the
+ * side away from the house.
  */
 export function focusOffset(target: { x: number; z: number }, size: number, cover: FocusCover | null): Vec3 {
   const distance = Math.max(FOCUS_MIN_DISTANCE, size * FOCUS_DISTANCE_PER_METRE);
@@ -390,9 +457,26 @@ export function focusOffset(target: { x: number; z: number }, size: number, cove
   if (!cover) return [back, up, back];
   const awayX = target.x < 0 ? -1 : 1;
   const awayZ = target.z < 0 ? -1 : 1;
-  if (!isInsideBuilding(cover.building, target.x, target.z)) return [awayX * back, up, awayZ * back];
+  if (!isInsideBuilding(cover.building, target.x, target.z)) {
+    return gardenFocusOffset(target, back, up, cover.shell ?? shellWalls(cover.building), awayX, awayZ);
+  }
 
   const walls = [...shellWalls(cover.building), ...cover.walls];
+  const diagonals = [[-awayX, -awayZ], [-awayX, awayZ], [awayX, -awayZ], [awayX, awayZ]] as const;
+  if (cover.open) {
+    const standing = [...(cover.shell ?? shellWalls(cover.building)), ...cover.walls];
+    // The sight line climbs from the item to the camera: a wall it crosses
+    // low enough to stand in it hides the item. The plain diagonal first,
+    // so a view nothing blocks is the one it always was.
+    const clear = (step: { x: number; z: number }): boolean =>
+      standing.every((wall) => {
+        const crossing = wallCrossing(target, step, wall);
+        return crossing === null || crossing * up >= cover.storeyHeight;
+      });
+    for (const [x, z] of [[1, 1], ...diagonals] as const) {
+      if (clear({ x: x * back, z: z * back })) return [x * back, up, z * back];
+    }
+  }
   const margin = FOCUS_ROOM_MARGIN / back;
   const reach = (step: { x: number; z: number }): number =>
     walls.reduce((nearest, wall) => {
@@ -401,7 +485,7 @@ export function focusOffset(target: { x: number; z: number }, size: number, cove
     }, 1);
   let best = { x: 0, z: 0 };
   let bestReach = 0;
-  for (const [x, z] of [[-awayX, -awayZ], [-awayX, awayZ], [awayX, -awayZ], [awayX, awayZ]] as const) {
+  for (const [x, z] of diagonals) {
     const step = { x: x * back, z: z * back };
     const share = reach(step);
     if (share > bestReach) {
@@ -409,7 +493,7 @@ export function focusOffset(target: { x: number; z: number }, size: number, cove
       best = { x: step.x * share, z: step.z * share };
     }
   }
-  return [best.x, Math.min(up, cover.storeyHeight - FOCUS_ROOM_MARGIN), best.z];
+  return [best.x, cover.open ? up : Math.min(up, cover.storeyHeight - FOCUS_ROOM_MARGIN), best.z];
 }
 
 function dot(a: Vec3, b: Vec3): number {

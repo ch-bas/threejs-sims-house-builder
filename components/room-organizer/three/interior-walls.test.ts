@@ -195,6 +195,22 @@ describe('a partition end on the shell stops short of it (#660)', () => {
     expect(xRange(wallMesh(inside))).toEqual({ min: -2, max: 2 });
   });
 
+  it("trims an end on an L's notch wall too (#783)", () => {
+    // 10 × 8 with a 4 × 3 cut at the north-east: the notch-x wall runs at z = -1 from x = 1 to 5.
+    const scene = new THREE.Scene();
+    renderInteriorWalls(THREE, scene, [{ id: 'iw', x1: 3, z1: -1, x2: 3, z2: 2 }], 0, undefined, {
+      roomWidth: 10,
+      roomDepth: 8,
+      cutout: { corner: 'ne', width: 4, depth: 3 },
+      openingCandidates: [],
+    });
+    const mesh = wallMesh(scene);
+    mesh.updateMatrixWorld();
+    const box = new THREE.Box3().setFromObject(mesh);
+    expect(box.min.z).toBeGreaterThan(-1 + 0.005);
+    expect(box.max.z).toBeCloseTo(2, 5);
+  });
+
   it('keeps a doorway where it was drawn after the trim', () => {
     const door = makeItem({ id: 'door', type: 'door', width: 0.9, depth: 0.12, height: 2.05, position: { x: -3, z: 0.5 }, rotation: 0 });
     const scene = new THREE.Scene();

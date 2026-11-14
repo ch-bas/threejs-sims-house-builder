@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NO_PLAN_ZOOM, planZoomOf, setPlanZoom, zoomPlanAbout } from '../canvas-2d/plan-zoom';
 import { get2DViewTransform } from '../canvas-2d/render';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { doorSwing, type PlacedItem } from '../lib/plan-export/plan-geometry';
@@ -185,6 +186,7 @@ describe('useCanvas2DInteraction in EXPLORE (#699)', () => {
   it('empty plan still deselects', () => {
     const { params, fire } = setup(['a'], { exploring: true });
     fire('pointerdown', -3.5, -2.5);
+    fire('pointerup', -3.5, -2.5);
     expect(params.onDeselect).toHaveBeenCalledTimes(1);
   });
 });
@@ -525,8 +527,8 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       const { onInteriorWallSelect, fire, scale } = select();
       const off = 0.08 + 10 / scale;
       fire('pointerdown', 1, off);
-      expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
       fire('pointerup', 1, off);
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
       fire('pointerdown', 1, off, 'touch');
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', expect.any(String));
     });
@@ -573,7 +575,48 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
       const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab });
       fire('pointerdown', 1, 0.05);
       expect(onWallGrab).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }));
+      fire('pointerup', 1, 0.05);
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', 'a');
+    });
+
+    it('a drag on a wall not yet selected moves it, and selects it only at the release (#786)', () => {
+      // Selecting opens the paint sheet, which on a phone covers the finger:
+      // selected at the press, the drag went on over the HUD and was called off.
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab: () => gesture });
+      fire('pointerdown', 1, 0.05, 'touch');
+      expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1', expect.any(String));
+      fire('pointermove', 1, 1, 'touch');
+      fire('pointermove', 1, 1.5, 'touch');
+      expect(gesture.move).toHaveBeenCalledTimes(2);
+      fire('pointerup', 1, 1.5, 'touch');
+      expect(onInteriorWallSelect).toHaveBeenLastCalledWith('w1', 'a');
+      expect(gesture.end).toHaveBeenCalledWith(true);
+    });
+
+    it('another pointer leaving the plan leaves a held wall alone (#786)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const { fire, params } = select({ selectedWallId: null, onWallGrab: () => gesture });
+      fire('pointerdown', 1, 0.05, 'touch');
+      const leave = new MouseEvent('pointerleave', { clientX: 0, clientY: 0 });
+      Object.defineProperty(leave, 'pointerId', { value: 2 });
+      Object.defineProperty(leave, 'pointerType', { value: 'mouse' });
+      params.canvasRef.current!.dispatchEvent(leave);
+      fire('pointermove', 1, 1, 'touch');
+      fire('pointerup', 1, 1, 'touch');
+      expect(gesture.move).toHaveBeenCalledTimes(1);
+      expect(gesture.end).toHaveBeenCalledTimes(1);
+      expect(gesture.end).toHaveBeenCalledWith(true);
+    });
+
+    it('a cancelled press on a wall not yet selected selects nothing (#786)', () => {
+      const gesture = { move: vi.fn(), end: vi.fn() };
+      const { fire, onInteriorWallSelect } = select({ selectedWallId: null, onWallGrab: () => gesture });
+      fire('pointerdown', 1, 0.05, 'touch');
+      fire('pointermove', 1, 1, 'touch');
+      fire('pointercancel', 1, 1, 'touch');
+      expect(onInteriorWallSelect).not.toHaveBeenCalledWith('w1', expect.any(String));
+      expect(gesture.end).toHaveBeenLastCalledWith(false);
     });
 
     it('a press on a selected end grabs that end, ahead of the item under it (#718)', () => {
@@ -605,6 +648,7 @@ describe('useCanvas2DInteraction wall tool (#564)', () => {
     it('EXPLORE selects no wall', () => {
       const { onInteriorWallSelect, fire } = select({ exploring: true });
       fire('pointerdown', 1, 0.05);
+      fire('pointerup', 1, 0.05);
       expect(onInteriorWallSelect).toHaveBeenLastCalledWith(null);
     });
   });
@@ -832,5 +876,163 @@ describe('useCanvas2DInteraction zone editing (#628)', () => {
     expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(true);
     fire('pointerup', -1, -1);
     expect(document.documentElement.hasAttribute(PLAN_GESTURE_ATTR)).toBe(false);
+  });
+});
+
+describe('useCanvas2DInteraction view zoom (#678)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const finger = (canvas: HTMLCanvasElement, type: string, x: number, y: number, id: number, isPrimary = id === 1) =>
+    canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: id, pointerType: 'touch', isPrimary, button: 0, bubbles: true }));
+  /** The transform the plan paints with now. */
+  const painted = (params: UseCanvas2DInteractionParams) =>
+    get2DViewTransform(W, H, params.layout, undefined, undefined, undefined, planZoomOf(params.canvasRef.current!));
+  const toWorld = (params: UseCanvas2DInteractionParams, x: number, y: number) => {
+    const t = painted(params);
+    return { x: (x - t.offsetX) / t.scale - params.layout.width / 2, z: (y - t.offsetY) / t.scale - params.layout.height / 2 };
+  };
+  /** Zoomed 2× about the canvas centre. */
+  const zoomIn = (canvas: HTMLCanvasElement, layout: UseCanvas2DInteractionParams['layout']) =>
+    setPlanZoom(canvas, zoomPlanAbout(get2DViewTransform(W, H, layout), NO_PLAN_ZOOM, 2, { x: W / 2, y: H / 2 }, { width: W, height: H }));
+
+  it('a pinch zooms the plan about the fingers, and a press then hits through the zoom', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    finger(canvas, 'pointerdown', 350, 300, 1);
+    finger(canvas, 'pointerdown', 450, 300, 2);
+    finger(canvas, 'pointermove', 300, 300, 1);
+    finger(canvas, 'pointermove', 500, 300, 2);
+    expect(planZoomOf(canvas).zoom).toBeCloseTo(2, 9);
+    finger(canvas, 'pointerup', 300, 300, 1);
+    finger(canvas, 'pointerup', 500, 300, 2);
+    expect(params.onItemDragStart).not.toHaveBeenCalled();
+    // A pinch is no tap: the selection stays.
+    expect(params.onDeselect).not.toHaveBeenCalled();
+    // Item b (0.5 m at x = 2.5) is now where the zoomed plan draws it.
+    const t = painted(params);
+    const bx = t.offsetX + (2.5 + params.layout.width / 2) * t.scale;
+    const by = t.offsetY + (0 + params.layout.height / 2) * t.scale;
+    canvas.dispatchEvent(pointer('pointerdown', bx, by));
+    expect(params.onItemSelect).toHaveBeenCalledWith('b', 'replace');
+  });
+
+  it('a second finger on a held item calls the drag off and zooms instead', () => {
+    const { params, fire } = setup([]);
+    const canvas = params.canvasRef.current!;
+    fire('pointerdown', 0, 0, 'touch');
+    fire('pointermove', 1, 0, 'touch');
+    finger(canvas, 'pointerdown', 600, 300, 2);
+    expect(params.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+    finger(canvas, 'pointermove', 700, 300, 2);
+    expect(planZoomOf(canvas).zoom).toBeGreaterThan(1);
+    expect(params.onItemDrag).toHaveBeenCalledTimes(1);
+  });
+
+  it('empty floor clears the selection on a tap, at the release, not on the press', () => {
+    const { params } = setup(['a']);
+    const canvas = params.canvasRef.current!;
+    finger(canvas, 'pointerdown', 20, 20, 1);
+    expect(params.onDeselect).not.toHaveBeenCalled();
+    finger(canvas, 'pointerup', 20, 20, 1);
+    expect(params.onDeselect).toHaveBeenCalledTimes(1);
+  });
+
+  it('one finger on empty floor pans the zoomed plan and keeps the selection; at the fit it is a tap', () => {
+    const { params } = setup(['a']);
+    const canvas = params.canvasRef.current!;
+    finger(canvas, 'pointerdown', 20, 20, 1);
+    finger(canvas, 'pointermove', 80, 60, 1);
+    finger(canvas, 'pointerup', 80, 60, 1);
+    expect(planZoomOf(canvas)).toBe(NO_PLAN_ZOOM);
+    expect(params.onDeselect).toHaveBeenCalledTimes(1);
+    zoomIn(canvas, params.layout);
+    const before = painted(params);
+    finger(canvas, 'pointerdown', 20, 20, 1);
+    finger(canvas, 'pointermove', 80, 60, 1);
+    finger(canvas, 'pointerup', 80, 60, 1);
+    const after = painted(params);
+    expect(after.offsetX - before.offsetX).toBeCloseTo(60, 6);
+    expect(after.offsetY - before.offsetY).toBeCloseTo(40, 6);
+    expect(params.onDeselect).toHaveBeenCalledTimes(1);
+    expect(params.onItemDragStart).not.toHaveBeenCalled();
+  });
+
+  it('a double tap on empty floor goes back to the fit', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    zoomIn(canvas, params.layout);
+    finger(canvas, 'pointerdown', 20, 20, 1);
+    finger(canvas, 'pointerup', 20, 20, 1);
+    expect(planZoomOf(canvas).zoom).toBe(2);
+    finger(canvas, 'pointerdown', 22, 21, 1);
+    finger(canvas, 'pointerup', 22, 21, 1);
+    expect(planZoomOf(canvas)).toBe(NO_PLAN_ZOOM);
+  });
+
+  it('a double tap on an item, or an item tap then an empty one, keeps the zoom', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    zoomIn(canvas, params.layout);
+    const t = painted(params);
+    const ax = t.offsetX + (params.layout.width / 2) * t.scale;
+    const ay = t.offsetY + (params.layout.height / 2) * t.scale;
+    finger(canvas, 'pointerdown', ax, ay, 1);
+    finger(canvas, 'pointerup', ax, ay, 1);
+    finger(canvas, 'pointerdown', ax, ay, 1);
+    finger(canvas, 'pointerup', ax, ay, 1);
+    expect(planZoomOf(canvas).zoom).toBe(2);
+    finger(canvas, 'pointerdown', ax, ay, 1);
+    finger(canvas, 'pointerup', ax, ay, 1);
+    finger(canvas, 'pointerdown', 20, 20, 1);
+    finger(canvas, 'pointerup', 20, 20, 1);
+    expect(planZoomOf(canvas).zoom).toBe(2);
+  });
+
+  it('with the Walls tool, a double tap places two points where they land and keeps the zoom', () => {
+    const onWallPoint = vi.fn();
+    const { params } = setup([], {
+      view: { showMeasurements: false, showWiFiSignals: false, showHeatmap: false, showFloorBelow: false, drawZoneMode: false, drawWallMode: true },
+      onWallPoint,
+    });
+    const canvas = params.canvasRef.current!;
+    zoomIn(canvas, params.layout);
+    const spot = toWorld(params, 300, 250);
+    finger(canvas, 'pointerdown', 300, 250, 1);
+    finger(canvas, 'pointerup', 300, 250, 1);
+    finger(canvas, 'pointerdown', 301, 250, 1);
+    finger(canvas, 'pointerup', 301, 250, 1);
+    expect(planZoomOf(canvas).zoom).toBe(2);
+    expect(onWallPoint).toHaveBeenCalledTimes(2);
+    const [x, z] = onWallPoint.mock.calls[1]!;
+    expect(x).toBeCloseTo(spot.x, 1);
+    expect(z).toBeCloseTo(spot.z, 1);
+  });
+
+  it('the wheel zooms about the pointer', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    const under = toWorld(params, 400, 300);
+    const wheel = new WheelEvent('wheel', { clientX: 400, clientY: 300, deltaY: -200, bubbles: true, cancelable: true });
+    canvas.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(planZoomOf(canvas).zoom).toBeGreaterThan(1);
+    const after = toWorld(params, 400, 300);
+    expect(after.x).toBeCloseTo(under.x, 9);
+    expect(after.z).toBeCloseTo(under.z, 9);
+  });
+
+  it('leaving the plan drops the zoom', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    zoomIn(canvas, params.layout);
+    cleanup();
+    expect(planZoomOf(canvas)).toBe(NO_PLAN_ZOOM);
   });
 });

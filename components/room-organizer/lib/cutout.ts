@@ -13,7 +13,8 @@ import {
   type FootprintRect,
 } from './footprint';
 import { formatMetres } from './format';
-import { collisionReason, type CollisionContext } from './geometry';
+import { collisionReason, decorNewlyOverOpening, openingUnderDecor, type CollisionContext } from './geometry';
+import { isCeilingHung, isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, isOpening, isWallMounted, settleWallMountedItem } from './opening-snap';
 import { regionsOutside } from './room-detect';
 import { storeyHeight } from './storeys';
@@ -74,14 +75,21 @@ function clashesWithEntrance(before: RoomLayout, after: RoomLayout): boolean {
  */
 function clearSpot(item: FurnitureItem, items: readonly FurnitureItem[], building: Building, context: CollisionContext, search: SpotSearch): Vec2 | null {
   const { width, height, cutout } = building;
+  // Wall decor stays on the wall it steps out along, and off its doors and
+  // windows (#778): a spot that would float it in the room or hang it over
+  // one is not clear.
+  const hung = isWallHung(item.type) && !isCeilingHung(item.type);
   const clear = (position: Vec2): boolean => {
     search.tries += 1;
-    return collisionReason({ ...item, position }, items, width, height, context) === null;
+    const moved = { ...item, position };
+    return collisionReason(moved, items, width, height, context) === null && (!hung || openingUnderDecor(moved, items, context.storeyHeight) === null);
   };
   if (search.tries >= SPOT_TRIES) return null;
   const from = item.position!;
   const exit = clampToFootprint(item, from, width, height, cutout);
   if (clear(exit)) return exit;
+  const facing = { x: Math.sin(item.rotation ?? 0), z: Math.cos(item.rotation ?? 0) };
+  const onExitWall = (spot: Vec2): boolean => !hung || Math.abs((spot.x - exit.x) * facing.x + (spot.z - exit.z) * facing.z) < 1e-6;
   const { halfW, halfD } = rotatedHalfExtents(item);
   const columns = Math.floor((width - 2 * halfW) / SPOT_STEP + 1e-9);
   const rows = Math.floor((height - 2 * halfD) / SPOT_STEP + 1e-9);
@@ -96,9 +104,8 @@ function clearSpot(item: FurnitureItem, items: readonly FurnitureItem[], buildin
     const cells: Array<{ key: number; spot: Vec2 }> = [];
     const add = (c: number, r: number): void => {
       const key = c * 4096 + r;
-      if (r >= 0 && r <= rows && !tried.has(key)) {
-        cells.push({ key, spot: { x: -width / 2 + halfW + c * SPOT_STEP, z: -height / 2 + halfD + r * SPOT_STEP } });
-      }
+      const spot = { x: -width / 2 + halfW + c * SPOT_STEP, z: -height / 2 + halfD + r * SPOT_STEP };
+      if (r >= 0 && r <= rows && !tried.has(key) && onExitWall(spot)) cells.push({ key, spot });
     };
     // The square's rim: what is inside it was tried at a shorter reach.
     for (let c = Math.max(0, column - reach); c <= Math.min(columns, column + reach); c++) {
@@ -212,6 +219,9 @@ function fitFloor(layout: RoomLayout, floor: FloorLayout, index: number, { loadi
   const search: SpotSearch = { tried: new Map(), tries: 0 };
   const items = [...floor.items];
   const movedOpenings: number[] = [];
+  // Openings settle first, so hung decor stepping out of the corner sees
+  // where they now stand (#778). Nothing else collides with the wall layer,
+  // so the order changes no other spot.
   items.forEach((item, at) => {
     if (item.id === ENTRANCE_DOOR_ID || !item.position) return;
     if (isWallMounted(item.type)) {
@@ -223,8 +233,10 @@ function fitFloor(layout: RoomLayout, floor: FloorLayout, index: number, { loadi
       itemsChanged = true;
       items[at] = moved;
       if (isOpening(item.type)) movedOpenings.push(at);
-      return;
     }
+  });
+  items.forEach((item, at) => {
+    if (item.id === ENTRANCE_DOOR_ID || !item.position || isWallMounted(item.type)) return;
     if (item.type === 'stairs' || item.category === 'outdoor' || !entersCutout(item, item.position, building)) return;
     const position = clearSpot(item, items, building, context, search);
     if (!position) {
@@ -257,6 +269,12 @@ function fitFloor(layout: RoomLayout, floor: FloorLayout, index: number, { loadi
       clash = [moved, other];
       break;
     }
+  }
+  // Hung decor stepping out of the corner, or a door or window resettling,
+  // can land one over the other (#778).
+  if (!clash && itemsChanged) {
+    const covered = decorNewlyOverOpening(floor.items, items, storeyHeight(floor));
+    if (covered) clash = [covered.decor, covered.opening];
   }
 
   if (!wallsChanged && !itemsChanged && !zonesChanged) return { floor, stuck, clash };

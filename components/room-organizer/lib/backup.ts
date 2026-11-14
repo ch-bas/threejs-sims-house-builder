@@ -2,6 +2,7 @@ import { STORAGE_KEY } from './constants';
 import { importCustomSets, listCustomSets, parseCustomSet, type CustomFurnitureSet } from './custom-sets';
 import {
   LIBRARY_KEY_PREFIX,
+  batchLibraryChanges,
   countUnreadableSavedLayouts,
   layoutSlugExists,
   listSavedLayouts,
@@ -426,6 +427,11 @@ export function restoreBackup(backup: ParsedBackup, current: RoomLayout): Restor
 }
 
 function restoreLibrary(backup: ParsedBackup, current: RoomLayout, report: RestoreReport): void {
+  // One re-measure for the whole restore, not one per house (#711).
+  batchLibraryChanges(() => restoreLibraryHouses(backup, current, report));
+}
+
+function restoreLibraryHouses(backup: ParsedBackup, current: RoomLayout, report: RestoreReport): void {
   const save = (stored: RoomLayout, name: string, savedAt?: number): void => {
     const outcome = saveNamedLayout(stored, name, savedAt === undefined ? {} : { savedAt });
     if (outcome.ok) report.library += 1;

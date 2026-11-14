@@ -88,10 +88,12 @@ components/
     │   ├── clipboard.ts                 In-memory copy/paste: the selection normalised around its centroid, pasted with fresh ids (#153)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
     │   ├── history-floor.ts             Which storey undo/redo lands on: same floor id, or the one other floor the swap changes (#578)
+    │   ├── item-cycle.ts                Keyboard selection on the scene: the floor's items in plan order, Tab's next and previous, the status line (#650)
     │   ├── history-label.ts             What an undo or redo step did, from the two snapshots, for the toolbar's tooltips
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
+    │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
     │   ├── wall-edit.ts                 Moving drawn walls: slide, end moves, corners that follow, what rides along (#718)
     │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
@@ -192,6 +194,7 @@ components/
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── canvas-2d/opening-symbol.ts      Door swings and window double lines on the plan, minimap and blueprint
     ├── canvas-2d/plan-edit.ts           What only the on-screen plan draws while editing: wall draft, selected wall, zone handles, and their hit tests and drag maths
+    ├── canvas-2d/plan-zoom.ts           The on-screen plan's view zoom and pan (pinch, wheel, double tap back to the fit): view state over the fit, kept per canvas
     ├── canvas-2d/stairs-symbol.ts       Stair treads + climb arrow, stairwell voids on the floor above
     ├── plotcraft/icon.tsx               PlotCraft SVG icon set for UI panels (no icon library)
     ├── plotcraft/tokens.css             PlotCraft design tokens (colours, type, spacing, glass) and HUD classes

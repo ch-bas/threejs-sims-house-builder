@@ -79,6 +79,7 @@ export function makeViewSettings(overrides: Partial<ViewSettings> = {}): ViewSet
     wallDisplay: 'cutaway',
     measurementMode: false,
     soundsEnabled: false,
+    hapticsEnabled: true,
     drawWallMode: false,
     drawZoneMode: false,
     showHeatmap: false,

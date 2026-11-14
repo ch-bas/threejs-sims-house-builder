@@ -86,6 +86,7 @@ export type PlotcraftIconName =
   | 'minimap'
   | 'grid'
   | 'sound'
+  | 'vibrate'
   | 'vision'
   | 'eye'
   | 'tag'
@@ -562,6 +563,12 @@ const PATHS: Record<PlotcraftIconName, ReactNode> = {
       <path d="M11 5L6 9H3v6h3l5 4V5z" />
       <path d="M15.5 8.5a4 4 0 0 1 0 7" />
       <path d="M18 5a8 8 0 0 1 0 14" />
+    </>
+  ),
+  vibrate: (
+    <>
+      <rect x="8" y="4" width="8" height="16" rx="1.5" />
+      <path d="M5 8v8M19 8v8M2.5 10v4M21.5 10v4" />
     </>
   ),
   vision: (

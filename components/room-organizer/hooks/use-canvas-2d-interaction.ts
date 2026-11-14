@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { draggedZoneRect, hitInteriorWall, wallEndAt, ZONE_GRIP_CURSORS, zoneAt, zoneGripAt, type ZoneGrip } from '../canvas-2d/plan-edit';
+import { NO_PLAN_ZOOM, panPlan, pinchPlan, planZoomOf, setPlanZoom, zoomPlanAbout, type PlanZoom } from '../canvas-2d/plan-zoom';
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
@@ -42,6 +43,13 @@ const ZONE_MARK_SLOP_TOUCH_PX = 22;
 /** How far a selected wall's end handles reach, the same 44 px under a finger. */
 const WALL_END_REACH_PX = 10;
 const WALL_END_REACH_TOUCH_PX = 22;
+/** Two taps this close in time (ms) and place (CSS px) are a double tap: back to the fit (#678). */
+const DOUBLE_TAP_MS = 320;
+const DOUBLE_TAP_SLOP_PX = 30;
+/** A touch that moved less than this (CSS px) before lifting was a tap. */
+const TAP_SLOP_PX = 10;
+/** Wheel zoom per pixel of scroll: a notch (100 px) is about 22 %. */
+const WHEEL_ZOOM_PER_PX = 0.002;
 
 /**
  * Topmost item under a world-space point, by exact rotated-rect containment.
@@ -233,7 +241,7 @@ export function useCanvas2DInteraction(
     const canvas = paramsRef.current.canvasRef.current;
     if (!canvas) return null;
     const { layout } = paramsRef.current;
-    const transform = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, layout, fit.padding, fit.insets, fit.bounds);
+    const transform = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, layout, fit.padding, fit.insets, fit.bounds, planZoomOf(canvas));
     if (!Number.isFinite(transform.scale) || transform.scale <= 0) return null;
     const rect = canvas.getBoundingClientRect();
     return canvasToWorld(clientX - rect.left, clientY - rect.top, transform, layout);
@@ -257,7 +265,7 @@ export function useCanvas2DInteraction(
   const hitSlopWorld = useCallback((fit: PlanFit, slopPx = HIT_SLOP_PX): number => {
     const canvas = paramsRef.current.canvasRef.current;
     if (!canvas) return 0;
-    const { scale } = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, paramsRef.current.layout, fit.padding, fit.insets, fit.bounds);
+    const { scale } = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, paramsRef.current.layout, fit.padding, fit.insets, fit.bounds, planZoomOf(canvas));
     return Number.isFinite(scale) && scale > 0 ? slopPx / scale : 0;
   }, []);
 
@@ -330,9 +338,15 @@ export function useCanvas2DInteraction(
       downClientY: number;
       threshold: number;
       started: boolean;
+      /**
+       * A wall this press is only now selecting, selected at the release
+       * (#786): selecting opens the paint sheet, which on a phone covers the
+       * finger, and the drag would go on over the HUD and be called off.
+       */
+      select?: { id: string; side: WallSide };
     }
     let wallHold: WallHold | null = null;
-    const holdWall = (gesture: HeldGesture, event: PointerEvent): void => {
+    const holdWall = (gesture: HeldGesture, event: PointerEvent, select?: WallHold['select']): void => {
       wallHold = {
         pointerId: event.pointerId,
         gesture,
@@ -340,6 +354,7 @@ export function useCanvas2DInteraction(
         downClientY: event.clientY,
         threshold: dragThresholdPx(event.pointerType),
         started: false,
+        ...(select ? { select } : {}),
       };
     };
     // The fit, measured at each press: the gesture maps the pointer and
@@ -348,6 +363,68 @@ export function useCanvas2DInteraction(
     // committed drop refits it (#381).
     let fit: PlanFit = { bounds: undefined, offPlan: [], insets: undefined, padding: PLAN_PADDING_PX, hudRects: [] };
     const worldAt = (event: PointerEvent) => toWorld(event.clientX, event.clientY, fit);
+
+    // View zoom and pan (#678): two fingers pinch and pan, one finger on
+    // empty floor pans once zoomed in, a double tap on empty floor goes back
+    // to the fit, a wheel zooms about the pointer. None of it touches the
+    // house. The plan's own paint, overlays and all, follows the zoom
+    // (`onPlanZoom` in use-scene-effects), as does the placement ghost.
+    type Point = { x: number; y: number };
+    const local = (event: { clientX: number; clientY: number }): Point => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+    /** Fingers down on the plan, where they are now (canvas px). */
+    const touches = new Map<number, Point>();
+    let pinch: { a: number; b: number; from: { a: Point; b: Point }; start: PlanZoom } | null = null;
+    /**
+     * A press on empty floor. Released where it came down it is a tap, which
+     * clears the selection (and a second one soon after, by a finger, goes
+     * back to the fit); dragged on a zoomed plan it pans, and keeps the
+     * selection.
+     */
+    let pan: {
+      pointerId: number;
+      last: Point;
+      down: Point;
+      threshold: number;
+      started: boolean;
+      /** The tap on empty floor just before this press, for the double tap. */
+      tapBefore: (Point & { time: number }) | null;
+      touch: boolean;
+    } | null = null;
+    /** The last tap on empty floor by a finger; any other press forgets it. */
+    let lastTap: (Point & { time: number }) | null = null;
+    /** A gesture of the house's (an item, a zone, a wall) is held. */
+    const houseGestureHeld = (): boolean => (gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold) !== null;
+    const size = () => ({ width: canvas.clientWidth, height: canvas.clientHeight });
+    /** The plain fit the zoom sits on, as `fit` measured it. */
+    const fitted = () => get2DViewTransform(canvas.clientWidth, canvas.clientHeight, paramsRef.current.layout, fit.padding, fit.insets, fit.bounds);
+    const startPinch = (): void => {
+      const [a, b] = [...touches.keys()];
+      if (a === undefined || b === undefined) return;
+      if (houseGestureHeld()) abortGesture(true);
+      if (pan) releaseCapture(pan.pointerId);
+      pan = null;
+      lastTap = null;
+      lockedPress = null;
+      fit = measureFit(canvas);
+      pinch = { a, b, from: { a: touches.get(a)!, b: touches.get(b)! }, start: planZoomOf(canvas) };
+    };
+    /** The release of a press on empty floor that didn't pan: a tap. */
+    const tapEmptyFloor = (press: NonNullable<typeof pan>, event: PointerEvent): void => {
+      const p = paramsRef.current;
+      p.onDeselect();
+      p.onInteriorWallSelect?.(null);
+      if (!press.touch || event.type !== 'pointerup') return;
+      const at = local(event);
+      if (Math.hypot(at.x - press.down.x, at.y - press.down.y) > TAP_SLOP_PX) return;
+      const now = event.timeStamp || performance.now();
+      const before = press.tapBefore;
+      const double = before !== null && now - before.time < DOUBLE_TAP_MS && Math.hypot(at.x - before.x, at.y - before.y) < DOUBLE_TAP_SLOP_PX;
+      lastTap = double ? null : { ...at, time: now };
+      if (double) setPlanZoom(canvas, NO_PLAN_ZOOM);
+    };
 
     const paintGhost = (): void => {
       rafId = null;
@@ -383,6 +460,7 @@ export function useCanvas2DInteraction(
         insets: fit.insets,
         padding: fit.padding,
         hudRects: fit.hudRects,
+        zoom: planZoomOf(canvas),
         hasCollision: (item) =>
           hasCollisions(item, items, layout.width, layout.height, { keepOut, interiorWalls: wallMove?.walls ?? activeFloor.interiorWalls, storeyHeight: storeyHeight(activeFloor) }),
       });
@@ -531,9 +609,27 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerDown = (event: PointerEvent): void => {
-      // A second finger while one is on the plan is a two-finger gesture,
-      // not a drag: drop the drag (the item goes back) or the zone draft,
-      // as the 3D canvas does.
+      // Only a tap on empty floor right after another makes a double tap.
+      const tapBefore = lastTap;
+      lastTap = null;
+      if (event.pointerType === 'touch') {
+        touches.set(event.pointerId, local(event));
+        if (pinch) return;
+        // A second finger is a pinch: whatever the first one held is called
+        // off (the item goes back, the zone draft goes), as on the 3D canvas.
+        if (touches.size >= 2) {
+          startPinch();
+          return;
+        }
+      }
+      if (pan) {
+        if (event.pointerId !== pan.pointerId) {
+          releaseCapture(pan.pointerId);
+          pan = null;
+        }
+        return;
+      }
+      // Another pointer while one holds a gesture of the house: drop it.
       const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold;
       if (held) {
         if (event.pointerId !== held.pointerId) abortGesture(true);
@@ -600,7 +696,7 @@ export function useCanvas2DInteraction(
       // An off-plan marker selects the far item it points to (#381): its
       // sheet or popover carries Centre to bring it back. No drag.
       if (fit.bounds && fit.offPlan.length > 0) {
-        const transform = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, p.layout, fit.padding, fit.insets, fit.bounds);
+        const transform = get2DViewTransform(canvas.clientWidth, canvas.clientHeight, p.layout, fit.padding, fit.insets, fit.bounds, planZoomOf(canvas));
         const rect = canvas.getBoundingClientRect();
         const marker = hitOffPlanMarker(
           offPlanMarkers(transform, p.layout, fit.bounds, fit.offPlan),
@@ -614,20 +710,34 @@ export function useCanvas2DInteraction(
         }
       }
       const hit = hitTest2DItems(p.activeFloor.items, world.x, world.z, hitSlopWorld(fit));
-      if (!hit) {
+      const wallSlop = hitSlopWorld(fit, event.pointerType === 'touch' ? WALL_HIT_SLOP_TOUCH_PX : WALL_HIT_SLOP_PX);
+      const wall = hit || p.exploring ? null : hitInteriorWall(p.activeFloor.interiorWalls ?? [], world.x, world.z, wallSlop);
+      if (!hit && !wall) {
+        // Empty floor: the release decides (a tap clears the selection, a
+        // drag on a zoomed plan pans and keeps it, #678).
+        const at = local(event);
+        pan = { pointerId: event.pointerId, last: at, down: at, threshold: dragThresholdPx(event.pointerType), started: false, tapBefore, touch: event.pointerType === 'touch' };
+        return;
+      }
+      if (!hit && wall) {
         p.onDeselect();
-        const slop = hitSlopWorld(fit, event.pointerType === 'touch' ? WALL_HIT_SLOP_TOUCH_PX : WALL_HIT_SLOP_PX);
-        const wall = p.exploring ? null : hitInteriorWall(p.activeFloor.interiorWalls ?? [], world.x, world.z, slop);
         // The panel a new selection opens refits the plan. On a press that
         // also holds the wall the fit is frozen till the release, so the wall
         // stays under the pointer.
-        const slide = wall && p.onWallGrab?.({ wallId: wall.id, grip: 'body', x: world.x, z: world.z, fresh: wall.id !== p.selectedWallId });
+        const fresh = wall !== null && wall.id !== p.selectedWallId;
+        const slide = wall && p.onWallGrab?.({ wallId: wall.id, grip: 'body', x: world.x, z: world.z, fresh });
         // The side of the line the press landed on is the face to paint (#720).
-        if (wall) p.onInteriorWallSelect?.(wall.id, wallSideAt(wall, world));
-        else p.onInteriorWallSelect?.(null);
+        const side = wall ? wallSideAt(wall, world) : null;
+        if (slide && fresh && wall && side) {
+          // Selected at the release, under a finger that is done (#786).
+          holdWall(slide, event, { id: wall.id, side });
+          return;
+        }
+        if (side) p.onInteriorWallSelect?.(wall.id, side);
         if (slide) holdWall(slide, event);
         return;
       }
+      if (!hit) return;
       p.onInteriorWallSelect?.(null);
       const mode = event.altKey ? 'single' : event.ctrlKey || event.metaKey ? 'toggle' : 'replace';
       const locked = hit.locked === true;
@@ -686,6 +796,33 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerMove = (event: PointerEvent): void => {
+      if (touches.has(event.pointerId)) touches.set(event.pointerId, local(event));
+      if (pinch) {
+        const a = touches.get(pinch.a);
+        const b = touches.get(pinch.b);
+        if (a && b && (event.pointerId === pinch.a || event.pointerId === pinch.b)) {
+          setPlanZoom(canvas, pinchPlan(fitted(), pinch.start, pinch.from, { a, b }, size()));
+        }
+        return;
+      }
+      if (pan && event.pointerId === pan.pointerId) {
+        const at = local(event);
+        if (!pan.started) {
+          // At the fit there is nothing to pan: the release is still a tap.
+          if (planZoomOf(canvas).zoom === 1) return;
+          if (Math.hypot(at.x - pan.down.x, at.y - pan.down.y) < pan.threshold) return;
+          pan.started = true;
+          try {
+            canvas.setPointerCapture(event.pointerId);
+          } catch {
+            // Capture can throw if the pointer is already gone; safe to ignore.
+          }
+        }
+        const zoom = panPlan(fitted(), planZoomOf(canvas), at.x - pan.last.x, at.y - pan.last.y, size());
+        pan.last = at;
+        setPlanZoom(canvas, zoom);
+        return;
+      }
       const hold = wallHold;
       if (hold && event.pointerId === hold.pointerId) {
         if (!hold.started) {
@@ -809,11 +946,32 @@ export function useCanvas2DInteraction(
       schedulePaint();
     };
 
+    /** A pointer of the view's own gestures lifted or was taken away. True if it was one of theirs. */
+    const endViewGesture = (event: PointerEvent): boolean => {
+      touches.delete(event.pointerId);
+      if (pinch) {
+        if (event.pointerId === pinch.a || event.pointerId === pinch.b) pinch = null;
+        return true;
+      }
+      if (pan && event.pointerId === pan.pointerId) {
+        const press = pan;
+        pan = null;
+        releaseCapture(press.pointerId);
+        // A cancelled press changes nothing.
+        if (!press.started && event.type === 'pointerup') tapEmptyFloor(press, event);
+        return true;
+      }
+      return false;
+    };
+
     const endGesture = (event: PointerEvent): void => {
+      if (endViewGesture(event)) return;
       lockedPress = null;
       if (wallHold && event.pointerId === wallHold.pointerId) {
-        const { gesture: wallGesture, started } = wallHold;
+        const { gesture: wallGesture, started, select } = wallHold;
         wallHold = null;
+        // Before the gesture ends: the move it commits keeps the wall selected.
+        if (select && event.type === 'pointerup') paramsRef.current.onInteriorWallSelect?.(select.id, select.side);
         releaseCapture(event.pointerId);
         if (rafId !== null) {
           cancelAnimationFrame(rafId);
@@ -881,6 +1039,7 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerCancel = (event: PointerEvent): void => {
+      if (endViewGesture(event)) return;
       lockedPress = null;
       if (wallPress && event.pointerId === wallPress.pointerId) {
         abortGesture();
@@ -896,16 +1055,28 @@ export function useCanvas2DInteraction(
       if (gesture && event.pointerId === gesture.pointerId) abortGesture(true);
     };
 
-    const onPointerLeave = (): void => {
-      lockedPress = null;
+    const onPointerLeave = (event: PointerEvent): void => {
+      // Only the pointer that left counts: a mouse the page thinks is over
+      // the plan leaves it when a sheet opens there, mid-touch (#786).
+      const own = (held: { pointerId: number } | null): boolean => held !== null && held.pointerId === event.pointerId;
+      if (lockedPress?.pointerId === event.pointerId) lockedPress = null;
       // A started drag holds pointer capture and stays alive off-canvas;
       // only an armed-but-unstarted gesture is abandoned here.
-      if (gesture && !gesture.started) gesture = null;
-      if (zoneGesture && !zoneGesture.started) zoneGesture = null;
-      if (zoneEdit && !zoneEdit.started) zoneEdit = null;
-      if (wallHold && !wallHold.started) {
-        wallHold.gesture.end(false);
+      if (own(gesture) && !gesture!.started) gesture = null;
+      if (own(zoneGesture) && !zoneGesture!.started) zoneGesture = null;
+      if (own(zoneEdit) && !zoneEdit!.started) zoneEdit = null;
+      if (own(pan) && !pan!.started) {
+        // The press still landed on empty floor.
+        const press = pan!;
+        pan = null;
+        tapEmptyFloor(press, event);
+      }
+      if (own(wallHold) && !wallHold!.started) {
+        const { select } = wallHold!;
+        wallHold!.gesture.end(false);
         wallHold = null;
+        // The press still picked the wall.
+        if (select) paramsRef.current.onInteriorWallSelect?.(select.id, select.side);
       }
       if (!zoneEdit?.started) setZoneCursor('');
       if (!wallPress && paramsRef.current.view.drawWallMode) paramsRef.current.onWallPointerLeave?.();
@@ -915,7 +1086,7 @@ export function useCanvas2DInteraction(
     // follows the gesture state after every event.
     const root = document.documentElement;
     const syncGestureFlag = (): void => {
-      root.toggleAttribute(PLAN_GESTURE_ATTR, gesture !== null || zoneGesture !== null || wallPress !== null || zoneEdit !== null || wallHold !== null);
+      root.toggleAttribute(PLAN_GESTURE_ATTR, houseGestureHeld() || pinch !== null || pan?.started === true);
     };
     const synced = (handler: (event: PointerEvent) => void) => (event: PointerEvent): void => {
       handler(event);
@@ -932,13 +1103,24 @@ export function useCanvas2DInteraction(
     // capture was taken away) must not leave the gesture armed: page-wide
     // text selection would stay off and the fit frozen. Undo the drag.
     const onLost = (): void => {
-      if (gesture === null && zoneGesture === null && wallPress === null && zoneEdit === null && wallHold === null) return;
-      abortGesture(true);
+      touches.clear();
+      pinch = null;
+      pan = null;
+      if (houseGestureHeld()) abortGesture(true);
       syncGestureFlag();
     };
     const onLostCapture = (event: PointerEvent): void => {
-      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold;
+      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold ?? pan;
       if (held && held.pointerId === event.pointerId) onLost();
+    };
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      if (houseGestureHeld() || pinch || pan) return;
+      const at = local(event);
+      // Lines scroll in rows of about 16 px.
+      const pixels = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+      fit = measureFit(canvas);
+      setPlanZoom(canvas, zoomPlanAbout(fitted(), planZoomOf(canvas), Math.exp(-pixels * WHEEL_ZOOM_PER_PX), at, size()));
     };
 
     canvas.addEventListener('pointerdown', onDown);
@@ -947,6 +1129,7 @@ export function useCanvas2DInteraction(
     canvas.addEventListener('pointercancel', onCancel);
     canvas.addEventListener('pointerleave', onLeave);
     canvas.addEventListener('lostpointercapture', onLostCapture);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('blur', onLost);
 
     return () => {
@@ -956,7 +1139,10 @@ export function useCanvas2DInteraction(
       canvas.removeEventListener('pointercancel', onCancel);
       canvas.removeEventListener('pointerleave', onLeave);
       canvas.removeEventListener('lostpointercapture', onLostCapture);
+      canvas.removeEventListener('wheel', onWheel);
       window.removeEventListener('blur', onLost);
+      // The zoom is the visit's: back in the plan, it is fitted again.
+      setPlanZoom(canvas, NO_PLAN_ZOOM);
       // Disabled (view switch) or unmounted mid-drag: discard the session so
       // nothing stale is committed on a later pointerup.
       abortGesture();
