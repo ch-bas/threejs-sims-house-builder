@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLengthUnit } from '../contexts';
 import { useMediaQuery } from '../hooks/use-media-query';
-import { formatMetres, formatSize } from '../lib/format';
+import { formatMetres, formatSize, lengthUnitSymbol } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { isTypingTarget } from '../lib/walk-input';
 import { parseWallLength, type WallSnapKind } from '../lib/wall-snap';
@@ -99,7 +99,7 @@ export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProp
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [hasAnchor, open]);
 
-  const length = text === null ? null : parseWallLength(text);
+  const length = text === null ? null : parseWallLength(text, unit);
   const place = (direction: Vec2 | null): void => {
     if (length !== null && onLength?.(length, direction)) setText(null);
   };
@@ -199,8 +199,9 @@ export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProp
                 // Opened by a key or a tap: the next key belongs here.
                 autoFocus
                 className="pc-chip-name"
-                aria-label="Wall length in metres"
-                inputMode="decimal"
+                aria-label={`Wall length in ${unit === 'imperial' ? 'feet and inches' : 'metres'}`}
+                // Feet and inches need the ' and " keys a decimal pad hasn't got (#725).
+                inputMode={unit === 'imperial' ? 'text' : 'decimal'}
                 autoComplete="off"
                 value={text}
                 onChange={(event) => setText(event.target.value)}
@@ -230,7 +231,7 @@ export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProp
                   fontSize: 12,
                 }}
               />
-              <span aria-hidden>m</span>
+              <span aria-hidden>{lengthUnitSymbol(unit)}</span>
               {aimedRef.current && (
                 <ChipButton type="submit" title="Place the wall at this length, the way the preview points" disabled={length === null}>
                   Place

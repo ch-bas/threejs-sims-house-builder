@@ -4,7 +4,8 @@ import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { useRoomEditor, useViewSettings } from '../contexts';
+import { useLengthUnit, useRoomEditor, useViewSettings } from '../contexts';
+import { lengthUnitSymbol } from '../lib/format';
 import { MAX_TERRAIN_Y, MIN_TERRAIN_Y, NEIGHBOUR_FLAGS } from '../lib/site';
 import { storeyHeight } from '../lib/storeys';
 import {
@@ -31,6 +32,7 @@ const NEIGHBOUR_LABELS: Record<NeighbourFlag, string> = {
  */
 export function SitePanel(): JSX.Element {
   const { layout, actions } = useRoomEditor();
+  const unit = useLengthUnit();
   const view = useViewSettings('view2D');
   const slopeLabelId = useId();
   const entranceLabelId = useId();
@@ -94,7 +96,7 @@ export function SitePanel(): JSX.Element {
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label htmlFor={frontId} className="text-xs">
-                Street level (m)
+                Street level ({lengthUnitSymbol(unit)})
               </Label>
               <RoomDimensionInput
                 id={frontId}
@@ -107,7 +109,7 @@ export function SitePanel(): JSX.Element {
             </div>
             <div>
               <Label htmlFor={backId} className="text-xs">
-                Garden level (m)
+                Garden level ({lengthUnitSymbol(unit)})
               </Label>
               <RoomDimensionInput
                 id={backId}
@@ -189,7 +191,7 @@ export function SitePanel(): JSX.Element {
           <div className="grid grid-cols-3 gap-2">
             <div>
               <Label htmlFor={entranceWidthId} className="text-[10px]">
-                Width (m)
+                Width ({lengthUnitSymbol(unit)})
               </Label>
               <RoomDimensionInput
                 id={entranceWidthId}
@@ -202,7 +204,7 @@ export function SitePanel(): JSX.Element {
             </div>
             <div>
               <Label htmlFor={entranceDepthId} className="text-[10px]">
-                Depth (m)
+                Depth ({lengthUnitSymbol(unit)})
               </Label>
               <RoomDimensionInput
                 id={entranceDepthId}
@@ -215,7 +217,7 @@ export function SitePanel(): JSX.Element {
             </div>
             <div>
               <Label htmlFor={entranceOffsetId} className="text-[10px]">
-                Offset (m)
+                Offset ({lengthUnitSymbol(unit)})
               </Label>
               <RoomDimensionInput
                 id={entranceOffsetId}

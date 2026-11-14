@@ -1,4 +1,5 @@
 import { clampToBuilding, cutoutRect, footprintOutline, type FootprintBuilding, type FootprintRect } from './footprint';
+import { getDisplayUnit, parseLength, type LengthUnit } from './format';
 import { projectOntoSegment } from './opening-snap';
 import type { FootprintCutout, InteriorWall, Vec2 } from './types';
 
@@ -248,12 +249,14 @@ function rayOnto(
   return Math.hypot(point.x - cursor.x, point.z - cursor.z) < snapDistance ? point : null;
 }
 
-/** A length as typed: "3.2", "3,2", "3.2 m". Null for anything else, or a wall too short to place. */
-export function parseWallLength(text: string): number | null {
-  const match = /^\s*(\d+[.,]?\d*|[.,]\d+)\s*m?\s*$/i.exec(text);
-  if (!match?.[1]) return null;
-  const value = Number(match[1].replace(',', '.'));
-  return Number.isFinite(value) && value >= MIN_WALL_LENGTH ? value : null;
+/**
+ * A length as typed: "3.2", "3,2", "3.2 m", or in feet and inches (#725)
+ * "12'6"", "12.5 ft"; a bare number is in the unit shown. Null for anything
+ * else, or a wall too short to place.
+ */
+export function parseWallLength(text: string, unit: LengthUnit = getDisplayUnit()): number | null {
+  const value = parseLength(text, unit);
+  return value !== null && value >= MIN_WALL_LENGTH ? value : null;
 }
 
 /** A wall's heading on the plan, 0–359°: 0 points east, 90 up the screen. */

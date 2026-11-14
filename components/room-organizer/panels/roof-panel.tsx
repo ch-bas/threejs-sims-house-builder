@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { useRoomEditor, useViewSettings } from '../contexts';
+import { useLengthUnit, useRoomEditor, useViewSettings } from '../contexts';
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
 import { PITCHED_OVER_CUTOUT_REFUSAL, roofCoversCutout } from '../lib/cutout';
 import {
@@ -21,6 +21,7 @@ import {
   roofSlopeSides,
   type DormerPreset,
 } from '../lib/dormers';
+import { lengthUnitSymbol } from '../lib/format';
 import { buildingHeight } from '../lib/storeys';
 import { ROOF_LABELS } from '../three/roof';
 import { RoomDimensionInput } from './room-settings-panel';
@@ -130,6 +131,7 @@ function DormersSection(): JSX.Element {
 
 function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number; sides: readonly WallId[] }): JSX.Element {
   const { layout, actions } = useRoomEditor();
+  const unit = useLengthUnit();
   const widthId = useId();
   const offsetId = useId();
   const preset = dormerPresetOf(dormer);
@@ -186,7 +188,7 @@ function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number
       <div className="grid grid-cols-2 gap-2">
         <div>
           <Label htmlFor={widthId} className="text-[10px]">
-            Width (m)
+            Width ({lengthUnitSymbol(unit)})
           </Label>
           <RoomDimensionInput
             id={widthId}
@@ -199,7 +201,7 @@ function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number
         </div>
         <div>
           <Label htmlFor={offsetId} className="text-[10px]">
-            Offset (m)
+            Offset ({lengthUnitSymbol(unit)})
           </Label>
           <RoomDimensionInput
             id={offsetId}

@@ -197,6 +197,13 @@ describe('typed wall lengths (#723)', () => {
     expect(parseWallLength(text)).toBeNull();
   });
 
+  it('reads feet and inches, and a bare number in the unit shown (#725)', () => {
+    expect(parseWallLength(`10'6"`, 'metric')).toBeCloseTo(3.2004, 9);
+    expect(parseWallLength('10', 'imperial')).toBeCloseTo(3.048, 9);
+    expect(parseWallLength('3 m', 'imperial')).toBe(3);
+    expect(parseWallLength('2"', 'imperial')).toBeNull();
+  });
+
   it('measures the end from the anchor along the direction', () => {
     const end = wallEndAtLength({ x: 0, z: 0 }, { x: 3, z: 4 }, 2.5, 10, 10);
     expect(end?.x).toBeCloseTo(1.5, 9);

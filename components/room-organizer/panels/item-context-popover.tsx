@@ -10,7 +10,7 @@ import { placedItemVariants } from '../lib/catalog-variants';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
 import { lockedNote } from '../lib/editor-notices';
-import { formatMetres } from '../lib/format';
+import { formatMetres, lengthSliderStep } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { isWallMounted } from '../lib/opening-snap';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
@@ -408,7 +408,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 label={dimension.label}
                 min={dimension.min}
                 max={sliderMax(dimension, item)}
-                step={0.1}
+                step={lengthSliderStep(0.1, unit)}
                 value={item[dimension.key]}
                 format={(v) => formatMetres(v, 2, unit)}
                 onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
@@ -465,7 +465,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               label="Sill"
               min={MIN_SILL_HEIGHT}
               max={MAX_SILL_HEIGHT}
-              step={0.05}
+              step={lengthSliderStep(0.05, unit)}
               value={windowSillHeight(item)}
               format={(v) => formatMetres(v, 2, unit)}
               onChange={(value) => actions.setSillHeight(item.id, value)}
@@ -481,7 +481,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               value={item.signalRange ?? (item.isWiFiAccessPoint ? 10 : 8)}
               min={2}
               max={item.isWiFiAccessPoint ? 20 : 15}
-              step={0.5}
+              step={lengthSliderStep(0.5, unit)}
               format={(v) => formatMetres(v, 1, unit)}
               onChange={(value) => actions.setSignalRange(item.id, value)}
               disabled={exploring}
@@ -783,7 +783,7 @@ function CameraModelCard({ disabled, modelId, fov, range, onPickModel, onSetFov,
         value={range}
         min={2}
         max={100}
-        step={0.5}
+        step={lengthSliderStep(0.5, unit)}
         format={(v) => formatMetres(v, 1, unit)}
         onChange={onSetRange}
         disabled={disabled}
@@ -803,9 +803,12 @@ interface CctvModelRowProps {
 
 function CctvModelRow({ value, onChange, disabled }: CctvModelRowProps): JSX.Element {
   const id = useId();
+  const unit = useLengthUnit();
   const selected = getCctvModel(value);
+  // The IR range in the unit shown (#725), to the foot; the maker's note stays as written.
+  const range = unit === 'imperial' ? formatMetres(selected?.range ?? 0, 0, unit) : `${selected?.range ?? 0} m`;
   const spec = selected
-    ? `${selected.type} · ${selected.resolution} · ${selected.fov}° · ${selected.range} m IR${selected.note ? ` · ${selected.note}` : ''}`
+    ? `${selected.type} · ${selected.resolution} · ${selected.fov}° · ${range} IR${selected.note ? ` · ${selected.note}` : ''}`
     : 'Custom — tune FOV and range below';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

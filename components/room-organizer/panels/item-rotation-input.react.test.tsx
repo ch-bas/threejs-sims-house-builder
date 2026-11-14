@@ -2,9 +2,11 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useMemo, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EditorViewProvider } from '../contexts/editor-view-context';
 import { RoomEditorProvider, type RoomEditorContextValue } from '../contexts/room-editor-context';
 import { SelectionProvider, type SelectionContextValue } from '../contexts/selection-context';
-import { makeItem } from '../lib/__testfixtures__/fixtures';
+import { createEditorViewStore } from '../hooks/editor-view-store';
+import { makeItem, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { ItemResizePanel } from './item-resize-panel';
 import type { FurnitureItem } from '../lib/types';
 
@@ -32,12 +34,16 @@ function Harness({ start }: { start: FurnitureItem }): JSX.Element {
     []
   );
   const selection = { selectedItem: item, allSelectedIds: new Set([item.id]) } as unknown as SelectionContextValue;
+  // The panel's length fields refuse through the view settings (#725).
+  const [viewStore] = useState(() => createEditorViewStore(makeViewSettings()));
   return (
-    <RoomEditorProvider value={editor}>
-      <SelectionProvider value={selection}>
-        <ItemResizePanel collision={null} onDuplicate={vi.fn()} />
-      </SelectionProvider>
-    </RoomEditorProvider>
+    <EditorViewProvider store={viewStore}>
+      <RoomEditorProvider value={editor}>
+        <SelectionProvider value={selection}>
+          <ItemResizePanel collision={null} onDuplicate={vi.fn()} />
+        </SelectionProvider>
+      </RoomEditorProvider>
+    </EditorViewProvider>
   );
 }
 
