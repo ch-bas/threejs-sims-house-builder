@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
+import { measureCpu } from '../lib/__testfixtures__/cpu-time';
 import { buildContactShadow, CONTACT_PLANE_GAP, CONTACT_SHADOW_TAG, contactCanvasSize, DESKTOP_DENSITY, liftContactPatches, paintContactPlan, PHONE_DENSITY, removeContactShadows } from './contact-shadow';
 import type { ContactPlan } from '../lib/contact-shadow';
 
@@ -85,12 +86,13 @@ describe('paintContactPlan (#754)', () => {
     expect(blurs.at(-1)).toBeGreaterThan(blurs[1]!);
   });
 
+  // The intent is no blow-up (about 1 ms of CPU today); measured in CPU
+  // time so a busy machine can't fail it (#733).
   it('stays quick on a 150-item floor', () => {
     const blobs = Array.from({ length: 150 }, (_, i) => ({ id: `${i}`, x: i % 10, z: i % 7, width: 1, depth: 1, rotation: 0.3, raised: i % 2 === 0 }));
     const { ctx } = recorder();
-    const start = performance.now();
-    paintContactPlan(ctx, plan({ blobs }), size);
-    expect(performance.now() - start).toBeLessThan(50);
+    const { cpuMs } = measureCpu(() => paintContactPlan(ctx, plan({ blobs }), size));
+    expect(cpuMs).toBeLessThan(50);
   });
 });
 

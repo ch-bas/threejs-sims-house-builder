@@ -191,6 +191,8 @@ describe('walkers on a furnished floor (#452)', () => {
     return npcs;
   }
 
+  // Deterministic and CPU-bound (7,200 frames): a busy machine only slows it,
+  // so it gets more than the 5 s default (#733).
   it('never walks into furniture, the partition, the stairs or the stairwell, and gets around', () => {
     const random = seeded(452);
     const npcs = spawn(random, 4);
@@ -219,7 +221,7 @@ describe('walkers on a furnished floor (#452)', () => {
     }
     // The door gets used: walkers wander between the rooms.
     expect(crossings).toBeGreaterThan(2);
-  });
+  }, 30_000);
 
   it('is deterministic for a given random source', () => {
     const run = () => {
@@ -432,6 +434,9 @@ describe('rigged walkers on a furnished floor', () => {
   const nav = makeNav(items, [wall]);
   const seats = seatsOf(items);
 
+  // Deterministic and CPU-bound (10,800 frames): a busy machine only slows it,
+  // so it gets more than the 5 s default (#733). A third of the run reaches
+  // only one seat; the full three minutes reach the chair as well.
   it('sit only in the seat they claimed, never in other furniture, and use the seats', () => {
     const random = seeded(533);
     const npcs: NpcState[] = [];
@@ -459,7 +464,7 @@ describe('rigged walkers on a furnished floor', () => {
       expect(new Set(keys).size).toBe(keys.length);
     }
     expect(sat.size).toBeGreaterThan(1);
-  });
+  }, 30_000);
 });
 
 describe('walker shadow pacing (#668)', () => {

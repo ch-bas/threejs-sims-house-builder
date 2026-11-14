@@ -94,6 +94,8 @@ describe('the rotation field keeps what is typed (#548)', () => {
     expect(field().value).toBe('45.5');
   });
 
+  // 360 renders in one test: a busy machine only slows it, so it gets more
+  // than the 5 s default (#733).
   it('keeps every half degree, whichever way it rounds in the store', () => {
     setup(0);
     fireEvent.focus(field());
@@ -101,7 +103,7 @@ describe('the rotation field keeps what is typed (#548)', () => {
       type(String(degrees));
       expect(field().value).toBe(String(degrees));
     }
-  });
+  }, 30_000);
 
   it('gives way to a rotation that came from elsewhere', () => {
     setup(0);

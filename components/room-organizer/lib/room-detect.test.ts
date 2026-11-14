@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { measureCpu } from './__testfixtures__/cpu-time';
 import { footprintOutline } from './footprint';
 import { detectRooms, floorRooms, hasTooManyWalls, MAX_ROOM_WALLS, ringArea } from './room-detect';
 import type { KeepOutRect } from './geometry';
@@ -168,17 +169,21 @@ describe('a floor past the wall cap', () => {
     });
   const building = (walls: InteriorWall[]) => ({ width: 40, height: 40, floors: [{ id: 'g', name: 'G', floorColor: '#ccc', items: [], interiorWalls: walls }] });
 
+  // The intent is no blow-up at the cap: detection grows much faster than
+  // the wall count (about 1.1 s of CPU at the cap, 0.13 s at half), which is
+  // why the cap exists. The bounds are CPU time, so a busy machine can't fail
+  // them (#733).
   it('finds the rooms at the cap, in good time', () => {
-    const started = performance.now();
-    expect(floorRooms(building(crossing(MAX_ROOM_WALLS)), 0).length).toBeGreaterThan(1000);
-    expect(performance.now() - started).toBeLessThan(2000);
-  });
+    const { result: rooms, cpuMs } = measureCpu(() => floorRooms(building(crossing(MAX_ROOM_WALLS)), 0));
+    expect(rooms.length).toBeGreaterThan(1000);
+    expect(cpuMs).toBeLessThan(6000);
+  }, 30_000);
 
   it('returns at once past it, and says so', () => {
     const walls = crossing(998);
-    const started = performance.now();
-    expect(floorRooms(building(walls), 0)).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(50);
+    const { result: rooms, cpuMs } = measureCpu(() => floorRooms(building(walls), 0));
+    expect(rooms).toEqual([]);
+    expect(cpuMs).toBeLessThan(50);
     expect(hasTooManyWalls({ interiorWalls: walls })).toBe(true);
     expect(hasTooManyWalls({ interiorWalls: crossing(MAX_ROOM_WALLS) })).toBe(false);
   });
