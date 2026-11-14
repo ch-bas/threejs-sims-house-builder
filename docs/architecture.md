@@ -21,6 +21,7 @@ app/                                     Next.js shell
 │   └── fonts.ts                         Loads them with next/font/local, one call per subset; the root's font CSS variables
 └── icon.svg, favicon.ico, apple-icon.png, opengraph-image.png
                                          Icons and link-preview image, served by Next under the basePath; rasters from scripts/build-icons.mjs
+public/                                  icon-192.png, icon-512.png: the manifest's install icons (scripts/build-icons.mjs), copied to the site root
 docs/                                    This file, the design notes, and the README screenshot
 scripts/
 ├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
