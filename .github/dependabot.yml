@@ -1,6 +1,7 @@
 # Weekly grouped dependency updates (#161). Majors for the framework stack
-# are deliberate holds (React 19 / Next 16 / Tailwind 4) and stay ignored;
-# everything else lands as one grouped PR that must pass CI.
+# are deliberate holds (React 19 / Next 16 / Tailwind 4), and so is ESLint 10
+# until its plugins declare it (#599); they stay ignored. Everything else
+# lands as one grouped PR that must pass CI.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -21,6 +22,10 @@ updates:
       - dependency-name: next
         update-types: ["version-update:semver-major"]
       - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
+      # ESLint 10 waits for eslint-plugin-import, -jsx-a11y and -react to
+      # declare it (#599; see eslint.config.mjs).
+      - dependency-name: eslint
         update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /

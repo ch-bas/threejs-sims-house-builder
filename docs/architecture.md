@@ -15,7 +15,7 @@ differs from the catalogue.
 ./                                       Root config
 ├── next.config.mjs                      Static export; the Pages basePath when GITHUB_PAGES=true; Next's own lint pass off (CI lints)
 ├── eslint.config.mjs                    Flat ESLint config: next/core-web-vitals plus the project rules, type-aware for TypeScript
-├── vitest.config.ts                     Vitest: node environment by default (jsdom per file), the `@/` alias, JSX transform
+├── vitest.config.mts                    Vitest: node environment by default (jsdom per file), the `@/` alias, JSX transform
 └── tailwind.config.ts, postcss.config.mjs
                                          Tailwind theme and the PostCSS pipeline (Tailwind, autoprefixer)
 app/                                     Next.js shell
