@@ -59,7 +59,7 @@ components/
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
-    │   ├── constants.ts                 Catalog (69 items in 12 categories), templates, MAX_FLOORS
+    │   ├── constants.ts                 Catalog (73 items in 12 categories) with colour variants, templates, MAX_FLOORS
     │   ├── schema.ts                    Type guards, legacy migration, caps that repair (never refuse)
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
     │   ├── collision-reason.ts          The sentence for why an item shows red (rules live in geometry.ts)
@@ -95,6 +95,7 @@ components/
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
     │   ├── blueprint.ts                 Print-friendly 2D blueprint HTML, canvas fitted to the plan content (#377)
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
+    │   ├── catalog-variants.ts          Colour variants (#621): the entry in a picked colour, drag keys, a placed item's colours
     │   ├── budget.ts                    Hard budget (#463e): spend, funds left, 80 % sell-back, purchase refusal, over-budget tile reason, schema repair
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
@@ -283,6 +284,7 @@ components/
         ├── view-options.tsx             View menu: distance tool, labels, heatmap, outdoor, snapping
         ├── item-context-popover.tsx     Floating per-item editor on selection; a bottom sheet on small screens
         ├── color-swatch-picker.tsx      Shared swatch + recent-colours picker
+        ├── variant-dots.tsx             Colour dots on a catalogue tile, and the per-tile colour picks (#621)
         ├── slider-row.tsx               Shared label + range + readout row
         ├── floor-switcher.tsx
         ├── walls-panel.tsx

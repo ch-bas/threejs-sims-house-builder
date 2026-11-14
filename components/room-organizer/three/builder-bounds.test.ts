@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { FURNITURE_CATALOG, WINDOW_SILL_HEIGHT } from '../lib/constants';
-import { isWallHung, mountBand, pendantBulbY } from '../lib/mount-band';
+import { isCeilingHung, isWallHung, mountBand, pendantBulbY } from '../lib/mount-band';
 import { STAIR_STEP_COUNT } from '../lib/stairs';
 import { createFurnitureModel } from './furniture-builders';
 import type { FurnitureItem } from '../lib/types';
@@ -67,7 +67,7 @@ describe('hung items are built where mountBand says (#471, #470)', () => {
     expect(Math.abs(box.max.y - band.top)).toBeLessThan(SLACK);
   });
 
-  it.each(hung.filter((type) => type !== 'pendant-light'))('%s: fits under a 1.2 m loft ceiling, where mountBand says (#610)', (type) => {
+  it.each(hung.filter((type) => !isCeilingHung(type)))('%s: fits under a 1.2 m loft ceiling, where mountBand says (#610)', (type) => {
     const item = catalogItem(type);
     const box = bounds(build(item, 1.2));
     const band = mountBand(item, 1.2);
@@ -114,7 +114,7 @@ describe('hung items are built where mountBand says (#471, #470)', () => {
 });
 
 describe('the builders fitted in #388 and #167 stay inside their catalog box', () => {
-  it.each(['lamp', 'floor-lamp', 'pendant-light', 'painting', 'bush', 'pet', 'wifi', 'router', 'pool', 'bathtub'])(
+  it.each(['lamp', 'floor-lamp', 'pendant-light', 'painting', 'bush', 'pet', 'wifi', 'router', 'pool', 'bathtub', 'microwave', 'washer', 'bar-stool', 'ceiling-fan'])(
     '%s',
     (type) => expectInsideBox(type)
   );

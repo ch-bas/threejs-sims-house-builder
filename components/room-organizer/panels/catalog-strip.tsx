@@ -9,11 +9,13 @@ import { useRefusal } from '../hooks/use-refusal';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { budgetBlockedReason } from '../lib/budget';
 import { CATALOG_DRAG_MIME, catalogKey, catalogTileBlockedReason } from '../lib/catalog-drag';
+import { catalogDragKey, withVariant } from '../lib/catalog-variants';
 import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from '../lib/constants';
 import { catalogFitsItsTiles, catalogPageSize, COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
 import { buildToolLabel, buildToolsTitle } from '../lib/modes';
 import { Icon, iconForItem, type PlotcraftIconName } from '../plotcraft/icon';
 import { CctvMenu } from './cctv-menu';
+import { useVariantPicks, VariantDots } from './variant-dots';
 import type { CatalogItem, FurnitureCategory } from '../lib/types';
 
 const PAGE_SIZE = 8;
@@ -30,6 +32,7 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
   // Hard budget (#463e): tiles over what's left grey out; null when off.
   const remaining = useBudgetRemaining();
   const refuse = useRefusal();
+  const { pickOf, setPick } = useVariantPicks();
   const [page, setPage] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
   // Docked on a phone (#395): one row of every item, scrolled sideways,
@@ -101,7 +104,9 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
           className="pc-catalog-row"
           style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}
         >
-          {visible.map((item, index) => {
+          {visible.map((entry, index) => {
+            // The tile places the colour its dots picked (#621).
+            const item = withVariant(entry, pickOf(entry));
             const blockedReason =
               catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
             const add = () => {
@@ -111,8 +116,11 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
             };
             return (
               <CatalogTile
-                key={catalogKey(item)}
+                key={catalogKey(entry)}
                 item={item}
+                entry={entry}
+                picked={pickOf(entry)}
+                onPick={(pick) => setPick(entry, pick)}
                 blockedReason={blockedReason}
                 onAdd={add}
                 roving={tileProps(index, add)}
@@ -216,8 +224,8 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
             }}
           >
             {Array.from({ length: fitted ? visible.length : PAGE_SIZE }).map((_, index) => {
-              const item = visible[index];
-              if (!item) {
+              const entry = visible[index];
+              if (!entry) {
                 return (
                   <div
                     key={index}
@@ -227,6 +235,8 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
                   />
                 );
               }
+              // The tile places the colour its dots picked (#621).
+              const item = withVariant(entry, pickOf(entry));
               const blockedReason =
                 catalogTileBlockedReason(item, activeFloorIndex) ?? budgetBlockedReason(item.price, remaining);
               const add = () => {
@@ -236,8 +246,11 @@ export function CatalogStrip({ category, onAdd }: CatalogStripProps): JSX.Elemen
               };
               return (
                 <CatalogTile
-                  key={catalogKey(item)}
+                  key={catalogKey(entry)}
                   item={item}
+                  entry={entry}
+                  picked={pickOf(entry)}
+                  onPick={(pick) => setPick(entry, pick)}
                   blockedReason={blockedReason}
                   onAdd={add}
                   roving={tileProps(index, add)}
@@ -341,7 +354,12 @@ function PageButton({ icon, label, disabled, onClick }: PageButtonProps): JSX.El
 }
 
 interface CatalogTileProps {
+  /** The entry in the picked colour: what the tile places. */
   item: CatalogItem;
+  /** The catalogue entry itself, with its colours (#621). */
+  entry: CatalogItem;
+  picked: number;
+  onPick(index: number): void;
   /** Why the tile can't place on the active floor (#347); it stays focusable so the roving grid keeps working. */
   blockedReason: string | null;
   onAdd(): void;
@@ -354,10 +372,13 @@ interface CatalogTileProps {
   overBudget?: boolean;
 }
 
-function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, overBudget }: CatalogTileProps): JSX.Element {
+function CatalogTile({ item, entry, picked, onPick, blockedReason, onAdd, roving, showName, docked, overBudget }: CatalogTileProps): JSX.Element {
   const icon = iconForItem(item.type, item.category);
   const blocked = blockedReason !== null;
-  return (
+  // The colour the tile places, named (#621): "Sofa, Rust, $650".
+  const colour = entry.variants?.[picked]?.name;
+  const named = colour ? `${item.name}, ${colour}` : item.name;
+  const tile = (
     <button
       type="button"
       // A click or tap picks the item up as a placement ghost (#463 d).
@@ -371,7 +392,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, ove
         onAdd();
       }}
       aria-disabled={blocked || undefined}
-      aria-label={`${item.name}, ${showName && overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}`}
+      aria-label={`${named}, ${showName && overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}`}
       title={
         blocked
           ? `${item.name} — ${blockedReason}`
@@ -381,7 +402,7 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, ove
       draggable={!blocked}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = 'copy';
-        event.dataTransfer.setData(CATALOG_DRAG_MIME, catalogKey(item));
+        event.dataTransfer.setData(CATALOG_DRAG_MIME, catalogDragKey(entry, picked));
         event.dataTransfer.setData('text/plain', item.name);
       }}
       className="pc-tile"
@@ -433,5 +454,12 @@ function CatalogTile({ item, blockedReason, onAdd, roving, showName, docked, ove
         {showName && overBudget ? 'Over budget' : `${CURRENCY_SYMBOL}${item.price.toLocaleString()}`}
       </span>
     </button>
+  );
+  if (!entry.variants) return tile;
+  return (
+    <div className="pc-variant-tile" style={docked ? { flexShrink: 0 } : undefined}>
+      {tile}
+      <VariantDots entry={entry} picked={picked} onPick={onPick} />
+    </div>
   );
 }

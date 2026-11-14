@@ -140,3 +140,40 @@ export function buildCounter(ctx: BuilderContext): ThreeNS.Group {
   group.add(top);
   return group;
 }
+
+/** The worktop under a microwave stands this high, as a counter's does. */
+const MICROWAVE_WORKTOP = 0.9;
+
+/**
+ * A microwave on its own base cupboard (#621): items have no elevation, so a
+ * worktop appliance brings its worktop. The cupboard is in the counter's
+ * finish; the microwave's case is in the item's colour, with a dark door
+ * window and a control strip, inside the item's box.
+ */
+export function buildMicrowave(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
+  const group = new THREE.Group();
+  const worktop = Math.min(MICROWAVE_WORKTOP, item.height * 0.72);
+  const carcassHeight = worktop - 0.03;
+  const { doors, trim } = cabinetFronts(THREE, item, carcassHeight);
+
+  const carcass = softBox(THREE, item.width, carcassHeight, item.depth - FRONT_SETBACK, EDGE.wood).translate(0, carcassHeight / 2, -FRONT_SETBACK / 2);
+  group.add(mesh(THREE, mergeParts(THREE, [carcass, ...doors]), surfaceMaterial(ctx, 0xf5f5f5, 'painted')));
+
+  const top = softBox(THREE, item.width, 0.03, item.depth, EDGE.wood).translate(0, worktop - 0.015, 0);
+  group.add(mesh(THREE, top, surfaceMaterial(ctx, 0xd7ccc8, 'plastic')));
+
+  // The microwave sits back on the worktop, a hand's width in from each side.
+  const ovenHeight = Math.min(0.32, item.height - worktop);
+  const ovenWidth = item.width * 0.85;
+  const ovenDepth = item.depth * 0.75;
+  const ovenZ = item.depth / 2 - ovenDepth / 2 - 0.02;
+  const ovenY = worktop + ovenHeight / 2;
+  group.add(mesh(THREE, softBox(THREE, ovenWidth, ovenHeight, ovenDepth, EDGE.wood).translate(0, ovenY, ovenZ), surfaceMaterial(ctx, baseColor, 'painted')));
+
+  const faceZ = ovenZ + ovenDepth / 2 + 0.004;
+  const window = softBox(THREE, ovenWidth * 0.6, ovenHeight * 0.7, 0.008, 0.002).translate(-ovenWidth * 0.12, ovenY, faceZ);
+  const panel = softBox(THREE, ovenWidth * 0.18, ovenHeight * 0.7, 0.008, 0.002).translate(ovenWidth * 0.36, ovenY, faceZ);
+  group.add(mesh(THREE, mergeParts(THREE, [...trim, window, panel]), surfaceMaterial(ctx, 0x2b2b2b, 'painted')));
+  return group;
+}

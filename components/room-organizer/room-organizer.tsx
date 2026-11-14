@@ -33,7 +33,7 @@ import { useThreeScene } from './hooks/use-three-scene';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
 import { furnitureSpend } from './lib/budget';
-import { findCatalogEntry } from './lib/catalog-drag';
+import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
@@ -977,7 +977,7 @@ export function RoomOrganizer(): JSX.Element {
         }
         onCatalogDrop={(clientX, clientY, key) => {
           if (exploring) return;
-          const item = findCatalogEntry(FURNITURE_CATALOG, key);
+          const item = catalogItemFromDrag(FURNITURE_CATALOG, key);
           if (!item) return;
           // The 2D plan inverts the renderer's view transform; 3D raycasts (#166).
           const world = view.view2D

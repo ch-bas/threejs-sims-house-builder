@@ -1,4 +1,4 @@
-import { type BuilderContext, material, mesh } from '../builder-utils';
+import { type BuilderContext, EDGE, material, mergeParts, mesh, softBox } from '../builder-utils';
 import { surfaceMaterial } from '../furniture-materials';
 import { addBasinWater, addRectBasin } from './builders-outdoor';
 import type * as ThreeNS from 'three';
@@ -69,5 +69,37 @@ export function buildShower({ THREE, item, hasCollision, baseColor, opacity }: B
   const head = mesh(THREE, new THREE.CylinderGeometry(item.width * 0.12, item.width * 0.12, 0.05, 16), headMat);
   head.position.set(0, item.height * 0.93, -item.depth * 0.4);
   group.add(head);
+  return group;
+}
+
+/** How far a washing machine's door stands proud of its front. */
+const WASHER_DOOR_DEPTH = 0.03;
+
+/**
+ * A front-loading washing machine (#621): the cabinet in the item's colour,
+ * a round door with a dark porthole, and a control strip along the top, the
+ * door inside the item's depth.
+ */
+export function buildWasher(ctx: BuilderContext): ThreeNS.Group {
+  const { THREE, item, baseColor } = ctx;
+  const group = new THREE.Group();
+  const bodyDepth = item.depth - WASHER_DOOR_DEPTH;
+  group.add(
+    mesh(THREE, softBox(THREE, item.width, item.height, bodyDepth, EDGE.wood).translate(0, item.height / 2, -WASHER_DOOR_DEPTH / 2), surfaceMaterial(ctx, baseColor, 'painted'))
+  );
+
+  const front = item.depth / 2 - WASHER_DOOR_DEPTH;
+  const doorRadius = Math.min(item.width, item.height * 0.8) * 0.36;
+  const doorY = item.height * 0.45;
+  const rim = new THREE.CylinderGeometry(doorRadius, doorRadius, WASHER_DOOR_DEPTH * 0.6, 32)
+    .rotateX(Math.PI / 2)
+    .translate(0, doorY, front + WASHER_DOOR_DEPTH * 0.3);
+  group.add(mesh(THREE, rim, surfaceMaterial(ctx, 0xb0bec5, 'brushedMetal')));
+
+  const glass = new THREE.CylinderGeometry(doorRadius * 0.72, doorRadius * 0.72, WASHER_DOOR_DEPTH * 0.4, 32)
+    .rotateX(Math.PI / 2)
+    .translate(0, doorY, front + WASHER_DOOR_DEPTH * 0.8);
+  const strip = softBox(THREE, item.width * 0.9, item.height * 0.08, 0.01, 0.003).translate(0, item.height * 0.9, front + 0.005);
+  group.add(mesh(THREE, mergeParts(THREE, [glass, strip]), surfaceMaterial(ctx, 0x263238, 'plastic')));
   return group;
 }

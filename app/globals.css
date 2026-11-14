@@ -1844,3 +1844,70 @@ html[data-photo] .pc-world .pc-photo-bar * {
     transform: translate(-50%, -50%);
   }
 }
+
+/* Catalogue colour variants (#621) */
+/* Swatch dots in the top-right corner of a tile whose entry comes in more
+   than one colour. A two-tone ring reads on the dark strip and the light
+   drawer alike; the picked dot wears the cyan halo. */
+.pc-variant-tile {
+  position: relative;
+}
+/* The wrapper is the grid cell now: the tile still fills it. */
+.pc-variant-tile > button:first-child {
+  width: 100%;
+}
+.pc-variant-dots {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  gap: 1px;
+}
+.pc-variant-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.pc-variant-dot > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), 0 0 0 2px rgba(0, 0, 0, 0.5);
+}
+.pc-variant-dot[aria-checked='true'] > span {
+  box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px var(--pc-cyan-glow, #22d3ee);
+}
+/* On touch the corner is one 32 px button that steps through the colours:
+   the picked one in front, the next peeking out behind it. */
+.pc-variant-cycle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.pc-variant-cycle > span {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px rgba(0, 0, 0, 0.55);
+}
+.pc-variant-cycle__current {
+  top: 5px;
+  right: 9px;
+}
+.pc-variant-cycle__next {
+  top: 9px;
+  right: 4px;
+}

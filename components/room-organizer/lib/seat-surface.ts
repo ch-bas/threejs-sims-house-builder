@@ -24,6 +24,8 @@ const SEAT_SURFACES: Readonly<Record<string, SeatSurface>> = {
   sofa: { fraction: 0.65 },
   // The top board is the item's top.
   bench: { fraction: 1 },
+  // builders-seating.ts: the round seat's top is the item's top (#621).
+  'bar-stool': { fraction: 1 },
   // builders-outdoor.ts: a 6 cm board at 0.5 h.
   'garden-bench': { fraction: 0.5, offset: 0.03 },
   // builders-bedroom.ts: the mattress, 0.32 h tall at 0.46 h.
