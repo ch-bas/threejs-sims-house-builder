@@ -433,6 +433,35 @@ describe('drag-handlers release over the HUD (#511)', () => {
     expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
   });
 
+  it('a lost window focus undoes a live drag, as a release over the HUD does (#779)', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    t.canvas.dispatchEvent(pointer('pointermove', 130, 100));
+    expect(t.handlers.onItemDragStart).toHaveBeenCalledWith('a');
+    window.dispatchEvent(new Event('blur'));
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+    expect(t.controls.enabled).toBe(true);
+    // Coming back, the pointer no longer carries the item, and a late
+    // release commits nothing.
+    t.canvas.dispatchEvent(pointer('pointermove', 150, 120));
+    t.canvas.dispatchEvent(pointer('pointerup', 150, 120));
+    expect(t.handlers.onItemDrag).toHaveBeenCalledTimes(1);
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+  });
+
+  it('a lost window focus disarms a press that never became a drag (#779)', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    expect(t.controls.enabled).toBe(false);
+    window.dispatchEvent(new Event('blur'));
+    expect(t.controls.enabled).toBe(true);
+    t.canvas.dispatchEvent(pointer('pointermove', 140, 100));
+    expect(t.handlers.onItemDragStart).not.toHaveBeenCalled();
+    expect(t.handlers.onItemDragCancel).not.toHaveBeenCalled();
+  });
+
   it('follows the pointer again once it is back on the canvas', () => {
     const t = setup([]);
     detach = t.detach;
