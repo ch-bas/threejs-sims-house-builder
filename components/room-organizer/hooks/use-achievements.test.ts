@@ -32,8 +32,9 @@ const load = (layout: RoomLayout): RoomLayout => {
   return layout;
 };
 
+const NO_COLLISIONS = { floorIndex: 0, ids: new Set<string>() };
 const mount = (initial: RoomLayout = emptyLayout()) =>
-  renderHook(({ layout }) => useAchievements(layout), { initialProps: { layout: initial } });
+  renderHook(({ layout }) => useAchievements(layout, NO_COLLISIONS), { initialProps: { layout: initial } });
 
 const ids = (pending: readonly { id: string }[]) => pending.map((a) => a.id);
 

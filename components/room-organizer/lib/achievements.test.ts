@@ -1,9 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { INITIAL_LAYOUT, layoutReducer } from '../hooks/layout-reducer';
+import { measureCpu } from './__testfixtures__/cpu-time';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { ACHIEVEMENTS, achievementsEarned } from './achievements';
 import { DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
-import type { FurnitureItem } from './types';
+import { hasCollisions } from './geometry';
+import { houseRoomScores, ROOM_CHECKS } from './room-score';
+import type { FloorLayout, FurnitureItem, RoomLayout, RoomZone } from './types';
+
+// The room goals' collision passes are counted (#903): the real check, watched.
+vi.mock('./geometry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./geometry')>();
+  return { ...actual, hasCollisions: vi.fn(actual.hasCollisions) };
+});
 
 function achievement(id: string) {
   const found = ACHIEVEMENTS.find((a) => a.id === id);
@@ -226,11 +235,164 @@ describe('achievementsEarned (#450)', () => {
     const counts = ACHIEVEMENTS.filter((a) => a.progress !== undefined).map((a) => a.id);
     expect(counts.sort()).toEqual(
       [
-        'big-spender', 'decorator', 'door-installer', 'first-steps', 'furnished', 'going-up', 'green-thumb',
-        'overstuffed', 'penthouse', 'sky-high', 'wall-whisperer', 'wifi-everywhere', 'window-watcher',
+        'big-spender', 'decorator', 'door-installer', 'first-steps', 'five-stars', 'furnished', 'going-up', 'green-thumb',
+        'home-sweet-home', 'night-owl', 'overstuffed', 'penthouse', 'real-kitchen', 'sky-high', 'wall-whisperer',
+        'wifi-everywhere', 'window-watcher',
       ].sort()
     );
     expect(achievement('window-watcher').progress?.(layoutWithItems(repeatItems(2, { type: 'window' })))).toBe(2);
   });
 });
 
+
+describe('room goals (#903)', () => {
+  const at = (id: string, type: string, x: number, z: number, extra: Partial<FurnitureItem> = {}): FurnitureItem =>
+    makeItem({ id, type, name: type, width: 0.6, depth: 0.6, height: 1, position: { x, z }, ...extra });
+  // A 4 x 3 m kitchen in the north-west corner of an 8 x 8 m house: 12 m² asks for two pieces of decor.
+  const kitchenZone: RoomZone = { id: 'k', name: 'Kitchen', color: '#ffffff', x: -4, z: -4, w: 4, d: 3 };
+  const kitchen = [at('fridge', 'fridge', -3.5, -3), at('stove', 'stove', -2.5, -3), at('counter', 'counter', -1.5, -3)];
+  const lamp = at('lamp', 'lamp', -1.5, -1.5, { category: 'electronics', width: 0.3, depth: 0.3 });
+  const decor = [
+    at('plant', 'plant', -3.5, -1.5, { category: 'decor', width: 0.4, depth: 0.4 }),
+    at('vase', 'vase', -2.5, -1.5, { category: 'decor', width: 0.2, depth: 0.2 }),
+  ];
+  const window = at('win', 'window', -2, -3.95, { category: 'structure', width: 1.2, depth: 0.1 });
+  const fiveStarKitchen = [...kitchen, lamp, ...decor, window];
+  const house = (items: FurnitureItem[], zones: RoomZone[] = [kitchenZone]): RoomLayout =>
+    makeLayout({ floors: [makeFloor({ items, zones })] });
+  const goal = (id: string) => ACHIEVEMENTS.find((a) => a.id === id)!;
+  const none = new Set<string>();
+  const earnedIds = (change: 'loaded' | 'edit', before: RoomLayout, now: RoomLayout) =>
+    achievementsEarned(change, before, now, none).map((a) => a.id);
+
+  it('the fixture kitchen meets every check', () => {
+    expect(houseRoomScores(house(fiveStarKitchen))[0]).toMatchObject({ type: 'kitchen', stars: ROOM_CHECKS.length });
+  });
+
+  it('A Real Kitchen needs a zone the furniture makes a kitchen of', () => {
+    expect(goal('real-kitchen').isMet(house(kitchen))).toBe(true);
+    expect(goal('real-kitchen').isMet(house(kitchen.slice(0, 2)))).toBe(false);
+    // The same furniture with no zone around it is not a room.
+    expect(goal('real-kitchen').isMet(house(kitchen, []))).toBe(false);
+  });
+
+  it('Five Stars needs a room with every star, and counts the best room', () => {
+    expect(goal('five-stars').isMet(house(fiveStarKitchen))).toBe(true);
+    const noLamp = fiveStarKitchen.filter((item) => item.id !== 'lamp');
+    expect(goal('five-stars').isMet(house(noLamp))).toBe(false);
+    expect(goal('five-stars').progress?.(house(noLamp))).toBe(ROOM_CHECKS.length - 1);
+    expect(earnedIds('edit', house(noLamp), house(fiveStarKitchen))).toContain('five-stars');
+  });
+
+  it('Home Sweet Home counts the four rooms that have three stars', () => {
+    // Each room: its furniture, a lamp and a window; two of three decor
+    // pieces short is still three stars (decor, collisions and space aside).
+    const room = (id: string, x: number, z: number, types: string[]): { zone: RoomZone; items: FurnitureItem[] } => ({
+      zone: { id, name: id, color: '#ffffff', x, z, w: 4, d: 4 },
+      items: [
+        ...types.map((type, i) => at(`${id}-${type}`, type, x + 0.5 + i * 0.8, z + 2)),
+        at(`${id}-lamp`, 'lamp', x + 3.5, z + 3.5, { category: 'electronics', width: 0.3, depth: 0.3 }),
+      ],
+    });
+    const rooms = [
+      room('bed', -4, -4, ['bed']),
+      room('kit', 0, -4, ['fridge', 'stove', 'counter']),
+      room('bath', -4, 0, ['toilet', 'bathroom-sink']),
+      room('liv', 0, 0, ['sofa']),
+    ];
+    const layout = (count: number) =>
+      house(rooms.slice(0, count).flatMap((r) => r.items), rooms.slice(0, count).map((r) => r.zone));
+    const scores = houseRoomScores(layout(4));
+    expect(scores.map((s) => s.type)).toEqual(['bedroom', 'kitchen', 'bathroom', 'living']);
+    expect(scores.every((s) => s.stars >= 3)).toBe(true);
+    expect(goal('home-sweet-home').progress?.(layout(3))).toBe(3);
+    expect(goal('home-sweet-home').isMet(layout(3))).toBe(false);
+    expect(goal('home-sweet-home').isMet(layout(4))).toBe(true);
+  });
+
+  it('Night Owl needs a lamp in every furnished room, and at least one room', () => {
+    expect(goal('night-owl').isMet(house([]))).toBe(false);
+    expect(goal('night-owl').isMet(house(kitchen))).toBe(false);
+    expect(goal('night-owl').isMet(house([...kitchen, lamp]))).toBe(true);
+    const bedroom: RoomZone = { id: 'b', name: 'Bedroom', color: '#ffffff', x: 0, z: 0, w: 4, d: 4 };
+    const bed = at('bed', 'bed', 2, 2, { width: 1.6, depth: 2 });
+    expect(goal('night-owl').isMet(house([...kitchen, lamp, bed], [kitchenZone, bedroom]))).toBe(false);
+    expect(goal('night-owl').progress?.(house([...kitchen, lamp, bed], [kitchenZone, bedroom]))).toBe(1);
+  });
+
+  it('Five Stars: another five-star room earns it, and 3 to 4 stars is progress before the first', () => {
+    const noLamp = fiveStarKitchen.filter((item) => item.id !== 'lamp');
+    const noLampOrDecor = noLamp.filter((item) => item.id !== 'plant');
+    const five = goal('five-stars');
+    expect(five.progress!(house(noLamp))).toBeGreaterThan(five.progress!(house(noLampOrDecor)));
+    // A loaded house with one five-star kitchen: a second one is doing the thing.
+    const second: RoomZone = { id: 'k2', name: 'Kitchen 2', color: '#ffffff', x: 0, z: -4, w: 4, d: 3 };
+    const copy = fiveStarKitchen.map((item) => ({ ...item, id: `2-${item.id}`, position: { x: item.position!.x + 4, z: item.position!.z } }));
+    const one = house(fiveStarKitchen, [kitchenZone, second]);
+    const two = house([...fiveStarKitchen, ...copy], [kitchenZone, second]);
+    expect(houseRoomScores(two).map((room) => room.stars)).toEqual([ROOM_CHECKS.length, ROOM_CHECKS.length]);
+    expect(earnedIds('edit', one, two)).toContain('five-stars');
+  });
+
+  it('Home Sweet Home: another good room of the four kinds earns it again', () => {
+    const at4 = (id: string, x: number, z: number, types: string[]) => ({
+      zone: { id, name: id, color: '#ffffff', x, z, w: 4, d: 4 } as RoomZone,
+      items: [
+        ...types.map((type, i) => at(`${id}-${type}`, type, x + 0.5 + i * 0.8, z + 2)),
+        at(`${id}-lamp`, 'lamp', x + 3.5, z + 3.5, { category: 'electronics', width: 0.3, depth: 0.3 }),
+      ],
+    });
+    const rooms = [at4('bed', -4, -4, ['bed']), at4('kit', 0, -4, ['fridge', 'stove', 'counter']), at4('bath', -4, 0, ['toilet', 'bathroom-sink']), at4('liv', 0, 0, ['sofa'])];
+    const build = (list: typeof rooms) => makeLayout({ width: 16, height: 8, floors: [makeFloor({ items: list.flatMap((r) => r.items), zones: list.map((r) => r.zone) })] });
+    const home = build(rooms);
+    const more = build([...rooms, at4('bed2', 4, -4, ['bed'])]);
+    expect(goal('home-sweet-home').isMet(home)).toBe(true);
+    expect(earnedIds('edit', home, more)).toContain('home-sweet-home');
+  });
+
+  it('a loaded house with a five-star kitchen earns nothing until the player edits it', () => {
+    const template = house(fiveStarKitchen);
+    expect(earnedIds('loaded', house([]), template)).toEqual([]);
+    // An edit that raises nothing the template met earns none of its goals.
+    const nudged = house(fiveStarKitchen.map((item) => (item.id === 'vase' ? { ...item, position: { x: -2.6, z: -1.5 } } : item)));
+    expect(earnedIds('edit', template, nudged)).toEqual([]);
+    // A second kitchen is doing the thing.
+    const second: RoomZone = { id: 'k2', name: 'Kitchen 2', color: '#ffffff', x: 0, z: 0, w: 4, d: 4 };
+    const more = house([...fiveStarKitchen, at('f2', 'fridge', 0.5, 2), at('s2', 'stove', 1.5, 2), at('c2', 'counter', 2.5, 2)], [kitchenZone, second]);
+    expect(earnedIds('edit', template, more)).toContain('real-kitchen');
+  });
+
+  it("with the editor's collisions, an edit runs no collision pass at all", () => {
+    // A full storey: 2,000 chairs under one zone with a bed in it.
+    const items = Array.from({ length: 2000 }, (_, i) =>
+      at(`i${i}`, i === 0 ? 'bed' : 'chair', -9 + (i % 45) * 0.4, -9 + Math.floor(i / 45) * 0.4, { width: 0.3, depth: 0.3 })
+    );
+    const zone: RoomZone = { id: 'z', name: 'Z', color: '#ffffff', x: -10, z: -10, w: 20, d: 20 };
+    const before = makeLayout({ width: 20, height: 20, floors: [makeFloor({ items, zones: [zone] })] });
+    const nudged = items.map((item, i) => (i === 1999 ? { ...item, position: { x: item.position!.x, z: item.position!.z + 0.01 } } : item));
+    const now = makeLayout({ width: 20, height: 20, floors: [makeFloor({ items: nudged, zones: [zone] })] });
+    const known = { floorIndex: 0, ids: new Set<string>() };
+    const watched = vi.mocked(hasCollisions);
+    watched.mockClear();
+    const { cpuMs } = measureCpu(() => achievementsEarned('edit', before, now, new Set(), { before: known, now: known }));
+    expect(watched).not.toHaveBeenCalled();
+    expect(cpuMs).toBeLessThan(50);
+  }, 30_000);
+
+  it('an edit on a four-storey house re-scores only the storey it changed', () => {
+    const storey = (id: string): FloorLayout =>
+      makeFloor({ id, name: id, items: fiveStarKitchen.map((item) => ({ ...item, id: `${id}-${item.id}` })), zones: [kitchenZone] });
+    const floors = ['g', '1', '2', '3'].map(storey);
+    const before = makeLayout({ floors });
+    // Everything else unlocked, so only the room goals look at the house.
+    const others = new Set(ACHIEVEMENTS.map((a) => a.id).filter((id) => !['real-kitchen', 'five-stars', 'home-sweet-home', 'night-owl'].includes(id)));
+    achievementsEarned('edit', makeLayout(), before, others);
+    const edited = floors[2]!;
+    const after = makeLayout({ floors: floors.map((floor) => (floor === edited ? { ...floor, items: [...floor.items, at('x', 'chair', 2, 2)] } : floor)) });
+    const watched = vi.mocked(hasCollisions);
+    watched.mockClear();
+    achievementsEarned('edit', before, after, others);
+    const checked = new Set(watched.mock.calls.map((call) => call[1]));
+    expect(checked).toEqual(new Set([after.floors[2]!.items]));
+  });
+});

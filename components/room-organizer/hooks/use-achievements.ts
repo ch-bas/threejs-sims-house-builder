@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { type Achievement, achievementsEarned, loadUnlocked, saveUnlocked } from '../lib/achievements';
 import { layoutStore } from './use-layout-store';
+import type { KnownCollisions } from '../lib/room-score';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseAchievementsResult {
@@ -31,19 +32,29 @@ export function isLoadedLayout(layout: RoomLayout): boolean {
   return loadedLayouts.has(layout);
 }
 
-export function useAchievements(layout: RoomLayout): UseAchievementsResult {
+/**
+ * `known`: the active storey's collisions as the editor has them for
+ * `layout` (`collidingIds`). The room goals score with them, and with the
+ * set kept from the previous layout for the one before it (#903).
+ */
+export function useAchievements(layout: RoomLayout, known: KnownCollisions): UseAchievementsResult {
   const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(() => loadUnlocked());
   const [pending, setPending] = useState<readonly Achievement[]>([]);
   /** The last layout evaluated; null before the first, the starting house. */
   const lastRef = useRef<RoomLayout | null>(null);
   const unlockedRef = useRef(unlocked);
+  const knownRef = useRef(known);
+  knownRef.current = known;
+  const lastKnownRef = useRef<KnownCollisions | undefined>(undefined);
 
   useEffect(() => {
     const before = lastRef.current;
     if (before === layout) return;
     lastRef.current = layout;
+    const knownBefore = lastKnownRef.current;
+    lastKnownRef.current = knownRef.current;
     const change = before === null || isLoadedLayout(layout) ? 'loaded' : 'edit';
-    const earned = achievementsEarned(change, before, layout, unlockedRef.current);
+    const earned = achievementsEarned(change, before, layout, unlockedRef.current, { before: knownBefore, now: knownRef.current });
     if (earned.length === 0) return;
     const next = new Set(unlockedRef.current);
     for (const achievement of earned) next.add(achievement.id);

@@ -121,11 +121,6 @@ export function RoomOrganizer(): JSX.Element {
   const { layout, activeFloor, activeFloorIndex, actions } = useLayoutState();
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   const activeStoreyHeight = storeyHeight(activeFloor);
-  const {
-    unlocked: unlockedAchievements,
-    pending: pendingAchievements,
-    dismiss: dismissAchievements,
-  } = useAchievements(layout);
   const { recent: recentColors, pushColor } = useRecentColors();
   // View and game state live in a per-editor store (#3). The orchestrator
   // reads every view field but the time of day, so an auto-cycle tick
@@ -222,6 +217,13 @@ export function RoomOrganizer(): JSX.Element {
     }
     return matches;
   }, [activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, layout.width, layout.height, keepOut]);
+  // The room goals score the active storey with these collisions (#903).
+  const knownCollisions = useMemo(() => ({ floorIndex: activeFloorIndex, ids: collidingIds }), [activeFloorIndex, collidingIds]);
+  const {
+    unlocked: unlockedAchievements,
+    pending: pendingAchievements,
+    dismiss: dismissAchievements,
+  } = useAchievements(layout, knownCollisions);
 
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
