@@ -26,6 +26,9 @@ scripts/
 ├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
 ├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445); script files narrowed to the basePath (#579)
 ├── add-csp.d.mts                        Types of add-csp.mjs's exports, for its test
+├── third-party-notices.mjs              Post-build: out/third-party-licenses.txt, the licences of the shipped packages and assets (#569)
+├── third-party-notices.d.mts            Types of third-party-notices.mjs's exports, for its test
+├── licenses/                            Licence texts of the libraries inside Next's polyfills chunk (core-js, whatwg-fetch, object-assign), for third-party-notices.mjs
 ├── build-icons.mjs                      Renders the app/ icon rasters and the preview image from SVG (Playwright, not part of the build)
 └── build-people-glb.mjs                 Rebuilds assets/people.glb from the Universal Animation Library
 components/

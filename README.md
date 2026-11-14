@@ -123,6 +123,13 @@ Moved to [docs/design-notes.md](docs/design-notes.md).
 
 ### Third-party assets
 
+The deployed site lists, with their licence texts, the production
+dependency tree, the packages Next.js bundles into the browser from its own
+copies (its React build and the libraries in its polyfills), and the assets
+below, in
+[`third-party-licenses.txt`](https://ch-bas.github.io/threejs-sims-house-builder/third-party-licenses.txt),
+written at build time by `scripts/third-party-notices.mjs`.
+
 - `components/room-organizer/assets/people.glb` — mannequin and animations
   from Quaternius' [Universal Animation Library](https://quaternius.itch.io/universal-animation-library),
   CC0 1.0. Thank you, Quaternius. Details in
