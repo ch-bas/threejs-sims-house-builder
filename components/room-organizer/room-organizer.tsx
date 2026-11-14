@@ -1438,6 +1438,15 @@ export function RoomOrganizer(): JSX.Element {
     return true;
   }, [layout.width, layout.height, layout.cutout, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
 
+  // `[` / `]` and PgUp / PgDn, and the touch walk HUD's clock and floor buttons (#688).
+  const advanceTime = useEvent((deltaHours: number) => {
+    setView((v) => ({ ...v, timeOfDay: (((v.timeOfDay + deltaHours) % 24) + 24) % 24 }));
+  });
+  const changeFloor = useEvent((delta: number) => {
+    const next = activeFloorIndex + delta;
+    if (next < 0 || next >= layout.floors.length) return;
+    actions.setActiveFloorIndex(next);
+  });
   const shortcutHandlers = useMemo(
     () => ({
       removeItem: (id: string) => {
@@ -1541,14 +1550,8 @@ export function RoomOrganizer(): JSX.Element {
           }),
         });
       },
-      advanceTime: (deltaHours: number) => {
-        setView((v) => ({ ...v, timeOfDay: (((v.timeOfDay + deltaHours) % 24) + 24) % 24 }));
-      },
-      changeFloor: (delta: number) => {
-        const next = activeFloorIndex + delta;
-        if (next < 0 || next >= layout.floors.length) return;
-        actions.setActiveFloorIndex(next);
-      },
+      advanceTime,
+      changeFloor,
       toggleSidebar: () => setSidebarCollapsed((c) => !c),
       removeInteriorWall: (id: string) => {
         if (id === ENTRANCE_WALL_ID) {
@@ -1591,7 +1594,6 @@ export function RoomOrganizer(): JSX.Element {
       layout.width,
       layout.height,
       layout.cutout,
-      setView,
       toggle,
       history.undo,
       history.redo,
@@ -1604,6 +1606,8 @@ export function RoomOrganizer(): JSX.Element {
       view.showAllFloors,
       activeStoreyHeight,
       orbitGroundAt,
+      advanceTime,
+      changeFloor,
       rotateItemHandler,
       rotateItemByHandler,
       playCue,
@@ -1740,9 +1744,13 @@ export function RoomOrganizer(): JSX.Element {
                 seated: walk.seated,
                 floorName: activeFloor.name,
                 multiFloor: layout.floors.length > 1,
+                canFloorUp: activeFloorIndex < layout.floors.length - 1,
+                canFloorDown: activeFloorIndex > 0,
                 onStick: walk.setStick,
                 onToggleSit: walk.toggleSit,
                 onExit: exitWalkthrough,
+                onChangeFloor: changeFloor,
+                onAdvanceTime: advanceTime,
               }
             : null
         }

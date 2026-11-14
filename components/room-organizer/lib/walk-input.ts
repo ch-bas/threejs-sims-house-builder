@@ -77,3 +77,40 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   if (typeof element?.tagName !== 'string') return false;
   return element.isContentEditable === true || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName);
 }
+
+/** A push under this share of the stick's throw is a resting thumb, not a step. */
+export const STICK_DEAD_ZONE = 0.12;
+/** The share of the throw that walks at full speed: the rest of the way is headroom before the sprint (#688). */
+export const STICK_WALK_THROW = 0.8;
+/** The sprint starts at this share of the throw, the knob at the rim (#688)… */
+export const STICK_SPRINT_ON = 0.97;
+/** …and holds until the thumb eases back under this one, so a thumb resting at the rim doesn't flicker. */
+export const STICK_SPRINT_OFF = 0.88;
+
+/** What the touch stick says: the walk (x right, y forward, in [−1, 1]), where its knob sits, and a sprint. */
+export interface StickReading {
+  x: number;
+  y: number;
+  knobX: number;
+  knobY: number;
+  sprint: boolean;
+}
+
+/**
+ * The stick read from the thumb's offset from its centre, in screen pixels
+ * (y down), with `reach` the knob's throw. The walk grows with the push up
+ * to full speed at `STICK_WALK_THROW`; at the rim it sprints, as Shift does
+ * on a keyboard, until the thumb eases back past `STICK_SPRINT_OFF`.
+ * `sprinting` is the last reading's sprint.
+ */
+export function readStick(dx: number, dy: number, reach: number, sprinting = false): StickReading {
+  const length = Math.hypot(dx, dy);
+  const clamp = length > reach ? reach / length : 1;
+  const knobX = dx * clamp;
+  const knobY = dy * clamp;
+  const push = Math.min(1, length / reach);
+  if (push < STICK_DEAD_ZONE) return { x: 0, y: 0, knobX, knobY, sprint: false };
+  const speed = Math.min(1, push / STICK_WALK_THROW) / push;
+  const sprint = push >= (sprinting ? STICK_SPRINT_OFF : STICK_SPRINT_ON);
+  return { x: (knobX / reach) * speed, y: (-knobY / reach) * speed, knobX, knobY, sprint };
+}
