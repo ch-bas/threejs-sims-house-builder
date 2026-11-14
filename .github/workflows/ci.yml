@@ -130,6 +130,24 @@ jobs:
             echo "::notice title=Deploy skipped::$GITHUB_SHA is no longer the head of main ($head); the newer commit's run deploys."
           fi
 
+      # The CSP names the site's origin for scripts (#579): add-csp.mjs takes
+      # https://<owner>.github.io when the build runs here. If Pages serves
+      # the site anywhere else (a custom domain, a renamed owner), every
+      # script would be blocked, so stop before replacing the working site.
+      - name: Check the site's address matches the script policy
+        if: steps.head.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url)
+          origin=$(printf '%s' "$url" | sed -E 's#^(https?://[^/]+).*#\1#' | tr 'A-Z' 'a-z')
+          expected="https://$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr 'A-Z' 'a-z').github.io"
+          if [ "$origin" != "$expected" ]; then
+            echo "::error title=Site address changed::Pages serves $url, but the CSP allows scripts only from $expected. Set CSP_SITE_ORIGIN for the build (scripts/add-csp.mjs) before deploying."
+            exit 1
+          fi
+          echo "Pages serves $url; scripts are allowed from $expected."
+
       - id: deployment
         if: steps.head.outputs.current == 'true'
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
