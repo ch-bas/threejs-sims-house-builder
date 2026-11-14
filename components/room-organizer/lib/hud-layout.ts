@@ -4,6 +4,9 @@
  * media queries must match the `@media` blocks in `app/globals.css`.
  */
 
+import { GRID_SIZE_METERS } from './constants';
+import { formatMetres, getDisplayUnit, type LengthUnit } from './format';
+
 /** Portrait phones and small tablets: the HUD docks as a bottom bar. */
 const PHONE_DOCK_QUERY = '(max-width: 768px)';
 
@@ -53,10 +56,11 @@ export interface WelcomeTip {
   body: string;
 }
 
-const POINTER_TIPS: readonly WelcomeTip[] = [
+// Lengths in the unit shown (#725): the steps are metric, written in feet if asked.
+const pointerTips = (unit: LengthUnit): readonly WelcomeTip[] => [
   { title: 'Drag from the catalogue', body: 'Drop any catalogue item onto the lot to place it exactly where you let go.' },
-  { title: 'Move in 3D', body: 'Items lock once placed: press U, then drag or nudge with the arrow keys — hold Shift for 1 m steps.' },
-  { title: 'Grid snap', body: 'Press G to snap items you drag to a 0.5 m grid. Doors and windows snap to walls on their own.' },
+  { title: 'Move in 3D', body: `Items lock once placed: press U, then drag or nudge with the arrow keys — hold Shift for ${formatMetres(1, undefined, unit)} steps.` },
+  { title: 'Grid snap', body: `Press G to snap items you drag to a ${formatMetres(GRID_SIZE_METERS, undefined, unit)} grid. Doors and windows snap to walls on their own.` },
   { title: 'Themes & sets', body: 'One-click templates rebuild the room. Library saves named layouts.' },
   { title: 'Walkthrough', body: 'Switch to EXPLORE to wander your home with WASD + Shift to sprint.' },
   { title: 'Multi-select', body: 'Ctrl/⌘-click to add items to a selection. Delete removes them all.' },
@@ -64,16 +68,16 @@ const POINTER_TIPS: readonly WelcomeTip[] = [
 
 // No keyboard, no modifier keys and no pointer lock on a phone (#429): only
 // what a finger can do.
-const TOUCH_TIPS: readonly WelcomeTip[] = [
+const touchTips = (unit: LengthUnit): readonly WelcomeTip[] => [
   { title: 'Tap to add', body: 'Tap a catalogue tile to drop the item on the lot.' },
   { title: 'Drag to move', body: 'Items lock once placed: tap one, tap Unlock, then drag it. The same sheet rotates, copies and deletes.' },
   { title: 'Look around', body: 'One finger orbits, pinch zooms, two fingers pan. Pan makes one finger pan; Fit frames the house.' },
-  { title: 'Grid snap', body: 'The grid button (under ⋯ on a phone, beside the 2D plan switch) snaps items to 0.5 m. Doors and windows snap to walls on their own.' },
+  { title: 'Grid snap', body: `The grid button (under ⋯ on a phone, beside the 2D plan switch) snaps items to ${formatMetres(GRID_SIZE_METERS, undefined, unit)}. Doors and windows snap to walls on their own.` },
   { title: 'Themes & sets', body: 'Open the panels button for one-click templates, and the Library to save named layouts.' },
 ];
 
-export function welcomeTips(touch: boolean): readonly WelcomeTip[] {
-  return touch ? TOUCH_TIPS : POINTER_TIPS;
+export function welcomeTips(touch: boolean, unit: LengthUnit = getDisplayUnit()): readonly WelcomeTip[] {
+  return touch ? touchTips(unit) : pointerTips(unit);
 }
 
 /**

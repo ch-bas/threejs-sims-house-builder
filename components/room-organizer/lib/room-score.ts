@@ -1,4 +1,5 @@
 import { floorKeepOut } from './floor-keep-out';
+import { formatArea, getDisplayUnit, type LengthUnit } from './format';
 import { footprintArea, hasCollisions } from './geometry';
 import { isNightLit } from './night-lights';
 import { storeyHeight } from './storeys';
@@ -58,6 +59,11 @@ export const ROOM_CHECKS: ReadonlyArray<{ key: RoomCheckKey; label: string }> = 
 
 /** Floor per piece of decor the decor check asks for. */
 export const DECOR_AREA_PER_PIECE = 10;
+
+/** A check's label in the unit shown (#725): the decor rule's area is in m² or sq ft. */
+export function roomCheckLabel(check: { key: RoomCheckKey; label: string }, unit: LengthUnit = getDisplayUnit()): string {
+  return check.key === 'decor' && unit === 'imperial' ? `more decor (a piece per ${formatArea(DECOR_AREA_PER_PIECE, unit)})` : check.label;
+}
 /** Most of a room's floor its furniture may cover and still score. */
 export const MAX_ROOM_COVERAGE = 0.7;
 /** How far off a zone's edge a window still counts as on that wall: a wall's half-thickness and a hand-drawn zone's slack. */

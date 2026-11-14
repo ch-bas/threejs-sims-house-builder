@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLengthUnit } from '../contexts';
 import { useLayout } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { budgetOf, budgetSpent } from '../lib/budget';
@@ -32,6 +33,7 @@ export function HeaderStats({
 }: HeaderStatsProps): JSX.Element {
   // `layout` from the store selector — re-renders only on layout changes.
   const layout = useLayout();
+  const unit = useLengthUnit();
   const budget = budgetOf(layout);
   // The porch door is structure, not furniture: older saves still carry its
   // catalog price (#382).
@@ -45,7 +47,7 @@ export function HeaderStats({
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
       <Chip icon="box" label="Items" value={allItems.length.toString()} />
       <Chip icon="stairs" label="Floors" value={layout.floors.length.toString()} />
-      <Chip icon="ruler" label="Room" value={formatSize(layout.width, layout.height)} />
+      <Chip icon="ruler" label="Room" value={formatSize(layout.width, layout.height, undefined, unit)} />
       <Chip
         icon="coin"
         label="Cost"

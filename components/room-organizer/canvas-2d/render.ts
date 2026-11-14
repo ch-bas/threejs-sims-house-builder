@@ -8,7 +8,7 @@ import {
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { floorPlanFitOf, floorPlanPlacement } from '../lib/floor-plan-fit';
 import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
-import { formatMetres, formatSize } from '../lib/format';
+import { areaInUnit, areaUnitSymbol, formatArea, formatMetres, formatSize, getDisplayUnit, type LengthUnit } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
 import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
@@ -103,6 +103,8 @@ export interface Render2DOptions {
   thumbnail?: boolean;
   /** The on-screen plan's view zoom and pan (`get2DViewTransform`'s `zoom`, #678). */
   zoom?: PlanZoom | undefined;
+  /** The unit lengths and areas are written in (#725); the editor's display unit if absent. */
+  unit?: LengthUnit | undefined;
 }
 
 const PADDING = PLAN_PADDING_PX;
@@ -227,6 +229,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   const { canvas, layout, floor } = options;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+  const unit = options.unit ?? getDisplayUnit();
 
   // The backing store is sized clientWidth/clientHeight × devicePixelRatio (by
   // the ResizeObserver in use-scene-effects), but all drawing below works in
@@ -254,7 +257,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
   drawOpeningGaps(ctx, layout, floor, offsetX, offsetY, scale, viewWidth, viewHeight);
-  drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true);
+  drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true, unit);
 
   const heatmapPeak = options.showHeatmap ? drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale) : 0;
 
@@ -264,10 +267,10 @@ export function render2DTopDown(options: Render2DOptions): void {
     drawVisionCones(ctx, floor.items, offsetX, offsetY, scale, layout);
   }
 
-  drawFurniture(ctx, options, offsetX, offsetY, scale);
+  drawFurniture(ctx, options, offsetX, offsetY, scale, unit);
 
   if (options.showMeasurements) {
-    drawRoomDimensions(ctx, layout, offsetX, offsetY, scale);
+    drawRoomDimensions(ctx, layout, offsetX, offsetY, scale, unit);
   }
 
   if (heatmapPeak > 0) {
@@ -278,19 +281,19 @@ export function render2DTopDown(options: Render2DOptions): void {
       right: offsetX + (fit.maxX + layout.width / 2) * scale,
       bottom: offsetY + (fit.maxZ + layout.height / 2) * scale,
     };
-    drawHeatmapLegend(ctx, heatmapPeak, planLegendSpot({ width: viewWidth, height: viewHeight }, plan, options.hudRects ?? [], HEATMAP_LEGEND_SIZE));
+    drawHeatmapLegend(ctx, heatmapPeak, unit, planLegendSpot({ width: viewWidth, height: viewHeight }, plan, options.hudRects ?? [], HEATMAP_LEGEND_SIZE));
   }
 
   if (options.offPlan && options.offPlan.length > 0) {
     const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
     const markers = offPlanMarkers({ scale, offsetX, offsetY }, layout, fit, options.offPlan, options.thumbnail ? THUMB_MARKER_SPACING_PX : undefined);
-    drawOffPlanMarkers(ctx, markers, options.thumbnail === true);
+    drawOffPlanMarkers(ctx, markers, options.thumbnail === true, unit);
   }
 
   if (options.roomsToName?.length) drawRoomsToName(ctx, layout, options.roomsToName, offsetX, offsetY, scale);
 
   if (options.zoneDraft) {
-    drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale);
+    drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale, unit);
   }
 
   const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
@@ -298,8 +301,8 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (selectedWall && options.selectedWallSide) drawWallSideMark(ctx, layout, selectedWall, options.selectedWallSide, offsetX, offsetY, scale);
   const selectedZone = options.selectedZoneId ? floor.zones?.find((zone) => zone.id === options.selectedZoneId) : null;
   if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
-  if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);
-  if (options.stampGhost) drawStampGhost(ctx, layout, options.stampGhost, offsetX, offsetY, scale);
+  if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale, unit);
+  if (options.stampGhost) drawStampGhost(ctx, layout, options.stampGhost, offsetX, offsetY, scale, unit);
   if (options.calibrationPoints?.length) drawCalibrationPoints(ctx, layout, options.calibrationPoints, offsetX, offsetY, scale);
 }
 
@@ -361,7 +364,8 @@ const THUMB_MARKER_SPACING_PX = 9;
 function drawOffPlanMarkers(
   ctx: CanvasRenderingContext2D,
   markers: ReturnType<typeof offPlanMarkers>,
-  thumbnail: boolean
+  thumbnail: boolean,
+  unit: LengthUnit
 ): void {
   ctx.save();
   for (const marker of markers) {
@@ -394,7 +398,7 @@ function drawOffPlanMarkers(
       ctx.lineJoin = 'round';
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      const label = `${Math.round(marker.distance)} m`;
+      const label = formatMetres(marker.distance, 0, unit);
       const below = marker.y + radius + 9;
       ctx.strokeText(label, marker.x, below);
       ctx.fillStyle = '#1d4ed8';
@@ -553,7 +557,8 @@ function drawZoneLabels(
   offsetY: number,
   scale: number,
   showArea: boolean,
-  thumbnail: boolean
+  thumbnail: boolean,
+  unit: LengthUnit
 ): void {
   const zones = floor.zones ?? [];
   if (zones.length === 0 || (thumbnail && scale < ZONE_LABEL_MIN_SCALE)) return;
@@ -572,7 +577,7 @@ function drawZoneLabels(
     // Along the top edge rather than the centre: the centre of a room is
     // where its bed or table sits, and the furniture paints over labels.
     const cx = x + w / 2;
-    const area = showArea ? `${zoneArea(zone, recess).toFixed(1)} m²` : null;
+    const area = showArea ? formatArea(zoneArea(zone, recess), unit) : null;
     ctx.font = 'bold 12px Arial';
     // A name wider than its zone would spill over the neighbouring rooms.
     if (ctx.measureText(zone.name).width > w - 4) continue;
@@ -580,6 +585,8 @@ function drawZoneLabels(
     ctx.fillText(zone.name, cx, y + 11);
     if (area) {
       ctx.font = '10px Arial';
+      // "1,292 sq ft" is wider than "120.0 m²": it too must stay inside its zone (#725).
+      if (unit === 'imperial' && ctx.measureText(area).width > w - 4) continue;
       ctx.strokeText(area, cx, y + 25);
       ctx.fillText(area, cx, y + 25);
     }
@@ -593,7 +600,8 @@ function drawZoneDraft(
   draft: ZoneRect,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  unit: LengthUnit
 ): void {
   const { x, y, w, h } = zoneCanvasRect(draft, layout, offsetX, offsetY, scale);
   ctx.save();
@@ -608,7 +616,7 @@ function drawZoneDraft(
   ctx.fillStyle = '#1d4ed8';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(formatSize(draft.w, draft.d, 1), x + w / 2, y - 4);
+  ctx.fillText(formatSize(draft.w, draft.d, 1, unit), x + w / 2, y - 4);
   ctx.restore();
 }
 
@@ -965,7 +973,8 @@ function drawFurniture(
   options: Render2DOptions,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  unit: LengthUnit
 ): void {
   // Layer order (#286): rugs first, then floor furniture, tabletop items,
   // wall-mounted — so a rug listed after its sofa still paints beneath it.
@@ -1027,7 +1036,7 @@ function drawFurniture(
       ctx.fillStyle = '#333';
       ctx.font = '10px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(formatSize(item.width, item.depth), cx, cy + halfD * scale + 15);
+      ctx.fillText(formatSize(item.width, item.depth, undefined, unit), cx, cy + halfD * scale + 15);
       ctx.restore();
     }
   }
@@ -1073,16 +1082,17 @@ function drawRoomDimensions(
   layout: RoomLayout,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  unit: LengthUnit
 ): void {
   ctx.fillStyle = '#333';
   ctx.font = 'bold 12px Arial';
   ctx.textAlign = 'center';
-  ctx.fillText(formatMetres(layout.width), offsetX + (layout.width * scale) / 2, offsetY - 10);
+  ctx.fillText(formatMetres(layout.width, undefined, unit), offsetX + (layout.width * scale) / 2, offsetY - 10);
   ctx.save();
   ctx.translate(offsetX - 10, offsetY + (layout.height * scale) / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText(formatMetres(layout.height), 0, 0);
+  ctx.fillText(formatMetres(layout.height, undefined, unit), 0, 0);
   ctx.restore();
 }
 
@@ -1201,6 +1211,7 @@ const HEATMAP_LEGEND_SIZE = { width: HEATMAP_LEGEND_BAR.width + 16, height: HEAT
 function drawHeatmapLegend(
   ctx: CanvasRenderingContext2D,
   maxPricePerSqM: number,
+  unit: LengthUnit,
   spot: { x: number; y: number }
 ): void {
   const { width: barWidth, height: barHeight } = HEATMAP_LEGEND_BAR;
@@ -1227,11 +1238,11 @@ function drawHeatmapLegend(
   ctx.fillStyle = '#333';
   ctx.font = '10px Arial';
   ctx.textAlign = 'left';
-  ctx.fillText(`${CURRENCY_SYMBOL}/m² density`, x, y - 4);
+  ctx.fillText(`${CURRENCY_SYMBOL}/${areaUnitSymbol(unit)} density`, x, y - 4);
   ctx.fillText('0', x, y + barHeight + 12);
   ctx.textAlign = 'right';
   ctx.fillText(
-    `${CURRENCY_SYMBOL}${Math.round(maxPricePerSqM).toLocaleString()}`,
+    `${CURRENCY_SYMBOL}${Math.round(maxPricePerSqM / areaInUnit(1, unit)).toLocaleString()}`,
     x + barWidth,
     y + barHeight + 12
   );

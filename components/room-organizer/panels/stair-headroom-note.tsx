@@ -1,6 +1,6 @@
 'use client';
 
-import { useRoomEditor } from '../contexts';
+import { useLengthUnit, useRoomEditor } from '../contexts';
 import { formatMetres } from '../lib/format';
 import { floorStairHeadroom, isHeadroomShort, STAIR_HEADROOM, stairGoesNowhere } from '../lib/stairs';
 import type { FurnitureItem } from '../lib/types';
@@ -12,6 +12,7 @@ import type { FurnitureItem } from '../lib/types';
  */
 export function StairHeadroomNote({ item }: { item: FurnitureItem }): JSX.Element | null {
   const { layout, activeFloorIndex } = useRoomEditor();
+  const unit = useLengthUnit();
   const headroom = floorStairHeadroom(item, layout, activeFloorIndex);
   const nowhere = stairGoesNowhere(layout, activeFloorIndex);
   if (!nowhere && (!headroom || !isHeadroomShort(headroom.clearance))) return null;
@@ -30,7 +31,7 @@ export function StairHeadroomNote({ item }: { item: FurnitureItem }): JSX.Elemen
     >
       {nowhere || !headroom
         ? 'This flight leads nowhere: there is no floor above it.'
-        : `Only ${formatMetres(headroom.clearance)} of headroom on this flight; ${formatMetres(STAIR_HEADROOM)} is the minimum.`}
+        : `Only ${formatMetres(headroom.clearance, undefined, unit)} of headroom on this flight; ${formatMetres(STAIR_HEADROOM, undefined, unit)} is the minimum.`}
     </p>
   );
 }
