@@ -14,6 +14,8 @@ export interface WalkHudProps {
   lockRefused: boolean;
   /** The seat in reach, while standing (#463b). */
   seatName: string | null;
+  /** The lamp in reach while standing, and whether it is on (#910). */
+  lamp?: { name: string; on: boolean } | null;
   seated: boolean;
   floorName: string;
   /** PgUp / PgDn have somewhere to go (#446). */
@@ -43,8 +45,15 @@ export function WalkHud(props: WalkHudProps): JSX.Element {
   return touch ? <TouchWalkHud {...props} /> : <DesktopWalkHud {...props} />;
 }
 
-function DesktopWalkHud({ locked, lockRefused, seatName, seated, floorName, multiFloor }: WalkHudProps): JSX.Element {
-  const prompt = seated ? 'Stand up' : seatName ? `Sit on ${seatName}` : null;
+/** What `E` does now, in words: stand, switch the lamp in reach (#910), or sit. */
+function interactPrompt({ seatName, seated, lamp }: Pick<WalkHudProps, 'seatName' | 'seated' | 'lamp'>): string | null {
+  if (seated) return 'Stand up';
+  if (lamp) return `${lamp.on ? 'Switch off' : 'Switch on'} ${lamp.name}`;
+  return seatName ? `Sit on ${seatName}` : null;
+}
+
+function DesktopWalkHud({ locked, lockRefused, seatName, lamp = null, seated, floorName, multiFloor }: WalkHudProps): JSX.Element {
+  const prompt = interactPrompt({ seatName, seated, lamp });
   return (
     <>
       <StatusBar floorName={floorName} />
@@ -87,8 +96,10 @@ function DesktopWalkHud({ locked, lockRefused, seatName, seated, floorName, mult
   );
 }
 
-function TouchWalkHud({ seatName, seated, floorName, multiFloor, canFloorUp, canFloorDown, onStick, onToggleSit, onExit, onChangeFloor, onAdvanceTime }: WalkHudProps): JSX.Element {
-  const canSit = seated || seatName !== null;
+function TouchWalkHud({ seatName, lamp = null, seated, floorName, multiFloor, canFloorUp, canFloorDown, onStick, onToggleSit, onExit, onChangeFloor, onAdvanceTime }: WalkHudProps): JSX.Element {
+  const prompt = interactPrompt({ seatName, seated, lamp });
+  // The lamp in reach is offered instead of a seat, never with one.
+  const switching = !seated && lamp !== null;
   return (
     <>
       <StatusBar floorName={floorName} hint="Drag to look" onExit={onExit} onAdvanceTime={onAdvanceTime} />
@@ -113,12 +124,12 @@ function TouchWalkHud({ seatName, seated, floorName, multiFloor, canFloorUp, can
           <RoundButton label="Floor down" icon="arrowD" disabled={!canFloorDown} onPress={() => onChangeFloor(-1)} />
         </div>
       )}
-      {canSit && (
+      {prompt !== null && (
         <button
           type="button"
           onClick={onToggleSit}
           className="pc-glass pc-glass--dark absolute"
-          aria-label={seated ? 'Stand up' : `Sit on ${seatName ?? ''}`}
+          aria-label={prompt}
           style={{
             ...ACTION_POSITION,
             right: 'calc(16px + env(safe-area-inset-right, 0px))',
@@ -140,8 +151,8 @@ function TouchWalkHud({ seatName, seated, floorName, multiFloor, canFloorUp, can
             border: '1.5px solid var(--pc-cyan-glow)',
           }}
         >
-          <Icon name={seated ? 'arrowU' : 'sofa'} size={16} />
-          {seated ? 'Stand' : 'Sit'}
+          <Icon name={seated ? 'arrowU' : switching ? 'lamp' : 'sofa'} size={16} />
+          {seated ? 'Stand' : switching ? (lamp.on ? 'Switch off' : 'Switch on') : 'Sit'}
         </button>
       )}
     </>

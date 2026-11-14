@@ -4,10 +4,12 @@ import { createNpcHandOff } from '../lib/npc-bodies';
 import { streetDryBoxes } from '../lib/street-row';
 import { streetSiteOf } from '../lib/walk-collision';
 import { modeAfterExplore, rememberModeBeforeExplore } from '../lib/walkthrough-view';
+import { computeSkyProfile } from '../three/lighting';
+import { isLoadedLayout } from './use-achievements';
 import { useCameraVision } from './use-camera-vision';
 import { useNpcs } from './use-npcs';
 import { usePeopleModel } from './use-people-model';
-import { useWalkthrough, type UseWalkthroughResult, type WalkthroughBuilding } from './use-walkthrough';
+import { useWalkthrough, type UseWalkthroughResult, type WalkLampSwitch, type WalkthroughBuilding } from './use-walkthrough';
 import { useWeather } from './use-weather';
 import type { EditorViewStore } from './editor-view-store';
 import type { UseThreeSceneResult } from './use-three-scene';
@@ -89,6 +91,33 @@ export function useSceneLife({
   // The player and the walkers, to each other (#585).
   const [npcHandOff] = useState(createNpcHandOff);
 
+  // Lamps switched with `E` (#910) are for this walk only: back on when
+  // EXPLORE ends, and for a whole-house load (marked by `markLayoutLoaded`),
+  // since template and copied houses reuse item ids. An item deleted or gone
+  // with the house is dropped from the set.
+  useEffect(() => {
+    if (!walkthroughActive) viewStore.getState().actions.resetLamps();
+  }, [walkthroughActive, viewStore]);
+  useEffect(() => {
+    const { lampsOff, actions } = viewStore.getState();
+    if (lampsOff.size === 0) return;
+    if (isLoadedLayout(layout)) {
+      actions.resetLamps();
+      return;
+    }
+    actions.resetLamps(new Set(layout.floors.flatMap((floor) => floor.items.map((item) => item.id))));
+  }, [layout, viewStore]);
+
+  // Lamps switched with `E` (#910): the store's session set, read live.
+  const lampSwitch = useMemo<WalkLampSwitch>(
+    () => ({
+      lit: () => computeSkyProfile(viewStore.getState().view.timeOfDay).lamps > 0,
+      isOff: (id) => viewStore.getState().lampsOff.has(id),
+      toggle: (id) => viewStore.getState().actions.switchLamp(id),
+    }),
+    [viewStore]
+  );
+
   const walk = useWalkthrough({
     enabled: isReady && walkthroughActive,
     invalidate,
@@ -104,6 +133,7 @@ export function useSceneLife({
     onFloorChange,
     onExit: exitWalkthrough,
     npcs: npcHandOff,
+    lampSwitch,
   });
 
   // people.glb is fetched only once a person is placed or the walkers are on.
