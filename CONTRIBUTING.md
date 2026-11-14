@@ -17,13 +17,21 @@ Open `http://localhost:3000` to see the app (Next moves to `http://localhost:300
 
 ## Development
 
-CI runs these three on every pull request, and branch protection on `main` requires them to pass:
+CI runs these steps on every pull request, in this order, as the `test` check that branch protection on `main` requires:
 
-- **Type-check:** `npm run typecheck`
-- **Lint:** `npm run lint -- --max-warnings=0` (a warning fails CI)
-- **Test:** `npm run test` (the Vitest unit suite)
+1. **Install:** `npm ci`
+2. **Advisories:** `npm audit --omit=dev --audit-level=high` (a high or critical advisory in a production dependency fails CI)
+3. **Type-check:** `npm run typecheck`
+4. **Lint:** `npm run lint -- --max-warnings=0` (a warning fails CI)
+5. **Test:** `npm run test` (the Vitest unit suite)
+6. **Build:** `GITHUB_PAGES=true npm run build` (the static export with the Pages basePath, as deployed)
+7. **Content-Security-Policy:** `node scripts/add-csp.mjs` (the build's postbuild step already runs it; it fails on an inline `on*=` handler)
+
+Steps 1 to 5 catch most problems. Run the build as well when you touch `app/`, `scripts/`, `next.config.mjs` or anything that ends up in an inline script: the CSP step fails only there, so an inline handler passes every other check.
 
 `npm run build` makes the static export in `out/`; serve it with `npm start` (`next start` doesn't work on a static export).
+
+The build needs no network access: the fonts are committed under `app/fonts/`, so it works offline once `npm ci` has run.
 
 Before you change a module, read its line in [docs/architecture.md](docs/architecture.md) and the relevant [design notes](docs/design-notes.md). A new module gets a line in `docs/architecture.md` in the same pull request (a unit test checks), and a change that sets a new rule gets a design note. The [wiki](https://github.com/ch-bas/threejs-sims-house-builder/wiki) covers the [architecture](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Architecture), [rendering](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Rendering), [data safety](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Data-safety) and [testing](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Development-and-testing).
 
@@ -32,7 +40,7 @@ Before you change a module, read its line in [docs/architecture.md](docs/archite
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-change`
 3. Make your changes
-4. Run the three checks above: `npm run typecheck`, `npm run lint -- --max-warnings=0` and `npm run test`
+4. Run the checks above: `npm run typecheck`, `npm run lint -- --max-warnings=0` and `npm run test`, and `npm run build` when you touch `app/`, `scripts/`, `next.config.mjs` or inline scripts
 5. Commit with a clear message describing what and why
 6. Push to your fork and open a Pull Request
 
