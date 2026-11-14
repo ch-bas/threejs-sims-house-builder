@@ -44,6 +44,11 @@ export interface SceneEventHandlers {
    */
   orbitOnly?: boolean;
   /**
+   * EXPLORE, a shared-link tour included (#722): a press on an item selects
+   * it and nothing more. No drag or twist is armed, so the house never moves.
+   */
+  selectOnly?: boolean;
+  /**
    * Wall-draw mode: every press is a floor point for onEmptyClick — furniture
    * and walls don't claim it, and furniture shows no hover affordance (#349).
    */
@@ -464,7 +469,7 @@ export function attachDragHandlers({
     const keepSelection = !locked && keepsSelectionOnPress(mode, itemId, handlersRef.current.selectedIds);
     if (!keepSelection) handlersRef.current.onItemSelect(itemId, mode);
 
-    if (locked || mode === 'toggle') return;
+    if (locked || mode === 'toggle' || handlersRef.current.selectOnly) return;
 
     // Arm a potential drag, but don't open the session yet: the drag only
     // begins once the pointer travels past the threshold (see onPointerMove).

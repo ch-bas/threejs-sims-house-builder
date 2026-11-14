@@ -91,6 +91,7 @@ components/
     │   ├── ids.ts                       Collision-resistant ids; withHouseId mints a house id (#342, #479)
     │   ├── share.ts                     Share-URL encode/decode (base64url); positions rounded to mm on encode
     │   ├── share-delivery.ts            Share-link delivery: share sheet on touch, clipboard inside the tap, copy field last
+    │   ├── tour-session.ts              The shared-link tour's page phase (touring, kept, none), read from the hash on first use (#722)
     │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
     │   ├── dev-diagnostics.ts           `?debug` flag + allocation-free renderer.info counters
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
@@ -268,6 +269,7 @@ components/
     │   ├── use-wall-draft.ts            The wall tool: draft anchor and snapped tip, typed length, room stamp in hand, resets on a tool or floor change (#723, #724)
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
+    │   ├── use-tour-phase.ts            The shared-link tour's phase as React state (#722)
     │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)
     │   ├── use-refusal.ts               `refuse(message)` for store-reading panels: the refused cue (muted with the sounds) and an error notice (#588, #642)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
@@ -276,7 +278,7 @@ components/
     │   ├── use-scroll-cue.ts            data-scrollable / data-more-before / -after on a HUD scroller (#426)
     │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308); places the touch row in the top bar
     │   ├── use-sheet-inset.ts           --pc-sheet-height while the phone item sheet is open (mode bar rides above it)
-    │   ├── use-house-loading.ts         The loads the editor makes on its own: the opening house, a share link over it (#573), another tab's save (#123), each by the load rules
+    │   ├── use-house-loading.ts         The loads the editor makes on its own: the opening house (a share link's as a tour), a toured house kept (#722), another tab's save (#123), each by the load rules
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
@@ -334,6 +336,7 @@ components/
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement or a ghost is pending (Cancel for touch)
         ├── photo-bar.tsx                Photo mode's shutter: Take photo and Done, the one HUD left on screen (#626)
+        ├── tour-banner.tsx              The shared-link tour's HUD: the house's name, Walk through, Keep a copy, Build your own (#722)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── confirm-dialog.tsx           The askConfirm() modal: focus trap, Enter confirms, Escape cancels (#649)
         ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), then the inline name field

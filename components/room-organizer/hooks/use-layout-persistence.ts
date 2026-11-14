@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
-import { askConfirm } from '../lib/confirm-dialog';
 import { AUTOSAVE_DEBOUNCE_MS, STORAGE_KEY } from '../lib/constants';
-import { notify } from '../lib/editor-notices';
+import { notify, notifyRefused, type RefusedCue } from '../lib/editor-notices';
+import { INITIAL_LAYOUT } from '../lib/initial-layout';
 import {
   EDITOR_SETTLED_MS,
   clearEditorCrashed,
@@ -13,10 +13,13 @@ import {
   loadLayout,
   sameLayoutContent,
   saveLayout,
+  saveOverStoredHouse,
 } from '../lib/persistence';
 import { isUntouched, snapshotBeforeReplace } from '../lib/restore-point';
+import { takeTourCrashNote } from '../lib/saved-house';
 import { parseStoredLayout } from '../lib/schema';
 import { isShareHash, isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
+import { isTourSession, setTourPhase } from '../lib/tour-session';
 import { recordSnapshot } from '../lib/version-history';
 import type { SaveFailureReason } from '../lib/persistence';
 import type { RoomLayout } from '../lib/types';
@@ -25,12 +28,13 @@ export interface UseLayoutPersistenceOptions {
   layout: RoomLayout;
   onHydrate: (layout: RoomLayout) => void;
   /**
-   * Open a shared house over the player's own (#573), once they said yes:
-   * an ordinary whole-house replacement (restore point, history commit,
-   * `markLayoutLoaded`), so one Ctrl+Z brings their house back. Without it
-   * a share link hydrates over the stored house unasked, as before.
+   * Keep a copy of the toured house (#722), once it is saved: the rest of
+   * the whole-house load (`commitNow`, `applyLayout`, `markLayoutLoaded`).
+   * The copy is saved, and the stored house it replaced is a recovered copy
+   * when `copiedAside` (false: there was nothing worth keeping), so the
+   * notice only names History when it holds the house.
    */
-  onOpenShared?: (layout: RoomLayout) => void;
+  onKeepTourCopy?: (house: RoomLayout, copiedAside: boolean) => void;
   debounceMs?: number;
 }
 
@@ -72,18 +76,47 @@ export interface UseLayoutPersistenceResult {
   remoteLayout: RoomLayout | null;
   /** Dismiss the cross-tab notice (also call after adopting `remoteLayout`). */
   clearRemoteLayout(): void;
+  /**
+   * The shared house being toured (#722), once its link has decoded; null
+   * before that and outside a tour (`isTourSession`).
+   */
+  tourHouse: RoomLayout | null;
+  /**
+   * Make the toured house the visitor's own: from here on it saves. Refused,
+   * with the tour left as it was, when the visitor's house can't be kept
+   * first or the copy can't be saved.
+   */
+  keepTourCopy(playCue: RefusedCue): void;
+  /** Leave the tour for the visitor's own house, or a fresh lot. */
+  leaveTour(): void;
+}
+
+const NO_ROOM_TO_KEEP_YOURS =
+  'No room to keep a copy of your own house first, so nothing was changed. Free space in Manage → Storage (Build your own opens your house), then open the link again.';
+
+const COPY_NOT_SAVED: Record<SaveFailureReason, string> = {
+  quota: 'Storage full: the copy couldn’t be saved, so nothing was changed. Free space in Manage → Storage, then open the link again.',
+  blocked: 'This browser blocks site storage, so a copy can’t be kept here. Nothing was changed.',
+  unknown: 'The copy couldn’t be saved, so nothing was changed. Try again in a moment.',
+};
+
+/** Drops a share link from the address, so a reload opens the visitor's own house. */
+function clearShareHash(): void {
+  if (!isShareHash(window.location.hash)) return;
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
 }
 
 export function useLayoutPersistence({
   layout,
   onHydrate,
-  onOpenShared,
+  onKeepTourCopy,
   debounceMs = AUTOSAVE_DEBOUNCE_MS,
 }: UseLayoutPersistenceOptions): UseLayoutPersistenceResult {
   const hasHydratedRef = useRef(false);
-  // Read when the player answers, which is after later renders.
-  const onOpenSharedRef = useRef(onOpenShared);
-  onOpenSharedRef.current = onOpenShared;
+  // Read when the visitor answers, which is after later renders.
+  const onKeepTourCopyRef = useRef(onKeepTourCopy);
+  onKeepTourCopyRef.current = onKeepTourCopy;
+  const [tourHouse, setTourHouse] = useState<RoomLayout | null>(null);
   // While set, autosave is suppressed until the layout moves past the stored
   // pre-hydration value — i.e. until the hydration dispatch has landed. This
   // stops a freshly opened share link (or a plain reload) from overwriting the
@@ -126,6 +159,9 @@ export function useLayoutPersistence({
   useEffect(() => {
     const onStorage = (event: StorageEvent): void => {
       if (event.key !== STORAGE_KEY || event.newValue === null) return;
+      // A tour shows someone else's house: the visitor's own, saved in
+      // another tab, is nothing to adopt over it (#722).
+      if (isTourSession()) return;
       if (event.newValue === lastSavedJsonRef.current) {
         // Storage is back to what this tab wrote: a notice offering the
         // other tab's version is stale, and adopting it would restart the
@@ -164,134 +200,97 @@ export function useLayoutPersistence({
     return () => window.clearTimeout(handle);
   }, []);
 
+  // Copy the stored house aside, or hold the main save if it can't be.
+  const keepStoredHouseAside = useCallback((): void => {
+    const outcome = keepStoredLayout();
+    if (outcome === 'kept') {
+      notify('Your saved house couldn’t be opened, so a copy was kept in Manage → Saved Layouts → History.', 'info');
+    }
+    if (outcome === 'kept' || outcome === 'nothing') return;
+    mainSaveHeldRef.current = true;
+    saveStatus.setState({ saveError: outcome });
+  }, [saveStatus]);
+
+  /** True when the stored house is the one on screen now. */
+  const hydrateFromLocalSave = useCallback((): boolean => {
+    const saved = loadLayout();
+    if (saved) {
+      hydrationBaseRef.current = layoutRef.current;
+      // A stored layout that parses but throws on apply must not
+      // white-screen mount.
+      try {
+        onHydrate(saved);
+        return true;
+      } catch (error) {
+        console.warn('Failed to apply saved layout:', error);
+        // Clearing the baseline resumes autosave, which will overwrite the
+        // stored blob with the fallback layout ~debounceMs later. That blob
+        // is the user's house — stash a copy first, exactly like the
+        // unreadable-blob branch below (#206).
+        keepStoredHouseAside();
+        hydrationBaseRef.current = null;
+      }
+    } else {
+      hydrationBaseRef.current = null;
+      // A blob that exists but failed to load would otherwise be overwritten
+      // by the autosave of the fallback layout ~debounceMs after mount —
+      // permanent data loss. Stash a copy first (#113).
+      keepStoredHouseAside();
+    }
+    return false;
+  }, [onHydrate, keepStoredHouseAside]);
+
   useEffect(() => {
     if (hasHydratedRef.current) return;
     hasHydratedRef.current = true;
 
-    // Copy the stored house aside, or hold the main save if it can't be.
-    const keepStoredHouseAside = (): void => {
-      const outcome = keepStoredLayout();
-      if (outcome === 'kept') {
-        notify('Your saved house couldn’t be opened, so a copy was kept in Manage → Saved Layouts → History.', 'info');
-      }
-      if (outcome === 'kept' || outcome === 'nothing') return;
-      mainSaveHeldRef.current = true;
-      saveStatus.setState({ saveError: outcome });
-    };
+    // The error screen dropped a tour's link after it crashed (#722).
+    if (takeTourCrashNote()) {
+      notify('The shared house hit an error and couldn’t be shown, so your own house is open.', 'error');
+    }
 
-    /** True when the stored house is the one on screen now. */
-    const hydrateFromLocalSave = (): boolean => {
-      const saved = loadLayout();
-      if (saved) {
-        hydrationBaseRef.current = layoutRef.current;
-        // A stored layout that parses but throws on apply must not
-        // white-screen mount.
-        try {
-          onHydrate(saved);
-          return true;
-        } catch (error) {
-          console.warn('Failed to apply saved layout:', error);
-          // Clearing the baseline resumes autosave, which will overwrite the
-          // stored blob with the fallback layout ~debounceMs later. That blob
-          // is the user's house — stash a copy first, exactly like the
-          // unreadable-blob branch below (#206).
-          keepStoredHouseAside();
-          hydrationBaseRef.current = null;
-        }
-      } else {
-        hydrationBaseRef.current = null;
-        // A blob that exists but failed to load would otherwise be overwritten
-        // by the autosave of the fallback layout ~debounceMs after mount —
-        // permanent data loss. Stash a copy first (#113).
-        keepStoredHouseAside();
-      }
-      return false;
-    };
-
-    // A share link opens the shared house: straight away over nothing worth
-    // keeping, after asking over the player's own work (#573).
+    // A share link opens the shared house as a read-only tour (#722): the
+    // visitor's own save is neither read onto the screen nor written until
+    // they keep a copy.
     if (typeof window !== 'undefined' && isShareHash(window.location.hash)) {
       const hash = window.location.hash;
       // Refused before decoding, with the local house left as it was: a hash
       // this long is no house, and inflating it could take the tab down (#332).
       if (!isShareHashWithinBudget(hash)) {
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        clearShareHash();
+        setTourPhase('none');
         notify('This shared link is far larger than any house, so it was not opened. Your own house is unchanged.', 'error');
         hydrateFromLocalSave();
         return;
       }
-      // The decode is async (DecompressionStream). Set the hydration
-      // baseline synchronously so the autosave effect stays suppressed while
-      // the decode is in flight — otherwise the fallback layout could be
-      // scheduled to overwrite the local save before hydration lands.
-      hydrationBaseRef.current = layoutRef.current;
-      // Clear the hash once the link is dealt with: reloading after edits
-      // must not open the shared version again, nor repeat a warning.
-      const clearHash = (): void => {
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      };
-      void readShareHash(hash).then(async (result) => {
+      // The tour is on from the first render (`tourPhase` reads the hash),
+      // so nothing autosaves while the decode (DecompressionStream) runs.
+      // The hash stays for the whole tour: a reload opens the tour again.
+      setTourPhase('touring');
+      hydrationBaseRef.current = null;
+      void readShareHash(hash).then((result) => {
+        // Left for the visitor's own house while the link was opening.
+        if (!isTourSession()) return;
         if (!result.ok) {
           // Truncated, corrupt or from a newer app: say which, without a
           // blocking alert, and open the local save (#607).
-          clearHash();
+          clearShareHash();
+          setTourPhase('none');
           notify(`${shareFailureMessage(result.reason)} Your own house is unchanged.`, 'error');
           hydrateFromLocalSave();
           return;
         }
-        const shared = result.layout;
-        // Reads storage only; the hydration baseline is untouched.
-        const outgoing = loadLayout();
-        const openShared = onOpenSharedRef.current;
-        if (outgoing && !isUntouched(outgoing) && openShared && hydrateFromLocalSave()) {
-          // The player's own house is on screen: ask before replacing it
-          // (#573). The hash stays until they answer, so a reload asks again.
-          const open = await askConfirm({
-            title: `Open the shared house “${shared.name}”?`,
-            body: 'Your current house is kept as a restore point, and Undo brings it back.',
-            confirmLabel: 'Open it',
-            cancelLabel: 'Keep mine',
-            // Keeping the player's house is the safe default, and a stray
-            // click beside the dialog answers nothing.
-            focus: 'cancel',
-            backdropCancels: false,
-          });
-          clearHash();
-          if (!open) return;
-          try {
-            onOpenSharedRef.current?.(shared);
-          } catch (error) {
-            // The house on screen is still the player's own (#206).
-            console.warn('Failed to apply shared layout:', error);
-            notify(`${shareFailureMessage('unreadable')} Your own house is unchanged.`, 'error');
-          }
-          // onOpenShared says it opened, with an Undo button.
-          return;
-        }
-        clearHash();
-        // Nothing worth asking about (no save, an untouched one) — or the
-        // stored house wouldn't even apply. Hydration clears undo and the
-        // first edit autosaves over the stored house, so its final state
-        // needs a restore point now — the ring's last cadence snapshot may
-        // be minutes stale (#298).
-        snapshotBeforeReplace(outgoing);
-        // An unreadable save has no restore point to fall back on, and the
-        // shared house would autosave over it (#113).
-        if (!outgoing) keepStoredHouseAside();
-        // Re-capture the baseline right before the hydration dispatch.
-        hydrationBaseRef.current = layoutRef.current;
         // A corrupt-but-parseable layout can still throw while it's applied
         // to the scene. Guard the dispatch so a bad share link doesn't crash
-        // the whole mount — the error boundary's reset path is the recovery.
+        // the whole mount (#206): the visitor's own house opens instead.
         try {
-          onHydrate(shared);
+          onHydrate(result.layout);
+          setTourHouse(result.layout);
         } catch (error) {
           console.warn('Failed to apply shared layout:', error);
-          // The LOCAL save is healthy and untouched — the failure is the
-          // shared layout's. Nulling the baseline here would let the
-          // fallback layout autosave over the local house ~debounceMs
-          // later (#206). Fall back to the local save instead, same as a
-          // link that failed to decode.
+          clearShareHash();
+          setTourPhase('none');
+          notify(`${shareFailureMessage('unreadable')} Your own house is unchanged.`, 'error');
           hydrateFromLocalSave();
         }
       });
@@ -299,9 +298,53 @@ export function useLayoutPersistence({
     }
 
     hydrateFromLocalSave();
-  }, [onHydrate, saveStatus]);
+  }, [onHydrate, hydrateFromLocalSave]);
+
+  // Keep a copy (#722): the toured house becomes the visitor's, through the
+  // ordinary whole-house load. Nothing replaces the visitor's house until it
+  // is a recovered copy, which no save evicts, and the kept one is saved: a
+  // refusal leaves the tour, the hash and storage exactly as they were.
+  const keepTourCopy = useCallback(
+    (playCue: RefusedCue) => {
+      const house = tourHouse;
+      if (!isTourSession() || !house) return;
+      const saved = saveOverStoredHouse(house);
+      if (!saved.ok) {
+        notifyRefused(saved.reason === 'yours' ? NO_ROOM_TO_KEEP_YOURS : COPY_NOT_SAVED[saved.reason], playCue);
+        return;
+      }
+      // A restore point too, where it fits: History lists it beside the copy.
+      // Taken after the save, so a refusal never touches the ring.
+      snapshotBeforeReplace(saved.previous);
+      lastSavedJsonRef.current = saved.json;
+      saveStatus.setState({ lastSavedAt: Date.now(), saving: false, saveError: null });
+      clearShareHash();
+      setTourPhase('kept');
+      // The copy is saved: the load that shows it is no edit, so it neither
+      // autosaves nor takes a restore point that could push the visitor's out.
+      hydrationBaseRef.current = layoutRef.current;
+      setTourHouse(null);
+      onKeepTourCopyRef.current?.(house, saved.copiedAside);
+    },
+    [tourHouse, saveStatus]
+  );
+
+  // Build your own (#722): back to the visitor's own house, or a fresh lot.
+  const leaveTour = useCallback(() => {
+    if (!isTourSession()) return;
+    clearShareHash();
+    setTourPhase('none');
+    setTourHouse(null);
+    if (hydrateFromLocalSave()) return;
+    // Nothing of theirs to open (or it couldn't be, and was copied aside):
+    // a fresh lot, which saves nothing until it is edited.
+    hydrationBaseRef.current = layoutRef.current;
+    onHydrate(INITIAL_LAYOUT);
+  }, [hydrateFromLocalSave, onHydrate]);
 
   useEffect(() => {
+    // The toured house is someone else's: nothing saves until Keep a copy (#722).
+    if (isTourSession()) return;
     if (hydrationBaseRef.current) {
       if (Object.is(layout, hydrationBaseRef.current)) return;
       // First layout change after hydration is the hydration dispatch itself,
@@ -365,7 +408,7 @@ export function useLayoutPersistence({
     // the pagehide or unmount that may follow.
     let pointOwed = false;
     const flush = (layout: RoomLayout | null, leaving: boolean) => {
-      if (mainSaveHeldRef.current || layout === null) return;
+      if (mainSaveHeldRef.current || layout === null || isTourSession()) return;
       if (pendingRef.current) {
         const result = saveLayout(layout);
         // Still pending after a failure: a later flush, or the debounced
@@ -408,5 +451,5 @@ export function useLayoutPersistence({
     };
   }, []);
 
-  return { saveStatus, remoteLayout, clearRemoteLayout };
+  return { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour };
 }

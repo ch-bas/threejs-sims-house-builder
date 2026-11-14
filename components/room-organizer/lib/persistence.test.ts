@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeLayout } from './__testfixtures__/fixtures';
+import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { MAX_ROOM_DIMENSION, STORAGE_KEY } from './constants';
 import { subscribeNotices, type Notice } from './editor-notices';
 import { randomId } from './ids';
@@ -26,6 +26,7 @@ import {
   resetStoredLayout,
   sameLayoutContent,
   saveLayout,
+  saveOverStoredHouse,
 } from './persistence';
 import { VERSION_HISTORY_STORAGE_KEY } from './version-history';
 import type { RawStore } from './persistence';
@@ -656,5 +657,57 @@ describe('persistence — third-review fixes (#336)', () => {
     });
     for (const { key } of readRecoveryCopies(withHouse)) withHouse.removeItem(key);
     expect(keepStoredLayout(unwritable, 3)).toBe('blocked');
+  });
+});
+
+describe('saveOverStoredHouse (#722)', () => {
+  const mine = makeLayout({ name: 'Mine', floors: [makeFloor({ items: [makeItem()] })] });
+  const theirs = makeLayout({ name: 'Theirs' });
+  const everything = (): Record<string, string> =>
+    Object.fromEntries(Object.keys(window.localStorage).map((key) => [key, window.localStorage.getItem(key)!]));
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('copies a house with work aside, then saves over it', () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(mine));
+    const outcome = saveOverStoredHouse(theirs);
+    expect(outcome).toMatchObject({ ok: true, copiedAside: true, previous: { name: 'Mine' } });
+    expect(readRecoveryCopies().map(({ raw }) => raw)).toEqual([JSON.stringify(mine)]);
+    expect(readStoredLayoutRaw()).toBe(JSON.stringify(theirs));
+  });
+
+  it('copies nothing aside over an untouched house or none', () => {
+    expect(saveOverStoredHouse(theirs)).toMatchObject({ ok: true, copiedAside: false, previous: null });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_LAYOUT));
+    expect(saveOverStoredHouse(theirs)).toMatchObject({ ok: true, copiedAside: false });
+    expect(readRecoveryCopies()).toEqual([]);
+  });
+
+  it('reads the stored house quietly', () => {
+    const heard: Notice[] = [];
+    const stop = subscribeNotices((notice) => heard.push(notice));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(mine));
+    saveOverStoredHouse(theirs);
+    stop();
+    expect(heard).toEqual([]);
+  });
+
+  it.each([
+    ['the copy aside', (key: string) => key.startsWith(RECOVERY_STORAGE_KEY), 'yours'],
+    ['the save', (key: string) => key === STORAGE_KEY, 'quota'],
+  ])('puts every entry back when %s has no room', (_label, fails, reason) => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(makeLayout({ name: 'Older', floors: [makeFloor({ items: [makeItem()] })] })));
+    saveLayout(mine);
+    window.localStorage.setItem(VERSION_HISTORY_STORAGE_KEY, '[]');
+    const before = everything();
+    const real = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (fails(key)) throw domError('QuotaExceededError', 22);
+      real.call(this, key, value);
+    });
+    expect(saveOverStoredHouse(theirs)).toEqual({ ok: false, reason });
+    expect(everything()).toEqual(before);
   });
 });

@@ -30,6 +30,7 @@ import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from
 import { useSceneLife } from './hooks/use-scene-life';
 import { useSelectionActions } from './hooks/use-selection-actions';
 import { useThreeScene } from './hooks/use-three-scene';
+import { useTourPhase } from './hooks/use-tour-phase';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
 import { budgetOf, furnitureSpend } from './lib/budget';
@@ -47,11 +48,13 @@ import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { entrancePlanOutline } from './lib/street';
+import { isTourSession } from './lib/tour-session';
 import { sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt } from './lib/wall-sides';
 import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
+import { CameraPad } from './panels/camera-pad';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FirstStepsCard } from './panels/first-steps-card';
@@ -65,6 +68,7 @@ import { PlanCalibrationChip } from './panels/plan-calibration-chip';
 import { SidebarDrawer } from './panels/sidebar-drawer';
 import { StatusToastHost } from './panels/status-toast';
 import { TouchModeToggle } from './panels/touch-mode-toggle';
+import { TourBanner } from './panels/tour-banner';
 import { Viewport } from './panels/viewport';
 import { WallDisplayPill } from './panels/wall-display-pill';
 import { WelcomeBanner } from './panels/welcome-banner';
@@ -126,7 +130,13 @@ export function RoomOrganizer(): JSX.Element {
   // View and game state live in a per-editor store (#3). The orchestrator
   // reads every view field but the time of day, so an auto-cycle tick
   // re-renders only what shows the hour, not this whole tree (#148).
-  const [viewStore] = useState(() => createEditorViewStore(INITIAL_VIEW_SETTINGS, { lengthUnit: loadLengthUnit() }));
+  const [viewStore] = useState(() => {
+    const store = createEditorViewStore(INITIAL_VIEW_SETTINGS, { lengthUnit: loadLengthUnit() });
+    // A shared link opens as a tour (#722), in EXPLORE from the first render:
+    // nothing edits the house, and leaving the walk stays in EXPLORE.
+    if (isTourSession()) store.getState().actions.setGameMode('live');
+    return store;
+  });
   const { setView, toggle } = viewStore.getState().actions;
   const view = useStore(viewStore, useShallow(viewExceptTime));
   const autoCycleLighting = useStore(viewStore, (state) => state.autoCycleLighting);
@@ -331,14 +341,33 @@ export function RoomOrganizer(): JSX.Element {
     selection: { allSelectedIds, selectOnly, setSelectedItemId, setExtraSelectedIds, setSelectedWall },
   });
 
-  const { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout } = useHouseLoading({
+  const { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour } = useHouseLoading({
     layout,
     actions,
     commitHistoryNow,
     clearHistory,
-    undoHistory: history.undo,
     clearTransientSelection,
   });
+
+  // The shared-link tour (#722): EXPLORE for as long as it lasts, then
+  // DESIGN, whichever way it ends.
+  const tourPhase = useTourPhase();
+  const touring = tourPhase === 'touring';
+  const wasTouringRef = useRef(touring);
+  useEffect(() => {
+    const { setGameMode } = viewStore.getState().actions;
+    if (touring) {
+      wasTouringRef.current = true;
+      return viewStore.subscribe((state) => {
+        if (state.gameMode !== 'live') setGameMode('live');
+      });
+    }
+    if (!wasTouringRef.current) return undefined;
+    wasTouringRef.current = false;
+    setView((v) => (v.walkthroughMode ? { ...v, walkthroughMode: false } : v));
+    setGameMode('build');
+    return undefined;
+  }, [touring, viewStore, setView]);
 
   const hasSignalItems = useMemo(
     () => activeFloor.items.some((item) => item.isWiFiAccessPoint || item.isCCTV),
@@ -382,12 +411,25 @@ export function RoomOrganizer(): JSX.Element {
     },
     [snapPlacement, lastSnapWall, snapTicker, view.hapticsEnabled]
   );
+  // A drag that slipped past the views' own gates still edits nothing in
+  // EXPLORE (#722): no session opens, and without one a move would dispatch
+  // directly, so moves are dropped too.
+  const exploringRef = useRef(exploring);
+  exploringRef.current = exploring;
   const startItemDrag = useCallback(
     (id: string) => {
+      if (exploringRef.current) return;
       snapTicker.reset();
       handleDragStart(id);
     },
     [snapTicker, handleDragStart]
+  );
+  const guardedDrag = useCallback(
+    (id: string, x: number, z: number) => {
+      if (exploringRef.current) return;
+      handleDrag(id, x, z);
+    },
+    [handleDrag]
   );
 
   // Every catalog add (tile click, keyboard, drag-drop) comes through here,
@@ -478,7 +520,7 @@ export function RoomOrganizer(): JSX.Element {
     onDeselect: deselectAll,
     snapPosition,
     onItemDragStart: startItemDrag,
-    onItemDrag: handleDrag,
+    onItemDrag: guardedDrag,
     onItemDragEnd: handleDragEnd,
     onItemDragCancel: handleDragCancel,
     onLockedDrag: handleLockedDrag,
@@ -508,6 +550,8 @@ export function RoomOrganizer(): JSX.Element {
       canvasRef,
       walkthroughActive,
       orbitOnly: photoActive,
+      // EXPLORE never edits the house: an item press selects only (#722).
+      selectOnly: exploring,
       groundAt: orbitGroundAt,
       renderQuality: view.renderQuality,
       // The distance tool measures across furniture, so its clicks go to the floor (#341).
@@ -515,7 +559,7 @@ export function RoomOrganizer(): JSX.Element {
       onItemSelect: handleSelect,
       selectedIds: allSelectedIds,
       onItemDragStart: startItemDrag,
-      onItemDrag: handleDrag,
+      onItemDrag: guardedDrag,
       onItemDragEnd: handleDragEnd,
       onItemDragCancel: handleDragCancel,
       canTwistItem,
@@ -618,6 +662,18 @@ export function RoomOrganizer(): JSX.Element {
     onFloorChange: actions.setActiveFloorIndex,
     canvasRef,
     scene: { isReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, cameraRef, controlsRef },
+  });
+
+  const tourTogglePlan = useEvent(() => toggle('view2D'));
+  // A refused Keep a copy plays the refused cue (#722).
+  const keepTourCopyWithCue = useEvent(() => keepTourCopy(playCue));
+
+  // The tour's Walk through (#722), as EXPLORE starts it from the mode panel.
+  // The walk's HUD exits it.
+  const tourWalk = useEvent(() => {
+    selectOnly(null);
+    setSelectedWall(null);
+    setView((v) => ({ ...v, view2D: false, walkthroughMode: true }));
   });
 
   // Called from a child so that a time-of-day tick or a search keystroke,
@@ -997,12 +1053,28 @@ export function RoomOrganizer(): JSX.Element {
 
       <DevDiagnostics isReady={isReady} rendererRef={rendererRef} sceneRef={sceneRef} />
 
-      <LotBadge
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
-      />
+      {/* A tour shows the name, the floors and the camera, and nothing that edits (#722). */}
+      {touring ? (
+        !error && (
+          <TourBanner
+            name={tourHouse?.name ?? null}
+            walking={walkthroughActive}
+            plan={view.view2D}
+            onTogglePlan={tourTogglePlan}
+            onWalk={tourWalk}
+            onKeepCopy={keepTourCopyWithCue}
+            onBuildOwn={leaveTour}
+          />
+        )
+      ) : (
+        <LotBadge
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
+        />
+      )}
 
       {/* Top-center: live stats */}
+      {!touring && (
       <div
         className="pc-header-stats"
         style={{
@@ -1032,6 +1104,7 @@ export function RoomOrganizer(): JSX.Element {
           />
         </div>
       </div>
+      )}
 
       {/* Top-right: floor pill + wall display */}
       <div
@@ -1071,6 +1144,13 @@ export function RoomOrganizer(): JSX.Element {
         />
       )}
 
+      {touring ? (
+        isReady && !error && !view.view2D && !walkthroughActive && (
+          <div className="pointer-events-none" style={{ position: 'absolute', left: 16, bottom: 16, zIndex: 25 }}>
+            <CameraPad onOrbit={orbitByPad} onZoom={zoomByPad} onFit={stableFitToRoom} controlsRef={controlsRef} />
+          </div>
+        )
+      ) : (
       <BottomHud
         selectedWall={selectedWall}
         onSelectedWallChange={setSelectedWall}
@@ -1083,6 +1163,7 @@ export function RoomOrganizer(): JSX.Element {
         onArmStamp={armStamp}
         onCancelStamp={cancelStamp}
       />
+      )}
 
       {/* L2 photo (#626): the shutter, the one HUD photo mode keeps. */}
       {photo.active && <PhotoBar onTake={photo.take} onDone={photo.leave} />}
@@ -1090,14 +1171,18 @@ export function RoomOrganizer(): JSX.Element {
       {/* Touch mode toggle — visible on mobile only */}
       <TouchModeToggle controlsRef={controlsRef} isReady={isReady} onFit={fitToRoom} />
 
-      {/* Welcome modal — auto-shows once, dismissible */}
-      <WelcomeBanner />
-      {/* Getting started (#721): offered once the start chooser is answered */}
-      <FirstStepsCard
-        placeCatalogItem={stablePlaceFromCatalog}
-        onShareLink={stableShareLink}
-        onSelectedWallChange={setSelectedWall}
-      />
+      {/* Welcome modal — auto-shows once, dismissible. Not over a shared
+          house, nor over one just kept from it (#722). */}
+      {tourPhase === 'none' && <WelcomeBanner />}
+      {/* Getting started (#721): offered once the start chooser is answered;
+          never over a shared house or one just kept from it (#722). */}
+      {tourPhase === 'none' && (
+        <FirstStepsCard
+          placeCatalogItem={stablePlaceFromCatalog}
+          onShareLink={stableShareLink}
+          onSelectedWallChange={setSelectedWall}
+        />
+      )}
 
       {/* Keyboard-placement key hint (#168) */}
       <PlacementHint active={placingId !== null} ghost={ghost} onCancel={placementGhost.cancel} />
@@ -1116,6 +1201,7 @@ export function RoomOrganizer(): JSX.Element {
         onDismiss={dismissAchievements}
       />
 
+      {!touring && (
       <SidebarDrawer
         collapsed={sidebarCollapsed}
         onCollapse={collapseSidebar}
@@ -1131,6 +1217,7 @@ export function RoomOrganizer(): JSX.Element {
         removeItem={stableRemoveItem}
         duplicateItem={stableDuplicateItem}
       />
+      )}
     </div>
     </SelectionProvider>
     </RoomEditorProvider>

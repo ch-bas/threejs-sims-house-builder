@@ -1,10 +1,12 @@
 import { floorKeepOut } from './floor-keep-out';
 import { hasCollisions, itemInBounds, type CollisionContext } from './geometry';
+import { SHARE_HASH_PREFIX } from './saved-house';
 import { MAX_LAYOUT_JSON_BYTES, parseStoredLayout } from './schema';
 import { storeyHeight } from './storeys';
 import type { FurnitureItem, RoomLayout } from './types';
 
-const HASH_PREFIX = '#layout=';
+// One spelling for the error screens' tour check too (#722).
+const HASH_PREFIX = SHARE_HASH_PREFIX;
 /**
  * Version prefix for compressed payloads: `#layout=2.<base64url(deflate-raw(json))>`.
  * Legacy (v1) links carry un-prefixed `base64url(json)`; base64url never contains

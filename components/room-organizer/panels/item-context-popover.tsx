@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
-import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
+import { useExploring, useNotWhileExploring } from '../hooks/use-exploring';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { placedItemVariants } from '../lib/catalog-variants';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
@@ -66,6 +66,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // item can still be selected and inspected, but every control that would
   // change it is off, with the reason as its hint.
   const exploring = useExploring();
+  const notWhileExploring = useNotWhileExploring();
   const dialogRef = useRef<HTMLDivElement>(null);
   // On a phone or a short screen the popover is a bottom sheet (globals.css,
   // "Overlays"): collapsed to the header and the action row so the selected
@@ -104,7 +105,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   const setExpanded = (next: boolean) => setExpandedFor(next ? item.id : null);
   // Why a control is off: exploring first, then the item's lock.
   const offHint = (lockedHint: string): string | undefined =>
-    exploring ? NOT_WHILE_EXPLORING : item.locked ? lockedHint : undefined;
+    exploring ? notWhileExploring : item.locked ? lockedHint : undefined;
   const lockedOff = exploring || item.locked === true;
   const lockedHere = item.locked === true && !exploring;
   const variants = placedItemVariants(FURNITURE_CATALOG, item);
@@ -126,7 +127,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
       }}
     />
   );
-  const exploreHint = exploring ? NOT_WHILE_EXPLORING : undefined;
+  const exploreHint = exploring ? notWhileExploring : undefined;
   return (
     <div
       ref={dialogRef}
@@ -248,7 +249,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
       >
         {exploring && (
           <p role="note" className="pc-body" style={{ margin: 0, fontSize: 11, opacity: 0.85 }}>
-            {NOT_WHILE_EXPLORING}.
+            {notWhileExploring}.
           </p>
         )}
 
@@ -377,7 +378,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             disabled={isWallMounted(item.type) || lockedOff}
             title={
               exploring
-                ? NOT_WHILE_EXPLORING
+                ? notWhileExploring
                 : isWallMounted(item.type)
                   ? 'Wall-mounted — drag along the wall instead'
                   : item.locked
@@ -492,7 +493,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
           {exploring ? (
             // The picker has no disabled state of its own; a disabled
             // fieldset turns off its colour input and swatches.
-            <fieldset disabled title={NOT_WHILE_EXPLORING} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, opacity: 0.45 }}>
+            <fieldset disabled title={notWhileExploring} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, opacity: 0.45 }}>
               {colorPicker}
             </fieldset>
           ) : (
@@ -503,7 +504,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             type="button"
             onClick={() => props.onRemove(item.id)}
             disabled={exploring}
-            {...(exploring ? { title: NOT_WHILE_EXPLORING } : {})}
+            {...(exploring ? { title: notWhileExploring } : {})}
             className="pc-tile"
             style={{
               ...(exploring ? { opacity: 0.4, cursor: 'not-allowed' } : {}),
@@ -736,7 +737,8 @@ interface CameraModelCardProps {
 }
 
 function CameraModelCard({ disabled, modelId, fov, range, onPickModel, onSetFov, onSetRange }: CameraModelCardProps): JSX.Element {
-  const hint = disabled ? NOT_WHILE_EXPLORING : undefined;
+  const notWhileExploring = useNotWhileExploring();
+  const hint = disabled ? notWhileExploring : undefined;
   const unit = useLengthUnit();
   return (
     <div
@@ -802,6 +804,7 @@ interface CctvModelRowProps {
 }
 
 function CctvModelRow({ value, onChange, disabled }: CctvModelRowProps): JSX.Element {
+  const notWhileExploring = useNotWhileExploring();
   const id = useId();
   const unit = useLengthUnit();
   const selected = getCctvModel(value);
@@ -830,7 +833,7 @@ function CctvModelRow({ value, onChange, disabled }: CctvModelRowProps): JSX.Ele
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
-        {...(disabled ? { title: NOT_WHILE_EXPLORING } : {})}
+        {...(disabled ? { title: notWhileExploring } : {})}
         style={{
           ...(disabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
           width: '100%',

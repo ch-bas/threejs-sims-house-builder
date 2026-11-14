@@ -315,6 +315,74 @@ export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): S
   }
 }
 
+/** Every entry the saved house owns: the save, its restore points, its recovered copies. */
+function ownEntries(store: RawStore): Map<string, string> {
+  const entries = new Map<string, string>();
+  for (let index = 0; index < store.length; index += 1) {
+    const key = store.key(index);
+    if (key === null || !key.startsWith(STORAGE_KEY)) continue;
+    const value = store.getItem(key);
+    if (value !== null) entries.set(key, value);
+  }
+  return entries;
+}
+
+/** Puts those entries back as they were: what was added goes first, freeing the room. */
+function restoreOwnEntries(store: RawStore, before: ReadonlyMap<string, string>): void {
+  for (const key of ownEntries(store).keys()) {
+    if (!before.has(key)) store.removeItem(key);
+  }
+  for (const [key, value] of before) {
+    try {
+      if (store.getItem(key) !== value) store.setItem(key, value);
+    } catch {
+      /* it fitted before, in no more room than is free now */
+    }
+  }
+}
+
+export type SaveOverOutcome =
+  /** `previous`: the stored house as read, quietly; `copiedAside`: it is a recovered copy now. */
+  | { ok: true; json: string; previous: RoomLayout | null; copiedAside: boolean }
+  /** `yours`: no room to copy the stored house aside. Storage is as it was. */
+  | { ok: false; reason: 'yours' | SaveFailureReason };
+
+/**
+ * Save a house over the stored one so that the stored one can always be had
+ * back (Keep a copy, #722). A stored house worth keeping (one with work, or
+ * one that can't be read) is copied to the recovery key first, which no save
+ * evicts, unlike restore points; then the new house is saved as any save is.
+ * Either failing puts every entry of the saved house back as it was. Reads
+ * the stored house quietly: no notice about a house that isn't on screen.
+ */
+export function saveOverStoredHouse(incoming: RoomLayout, storage?: RawStore): SaveOverOutcome {
+  const target = storage ?? localStorageOrNull();
+  if (!target) return { ok: false, reason: 'blocked' };
+  let before: Map<string, string>;
+  try {
+    before = ownEntries(target);
+  } catch (error) {
+    return { ok: false, reason: classifyStorageError(error) };
+  }
+  const raw = before.get(STORAGE_KEY) ?? null;
+  const previous = raw === null ? null : parseLayoutJson(raw);
+  const worthKeeping = raw !== null && (previous === null || !isUntouched(previous));
+  if (worthKeeping) {
+    // 'nothing': the same house is already a recovered copy.
+    const aside = keepStoredLayout(target);
+    if (aside !== 'kept' && aside !== 'nothing') {
+      restoreOwnEntries(target, before);
+      return { ok: false, reason: 'yours' };
+    }
+  }
+  const saved = saveLayout(incoming, target);
+  if (!saved.ok) {
+    restoreOwnEntries(target, before);
+    return { ok: false, reason: saved.reason };
+  }
+  return { ok: true, json: saved.json, previous, copiedAside: worthKeeping };
+}
+
 function canonicalJson(value: unknown): string {
   return JSON.stringify(value, (_key, inner: unknown) => {
     if (inner === null || typeof inner !== 'object' || Array.isArray(inner)) return inner;
