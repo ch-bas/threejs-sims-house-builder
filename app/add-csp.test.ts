@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { addPolicy } from '../scripts/add-csp.mjs';
+import { addPolicy, scriptSource, siteOrigin } from '../scripts/add-csp.mjs';
 
 // The post-build step that writes the Content-Security-Policy meta (#445).
 
@@ -92,5 +92,43 @@ describe('addPolicy', () => {
     expect(policy).toContain("base-uri 'self'");
     expect(policy).toContain("form-action 'none'");
     expect(policy).toContain("img-src 'self' data:");
+  });
+});
+
+// #579: GitHub Pages serves every project site of an account from one origin.
+describe('script sources on a basePath build', () => {
+  const BASE = '/threejs-sims-house-builder';
+  const ORIGIN = 'https://ch-bas.github.io';
+  const chunk = (prefix: string, name = 'main') => `<script src="${prefix}/_next/static/chunks/${name}.js" async=""></script>`;
+
+  it('narrows script files to the basePath _next/ folder on the site origin', () => {
+    const out = addPolicy(page(chunk(BASE) + `<script>${INLINE}</script>`), 'index.html', ORIGIN);
+    expect(out.source).toBe(`${ORIGIN}${BASE}/_next/`);
+    expect(directive(out.html, 'script-src')).toBe(`script-src ${ORIGIN}${BASE}/_next/ ${sha(INLINE)}`);
+    expect(directive(out.html, 'script-src')).not.toContain("'self'");
+  });
+
+  it("keeps 'self' without a basePath or without a known origin", () => {
+    expect(scriptSource(page(chunk('')), ORIGIN)).toBe("'self'");
+    expect(scriptSource(page(chunk(BASE)), null)).toBe("'self'");
+    expect(scriptSource(page(`<script>${INLINE}</script>`), ORIGIN)).toBe("'self'");
+  });
+
+  it('refuses a script file the narrowed policy would block', () => {
+    expect(() => scriptSource(page(chunk(BASE) + '<script src="/other/x.js"></script>'), ORIGIN, 'p.html')).toThrow(
+      /p\.html: script outside _next\/ would be blocked/,
+    );
+    expect(() => scriptSource(page(chunk(BASE) + chunk('/elsewhere')), ORIGIN)).toThrow(/more than one basePath/);
+    expect(() => scriptSource(page('<script src="https://cdn.example/x.js"></script>'), ORIGIN)).toThrow(/outside _next/);
+  });
+
+  it('takes the origin from the override, then the Actions owner, then the homepage', () => {
+    const homepage = 'https://ch-bas.github.io/threejs-sims-house-builder/';
+    expect(siteOrigin({ CSP_SITE_ORIGIN: 'https://builder.example.org/x', GITHUB_REPOSITORY_OWNER: 'a' }, homepage)).toBe(
+      'https://builder.example.org',
+    );
+    expect(siteOrigin({ GITHUB_REPOSITORY_OWNER: 'Some-Fork' }, homepage)).toBe('https://some-fork.github.io');
+    expect(siteOrigin({}, homepage)).toBe('https://ch-bas.github.io');
+    expect(siteOrigin({}, undefined)).toBeNull();
   });
 });
