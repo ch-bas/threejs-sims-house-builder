@@ -1,14 +1,16 @@
 // Rebuilds the raster icons and the link-preview image from SVG. Not part of
 // the app build: the outputs are committed, and Next picks them up from app/
 // by file name (icon.svg, favicon.ico, apple-icon.png, opengraph-image.png),
-// adding the GitHub Pages basePath to every link it writes.
+// adding the GitHub Pages basePath to every link it writes. The 192 and
+// 512 px manifest icons go to public/, which the export copies to the site
+// root, where app/manifest.ts names them.
 //
 //   npm i --no-save playwright && npx playwright install chromium
 //   node scripts/build-icons.mjs
 //
 // Sources: app/icon.svg (the favicon, served as is) and the preview card
 // below, which frames docs/images/editor-3d.png (the README screenshot).
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const ICON_SVG = await readFile('app/icon.svg', 'utf8');
@@ -92,7 +94,9 @@ try {
   await writeFile('app/favicon.ico', icoFromPngs(favicons));
   await writeFile('app/apple-icon.png', await render(SQUARE_ICON_SVG, 180, 180));
   await writeFile('app/opengraph-image.png', await render(previewCardSvg(), 1200, 630));
-  console.warn('wrote app/favicon.ico, app/apple-icon.png, app/opengraph-image.png');
+  await mkdir('public', { recursive: true });
+  for (const size of [192, 512]) await writeFile(`public/icon-${size}.png`, await render(ICON_SVG, size, size));
+  console.warn('wrote app/favicon.ico, app/apple-icon.png, app/opengraph-image.png, public/icon-192.png, public/icon-512.png');
 } finally {
   await browser.close();
 }
