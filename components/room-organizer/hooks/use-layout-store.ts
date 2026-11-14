@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { createStore, useStore } from 'zustand';
-import { budgetRemaining } from '../lib/budget';
+import { budgetOf, budgetRemaining } from '../lib/budget';
 import { floorIndexAfterRestore } from '../lib/history-floor';
 import { randomId, randomSuffix, withHouseId } from '../lib/ids';
 import { randomStreetSeed } from '../lib/street-row';
@@ -103,6 +103,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     removeItem: (id) => dispatch({ type: 'removeItem', id }),
     sellItems: (ids) => dispatch({ type: 'sellItems', ids }),
     setHardBudget: (on) => dispatch({ type: 'setHardBudget', on }),
+    setFunds: (amount) => dispatch({ type: 'setFunds', amount }),
     duplicateItem: (id) => {
       const newId = nextId('copy');
       dispatch({ type: 'duplicateItem', sourceId: id, newId });
@@ -214,6 +215,11 @@ export function useActiveFloor(): FloorLayout {
  */
 export function useBudgetRemaining(): number | null {
   return useStore(layoutStore, (s) => budgetRemaining(s.layout));
+}
+
+/** The house's funds (#609). */
+export function useFunds(): number {
+  return useStore(layoutStore, (s) => budgetOf(s.layout));
 }
 
 // Actions are created once and never change identity, so this hook never causes

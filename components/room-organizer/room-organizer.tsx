@@ -32,7 +32,7 @@ import { useSelectionActions } from './hooks/use-selection-actions';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
-import { furnitureSpend } from './lib/budget';
+import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
@@ -357,6 +357,7 @@ export function RoomOrganizer(): JSX.Element {
     roomWidth: layout.width,
     roomDepth: layout.height,
     buildingCost,
+    budget: budgetOf(layout),
     actions,
     view,
     allSelectedIds,

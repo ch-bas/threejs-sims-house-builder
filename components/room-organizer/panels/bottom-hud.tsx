@@ -8,8 +8,8 @@ import { useEvent } from '../hooks/use-event';
 import { layoutStore } from '../hooks/use-layout-store';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { useSheetInset } from '../hooks/use-sheet-inset';
+import { budgetOf } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
-import { DEFAULT_BUDGET } from '../lib/constants';
 import { COARSE_POINTER_QUERY, revealAboveFooter } from '../lib/hud-layout';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
 import { runSurprise } from '../lib/surprise';
@@ -248,7 +248,8 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
           // spends what the rest of the building leaves of the budget: the
           // hard budget refuses before asking, the soft one asks before
           // going over (#136, #581).
-          void runSurprise(layoutStore.getState().layout, activeFloorIndex, DEFAULT_BUDGET, {
+          const house = layoutStore.getState().layout;
+          void runSurprise(house, activeFloorIndex, budgetOf(house), {
             confirm: askConfirm,
             playCue,
             replaceItems: (items) => actions.replaceItems(items),

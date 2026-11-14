@@ -474,6 +474,27 @@
     margin-left: 6px !important;
     font-size: 10px !important;
   }
+  /* The funds field (#609) shows only with ⋯ open, so the bar under the
+     hard budget stays one short row. Open, it joins the funds' line as
+     "$4,005 LEFT ◯ HARD BUDGET $8,000": one line on a 390 px phone for
+     amounts to six figures. Narrower (SE) or longer, the field wraps to a
+     second line of its own, centred: that wrap is meant. */
+  .pc-mode-panel[data-more-open][data-hard-budget] .pc-funds-left-word,
+  .pc-mode-panel .pc-funds-field__of {
+    display: none;
+  }
+  .pc-mode-panel > div:first-child .pc-funds-field {
+    display: inline-flex;
+    vertical-align: middle;
+    margin: 0 0 0 8px;
+  }
+  .pc-mode-panel:not([data-more-open]) > div:first-child .pc-funds-field {
+    display: none;
+  }
+  .pc-mode-panel > div:first-child .pc-funds-field__input {
+    min-height: 28px;
+    font-size: 12px;
+  }
   .pc-mode-pill {
     grid-area: pill;
     gap: 2px !important;
@@ -1259,6 +1280,13 @@ html[data-plan-gesture] * {
     content: '';
     position: absolute;
     inset: -3px;
+  }
+  /* The funds field's row (#609): the switch sits at its middle. */
+  .pc-funds-field__input {
+    min-height: 32px;
+  }
+  .pc-mode-panel[data-hard-budget] .pc-budget-switch {
+    bottom: 8px;
   }
 
   /* Floor tiles and the pager are as wide as a finger. */

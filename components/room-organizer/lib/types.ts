@@ -356,6 +356,8 @@ export interface HardBudget {
   writeOff: number;
   /** `false`: switched off after use; the write-off is kept for when it comes back on. */
   enabled?: false;
+  /** The house's funds (#609); absent means DEFAULT_BUDGET. Kept while the hard budget is off. */
+  amount?: number;
 }
 
 /**

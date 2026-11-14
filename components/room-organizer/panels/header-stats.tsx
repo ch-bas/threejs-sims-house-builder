@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useLayout } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
-import { budgetSpent } from '../lib/budget';
-import { CURRENCY_SYMBOL, DEFAULT_BUDGET } from '../lib/constants';
-import { formatAge, formatSize } from '../lib/format';
+import { budgetOf, budgetSpent } from '../lib/budget';
+import { formatAge, formatMoney, formatSize } from '../lib/format';
 import { HEADER_HIDDEN_QUERY } from '../lib/overlay-queue';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
@@ -33,7 +32,7 @@ export function HeaderStats({
 }: HeaderStatsProps): JSX.Element {
   // `layout` from the store selector — re-renders only on layout changes.
   const layout = useLayout();
-  const budget = DEFAULT_BUDGET;
+  const budget = budgetOf(layout);
   // The porch door is structure, not furniture: older saves still carry its
   // catalog price (#382).
   const allItems = layout.floors.flatMap((floor) => floor.items).filter((item) => item.id !== ENTRANCE_DOOR_ID);
@@ -50,7 +49,7 @@ export function HeaderStats({
       <Chip
         icon="coin"
         label="Cost"
-        value={`${CURRENCY_SYMBOL}${cost.toLocaleString()} / ${CURRENCY_SYMBOL}${budget.toLocaleString()}`}
+        value={`${formatMoney(cost, { compact: true })} / ${formatMoney(budget, { compact: true })}`}
         intent={overBudget ? 'danger' : ratio > 0.85 ? 'warning' : 'normal'}
       />
       <SaveIndicator lastSavedAt={lastSavedAt} saving={saving} saveError={saveError} />
