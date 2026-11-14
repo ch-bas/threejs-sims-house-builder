@@ -154,3 +154,21 @@ describe('app/global-error.tsx — any other crash (#336, #568)', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 });
+
+describe('app/global-error.tsx — a crash in a shared-link tour (#722)', () => {
+  it('drops the link and offers a plain reload, never a start-fresh', () => {
+    window.localStorage.setItem(STORAGE_KEY, house);
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, hash: '#layout=2.abc', pathname: '/', search: '', reload },
+      writable: true,
+    });
+    const replace = vi.spyOn(window.history, 'replaceState').mockImplementation(() => undefined);
+    renderBoundary(new Error('boom') as Error & { digest?: string });
+    expect(replace).toHaveBeenCalledWith(null, '', '/');
+    expect(screen.queryByRole('button', { name: /start fresh/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(house);
+    expect(readRecoveryCopies()).toEqual([]);
+  });
+});

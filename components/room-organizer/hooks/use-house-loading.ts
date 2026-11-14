@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { notifyWithUndo } from '../lib/editor-notices';
+import { notify, type RefusedCue } from '../lib/editor-notices';
 import { snapshotBeforeReplace } from '../lib/restore-point';
 import { markLayoutLoaded } from './use-achievements';
 import { useLayoutPersistence, type SaveStatusStore } from './use-layout-persistence';
@@ -12,7 +12,6 @@ export interface UseHouseLoadingOptions {
   actions: Pick<LayoutActions, 'applyLayout'>;
   commitHistoryNow: () => void;
   clearHistory: (baseline: RoomLayout) => void;
-  undoHistory: () => void;
   /** Drops the selection, the selected wall and the distance points. */
   clearTransientSelection: () => void;
 }
@@ -22,12 +21,16 @@ export interface HouseLoading {
   remoteLayout: RoomLayout | null;
   clearRemoteLayout(): void;
   adoptRemoteLayout(): void;
+  /** The shared house being toured (#722), once decoded. */
+  tourHouse: RoomLayout | null;
+  keepTourCopy(playCue: RefusedCue): void;
+  leaveTour(): void;
 }
 
 /**
  * The whole-house loads the editor makes on its own: the house the session
- * opens on, a share link opened over the player's house (#573), and another
- * tab's save adopted (#123). Each follows the load rules: a restore point
+ * opens on (a share link's opens as a tour), a toured house kept (#722), and
+ * another tab's save adopted (#123). Each follows the load rules: a restore point
  * and a history commit before a replacement, and loads earn nothing (#450).
  */
 export function useHouseLoading({
@@ -35,10 +38,9 @@ export function useHouseLoading({
   actions,
   commitHistoryNow,
   clearHistory,
-  undoHistory,
   clearTransientSelection,
 }: UseHouseLoadingOptions): HouseLoading {
-  const { saveStatus, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
+  const { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour } = useLayoutPersistence({
     layout,
     onHydrate: useCallback(
       (saved: RoomLayout) => {
@@ -52,21 +54,27 @@ export function useHouseLoading({
       },
       [actions, clearHistory, clearTransientSelection]
     ),
-    // A share link over the player's own house, once they said yes (#573):
-    // an ordinary replacement, one Ctrl+Z from the house it replaced.
-    onOpenShared: useCallback(
-      (shared: RoomLayout) => {
-        snapshotBeforeReplace(layoutStore.getState().layout);
+    // Keep a copy (#722), once the copy is saved: the rest of an ordinary
+    // whole-house load. The persistence copied the stored house aside and
+    // took its restore point first, and refuses when it can't.
+    onKeepTourCopy: useCallback(
+      (house: RoomLayout, copiedAside: boolean) => {
         commitHistoryNow();
-        actions.applyLayout(shared);
+        actions.applyLayout(house);
         markLayoutLoaded();
         clearTransientSelection();
-        notifyWithUndo('Opened the shared house. Undo brings yours back; it is also kept in Manage → Saved Layouts → History.', {
-          current: () => layoutStore.getState().layout,
-          undo: undoHistory,
-        });
+        // The tour had nothing to undo, and an undo step back to the same
+        // house would change nothing: the history starts at the copy.
+        clearHistory(layoutStore.getState().layout);
+        const name = house.name.trim() || 'the shared house';
+        notify(
+          copiedAside
+            ? `Kept a copy of “${name}”: it saves here now. Your previous house is kept as a recovered copy in Manage → Saved Layouts → History.`
+            : `Kept a copy of “${name}”: it saves here now.`,
+          'success'
+        );
       },
-      [actions, commitHistoryNow, clearTransientSelection, undoHistory]
+      [actions, commitHistoryNow, clearHistory, clearTransientSelection]
     ),
   });
 
@@ -84,5 +92,5 @@ export function useHouseLoading({
     clearRemoteLayout();
   }, [remoteLayout, layout, actions, commitHistoryNow, clearTransientSelection, clearRemoteLayout]);
 
-  return { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout };
+  return { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour };
 }

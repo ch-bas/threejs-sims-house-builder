@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatMetres } from '../lib/format';
+import { useLengthUnit } from '../contexts';
+import { formatMetres, lengthSliderStep } from '../lib/format';
 import { ROOM_SHAPES, type RoomShapeId } from '../lib/room-shapes';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
@@ -165,6 +166,7 @@ interface SizeRowProps {
 }
 
 function SizeRow({ label, name, value, min, max, onChange }: SizeRowProps): JSX.Element {
+  const unit = useLengthUnit();
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <span
@@ -183,9 +185,9 @@ function SizeRow({ label, name, value, min, max, onChange }: SizeRowProps): JSX.
         aria-label={name}
         min={min}
         max={max}
-        step={0.5}
+        step={lengthSliderStep(0.5, unit)}
         value={value}
-        aria-valuetext={formatMetres(value, 1)}
+        aria-valuetext={formatMetres(value, 1, unit)}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{ flex: 1, accentColor: 'var(--pc-cyan-glow)' }}
       />
@@ -200,7 +202,7 @@ function SizeRow({ label, name, value, min, max, onChange }: SizeRowProps): JSX.
           color: 'var(--pc-paper)',
         }}
       >
-        {formatMetres(value, 1)}
+        {formatMetres(value, 1, unit)}
       </span>
     </div>
   );

@@ -6,7 +6,7 @@ import {
   isChunkLoadError,
   reloadOnceForChunkError,
 } from '../components/room-organizer/lib/chunk-reload';
-import { downloadRawLayout, noteEditorCrashed, readStoredLayoutRaw } from '../components/room-organizer/lib/saved-house';
+import { downloadRawLayout, leaveCrashedTour, noteEditorCrashed, readStoredLayoutRaw } from '../components/room-organizer/lib/saved-house';
 
 // Global error boundary — catches errors thrown in the root layout itself (and
 // in app/error.tsx), so it must render its own <html>/<body>. Starting fresh
@@ -30,6 +30,9 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
   // A persistent chunk failure is a deploy problem, not a corrupt save; keep
   // the user's layout and offer a plain retry instead (#143).
   const chunkFailure = isChunkLoadError(error);
+  // A crash in a shared-link tour is the toured house's (#722): a plain
+  // reload opens the visitor's own, which is not moved aside.
+  const [tourCrash] = useState(() => !chunkFailure && leaveCrashedTour());
   const retryChunkLoad = () => {
     clearChunkReloadGuard();
     window.location.reload();
@@ -103,7 +106,9 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
             {chunkFailure ? 'Couldn’t load the app' : 'Something went sideways'}
           </p>
           <p style={{ margin: '0 0 20px', color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>
-            {chunkFailure
+            {tourCrash
+              ? 'The shared house hit an error and couldn’t be shown. Your own house is untouched: reloading opens it.'
+              : chunkFailure
               ? 'Some of the app’s files couldn’t be fetched — a fresh deploy may be rolling out. Reloading usually fixes it, and your saved house is untouched.'
               : resetProblem ??
                 'The editor couldn’t start. Starting fresh moves your saved house to Manage → Saved Layouts → History, where you can restore it.'}
@@ -113,7 +118,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
           {!lostRaw && (
           <button
             type="button"
-            onClick={chunkFailure ? retryChunkLoad : () => void resetSavedLayout()}
+            onClick={chunkFailure ? retryChunkLoad : tourCrash ? () => window.location.reload() : () => void resetSavedLayout()}
             style={{
               appearance: 'none',
               cursor: 'pointer',
@@ -128,7 +133,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
               fontSize: 12,
             }}
           >
-            {chunkFailure ? 'Reload' : 'Start fresh, keep a copy'}
+            {chunkFailure || tourCrash ? 'Reload' : 'Start fresh, keep a copy'}
           </button>
           )}
           {lostRaw && (

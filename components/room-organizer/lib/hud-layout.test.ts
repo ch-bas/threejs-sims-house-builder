@@ -67,3 +67,14 @@ describe('revealAboveFooter (#751)', () => {
     expect(revealAboveFooter(40, { top: 443, bottom: 661 }, { top: 96, bottom: 673 })).toBe(40);
   });
 });
+
+describe('welcomeTips in the unit shown (#725)', () => {
+  it('writes the Shift step and the grid in metres or feet and inches', () => {
+    const text = (touch: boolean, unit: 'metric' | 'imperial') => welcomeTips(touch, unit).map((tip) => tip.body).join(' ');
+    expect(text(false, 'metric')).toContain('hold Shift for 1 m steps');
+    expect(text(false, 'metric')).toContain('a 0.5 m grid');
+    expect(text(false, 'imperial')).toContain(`hold Shift for 3' 3" steps`);
+    expect(text(false, 'imperial')).toContain(`a 1' 8" grid`);
+    expect(text(true, 'imperial')).toContain(`snaps items to 1' 8"`);
+  });
+});

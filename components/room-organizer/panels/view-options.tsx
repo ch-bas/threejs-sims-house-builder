@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { useEditorViewActions, useViewSettings } from '../contexts';
+import { useEditorViewActions, useLengthUnit, useViewSettings } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
+import { LENGTH_UNITS, type LengthUnit } from '../lib/format';
 import { enterPhotoMode } from '../lib/photo-mode';
 import { QUALITY_CHOICES, saveQualityChoice, type QualityChoice } from '../lib/render-quality';
 import { toggleViewOption, VIEW_OPTION_KEYS, type ViewOptionKey } from '../lib/view-options';
@@ -53,7 +54,8 @@ export interface ViewOptionsMenuProps {
  */
 export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps): JSX.Element {
   const view = useViewSettings(...VIEW_OPTION_KEYS, 'renderQuality', 'view2D');
-  const { setView } = useEditorViewActions();
+  const lengthUnit = useLengthUnit();
+  const { setView, setLengthUnit } = useEditorViewActions();
   const menuRef = useRef<HTMLDivElement>(null);
   const [maxHeight, setMaxHeight] = useState<number | null>(null);
 
@@ -121,25 +123,28 @@ export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps
       {GROUPS.map((group, index) => (
         <div key={group.title} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {index === 0 ? (
-            // Photo mode (#626) shares the first heading's row, so the menu
-            // keeps its height.
+            // Photo mode (#626) and the length unit (#725) share the first
+            // heading's row, so the menu keeps its height.
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
                 {group.title}
               </div>
-              <button
-                type="button"
-                className="pc-tile pc-photo-entry"
-                disabled={view.view2D}
-                title={view.view2D ? 'Photo mode — switch back to 3D view' : 'Photo mode: hide the HUD and save a picture'}
-                onClick={() => {
-                  const opener = anchorRef.current;
-                  onClose();
-                  enterPhotoMode(opener);
-                }}
-              >
-                Photo mode
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <UnitPicker unit={lengthUnit} onChoose={setLengthUnit} />
+                <button
+                  type="button"
+                  className="pc-tile pc-photo-entry"
+                  disabled={view.view2D}
+                  title={view.view2D ? 'Photo mode — switch back to 3D view' : 'Photo mode: hide the HUD and save a picture'}
+                  onClick={() => {
+                    const opener = anchorRef.current;
+                    onClose();
+                    enterPhotoMode(opener);
+                  }}
+                >
+                  Photo mode
+                </button>
+              </div>
             </div>
           ) : (
             <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
@@ -165,6 +170,43 @@ export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps
           setView((current) => ({ ...current, renderQuality }));
         }}
       />
+    </div>
+  );
+}
+
+const UNIT_NAMES: Record<LengthUnit, { short: string; name: string }> = {
+  metric: { short: 'm', name: 'Metres' },
+  imperial: { short: 'ft', name: 'Feet and inches' },
+};
+
+/**
+ * Lengths in metres or in feet and inches (#725), remembered on this
+ * browser, never in the house. Two small radios in the View heading's row:
+ * one tab stop, the arrows move and choose (hooks/roving-keys).
+ */
+function UnitPicker({ unit, onChoose }: { unit: LengthUnit; onChoose(next: LengthUnit): void }): JSX.Element {
+  return (
+    <div role="radiogroup" aria-label="Length units" style={{ display: 'flex', gap: 6 }}>
+      {LENGTH_UNITS.map((option) => (
+        <button
+          key={option}
+          type="button"
+          role="radio"
+          aria-checked={option === unit}
+          aria-label={UNIT_NAMES[option].name}
+          title={`Lengths in ${UNIT_NAMES[option].name.toLowerCase()}`}
+          tabIndex={option === unit ? 0 : -1}
+          onClick={() => onChoose(option)}
+          onKeyDown={(event) => onRovingKeyDown(event, (index) => {
+            const next = LENGTH_UNITS[index];
+            if (next) onChoose(next);
+          })}
+          className={`pc-tile pc-photo-entry${option === unit ? ' pc-tile--active' : ''}`}
+          style={{ minWidth: 36 }}
+        >
+          {UNIT_NAMES[option].short}
+        </button>
+      ))}
     </div>
   );
 }

@@ -6,8 +6,12 @@
 //
 // One store per editor instance (see EditorViewProvider), not a module
 // singleton: view state is per mount and is never persisted, unlike the layout.
+// The length unit (#725) is the exception: a per-browser preference, kept in
+// its own storage key and never in the house.
 
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { asLengthUnit, setDisplayUnit, type LengthUnit } from '../lib/format';
+import { safeGetItem, safeSetItem } from '../lib/safe-storage';
 import { withViewInvariants } from '../lib/view-options';
 import type { FurnitureItem, GameMode, ViewSettings } from '../lib/types';
 import type { Dispatch, SetStateAction } from 'react';
@@ -18,6 +22,8 @@ export interface EditorViewActions {
   readonly setCatalogQuery: Dispatch<SetStateAction<string>>;
   readonly setGameMode: Dispatch<SetStateAction<GameMode>>;
   readonly setAutoCycleLighting: Dispatch<SetStateAction<boolean>>;
+  /** Shows lengths in the unit and remembers it on this browser (#725). */
+  setLengthUnit(unit: LengthUnit): void;
 }
 
 export interface EditorViewState {
@@ -26,6 +32,8 @@ export interface EditorViewState {
   readonly catalogQuery: string;
   readonly gameMode: GameMode;
   readonly autoCycleLighting: boolean;
+  /** Metres or feet and inches, for what is shown; geometry stays in metres (#725). */
+  readonly lengthUnit: LengthUnit;
   /** Created once per store, so selecting it never re-renders. */
   readonly actions: EditorViewActions;
 }
@@ -36,7 +44,30 @@ function resolve<T>(next: SetStateAction<T>, current: T): T {
   return typeof next === 'function' ? (next as (previous: T) => T)(current) : next;
 }
 
-export function createEditorViewStore(initialView: ViewSettings): EditorViewStore {
+const LENGTH_UNIT_KEY = 'length-unit';
+
+/** The unit picked on this browser; anything unreadable is metres. */
+export function loadLengthUnit(storage?: Storage): LengthUnit {
+  return asLengthUnit(safeGetItem(LENGTH_UNIT_KEY, storage)) ?? 'metric';
+}
+
+export function saveLengthUnit(unit: LengthUnit, storage?: Storage): void {
+  safeSetItem(LENGTH_UNIT_KEY, unit, storage);
+}
+
+export interface EditorViewStoreOptions {
+  /** The unit to start in (`loadLengthUnit()` in the editor); metres if absent. */
+  lengthUnit?: LengthUnit;
+  /** Where the unit is remembered; the browser's storage if absent. */
+  storage?: Storage;
+}
+
+export function createEditorViewStore(initialView: ViewSettings, options: EditorViewStoreOptions = {}): EditorViewStore {
+  const initialUnit = options.lengthUnit ?? 'metric';
+  // Strings written outside React (refusals, printouts) read the mirror. Only
+  // a unit the caller chose is mirrored: a store made with none (a test, a
+  // second mount) must not reset what another set.
+  if (options.lengthUnit) setDisplayUnit(options.lengthUnit);
   return createStore<EditorViewState>()((set) => {
     // An unchanged value returns the same state object, so no subscriber is
     // even asked to compare.
@@ -59,8 +90,16 @@ export function createEditorViewStore(initialView: ViewSettings): EditorViewStor
       setCatalogQuery: (next) => setField('catalogQuery', next),
       setGameMode: (next) => setField('gameMode', next),
       setAutoCycleLighting: (next) => setField('autoCycleLighting', next),
+      setLengthUnit: (unit) => {
+        set((state) => {
+          if (state.lengthUnit === unit) return state;
+          setDisplayUnit(unit);
+          saveLengthUnit(unit, options.storage);
+          return { ...state, lengthUnit: unit };
+        });
+      },
     };
-    return { view: initialView, catalogQuery: '', gameMode: 'build', autoCycleLighting: false, actions };
+    return { view: initialView, catalogQuery: '', gameMode: 'build', autoCycleLighting: false, lengthUnit: initialUnit, actions };
   });
 }
 

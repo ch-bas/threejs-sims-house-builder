@@ -1,22 +1,17 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useRoomEditor, useViewSettings } from '../contexts';
+import { useLengthUnit, useRoomEditor, useViewSettings } from '../contexts';
 import { endPlanCalibration, setCalibrationPhase, usePlanCalibration } from '../hooks/plan-calibration';
 import { useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { useRefusal } from '../hooks/use-refusal';
 import { calibrateFloorPlan, calibrationProblem, floorPlanFitOf, type CalibrationProblem } from '../lib/floor-plan-fit';
+import { lengthUnitName, parseLength } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { Icon } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
-
-/** A typed length in metres: a decimal comma is fine, anything else isn't one. */
-function parseMetres(text: string): number {
-  const value = Number(text.trim().replace(',', '.').replace(/\s*m$/i, ''));
-  return Number.isFinite(value) ? value : Number.NaN;
-}
 
 const PROBLEMS: Record<CalibrationProblem, string> = {
   length: 'Type the length between the two points in metres',
@@ -37,6 +32,7 @@ export function PlanCalibrationChip(): JSX.Element | null {
   const calibration = usePlanCalibration();
   const refuse = useRefusal();
   const touch = useMediaQuery(COARSE_POINTER_QUERY);
+  const unit = useLengthUnit();
   const hasImage = !!layout.floorPlanImage;
   const calibrated = !!layout.floorPlanTransform;
   const live = calibration !== null;
@@ -62,7 +58,8 @@ export function PlanCalibrationChip(): JSX.Element | null {
   if (!calibration || !view.view2D) return null;
 
   const apply = (text: string) => {
-    const metres = parseMetres(text);
+    // In the unit shown (#725): a bare 12 is 12 ft in feet and inches, not 12 m.
+    const metres = parseLength(text, unit) ?? Number.NaN;
     // Read the house again: the plan may have changed since the points were picked.
     const current = layoutStore.getState().layout;
     const [a, b] = calibration.points;
@@ -72,7 +69,7 @@ export function PlanCalibrationChip(): JSX.Element | null {
     const problem = calibrationProblem(a, b, metres, width, height, fit);
     const transform = problem ? null : calibrateFloorPlan(a, b, metres, width, height, fit);
     if (!transform) {
-      refuse(PROBLEMS[problem ?? 'points']);
+      refuse(problem === 'length' && unit === 'imperial' ? `Type the length between the two points in feet and inches, as 12' 6"` : PROBLEMS[problem ?? 'points']);
       return;
     }
     history.commitNow();
@@ -98,9 +95,9 @@ export function PlanCalibrationChip(): JSX.Element | null {
         )}
         {calibration.phase === 'distance' && (
           <>
-            Length between them, in metres
+            Length between them, in {lengthUnitName(unit)}
             <ChipNameField
-              label="Length between the points, in metres"
+              label={`Length between the points, in ${lengthUnitName(unit)}`}
               initialValue=""
               submitLabel="Apply"
               maxLength={12}

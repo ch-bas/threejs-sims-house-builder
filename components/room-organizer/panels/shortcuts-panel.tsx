@@ -1,6 +1,8 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useLengthUnit } from '../contexts';
+import { formatMetres } from '../lib/format';
 
 interface Shortcut {
   label: string;
@@ -13,7 +15,7 @@ const SHORTCUTS: readonly Shortcut[] = [
   { label: 'Duplicate', keys: 'Ctrl+D' },
   { label: 'Copy / Paste', keys: 'Ctrl+C / Ctrl+V' },
   { label: 'Rotate', keys: 'R (⇧R = 15°)' },
-  { label: 'Nudge', keys: 'Arrows (⇧ = 1 m)' },
+  // Nudge goes here, with the Shift step in the unit shown (#725).
   { label: 'Lock / unlock', keys: 'U' },
   { label: 'Deselect', keys: 'Esc' },
   { label: 'Focus on item', keys: 'F' },
@@ -28,6 +30,10 @@ const SHORTCUTS: readonly Shortcut[] = [
 ];
 
 export function ShortcutsPanel(): JSX.Element {
+  const unit = useLengthUnit();
+  const nudge: Shortcut = { label: 'Nudge', keys: `Arrows (⇧ = ${formatMetres(1, undefined, unit)})` };
+  const rotate = SHORTCUTS.findIndex((shortcut) => shortcut.label === 'Rotate');
+  const shortcuts = [...SHORTCUTS.slice(0, rotate + 1), nudge, ...SHORTCUTS.slice(rotate + 1)];
   return (
     <Card>
       <CardHeader>
@@ -35,7 +41,7 @@ export function ShortcutsPanel(): JSX.Element {
       </CardHeader>
       <CardContent>
         <div className="text-xs space-y-1">
-          {SHORTCUTS.map((shortcut) => (
+          {shortcuts.map((shortcut) => (
             <div key={shortcut.label} className="flex justify-between">
               <span className="text-muted-foreground">{shortcut.label}:</span>
               <code className="bg-muted px-1 rounded">{shortcut.keys}</code>

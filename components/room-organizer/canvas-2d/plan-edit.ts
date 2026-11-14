@@ -1,5 +1,5 @@
 import { cutoutRect } from '../lib/footprint';
-import { formatMetres, formatSize } from '../lib/format';
+import { formatMetres, formatSize, getDisplayUnit, type LengthUnit } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS } from '../lib/opening-snap';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { wallAngleDegrees } from '../lib/wall-snap';
@@ -100,7 +100,8 @@ export function drawWallPreview(
   preview: WallPreview,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  unit: LengthUnit = getDisplayUnit()
 ): void {
   const toX = (x: number) => offsetX + (x + layout.width / 2) * scale;
   const toY = (z: number) => offsetY + (z + layout.height / 2) * scale;
@@ -125,7 +126,7 @@ export function drawWallPreview(
       ctx.fillStyle = DRAFT_INK;
       const labelX = (toX(anchor.x) + toX(tip.x)) / 2;
       const labelY = (toY(anchor.z) + toY(tip.z)) / 2 - 8;
-      const label = `${formatMetres(length)} · ${wallAngleDegrees(anchor, tip)}°`;
+      const label = `${formatMetres(length, undefined, unit)} · ${wallAngleDegrees(anchor, tip)}°`;
       ctx.strokeText(label, labelX, labelY);
       ctx.fillText(label, labelX, labelY);
     }
@@ -161,7 +162,8 @@ export function drawStampGhost(
   ghost: StampGhost,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  unit: LengthUnit = getDisplayUnit()
 ): void {
   const toX = (x: number) => offsetX + (x + layout.width / 2) * scale;
   const toY = (z: number) => offsetY + (z + layout.height / 2) * scale;
@@ -182,7 +184,7 @@ export function drawStampGhost(
   ctx.lineWidth = 3;
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
   ctx.fillStyle = ghost.refused ? '#b91c1c' : DRAFT_INK;
-  const label = formatSize(ghost.width, ghost.depth);
+  const label = formatSize(ghost.width, ghost.depth, undefined, unit);
   ctx.strokeText(label, toX(ghost.x), toY(ghost.z));
   ctx.fillText(label, toX(ghost.x), toY(ghost.z));
   ctx.restore();

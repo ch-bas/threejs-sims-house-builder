@@ -381,3 +381,16 @@ describe('buildPrintDocument escaping (#455)', () => {
     expect(html).toContain('&quot; onmouseover=&quot;alert(1)');
   });
 });
+
+describe('buildPrintDocument in feet and inches (#725)', () => {
+  it('writes the footprint, the plan and the schedule in the unit; the scale stays a ratio', () => {
+    const floor = makeFloor({ items: [makeItem({ width: 1.2, depth: 0.6, height: 0.8 })] });
+    const layout = makeLayout({ width: 8, height: 6, floors: [floor] });
+    const html = buildPrintDocument(layout, floor, { unit: 'imperial', schedule: true }, '1/1/2026');
+    expect(html).toContain('26&#39; 3&quot; × 19&#39; 8&quot;');
+    expect(html).toContain('<th>W × D × H</th>');
+    expect(html).toContain('3&#39;11&quot; × 2&#39;0&quot; × 2&#39;7&quot;');
+    expect(html).toMatch(/1:\d+ \(A4 /);
+    expect(html).not.toContain('8 m × 6 m');
+  });
+});

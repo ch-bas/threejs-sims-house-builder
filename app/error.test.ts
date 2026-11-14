@@ -181,3 +181,41 @@ describe('app/error.tsx — recovery never loses the house (#336)', () => {
     expect(await (downloaded as Blob | null)?.text()).toBe(flushed);
   });
 });
+
+describe('app/error.tsx — a crash in a shared-link tour (#722)', () => {
+  let reload: ReturnType<typeof vi.fn>;
+  const house = JSON.stringify(makeLayout({ name: 'Mine', floors: [makeFloor({ items: [makeItem({ id: 'sofa' })] })] }));
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+    reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, hash: '#layout=2.abc', pathname: '/', search: '', reload },
+      writable: true,
+    });
+  });
+
+  it('drops the link, never suspects the visitor’s house, and reloads into it', () => {
+    window.localStorage.setItem(STORAGE_KEY, house);
+    const replace = vi.spyOn(window.history, 'replaceState').mockImplementation(() => undefined);
+    // Even right after a reload, the crash that came back is the tour's.
+    window.sessionStorage.setItem('pc-error-reload', String(Date.now() - 1_000));
+    renderBoundary(new Error('boom') as Error & { digest?: string });
+    expect(replace).toHaveBeenCalledWith(null, '', '/');
+    expect(window.sessionStorage.getItem('pc-tour-crashed')).toBe('1');
+    expect(screen.getByText(/The shared house hit an error/)).toBeDefined();
+    expect(screen.queryByRole('button', { name: /start fresh/i })).toBeNull();
+    window.sessionStorage.removeItem('pc-error-reload');
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }));
+    expect(reload).toHaveBeenCalledTimes(1);
+    // The reload is not counted against the visitor's house.
+    expect(window.sessionStorage.getItem('pc-error-reload')).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(house);
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { measureCpu } from './__testfixtures__/cpu-time';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { ROOM_CHECKS, classifyRoom, houseRoomScores, onZoneEdge, scoreZone } from './room-score';
+import { ROOM_CHECKS, classifyRoom, houseRoomScores, onZoneEdge, roomCheckLabel, scoreZone } from './room-score';
 import type { FurnitureItem, RoomZone } from './types';
 
 const at = (id: string, type: string, x: number, z: number, extra: Partial<FurnitureItem> = {}): FurnitureItem =>
@@ -160,5 +160,15 @@ describe('houseRoomScores (#613)', () => {
 
   it('a house with no zones has no scores', () => {
     expect(houseRoomScores(makeLayout())).toEqual([]);
+  });
+});
+
+describe('roomCheckLabel (#725)', () => {
+  it('writes the decor rule in the unit shown and leaves the others alone', () => {
+    const decor = ROOM_CHECKS.find((check) => check.key === 'decor')!;
+    const window = ROOM_CHECKS.find((check) => check.key === 'window')!;
+    expect(roomCheckLabel(decor, 'metric')).toBe('more decor (a piece per 10 m²)');
+    expect(roomCheckLabel(decor, 'imperial')).toBe('more decor (a piece per 108 sq ft)');
+    expect(roomCheckLabel(window, 'imperial')).toBe(window.label);
   });
 });

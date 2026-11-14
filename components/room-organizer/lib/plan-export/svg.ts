@@ -15,6 +15,7 @@
 import { CURRENCY_SYMBOL } from '../constants';
 import { floorKeepOut } from '../floor-keep-out';
 import { cutoutRect, shellWalls } from '../footprint';
+import { formatArea, formatSize, getDisplayUnit, type LengthUnit } from '../format';
 import { escapeHtml } from '../html-escape';
 import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
@@ -36,6 +37,7 @@ import {
   planFrameBounds,
   polarPoint,
   roomDimensions,
+  scheduleSizeHeading,
   scheduleSizeText,
   splitPlanItems,
   stairArrow,
@@ -117,6 +119,11 @@ export interface SvgExportOptions {
    * resolves `url(#id)` to the first element with that id.
    */
   idPrefix?: string;
+  /**
+   * The unit the dimensions, areas, title, scale bar and schedule are written
+   * in (#725); the editor's display unit if absent. Geometry stays metres.
+   */
+  unit?: LengthUnit;
 }
 
 /** The plan-geometry coverage mode for these options. */
@@ -260,7 +267,7 @@ function svgOpen(widthPx: number, heightPx: number): string {
 
 function openingChains(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions, scale: number): OpeningChain[] {
   if (options.openingDimensions !== true || options.dimensions === false) return [];
-  return wallOpeningDimensions(layout, floor, OPENING_CHAIN_LABEL_SPACING_PX / scale);
+  return wallOpeningDimensions(layout, floor, OPENING_CHAIN_LABEL_SPACING_PX / scale, options.unit ?? getDisplayUnit());
 }
 
 /**
@@ -328,6 +335,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
   const sheet = sheetLayout(layout, floor, options);
   const { scale, margin, bounds, chainBand } = sheet;
   const theme: SvgPlanTheme = { ...DEFAULT_THEME, ...options.theme };
+  const unit = options.unit ?? getDisplayUnit();
 
   const roomW = layout.width * scale;
   const roomD = layout.height * scale;
@@ -366,7 +374,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     `<rect x="${fmt(margin)}" y="${fmt(margin)}" width="${fmt(roomW)}" height="${fmt(roomD)}" fill="${escapeHtml(floor.floorColor)}"/>`,
     renderZoneFloors(layout, floor, px, py),
     renderGrid(layout, margin, scale, theme),
-    renderZones(floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), px, py, scale, theme),
+    renderZones(floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), px, py, scale, theme, unit),
     renderRoomOutline(layout, floor, margin, scale, theme),
     renderInteriorWalls(floor, px, py, scale, theme),
     renderStairwellHoles(layout, floor, px, py, theme),
@@ -374,15 +382,15 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
     ...furniture.map((item) => renderFurniture(item, px, py, scale, theme)),
     renderStairCutHatch(layout, floor, px, py, theme),
-    options.dimensions === false ? '' : renderDimensions(layout, floor, px, py, content, theme, openingChains(layout, floor, options, scale), chainBand),
+    options.dimensions === false ? '' : renderDimensions(layout, floor, px, py, content, theme, openingChains(layout, floor, options, scale), chainBand, unit),
     `</g>`,
     // Annotations sit in the margin band around the content — the content
     // spans (margin, margin) → (totalW − margin, totalH − margin) on the
     // sheet — so no item can overprint them.
-    renderTitleBlock(title, `${fmt(layout.width)} m × ${fmt(layout.height)} m`, margin, totalW, theme),
+    renderTitleBlock(title, unit === 'imperial' ? formatSize(layout.width, layout.height, undefined, unit) : `${fmt(layout.width)} m × ${fmt(layout.height)} m`, margin, totalW, theme),
     renderNorthArrow(totalW - margin / 2, margin, theme),
-    renderScaleBar(layout, margin, scale, totalH, theme),
-    sheet.schedule ? renderSchedule(sheet.schedule, margin, totalH, theme) : '',
+    renderScaleBar(layout, margin, scale, totalH, theme, unit),
+    sheet.schedule ? renderSchedule(sheet.schedule, margin, totalH, theme, unit) : '',
   ];
   return { widthPx: sheet.widthPx, heightPx: sheet.heightPx, body: body.filter((part) => part !== '') };
 }
@@ -490,7 +498,8 @@ function renderZones(
   px: (x: number) => string,
   py: (z: number) => string,
   scale: number,
-  theme: SvgPlanTheme
+  theme: SvgPlanTheme,
+  unit: LengthUnit
 ): string {
   const zones = floor.zones ?? [];
   if (zones.length === 0) return '';
@@ -509,7 +518,7 @@ function renderZones(
           ? `<path d="${zoneRings(zone).map((ring) => ringPath(ring, px, py)).join(' ')}" fill-rule="evenodd" ${paint}/>`
           : `<rect x="${px(zone.x)}" y="${py(zone.z)}" width="${fmt(zone.w * scale)}" height="${fmt(zone.d * scale)}" ${paint}/>`,
         `<text x="${cx}" y="${top}" font-size="12" font-weight="bold" text-anchor="middle" fill="${theme.label}"${halo}>${escapeHtml(zone.name)}</text>`,
-        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}"${halo}>${zoneArea(zone, recess).toFixed(1)} m²</text>`,
+        `<text x="${cx}" y="${top}" dy="1.2em" font-size="10" text-anchor="middle" fill="${theme.label}"${halo}>${formatArea(zoneArea(zone, recess), unit)}</text>`,
         `</g>`,
       ].join('');
     })
@@ -770,10 +779,11 @@ function renderDimensions(
   content: PlanBounds,
   theme: SvgPlanTheme,
   chains: readonly OpeningChain[],
-  chainBand: number
+  chainBand: number,
+  unit: LengthUnit
 ): string {
   const parts: string[] = [`<g class="dimensions" stroke="${theme.dimension}" fill="${theme.dimension}" font-size="10">`];
-  const { width, depth } = roomDimensions(layout);
+  const { width, depth } = roomDimensions(layout, unit);
   const roomOffset = DIMENSION_OFFSET_PX + chainBand;
 
   const wy = Number(py(content.maxZ)) + roomOffset;
@@ -796,7 +806,7 @@ function renderDimensions(
     dimensionLine(dx, dy1, dx, dy0, depth, { x: -1, z: 0 }, 'room-dimension')
   );
 
-  for (const dim of interiorWallDimensions(floor)) {
+  for (const dim of interiorWallDimensions(floor, unit)) {
     const x0 = Number(px(dim.from.x));
     const y0 = Number(py(dim.from.z));
     const x1 = Number(px(dim.to.x));
@@ -951,9 +961,13 @@ function renderScaleBar(
   margin: number,
   scale: number,
   totalH: number,
-  theme: SvgPlanTheme
+  theme: SvgPlanTheme,
+  unit: LengthUnit
 ): string {
-  const metres = layout.width >= 4 ? 2 : 1;
+  // A round length in the unit shown: 2 m or 1 m, or 5 ft or 2 ft (#725).
+  const imperial = unit === 'imperial';
+  const length = imperial ? (layout.width >= 4 ? 5 : 2) : layout.width >= 4 ? 2 : 1;
+  const metres = imperial ? length * 0.3048 : length;
   const x0 = margin;
   const x1 = margin + metres * scale;
   const y = totalH - 26;
@@ -963,7 +977,7 @@ function renderScaleBar(
     `<line x1="${fmt(x0)}" y1="${fmt(y - 4)}" x2="${fmt(x0)}" y2="${fmt(y + 4)}"/>`,
     `<line x1="${fmt(x1)}" y1="${fmt(y - 4)}" x2="${fmt(x1)}" y2="${fmt(y + 4)}"/>`,
     `</g>`,
-    `<text x="${fmt((x0 + x1) / 2)}" y="${fmt(y + 16)}" font-size="10" text-anchor="middle" fill="${theme.label}">${metres} m</text>`,
+    `<text x="${fmt((x0 + x1) / 2)}" y="${fmt(y + 16)}" font-size="10" text-anchor="middle" fill="${theme.label}">${length} ${imperial ? 'ft' : 'm'}</text>`,
   ].join('');
 }
 
@@ -971,7 +985,7 @@ function renderScaleBar(
  * The item schedule (#424): name, W × D × H, count and price per line and a
  * total, as a table under the plan's scale bar.
  */
-function renderSchedule(rows: readonly ScheduleRow[], margin: number, planHeight: number, theme: SvgPlanTheme): string {
+function renderSchedule(rows: readonly ScheduleRow[], margin: number, planHeight: number, theme: SvgPlanTheme, unit: LengthUnit): string {
   const left = margin;
   const right = margin + SCHEDULE_WIDTH_PX;
   const sizeX = left + 196;
@@ -987,7 +1001,7 @@ function renderSchedule(rows: readonly ScheduleRow[], margin: number, planHeight
     `<g class="schedule" font-size="10" fill="${theme.label}">`,
     `<text x="${fmt(left)}" y="${fmt(planHeight + 24)}" font-size="12" font-weight="bold">Item schedule</text>`,
     cell(left, headY, 'Item', 'start', true),
-    cell(sizeX, headY, 'W × D × H (m)', 'start', true),
+    cell(sizeX, headY, scheduleSizeHeading(unit), 'start', true),
     cell(qtyX, headY, 'Qty', 'end', true),
     cell(right, headY, 'Price', 'end', true),
     rule(headY + 5),
@@ -998,7 +1012,7 @@ function renderSchedule(rows: readonly ScheduleRow[], margin: number, planHeight
     parts.push(
       `<g class="schedule-row">`,
       cell(left, y, name, 'start'),
-      cell(sizeX, y, scheduleSizeText(row), 'start'),
+      cell(sizeX, y, scheduleSizeText(row, unit), 'start'),
       cell(qtyX, y, String(row.count), 'end'),
       cell(right, y, row.totalPrice > 0 ? price(row.totalPrice) : '—', 'end'),
       `</g>`

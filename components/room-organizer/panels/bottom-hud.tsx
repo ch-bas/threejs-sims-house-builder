@@ -7,6 +7,7 @@ import { useEdgeVar } from '../hooks/use-edge-var';
 import { useEvent } from '../hooks/use-event';
 import { layoutStore } from '../hooks/use-layout-store';
 import { useScrollCue } from '../hooks/use-scroll-cue';
+import { useSetGameMode } from '../hooks/use-set-game-mode';
 import { useSheetInset } from '../hooks/use-sheet-inset';
 import { budgetOf } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
@@ -44,10 +45,11 @@ export interface BottomHudProps {
 // memoised too.
 export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallChange, onOrbit, onZoom, onFit, controlsRef, placeCatalogItem, stampArmed, onArmStamp, onCancelStamp }: BottomHudProps): JSX.Element {
   const { layout, activeFloorIndex, actions, isReady, error, playCue } = useRoomEditor();
-  const view = useViewSettings('drawWallMode', 'view2D', 'walkthroughMode');
-  const { toggle, setView, setGameMode } = useEditorViewActions();
+  const view = useViewSettings('drawWallMode', 'view2D');
+  const { toggle } = useEditorViewActions();
   const gameMode = useEditorView((state) => state.gameMode);
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
+  const setMode = useSetGameMode(onSelectedWallChange);
   const [buildToolCategory, setBuildToolCategory] = useState<BuildToolCategory>('seating');
   const hudRef = useRef<HTMLDivElement>(null);
   const leftColumnRef = useRef<HTMLDivElement>(null);
@@ -222,24 +224,7 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
       )}
 
       <ModePanel
-        onSetMode={(mode) => {
-          setGameMode(mode);
-          // The wall tool lives in DESIGN only; don't leave the draw mode
-          // (and its paint/stamp panels) armed with no tile to disarm it (#151).
-          if (mode !== 'build' && view.drawWallMode) toggle('drawWallMode');
-          if (mode === 'live') {
-            // EXPLORE is for looking around: drop the selection so its
-            // popover doesn't float over the walkthrough (#339).
-            selectOnly(null);
-            onSelectedWallChange(null);
-            // Walkthrough needs the 3D view — the hook requires `!view2D`, so
-            // entering Live from the 2D top-down view is otherwise a silent
-            // no-op (see #67). Drop view2D as we switch walkthrough on.
-            setView((v) => ({ ...v, view2D: false, walkthroughMode: true }));
-          } else if (view.walkthroughMode) {
-            toggle('walkthroughMode');
-          }
-        }}
+        onSetMode={setMode}
         onSurprise={() => {
           // Not while exploring: EXPLORE never edits the house (#643).
           if (gameMode === 'live') return;

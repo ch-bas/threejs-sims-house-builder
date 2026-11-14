@@ -1939,3 +1939,203 @@ html[data-photo] .pc-world .pc-photo-bar * {
   top: 9px;
   right: 4px;
 }
+
+/* Getting started card (#721): under the top-right pills on desktop, as
+   wide as the mode panel below it so it leaves the framing alone, and never
+   past that panel's top (a short desktop scrolls it); one thin line over the
+   dock on phones. Both are scene occluders. */
+.pc-first-steps {
+  position: absolute;
+  top: calc(var(--pc-top-pills-bottom, 120px) + 12px);
+  right: 16px;
+  width: 246px;
+  max-height: calc(var(--pc-mode-top, 100vh) - var(--pc-top-pills-bottom, 120px) - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  z-index: 24;
+  padding: 10px 12px;
+}
+.pc-first-steps__mark {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0b2a30;
+}
+.pc-first-steps__mark--done {
+  background: var(--pc-cyan-glow);
+  border-color: var(--pc-cyan-glow);
+}
+.pc-first-steps__go {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-family: var(--pc-font-display);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: var(--pc-tr-mode);
+  text-transform: uppercase;
+}
+.pc-first-steps__tips {
+  list-style: none;
+  margin: 2px 0 6px 26px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--pc-font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pc-paper-soft);
+}
+.pc-first-steps__tips strong {
+  color: var(--pc-paper);
+  font-weight: 700;
+}
+.pc-first-steps--line {
+  top: calc(var(--pc-dock-top, 100dvh) - 48px);
+  left: calc(16px + env(safe-area-inset-left, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  width: auto;
+  height: 40px;
+  max-height: none;
+  overflow: visible;
+  padding: 0 6px 0 12px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html[data-sheet-open] .pc-first-steps--line,
+html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line {
+  display: none;
+}
+/* A landscape phone's dock is two columns: the line rides on the mode
+   panel at the right, leaving the band over the catalogue to the scene. */
+@media (max-width: 1100px) and (max-height: 500px) {
+  .pc-first-steps--line {
+    top: calc(var(--pc-mode-top, 100dvh) - 48px);
+    left: auto;
+    width: min(380px, 45vw);
+  }
+}
+
+/* Shared-link tour (#722): the name top left, the actions in a bar at the
+   bottom. On a phone the top belongs to the pills, so the name heads the bar. */
+.pc-tour-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: calc(100vw - 32px);
+}
+.pc-tour-bar__box {
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+}
+.pc-tour-bar__name,
+.pc-tour-plan {
+  display: none;
+}
+/* The 2D switch rides in the bar where the walls pill drops its own. */
+@media (max-width: 768px), (max-width: 1100px) and (max-height: 500px) {
+  .pc-tile.pc-tour-plan {
+    display: inline-block;
+    flex: 0 0 auto;
+  }
+}
+.pc-tour-button {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: var(--pc-tr-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .pc-tour-button {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+}
+@media (max-width: 768px), (max-height: 500px) {
+  .pc-tour-name {
+    display: none;
+  }
+  .pc-tour-bar {
+    left: 16px;
+    right: 16px;
+    transform: none;
+    max-width: none;
+  }
+  .pc-tour-bar__box {
+    flex-wrap: wrap;
+    border-radius: 22px;
+  }
+  .pc-tour-bar__name {
+    display: block;
+    flex-basis: 100%;
+    padding: 4px 10px 2px;
+    font-family: var(--pc-font-display);
+    font-weight: 800;
+    font-size: 14px;
+    color: var(--pc-paper);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pc-tour-button {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: normal;
+    padding: 4px 8px;
+    line-height: 1.2;
+  }
+}
+@media (max-height: 500px) {
+  /* A landscape phone: the name shares the row, so the bar stays one tap high. */
+  .pc-tour-bar__box {
+    flex-wrap: nowrap;
+  }
+  .pc-tour-bar__name {
+    flex: 0 1 auto;
+    max-width: 30%;
+    padding: 0 6px 0 10px;
+  }
+}
+
+/* The header's Share (#722), beside the save status. */
+.pc-tile.pc-share-button {
+  display: inline-grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border-radius: 999px;
+}
+@media (pointer: coarse) {
+  /* A 44 px tap around the small header button. */
+  .pc-tile.pc-share-button {
+    position: relative;
+  }
+  .pc-tile.pc-share-button::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}

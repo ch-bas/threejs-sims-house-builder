@@ -6,10 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { useRoomEditor } from '../contexts';
+import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { useRefusal } from '../hooks/use-refusal';
 import { FURNITURE_CATALOG } from '../lib/constants';
-import { formatMetres } from '../lib/format';
+import { formatMetres, lengthInputValue, lengthRefusal, lengthSliderStep, lengthUnitSymbol, parseLength } from '../lib/format';
 import { isWallMounted } from '../lib/opening-snap';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
@@ -274,48 +275,67 @@ interface PositionInputsProps {
 function PositionInputs({ x, z, disabled, title, onChange }: PositionInputsProps): JSX.Element {
   const xId = useId();
   const zId = useId();
+  const unit = useLengthUnit();
   // While a field is being edited, show the raw draft instead of the
   // re-formatted value: feeding toFixed(2) back on every keystroke snapped
   // intermediate states like "-" or "1." away mid-typing (#122). Commit only
-  // parseable drafts; blur restores the canonical formatting.
+  // parseable drafts; blur restores the canonical formatting. In feet and
+  // inches (#725) the fields are text and read 3'6", 3.5 ft or 1.2 m.
   const [xDraft, setXDraft] = useState<string | null>(null);
   const [zDraft, setZDraft] = useState<string | null>(null);
+  const imperial = unit === 'imperial';
+  const shown = (value: number): string => (imperial ? lengthInputValue(value, unit) : value.toFixed(2));
+  const parse = (text: string): number | null => {
+    if (imperial) return parseLength(text, unit);
+    const parsed = parseFloat(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const refuse = useRefusal();
+  // A draft it can't read is said, not dropped in silence; a cleared field just restores.
+  const settle = (draft: string | null): void => {
+    if (draft !== null && draft.trim() !== '' && parse(draft) === null) refuse(lengthRefusal(draft, unit));
+  };
+  const field = imperial ? ({ type: 'text', autoComplete: 'off', spellCheck: false } as const) : ({ type: 'number', step: 0.1 } as const);
   return (
     <div className={`grid grid-cols-2 gap-2${disabled ? ' opacity-50' : ''}`} title={title}>
       <div>
         <Label htmlFor={xId} className="text-xs">
-          X (m)
+          X ({lengthUnitSymbol(unit)})
         </Label>
         <Input
           id={xId}
-          type="number"
-          step={0.1}
+          {...field}
           disabled={disabled}
-          value={xDraft ?? x.toFixed(2)}
+          value={xDraft ?? shown(x)}
           onChange={(event) => {
             setXDraft(event.target.value);
-            const parsed = parseFloat(event.target.value);
-            if (Number.isFinite(parsed)) onChange(parsed, z);
+            const parsed = parse(event.target.value);
+            if (parsed !== null) onChange(parsed, z);
           }}
-          onBlur={() => setXDraft(null)}
+          onBlur={() => {
+            settle(xDraft);
+            setXDraft(null);
+          }}
         />
       </div>
       <div>
         <Label htmlFor={zId} className="text-xs">
-          Z (m)
+          Z ({lengthUnitSymbol(unit)})
         </Label>
         <Input
           id={zId}
-          type="number"
-          step={0.1}
+          {...field}
           disabled={disabled}
-          value={zDraft ?? z.toFixed(2)}
+          value={zDraft ?? shown(z)}
           onChange={(event) => {
             setZDraft(event.target.value);
-            const parsed = parseFloat(event.target.value);
-            if (Number.isFinite(parsed)) onChange(x, parsed);
+            const parsed = parse(event.target.value);
+            if (parsed !== null) onChange(x, parsed);
           }}
-          onBlur={() => setZDraft(null)}
+          onBlur={() => {
+            settle(zDraft);
+            setZDraft(null);
+          }}
         />
       </div>
     </div>
@@ -383,19 +403,21 @@ interface DimensionSliderProps {
 
 function DimensionSlider({ item, dimension, disabled, title, onChange }: DimensionSliderProps): JSX.Element {
   const inputId = useId();
+  const unit = useLengthUnit();
   const value = item[dimension.key];
   return (
     <div title={title} className={disabled ? 'opacity-50' : undefined}>
       <Label htmlFor={inputId} className="text-xs">
-        {dimension.label}: {formatMetres(value, 2)}
+        {dimension.label}: {formatMetres(value, 2, unit)}
       </Label>
       <Input
         id={inputId}
         type="range"
         min={dimension.min}
         max={sliderMax(dimension, item)}
-        step="0.1"
+        step={lengthSliderStep(0.1, unit)}
         value={value}
+        aria-valuetext={formatMetres(value, 2, unit)}
         disabled={disabled}
         onChange={(event) => onChange(parseFloat(event.target.value))}
         className="w-full"
@@ -454,22 +476,25 @@ function SignalRangeSlider({
   value,
   disabled,
   title,
-  format = (v) => formatMetres(v, 1),
+  format,
   onChange,
 }: SignalRangeSliderProps): JSX.Element {
   const id = useId();
+  const unit = useLengthUnit();
   return (
     <div>
       <Label htmlFor={id} className="text-xs">
-        {label}: {format(value)}
+        {label}: {format ? format(value) : formatMetres(value, 1, unit)}
       </Label>
       <Input
         id={id}
         type="range"
         min={min}
         max={max}
-        step={step}
+        // A format of its own means a count, not a length: its step stays.
+        step={format ? step : lengthSliderStep(step, unit)}
         value={value}
+        aria-valuetext={format ? format(value) : formatMetres(value, 1, unit)}
         disabled={disabled}
         title={title}
         onChange={(event) => onChange(parseFloat(event.target.value))}

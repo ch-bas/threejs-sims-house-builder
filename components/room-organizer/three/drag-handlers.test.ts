@@ -126,6 +126,27 @@ describe('drag-handlers selection on press (#291)', () => {
   });
 });
 
+describe('drag-handlers in EXPLORE (#722)', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  it('a press selects and a drag moves nothing', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.handlers.selectOnly = true;
+    t.canvas.dispatchEvent(pointer('pointerdown', 100, 100));
+    expect(t.handlers.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    t.canvas.dispatchEvent(pointer('pointermove', 140, 100));
+    t.canvas.dispatchEvent(pointer('pointerup', 140, 100));
+    expect(t.handlers.onItemDragStart).not.toHaveBeenCalled();
+    expect(t.handlers.onItemDrag).not.toHaveBeenCalled();
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+    expect(t.groups.get('a')!.position.x).toBe(0);
+    // The camera is left to orbit.
+    expect(t.controls.enabled).toBe(true);
+  });
+});
+
 describe('drag-handlers cancel, grab offset and touch threshold (#292)', () => {
   let detach: (() => void) | null = null;
   afterEach(() => detach?.());

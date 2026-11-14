@@ -106,3 +106,46 @@ export function crashRecurredAfterReload(now: number = Date.now(), session?: Pic
     return true;
   }
 }
+
+/** What a share link's hash starts with; `share.ts` reads it from here. */
+export const SHARE_HASH_PREFIX = '#layout=';
+const TOUR_CRASHED_KEY = 'pc-tour-crashed';
+
+/**
+ * Called by the error screens as they render (#722). A share link still in
+ * the address means the crash came in a tour (Keep a copy and every way out
+ * drop it): the toured house is the suspect, never the visitor's own. The
+ * link is dropped, so a reload opens their house instead of crashing again,
+ * with a note for the editor to say why. True when it was a tour.
+ */
+let tourLeftAfterCrash = false;
+
+export function leaveCrashedTour(session?: Pick<Storage, 'setItem'>): boolean {
+  // Asked again by a second render of the screen once the link is gone.
+  if (tourLeftAfterCrash) return true;
+  if (typeof window === 'undefined' || !window.location.hash.startsWith(SHARE_HASH_PREFIX)) return false;
+  tourLeftAfterCrash = true;
+  try {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  } catch {
+    /* the reload below opens the tour again, and crashes back here */
+  }
+  try {
+    (session ?? window.sessionStorage).setItem(TOUR_CRASHED_KEY, '1');
+  } catch {
+    /* without the note the visitor's house opens without a word */
+  }
+  return true;
+}
+
+/** Called as the editor hydrates: whether a tour crashed just before, read once. */
+export function takeTourCrashNote(session?: Pick<Storage, 'getItem' | 'removeItem'>): boolean {
+  try {
+    const store = session ?? window.sessionStorage;
+    if (store.getItem(TOUR_CRASHED_KEY) === null) return false;
+    store.removeItem(TOUR_CRASHED_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}

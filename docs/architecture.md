@@ -73,6 +73,7 @@ components/
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements with count progress; `achievementsEarned` (loaded / edit)
+    │   ├── first-steps.ts               The Getting started card's five steps: progress from edits like achievements (loads do none), per-step tips, the stored record (card state, a boolean per step) (#721)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
@@ -90,6 +91,7 @@ components/
     │   ├── ids.ts                       Collision-resistant ids; withHouseId mints a house id (#342, #479)
     │   ├── share.ts                     Share-URL encode/decode (base64url); positions rounded to mm on encode
     │   ├── share-delivery.ts            Share-link delivery: share sheet on touch, clipboard inside the tap, copy field last
+    │   ├── tour-session.ts              The shared-link tour's page phase (touring, kept, none), read from the hash on first use (#722)
     │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
     │   ├── dev-diagnostics.ts           `?debug` flag + allocation-free renderer.info counters
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
@@ -154,7 +156,7 @@ components/
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode or calibration, the one rectangle the 2D plan, blueprint and 3D floor paint (#191, #726); two-point calibration maths
     │   ├── file-io.ts                   JSON / image / PNG / CSV + schedule / GLB I/O
-    │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m"), formatSize, formatAge ("3 min ago", #438); money with one fixed grouping, formatMoney ("$1,200", compact "$100M", #609)
+    │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m", or 8' 2" in feet and inches, #725), formatSize, formatArea (m² / sq ft), parseLength (12'6", 12.5 ft, 3.5 m), the display-unit mirror the view store sets; formatAge ("3 min ago", #438); money with one fixed grouping, formatMoney ("$1,200", compact "$100M", #609)
     │   └── plan-export/                 2D-plan exporters (#230); svg, dxf, print and the blueprint load on click (#589)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
     │       ├── svg.ts                   Vector SVG plan emitter, one floor or the whole building (pure)
@@ -230,7 +232,7 @@ components/
     ├── hooks/
     │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)
     │   ├── use-layout-store.ts          Zustand store (reuses the reducer) + selectors
-    │   ├── editor-view-store.ts         Per-editor Zustand store: view settings, catalog search, game mode, time auto-cycle
+    │   ├── editor-view-store.ts         Per-editor Zustand store: view settings, catalog search, game mode, time auto-cycle, the length unit (per browser, never in the house, #725)
     │   ├── use-layout-state.ts          Adapter over the store (activeFloor, actions)
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
@@ -252,6 +254,9 @@ components/
     │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
+    │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
+    │   ├── use-first-steps.ts           Getting started session: steps done (edits, `markFirstStep` for walk and share), stored with the offered/dismissed card (#721)
+    │   ├── use-set-game-mode.ts         DESIGN / FURNISH / EXPLORE switch with what it brings along (mode panel, First steps card)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
@@ -264,6 +269,7 @@ components/
     │   ├── use-wall-draft.ts            The wall tool: draft anchor and snapped tip, typed length, room stamp in hand, resets on a tool or floor change (#723, #724)
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
+    │   ├── use-tour-phase.ts            The shared-link tour's phase as React state (#722)
     │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)
     │   ├── use-refusal.ts               `refuse(message)` for store-reading panels: the refused cue (muted with the sounds) and an error notice (#588, #642)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
@@ -272,7 +278,7 @@ components/
     │   ├── use-scroll-cue.ts            data-scrollable / data-more-before / -after on a HUD scroller (#426)
     │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308); places the touch row in the top bar
     │   ├── use-sheet-inset.ts           --pc-sheet-height while the phone item sheet is open (mode bar rides above it)
-    │   ├── use-house-loading.ts         The loads the editor makes on its own: the opening house, a share link over it (#573), another tab's save (#123), each by the load rules
+    │   ├── use-house-loading.ts         The loads the editor makes on its own: the opening house (a share link's as a tour), a toured house kept (#722), another tab's save (#123), each by the load rules
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
@@ -321,7 +327,8 @@ components/
         ├── actions-panel.tsx
         ├── print-options.tsx            Print / PDF button and its folding options (paper, orientation, scale, outdoor, every floor)
         ├── shortcuts-panel.tsx
-        ├── welcome-banner.tsx
+        ├── welcome-banner.tsx           First-run start chooser: start empty, a template (with its plan), or a random one (#721)
+        ├── first-steps-card.tsx         Getting started checklist: each step arms its tool, the next one shows its tips; a thin occluding line on phones (#721)
         ├── minimap.tsx
         ├── plan-thumb.tsx
         ├── achievements-panel.tsx
@@ -329,6 +336,7 @@ components/
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement or a ghost is pending (Cancel for touch)
         ├── photo-bar.tsx                Photo mode's shutter: Take photo and Done, the one HUD left on screen (#626)
+        ├── tour-banner.tsx              The shared-link tour's HUD: the house's name, Walk through, Keep a copy, Build your own (#722)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── confirm-dialog.tsx           The askConfirm() modal: focus trap, Enter confirms, Escape cancels (#649)
         ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), then the inline name field

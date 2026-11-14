@@ -12,8 +12,9 @@
  */
 
 import { CURRENCY_SYMBOL } from '../constants';
+import { formatSize, getDisplayUnit, type LengthUnit } from '../format';
 import { escapeHtml } from '../html-escape';
-import { itemSchedule, scheduleSizeText, type ScheduleRow } from './plan-geometry';
+import { itemSchedule, scheduleSizeHeading, scheduleSizeText, type ScheduleRow } from './plan-geometry';
 import { openPrintPopup, printWhenLoaded } from './print-popup';
 import {
   DEFAULT_PRINT_OPTIONS,
@@ -61,10 +62,12 @@ export { printWhenLoaded } from './print-popup';
 export function buildPrintDocument(
   layout: RoomLayout,
   floor: FloorLayout,
-  options: Partial<PrintOptions> = {},
+  options: Partial<PrintOptions> & { unit?: LengthUnit } = {},
   date: string = new Date().toLocaleDateString()
 ): string {
   const { floors, frame, contentWidthM, contentHeightM, scale } = resolvePrint(layout, floor, options);
+  // The plan's lengths follow the unit shown (#725); the scale is a ratio either way.
+  const unit = options.unit ?? getDisplayUnit();
   const withSchedule = options.schedule ?? DEFAULT_PRINT_OPTIONS.schedule;
   const pxPerMetre = printPxPerMetre(scale.denominator);
   // Outsized: shrink every page by the same factor (the label already says
@@ -74,7 +77,7 @@ export function buildPrintDocument(
   const sheets = floors.map(({ source, printed }, index) => {
     // One frame for every page (#405), and per-sheet ids: the sheets share
     // one HTML page, where `url(#id)` resolves to the first match.
-    const svgOptions = { pxPerMetre, bounds: frame, idPrefix: `sheet${index}-` };
+    const svgOptions = { pxPerMetre, bounds: frame, idPrefix: `sheet${index}-`, unit };
     const sheet = planSheetSize(layout, printed, svgOptions);
     // Placed items only: an unplaced one is on neither the plan nor the tally.
     const drawn = printed.items.filter((item) => item.position).length;
@@ -86,13 +89,14 @@ export function buildPrintDocument(
       svg: layoutToSvg(layout, printed, svgOptions),
       // What is drawn is what is listed: items left off the plan are not.
       schedule: withSchedule ? itemSchedule(printed.items) : [],
+      unit,
     };
   });
 
   return renderPrintHtml({
     title: floors.length > 1 ? `${layout.name} — All floors` : `${layout.name} — ${floor.name}`,
     layoutName: layout.name,
-    dims: `${layout.width} m × ${layout.height} m`,
+    dims: unit === 'imperial' ? formatSize(layout.width, layout.height, undefined, unit) : `${layout.width} m × ${layout.height} m`,
     scaleLabel: printScaleLabel(scale),
     date,
     paper: scale.paper,
@@ -125,6 +129,8 @@ interface PrintSheet {
   svg: string;
   /** Item schedule rows; empty prints no table. */
   schedule: readonly ScheduleRow[];
+  /** The unit the schedule's sizes are written in (#725). */
+  unit: LengthUnit;
 }
 
 interface PrintHtmlInput {
@@ -159,7 +165,7 @@ function renderPrintHtml(input: PrintHtmlInput): string {
           <td class="k">Date</td><td>${escapeHtml(input.date)}</td>
           <td class="k">Drawn by</td><td>House Builder</td>
         </tr>
-      </table>${renderScheduleTable(sheet.schedule)}
+      </table>${renderScheduleTable(sheet.schedule, sheet.unit)}
     </section>`
     )
     .join('\n    ');
@@ -216,7 +222,7 @@ const SCHEDULE_LEAD_ROWS = 3;
  * together in one unbreakable block, so the headings never strand at the
  * foot of a page, and nothing repeats on the next one.
  */
-function renderScheduleTable(rows: readonly ScheduleRow[]): string {
+function renderScheduleTable(rows: readonly ScheduleRow[], unit: LengthUnit): string {
   if (rows.length === 0) return '';
   const price = (value: number): string => `${CURRENCY_SYMBOL}${Math.round(value).toLocaleString('en-US')}`;
   const count = rows.reduce((sum, row) => sum + row.count, 0);
@@ -224,7 +230,7 @@ function renderScheduleTable(rows: readonly ScheduleRow[]): string {
   const lines = [
     ...rows.map(
       (row) =>
-        `<tr><td>${escapeHtml(row.name)}</td><td>${scheduleSizeText(row)}</td>` +
+        `<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(scheduleSizeText(row, unit))}</td>` +
         `<td class="n">${row.count}</td><td class="n">${row.totalPrice > 0 ? price(row.totalPrice) : '—'}</td></tr>`
     ),
     `<tr class="total"><td>Total</td><td></td><td class="n">${count}</td><td class="n">${price(total)}</td></tr>`,
@@ -238,7 +244,7 @@ function renderScheduleTable(rows: readonly ScheduleRow[]): string {
         <div class="schedule-start">
           <p class="schedule-title">Item schedule</p>
           <table class="schedule-rows">${cols}
-            <thead><tr><th>Item</th><th>W × D × H (m)</th><th class="n">Qty</th><th class="n">Price</th></tr></thead>
+            <thead><tr><th>Item</th><th>${scheduleSizeHeading(unit)}</th><th class="n">Qty</th><th class="n">Price</th></tr></thead>
             <tbody>${lines.slice(0, lead).join('')}</tbody>
           </table>
         </div>${

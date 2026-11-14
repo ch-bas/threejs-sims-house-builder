@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useLengthUnit } from '../contexts';
 import { useLayout } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { budgetOf, budgetSpent } from '../lib/budget';
@@ -20,6 +21,8 @@ export interface HeaderStatsProps {
   remoteChange?: boolean;
   onAdoptRemote?(): void;
   onDismissRemote?(): void;
+  /** Share a link to the house (#722), through `lib/share-delivery.ts`. */
+  onShare?(): void;
 }
 
 export function HeaderStats({
@@ -29,9 +32,11 @@ export function HeaderStats({
   remoteChange = false,
   onAdoptRemote,
   onDismissRemote,
+  onShare,
 }: HeaderStatsProps): JSX.Element {
   // `layout` from the store selector — re-renders only on layout changes.
   const layout = useLayout();
+  const unit = useLengthUnit();
   const budget = budgetOf(layout);
   // The porch door is structure, not furniture: older saves still carry its
   // catalog price (#382).
@@ -45,7 +50,7 @@ export function HeaderStats({
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
       <Chip icon="box" label="Items" value={allItems.length.toString()} />
       <Chip icon="stairs" label="Floors" value={layout.floors.length.toString()} />
-      <Chip icon="ruler" label="Room" value={formatSize(layout.width, layout.height)} />
+      <Chip icon="ruler" label="Room" value={formatSize(layout.width, layout.height, undefined, unit)} />
       <Chip
         icon="coin"
         label="Cost"
@@ -53,6 +58,22 @@ export function HeaderStats({
         intent={overBudget ? 'danger' : ratio > 0.85 ? 'warning' : 'normal'}
       />
       <SaveIndicator lastSavedAt={lastSavedAt} saving={saving} saveError={saveError} />
+      {onShare && (
+        <button
+          type="button"
+          className="pc-tile pc-share-button"
+          // Icon only: the stats must stay one row at 1440 px.
+          aria-label="Share a link to this house"
+          title="Share a link to this house: it opens as a tour"
+          onClick={onShare}
+          // A held Enter shares once, not once per repeat.
+          onKeyDown={(event) => {
+            if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault();
+          }}
+        >
+          <Icon name="link" size={16} aria-hidden />
+        </button>
+      )}
       {remoteChange && (
         <RemoteChangeNotice onAdopt={onAdoptRemote} onDismiss={onDismissRemote} />
       )}

@@ -771,14 +771,29 @@ to respect.
   there: the gesture that asked can't answer. Handlers read `layoutStore`
   again after the answer (remove a floor by id, not index). A keyboard add
   that asked starts its session through `adoptDeferredPlacement`.
-- **A share link over your own house asks first** (#573). The stored
-  house hydrates, then the in-app question asks; the link stays in the
-  address bar until it is answered. A yes is an ordinary replacement
-  (`onOpenShared`: restore point, history commit, `markLayoutLoaded`, a
-  notice with Undo), so Ctrl+Z returns to the house it replaced. Keep
-  mine starts focused and the backdrop is inert for that question; over nothing worth keeping the
-  link hydrates unasked, as before. A link that doesn't open names the
-  reason (too large, cut off, from a newer app: a payload version past
+- **A share link opens as a read-only tour** (#722, replacing the
+  question of #573). `lib/tour-session.ts` reads the hash on first use, so
+  the editor's first render is already in EXPLORE with the tour HUD (name,
+  floors, camera, Walk through, Keep a copy, Build your own) and no
+  welcome. Nothing saves while touring: no autosave, no flush on pagehide,
+  no restore point, no cross-tab notice; the visitor's save is not even
+  read. The hash stays, so a reload tours again. EXPLORE (tour or not)
+  never drags an item: a 3D press selects only (`selectOnly` in the drag
+  handlers), as the 2D plan already did. Keep a copy replaces nothing
+  until the visitor's house (one with work, or an unreadable one) is a
+  recovered copy, which no save evicts, and the kept house is saved
+  (`saveOverStoredHouse`); either failing puts every entry of the saved
+  house back as it was and refuses, leaving the tour and the hash. Then a
+  restore point of the old house where it fits, `commitNow`, `applyLayout`,
+  `markLayoutLoaded`, with hydration re-baselined so that load is no edit
+  (no autosave, no point that could evict the visitor's); the history
+  starts at the copy, the notice names the recovered copy, and the
+  welcome stays away for the page. Build your own opens the visitor's
+  house, or a fresh lot. A crash during a tour is the toured house's: the
+  error screens drop the link (`leaveCrashedTour`), offer a plain reload
+  and never Start fresh, and the next load opens the visitor's house with
+  a notice. A link that doesn't open ends the tour and names the reason
+  (too large, cut off, from a newer app: a payload version past
   `SHARE_FORMAT_VERSION`).
 - **Pure helpers** wherever possible. Snap-to-wall, snap-to-neighbours,
   collisions, bounds, alignment, distribution, achievements predicates,
