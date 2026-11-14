@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls as RealOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FURNITURE_REVISION_KEY, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, pickFurniture, pointerOnCanvas, type SceneEventHandlers } from './drag-handlers';
+import { FURNITURE_REVISION_KEY, TWIST_STEP, attachDragHandlers, dragThresholdPx, keepsSelectionOnPress, pickFurniture, pointerOnCanvas, readTwoFingers, twistAngle, type SceneEventHandlers } from './drag-handlers';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const SIZE = 200;
@@ -548,6 +548,172 @@ describe('drag-handlers hand a pinch that starts on an item to the camera', () =
     expect(controls.enabled).toBe(true);
     t.canvas.dispatchEvent(touch('pointerup', 10, 10, 1));
     t.canvas.dispatchEvent(touch('pointerup', 100, 100, 2));
+  });
+});
+
+describe('readTwoFingers (#689)', () => {
+  const at = (x: number, y: number) => ({ x, y });
+  const around = (degrees: number, r = 40) => at(100 + r * Math.cos((degrees * Math.PI) / 180), 100 + r * Math.sin((degrees * Math.PI) / 180));
+
+  it('a turn past 10° is a twist, clockwise on screen positive', () => {
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(5)]).kind).toBe('undecided');
+    const read = readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(12)]);
+    expect(read.kind).toBe('twist');
+    expect(read.angle).toBeCloseTo((12 * Math.PI) / 180);
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(-12)]).angle).toBeLessThan(0);
+  });
+
+  it('a spread, a pinch or a slide before any turn is the camera', () => {
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(0, 48)]).kind).toBe('camera');
+    // A zoom whose fingers drift round by 12°: still the camera's.
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(12, 50)]).kind).toBe('camera');
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(12, 44)]).kind).toBe('camera');
+    // A twist with a little span wobble stays a twist.
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(12, 41)]).kind).toBe('twist');
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 100), around(0, 32)]).kind).toBe('camera');
+    expect(readTwoFingers([at(100, 100), around(0)], [at(100, 130), at(140, 130)]).kind).toBe('camera');
+  });
+
+  it('twistAngle wraps across the ±π seam', () => {
+    expect(twistAngle([at(0, 0), at(-10, 1)], [at(0, 0), at(-10, -1)])).toBeCloseTo(2 * Math.atan2(1, 10));
+  });
+});
+
+describe('drag-handlers turn an item under a two-finger twist (#689)', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  /** Finger 2 at `degrees` around finger 1 at the item's centre (100, 100). */
+  const second = (type: string, degrees: number, r = 40): PointerEvent =>
+    touch(type, 100 + r * Math.cos((degrees * Math.PI) / 180), 100 + r * Math.sin((degrees * Math.PI) / 180), 2);
+
+  const twistable = (canTwist = true) => {
+    const t = setup([], { realControls: true });
+    detach = t.detach;
+    t.handlers.canTwistItem = vi.fn(() => canTwist);
+    t.handlers.onItemTwist = vi.fn();
+    t.handlers.onItemTwistStart = vi.fn();
+    t.handlers.onItemTwistEnd = vi.fn();
+    (t.controls as RealOrbitControls).update();
+    return { ...t, start: t.camera.position.clone() };
+  };
+  const turned = (t: ReturnType<typeof twistable>): number =>
+    vi.mocked(t.handlers.onItemTwist!).mock.calls.reduce((sum, [, radians]) => sum + radians, 0);
+
+  it('turns in 15° steps, clockwise on screen being clockwise from above, and leaves the camera still', () => {
+    const t = twistable();
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+    t.canvas.dispatchEvent(second('pointerdown', 0));
+    expect(t.handlers.canTwistItem).toHaveBeenCalledWith('a');
+    for (let degrees = 4; degrees <= 40; degrees += 4) t.canvas.dispatchEvent(second('pointermove', degrees));
+    // 40° is nearest three steps.
+    expect(turned(t)).toBeCloseTo(-3 * TWIST_STEP);
+    for (const [, radians] of vi.mocked(t.handlers.onItemTwist!).mock.calls) expect(Math.abs(radians)).toBeCloseTo(TWIST_STEP);
+    // One gesture: started once, before the first step, whose cue is the only one.
+    expect(t.handlers.onItemTwistStart).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(t.handlers.onItemTwistStart!).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(t.handlers.onItemTwist!).mock.invocationCallOrder[0]!
+    );
+    expect(vi.mocked(t.handlers.onItemTwist!).mock.calls.map(([, , first]) => first)).toEqual([true, false, false]);
+    // Back the other way past the start.
+    for (let degrees = 36; degrees >= -20; degrees -= 4) t.canvas.dispatchEvent(second('pointermove', degrees));
+    // -20° is nearest one step the other way.
+    expect(turned(t)).toBeCloseTo(TWIST_STEP);
+    (t.controls as RealOrbitControls).update();
+    expect(t.camera.position.distanceTo(t.start)).toBeLessThan(1e-9);
+    expect(t.handlers.onItemDragStart).not.toHaveBeenCalled();
+    t.canvas.dispatchEvent(second('pointerup', -20));
+    expect(t.handlers.onItemTwistEnd).toHaveBeenCalledWith('a', true);
+    expect(t.controls.enabled).toBe(true);
+    // The finger still down neither drags the item nor orbits.
+    for (let x = 110; x <= 170; x += 15) t.canvas.dispatchEvent(touch('pointermove', x, 100, 1));
+    t.canvas.dispatchEvent(touch('pointerup', 170, 100, 1));
+    (t.controls as RealOrbitControls).update();
+    expect(t.camera.position.distanceTo(t.start)).toBeLessThan(1e-9);
+    expect(t.handlers.onItemDrag).not.toHaveBeenCalled();
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+  });
+
+  it('a spread before any turn is still the camera\'s pinch', () => {
+    const t = twistable();
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+    t.canvas.dispatchEvent(touch('pointerdown', 140, 140, 2));
+    for (let i = 1; i <= 6; i++) {
+      t.canvas.dispatchEvent(touch('pointermove', 100 - i * 6, 100 - i * 6, 1));
+      t.canvas.dispatchEvent(touch('pointermove', 140 + i * 6, 140 + i * 6, 2));
+    }
+    (t.controls as RealOrbitControls).update();
+    expect(t.camera.position.length()).toBeLessThan(t.start.length() - 0.1);
+    expect(t.handlers.onItemTwist).not.toHaveBeenCalled();
+    t.canvas.dispatchEvent(touch('pointerup', 64, 64, 1));
+    t.canvas.dispatchEvent(touch('pointerup', 176, 176, 2));
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('a twist back to where it began ends unturned', () => {
+    const t = twistable();
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+    t.canvas.dispatchEvent(second('pointerdown', 0));
+    for (const degrees of [4, 8, 12, 16, 20, 16, 12, 8, 4, 0]) t.canvas.dispatchEvent(second('pointermove', degrees));
+    t.canvas.dispatchEvent(second('pointerup', 0));
+    expect(turned(t)).toBeCloseTo(0);
+    expect(t.handlers.onItemTwistEnd).toHaveBeenCalledWith('a', false);
+    t.canvas.dispatchEvent(touch('pointerup', 100, 100, 1));
+  });
+
+  it('a zoom pinch that drifts round by 12° stays the camera\'s and turns nothing', () => {
+    const t = twistable();
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+    t.canvas.dispatchEvent(second('pointerdown', 0));
+    for (let i = 1; i <= 6; i++) t.canvas.dispatchEvent(second('pointermove', i * 2, 40 + i * 4));
+    (t.controls as RealOrbitControls).update();
+    expect(t.handlers.onItemTwist).not.toHaveBeenCalled();
+    expect(t.handlers.onItemTwistStart).not.toHaveBeenCalled();
+    expect(t.camera.position.distanceTo(t.start)).toBeGreaterThan(0.1);
+    t.canvas.dispatchEvent(second('pointerup', 12, 64));
+    t.canvas.dispatchEvent(touch('pointerup', 100, 100, 1));
+    expect(t.handlers.onItemTwistEnd).not.toHaveBeenCalled();
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('an item that can\'t turn leaves both fingers to the camera at once', () => {
+    const t = twistable(false);
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+    t.canvas.dispatchEvent(second('pointerdown', 0));
+    expect(t.controls.enabled).toBe(true);
+    for (let degrees = 4; degrees <= 40; degrees += 4) t.canvas.dispatchEvent(second('pointermove', degrees));
+    expect(t.handlers.onItemTwist).not.toHaveBeenCalled();
+    t.canvas.dispatchEvent(second('pointerup', 40));
+    t.canvas.dispatchEvent(touch('pointerup', 100, 100, 1));
+  });
+
+  it('a drag the first finger started goes back before the twist', () => {
+    const t = twistable();
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+    t.canvas.dispatchEvent(touch('pointermove', 115, 100, 1));
+    expect(t.handlers.onItemDragStart).toHaveBeenCalledWith('a');
+    t.canvas.dispatchEvent(touch('pointerdown', 155, 100, 2));
+    expect(t.handlers.onItemDragCancel).toHaveBeenCalledWith('a', { restore: true });
+    expect(t.controls.enabled).toBe(false);
+    for (let degrees = 4; degrees <= 20; degrees += 4) {
+      const radians = (degrees * Math.PI) / 180;
+      t.canvas.dispatchEvent(touch('pointermove', 115 + 40 * Math.cos(radians), 100 + 40 * Math.sin(radians), 2));
+    }
+    expect(turned(t)).toBeCloseTo(-TWIST_STEP);
+    t.canvas.dispatchEvent(touch('pointercancel', 150, 110, 2));
+    expect(t.controls.enabled).toBe(true);
+    t.canvas.dispatchEvent(touch('pointerup', 115, 100, 1));
+    expect(t.handlers.onItemDragEnd).not.toHaveBeenCalled();
+  });
+
+  it('a lost window focus lets go of a twist', () => {
+    const t = twistable();
+    t.canvas.dispatchEvent(touch('pointerdown', 100, 100, 1));
+    t.canvas.dispatchEvent(second('pointerdown', 0));
+    window.dispatchEvent(new Event('blur'));
+    expect(t.controls.enabled).toBe(true);
+    t.canvas.dispatchEvent(second('pointermove', 40));
+    expect(t.handlers.onItemTwist).not.toHaveBeenCalled();
   });
 });
 

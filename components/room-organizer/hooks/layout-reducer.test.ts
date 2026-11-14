@@ -282,6 +282,17 @@ describe('layoutReducer — rotateSelection (rigid rotation about centroid)', ()
     }
   });
 
+  it('keeps each turn in [0, 2π) when it turns backwards (#689)', () => {
+    const items = [
+      makeItem({ id: 'a', position: { x: -1, z: 0 }, rotation: 0 }),
+      makeItem({ id: 'b', position: { x: 1, z: 0 }, rotation: Math.PI / 24 }),
+    ];
+    const state = layoutReducer(stateWith(items), { type: 'rotateSelection', ids: new Set(['a', 'b']), radians: -Math.PI / 12 });
+    const [a, b] = activeItems(state);
+    expect(a!.rotation).toBeCloseTo(2 * Math.PI - Math.PI / 12, 10);
+    expect(b!.rotation).toBeCloseTo(2 * Math.PI - Math.PI / 24, 10);
+  });
+
   it('preserves pairwise distances between items (arrangement rigid)', () => {
     const items = [
       makeItem({ id: 'a', position: { x: -1, z: 0 } }),
