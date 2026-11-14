@@ -5,7 +5,7 @@ import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { EditorViewProvider, useEditorView } from './contexts/editor-view-context';
 import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
-import { SelectionProvider, type SelectionContextValue } from './contexts/selection-context';
+import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
 import { selectionTurns } from './hooks/layout-reducer';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
@@ -30,6 +30,7 @@ import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useRoomStamp } from './hooks/use-room-stamp';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
+import { useSelectionActions } from './hooks/use-selection-actions';
 import { useShiftHeld } from './hooks/use-shift-held';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useWalkthrough, type WalkthroughBuilding } from './hooks/use-walkthrough';
@@ -41,13 +42,11 @@ import { findCatalogEntry } from './lib/catalog-drag';
 import { buildPasteItems, copyToClipboard } from './lib/clipboard';
 import { collisionMessage } from './lib/collision-reason';
 import { CAMERA_BRACKET_ARM, FURNITURE_CATALOG } from './lib/constants';
-import { saveCustomSet } from './lib/custom-sets';
 import { ROOF_EAVE_OVERHANG } from './lib/dormers';
-import { lockedMessage, notify, notifyRefused, notifyRefusedOnce, notifyWithUndo, removedMessage } from './lib/editor-notices';
+import { lockedMessage, notifyRefused, notifyRefusedOnce, notifyWithUndo, removedMessage } from './lib/editor-notices';
 import { isInsideBuilding } from './lib/footprint';
 import { formatMetres } from './lib/format';
 import { hasCollisions } from './lib/geometry';
-import { expandSelection, groupIdsIn, isWholeGroup } from './lib/groups';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
 import { COARSE_POINTER_QUERY } from './lib/hud-layout';
@@ -63,7 +62,7 @@ import { ENTRANCE_WALL_ID, entrancePlanOutline } from './lib/street';
 import { streetDryBoxes } from './lib/street-row';
 import { streetSiteOf } from './lib/walk-collision';
 import { modeAfterExplore, rememberModeBeforeExplore, sceneWallDisplay } from './lib/walkthrough-view';
-import { wallSideAt, type SelectedWall, type WallSide } from './lib/wall-sides';
+import { wallSideAt } from './lib/wall-sides';
 import { MIN_WALL_LENGTH, snapWallEndpoint, wallAngleDegrees, wallEndAtLength, type WallSnapResult } from './lib/wall-snap';
 import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
@@ -207,9 +206,28 @@ export function RoomOrganizer(): JSX.Element {
     },
     [view.soundsEnabled, view.hapticsEnabled]
   );
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [selectedWall, setSelectedWall] = useState<SelectedWall | null>(null);
-  const [extraSelectedIds, setExtraSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const {
+    selectedItemId,
+    setSelectedItemId,
+    extraSelectedIds,
+    setExtraSelectedIds,
+    selectedWall,
+    setSelectedWall,
+    selectedItem,
+    allSelectedIds,
+    selectOnly,
+    handleSelect,
+    handleInteriorWallSelect,
+    clearItemSelection,
+    deselectAll,
+    selectFromKeyboard,
+    selectionIsGroup,
+    selectionHasGroups,
+    groupSelection,
+    ungroupSelection,
+    saveSelectionAsSet,
+    selectionValue,
+  } = useSelectionActions({ activeFloor, activeFloorIndex, actions, playCue });
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [measurementPoints, setMeasurementPoints] = useState<ReadonlyArray<{ x: number; z: number }>>([]);
@@ -357,15 +375,11 @@ export function RoomOrganizer(): JSX.Element {
     return true;
   };
 
-  const handleInteriorWallSelect = useCallback((id: string | null, side?: WallSide) => {
-    setSelectedWall(id === null ? null : { id, kind: 'interior', ...(side ? { side } : {}) });
-  }, []);
-
   // The tools that take every press leave a selected wall's handles with
   // nothing to do.
   useEffect(() => {
     if (view.drawWallMode || view.drawZoneMode || view.measurementMode) setSelectedWall(null);
-  }, [view.drawWallMode, view.drawZoneMode, view.measurementMode]);
+  }, [view.drawWallMode, view.drawZoneMode, view.measurementMode, setSelectedWall]);
 
   const planPorch = useMemo(
     () => (view.drawWallMode ? entrancePlanOutline(layout, activeFloorIndex) : null),
@@ -415,53 +429,18 @@ export function RoomOrganizer(): JSX.Element {
       setPointerWorld(null);
       cancelStamp();
     }
-  }, [view.drawWallMode, cancelStamp]);
+  }, [view.drawWallMode, cancelStamp, setSelectedWall]);
 
-  // Floor switch: drop any in-progress wall draft and selection (those live on
-  // the previous floor).
+  // Floor switch: drop any in-progress wall draft (it lives on the previous
+  // floor; the selection hook drops the selection).
   useEffect(() => {
     setWallDraft(null);
     cancelStamp();
-    setSelectedItemId(null);
-    setSelectedWall(null);
-    setExtraSelectedIds(new Set());
     // Points are floor-plane coordinates; kept, they'd float on the new floor
     // showing a distance measured on the old one (#224).
     setMeasurementPoints([]);
-    // activeFloor.id: removing floor 0 (or reordering) can change WHICH floor
-    // is active while the index stays 0 — keying on the index alone carried
-    // the deleted floor's selection onto its replacement (#117).
+    // activeFloor.id: see the selection's own floor-switch reset (#117).
   }, [activeFloorIndex, activeFloor.id, cancelStamp]);
-
-  // Ghost-selection guard: whenever the floor's items change (undo/redo,
-  // import, clear floor, deletes from any path), drop selected ids that no
-  // longer exist; a vanished primary promotes the first surviving extra (#117).
-  useEffect(() => {
-    const ids = new Set(activeFloor.items.map((item) => item.id));
-    const primaryGone = selectedItemId !== null && !ids.has(selectedItemId);
-    const hasStaleExtras = Array.from(extraSelectedIds).some((id) => !ids.has(id));
-    if (!primaryGone && !hasStaleExtras) return;
-    const liveExtras = Array.from(extraSelectedIds).filter((id) => ids.has(id));
-    if (primaryGone) setSelectedItemId(liveExtras.shift() ?? null);
-    setExtraSelectedIds(new Set(liveExtras));
-  }, [activeFloor.items, selectedItemId, extraSelectedIds]);
-
-  // Same guard for a selected interior wall: undo/redo past its creation (or
-  // any path that removes it) would otherwise leave the paint panel open and
-  // dispatching against a wall that no longer exists (#224).
-  useEffect(() => {
-    if (selectedWall?.kind !== 'interior') return;
-    const exists = (activeFloor.interiorWalls ?? []).some((wall) => wall.id === selectedWall.id);
-    if (!exists) setSelectedWall(null);
-  }, [activeFloor.interiorWalls, selectedWall]);
-
-  // Make `id` the sole selection (null clears). The one way panels set a
-  // primary — pairing the two setters at every call site is how stale extras
-  // leaked into later group operations (#117).
-  const selectOnly = useCallback((id: string | null) => {
-    setSelectedItemId(id);
-    setExtraSelectedIds((extras) => (extras.size === 0 ? extras : new Set()));
-  }, []);
 
   // A whole-layout replacement (import, share/local hydration, adopting
   // another tab's save) invalidates every piece of transient selection state,
@@ -470,111 +449,7 @@ export function RoomOrganizer(): JSX.Element {
     selectOnly(null);
     setSelectedWall(null);
     setMeasurementPoints([]);
-  }, [selectOnly]);
-
-  // Plain reads + flat setter calls. The previous version computed the
-  // promotion inside a nested setState updater and read the result back
-  // synchronously — that only works on React's eager-evaluation path, and
-  // StrictMode's double-invoked updaters ran the toggle twice (#117).
-  //
-  // Persistent groups (#154) expand HERE, not in the canvas handlers: both
-  // the 3D raycast and the 2D hit-test report the clicked id and modifier,
-  // and this one place turns a grouped id into its whole group, so the two
-  // views can't drift. 'replace' selects the group with the clicked member
-  // as primary; 'toggle' adds or removes the whole group; 'single'
-  // (Alt+click) is the escape hatch that picks one member on its own.
-  const handleSelect = useCallback(
-    (id: string, mode: 'replace' | 'toggle' | 'single') => {
-      const members = mode === 'single' ? new Set([id]) : expandSelection(activeFloor.items, id);
-      if (mode !== 'toggle') {
-        if (members.size === 1) {
-          selectOnly(id);
-          return;
-        }
-        setSelectedItemId(id);
-        const extras = new Set(members);
-        extras.delete(id);
-        setExtraSelectedIds(extras);
-        return;
-      }
-      if (selectedItemId === null) {
-        setSelectedItemId(id);
-        const extras = new Set(members);
-        extras.delete(id);
-        setExtraSelectedIds(extras);
-        return;
-      }
-      const allIn = Array.from(members).every(
-        (member) => member === selectedItemId || extraSelectedIds.has(member)
-      );
-      const next = new Set(extraSelectedIds);
-      if (allIn) {
-        // Toggling off: drop every member. If the primary was among them,
-        // promote a surviving extra (keeping the rest of the multi-select
-        // intact) or clear the selection entirely.
-        for (const member of members) next.delete(member);
-        if (members.has(selectedItemId)) {
-          const [promoted] = next;
-          if (promoted === undefined) {
-            setSelectedItemId(null);
-            setExtraSelectedIds(new Set());
-            return;
-          }
-          next.delete(promoted);
-          setSelectedItemId(promoted);
-        }
-        setExtraSelectedIds(next);
-        return;
-      }
-      for (const member of members) {
-        if (member !== selectedItemId) next.add(member);
-      }
-      setExtraSelectedIds(next);
-    },
-    [activeFloor.items, selectedItemId, extraSelectedIds, selectOnly]
-  );
-
-  const allSelectedIds = useMemo(() => {
-    const set = new Set(extraSelectedIds);
-    if (selectedItemId) set.add(selectedItemId);
-    return set;
-  }, [selectedItemId, extraSelectedIds]);
-
-  // Persistent groups (#154). Group merges whatever is selected — members of
-  // other groups included — into one fresh group; Ungroup frees every
-  // selected item. The selection itself is untouched either way, so a
-  // freshly grouped set stays selected and draggable.
-  const selectionIsGroup = useMemo(
-    () => isWholeGroup(activeFloor.items, allSelectedIds),
-    [activeFloor.items, allSelectedIds]
-  );
-  const selectionHasGroups = useMemo(
-    () => groupIdsIn(activeFloor.items, allSelectedIds).size > 0,
-    [activeFloor.items, allSelectedIds]
-  );
-  const groupSelection = useCallback(() => {
-    if (allSelectedIds.size < 2) return;
-    actions.setGroup(allSelectedIds);
-  }, [actions, allSelectedIds]);
-  const ungroupSelection = useCallback(() => {
-    actions.clearGroup(allSelectedIds);
-  }, [actions, allSelectedIds]);
-
-  // Custom sets (#302): the selection, normalised around its centroid, under
-  // a name the user picks — typed into the selection chip (#374). Groups
-  // inside it are kept and come back as fresh groups when the set is placed.
-  const saveSelectionAsSet = useCallback((name: string) => {
-    const items = activeFloor.items.filter((item) => allSelectedIds.has(item.id));
-    if (items.length < 2 || !name.trim()) return false;
-    const saved = saveCustomSet(items, name, { idTag: randomSuffix() });
-    if (!saved) {
-      notify('Could not save the set — browser storage is full.', 'error');
-      return false;
-    }
-    notify(`Saved “${saved.name}” to Furniture Sets.`, 'success');
-    playCue('success');
-    return true;
-  }, [activeFloor.items, allSelectedIds, playCue]);
+  }, [selectOnly, setSelectedWall]);
 
   // The recess's span of the front wall on this storey; openings settle on
   // its piers (#394). Memoised on what the recess is fitted to.
@@ -817,7 +692,7 @@ export function RoomOrganizer(): JSX.Element {
         return next;
       });
     },
-    [actions, commitHistoryNow, offerRemovalUndo, playCue]
+    [actions, commitHistoryNow, offerRemovalUndo, playCue, setSelectedItemId, setExtraSelectedIds]
   );
 
   const removeSelected = useCallback(() => {
@@ -832,7 +707,7 @@ export function RoomOrganizer(): JSX.Element {
     playCue('remove');
     setSelectedItemId(null);
     setExtraSelectedIds(new Set());
-  }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds, offerRemovalUndo, playCue]);
+  }, [actions, commitHistoryNow, activeFloor.items, allSelectedIds, offerRemovalUndo, playCue, setSelectedItemId, setExtraSelectedIds]);
 
   // Duplicate the current selection. For a multi-select every selected item is
   // copied (each offset by the reducer) and the copies become the new
@@ -865,7 +740,7 @@ export function RoomOrganizer(): JSX.Element {
       // A single copy clears stale extras, so the selection is only the copy.
       setExtraSelectedIds(new Set(newExtras));
     },
-    [actions, commitHistoryNow, allSelectedIds, activeFloor.items, refuseOverBudget, playCue]
+    [actions, commitHistoryNow, allSelectedIds, activeFloor.items, refuseOverBudget, playCue, setSelectedItemId, setExtraSelectedIds]
   );
 
   const { saveStatus, remoteLayout, clearRemoteLayout } = useLayoutPersistence({
@@ -913,11 +788,6 @@ export function RoomOrganizer(): JSX.Element {
     clearTransientSelection();
     clearRemoteLayout();
   }, [remoteLayout, layout, actions, commitHistoryNow, clearTransientSelection, clearRemoteLayout]);
-
-  const selectedItem = useMemo(
-    () => (selectedItemId ? activeFloor.items.find((item) => item.id === selectedItemId) ?? null : null),
-    [activeFloor.items, selectedItemId]
-  );
 
   const hasSignalItems = useMemo(
     () => activeFloor.items.some((item) => item.isWiFiAccessPoint || item.isCCTV),
@@ -980,16 +850,6 @@ export function RoomOrganizer(): JSX.Element {
       handleDragStart(id);
     },
     [snapTicker, handleDragStart]
-  );
-
-  const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
-  // #650: Tab on the focused scene picked an item; a selected wall lets go, as on a click.
-  const selectFromKeyboard = useCallback(
-    (id: string) => {
-      handleInteriorWallSelect(null);
-      handleSelect(id, 'replace');
-    },
-    [handleInteriorWallSelect, handleSelect]
   );
 
   // Every catalog add (tile click, keyboard, drag-drop) comes through here,
@@ -1444,7 +1304,7 @@ export function RoomOrganizer(): JSX.Element {
     }
     playCue('place');
     return true;
-  }, [layout.width, layout.height, layout.cutout, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, playCue, refuseOverBudget]);
+  }, [layout.width, layout.height, layout.cutout, activeFloor.interiorWalls, activeFloorIndex, actions, commitHistoryNow, selectOnly, setExtraSelectedIds, playCue, refuseOverBudget]);
 
   // `[` / `]` and PgUp / PgDn, and the touch walk HUD's clock and floor buttons (#688).
   const advanceTime = useEvent((deltaHours: number) => {
@@ -1534,8 +1394,7 @@ export function RoomOrganizer(): JSX.Element {
           toggle('drawZoneMode');
           return;
         }
-        setSelectedItemId(null);
-        setExtraSelectedIds(new Set());
+        clearItemSelection();
         setSelectedWall(null);
       },
       focusOnSelection: () => {
@@ -1628,6 +1487,8 @@ export function RoomOrganizer(): JSX.Element {
       view.drawWallMode,
       view.measurementMode,
       view.drawZoneMode,
+      clearItemSelection,
+      setSelectedWall,
     ]
   );
 
@@ -1698,19 +1559,6 @@ export function RoomOrganizer(): JSX.Element {
       recentColors, pushColor, playCue,
       history, isReady, error,
     ]
-  );
-
-  const selectionValue = useMemo<SelectionContextValue>(
-    () => ({
-      selectedItemId,
-      setSelectedItemId,
-      selectedItem,
-      extraSelectedIds,
-      setExtraSelectedIds,
-      allSelectedIds,
-      selectOnly,
-    }),
-    [selectedItemId, setSelectedItemId, selectedItem, extraSelectedIds, setExtraSelectedIds, allSelectedIds, selectOnly]
   );
 
   return (
@@ -1887,10 +1735,7 @@ export function RoomOrganizer(): JSX.Element {
           onToggleCameraBracket={toggleCameraBracket}
           onDuplicate={duplicateSelected}
           onRemove={removeItem}
-          onClose={() => {
-            setSelectedItemId(null);
-            setExtraSelectedIds(new Set());
-          }}
+          onClose={clearItemSelection}
         />
       )}
 
