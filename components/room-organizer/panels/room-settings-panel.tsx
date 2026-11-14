@@ -115,7 +115,7 @@ function FootprintShape(): JSX.Element {
       )}
       <p className="mt-1 text-xs text-muted-foreground">
         {cutout
-          ? 'On every floor. The two new walls take the colour of the side they face. Flat roof only.'
+          ? 'On every floor. The two new walls take the colour of the side they face. A flat roof or none.'
           : 'Cut a corner out of the house to make an L, on every floor.'}
       </p>
     </div>

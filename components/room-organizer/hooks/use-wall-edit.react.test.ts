@@ -71,6 +71,23 @@ describe('useWallEdit (#718)', () => {
     expect(setup({ selectedWallId: null }).result.current.grabWall(grab)).toBeNull();
   });
 
+  it('a wall not yet selected commits at the release, which selects it (#786)', () => {
+    const { result, params } = setup({ selectedWallId: null });
+    const gesture = result.current.grabWall({ ...grab, fresh: true })!;
+    gesture.move(0, 1, false);
+    gesture.end(true);
+    expect(params.onMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('a wall not yet selected commits nothing once another wall was selected meanwhile', () => {
+    const { result, params, rerender } = setup({ selectedWallId: null });
+    const gesture = result.current.grabWall({ ...grab, fresh: true })!;
+    gesture.move(0, 1, false);
+    rerender({ ...params, selectedWallId: 'other' });
+    gesture.end(true);
+    expect(params.onMove).not.toHaveBeenCalled();
+  });
+
   it('refuses at the release, with the reason in the preview till then', () => {
     const twin: InteriorWall = { id: 't', x1: -2, z1: 1, x2: 2, z2: 1 };
     const { result, params } = setup({ activeFloor: makeFloor({ interiorWalls: [wall, twin] }) });

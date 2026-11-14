@@ -19,7 +19,11 @@ export interface WallGrabInfo {
   grip: WallGrip;
   x: number;
   z: number;
-  /** This press is selecting the wall (the plan): it may start dragging too. */
+  /**
+   * This press is selecting the wall (the plan): it may start dragging too.
+   * The plan selects it at the release (#786), so the release may commit
+   * while the selection is still what it was at the press.
+   */
   fresh?: boolean;
 }
 
@@ -72,6 +76,7 @@ export function useWallEdit(params: UseWallEditParams): UseWallEditResult {
     const selected = p.selectedWallId === info.wallId || (info.fresh === true && p.pressDrags);
     if (!p.enabled || !selected || !walls?.some((wall) => wall.id === info.wallId)) return null;
     const floor = p.activeFloor;
+    const selectedAtPress = p.selectedWallId;
     const grab = { wallId: info.wallId, grip: info.grip, at: { x: info.x, z: info.z }, walls };
     const context = {
       roomWidth: p.layout.width,
@@ -115,7 +120,8 @@ export function useWallEdit(params: UseWallEditParams): UseWallEditResult {
         const latest = paramsRef.current;
         if (!commit || !preview || latest.activeFloor.interiorWalls !== walls) return;
         // The wall stopped being this gesture's to move while it was held.
-        if (!latest.enabled || latest.selectedWallId !== info.wallId) return;
+        const stillHeld = latest.selectedWallId === info.wallId || (info.fresh === true && latest.selectedWallId === selectedAtPress);
+        if (!latest.enabled || !stillHeld) return;
         if (preview.refusal !== null) {
           latest.onRefused(preview.refusal);
           return;
