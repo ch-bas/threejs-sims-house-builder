@@ -24,7 +24,8 @@
     "lint": "eslint --ext .ts,.tsx app components lib",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.17",

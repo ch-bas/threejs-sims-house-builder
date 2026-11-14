@@ -30,6 +30,9 @@ scripts/
 ├── third-party-notices.mjs              Post-build: out/third-party-licenses.txt, the licences of the shipped packages and assets (#569)
 ├── third-party-notices.d.mts            Types of third-party-notices.mjs's exports, for its test
 ├── licenses/                            Licence texts of the libraries inside Next's polyfills chunk (core-js, whatwg-fetch, object-assign), for third-party-notices.mjs
+├── check-bundle.mjs                     CI: gzip sizes of the export (first-load JS, largest chunk, CSS) against bundle-budget.json (#732)
+├── check-bundle.d.mts                   Types for check-bundle.mjs, for its unit test
+├── bundle-budget.json                   The gzip budgets check-bundle.mjs enforces; raised with `npm run check:bundle -- --update`
 ├── build-icons.mjs                      Renders the app/ icon rasters and the preview image from SVG (Playwright, not part of the build)
 └── build-people-glb.mjs                 Rebuilds assets/people.glb from the Universal Animation Library
 components/

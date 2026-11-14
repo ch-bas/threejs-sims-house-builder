@@ -63,6 +63,16 @@ jobs:
       - name: Add the Content-Security-Policy
         run: node scripts/add-csp.mjs
 
+      # Gzip sizes against scripts/bundle-budget.json (#732): first-load JS,
+      # the largest chunk and the CSS, as a table in the job summary.
+      # Report-only for its first sprint: over budget is a warning
+      # annotation, not a failure. Once the numbers have held still across
+      # that sprint's CI runs (module ids, #594), drop --report-only so going
+      # over fails the job; a deliberate increase then edits the JSON in the
+      # same pull request.
+      - name: Check the bundle budget
+        run: npm run check:bundle -- --report-only
+
       - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
