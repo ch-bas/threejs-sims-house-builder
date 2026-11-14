@@ -140,6 +140,7 @@ components/
     │   ├── night-lights.ts              Which items light the night, bulb heights, candela; the lamp pool (#215, #393)
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout
+    │   ├── door-swing.ts                How a door swings open in EXPLORE: openness by distance, eased angle, side away from the walker (#605)
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── zones.ts                     Room zones: rect and polygon validation, clamping, re-fit to detected rooms (#719), per-zone stats (porch left out, #582)
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
@@ -166,6 +167,7 @@ components/
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
     │   ├── drag-handlers.ts             Canvas mouse events: select/drag/hover/wall-pick
+    │   ├── door-leaves.ts               Finds the door leaves in the scene and swings them for the walker; shuts them on exit (#605)
     │   ├── builders/                    Per-category builder functions
     │   │   ├── builders-seating.ts      Chair, armchair, bench, sofa
     │   │   ├── builders-bedroom.ts      Bed, nightstand, dresser

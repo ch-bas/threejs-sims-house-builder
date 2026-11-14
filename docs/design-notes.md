@@ -381,6 +381,16 @@ to respect.
   which hand out clones and are emptied at unmount (`clearTextureCaches`).
   Idle walkers repaint every frame for their breathing but recompute the
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
+- **Doors swing for the walker (#605).** A door's leaf and handle hang in a
+  pivot group on the hinge jamb (`DOOR_LEAF_NAME`), shut at rest, so the
+  plan, the exports, the GLB and DESIGN never see it open. In EXPLORE the
+  walk loop steps `three/door-leaves.ts`: within 1.8 m of a door's centre
+  on the walker's storey the leaf opens over 0.45 s, swinging away from
+  the walker, and shuts again behind. It is never less open than the
+  walker's distance asks, fully open inside 0.9 m, so a sprinter never
+  passes through a closed leaf; the collider's door gap is unchanged.
+  Only the pivot's `rotation.y` moves (kept groups, #404); the shadow map
+  is redrawn once the leaves stop. Leaving the walk shuts every door.
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
   rasterises a storey into 0.2 m cells a walker (radius 0.22 m)
   can stand in: the walkthrough's colliders (furniture, partitions with
