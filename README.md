@@ -127,3 +127,7 @@ Moved to [docs/design-notes.md](docs/design-notes.md).
   from Quaternius' [Universal Animation Library](https://quaternius.itch.io/universal-animation-library),
   CC0 1.0. Thank you, Quaternius. Details in
   [`assets/README.md`](components/room-organizer/assets/README.md).
+- `app/fonts/` — the [Sora](https://github.com/sora-xor/sora-font) and
+  [Nunito](https://github.com/googlefonts/nunito) typefaces, SIL Open Font
+  License 1.1 ([Sora](app/fonts/Sora-OFL.txt), [Nunito](app/fonts/Nunito-OFL.txt)).
+  They are committed, so the build needs no network.
