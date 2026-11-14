@@ -693,6 +693,50 @@ export function RoomOrganizer(): JSX.Element {
     [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera, playCue, refuseLocked]
   );
 
+  // Shift+R's 15° turn and each step of a two-finger twist (#689), which
+  // plays its cue on the first step only (`cue`).
+  const rotateItemByHandler = useCallback(
+    (id: string, radians: number, cue = true) => {
+      if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
+        const unlocked = unlockedSelectedIds();
+        if (unlocked.size === 0) {
+          refuseLocked(allSelectedIds.size);
+          return;
+        }
+        if (!selectionTurns(activeFloor.items, unlocked)) {
+          playCue('refused');
+          return;
+        }
+        actions.rotateSelection(unlocked, radians);
+        if (cue) playCue('rotate');
+        return;
+      }
+      const item = activeFloor.items.find((entry) => entry.id === id);
+      if (!item) return;
+      if (item.locked) {
+        refuseLocked(item.name);
+        return;
+      }
+      // In [0, 2π): a twist turns both ways.
+      const turn = Math.PI * 2;
+      const next = ((((item.rotation ?? 0) + radians) % turn) + turn) % turn;
+      actions.setRotation(id, next);
+      reseatCamera(id, next);
+      if (cue) playCue('rotate');
+    },
+    [allSelectedIds, unlockedSelectedIds, activeFloor.items, actions, reseatCamera, playCue, refuseLocked]
+  );
+  // A twist is only offered for what it would turn: otherwise the two
+  // fingers stay the camera's pinch, never a refusal (#689).
+  const canTwistItem = useCallback(
+    (id: string) => {
+      if (exploring) return false;
+      const turning = allSelectedIds.size > 1 && allSelectedIds.has(id) ? unlockedSelectedIds() : new Set([id]);
+      return selectionTurns(activeFloor.items, turning);
+    },
+    [exploring, allSelectedIds, unlockedSelectedIds, activeFloor.items]
+  );
+
   // Toggle a camera's stand-off bracket. Enabling it keeps the current facing
   // and lifts the camera onto the arm; disabling it snaps the camera back flush
   // and re-locks facing to the wall's inward normal.
@@ -1074,6 +1118,11 @@ export function RoomOrganizer(): JSX.Element {
       onItemDrag: handleDrag,
       onItemDragEnd: handleDragEnd,
       onItemDragCancel: handleDragCancel,
+      canTwistItem,
+      // One gesture, one undo entry and one cue, however it pauses (#689).
+      onItemTwistStart: history.holdGesture,
+      onItemTwist: (id: string, radians: number, first: boolean) => rotateItemByHandler(id, radians, first),
+      onItemTwistEnd: (_id: string, turned: boolean) => history.releaseGesture(turned),
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
       onWallSelect: ({ wallId, kind, from }) => {
@@ -1399,32 +1448,7 @@ export function RoomOrganizer(): JSX.Element {
       copySelection: copySelectionToClipboard,
       pasteClipboard: pasteFromClipboard,
       rotateItem: rotateItemHandler,
-      rotateItemBy: (id: string, radians: number) => {
-        if (allSelectedIds.size > 1 && allSelectedIds.has(id)) {
-          const unlocked = unlockedSelectedIds();
-          if (unlocked.size === 0) {
-            refuseLocked(allSelectedIds.size);
-            return;
-          }
-          if (!selectionTurns(activeFloor.items, unlocked)) {
-            playCue('refused');
-            return;
-          }
-          actions.rotateSelection(unlocked, radians);
-          playCue('rotate');
-          return;
-        }
-        const item = activeFloor.items.find((entry) => entry.id === id);
-        if (!item) return;
-        if (item.locked) {
-          refuseLocked(item.name);
-          return;
-        }
-        const next = ((item.rotation ?? 0) + radians) % (Math.PI * 2);
-        actions.setRotation(id, next);
-        reseatCamera(id, next);
-        playCue('rotate');
-      },
+      rotateItemBy: rotateItemByHandler,
       moveItem: (id: string, x: number, z: number) => {
         // Arrow nudges settle wall-mounted items back onto their wall the way
         // drag release does — a nudged door slides along its wall instead of
@@ -1555,7 +1579,6 @@ export function RoomOrganizer(): JSX.Element {
       layout.width,
       layout.height,
       layout.cutout,
-      unlockedSelectedIds,
       setView,
       toggle,
       history.undo,
@@ -1567,7 +1590,7 @@ export function RoomOrganizer(): JSX.Element {
       activeStoreyHeight,
       orbitGroundAt,
       rotateItemHandler,
-      reseatCamera,
+      rotateItemByHandler,
       playCue,
       refuseLocked,
       wallDraft,

@@ -31,6 +31,15 @@ export interface UseHistoryResult<T = unknown> {
    */
   commitNow(): void;
   /**
+   * A gesture that dispatches in steps (a two-finger twist, #689) is one
+   * entry however long it pauses: `holdGesture` commits any pending edit on
+   * its own and stops the debounce from committing; `releaseGesture` commits
+   * what the gesture changed as one entry, or with `keep` false (it ended
+   * where it began) puts the value back to the start and adds nothing.
+   */
+  holdGesture(): void;
+  releaseGesture(keep: boolean): void;
+  /**
    * Forget `snapshot` and every entry newer than it, clear redo, and adopt the
    * next value change as the baseline. For abandoning a session that started
    * at `snapshot` (keyboard placement cancel, #356): call it, then apply the
@@ -81,6 +90,8 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
   // Set by commitNow(): commit the next change immediately (#425).
   const discreteRef = useRef(false);
   const discreteTimerRef = useRef<number | undefined>(undefined);
+  // Set by holdGesture(): the debounce waits for releaseGesture().
+  const holdingRef = useRef(false);
 
   const commit = useCallback(
     (next: T) => {
@@ -100,6 +111,7 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
       return undefined;
     }
     if (Object.is(value, lastCommittedRef.current)) return undefined;
+    if (holdingRef.current) return undefined;
 
     if (discreteRef.current) {
       discreteRef.current = false;
@@ -185,6 +197,7 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     setStacks(stacksRef.current);
     skipNextRef.current = false;
     discreteRef.current = false;
+    holdingRef.current = false;
     lastCommittedRef.current = baseline;
   }, []);
 
@@ -202,6 +215,32 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     }, debounceMs);
   }, [commit, debounceMs]);
 
+  const holdGesture = useCallback(() => {
+    if (!skipNextRef.current && !Object.is(valueRef.current, lastCommittedRef.current)) {
+      generationRef.current += 1;
+      commit(valueRef.current);
+    }
+    discreteRef.current = false;
+    window.clearTimeout(discreteTimerRef.current);
+    holdingRef.current = true;
+  }, [commit]);
+
+  const releaseGesture = useCallback(
+    (keep: boolean) => {
+      if (!holdingRef.current) return;
+      holdingRef.current = false;
+      if (skipNextRef.current || Object.is(valueRef.current, lastCommittedRef.current)) return;
+      if (keep) {
+        generationRef.current += 1;
+        commit(valueRef.current);
+        return;
+      }
+      skipNextRef.current = true;
+      apply(lastCommittedRef.current);
+    },
+    [commit, apply]
+  );
+
   const truncateTo = useCallback((snapshot: T) => {
     const { past } = stacksRef.current;
     const index = past.lastIndexOf(snapshot);
@@ -212,6 +251,7 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     stacksRef.current = { past: kept, future: [] };
     setStacks(stacksRef.current);
     discreteRef.current = false;
+    holdingRef.current = false;
     skipNextRef.current = true;
   }, []);
 
@@ -232,7 +272,7 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
   const redoLabel = describe && canRedo && next !== undefined ? describe(committed, next) : null;
 
   return useMemo(
-    () => ({ canUndo, canRedo, undoLabel, redoLabel, undo, redo, clear, commitNow, truncateTo }),
-    [canUndo, canRedo, undoLabel, redoLabel, undo, redo, clear, commitNow, truncateTo]
+    () => ({ canUndo, canRedo, undoLabel, redoLabel, undo, redo, clear, commitNow, holdGesture, releaseGesture, truncateTo }),
+    [canUndo, canRedo, undoLabel, redoLabel, undo, redo, clear, commitNow, holdGesture, releaseGesture, truncateTo]
   );
 }

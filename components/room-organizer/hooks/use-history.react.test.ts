@@ -190,6 +190,45 @@ describe('useHistory — commitNow', () => {
     expect(apply).toHaveBeenLastCalledWith(v0);
   });
 
+  it('a held gesture is one entry across pauses past the debounce, apart from the edit before it (#689)', () => {
+    const v0: Doc = { name: 'start' };
+    const recoloured: Doc = { name: 'recoloured' };
+    const steps: Doc[] = [{ name: '15°' }, { name: '30°' }, { name: '45°' }];
+    const { apply, result, rerender } = setup(v0);
+    rerender({ value: recoloured });
+    act(() => result.current.holdGesture());
+    for (const step of steps) {
+      rerender({ value: step });
+      act(() => {
+        vi.advanceTimersByTime(900);
+      });
+    }
+    act(() => result.current.releaseGesture(true));
+    act(() => result.current.undo());
+    expect(apply).toHaveBeenLastCalledWith(recoloured);
+    rerender({ value: recoloured });
+    act(() => result.current.undo());
+    expect(apply).toHaveBeenLastCalledWith(v0);
+  });
+
+  it('a held gesture that ends where it began goes back to the start and adds nothing (#689)', () => {
+    const v0: Doc = { name: 'start' };
+    const { apply, result, rerender } = setup(v0);
+    act(() => result.current.holdGesture());
+    rerender({ value: { name: '15°' } });
+    act(() => {
+      vi.advanceTimersByTime(900);
+    });
+    rerender({ value: { name: '0° again' } });
+    act(() => result.current.releaseGesture(false));
+    expect(apply).toHaveBeenLastCalledWith(v0);
+    rerender({ value: v0 });
+    act(() => {
+      vi.advanceTimersByTime(900);
+    });
+    expect(result.current.canUndo).toBe(false);
+  });
+
   it('separates a discrete action from a pending edit before it and a stream after it', () => {
     const v0: Doc = { name: 'start' };
     const colour: Doc = { name: 'recoloured' };

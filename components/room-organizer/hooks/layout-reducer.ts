@@ -731,7 +731,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           // reducer is the guarantee (#115/#209); nor does the porch's
           // door, which belongs to the recess (#357).
           if (!action.ids.has(item.id) || !turnsInSelection(item)) return item;
-          const rotation = ((item.rotation ?? 0) + theta) % (Math.PI * 2);
+          // In [0, 2π): a two-finger twist turns both ways (#689).
+          const rotation = ((((item.rotation ?? 0) + theta) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
           const moved: FurnitureItem = { ...item, rotation };
           if (item.position) {
             const dx = item.position.x - cx;
