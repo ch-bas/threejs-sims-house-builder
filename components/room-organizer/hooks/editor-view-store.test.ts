@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeItem, makeViewSettings } from '../lib/__testfixtures__/fixtures';
-import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './editor-view-store';
+import { getDisplayUnit } from '../lib/format';
+import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './editor-view-store';
 
 describe('editor view store (#3, #148)', () => {
   it('applies values and updaters, and toggles a view flag', () => {
@@ -88,5 +89,67 @@ describe('editor view store invariants (#439)', () => {
     const store = createEditorViewStore(makeViewSettings({ view2D: true, drawZoneMode: true }));
     store.getState().actions.toggle('showMeasurements');
     expect(store.getState().view.drawZoneMode).toBe(true);
+  });
+});
+
+describe('length unit (#725)', () => {
+  function memoryStorage(): Storage {
+    const data = new Map<string, string>();
+    return {
+      get length() {
+        return data.size;
+      },
+      clear: () => data.clear(),
+      getItem: (key) => data.get(key) ?? null,
+      key: (index) => [...data.keys()][index] ?? null,
+      removeItem: (key) => void data.delete(key),
+      setItem: (key, value) => void data.set(key, value),
+    };
+  }
+
+  it('starts in metres, and anything unreadable in storage is metres', () => {
+    const storage = memoryStorage();
+    expect(createEditorViewStore(makeViewSettings()).getState().lengthUnit).toBe('metric');
+    expect(loadLengthUnit(storage)).toBe('metric');
+    storage.setItem('length-unit', 'cubits');
+    expect(loadLengthUnit(storage)).toBe('metric');
+  });
+
+  it('remembers the unit on the browser and mirrors it for strings outside React', () => {
+    const storage = memoryStorage();
+    const store = createEditorViewStore(makeViewSettings(), { storage });
+    try {
+      store.getState().actions.setLengthUnit('imperial');
+      expect(store.getState().lengthUnit).toBe('imperial');
+      expect(getDisplayUnit()).toBe('imperial');
+      expect(loadLengthUnit(storage)).toBe('imperial');
+      expect(createEditorViewStore(makeViewSettings(), { lengthUnit: loadLengthUnit(storage) }).getState().lengthUnit).toBe('imperial');
+    } finally {
+      store.getState().actions.setLengthUnit('metric');
+    }
+    expect(getDisplayUnit()).toBe('metric');
+  });
+
+  it('the same unit again keeps the state object', () => {
+    const store = createEditorViewStore(makeViewSettings(), { storage: memoryStorage() });
+    const before = store.getState();
+    before.actions.setLengthUnit('metric');
+    expect(store.getState()).toBe(before);
+  });
+
+  it('a store made with no unit leaves the mirror alone, and an unchanged unit writes nothing', () => {
+    const storage = memoryStorage();
+    const chosen = createEditorViewStore(makeViewSettings(), { lengthUnit: 'imperial', storage });
+    try {
+      expect(getDisplayUnit()).toBe('imperial');
+      createEditorViewStore(makeViewSettings());
+      expect(getDisplayUnit()).toBe('imperial');
+      chosen.getState().actions.setLengthUnit('imperial');
+      expect(storage.length).toBe(0);
+    } finally {
+      chosen.getState().actions.setLengthUnit('metric');
+    }
+    expect(getDisplayUnit()).toBe('metric');
+    expect(loadLengthUnit(storage)).toBe('metric');
   });
 });

@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { EditorViewProvider, useEditorView } from './contexts/editor-view-context';
 import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
 import { SelectionProvider } from './contexts/selection-context';
-import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
+import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
 import { useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
@@ -125,7 +125,7 @@ export function RoomOrganizer(): JSX.Element {
   // View and game state live in a per-editor store (#3). The orchestrator
   // reads every view field but the time of day, so an auto-cycle tick
   // re-renders only what shows the hour, not this whole tree (#148).
-  const [viewStore] = useState(() => createEditorViewStore(INITIAL_VIEW_SETTINGS));
+  const [viewStore] = useState(() => createEditorViewStore(INITIAL_VIEW_SETTINGS, { lengthUnit: loadLengthUnit() }));
   const { setView, toggle } = viewStore.getState().actions;
   const view = useStore(viewStore, useShallow(viewExceptTime));
   const autoCycleLighting = useStore(viewStore, (state) => state.autoCycleLighting);

@@ -1,8 +1,9 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { getDisplayUnit, type LengthUnit } from '../lib/format';
 import type { EditorViewActions, EditorViewState, EditorViewStore } from '../hooks/editor-view-store';
 import type { ViewSettings } from '../lib/types';
 
@@ -43,4 +44,16 @@ export function useViewSettings<K extends keyof ViewSettings>(...keys: readonly 
       return picked;
     })
   );
+}
+
+const subscribeNothing = (): (() => void) => () => {};
+
+/**
+ * The unit lengths are shown in (#725); a component that writes one
+ * re-renders on a switch. Outside an editor (a panel rendered on its own)
+ * it is the display unit, metres unless set.
+ */
+export function useLengthUnit(): LengthUnit {
+  const store = useContext(EditorViewContext);
+  return useSyncExternalStore(store?.subscribe ?? subscribeNothing, () => (store ? store.getState().lengthUnit : getDisplayUnit()));
 }

@@ -3,6 +3,7 @@ export {
   useEditorView,
   useEditorViewActions,
   useEditorViewStore,
+  useLengthUnit,
   useViewSettings,
 } from './editor-view-context';
 export { HeldEditorContexts } from './held-editor-contexts';

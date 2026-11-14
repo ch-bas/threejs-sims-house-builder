@@ -154,7 +154,7 @@ components/
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode or calibration, the one rectangle the 2D plan, blueprint and 3D floor paint (#191, #726); two-point calibration maths
     │   ├── file-io.ts                   JSON / image / PNG / CSV + schedule / GLB I/O
-    │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m"), formatSize, formatAge ("3 min ago", #438); money with one fixed grouping, formatMoney ("$1,200", compact "$100M", #609)
+    │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m", or 8' 2" in feet and inches, #725), formatSize, formatArea (m² / sq ft), parseLength (12'6", 12.5 ft, 3.5 m), the display-unit mirror the view store sets; formatAge ("3 min ago", #438); money with one fixed grouping, formatMoney ("$1,200", compact "$100M", #609)
     │   └── plan-export/                 2D-plan exporters (#230); svg, dxf, print and the blueprint load on click (#589)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
     │       ├── svg.ts                   Vector SVG plan emitter, one floor or the whole building (pure)
@@ -230,7 +230,7 @@ components/
     ├── hooks/
     │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)
     │   ├── use-layout-store.ts          Zustand store (reuses the reducer) + selectors
-    │   ├── editor-view-store.ts         Per-editor Zustand store: view settings, catalog search, game mode, time auto-cycle
+    │   ├── editor-view-store.ts         Per-editor Zustand store: view settings, catalog search, game mode, time auto-cycle, the length unit (per browser, never in the house, #725)
     │   ├── use-layout-state.ts          Adapter over the store (activeFloor, actions)
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
