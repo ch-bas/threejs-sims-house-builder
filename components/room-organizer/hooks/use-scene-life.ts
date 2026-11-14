@@ -96,6 +96,9 @@ export function useSceneLife({
     threeModuleRef,
     cameraRef,
     orbitRef: controlsRef,
+    // L2 doors (#605).
+    sceneRef,
+    requestShadowUpdate,
     building: walkBuilding,
     activeFloorIndex,
     onFloorChange,
