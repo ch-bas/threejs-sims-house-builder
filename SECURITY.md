@@ -54,4 +54,4 @@ Only a custom domain gives the app an origin of its own. Until then, these risks
 
 ## Dependency Updates
 
-We monitor dependencies with `npm audit` and address critical/high vulnerabilities promptly. If you notice an unpatched advisory, please report it.
+We monitor dependencies with `npm audit` and address critical/high vulnerabilities promptly. Every pull request and push to `main` audits the production dependencies, and a weekly scheduled scan (Mondays) audits the whole lockfile, dev dependencies included. If you notice an unpatched advisory, please report it.
