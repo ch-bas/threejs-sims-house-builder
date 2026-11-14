@@ -2,6 +2,7 @@ import { repairHardBudget } from './budget';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
+import { repairFloorPlanTransform } from './floor-plan-fit';
 import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
@@ -372,6 +373,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   floorPlanImage: true,
   floorPlanOpacity: true,
   floorPlanFitMode: true,
+  floorPlanTransform: true,
   terrain: true,
   neighbours: true,
   entrance: true,
@@ -680,6 +682,16 @@ function repairFields(layout: RoomLayout): RoomLayout {
   if (layout.id !== undefined) patch.id = capText(layout.id, MAX_ID_LENGTH);
   if (layout.roof) patch.roof = repairRoof(layout.roof);
   if (layout.terrain) patch.terrain = pick(layout.terrain, TERRAIN_KEYS);
+  // A traced plan's calibration (#726) is repaired, never refused: a bad one
+  // costs the image its scale, and the fit mode places it again.
+  if (layout.floorPlanTransform !== undefined) {
+    const transform = repairFloorPlanTransform(layout.floorPlanTransform);
+    if (transform === undefined) {
+      const { floorPlanTransform: _dropped, ...rest } = layout;
+      return repairFields(rest);
+    }
+    patch.floorPlanTransform = transform;
+  }
   // A share link or a file can carry a porch taller than its storey (#587).
   if (layout.entrance) {
     const entrance = entranceWithinStorey(pick(layout.entrance, ENTRANCE_KEYS), layout);

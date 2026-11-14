@@ -4,6 +4,7 @@ import { NO_PLAN_ZOOM, panPlan, pinchPlan, planZoomOf, setPlanZoom, zoomPlanAbou
 import { canvasToWorld, get2DViewTransform, render2DTopDown } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
+import { movedFloorPlan } from '../lib/floor-plan-fit';
 import { hasCollisions } from '../lib/geometry';
 import { isWallMounted } from '../lib/opening-snap';
 import { isOnDoorLeaf, type PlacedItem } from '../lib/plan-export/plan-geometry';
@@ -14,6 +15,7 @@ import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { wallSideAt, type WallSide } from '../lib/wall-sides';
 import { defaultZoneName, nextZoneColor, roomAt, zoneFromCorners, zoneFromRoom, zoneInPorch, type ZoneRect } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
+import { addCalibrationPoint, getPlanCalibration } from './plan-calibration';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
 import type { DragCancelOptions } from './use-item-drag';
@@ -21,7 +23,7 @@ import type { WallGrabInfo, WallMovePreview } from './use-wall-edit';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { EntrancePlanOutline } from '../lib/street';
-import type { FloorLayout, FurnitureItem, RoomLayout, ViewSettings } from '../lib/types';
+import type { FloorLayout, FloorPlanTransform, FurnitureItem, RoomLayout, Vec2, ViewSettings } from '../lib/types';
 import type { HeldGesture } from '../three/drag-handlers';
 
 /**
@@ -296,6 +298,20 @@ export function useCanvas2DInteraction(
     /** A press on a locked item, watched only to explain the drag it can't start (#635). */
     let lockedPress: { id: string; pointerId: number; x: number; y: number; threshold: number } | null = null;
     let rafId: number | null = null;
+    /**
+     * Calibrating the traced plan (#726): the image follows the pointer and
+     * the plan repaints it per frame; the release commits it in one dispatch.
+     */
+    let imageDrag: { pointerId: number; start: Vec2; from: FloorPlanTransform; latest: FloorPlanTransform } | null = null;
+    /** Ends an image drag, committing where it was let go, or putting it back. */
+    const endImageDrag = (commit: boolean): void => {
+      const drag = imageDrag;
+      if (!drag) return;
+      imageDrag = null;
+      releaseCapture(drag.pointerId);
+      if (commit && drag.latest !== drag.from) layoutActions.setFloorPlanTransform(drag.latest);
+      else schedulePaint();
+    };
 
     /** A zone rectangle being dragged out (#155); world corners, room-centred. */
     interface ZoneGesture {
@@ -392,6 +408,8 @@ export function useCanvas2DInteraction(
       /** The tap on empty floor just before this press, for the double tap. */
       tapBefore: (Point & { time: number }) | null;
       touch: boolean;
+      /** Pressed while calibrating the traced plan (#726): a tap picks a point, not the selection. */
+      calibrating?: boolean;
     } | null = null;
     /** The last tap on empty floor by a finger; any other press forgets it. */
     let lastTap: (Point & { time: number }) | null = null;
@@ -404,6 +422,7 @@ export function useCanvas2DInteraction(
       const [a, b] = [...touches.keys()];
       if (a === undefined || b === undefined) return;
       if (houseGestureHeld()) abortGesture(true);
+      endImageDrag(false);
       if (pan) releaseCapture(pan.pointerId);
       pan = null;
       lastTap = null;
@@ -428,7 +447,8 @@ export function useCanvas2DInteraction(
 
     const paintGhost = (): void => {
       rafId = null;
-      const { layout, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId, selectedWallId, roomsToName } = paramsRef.current;
+      const { layout: committed, activeFloor, view, selectedItemId, extraSelectedIds, selectedZoneId, selectedWallId, roomsToName } = paramsRef.current;
+      const layout = imageDrag ? { ...committed, floorPlanTransform: imageDrag.latest } : committed;
       const session = gesture?.started ? gesture : null;
       const wallMove = wallHold?.started ? paramsRef.current.wallMovePreview?.() : null;
       const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : (wallMove?.items ?? activeFloor.items);
@@ -455,6 +475,8 @@ export function useCanvas2DInteraction(
         selectedZoneId,
         selectedWallId,
         selectedWallRefused: (wallMove?.refusal ?? null) !== null,
+        calibrationPoints: getPlanCalibration()?.points,
+        floorPlanUnclipped: getPlanCalibration() !== null,
         fitBounds: fit.bounds,
         offPlan: fit.offPlan,
         insets: fit.insets,
@@ -635,12 +657,35 @@ export function useCanvas2DInteraction(
         if (event.pointerId !== held.pointerId) abortGesture(true);
         return;
       }
+      if (imageDrag) {
+        if (event.pointerId !== imageDrag.pointerId) endImageDrag(false);
+        return;
+      }
       // A later finger of a multi-touch gesture never selects or drags.
       if (event.button !== 0 || event.isPrimary === false) return;
       const p = paramsRef.current;
       fit = measureFit(canvas);
       const world = worldAt(event);
       if (!world) return;
+      // Calibrating the traced plan (#726) claims every press: nothing is
+      // selected underneath. Picking, a press is a view press that becomes a
+      // point if it is a tap; placing, it takes the image.
+      const calibration = getPlanCalibration();
+      if (calibration && !p.exploring) {
+        const transform = p.layout.floorPlanTransform;
+        if (calibration.phase !== 'move' || !transform) {
+          const at = local(event);
+          pan = { pointerId: event.pointerId, last: at, down: at, threshold: dragThresholdPx(event.pointerType), started: false, tapBefore: null, touch: event.pointerType === 'touch', calibrating: true };
+          return;
+        }
+        imageDrag = { pointerId: event.pointerId, start: world, from: transform, latest: transform };
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // Capture can throw if the pointer is already gone; safe to ignore.
+        }
+        return;
+      }
       // The Walls tool claims the press, as on the 3D floor (#349). It comes
       // before zones: arming zones parks it, so if both are on it is the
       // later pick.
@@ -797,6 +842,14 @@ export function useCanvas2DInteraction(
 
     const onPointerMove = (event: PointerEvent): void => {
       if (touches.has(event.pointerId)) touches.set(event.pointerId, local(event));
+      if (imageDrag && event.pointerId === imageDrag.pointerId) {
+        const world = worldAt(event);
+        if (world) {
+          imageDrag.latest = movedFloorPlan(imageDrag.from, world.x - imageDrag.start.x, world.z - imageDrag.start.z);
+          schedulePaint();
+        }
+        return;
+      }
       if (pinch) {
         const a = touches.get(pinch.a);
         const b = touches.get(pinch.b);
@@ -958,13 +1011,28 @@ export function useCanvas2DInteraction(
         pan = null;
         releaseCapture(press.pointerId);
         // A cancelled press changes nothing.
-        if (!press.started && event.type === 'pointerup') tapEmptyFloor(press, event);
+        if (press.started || event.type !== 'pointerup') return true;
+        if (!press.calibrating) {
+          tapEmptyFloor(press, event);
+          return true;
+        }
+        // A calibration point is a tap (#726): placed where it lifts, and only
+        // if it stayed put, so a pan or a pinch never drops one.
+        const at = local(event);
+        const world = Math.hypot(at.x - press.down.x, at.y - press.down.y) <= TAP_SLOP_PX ? worldAt(event) : null;
+        if (world && !paramsRef.current.exploring) addCalibrationPoint(world);
         return true;
       }
       return false;
     };
 
     const endGesture = (event: PointerEvent): void => {
+      if (imageDrag && event.pointerId === imageDrag.pointerId) {
+        touches.delete(event.pointerId);
+        // Let go over the HUD, or cancelled: the image goes back.
+        endImageDrag(event.type === 'pointerup' && pointerOnCanvas(canvas, event.clientX, event.clientY));
+        return;
+      }
       if (endViewGesture(event)) return;
       lockedPress = null;
       if (wallHold && event.pointerId === wallHold.pointerId) {
@@ -1039,6 +1107,11 @@ export function useCanvas2DInteraction(
     };
 
     const onPointerCancel = (event: PointerEvent): void => {
+      if (imageDrag && event.pointerId === imageDrag.pointerId) {
+        touches.delete(event.pointerId);
+        endImageDrag(false);
+        return;
+      }
       if (endViewGesture(event)) return;
       lockedPress = null;
       if (wallPress && event.pointerId === wallPress.pointerId) {
@@ -1086,7 +1159,7 @@ export function useCanvas2DInteraction(
     // follows the gesture state after every event.
     const root = document.documentElement;
     const syncGestureFlag = (): void => {
-      root.toggleAttribute(PLAN_GESTURE_ATTR, houseGestureHeld() || pinch !== null || pan?.started === true);
+      root.toggleAttribute(PLAN_GESTURE_ATTR, houseGestureHeld() || imageDrag !== null || pinch !== null || pan?.started === true);
     };
     const synced = (handler: (event: PointerEvent) => void) => (event: PointerEvent): void => {
       handler(event);
@@ -1106,16 +1179,17 @@ export function useCanvas2DInteraction(
       touches.clear();
       pinch = null;
       pan = null;
+      endImageDrag(false);
       if (houseGestureHeld()) abortGesture(true);
       syncGestureFlag();
     };
     const onLostCapture = (event: PointerEvent): void => {
-      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold ?? pan;
+      const held = gesture ?? zoneGesture ?? wallPress ?? zoneEdit ?? wallHold ?? pan ?? imageDrag;
       if (held && held.pointerId === event.pointerId) onLost();
     };
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      if (houseGestureHeld() || pinch || pan) return;
+      if (houseGestureHeld() || imageDrag || pinch || pan) return;
       const at = local(event);
       // Lines scroll in rows of about 16 px.
       const pixels = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
@@ -1145,6 +1219,7 @@ export function useCanvas2DInteraction(
       setPlanZoom(canvas, NO_PLAN_ZOOM);
       // Disabled (view switch) or unmounted mid-drag: discard the session so
       // nothing stale is committed on a later pointerup.
+      imageDrag = null;
       abortGesture();
       setZoneCursor('');
       syncGestureFlag();

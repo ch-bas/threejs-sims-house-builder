@@ -6,7 +6,7 @@ import {
   GRID_SIZE_METERS,
 } from '../lib/constants';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
+import { floorPlanFitOf, floorPlanPlacement } from '../lib/floor-plan-fit';
 import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
 import { formatMetres, formatSize } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
@@ -21,7 +21,7 @@ import { zoomedTransform, type PlanZoom } from './plan-zoom';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
-import type { FloorLayout, FurnitureItem, RoomLayout, WallId } from '../lib/types';
+import type { FloorLayout, FurnitureItem, RoomLayout, Vec2, WallId } from '../lib/types';
 import type { WallSide } from '../lib/wall-sides';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
@@ -56,6 +56,13 @@ export interface Render2DOptions {
   wallPreview?: WallPreview | null | undefined;
   /** The room stamp in hand (#724). */
   stampGhost?: StampGhost | null | undefined;
+  /** The points picked to calibrate the traced plan (#726), world metres. */
+  calibrationPoints?: readonly Vec2[] | undefined;
+  /**
+   * Calibrating (#726): the traced image shows past the walls too, dimmed, so
+   * its margins (dimension lines, walls outside the room) can be measured and lined up.
+   */
+  floorPlanUnclipped?: boolean | undefined;
   hasCollision: (item: FurnitureItem) => boolean;
   /**
    * Margin (CSS px) around the room. The default suits the full-screen 2D
@@ -235,7 +242,7 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds, options.zoom);
 
-  drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
+  drawFloor(ctx, layout, floor, offsetX, offsetY, scale, options.floorPlanUnclipped === true);
   drawZoneFloors(ctx, layout, floor, offsetX, offsetY, scale);
   if (options.showFloorBelow) drawFloorBelow(ctx, layout, planFloorIndex(layout.floors, floor), offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
@@ -293,6 +300,54 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (selectedZone) drawZoneHandles(ctx, layout, selectedZone, offsetX, offsetY, scale);
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale);
   if (options.stampGhost) drawStampGhost(ctx, layout, options.stampGhost, offsetX, offsetY, scale);
+  if (options.calibrationPoints?.length) drawCalibrationPoints(ctx, layout, options.calibrationPoints, offsetX, offsetY, scale);
+}
+
+/**
+ * The calibration's two points (#726): a ringed cross on each, joined by a
+ * dashed line. Cyan on a dark halo, so they read over any scan.
+ */
+function drawCalibrationPoints(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  points: readonly Vec2[],
+  offsetX: number,
+  offsetY: number,
+  scale: number
+): void {
+  const at = (point: Vec2) => ({ x: offsetX + (point.x + layout.width / 2) * scale, y: offsetY + (point.z + layout.height / 2) * scale });
+  const canvasPoints = points.map(at);
+  ctx.save();
+  ctx.lineCap = 'round';
+  const stroke = (draw: () => void): void => {
+    for (const [colour, width] of [['rgba(15, 23, 42, 0.85)', 4], ['#22d3ee', 2]] as const) {
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      draw();
+      ctx.stroke();
+    }
+  };
+  const [first, second] = canvasPoints;
+  if (first && second) {
+    ctx.setLineDash([6, 4]);
+    stroke(() => {
+      ctx.moveTo(first.x, first.y);
+      ctx.lineTo(second.x, second.y);
+    });
+    ctx.setLineDash([]);
+  }
+  for (const point of canvasPoints) {
+    stroke(() => {
+      ctx.moveTo(point.x + 7, point.y);
+      ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+      ctx.moveTo(point.x - 11, point.y);
+      ctx.lineTo(point.x + 11, point.y);
+      ctx.moveTo(point.x, point.y - 11);
+      ctx.lineTo(point.x, point.y + 11);
+    });
+  }
+  ctx.restore();
 }
 
 /** A thumbnail's off-plan arrows are bare dots: fan them closer. */
@@ -563,7 +618,8 @@ function drawFloor(
   floor: FloorLayout,
   offsetX: number,
   offsetY: number,
-  scale: number
+  scale: number,
+  unclipped = false
 ): void {
   // The tracing image belongs to the ground floor only, like in 3D
   // (use-scene-effects keys it on floor index 0) — painting it under every
@@ -583,27 +639,26 @@ function drawFloor(
     if (floorPlanImageCache?.url === url && floorPlanImageCache.image.complete) {
       const img = floorPlanImageCache.image;
       if (img.naturalWidth > 0) {
-        const { source, dest } = computeFloorPlanPlacement(
-          img.naturalWidth,
-          img.naturalHeight,
-          layout.width / layout.height,
-          layout.floorPlanFitMode ?? 'stretch'
-        );
+        // The rectangle the 3D floor paints too (#726); a calibrated image
+        // may reach past the walls, and is clipped to the building like the floor.
+        const { source, dest } = floorPlanPlacement(img.naturalWidth, img.naturalHeight, floorPlanFitOf(layout));
         const roomW = layout.width * scale;
         const roomH = layout.height * scale;
-        ctx.globalAlpha = layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY;
-        ctx.drawImage(
-          img,
-          source.x,
-          source.y,
-          source.w,
-          source.h,
-          offsetX + dest.x * roomW,
-          offsetY + dest.y * roomH,
-          dest.w * roomW,
-          dest.h * roomH
-        );
-        ctx.globalAlpha = 1;
+        const opacity = layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY;
+        const paint = (alpha: number, outside: boolean): void => {
+          ctx.save();
+          ctx.beginPath();
+          // Outside: the whole canvas less the building, by the even-odd rule.
+          if (outside) ctx.rect(-1e5, -1e5, 2e5, 2e5);
+          ctx.rect(offsetX, offsetY, roomW, roomH);
+          ctx.clip('evenodd');
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(img, source.x, source.y, source.w, source.h, offsetX + dest.x * roomW, offsetY + dest.y * roomH, dest.w * roomW, dest.h * roomH);
+          ctx.restore();
+        };
+        paint(opacity, false);
+        // While calibrating, the rest of the image shows dimmed around the building.
+        if (unclipped) paint(Math.max(0.15, opacity * 0.45), true);
       }
       return;
     }

@@ -60,6 +60,7 @@ import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
 import { PhotoBar } from './panels/photo-bar';
 import { PlacementHint } from './panels/placement-hint';
+import { PlanCalibrationChip } from './panels/plan-calibration-chip';
 import { SidebarDrawer } from './panels/sidebar-drawer';
 import { StatusToastHost } from './panels/status-toast';
 import { TouchModeToggle } from './panels/touch-mode-toggle';
@@ -1095,6 +1096,7 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Inline zone naming and export/share status (#374) */}
       <ZoneNameChip />
+      <PlanCalibrationChip />
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}
       <ConfirmDialogHost />

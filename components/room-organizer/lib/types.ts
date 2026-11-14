@@ -87,6 +87,18 @@ export type StairsShape = 'straight' | 'winder';
 
 export type FloorPlanFitMode = 'stretch' | 'cover' | 'contain';
 
+/**
+ * A traced plan calibrated from a known length (#726): the image keeps its
+ * proportions at `scale` metres per image pixel, its centre at
+ * (`offsetX`, `offsetZ`) in world metres (room-centred). Absent, the image
+ * fills the footprint by `floorPlanFitMode`.
+ */
+export interface FloorPlanTransform {
+  scale: number;
+  offsetX: number;
+  offsetZ: number;
+}
+
 export type FurnitureCategory =
   | 'seating'
   | 'tables'
@@ -373,6 +385,8 @@ export interface RoomLayout {
   floorPlanImage?: string;
   floorPlanOpacity?: number;
   floorPlanFitMode?: FloorPlanFitMode;
+  /** The traced plan's calibration (#726); wins over the fit mode. */
+  floorPlanTransform?: FloorPlanTransform;
   /** Sloped site; absent is flat ground at the ground-floor level. */
   terrain?: TerrainSpec;
   neighbours?: NeighbourSpec;

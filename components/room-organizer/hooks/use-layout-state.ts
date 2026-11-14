@@ -19,6 +19,7 @@ import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanTransform,
   Frontage,
   FurnitureItem,
   InteriorWall,
@@ -58,6 +59,8 @@ export interface LayoutActions {
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
+  /** Calibrate the traced plan (#726); `null` hands it back to the fit mode. */
+  setFloorPlanTransform(transform: FloorPlanTransform | null): void;
   setRoofStyle(style: RoofStyle): void;
   /** Cut a corner out of the building, or fill it back in (#727). */
   setCutout(cutout: FootprintCutout | null): void;
