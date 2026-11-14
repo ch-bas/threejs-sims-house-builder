@@ -13,6 +13,7 @@ import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
 import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
 import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitScale, type OffPlanItem, type PlanBounds } from '../lib/plan-view-fit';
+import { roomScoreLine, type RoomScore } from '../lib/room-score';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
@@ -105,6 +106,12 @@ export interface Render2DOptions {
   zoom?: PlanZoom | undefined;
   /** The unit lengths and areas are written in (#725); the editor's display unit if absent. */
   unit?: LengthUnit | undefined;
+  /**
+   * The active storey's room scores by zone id (`activeStoreyRoomScores`, #905):
+   * the on-screen plan writes "Kitchen · ★★★☆☆" under a scored zone's name.
+   * Game state, not drawing data: thumbnails, the blueprint and the exports never pass it.
+   */
+  roomScores?: ReadonlyMap<string, Pick<RoomScore, 'type' | 'stars'>> | undefined;
 }
 
 const PADDING = PLAN_PADDING_PX;
@@ -257,7 +264,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
   drawOpeningGaps(ctx, layout, floor, offsetX, offsetY, scale, viewWidth, viewHeight);
-  drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true, unit);
+  const scoreLines = drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true, unit, options.thumbnail ? undefined : options.roomScores);
 
   const heatmapPeak = options.showHeatmap ? drawHeatmap(ctx, layout, floor.items, offsetX, offsetY, scale) : 0;
 
@@ -268,6 +275,9 @@ export function render2DTopDown(options: Render2DOptions): void {
   }
 
   drawFurniture(ctx, options, offsetX, offsetY, scale, unit);
+  // A room's stars go over its furniture: a kitchen's counters run along the
+  // very wall its name is written by (#905).
+  drawRoomScoreLines(ctx, scoreLines);
 
   if (options.showMeasurements) {
     drawRoomDimensions(ctx, layout, offsetX, offsetY, scale, unit);
@@ -558,10 +568,12 @@ function drawZoneLabels(
   scale: number,
   showArea: boolean,
   thumbnail: boolean,
-  unit: LengthUnit
-): void {
+  unit: LengthUnit,
+  roomScores: Render2DOptions['roomScores']
+): RoomScoreLine[] {
+  const lines: RoomScoreLine[] = [];
   const zones = floor.zones ?? [];
-  if (zones.length === 0 || (thumbnail && scale < ZONE_LABEL_MIN_SCALE)) return;
+  if (zones.length === 0 || (thumbnail && scale < ZONE_LABEL_MIN_SCALE)) return lines;
   const recess = entrancePlanOutline(layout, planFloorIndex(layout.floors, floor));
   ctx.save();
   ctx.textAlign = 'center';
@@ -583,13 +595,58 @@ function drawZoneLabels(
     if (ctx.measureText(zone.name).width > w - 4) continue;
     ctx.strokeText(zone.name, cx, y + 11);
     ctx.fillText(zone.name, cx, y + 11);
+    let lineY = y + 25;
     if (area) {
       ctx.font = '10px Arial';
       // "1,292 sq ft" is wider than "120.0 m²": it too must stay inside its zone (#725).
       if (unit === 'imperial' && ctx.measureText(area).width > w - 4) continue;
-      ctx.strokeText(area, cx, y + 25);
-      ctx.fillText(area, cx, y + 25);
+      ctx.strokeText(area, cx, lineY);
+      ctx.fillText(area, cx, lineY);
+      lineY += 14;
     }
+    // The room the furniture makes and its stars (#905), when they fit inside the zone.
+    const score = roomScores?.get(zone.id);
+    const line = score ? roomScoreLine(score) : null;
+    if (line && lineY + 7 <= y + h) {
+      ctx.font = ROOM_SCORE_FONT;
+      const width = ctx.measureText(line).width;
+      if (width + 2 * ROOM_SCORE_PAD_PX > w - 4) continue;
+      lines.push({ text: line, x: cx, y: lineY, width });
+    }
+  }
+  ctx.restore();
+  return lines;
+}
+
+/** A zone's "Kitchen · ★★★☆☆" line (#905), drawn after the furniture. */
+interface RoomScoreLine {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+}
+
+const ROOM_SCORE_FONT = 'bold 10px Arial';
+const ROOM_SCORE_PAD_PX = 4;
+
+/** The stars lines, each on a white tag so they read over furniture as well as floor. */
+function drawRoomScoreLines(ctx: CanvasRenderingContext2D, lines: readonly RoomScoreLine[]): void {
+  if (lines.length === 0) return;
+  ctx.save();
+  ctx.font = ROOM_SCORE_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const line of lines) {
+    const left = line.x - line.width / 2 - ROOM_SCORE_PAD_PX;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.strokeStyle = 'rgba(51, 51, 51, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.rect(left, line.y - 7, line.width + 2 * ROOM_SCORE_PAD_PX, 14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#333';
+    ctx.fillText(line.text, line.x, line.y);
   }
   ctx.restore();
 }

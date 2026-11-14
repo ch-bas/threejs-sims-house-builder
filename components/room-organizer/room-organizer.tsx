@@ -43,6 +43,7 @@ import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
 import { loadQualityChoice } from './lib/render-quality';
+import { activeStoreyRoomScores } from './lib/room-score';
 import { focusCoverFor } from './lib/scene-insets';
 import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
@@ -484,6 +485,13 @@ export function RoomOrganizer(): JSX.Element {
     [view.drawZoneMode, exploring, layout, activeFloorIndex]
   );
 
+  // The active storey's room types and stars, written on the plan under each
+  // zone's name (#905). Only while the plan shows; the collisions are the editor's.
+  const planRoomScores = useMemo(
+    () => (view.view2D ? activeStoreyRoomScores(layout, { floorIndex: activeFloorIndex, ids: collidingIds }) : undefined),
+    [view.view2D, layout, activeFloorIndex, collidingIds]
+  );
+
   // Moving a selected wall, in both views (#718). The 3D ghosts are wired below,
   // once the scene exists.
   const interiorSelectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
@@ -539,6 +547,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedZoneId: planZoneId,
     onZoneSelect: setSelectedZoneId,
     roomsToName: planRoomsToName,
+    roomScores: planRoomScores,
   });
 
   const orbitGroundAt = useCallback(
@@ -699,6 +708,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedWall,
     selectedZoneId: planZoneId,
     roomsToName: planRoomsToName,
+    roomScores: planRoomScores,
     wallDraft,
     stampGhost,
     stampArmed: roomStamp.armed,
@@ -1191,7 +1201,7 @@ export function RoomOrganizer(): JSX.Element {
       <PlacementHint active={placingId !== null} ghost={ghost} onCancel={placementGhost.cancel} />
 
       {/* Inline zone naming and export/share status (#374) */}
-      <ZoneNameChip />
+      <ZoneNameChip selectedZoneId={planZoneId} />
       <PlanCalibrationChip />
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}
