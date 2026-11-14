@@ -1101,6 +1101,7 @@ export function RoomOrganizer(): JSX.Element {
             remoteChange={remoteLayout !== null}
             onAdoptRemote={adoptRemoteLayout}
             onDismissRemote={clearRemoteLayout}
+            onShare={stableShareLink}
           />
         </div>
       </div>

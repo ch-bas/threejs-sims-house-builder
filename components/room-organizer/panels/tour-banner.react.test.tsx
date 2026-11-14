@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HeaderStats } from './header-stats';
 import { TourBanner, type TourBannerProps } from './tour-banner';
 
 function setup(overrides: Partial<TourBannerProps> = {}) {
@@ -51,5 +52,21 @@ describe('TourBanner (#722)', () => {
   it('leaves the screen to the walk while walking', () => {
     setup({ walking: true });
     expect(screen.queryByRole('group', { name: 'Shared house' })).toBeNull();
+  });
+});
+
+describe('the header Share button (#722)', () => {
+  afterEach(cleanup);
+
+  it('shares the house', () => {
+    const onShare = vi.fn();
+    render(<HeaderStats onShare={onShare} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Share a link to this house' }));
+    expect(onShare).toHaveBeenCalledTimes(1);
+  });
+
+  it('is absent without a share action', () => {
+    render(<HeaderStats />);
+    expect(screen.queryByRole('button', { name: 'Share a link to this house' })).toBeNull();
   });
 });

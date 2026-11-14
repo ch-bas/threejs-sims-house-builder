@@ -2114,3 +2114,28 @@ html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line {
     padding: 0 6px 0 10px;
   }
 }
+
+/* The header's Share (#722), beside the save status. */
+.pc-tile.pc-share-button {
+  display: inline-grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border-radius: 999px;
+}
+@media (pointer: coarse) {
+  /* A 44 px tap around the small header button. */
+  .pc-tile.pc-share-button {
+    position: relative;
+  }
+  .pc-tile.pc-share-button::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}

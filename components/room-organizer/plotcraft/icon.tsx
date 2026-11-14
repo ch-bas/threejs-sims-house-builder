@@ -96,7 +96,9 @@ export type PlotcraftIconName =
   | 'eye'
   | 'tag'
   | 'magnet'
-  | 'warn';
+  | 'warn'
+  // The header's Share (#722)
+  | 'link';
 
 const PATHS: Record<PlotcraftIconName, ReactNode> = {
   wall: (
@@ -636,6 +638,12 @@ const PATHS: Record<PlotcraftIconName, ReactNode> = {
     <>
       <path d="M12 4l9 16H3z" />
       <path d="M12 10v4M12 17v.5" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M10 14a4 4 0 0 0 5.66 0l3 -3a4 4 0 0 0 -5.66 -5.66l-1 1" />
+      <path d="M14 10a4 4 0 0 0 -5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1 -1" />
     </>
   ),
 };
