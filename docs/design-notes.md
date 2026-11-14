@@ -491,6 +491,16 @@ to respect.
   round (`bedId` in `lib/npc-bodies`). The spots are built
   with the seats when the floor's items change, never per frame. Still to
   come: the garden (the nav grid is indoors only) and a mood marker.
+  Hygiene (#904) runs out in 200 s and is met standing at the toilet, the
+  shower, the bath or the basin, with the reach clip. A computer is fun
+  used like a TV, from a seat facing it within 1.3 m (the desk chair), or
+  standing. A chair pushed in at a desk or a table has no free floor in
+  front, so the seats are found against the nav grid: such a chair is
+  entered from whichever side is free, or else from behind, but only when
+  the straight walk from there to where the feet go (0.24 m in front of the
+  hips) keeps 0.1 m from every other item and partition. A chair tucked
+  under a table, or three along one side, would put the feet under the
+  table: it keeps its blocked front and the walkers pass it over.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`

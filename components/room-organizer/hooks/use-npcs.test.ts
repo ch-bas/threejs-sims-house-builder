@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { ROOM_TEMPLATES } from '../lib/constants';
 import { type PlayerBody, createNpcBody, createNpcHandOff } from '../lib/npc-bodies';
 import { findNeedSpots } from '../lib/npc-needs';
-import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath } from '../lib/npc-path';
+import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath, isFreeAt } from '../lib/npc-path';
 import { findNpcSeats } from '../lib/npc-seats';
 import {
   NPC_REPAINT,
@@ -72,7 +73,7 @@ function walker(overrides: Partial<NpcState> = {}, to = { x: 2, z: 0 }): NpcStat
     standHeading: Number.NaN,
     stuck: 0,
     body: createNpcBody(0, 0, 0, 0),
-    needs: { hunger: 1, energy: 1, fun: 1 },
+    needs: { hunger: 1, energy: 1, fun: 1, hygiene: 1 },
     seeking: null,
     using: null,
     ...overrides,
@@ -611,7 +612,7 @@ describe('walkers with needs (#617)', () => {
   }
 
   it('a hungry walker goes to the fridge, reaches in, and is fed', () => {
-    const npc = needy({ hunger: 0.05, energy: 0.9, fun: 0.9 });
+    const npc = needy({ hunger: 0.05, energy: 0.9, fun: 0.9, hygiene: 1 });
     let usedFridge = false;
     let gap = Number.POSITIVE_INFINITY;
     live(npc, 30, () => {
@@ -627,7 +628,7 @@ describe('walkers with needs (#617)', () => {
   });
 
   it('a tired walker rests in the sofa, and gets up rested', () => {
-    const npc = needy({ hunger: 0.9, energy: 0.05, fun: 0.9 });
+    const npc = needy({ hunger: 0.9, energy: 0.05, fun: 0.9, hygiene: 1 });
     let rested = false;
     live(npc, 60, () => {
       if (npc.mode === 'seated' && npc.using === 'energy') rested = true;
@@ -641,7 +642,7 @@ describe('walkers with needs (#617)', () => {
   it('a bored walker watches the TV from the sofa facing it, or takes a book', () => {
     const uses = new Set<string>();
     for (let trial = 0; trial < 6; trial++) {
-      const npc = needy({ hunger: 0.9, energy: 0.9, fun: 0.02 });
+      const npc = needy({ hunger: 0.9, energy: 0.9, fun: 0.02, hygiene: 1 });
       const random = seeded(trial + 1);
       live(npc, 40, () => npc.using === 'fun' && (npc.mode === 'seated' || npc.anim!.current === npc.anim!.pickUp), random);
       expect(npc.using).toBe('fun');
@@ -651,7 +652,7 @@ describe('walkers with needs (#617)', () => {
   });
 
   it("doesn't head for the fridge another walker stands at, or the place the player sits", () => {
-    const npc = needy({ hunger: 0.05, energy: 0.05, fun: 0.9 });
+    const npc = needy({ hunger: 0.05, energy: 0.05, fun: 0.9, hygiene: 1 });
     const fridgeSpot = spots.find((spot) => spot.itemId === 'fridge')!;
     const atFridge = walker({ position: { x: fridgeSpot.x, z: fridgeSpot.z }, pause: 5 });
     const sofaSpots = spots.filter((spot) => spot.itemId === 'sofa');
@@ -674,7 +675,7 @@ describe('walkers with needs (#617)', () => {
     const npcs: NpcState[] = [];
     for (let i = 0; i < 4; i++) {
       const cell = nav.free[Math.floor(random() * nav.freeCount)]!;
-      const npc = needy({ hunger: random(), energy: random(), fun: random() });
+      const npc = needy({ hunger: random(), energy: random(), fun: random(), hygiene: 1 });
       npc.position = { x: cellX(nav, cell), z: cellZ(nav, cell) };
       npcs.push(npc);
     }
@@ -705,22 +706,88 @@ describe('walkers with needs (#617)', () => {
     // The player sits in the middle of the bed, 0.55 m behind the foot slots.
     const you = { ...createNpcHandOff().player, present: true, x: 0, z: 0.5, seatX: 0, seatZ: -1, bedId: 'bed' };
     for (let trial = 0; trial < 10; trial++) {
-      const npc = needy({ hunger: 1, energy: 0.05, fun: 1 });
+      const npc = needy({ hunger: 1, energy: 0.05, fun: 1, hygiene: 1 });
       npc.position = { x: 0, z: 2 };
       expect(planNeed(npc, bedNav, bedSeats, bedSpots, seeded(trial), [npc], you)).toBe(false);
       expect(planSeat(npc, bedNav, bedSeats, seeded(trial), [npc], you)).toBe(false);
     }
-    expect(planSeat(needy({ hunger: 1, energy: 1, fun: 1 }), bedNav, bedSeats, seeded(1), [], { ...you, bedId: null, seatX: Number.NaN })).toBe(true);
+    expect(planSeat(needy({ hunger: 1, energy: 1, fun: 1, hygiene: 1 }), bedNav, bedSeats, seeded(1), [], { ...you, bedId: null, seatX: Number.NaN })).toBe(true);
   });
 
+  it('a walker that needs a wash goes to the basin and washes (#904)', () => {
+    const basin = { ...furniture('basin', 'bathroom-sink', 2, -3.5, 0.6, 0.45), height: 0.85 };
+    const washItems = [basin];
+    const washNav = makeNav(washItems);
+    const washSpots = findNeedSpots(washItems, findNpcSeats(washItems));
+    const npc = needy({ hunger: 1, energy: 1, fun: 1, hygiene: 0.05 });
+    const random = seeded(904);
+    let washed = false;
+    for (let t = 0; t < 30 && !(washed && npc.mode === 'walk'); t += FRAME) {
+      stepNpcs([npc], FRAME, washNav, 0, random, new Map(), null, washSpots);
+      if (npc.using === 'hygiene' && npc.anim!.current === npc.anim!.interact) {
+        washed = true;
+        expect(gapTo(basin, npc.position.x, npc.position.z)).toBeLessThan(0.6);
+      }
+    }
+    expect(washed).toBe(true);
+    expect(npc.needs.hygiene).toBeGreaterThan(0.5);
+  });
+
+  it('a bored walker sits at the desk to use the computer, coming in from the side (#904)', () => {
+    // The office template's desk, computer and the chair pushed in at it.
+    const desk = furniture('desk', 'desk', 0, -0.8, 1.2, 0.6);
+    const pc = { ...furniture('pc', 'computer', 0, -0.8, 0.5, 0.5), height: 0.5 };
+    const chair = furniture('chair', 'chair', 0, 0, 0.5, 0.5, Math.PI);
+    const deskItems = [desk, pc, chair];
+    const deskNav = makeNav(deskItems);
+    const seatList = findNpcSeats(deskItems, { isFree: (x, z) => isFreeAt(deskNav, x, z), blockers: deskNav.colliders });
+    const deskSeats = new Map(seatList.map((seat) => [seat.key, seat]));
+    const deskSpots = findNeedSpots(deskItems, seatList);
+    expect(deskSpots.map((spot) => spot.seatKey)).toEqual(['chair:0']);
+    const npc = needy({ hunger: 1, energy: 1, fun: 0.05, hygiene: 1 });
+    npc.position = { x: 2, z: 2 };
+    const random = seeded(904);
+    for (let t = 0; t < 40 && npc.mode !== 'seated'; t += FRAME) stepNpcs([npc], FRAME, deskNav, 0, random, deskSeats, null, deskSpots);
+    expect(npc.mode).toBe('seated');
+    expect(npc.using).toBe('fun');
+    expect(npc.seat?.itemId).toBe('chair');
+  });
+
+  // Deterministic and CPU-bound (7,200 frames × 3 walkers).
+  it('in the kitchen template, nobody ends up inside the dining table (#904)', () => {
+    const kitchen = ROOM_TEMPLATES.kitchen;
+    const kitchenItems = kitchen.floors[0]!.items;
+    const kitchenNav = buildNpcNav({ items: kitchenItems, interiorWalls: [], keepOut: [], roomWidth: kitchen.width, roomDepth: kitchen.height })!;
+    const seatList = findNpcSeats(kitchenItems, { isFree: (x, z) => isFreeAt(kitchenNav, x, z), blockers: kitchenNav.colliders });
+    const kitchenSeats = new Map(seatList.map((seat) => [seat.key, seat]));
+    const kitchenSpots = findNeedSpots(kitchenItems, seatList);
+    const table = kitchenItems.find((item) => item.type === 'dining-table')!;
+    const random = seeded(9041);
+    const npcs: NpcState[] = [];
+    for (let i = 0; i < 3; i++) {
+      const cell = kitchenNav.free[Math.floor(random() * kitchenNav.freeCount)]!;
+      const npc = needy({ hunger: random(), energy: random(), fun: random(), hygiene: random() });
+      npc.position = { x: cellX(kitchenNav, cell), z: cellZ(kitchenNav, cell) };
+      npcs.push(npc);
+    }
+    let inside = 0;
+    for (let frame = 0; frame < 120 * 60; frame++) {
+      stepNpcs(npcs, FRAME, kitchenNav, 0, random, kitchenSeats, null, kitchenSpots);
+      for (const npc of npcs) {
+        if (Math.abs(npc.position.x - table.position!.x) < table.width / 2 - 0.05 && Math.abs(npc.position.z - table.position!.z) < table.depth / 2 - 0.05) inside += 1;
+      }
+    }
+    expect(inside).toBe(0);
+  }, 30_000);
+
   it('wanders as before while every need is met', () => {
-    const npc = needy({ hunger: 1, energy: 1, fun: 1 });
+    const npc = needy({ hunger: 1, energy: 1, fun: 1, hygiene: 1 });
     expect(planNeed(npc, nav, seats, spots, seeded(1))).toBe(false);
     expect(npc.seeking).toBeNull();
   });
 
   it('needs run down while it walks', () => {
-    const npc = rigged({ needs: { hunger: 1, energy: 1, fun: 1 } });
+    const npc = rigged({ needs: { hunger: 1, energy: 1, fun: 1, hygiene: 1 } });
     for (let frame = 0; frame < 60; frame++) stepNpcs([npc], FRAME, OPEN, 0);
     expect(npc.needs.fun).toBeLessThan(1);
     expect(npc.needs.hunger).toBeLessThan(1);

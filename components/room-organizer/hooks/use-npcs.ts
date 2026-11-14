@@ -113,7 +113,7 @@ export interface NpcState {
   stuck: number;
   /** What the player bumps into and can't sit on (#585); moved with the walker every step. */
   body: NpcBody;
-  /** Hunger, energy and fun, running down (#617). */
+  /** Hunger, energy, fun and hygiene, running down (#617, #904). */
   needs: NpcNeeds;
   /** The need the trip under way (or the seat headed for) is to meet; null for a wander. */
   seeking: NeedKind | null;
@@ -434,7 +434,8 @@ function syncNpcStoreys(
     // Rebuilt only when what it reads changes (not on a recolour or a lock,
     // which still hand over new arrays).
     const signature = `${building.width}:${building.height}|${npcNavSignature({ items: floor.items, interiorWalls, keepOut })}`;
-    if (signature !== storey.signature) {
+    const navChanged = signature !== storey.signature;
+    if (navChanged) {
       storey.signature = signature;
       storey.nav = buildNpcNav({ items: floor.items, interiorWalls, keepOut, roomWidth: building.width, roomDepth: building.height });
       if (storey.nav && storey.nav.freeCount > 0 && storey.npcs.length > 0) {
@@ -443,10 +444,12 @@ function syncNpcStoreys(
       }
     }
     // Cheap to rebuild, and a rebuild disturbs nobody (a sitter whose seat
-    // moved stands up), so this keys on the items themselves.
-    if (floor.items !== storey.seatItems) {
+    // moved stands up), so this keys on the items themselves, and on the nav:
+    // a chair pushed in at a desk is entered from wherever is free (#904).
+    if (floor.items !== storey.seatItems || navChanged) {
       storey.seatItems = floor.items;
-      const seats = findNpcSeats(floor.items);
+      const nav = storey.nav;
+      const seats = findNpcSeats(floor.items, nav ? { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders } : undefined);
       storey.seats = new Map(seats.map((seat) => [seat.key, seat]));
       storey.spots = findNeedSpots(floor.items, seats);
     }
@@ -1136,10 +1139,11 @@ function arriveAtStop(
   npc.mode = 'pause';
   const activities = npc.anim?.activities ?? [];
   if (using) {
-    // Reach into the fridge or the stove, take a book; the TV, watched
-    // standing, has no clip: just a while in front of it.
+    // Reach into the fridge or the stove, take a book, wash at the basin or
+    // the shower (#904); a screen, used standing, has no clip: just a while
+    // in front of it.
     const itemType = nearestSpotType(spots, using, npc.position.x, npc.position.z);
-    const use = itemType === 'bookshelf' ? npc.anim?.pickUp : using === 'hunger' ? npc.anim?.interact : null;
+    const use = itemType === 'bookshelf' ? npc.anim?.pickUp : using === 'hunger' || using === 'hygiene' ? npc.anim?.interact : null;
     if (use) {
       npc.pause = use.getClip().duration + 0.3;
       standStill(npc, floorY, use);
