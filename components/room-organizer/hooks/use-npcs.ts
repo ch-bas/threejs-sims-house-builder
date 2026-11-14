@@ -2,6 +2,16 @@ import { useEffect, useRef } from 'react';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { type NpcBody, type NpcHandOff, type PlayerBody, createNpcBody, moveNpcBody, seatTakenByPlayer } from '../lib/npc-bodies';
 import {
+  type NeedKind,
+  type NeedSpot,
+  type NpcNeeds,
+  decayNeeds,
+  findNeedSpots,
+  pickNeedSpot,
+  randomNeeds,
+  refillNeed,
+} from '../lib/npc-needs';
+import {
   MAX_PATH_POINTS,
   NPC_RADIUS,
   type NpcNav,
@@ -103,6 +113,12 @@ export interface NpcState {
   stuck: number;
   /** What the player bumps into and can't sit on (#585); moved with the walker every step. */
   body: NpcBody;
+  /** Hunger, energy and fun, running down (#617). */
+  needs: NpcNeeds;
+  /** The need the trip under way (or the seat headed for) is to meet; null for a wander. */
+  seeking: NeedKind | null;
+  /** The need being met at this stop or in this seat, topped up while it lasts. */
+  using: NeedKind | null;
 }
 
 export interface NpcAnimation {
@@ -111,6 +127,9 @@ export interface NpcAnimation {
   stand: ThreeNS.AnimationAction[];
   /** Played now and then at a stop: dance, reach, pick something up. */
   activities?: ThreeNS.AnimationAction[];
+  /** One-shot clips for using things (#617): reaching into the fridge, taking a book. */
+  interact?: ThreeNS.AnimationAction | null;
+  pickUp?: ThreeNS.AnimationAction | null;
   sit?: NpcSitAnimation | null;
   current: ThreeNS.AnimationAction;
 }
@@ -149,6 +168,11 @@ const BLOCKED_SECONDS = [0.7, 1.4] as const;
 const ACTIVITY_CHANCE = 0.4;
 const SEAT_CHANCE = 0.35;
 const SEATED_SECONDS = [5, 11] as const;
+/** A rest in the sofa or a programme on TV takes longer than a sit down (#617). */
+const SEATED_USE_SECONDS = [8, 14] as const;
+/** Standing at something that meets a need with no clip to play: the TV, or a procedural figure. */
+const STAND_USE_SECONDS = [4, 7] as const;
+const NO_SPOTS: readonly NeedSpot[] = [];
 /** Re-plans tried, after a wait, for a way that isn't blocked. */
 const UNBLOCK_TRIES = 12;
 /** Close enough to the spot inside a seat (or back out of it). */
@@ -237,6 +261,8 @@ interface StoreyWalkers {
   /** `npcNavSignature` plus the footprint: equal ones build the same nav. */
   signature: string | null;
   seats: NpcSeats;
+  /** What on the floor meets the walkers' needs (#617), rebuilt with the seats. */
+  spots: readonly NeedSpot[];
   /** The items the seats were found in, so a new array rebuilds them. */
   seatItems: readonly FurnitureItem[] | null;
   floorY: number;
@@ -318,7 +344,7 @@ export function useNpcs(options: UseNpcsOptions): void {
         // only when a walker moved: a rigged figure idles (breathes) every
         // frame, and re-rendering every caster for that pinned the GPU (#400).
         // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
-        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats, player)) as NpcChange;
+        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats, player, storey.spots)) as NpcChange;
       }
       if (shadowDue(performance.now(), change === NPC_SHADOW)) inputsRef.current.requestShadowUpdate?.();
       return change !== NPC_STILL;
@@ -386,7 +412,7 @@ function syncNpcStoreys(
     let storey = storeys.get(floor.id);
     if (!storey) {
       if (!shown) return;
-      storey = { npcs: [], nav: null, signature: null, seats: EMPTY_SEATS, seatItems: null, floorY: 0, index, shown: false };
+      storey = { npcs: [], nav: null, signature: null, seats: EMPTY_SEATS, spots: NO_SPOTS, seatItems: null, floorY: 0, index, shown: false };
       storeys.set(floor.id, storey);
     }
     const floorY = floorElevation(floors, index);
@@ -420,7 +446,9 @@ function syncNpcStoreys(
     // moved stands up), so this keys on the items themselves.
     if (floor.items !== storey.seatItems) {
       storey.seatItems = floor.items;
-      storey.seats = seatMap(floor.items);
+      const seats = findNpcSeats(floor.items);
+      storey.seats = new Map(seats.map((seat) => [seat.key, seat]));
+      storey.spots = findNeedSpots(floor.items, seats);
     }
 
     const nav = storey.nav;
@@ -437,7 +465,7 @@ function syncNpcStoreys(
       // Seeded per storey too, so two storeys don't hold the same people.
       for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, index, i + index * count, stage.people, npcs, here));
       storey.npcs = npcs;
-      stepNpcs(npcs, 0, nav, floorY, Math.random, storey.seats);
+      stepNpcs(npcs, 0, nav, floorY, Math.random, storey.seats, null, storey.spots);
       changed = true;
     }
     storey.shown = shown;
@@ -511,11 +539,9 @@ function createNpc(
       list.filter((entry): entry is ThreeNS.AnimationAction => entry !== null);
     const walk = mixer.clipAction(walkClip);
     const stand = present([action(idleClip), action(clip(PEOPLE_CLIPS.talk))]);
-    const activities = present([
-      action(clip(PEOPLE_CLIPS.dance)),
-      action(clip(PEOPLE_CLIPS.interact), true),
-      action(clip(PEOPLE_CLIPS.pickUp), true),
-    ]);
+    const interact = action(clip(PEOPLE_CLIPS.interact), true);
+    const pickUp = action(clip(PEOPLE_CLIPS.pickUp), true);
+    const activities = present([action(clip(PEOPLE_CLIPS.dance)), interact, pickUp]);
     const down = action(clip(PEOPLE_CLIPS.sitDown), true);
     const up = action(clip(PEOPLE_CLIPS.standUp), true);
     const sitIdle = present([action(clip(PEOPLE_CLIPS.sitIdle)), action(clip(PEOPLE_CLIPS.sitTalk))]);
@@ -523,7 +549,7 @@ function createNpc(
     walk.play();
     // Desynchronise the walkers so their steps don't land in unison.
     walk.time = Math.random() * walkClip.duration;
-    anim = { mixer, walk, stand, activities, sit, current: walk };
+    anim = { mixer, walk, stand, activities, interact, pickUp, sit, current: walk };
   } else {
     const figure = buildHumanFigure(THREE, {
       top: new THREE.MeshStandardMaterial({ color: pick(palette), roughness: 0.8 }),
@@ -575,6 +601,9 @@ function createNpc(
     standHeading: Number.NaN,
     stuck: 0,
     body: createNpcBody(position.x, position.z, floorY, floorIndex),
+    needs: randomNeeds(Math.random),
+    seeking: null,
+    using: null,
   };
   planRoute(npc, nav, Math.random, others);
   return npc;
@@ -596,6 +625,7 @@ export function planRoute(
   npc.destination = -1;
   npc.stuck = 0;
   npc.arrivalHeading = Number.NaN;
+  npc.seeking = null;
   const from = standingCell(npc, nav);
   if (from < 0) return;
   const destination = pickDestination(
@@ -689,10 +719,19 @@ function inSeat(npc: NpcState): boolean {
   return npc.mode !== 'walk' && npc.mode !== 'pause' && npc.mode !== 'blocked';
 }
 
-function seatMap(items: readonly FurnitureItem[]): NpcSeats {
-  const seats = new Map<string, NpcSeat>();
-  for (const seat of findNpcSeats(items)) seats.set(seat.key, seat);
-  return seats;
+/** The item type of the standing spot for `need` nearest (x, z): what a walker that arrived there is using. */
+function nearestSpotType(spots: readonly NeedSpot[], need: NeedKind, x: number, z: number): string | null {
+  let best: NeedSpot | null = null;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const spot of spots) {
+    if (spot.need !== need || spot.seatKey !== null) continue;
+    const gap = Math.hypot(spot.x - x, spot.z - z);
+    if (gap < bestGap) {
+      best = spot;
+      bestGap = gap;
+    }
+  }
+  return best?.itemType ?? null;
 }
 
 /**
@@ -720,20 +759,78 @@ export function planSeat(
     if (nav.region[cell] !== region) continue;
     if (others.some((other) => other !== npc && other.seat?.key === seat.key)) continue;
     // Nor where the player sits (#585).
-    if (player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z)) continue;
+    if (player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat))) continue;
     eligible += 1;
     if (random() * eligible < 1) chosen = seat;
   }
-  if (!chosen) return false;
-  const cell = cellAt(nav, chosen.approachX, chosen.approachZ);
+  return chosen !== null && headForSeat(npc, nav, from, chosen);
+}
+
+/** Route from `from` to a seat's approach point and claim the seat; false when there is no way. */
+function headForSeat(npc: NpcState, nav: NpcNav, from: number, seat: NpcSeat): boolean {
+  const cell = cellAt(nav, seat.approachX, seat.approachZ);
   routeTo(npc, nav, from, cell);
   if (npc.pathLength === 0) return false;
   npc.stuck = 0;
-  npc.seat = chosen;
+  npc.seat = seat;
+  npc.seeking = null;
   npc.destination = cell;
   npc.goal.x = cellX(nav, cell);
   npc.goal.z = cellZ(nav, cell);
   npc.arrivalHeading = Number.NaN;
+  return true;
+}
+
+/**
+ * Head for something that meets the walker's most pressing need (#617):
+ * the fridge or the stove, the bed or the sofa, a seat facing the TV or the
+ * bookshelf, picked by `pickNeedSpot` among the spots it can reach that
+ * nobody (walker or player) holds. `skip` is the need being met right now.
+ * True when it set off; false leaves it to wander.
+ */
+export function planNeed(
+  npc: NpcState,
+  nav: NpcNav,
+  seats: NpcSeats,
+  spots: readonly NeedSpot[],
+  random: () => number,
+  others: readonly NpcState[] = [],
+  player: PlayerBody | null = null,
+  skip: NeedKind | null = null
+): boolean {
+  if (spots.length === 0) return false;
+  const from = standingCell(npc, nav);
+  if (from < 0) return false;
+  const region = nav.region[from];
+  const reachable = (x: number, z: number): boolean => isFreeAt(nav, x, z) && nav.region[cellAt(nav, x, z)] === region;
+  const usable = (spot: NeedSpot): boolean => {
+    if (!reachable(spot.x, spot.z)) return false;
+    if (spot.seatKey === null) {
+      if (others.some((other) => other !== npc && claims(other, spot.x, spot.z))) return false;
+      return player === null || Math.hypot(player.x - spot.x, player.z - spot.z) >= PERSONAL_SPACE;
+    }
+    // Only the rigged figure sits; one sitter per seat (#585).
+    const seat = seats.get(spot.seatKey);
+    if (!seat || !npc.anim?.sit) return false;
+    if (others.some((other) => other !== npc && other.seat?.key === seat.key)) return false;
+    return !(player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat)));
+  };
+  const spot = pickNeedSpot(npc.needs, spots, npc.position.x, npc.position.z, usable, random, skip);
+  if (!spot) return false;
+  if (spot.seatKey !== null) {
+    if (!headForSeat(npc, nav, from, seats.get(spot.seatKey)!)) return false;
+  } else {
+    const cell = cellAt(nav, spot.x, spot.z);
+    routeTo(npc, nav, from, cell);
+    if (npc.pathLength === 0) return false;
+    npc.stuck = 0;
+    npc.seat = null;
+    npc.destination = cell;
+    npc.goal.x = cellX(nav, cell);
+    npc.goal.z = cellZ(nav, cell);
+    npc.arrivalHeading = spot.heading;
+  }
+  npc.seeking = spot.need;
   return true;
 }
 
@@ -770,10 +867,14 @@ export function stepNpcs(
   floorY: number,
   random: () => number = Math.random,
   seats: NpcSeats = EMPTY_SEATS,
-  player: PlayerBody | null = null
+  player: PlayerBody | null = null,
+  spots: readonly NeedSpot[] = NO_SPOTS
 ): NpcChange {
   let change: NpcChange = NPC_STILL;
   for (const npc of npcs) {
+    // Needs run down all the time and are met while using something (#617).
+    decayNeeds(npc.needs, delta);
+    if (npc.using && (npc.mode === 'pause' || npc.mode === 'seated')) refillNeed(npc.needs, npc.using, delta);
     // A rigged figure breathes and shifts its weight even while standing, so
     // it needs frames whenever it exists; the procedural one only when moving.
     if (npc.anim) {
@@ -796,6 +897,8 @@ export function stepNpcs(
           change = NPC_SHADOW;
         }
         if (npc.pause > 0) break;
+        // A use that ran its course meets the need (#617).
+        if (npc.using) refillNeed(npc.needs, npc.using, Number.POSITIVE_INFINITY);
         if (npc.mode === 'seated') standUp(npc);
         else {
           if (npc.mode === 'blocked' && wayAheadBlocked(npc, npcs, player)) {
@@ -826,7 +929,11 @@ export function stepNpcs(
         if (npc.pause > 0) break;
         if (npc.mode === 'sitDown' && npc.anim && sit) {
           npc.mode = 'seated';
-          npc.pause = between(random, SEATED_SECONDS[0], SEATED_SECONDS[1]);
+          // In the seat for a need: resting, or watching TV (#617).
+          npc.using = npc.seeking;
+          npc.seeking = null;
+          const sitFor = npc.using ? SEATED_USE_SECONDS : SEATED_SECONDS;
+          npc.pause = between(random, sitFor[0], sitFor[1]);
           crossFadeTo(npc.anim, randomOf(sit.idle, random));
           npc.shadowSettle = FADE_SECONDS;
         } else {
@@ -870,7 +977,7 @@ export function stepNpcs(
           } else {
             // Up from a seat: walk somewhere before sitting again.
             npc.seat = null;
-            arriveAtStop(npc, nav, floorY, random, npcs, null, player);
+            arriveAtStop(npc, nav, floorY, random, npcs, null, player, spots);
           }
           break;
         }
@@ -899,8 +1006,9 @@ export function stepNpcs(
       }
       case 'walk': {
         // The player sat down in the seat it was heading for (#585): pick again.
-        if (npc.seat && player && seatTakenByPlayer(player, player.floorIndex, npc.seat.x, npc.seat.z)) {
+        if (npc.seat && player && seatTakenByPlayer(player, player.floorIndex, npc.seat.x, npc.seat.z, bedOf(npc.seat))) {
           npc.seat = null;
+          npc.seeking = null;
           npc.pathLength = 0;
           npc.pathIndex = 0;
           npc.destination = -1;
@@ -918,7 +1026,7 @@ export function stepNpcs(
             npc.mode = 'settle';
             npc.stuck = 0;
             sitFeet(npc, npc.seat, npc.target);
-          } else arriveAtStop(npc, nav, floorY, random, npcs, seats, player);
+          } else arriveAtStop(npc, nav, floorY, random, npcs, seats, player, spots);
           change = NPC_SHADOW;
           break;
         }
@@ -986,6 +1094,7 @@ export function stepNpcs(
     const sitting = inSeat(npc) ? npc.seat : null;
     npc.body.seatX = sitting ? sitting.x : Number.NaN;
     npc.body.seatZ = sitting ? sitting.z : Number.NaN;
+    npc.body.bedId = sitting ? bedOf(sitting) : null;
   }
   return change;
 }
@@ -993,8 +1102,10 @@ export function stepNpcs(
 /**
  * Arrived at a stop: face whatever it came to see while it stands for a
  * moment (now and then dancing or reaching for something instead), and
- * plan where it goes next: sometimes one of `seats` (null: not a seat). It
- * sets off after the pause.
+ * plan where it goes next: what meets its most pressing need (#617), or
+ * else sometimes one of `seats` (null: not a seat). At something that meets
+ * a need it uses it instead: reaches into the fridge, takes a book, watches
+ * the TV. It sets off after the pause.
  */
 function arriveAtStop(
   npc: NpcState,
@@ -1003,19 +1114,41 @@ function arriveAtStop(
   random: () => number,
   npcs: readonly NpcState[],
   seats: NpcSeats | null,
-  player: PlayerBody | null
+  player: PlayerBody | null,
+  spots: readonly NeedSpot[]
 ): void {
   npc.standHeading = npc.arrivalHeading;
+  // Arrived where it set out for (not dropped short of a seat it lost).
+  npc.using = npc.destination >= 0 ? npc.seeking : null;
+  npc.seeking = null;
+  const using = npc.using;
+  const toNeed = planNeed(npc, nav, seats ?? EMPTY_SEATS, spots, random, npcs, player, using);
   const toSeat =
+    !toNeed &&
     Boolean(npc.anim?.sit) &&
     seats !== null &&
     seats.size > 0 &&
     random() < SEAT_CHANCE &&
     planSeat(npc, nav, seats, random, npcs, player);
-  if (!toSeat) planRoute(npc, nav, random, npcs, player);
+  if (!toNeed && !toSeat) planRoute(npc, nav, random, npcs, player);
+  // planNeed and planRoute leave what this stop is for alone.
+  npc.using = using;
   npc.mode = 'pause';
   const activities = npc.anim?.activities ?? [];
-  if (activities.length > 0 && random() < ACTIVITY_CHANCE) {
+  if (using) {
+    // Reach into the fridge or the stove, take a book; the TV, watched
+    // standing, has no clip: just a while in front of it.
+    const itemType = nearestSpotType(spots, using, npc.position.x, npc.position.z);
+    const use = itemType === 'bookshelf' ? npc.anim?.pickUp : using === 'hunger' ? npc.anim?.interact : null;
+    if (use) {
+      npc.pause = use.getClip().duration + 0.3;
+      standStill(npc, floorY, use);
+      npc.shadowSettle = npc.pause;
+    } else {
+      npc.pause = between(random, STAND_USE_SECONDS[0], STAND_USE_SECONDS[1]);
+      standStill(npc, floorY, npc.anim?.stand[0]);
+    }
+  } else if (activities.length > 0 && random() < ACTIVITY_CHANCE) {
     const activity = randomOf(activities, random);
     // Only the one-shot clips are clamped (see createNpc): play those once.
     npc.pause = activity.clampWhenFinished ? activity.getClip().duration + 0.3 : between(random, 3, 6);
@@ -1039,6 +1172,7 @@ function standStill(npc: NpcState, floorY: number, action: ThreeNS.AnimationActi
 }
 
 function startWalking(npc: NpcState): void {
+  npc.using = null;
   npc.mode = 'walk';
   npc.pause = 0;
   npc.stuck = 0;
@@ -1062,6 +1196,7 @@ function standUp(npc: NpcState): void {
 function leaveSeat(npc: NpcState, floorY: number, nav: NpcNav): void {
   npc.mode = 'leaveSeat';
   npc.stuck = 0;
+  npc.using = null;
   npc.lift = 0;
   npc.group.position.y = floorY;
   const seat = npc.seat;
@@ -1082,6 +1217,8 @@ function dropVanishedSeat(npc: NpcState, seats: NpcSeats, floorY: number, nav: N
   if (!seat) return;
   const current = seats.get(seat.key);
   if (current && current.x === seat.x && current.z === seat.z && current.rotation === seat.rotation) return;
+  // Whatever it was heading there for, it isn't getting it there.
+  npc.seeking = null;
   if (npc.mode === 'seated') standUp(npc);
   else if (npc.mode === 'walk') {
     // Still on its way, on free floor: stop where it is and pick somewhere else.
@@ -1135,6 +1272,11 @@ export function wayAheadBlocked(npc: NpcState, npcs: readonly NpcState[], player
  * seat (#585): give the seat up and step out to the nearest free floor
  * clear of the player instead.
  */
+/** The bed a seat is on, null for any other seat: a bed seats one party (`lib/npc-bodies`). */
+function bedOf(seat: NpcSeat): string | null {
+  return seat.itemType === 'bed' ? seat.itemId : null;
+}
+
 function stepAroundPlayer(npc: NpcState, nav: NpcNav, player: PlayerBody): void {
   let best = -1;
   let bestGap = Number.POSITIVE_INFINITY;
@@ -1150,6 +1292,8 @@ function stepAroundPlayer(npc: NpcState, nav: NpcNav, player: PlayerBody): void 
     }
   }
   npc.seat = null;
+  npc.seeking = null;
+  npc.using = null;
   npc.mode = 'leaveSeat';
   npc.stuck = 0;
   if (best >= 0) {

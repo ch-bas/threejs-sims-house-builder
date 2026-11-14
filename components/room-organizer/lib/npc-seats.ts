@@ -3,7 +3,8 @@
  * reduced to one or more slots: the spot the hips land on, the yaw the sitter
  * faces, and an approach point clear of the seat's own footprint where the
  * walker turns in. Seats face their local +z: the builders in
- * three/builders/builders-seating.ts put every backrest at −z.
+ * three/builders/builders-seating.ts put every backrest at −z, and a bed's
+ * headboard is at −z, so a walker sits on the end of the bed (#617).
  */
 
 import { seatSurfaceHeight } from './seat-surface';
@@ -13,6 +14,8 @@ export interface NpcSeat {
   /** Item id plus slot index: stable while the item stays put. */
   key: string;
   itemId: string;
+  /** The item's type: what sitting there is for (`lib/npc-needs`). */
+  itemType: string;
   /** Where the hips land. */
   x: number;
   z: number;
@@ -26,7 +29,7 @@ export interface NpcSeat {
 }
 
 /** What the walkers sit on; how high comes from lib/seat-surface (#623). */
-const NPC_SEAT_TYPES: ReadonlySet<string> = new Set(['chair', 'dining-chair', 'armchair', 'sofa', 'bench', 'garden-bench']);
+const NPC_SEAT_TYPES: ReadonlySet<string> = new Set(['chair', 'dining-chair', 'armchair', 'sofa', 'bench', 'garden-bench', 'bed']);
 
 /** Seats wide enough for several people get one slot per this many metres. */
 const SLOT_WIDTH = 0.65;
@@ -34,6 +37,8 @@ const SLOT_WIDTH = 0.65;
 const APPROACH_GAP = 0.35;
 /** The hips sit a little forward of the centre, clear of the backrest. */
 const HIP_FORWARD = 0.08;
+/** On a bed the hips sit this far in from the foot end. */
+const BED_EDGE = 0.25;
 
 export function isNpcSeat(item: Pick<FurnitureItem, 'type' | 'sofaShape'>): boolean {
   if (!NPC_SEAT_TYPES.has(item.type)) return false;
@@ -57,11 +62,12 @@ export function findNpcSeats(items: readonly FurnitureItem[]): NpcSeat[] {
       const along = (slot + 0.5) * (item.width / slots) - item.width / 2;
       const cx = item.position.x + wx * along;
       const cz = item.position.z + wz * along;
-      const forward = item.depth * HIP_FORWARD;
+      const forward = item.type === 'bed' ? Math.max(0, item.depth / 2 - BED_EDGE) : item.depth * HIP_FORWARD;
       const approach = item.depth / 2 + APPROACH_GAP;
       seats.push({
         key: `${item.id}:${slot}`,
         itemId: item.id,
+        itemType: item.type,
         x: cx + fx * forward,
         z: cz + fz * forward,
         rotation,

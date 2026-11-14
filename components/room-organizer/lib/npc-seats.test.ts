@@ -45,6 +45,13 @@ describe('findNpcSeats', () => {
     expect(slots[0]!.x).toBeLessThan(slots[2]!.x);
   });
 
+  it('sits on the end of a bed, away from the headboard (#617)', () => {
+    const slots = findNpcSeats([seat({ id: 'bed', type: 'bed', width: 2, depth: 1.6, height: 0.6 })]);
+    expect(slots.map((s) => s.itemType)).toEqual(['bed', 'bed', 'bed']);
+    expect(slots[0]!.z).toBeCloseTo(0.8 - 0.25);
+    expect(slots[0]!.approachZ).toBeGreaterThan(0.8);
+  });
+
   it('skips corner sofas, unplaced seats and things that are not seats', () => {
     expect(isNpcSeat({ type: 'sofa', sofaShape: 'L-shape' })).toBe(false);
     expect(findNpcSeats([unplaced(), seat({ type: 'table' })])).toEqual([]);

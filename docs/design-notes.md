@@ -428,6 +428,22 @@ to respect.
   nearest free floor clear of the player. New walkers spawn clear of the
   player, and a parked one standing on the player stays hidden until it
   moves off.
+- **Walkers have needs (#617).** `lib/npc-needs` gives each walker hunger,
+  energy and fun that run down (150, 240 and 120 s from met to empty) and
+  a table of what meets them: standing in front of the fridge, the stove
+  or the bookshelf, sitting in the sofa or on the end of the bed, or in a
+  seat facing a TV (in front of a TV no seat faces). At each stop a walker
+  first asks `pickNeedSpot` for somewhere: a weighted pick, urgency
+  squared over distance, among spots it can reach that no walker or the
+  player holds, leaving out the need it is meeting there. Only a need
+  under half counts, so a sated walker wanders as before. Using something
+  plays the reach clip at the fridge or the stove, takes a book, or sits
+  longer; a use that runs its course meets the need. A bed seats one
+  party: the player sits in its middle, a walker on its end only 0.55 m
+  away, so the player on a bed keeps walkers off it and the other way
+  round (`bedId` in `lib/npc-bodies`). The spots are built
+  with the seats when the floor's items change, never per frame. Still to
+  come: the garden (the nav grid is indoors only) and a mood marker.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
