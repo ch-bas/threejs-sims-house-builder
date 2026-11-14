@@ -134,6 +134,7 @@ components/
     │   ├── room-stamp.ts                The room stamp as a held placement: snapped position, drag to size, the walls a drop adds (#724)
     │   ├── room-detect.ts               Rooms closed by walls: planar faces of the footprint, partitions and keep-out, with areas (#719)
     │   ├── room-shapes.ts               Predefined room shape presets
+    │   ├── room-score.ts                Room types from a zone's furniture and a five-check score (decor, window, lamp, no collisions, space) for Statistics (#613)
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground (garden items stand on it, #665), neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
