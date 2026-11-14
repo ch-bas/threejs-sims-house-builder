@@ -82,6 +82,48 @@ export function parseLibraryIndex(raw: string | null): LibraryIndex {
   return { entries, unreadable, rest, raw: rawById };
 }
 
+// Storage & backup re-measures after a save or delete made in this tab
+// (#711); other tabs reach it through the `storage` event. A module-level
+// signal, like restore points' and custom sets', keeps lib/ free of React.
+const listeners = new Set<() => void>();
+
+/** Calls `listener` after every library save or delete in this tab. */
+export function subscribeLibrary(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Non-zero inside `batchLibraryChanges`; `held` says a change waits for its end. */
+let batching = 0;
+let held = false;
+
+function notifyLibraryChanged(): void {
+  if (batching > 0) {
+    held = true;
+    return;
+  }
+  for (const listener of listeners) listener();
+}
+
+/**
+ * Run `run` with the change signal held, then signal once if anything
+ * changed: a backup restore saves many houses and the meter re-measures once.
+ */
+export function batchLibraryChanges<T>(run: () => T): T {
+  batching += 1;
+  try {
+    return run();
+  } finally {
+    batching -= 1;
+    if (batching === 0 && held) {
+      held = false;
+      notifyLibraryChanged();
+    }
+  }
+}
+
 function readIndex(): LibraryIndex {
   if (typeof window === 'undefined') return emptyIndex();
   return parseLibraryIndex(safeGetItem(LIBRARY_INDEX_KEY));
@@ -386,6 +428,14 @@ export function saveNamedLayout(
   /** `savedAt`: when the copy was first saved — a restored backup keeps its dates and order (#620). */
   opts: { savedAt?: number } = {}
 ): LibrarySaveOutcome {
+  const outcome = writeNamedLayout(layout, name, opts);
+  // A failed save can still have moved a house to its own slot or evicted
+  // restore points, so the meter re-measures either way.
+  notifyLibraryChanged();
+  return outcome;
+}
+
+function writeNamedLayout(layout: RoomLayout, name: string, opts: { savedAt?: number }): LibrarySaveOutcome {
   let storage: Storage;
   try {
     storage = window.localStorage;
@@ -530,6 +580,13 @@ export function loadNamedLayout(id: string): RoomLayout | null {
 }
 
 export function deleteNamedLayout(id: string): boolean {
+  const deleted = removeNamedLayout(id);
+  // Like a save, success or not: the meter re-measures what is there.
+  notifyLibraryChanged();
+  return deleted;
+}
+
+function removeNamedLayout(id: string): boolean {
   if (typeof window === 'undefined') return false;
   const index = readIndex();
   const filtered = index.entries.filter((entry) => entry.id !== id);

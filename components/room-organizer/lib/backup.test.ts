@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import {
   BACKUP_FORMAT,
@@ -15,7 +15,7 @@ import {
 } from './backup';
 import { STORAGE_KEY } from './constants';
 import { CUSTOM_SETS_STORAGE_KEY, listCustomSets, saveCustomSet } from './custom-sets';
-import { listSavedLayouts, loadNamedLayout, saveNamedLayout } from './library';
+import { listSavedLayouts, loadNamedLayout, saveNamedLayout, subscribeLibrary } from './library';
 import { addReceivedLayout, listReceivedLayouts } from './pasteboard';
 import { RECOVERY_STORAGE_KEY, readRecoveryCopies } from './persistence';
 import { getSnapshot, listSnapshots, recordSnapshot } from './version-history';
@@ -99,6 +99,19 @@ describe('backup round trip (#620)', () => {
     expect(filed?.layout?.id).toBe(open.id);
     // Another site's key is neither backed up nor touched.
     expect(text).not.toContain('some-other-site');
+  });
+
+  it('signals the library change once for the whole restore (#711)', () => {
+    const open = fillBrowser();
+    saveNamedLayout(house('Barn', 1), 'Barn');
+    const bundle = createBackup(open);
+    localStorage.clear();
+    const listener = vi.fn();
+    const unsubscribe = subscribeLibrary(listener);
+    const report = restoreBackup(reread(bundle), house('Blank', 0));
+    unsubscribe();
+    expect(report.library).toBeGreaterThan(1);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('never writes the main save', () => {

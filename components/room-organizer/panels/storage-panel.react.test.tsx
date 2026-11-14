@@ -6,7 +6,7 @@ import { createEditorViewStore } from '../hooks/editor-view-store';
 import { autoAnswerConfirms, type AutoAnswer } from '../lib/__testfixtures__/confirm';
 import { makeFloor, makeItem, makeLayout, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { createBackup } from '../lib/backup';
-import { listSavedLayouts, loadNamedLayout, saveNamedLayout } from '../lib/library';
+import { deleteNamedLayout, listSavedLayouts, loadNamedLayout, saveNamedLayout } from '../lib/library';
 import { listSnapshots, recordSnapshot } from '../lib/version-history';
 import { StoragePanel } from './storage-panel';
 import type { GameMode, RoomLayout } from '../lib/types';
@@ -58,6 +58,19 @@ describe('storage card (#615, #620)', () => {
     expect(screen.getByRole('meter', { name: 'Browser storage used' })).toBeTruthy();
     expect(screen.getByText('Saved layouts', { selector: 'span' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Delete saved layout Cottage' })).toBeTruthy();
+  });
+
+  it('re-measures after a save or delete made elsewhere in this tab (#711)', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: 'Delete saved layout Cottage' })).toBeNull();
+    act(() => {
+      saveNamedLayout(house('Cottage', 3), 'Cottage');
+    });
+    expect(screen.getByRole('button', { name: 'Delete saved layout Cottage' })).toBeTruthy();
+    act(() => {
+      deleteNamedLayout('cottage');
+    });
+    expect(screen.queryByRole('button', { name: 'Delete saved layout Cottage' })).toBeNull();
   });
 
   it('deletes a saved layout and every restore point only after a yes to a danger question', async () => {
