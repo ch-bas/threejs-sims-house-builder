@@ -33,6 +33,8 @@ export interface PlayerBody {
   /** Where the player sits, NaN while standing. */
   seatX: number;
   seatZ: number;
+  /** The bed the player sits on, null otherwise: a bed seats one party (#617). */
+  bedId: string | null;
 }
 
 /** A walker, as the player's resolve and seat lookup see it. */
@@ -43,6 +45,8 @@ export interface NpcBody {
   /** The hips' spot of the seat it is stepping into, sitting on or leaving; NaN otherwise. */
   seatX: number;
   seatZ: number;
+  /** The bed that seat is on, null otherwise. */
+  bedId: string | null;
 }
 
 export interface NpcHandOff {
@@ -53,7 +57,7 @@ export interface NpcHandOff {
 
 export function createNpcHandOff(): NpcHandOff {
   return {
-    player: { present: false, x: 0, z: 0, y: 0, floorIndex: 0, seatX: Number.NaN, seatZ: Number.NaN },
+    player: { present: false, x: 0, z: 0, y: 0, floorIndex: 0, seatX: Number.NaN, seatZ: Number.NaN, bedId: null },
     bodies: [],
   };
 }
@@ -64,6 +68,7 @@ export function createNpcBody(x: number, z: number, floorY: number, floorIndex: 
     floorIndex,
     seatX: Number.NaN,
     seatZ: Number.NaN,
+    bedId: null,
   };
 }
 
@@ -77,18 +82,37 @@ export function moveNpcBody(body: NpcBody, x: number, z: number, floorY: number,
   body.floorIndex = floorIndex;
 }
 
-/** Whether a walker on `floorIndex` sits (or is sitting down or getting up) with its hips near (x, z). */
-export function seatTakenByWalker(bodies: readonly NpcBody[], floorIndex: number, x: number, z: number): boolean {
+/**
+ * Whether a walker on `floorIndex` sits (or is sitting down or getting up)
+ * with its hips near (x, z), or, for a seat on bed `bedId`, anywhere on
+ * that bed: the player sits in the middle of a bed, a walker on its end, a
+ * hip's width apart, so a bed takes one party at a time (#617).
+ */
+export function seatTakenByWalker(
+  bodies: readonly NpcBody[],
+  floorIndex: number,
+  x: number,
+  z: number,
+  bedId: string | null = null
+): boolean {
   for (const body of bodies) {
     if (body.floorIndex !== floorIndex || Number.isNaN(body.seatX)) continue;
+    if (bedId !== null && body.bedId === bedId) return true;
     if (Math.hypot(body.seatX - x, body.seatZ - z) < SEAT_SHARE_GAP) return true;
   }
   return false;
 }
 
-/** Whether the player sits with its hips near (x, z) on `floorIndex`. */
-export function seatTakenByPlayer(player: PlayerBody, floorIndex: number, x: number, z: number): boolean {
+/** Whether the player sits with its hips near (x, z) on `floorIndex`, or anywhere on bed `bedId`. */
+export function seatTakenByPlayer(
+  player: PlayerBody,
+  floorIndex: number,
+  x: number,
+  z: number,
+  bedId: string | null = null
+): boolean {
   if (!player.present || player.floorIndex !== floorIndex || Number.isNaN(player.seatX)) return false;
+  if (bedId !== null && player.bedId === bedId) return true;
   return Math.hypot(player.seatX - x, player.seatZ - z) < SEAT_SHARE_GAP;
 }
 

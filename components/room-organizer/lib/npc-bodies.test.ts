@@ -77,6 +77,20 @@ describe('one sitter per seat (#585)', () => {
     expect(seatTakenByWalker([body], 0, 0.2 + 0.67, 0)).toBe(false);
   });
 
+  it('a bed seats one party: the player in the middle, or walkers on its end (#617)', () => {
+    const body = createNpcBody(0, 0, 0, 0);
+    body.seatX = 0;
+    body.seatZ = 0.55;
+    body.bedId = 'bed';
+    // The player would sit 0.55 m behind the walker, at the bed's middle.
+    expect(seatTakenByWalker([body], 0, 0, 0, 'bed')).toBe(true);
+    expect(seatTakenByWalker([body], 0, 3, 3, 'other-bed')).toBe(false);
+    const { player } = createNpcHandOff();
+    Object.assign(player, { present: true, seatX: 0, seatZ: 0, bedId: 'bed' });
+    expect(seatTakenByPlayer(player, 0, 0.67, 0.55, 'bed')).toBe(true);
+    expect(seatTakenByPlayer(player, 0, 0.67, 0.55, null)).toBe(false);
+  });
+
   it('the seated player takes the slots under it, and only while there', () => {
     const { player } = createNpcHandOff();
     player.present = true;

@@ -277,7 +277,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
 
     // --- Walkers (#585): the player is a person to them, and they to it. ---
     const bodiesCache: BodiesCache = new WeakMap();
-    const seatSpot = { x: Number.NaN, z: Number.NaN };
+    const seatSpot: { x: number; z: number; bedId: string | null } = { x: Number.NaN, z: Number.NaN, bedId: null };
     const publishPlayer = (): void => {
       const player = npcsRef.current?.player;
       if (!player) return;
@@ -289,9 +289,11 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       player.floorIndex = walker.floorIndex;
       player.seatX = session.seated ? seatSpot.x : Number.NaN;
       player.seatZ = session.seated ? seatSpot.z : Number.NaN;
+      player.bedId = session.seated ? seatSpot.bedId : null;
     };
-    const walkerSitsAt = (x: number, z: number): boolean =>
-      seatTakenByWalker(npcsRef.current?.bodies ?? NO_BODIES, session.walker.floorIndex, x, z);
+    // A bed seats one party: the player in the middle or walkers on its end (#617).
+    const walkerSitsAt = (seat: FurnitureItem, x: number, z: number): boolean =>
+      seatTakenByWalker(npcsRef.current?.bodies ?? NO_BODIES, session.walker.floorIndex, x, z, seat.type === 'bed' ? seat.id : null);
     cleanup.push(() => {
       const player = npcsRef.current?.player;
       if (player) player.present = false;
@@ -411,12 +413,13 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       const pose = seat
         ? seatPose(seat, items, floorY, { colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS })
         : null;
-      if (!pose) return;
+      if (!pose || !seat) return;
       // A walker sits there already (#585).
-      if (walkerSitsAt(pose.x, pose.z)) return;
+      if (walkerSitsAt(seat, pose.x, pose.z)) return;
       session.seated = { x: walker.x, z: walker.z };
       seatSpot.x = pose.x;
       seatSpot.z = pose.z;
+      seatSpot.bedId = seat.type === 'bed' ? seat.id : null;
       publishPlayer();
       setSeated(true);
       startTransition(pose.x, pose.eyeY, pose.z, pose.lookX, pose.lookY, pose.lookZ);
@@ -667,7 +670,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           });
           // A seat a walker sits on offers no prompt (#585).
           const spot = seat ? seatPose(seat, itemsRef.current, 0) : null;
-          const free = seat && !(spot && walkerSitsAt(spot.x, spot.z)) ? seat : null;
+          const free = seat && !(spot && walkerSitsAt(seat, spot.x, spot.z)) ? seat : null;
           const id = free?.id ?? null;
           if (id !== session.seatTargetId) {
             session.seatTargetId = id;
