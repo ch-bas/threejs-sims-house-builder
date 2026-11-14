@@ -73,6 +73,7 @@ components/
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── achievements.ts              15 predicate-based achievements with count progress; `achievementsEarned` (loaded / edit)
+    │   ├── first-steps.ts               The First steps card's five steps: progress from edits like achievements (loads do none), per-step tips, offered/dismissed flag (#721)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
