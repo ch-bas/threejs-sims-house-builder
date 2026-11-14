@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useRoomEditor } from '../contexts';
+import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
@@ -62,6 +62,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const hasInteriorWalls = (activeFloor.interiorWalls ?? []).some((wall) => wall.id !== ENTRANCE_WALL_ID);
   const allLocked = hasItems && activeFloor.items.every((item) => item.locked === true);
   const multiStorey = layout.floors.length > 1;
+  // DXF is CAD: metres whatever the editor shows, and it says so (#725).
+  const dxfUnitNote = useLengthUnit() === 'imperial' ? ', in metres: CAD files stay metric' : ', in metres';
   // EXPLORE never edits the house (#643): the edits here are off, the
   // exports stay.
   const exploring = useExploring();
@@ -322,7 +324,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
               variant="outline"
               size="sm"
               className="text-xs"
-              title={multiStorey ? 'This floor, in metres' : 'The plan, in metres'}
+              title={`${multiStorey ? 'This floor' : 'The plan'}${dxfUnitNote}`}
             >
               📐 DXF
             </Button>
@@ -359,7 +361,7 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                   variant="outline"
                   size="sm"
                   className="text-xs"
-                  title="Every floor side by side, in metres"
+                  title={`Every floor side by side${dxfUnitNote}`}
                 >
                   📐 DXF · all floors
                 </Button>

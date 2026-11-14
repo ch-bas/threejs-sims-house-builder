@@ -12,6 +12,7 @@
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from '../constants';
 import { floorHoleOutlines } from '../floor-holes';
 import { shellWalls, shellWallSpan, type ShellWallId } from '../footprint';
+import { formatMetres, getDisplayUnit, type LengthUnit } from '../format';
 import { isOpening, isWallMounted } from '../opening-snap';
 import { computeFloorOpenings, floorOpeningOutline, floorStairHeadroom, stairPlanSymbol, stairTreadLines } from '../stairs';
 import { entrancePlanOutline, planFloorIndex } from '../street';
@@ -473,8 +474,12 @@ export interface PlanDimension {
 /** Interior walls shorter than this carry no dimension string — the label would not fit. */
 const MIN_DIMENSIONED_WALL_M = 0.3;
 
-/** "4.00 m": two decimals, the precision the wall tools snap to. */
-export function formatDimension(metres: number): string {
+/**
+ * "4.00 m": two decimals, the precision the wall tools snap to; in feet and
+ * inches (#725) "13' 1"", to the inch.
+ */
+export function formatDimension(metres: number, unit: LengthUnit = getDisplayUnit()): string {
+  if (unit === 'imperial') return formatMetres(metres, 2, unit);
   const value = Math.round(metres * 100) / 100;
   return `${(Object.is(value, -0) ? 0 : value).toFixed(2)} m`;
 }
@@ -484,12 +489,12 @@ export function formatDimension(metres: number): string {
  * edge's depth, measured along the footprint. Exporters offset them out into
  * the margin band beyond the plan content.
  */
-export function roomDimensions(layout: Pick<RoomLayout, 'width' | 'height'>): { width: PlanDimension; depth: PlanDimension } {
+export function roomDimensions(layout: Pick<RoomLayout, 'width' | 'height'>, unit: LengthUnit = getDisplayUnit()): { width: PlanDimension; depth: PlanDimension } {
   const hw = layout.width / 2;
   const hd = layout.height / 2;
   return {
-    width: { from: { x: -hw, z: hd }, to: { x: hw, z: hd }, lengthM: layout.width, label: formatDimension(layout.width) },
-    depth: { from: { x: -hw, z: -hd }, to: { x: -hw, z: hd }, lengthM: layout.height, label: formatDimension(layout.height) },
+    width: { from: { x: -hw, z: hd }, to: { x: hw, z: hd }, lengthM: layout.width, label: formatDimension(layout.width, unit) },
+    depth: { from: { x: -hw, z: -hd }, to: { x: -hw, z: hd }, lengthM: layout.height, label: formatDimension(layout.height, unit) },
   };
 }
 
@@ -544,7 +549,7 @@ function clearLabelSpot(probe: (side: number, shift: number) => number, preferre
  * other side. When both sides are crowded the label slides along the wall to
  * the nearest clear spot, and stays at the middle if there is none.
  */
-export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls' | 'items'>): WallDimension[] {
+export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls' | 'items'>, unit: LengthUnit = getDisplayUnit()): WallDimension[] {
   const { openings, furniture } = splitPlanItems(floor.items);
   const footprints = [
     ...furniture.map((item) => {
@@ -581,7 +586,7 @@ export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls' 
       from: { x: wall.x1, z: wall.z1 },
       to: { x: wall.x2, z: wall.z2 },
       lengthM,
-      label: formatDimension(lengthM),
+      label: formatDimension(lengthM, unit),
       normal: { x: left.x * sign + 0, z: left.z * sign + 0 },
       labelShiftM: slid?.shift ?? 0,
     });
@@ -627,7 +632,7 @@ const SIDE_OUTWARD: Record<WallId, PlanPoint> = {
   west: { x: -1, z: 0 },
 };
 
-export function wallOpeningDimensions(layout: RoomLayout, floor: FloorLayout, labelSpacingM = CHAIN_LABEL_SPACING_M): OpeningChain[] {
+export function wallOpeningDimensions(layout: RoomLayout, floor: FloorLayout, labelSpacingM = CHAIN_LABEL_SPACING_M, unit: LengthUnit = getDisplayUnit()): OpeningChain[] {
   const spans = new Map<ShellWallId, Array<[number, number]>>();
   const shell = shellWalls(layout);
   for (const item of splitPlanItems(floor.items).openings) {
@@ -672,7 +677,7 @@ export function wallOpeningDimensions(layout: RoomLayout, floor: FloorLayout, la
       const free = rows.findIndex((last) => centre - last >= labelSpacingM);
       const labelRow = free === -1 ? rows.length : free;
       rows[labelRow] = centre;
-      segments.push({ from: at(stations[i]!), to: at(stations[i + 1]!), lengthM, label: formatDimension(lengthM), labelRow });
+      segments.push({ from: at(stations[i]!), to: at(stations[i + 1]!), lengthM, label: formatDimension(lengthM, unit), labelRow });
     }
     chains.push({ wall, outward, segments });
   }
@@ -869,9 +874,19 @@ export interface ScheduleRow {
   totalPrice: number;
 }
 
-/** A schedule row's W × D × H in metres, always to the centimetre, as the CSV writes them (#596). */
-export function scheduleSizeText(row: Pick<ScheduleRow, 'width' | 'depth' | 'height'>): string {
+/**
+ * A schedule row's W × D × H in metres, always to the centimetre, as the CSV
+ * writes them (#596); in feet and inches (#725) each to the inch, unspaced
+ * ("3'11" × 2'0" × 2'7"") so the column keeps its width.
+ */
+export function scheduleSizeText(row: Pick<ScheduleRow, 'width' | 'depth' | 'height'>, unit: LengthUnit = getDisplayUnit()): string {
+  if (unit === 'imperial') return [row.width, row.depth, row.height].map((value) => formatMetres(value, 2, unit).replace(' ', '')).join(' × ');
   return [row.width, row.depth, row.height].map((value) => value.toFixed(2)).join(' × ');
+}
+
+/** The schedule's size heading: the metric figures are bare, so it names the unit. */
+export function scheduleSizeHeading(unit: LengthUnit = getDisplayUnit()): string {
+  return unit === 'imperial' ? 'W × D × H' : 'W × D × H (m)';
 }
 
 /**
