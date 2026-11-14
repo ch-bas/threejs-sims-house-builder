@@ -1,5 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
+import { measureCpuAsync } from './__testfixtures__/cpu-time';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { FURNITURE_CATALOG } from './constants';
 import { planFurniture } from './furniture-scene';
@@ -209,11 +210,12 @@ describe('untrusted share hashes (#332)', () => {
     const json = `{"name":"${' '.repeat(30_000_000)}","width":8,"height":8,"floors":[]}`;
     const hash = v2Hash(json);
     expect(hash.length).toBeLessThan(MAX_SHARE_HASH_LENGTH);
-    const started = performance.now();
-    expect(await readShareHash(hash)).toEqual({ ok: false, reason: 'too-large' });
-    // Inflating stops at MAX_LAYOUT_JSON_BYTES instead of materialising 30 MB
-    // and parsing it; generous for slow CI machines.
-    expect(performance.now() - started).toBeLessThan(1000);
+    const { result, cpuMs } = await measureCpuAsync(() => readShareHash(hash));
+    expect(result).toEqual({ ok: false, reason: 'too-large' });
+    // The intent is no blow-up: inflating stops at MAX_LAYOUT_JSON_BYTES
+    // instead of materialising 30 MB and parsing it (about 30 ms of CPU).
+    // CPU time, so a busy machine can't fail it (#733).
+    expect(cpuMs).toBeLessThan(1000);
   });
 
   it('a payload just under the output budget still reaches the schema', async () => {
@@ -420,10 +422,11 @@ describe('encodeShareUrl — a house too big to share is refused cheaply (#611)'
 
   it('answers for 2,000 items without rounding them all against each other', async () => {
     const layout = crowded(2000);
-    const started = performance.now();
-    const { url } = await encodeShareUrl(layout, ORIGIN);
-    // The full rounding pass alone took ~700 ms here; generous for slow CI.
-    expect(performance.now() - started).toBeLessThan(250);
+    const { result: { url }, cpuMs } = await measureCpuAsync(() => encodeShareUrl(layout, ORIGIN));
+    // The intent is no blow-up: the full rounding pass alone took ~700 ms
+    // here, the answer now about 20 ms of CPU. CPU time, so a busy machine
+    // can't fail it (#733).
+    expect(cpuMs).toBeLessThan(250);
     expect(isShareUrlReasonablySized(url)).toBe(false);
   });
 
@@ -437,6 +440,8 @@ describe('encodeShareUrl — a house too big to share is refused cheaply (#611)'
     }
   });
 
+  // Six full encodes of a crowded house: a busy machine only slows them, so
+  // the test gets more than the 5 s default (#733).
   it('a house just over the cap is still measured on its rounded link', async () => {
     // About 20 characters an item: these straddle the 12,000 cap.
     for (const count of [570, 575, 580, 585, 590, 620]) {
@@ -448,5 +453,5 @@ describe('encodeShareUrl — a house too big to share is refused cheaply (#611)'
       // Up to a little past the cap, the link is the exact one.
       if (exact.length < 12_400) expect(url).toBe(exact);
     }
-  });
+  }, 30_000);
 });

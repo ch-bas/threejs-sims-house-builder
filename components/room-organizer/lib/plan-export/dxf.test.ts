@@ -642,6 +642,8 @@ describe('interior wall dimensions', () => {
 });
 
 describe('buildingToDxf', () => {
+  // Several full exports of a rich building: a busy machine only slows them,
+  // so the test gets more than the 5 s default (#733).
   it('lays every floor out side by side on the same layers, ground first (#405)', () => {
     const building = makeRichBuilding();
     const dxf = buildingToDxf(building);
@@ -665,5 +667,5 @@ describe('buildingToDxf', () => {
     }
     const total = (d: string) => entities(d).length;
     expect(total(dxf)).toBe(building.floors.reduce((sum, f) => sum + total(layoutToDxf(building, f)), 0));
-  });
+  }, 30_000);
 });

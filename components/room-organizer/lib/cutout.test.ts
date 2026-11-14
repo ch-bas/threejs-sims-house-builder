@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { layoutReducer, resizeRefusal, type LayoutState } from '../hooks/layout-reducer';
+import { measureCpu } from './__testfixtures__/cpu-time';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { ENTRANCE_CLASH_REFUSAL, cutoutRefusal, itemsInCorner, outdoorItemsTakenIn, withCutout } from './cutout';
 import { floorKeepOut } from './floor-keep-out';
@@ -440,14 +441,16 @@ describe('a crafted file with everything in the corner', () => {
       floors: [makeFloor({ items: Array.from({ length: count }, (_, i) => makeItem({ id: `c${i}`, width: 0.5, depth: 0.5, height: 0.8, position: { x: 45, z: -45 } })) })],
     });
 
+  // The intent is no blow-up: the spot search grows faster than the pile
+  // (about 2.6 s of CPU for 2,000 items, 0.7 s for 1,000), so the bound sits
+  // well above that, in CPU time so a busy machine can't fail it (#733).
   it('parses in time, and what the search reached is out of the corner', () => {
     const raw = JSON.parse(JSON.stringify(pile(2000)));
-    const started = performance.now();
-    const loaded = parseStoredLayout(raw)!;
-    expect(performance.now() - started).toBeLessThan(3000);
+    const { result: loaded, cpuMs } = measureCpu(() => parseStoredLayout(raw)!);
+    expect(cpuMs).toBeLessThan(10_000);
     const moved = loaded.floors[0]!.items.filter((item) => item.position!.x !== 45 || item.position!.z !== -45);
     expect(moved.length).toBeGreaterThan(1900);
-  });
+  }, 30_000);
 
   it('a pile a fit can place goes down without overlaps', () => {
     const items = parseStoredLayout(JSON.parse(JSON.stringify(pile(60))))!.floors[0]!.items;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { measureCpu } from './__testfixtures__/cpu-time';
 import { ENTRANCE_DOOR_ID } from './street';
 import { buildShellColliders, buildWalkColliders, walkClearance, type ShellBuilding } from './walk-collision';
 import { walkArrival, walkSpawn, type WalkSpawnContext } from './walk-spawn';
@@ -129,12 +130,12 @@ describe('walkSpawn — a big house with no door (#602)', () => {
 
   it('finds the roomiest spot of a 100 m house without a long freeze', () => {
     const ctx = context(sprawling(300), 0);
-    const started = performance.now();
-    const spawn = walkSpawn(ctx, 0);
-    // The full 0.25 m scan took ~1.3 s here and several seconds on CI; the
-    // coarse scan takes about 0.1 s, but shared CI runners are slow and
-    // noisy (305 ms seen), so the bound only has to catch the old freeze.
-    expect(performance.now() - started).toBeLessThan(1000);
+    const { result: spawn, cpuMs } = measureCpu(() => walkSpawn(ctx, 0));
+    // The intent is no blow-up: the full 0.25 m scan took ~1.3 s here and
+    // several seconds on CI, the coarse scan about 0.07 s of CPU, so the
+    // bound only has to catch the old freeze. CPU time, so a busy machine
+    // can't fail it (#733).
+    expect(cpuMs).toBeLessThan(1000);
     expect(walkClearance(ctx.colliders, spawn.x, spawn.z, true, 0)).toBeGreaterThan(3);
   });
 
