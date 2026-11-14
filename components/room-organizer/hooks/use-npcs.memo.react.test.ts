@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react';
+import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import * as npcPath from '../lib/npc-path';
 import { type LayoutAction, type LayoutState, layoutReducer } from './layout-reducer';
-import { useFloorKeepOut } from './use-floor-keep-out';
 import { useNpcs } from './use-npcs';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -23,15 +23,14 @@ describe('walker nav rebuilds (#452 review)', () => {
       }),
       activeFloorIndex: 0,
     };
-    const threeModuleRef = { current: null };
-    const sceneRef = { current: null };
+    const threeModuleRef = { current: THREE as unknown as typeof import('../three/three-runtime') };
+    const sceneRef = { current: new THREE.Scene() };
+    const addDecorativeStep = () => () => {};
     const { rerender } = renderHook(
       ({ s }: { s: LayoutState }) => {
-        const keepOut = useFloorKeepOut(s.layout, s.activeFloorIndex);
-        const floor = s.layout.floors[s.activeFloorIndex]!;
         useNpcs({
-          enabled: true, threeModuleRef, sceneRef, roomWidth: s.layout.width, roomDepth: s.layout.height,
-          items: floor.items, interiorWalls: floor.interiorWalls, keepOut, floorY: 0, addDecorativeStep: () => () => {},
+          enabled: true, threeModuleRef, sceneRef, building: s.layout, shownFrom: s.activeFloorIndex, shownTo: s.activeFloorIndex,
+          addDecorativeStep,
         });
       },
       { initialProps: { s: state } }

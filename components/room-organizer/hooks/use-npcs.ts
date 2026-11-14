@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import {
   MAX_PATH_POINTS,
   NPC_RADIUS,
@@ -15,6 +16,7 @@ import {
   randomFreeCell,
 } from '../lib/npc-path';
 import { type NpcSeat, findNpcSeats } from '../lib/npc-seats';
+import { floorElevation } from '../lib/storeys';
 import { type WalkerPosition, resolveWalkerStep } from '../lib/walk-collision';
 import { disposeObject } from '../three/builder-utils';
 import { type HumanFigureRig, buildHumanFigure, poseWalk } from '../three/builders/human-figure';
@@ -30,7 +32,6 @@ import {
 } from '../three/people-model';
 import { lookForSeed } from '../three/people-outfits';
 import { useReducedMotion } from './use-reduced-motion';
-import type { KeepOutRect } from '../lib/geometry';
 import type { FurnitureItem, InteriorWall } from '../lib/types';
 import type { FrameBudget } from '../three/frame-budget';
 import type * as ThreeNS from 'three';
@@ -117,7 +118,7 @@ export interface NpcSitAnimation {
   up: ThreeNS.AnimationAction;
 }
 
-/** The active floor's seats by `NpcSeat.key`. */
+/** A storey's seats by `NpcSeat.key`. */
 export type NpcSeats = ReadonlyMap<string, NpcSeat>;
 const EMPTY_SEATS: NpcSeats = new Map();
 
@@ -180,18 +181,22 @@ export function npcShadowPacer(intervalMs = NPC_SHADOW_INTERVAL_MS): (now: numbe
 
 export interface UseNpcsOptions {
   enabled: boolean;
+  /** Walkers per storey. */
   count?: number;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
-  roomWidth: number;
-  roomDepth: number;
-  /** The active floor's items and partitions: what the walkers walk around. */
-  items: readonly FurnitureItem[];
-  interiorWalls?: readonly InteriorWall[] | undefined;
-  /** The active floor's porch and stairwell keep-out (`useFloorKeepOut`). */
-  keepOut: readonly KeepOutRect[];
-  /** Y-offset to plant the NPCs on the active floor. */
-  floorY: number;
+  /**
+   * The building: its storeys' items, partitions and keep-out (porch,
+   * stairwells, the corner cut) are what the walkers walk around.
+   */
+  building: KeepOutBuilding;
+  /**
+   * The storeys drawn now, as an inclusive range of indices (#580). Their
+   * walkers are shown and walk; a storey drawn for the first time gets its
+   * walkers then. The others' walkers are parked, hidden, where they stood.
+   */
+  shownFrom: number;
+  shownTo: number;
   /**
    * True once people.glb has loaded. Flipping it re-spawns the walkers as
    * rigged figures; until then (or if it never loads) they're procedural.
@@ -209,108 +214,206 @@ export interface UseNpcsOptions {
 }
 
 /**
- * Sprinkles a few human figures into the scene and walks them around the
- * active floor's furniture, partitions, stairs and keep-out between spots
- * worth stopping at (#452). The walkers are spawned once per floor; editing
- * the floor re-routes them (and steps any the edit landed on into free
- * space) without respawning.
+ * One storey's walkers (#580), keyed by the floor's id: a floor switch, a
+ * climb in EXPLORE or a storey-height edit keeps them, and only a storey
+ * that is deleted (or walkers turned off) loses them.
+ */
+interface StoreyWalkers {
+  npcs: NpcState[];
+  nav: NpcNav | null;
+  /** `npcNavSignature` plus the footprint: equal ones build the same nav. */
+  signature: string | null;
+  seats: NpcSeats;
+  /** The items the seats were found in, so a new array rebuilds them. */
+  seatItems: readonly FurnitureItem[] | null;
+  floorY: number;
+  shown: boolean;
+}
+
+/** What the walkers need from the scene while they exist. */
+interface NpcStage {
+  THREE: ThreeModule;
+  scene: ThreeNS.Scene;
+  people: PeopleModel | null;
+}
+
+/**
+ * Sprinkles a few human figures onto each storey that is drawn and walks
+ * them around its furniture, partitions, stairs and keep-out between spots
+ * worth stopping at (#452). Each storey's walkers are spawned once, the
+ * first time it is drawn (#580); editing the floor re-routes them (and steps
+ * any the edit landed on into free space) without respawning, and a storey
+ * that stops being drawn parks its walkers, hidden, until it is drawn again.
  */
 export function useNpcs(options: UseNpcsOptions): void {
   const {
-    enabled, count = 3, threeModuleRef, sceneRef, roomWidth, roomDepth, items, interiorWalls = EMPTY_WALLS, keepOut,
-    floorY, riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep,
+    enabled, count = 3, threeModuleRef, sceneRef, building, shownFrom, shownTo,
+    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep,
   } = options;
   const reducedMotion = useReducedMotion();
-  const stateRef = useRef<NpcState[]>([]);
-  const navRef = useRef<NpcNav | null>(null);
-  const seatsRef = useRef<NpcSeats>(EMPTY_SEATS);
+  const storeysRef = useRef(new Map<string, StoreyWalkers>());
+  const stageRef = useRef<NpcStage | null>(null);
+  // Read by `sync`, which runs from both effects below.
+  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate });
+  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate };
 
-  // Rebuilt only when what it reads changes (not on a recolour or a lock,
-  // which still hand over new arrays), and not at all while walkers are off.
-  const signature = useMemo(
-    () => (enabled ? npcNavSignature({ items, interiorWalls, keepOut }) : null),
-    [enabled, items, interiorWalls, keepOut]
-  );
-  const nav = useMemo(
-    () => (signature === null ? null : buildNpcNav({ items, interiorWalls, keepOut, roomWidth, roomDepth })),
-    // The signature stands for items, walls and keep-out.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [signature, roomWidth, roomDepth]
-  );
-
-  // Cheap to rebuild, and a rebuild disturbs nobody (a sitter whose seat
-  // moved stands up), so this keys on the items themselves.
-  const seats = useMemo(() => (enabled ? seatMap(items) : EMPTY_SEATS), [enabled, items]);
-  useEffect(() => {
-    seatsRef.current = seats;
-  }, [seats]);
-
-  // A floor with no free cell spawns nobody; clearing it lets them in.
-  const hasRoom = (nav?.freeCount ?? 0) > 0;
-
-  // Declared before the spawn effect so a spawn always sees the current nav.
-  useEffect(() => {
-    navRef.current = nav;
-    if (!nav || stateRef.current.length === 0) return;
-    rehomeNpcs(stateRef.current, nav, floorY);
-    requestShadowUpdate?.();
-    invalidate?.();
-    // floorY is read for the rehome only; a floor change respawns below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nav]);
+  // Brings the storeys' walkers in line with the building and the storeys
+  // drawn: spawn, re-route, re-seat, lift or lower, show or park, remove.
+  const syncRef = useRef<() => void>(() => {});
+  syncRef.current = () => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const inputs = inputsRef.current;
+    if (syncNpcStoreys(storeysRef.current, stage, inputs.building, inputs.shownFrom, inputs.shownTo, inputs.count)) {
+      inputs.requestShadowUpdate?.();
+      inputs.invalidate?.();
+    }
+  };
 
   useEffect(() => {
     if (!enabled) return undefined;
     const THREE = threeModuleRef.current;
     const scene = sceneRef.current;
-    const startNav = navRef.current;
-    if (!THREE || !scene || !startNav || !hasRoom) return undefined;
-
-    const people = riggedModelReady ? getPeopleModel() : null;
-    const npcs: NpcState[] = [];
-    for (let i = 0; i < count; i++) {
-      npcs.push(createNpc(THREE, scene, startNav, floorY, i, people, npcs));
-    }
-    stateRef.current = npcs;
+    if (!THREE || !scene) return undefined;
+    const storeys = storeysRef.current;
+    stageRef.current = { THREE, scene, people: riggedModelReady ? getPeopleModel() : null };
+    // Spawns, and poses, the walkers of the storeys drawn now, outside the
+    // budget: a paused one (a hidden tab adopting another tab's house) would
+    // leave them unposed and shadowless until it runs.
+    syncRef.current();
 
     const shadowDue = npcShadowPacer();
-    // One step of the walk, on the scene's frame budget (#671); true asks for a repaint.
+    // One step of the walk, on the scene's frame budget (#671); true asks for
+    // a repaint. Parked storeys don't step.
     const step = (delta: number): boolean => {
-      const currentNav = navRef.current;
-      if (!currentNav) return false;
-      // Repaint only when a pose changed, and recompute the 2048² shadow map
-      // only when a walker moved: a rigged figure idles (breathes) every
-      // frame, and re-rendering every caster for that pinned the GPU (#400).
-      // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
-      const change = stepNpcs(stateRef.current, delta, currentNav, floorY, Math.random, seatsRef.current);
-      if (reducedMotion || shadowDue(performance.now(), change === NPC_SHADOW)) requestShadowUpdate?.();
-      return change !== NPC_STILL || reducedMotion;
+      let change: NpcChange = NPC_STILL;
+      for (const storey of storeys.values()) {
+        if (!storey.shown || !storey.nav || storey.npcs.length === 0) continue;
+        // Repaint only when a pose changed, and recompute the 2048² shadow map
+        // only when a walker moved: a rigged figure idles (breathes) every
+        // frame, and re-rendering every caster for that pinned the GPU (#400).
+        // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
+        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats)) as NpcChange;
+      }
+      if (shadowDue(performance.now(), change === NPC_SHADOW)) inputsRef.current.requestShadowUpdate?.();
+      return change !== NPC_STILL;
     };
-    // Pose the new walkers and their shadows now, outside the budget: a
-    // paused one (a hidden tab adopting another tab's house) would leave
-    // them unposed and shadowless until it runs.
-    step(0);
-    requestShadowUpdate?.();
-    invalidate?.();
-    // Reduced motion (#436): that pose is all; they stand where they
+    // Reduced motion (#436): the spawn pose is all; they stand where they
     // spawned, with no loop and no wandering.
     const removeStep = reducedMotion ? () => {} : addDecorativeStep(step);
 
     return () => {
       removeStep();
-      for (const npc of stateRef.current) {
-        npc.anim?.mixer.stopAllAction();
-        scene.remove(npc.group);
-        disposeObject(npc.group);
-      }
-      stateRef.current = [];
+      for (const storey of storeys.values()) removeNpcs(scene, storey.npcs);
+      storeys.clear();
+      stageRef.current = null;
       // Nothing else consumes showNpcs, so without an explicit repaint (and a
       // shadow-map refresh — walkers cast) the removed NPCs stay painted in
       // the last frame until something unrelated invalidates (#119).
       requestShadowUpdate?.();
       invalidate?.();
     };
-  }, [enabled, hasRoom, count, riggedModelReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, roomWidth, roomDepth, floorY, reducedMotion]);
+  }, [enabled, riggedModelReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, reducedMotion]);
+
+  // Declared after the lifecycle effect: a re-spawn (the rigged model
+  // arriving) has already happened when this runs.
+  useEffect(() => {
+    syncRef.current();
+  }, [building, shownFrom, shownTo, count]);
+}
+
+/**
+ * Bring each storey's walkers in line with the building (#580). A storey
+ * gets walkers the first time it is drawn; a nav change re-routes them, an
+ * elevation change lifts them with the floor, and a storey that is no longer
+ * drawn hides its walkers where they stand. Walkers of a deleted storey,
+ * or of one with no free floor left, are removed. True when anything changed.
+ */
+function syncNpcStoreys(
+  storeys: Map<string, StoreyWalkers>,
+  stage: NpcStage,
+  building: KeepOutBuilding,
+  shownFrom: number,
+  shownTo: number,
+  count: number
+): boolean {
+  let changed = false;
+  const { floors } = building;
+  const present = new Set<string>();
+  floors.forEach((floor, index) => {
+    present.add(floor.id);
+    const shown = index >= shownFrom && index <= shownTo;
+    let storey = storeys.get(floor.id);
+    if (!storey) {
+      if (!shown) return;
+      storey = { npcs: [], nav: null, signature: null, seats: EMPTY_SEATS, seatItems: null, floorY: 0, shown: false };
+      storeys.set(floor.id, storey);
+    }
+    const floorY = floorElevation(floors, index);
+    if (storey.npcs.length > 0 && floorY !== storey.floorY) {
+      for (const npc of storey.npcs) npc.group.position.y += floorY - storey.floorY;
+      changed = true;
+    }
+    storey.floorY = floorY;
+
+    const keepOut = floorKeepOut(building, index);
+    const interiorWalls = floor.interiorWalls ?? EMPTY_WALLS;
+    // Rebuilt only when what it reads changes (not on a recolour or a lock,
+    // which still hand over new arrays).
+    const signature = `${building.width}:${building.height}|${npcNavSignature({ items: floor.items, interiorWalls, keepOut })}`;
+    if (signature !== storey.signature) {
+      storey.signature = signature;
+      storey.nav = buildNpcNav({ items: floor.items, interiorWalls, keepOut, roomWidth: building.width, roomDepth: building.height });
+      if (storey.nav && storey.nav.freeCount > 0 && storey.npcs.length > 0) {
+        rehomeNpcs(storey.npcs, storey.nav, floorY);
+        changed = true;
+      }
+    }
+    // Cheap to rebuild, and a rebuild disturbs nobody (a sitter whose seat
+    // moved stands up), so this keys on the items themselves.
+    if (floor.items !== storey.seatItems) {
+      storey.seatItems = floor.items;
+      storey.seats = seatMap(floor.items);
+    }
+
+    const nav = storey.nav;
+    if (!nav || nav.freeCount === 0) {
+      // A floor with no free cell holds nobody; clearing it lets them in.
+      if (storey.npcs.length > 0) {
+        removeNpcs(stage.scene, storey.npcs);
+        storey.npcs = [];
+        changed = true;
+      }
+    } else if (shown && storey.npcs.length === 0) {
+      const npcs: NpcState[] = [];
+      // Seeded per storey too, so two storeys don't hold the same people.
+      for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, i + index * count, stage.people, npcs));
+      storey.npcs = npcs;
+      stepNpcs(npcs, 0, nav, floorY, Math.random, storey.seats);
+      changed = true;
+    }
+    storey.shown = shown;
+    for (const npc of storey.npcs) {
+      if (npc.group.visible === shown) continue;
+      npc.group.visible = shown;
+      changed = true;
+    }
+  });
+  for (const [id, storey] of storeys) {
+    if (present.has(id)) continue;
+    if (storey.npcs.length > 0) changed = true;
+    removeNpcs(stage.scene, storey.npcs);
+    storeys.delete(id);
+  }
+  return changed;
+}
+
+function removeNpcs(scene: ThreeNS.Scene, npcs: readonly NpcState[]): void {
+  for (const npc of npcs) {
+    npc.anim?.mixer.stopAllAction();
+    scene.remove(npc.group);
+    disposeObject(npc.group);
+  }
 }
 
 function createNpc(

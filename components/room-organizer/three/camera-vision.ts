@@ -52,7 +52,7 @@ const UNDETECTABLE_TYPES: ReadonlySet<string> = new Set([
   'window',
   'rug',
 ]);
-/** Tag used by use-npcs for wandering pedestrians. */
+/** Tag used by use-npcs for the walkers. */
 const NPC_TAG = 'npc';
 
 interface VisionConeUserData {
@@ -218,8 +218,9 @@ export function stepVisionCones(
       testTarget(obj);
     }
     for (const npc of npcs) {
-      // NPCs wander the active floor; match by height against the cone base.
-      if (Math.abs(npc.position.y - child.position.y) < 1.5) testTarget(npc);
+      // A walker parked on a storey that isn't drawn is not there (#580);
+      // the others match by height against the cone base.
+      if (npc.visible && Math.abs(npc.position.y - child.position.y) < 1.5) testTarget(npc);
     }
 
     // --- Animate: ease colours toward idle/alert, pulse, and scan-blip. ---

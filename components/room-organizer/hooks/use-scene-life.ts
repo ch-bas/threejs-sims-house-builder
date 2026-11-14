@@ -10,18 +10,15 @@ import { useWalkthrough, type UseWalkthroughResult, type WalkthroughBuilding } f
 import { useWeather } from './use-weather';
 import type { EditorViewStore } from './editor-view-store';
 import type { UseThreeSceneResult } from './use-three-scene';
-import type { KeepOutRect } from '../lib/geometry';
-import type { FloorLayout, GameMode, RoomLayout, ViewSettings } from '../lib/types';
+import type { KeepOutBuilding } from '../lib/floor-keep-out';
+import type { GameMode, RoomLayout, ViewSettings } from '../lib/types';
 
 export interface UseSceneLifeOptions {
   viewStore: EditorViewStore;
   view: Pick<ViewSettings, 'showNpcs' | 'view2D' | 'weather' | 'showCameraVision'>;
   walkthroughActive: boolean;
   layout: RoomLayout;
-  activeFloor: FloorLayout;
   activeFloorIndex: number;
-  activeFloorY: number;
-  keepOut: readonly KeepOutRect[];
   onFloorChange: (index: number) => void;
   canvasRef: React.RefObject<HTMLCanvasElement>;
   scene: Pick<
@@ -46,10 +43,7 @@ export function useSceneLife({
   view,
   walkthroughActive,
   layout,
-  activeFloor,
   activeFloorIndex,
-  activeFloorY,
-  keepOut,
   onFloorChange,
   canvasRef,
   scene,
@@ -111,6 +105,19 @@ export function useSceneLife({
   );
   const peopleModelReady = usePeopleModel(threeModuleRef, isReady, layoutHasPeople || view.showNpcs);
 
+  // What the walkers walk around on each storey: its items, partitions and keep-out.
+  const npcBuilding = useMemo<KeepOutBuilding>(
+    () => ({ width: layout.width, height: layout.height, terrain: layout.terrain, entrance: layout.entrance, floors: layout.floors, cutout: layout.cutout }),
+    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors, layout.cutout]
+  );
+  // The storeys whose walkers are shown (#580): the active one, and while
+  // walking indoors its neighbours near the stairs, as the scene draws
+  // them. From outside the other storeys' rooms are barely seen through
+  // the windows, and a phone pays for every figure: theirs stay parked.
+  const walkSpan = walkthroughActive && !walk.outside && walk.nearStairs ? 1 : 0;
+  const npcShownFrom = activeFloorIndex - walkSpan;
+  const npcShownTo = activeFloorIndex + walkSpan;
+
   useNpcs({
     enabled: isReady && view.showNpcs && !view.view2D,
     invalidate,
@@ -118,12 +125,9 @@ export function useSceneLife({
     addDecorativeStep,
     threeModuleRef,
     sceneRef,
-    roomWidth: layout.width,
-    roomDepth: layout.height,
-    items: activeFloor.items,
-    interiorWalls: activeFloor.interiorWalls,
-    keepOut,
-    floorY: activeFloorY,
+    building: npcBuilding,
+    shownFrom: npcShownFrom,
+    shownTo: npcShownTo,
     riggedModelReady: peopleModelReady,
   });
 
