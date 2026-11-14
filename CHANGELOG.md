@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.32.0] - 2026-11-14
+
+The **Project health** milestone: the app is safer to ship and easier to work on. Builds are reproducible and need no network, CI watches the download size and loads the built site in a browser, scripts may only come from the app's own path, the licences of everything shipped are published, and the editor's largest file is split into focused hooks.
+
+### Added
+- The site publishes `third-party-licenses.txt` with the licences of every bundled package, both fonts and the people model, linked from the README ([#569](https://github.com/ch-bas/threejs-sims-house-builder/issues/569), [#622](https://github.com/ch-bas/threejs-sims-house-builder/issues/622))
+- The app can be installed: it opens in its own window and has 192 and 512 px icons ([#616](https://github.com/ch-bas/threejs-sims-house-builder/issues/616))
+- With JavaScript off, the page explains that the builder needs it instead of showing "Loading the lot…" forever ([#612](https://github.com/ch-bas/threejs-sims-house-builder/issues/612))
+- CI reports the gzip size of first-load JS, the largest chunk and the CSS against a committed budget ([#732](https://github.com/ch-bas/threejs-sims-house-builder/issues/732))
+- CI loads the built site in a headless browser and reports console errors, CSP violations, failed requests, the 404 page and the stale-chunk reload ([#561](https://github.com/ch-bas/threejs-sims-house-builder/issues/561))
+- A weekly scan checks every dependency, dev dependencies included, for security advisories ([#574](https://github.com/ch-bas/threejs-sims-house-builder/issues/574))
+
+### Changed
+- Security: on GitHub Pages, scripts may load only from the app's own `_next/` folder, not from any site on the shared origin; a deploy stops if the site's address no longer matches ([#579](https://github.com/ch-bas/threejs-sims-house-builder/issues/579))
+- The Sora and Nunito fonts are committed, so `npm run build` works offline ([#560](https://github.com/ch-bas/threejs-sims-house-builder/issues/560))
+- Builds of one commit are reproducible: a fixed build id and a pinned CI runner image ([#594](https://github.com/ch-bas/threejs-sims-house-builder/issues/594))
+- The editor's orchestrator is split by seam into hooks for selection, the wall draft, item commands, the camera pad, the living scene and house loading; its main function shrinks from 1784 to 1004 lines ([#734](https://github.com/ch-bas/threejs-sims-house-builder/issues/734))
+- ESLint is held at 9 until its plugins support 10, and the Vitest config loads as ESM ([#599](https://github.com/ch-bas/threejs-sims-house-builder/issues/599))
+- CONTRIBUTING and the pull request checklist list every CI step; the module map covers the app shell, scripts and config files, and the drift test checks them ([#604](https://github.com/ch-bas/threejs-sims-house-builder/issues/604))
+
+### Fixed
+- Tests no longer fail on a busy machine: CPU-bound simulations get their own timeout and speed checks measure CPU time, not the clock ([#733](https://github.com/ch-bas/threejs-sims-house-builder/issues/733))
+- New tests cover the JSON import order, camera framing, the engine's load and chunk recovery, the root error screen and the CSP post-build step; `npm run lint` covers `scripts/` ([#608](https://github.com/ch-bas/threejs-sims-house-builder/issues/608))
+
 ## [1.31.0] - 2026-11-14
 
 The **Polish: desktop & mobile** milestone, second wave: touch and keyboard work the way you expect. The 2D plan zooms, a selected item turns with two fingers, phones buzz on a placement or a refusal, items can be reached from the keyboard, and a wall move can no longer leave a picture hanging over a door.
@@ -932,7 +956,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.31.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.32.0...HEAD
+[1.32.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.31.0...v1.32.0
 [1.31.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.30.0...v1.31.0
 [1.30.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.29.0...v1.30.0
 [1.29.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.28.0...v1.29.0
