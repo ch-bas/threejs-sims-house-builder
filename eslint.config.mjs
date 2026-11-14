@@ -32,6 +32,12 @@ const reactCompilerRulesOff = Object.fromEntries(
     .map((rule) => [rule, 'off']),
 );
 
+// The TypeScript parser eslint-config-next already uses for .ts/.tsx. Its
+// own block covers only those, so a .d.mts beside a script (scripts/) would
+// otherwise go to the JavaScript parser and fail to parse.
+const typescriptParser = nextCoreWebVitals.find((entry) => entry.name === 'next/typescript')?.languageOptions?.parser;
+if (!typescriptParser) throw new Error('eslint-config-next no longer exposes its TypeScript parser as next/typescript');
+
 const config = [
   {
     ignores: ['.next/**', 'out/**', 'video-promo/**', '.agents/**', '**/*.patch'],
@@ -59,6 +65,15 @@ const config = [
       ],
       'react/self-closing-comp': 'warn',
     },
+  },
+  {
+    files: ['**/*.mts', '**/*.cts'],
+    languageOptions: { parser: typescriptParser },
+  },
+  {
+    // Build and maintenance scripts report to the terminal: that is their output.
+    files: ['scripts/**'],
+    rules: { 'no-console': 'off' },
   },
   {
     files: ['**/*.ts', '**/*.tsx'],

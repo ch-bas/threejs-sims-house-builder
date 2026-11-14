@@ -21,7 +21,7 @@
     "build": "next build",
     "postbuild": "node scripts/add-preloads.mjs && node scripts/add-csp.mjs && node scripts/third-party-notices.mjs",
     "start": "npx --yes serve@14 out",
-    "lint": "eslint --ext .ts,.tsx app components lib",
+    "lint": "eslint --ext .ts,.tsx app components lib scripts",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
