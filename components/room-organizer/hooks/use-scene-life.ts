@@ -4,12 +4,14 @@ import { createNpcHandOff } from '../lib/npc-bodies';
 import { streetDryBoxes } from '../lib/street-row';
 import { streetSiteOf } from '../lib/walk-collision';
 import { modeAfterExplore, rememberModeBeforeExplore } from '../lib/walkthrough-view';
+import { type DoorWalker, createDoorSwinger, doorWalkersOf } from '../three/door-leaves';
 import { computeSkyProfile } from '../three/lighting';
 import { isLoadedLayout } from './use-achievements';
 import { useAmbience } from './use-ambience';
 import { useCameraVision } from './use-camera-vision';
 import { useNpcs } from './use-npcs';
 import { usePeopleModel } from './use-people-model';
+import { useReducedMotion } from './use-reduced-motion';
 import { useWalkthrough, type UseWalkthroughResult, type WalkLampSwitch, type WalkthroughBuilding } from './use-walkthrough';
 import { useWeather } from './use-weather';
 import type { EditorViewStore } from './editor-view-store';
@@ -126,9 +128,6 @@ export function useSceneLife({
     threeModuleRef,
     cameraRef,
     orbitRef: controlsRef,
-    // L2 doors (#605).
-    sceneRef,
-    requestShadowUpdate,
     building: walkBuilding,
     activeFloorIndex,
     onFloorChange,
@@ -145,6 +144,26 @@ export function useSceneLife({
     walkedDistance: walk.walkedDistance,
     addDecorativeStep,
   });
+
+  // Doors swing for everyone (#605, #908): the player and every walker
+  // shown, in the walk and in the orbit view (any mode: the walkers are
+  // opt-in), on the frame budget. Only the leaves' rotation.y moves, and
+  // the shadow map is redrawn once they stop. The plan and the exports
+  // still draw every door shut. Under reduced motion the walkers stand
+  // still, so only the player opens doors.
+  const doorsReducedMotion = useReducedMotion();
+  const doorsWanted = isReady && !view.view2D && (view.showNpcs || walkthroughActive);
+  useEffect(() => {
+    const doorScene = sceneRef.current;
+    if (!doorsWanted || !doorScene) return undefined;
+    const doors = createDoorSwinger(doorScene, requestShadowUpdate);
+    const people: DoorWalker[] = [];
+    const removeStep = addDecorativeStep((delta) => doors.step(doorWalkersOf(npcHandOff, people, !doorsReducedMotion), delta, doorsReducedMotion));
+    return () => {
+      removeStep();
+      if (doors.shutAll()) invalidate();
+    };
+  }, [doorsWanted, doorsReducedMotion, sceneRef, npcHandOff, addDecorativeStep, requestShadowUpdate, invalidate]);
 
   // people.glb is fetched only once a person is placed or the walkers are on.
   const layoutHasPeople = useMemo(

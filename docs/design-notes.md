@@ -383,14 +383,25 @@ to respect.
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
 - **Doors swing for the walker (#605).** A door's leaf and handle hang in a
   pivot group on the hinge jamb (`DOOR_LEAF_NAME`), shut at rest, so the
-  plan, the exports, the GLB and DESIGN never see it open. In EXPLORE the
+  plan, the exports and the GLB never see it open. In EXPLORE the
   walk loop steps `three/door-leaves.ts`: within 1.8 m of a door's centre
   on the walker's storey the leaf opens over 0.45 s, swinging away from
   the walker, and shuts again behind. It is never less open than the
   walker's distance asks, fully open inside 0.9 m, so a sprinter never
   passes through a closed leaf; the collider's door gap is unchanged.
   Only the pivot's `rotation.y` moves (kept groups, #404); the shadow map
-  is redrawn once the leaves stop. Leaving the walk shuts every door.
+  is redrawn once the leaves stop. Since #908 the swinger belongs to
+  `use-scene-life` and runs on the frame budget, for everyone: the player
+  and every walker shown (their bodies in the `NpcHandOff`, read into a
+  reused array). Each leaf follows the nearest person on its storey and
+  swings away from that one's side; a door still shutting reopens for the
+  next, since it is never less open than the distance asks. They swing in
+  every mode while walkers are shown (an opt-in), since EXPLORE's orbit
+  view is rare (the walk starts with it); only the leaf turns, so a
+  selection or a drag still finds the door item. Turning the walkers off
+  with no walk on, or the 2D plan, shuts every door. Under reduced motion
+  the walkers stand where they spawned, so only the player opens doors:
+  a walker parked by a door never holds it open.
 - **Photo mode hides, it doesn't remove (#626).** View options → Photo
   mode (a button in the View heading's row, so the menu keeps its height)
   sets `html[data-photo]`: CSS makes everything in `.pc-world` but the 3D

@@ -176,7 +176,7 @@ components/
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
     │   ├── drag-handlers.ts             Canvas mouse events: select/drag/hover/wall-pick
-    │   ├── door-leaves.ts               Finds the door leaves in the scene and swings them for the walker; shuts them on exit (#605)
+    │   ├── door-leaves.ts               Finds the door leaves in the scene and swings each for the nearest person on its storey, the player or a walker (#605, #908); shuts them all
     │   ├── builders/                    Per-category builder functions
     │   │   ├── builders-seating.ts      Chair, armchair, bench, sofa
     │   │   ├── builders-bedroom.ts      Bed, nightstand, dresser
@@ -257,7 +257,7 @@ components/
     │   ├── plan-calibration.ts          The traced plan's calibration session (#726): points picked, length step, move step
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
     │   ├── use-camera-vision.ts         Vision-cone sweep on the frame budget
-    │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones; the clock ref the walkers read (#907)
+    │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones; the clock ref the walkers read (#907); the door swinger, for the player and the walkers (#908)
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
