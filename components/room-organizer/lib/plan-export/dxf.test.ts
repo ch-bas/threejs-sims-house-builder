@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../__testfixtures__/fixtures';
+import { setDisplayUnit } from '../format';
 import { buildingToDxf, DXF_LAYERS, layoutToDxf } from './dxf';
 import { buildingFrameBounds, interiorWallDimensions, stairCutHatch } from './plan-geometry';
 import { layoutToSvg } from './svg';
@@ -668,4 +669,19 @@ describe('buildingToDxf', () => {
     const total = (d: string) => entities(d).length;
     expect(total(dxf)).toBe(building.floors.reduce((sum, f) => sum + total(layoutToDxf(building, f)), 0));
   }, 30_000);
+});
+
+describe('DXF stays in metres (#725)', () => {
+  it('writes the same file whatever unit the editor shows', () => {
+    const floor = makeFloor({ items: [makeItem()], interiorWalls: [{ id: 'w', x1: -2, z1: -4, x2: -2, z2: 0 }] });
+    const layout = makeLayout({ floors: [floor] });
+    const metric = layoutToDxf(layout, floor, { openingDimensions: true });
+    setDisplayUnit('imperial');
+    try {
+      expect(layoutToDxf(layout, floor, { openingDimensions: true })).toBe(metric);
+    } finally {
+      setDisplayUnit('metric');
+    }
+    expect(metric).toContain('4.00 m');
+  });
 });

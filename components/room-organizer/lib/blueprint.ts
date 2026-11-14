@@ -3,6 +3,7 @@ import { furnitureSpend } from './budget';
 import { CATEGORIES, CURRENCY_SYMBOL } from './constants';
 import { floorKeepOut } from './floor-keep-out';
 import { buildingArea } from './footprint';
+import { formatArea, formatMetres, formatSize, getDisplayUnit } from './format';
 import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
 import { COARSE_POINTER_QUERY } from './hud-layout';
@@ -184,6 +185,8 @@ async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<st
   const size = blueprintCanvasSize(bounds);
   const floorIndex = planFloorIndex(layout.floors, floor);
   const keepOut = floorKeepOut(layout, floorIndex);
+  // Lengths and areas in the unit the editor shows (#725).
+  const unit = getDisplayUnit();
 
   const draw = (canvas: HTMLCanvasElement, pixelRatio: number): void =>
     render2DTopDown({
@@ -199,6 +202,7 @@ async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<st
       fitBounds: bounds,
       padding: BLUEPRINT_PADDING,
       pixelRatio,
+      unit,
       hasCollision: (item) =>
         hasCollisions(item, floor.items, layout.width, layout.height, { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) }),
     });
@@ -207,8 +211,8 @@ async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<st
 
   const stats = {
     items: floor.items.length,
-    area: floorArea(layout, floorIndex).toFixed(1),
-    footprint: footprintArea(floor.items).toFixed(1),
+    area: formatArea(floorArea(layout, floorIndex), unit),
+    footprint: formatArea(footprintArea(floor.items), unit),
     // The porch door is structure, as in the header (#693).
     cost: `${CURRENCY_SYMBOL}${furnitureSpend({ floors: [floor] }).toLocaleString()}`,
   };
@@ -222,19 +226,19 @@ async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<st
   const zonesHtml = (floor.zones ?? [])
     .map((zone) => {
       const zs = zoneStats(zone, floor.items, recess);
-      return `<li>${escapeHtml(zone.name)}: ${zs.itemCount} items · ${CURRENCY_SYMBOL}${zs.cost.toLocaleString()} · ${zs.area.toFixed(1)} m²</li>`;
+      return `<li>${escapeHtml(zone.name)}: ${zs.itemCount} items · ${CURRENCY_SYMBOL}${zs.cost.toLocaleString()} · ${formatArea(zs.area, unit)}</li>`;
     })
     .join('');
 
   // Far items the plan leaves off are still listed, so the sheet never
   // counts an item it doesn't account for.
   const omittedHtml = plan.omitted
-    .map(({ item, distance }) => `<li>${escapeHtml(item.icon)} ${escapeHtml(item.name)}: ${distance.toFixed(1)} m outside the walls</li>`)
+    .map(({ item, distance }) => `<li>${escapeHtml(item.icon)} ${escapeHtml(item.name)}: ${escapeHtml(formatMetres(distance, 1, unit))} outside the walls</li>`)
     .join('');
 
   return renderBlueprintHtml({
     title: `${layout.name} — ${floor.name}`,
-    subtitle: `${layout.width} m × ${layout.height} m · ${stats.items} items · ${stats.cost}`,
+    subtitle: `${unit === 'imperial' ? formatSize(layout.width, layout.height, undefined, unit) : `${layout.width} m × ${layout.height} m`} · ${stats.items} items · ${stats.cost}`,
     imageUrl: dataUrl,
     imageSize: size,
     legendHtml: legend,
@@ -291,8 +295,8 @@ function renderBlueprintHtml({ title, subtitle, imageUrl, imageSize, legendHtml,
         <strong>Statistics</strong>
         <ul>
           <li>Items: ${stats.items}</li>
-          <li>Floor area: ${stats.area} m²</li>
-          <li>Furniture footprint: ${stats.footprint} m²</li>
+          <li>Floor area: ${escapeHtml(stats.area)}</li>
+          <li>Furniture footprint: ${escapeHtml(stats.footprint)}</li>
           <li>Cost: ${escapeHtml(stats.cost)}</li>
         </ul>
       </section>

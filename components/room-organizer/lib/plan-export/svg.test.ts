@@ -558,3 +558,27 @@ describe('SVG escaping of user text (#455)', () => {
     expect(layoutToSvg(makeLayout({ floors: [floor] }), floor)).toContain('12.0 m²</text>');
   });
 });
+
+describe('SVG in feet and inches (#725)', () => {
+  it('writes dimensions, areas, the title, the scale bar and the schedule in the unit', () => {
+    const { layout, floor } = makeFixture();
+    const zoned = { ...floor, zones: [{ id: 'z', name: 'Den', color: '#3b82f6', x: -4, z: -4, w: 4, d: 3 }] };
+    const svg = layoutToSvg({ ...layout, floors: [zoned] }, zoned, { schedule: true, unit: 'imperial' });
+    // Escaped like every text sink (#455): 26' 3".
+    expect(svg).toContain('>26&#39; 3&quot;</text>');
+    expect(svg).toContain('>129 sq ft</text>');
+    expect(svg).toContain('26&#39; 3&quot; × 26&#39; 3&quot;');
+    expect(svg).toContain('>5 ft</text>');
+    expect(svg).toContain('>W × D × H</text>');
+    expect(svg).not.toMatch(/\d m</);
+    expect(svg).not.toContain('m²');
+  });
+
+  it('stays in metres by default', () => {
+    const { layout, floor } = makeFixture();
+    const svg = layoutToSvg(layout, floor, { schedule: true });
+    expect(svg).toContain('>8.00 m</text>');
+    expect(svg).toContain('>2 m</text>');
+    expect(svg).toContain('>W × D × H (m)</text>');
+  });
+});

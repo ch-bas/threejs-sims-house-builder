@@ -580,7 +580,8 @@ function emitFloor(
   }
 
   const showChains = options.dimensions !== false && options.openingDimensions === true;
-  const chains = showChains ? wallOpeningDimensions(layout, floor) : [];
+  // CAD files stay in metres whatever the editor shows (#725): $INSUNITS says so.
+  const chains = showChains ? wallOpeningDimensions(layout, floor, undefined, 'metric') : [];
   const topRow = Math.max(0, ...chains.flatMap((chain) => chain.segments.map((segment) => segment.labelRow)));
   const chainBand = showChains ? OPENING_CHAIN_BAND_M + OPENING_CHAIN_ROW_M * Math.max(0, topRow - 1) : 0;
   if (options.dimensions !== false) emitDimensions(doc, layout, floor, content, cad, chainBand);
@@ -720,7 +721,7 @@ function emitDimensions(
   doc.line('DIMENSIONS', [x0, y1], [dx - tick, y1]);
   dimension(doc, [dx, y0], [dx, y1], layout.height, [-1, 0]);
 
-  for (const dim of interiorWallDimensions(floor)) {
+  for (const dim of interiorWallDimensions(floor, 'metric')) {
     const from = cad(dim.from.x, dim.from.z);
     const to = cad(dim.to.x, dim.to.z);
     // The side plan-geometry chose, shared with the SVG: world (x, z) → CAD (x, −z).
