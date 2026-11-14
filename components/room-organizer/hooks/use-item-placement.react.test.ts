@@ -248,6 +248,33 @@ describe('useItemPlacement — snapPosition', () => {
     expect(result.current.snapPosition('a', 0.1, 0).x).toBeCloseTo(0.05, 10);
   });
 
+  it('names the wall an item sits on, even when the grid put it there first (#687)', () => {
+    const box = makeItem({ id: 'box', width: 1, depth: 1, rotation: 0, category: 'seating', position: { x: 0, z: 0 } });
+    const { result } = renderHook(() =>
+      useItemPlacement({
+        activeFloor: makeFloor({ items: [box, windowItem] }),
+        activeFloorY: 0,
+        roomWidth: 8,
+        roomDepth: 8,
+        buildingCost: 0,
+        actions: layoutStore.getState().actions,
+        view: { snapToGrid: true, snapToWall: true, snapToItems: false },
+      })
+    );
+    // The grid lands it on the west face (-3.5) before the wall snap moves anything.
+    expect(result.current.snapPosition('box', -3.4, 0)).toEqual({ x: -3.5, z: 0 });
+    expect(result.current.lastSnapWall().touching).toEqual(['west']);
+    // Into the north-west corner: both walls.
+    result.current.snapPosition('box', -3.4, -3.4);
+    expect([...result.current.lastSnapWall().touching].sort()).toEqual(['north', 'west']);
+    // Mid-room: none, and nothing near.
+    result.current.snapPosition('box', 0, 0);
+    expect(result.current.lastSnapWall()).toEqual({ touching: [], near: [] });
+    // An opening keys on its wall line.
+    result.current.snapPosition('w', 1, -3.9);
+    expect(result.current.lastSnapWall().touching).toHaveLength(1);
+  });
+
   it('keeps a dragged window out of the porch recess span (#394)', () => {
     const { result } = mount({ frontGap: { x0: -0.7, x1: 0.7 } });
     expect(result.current.snapPosition('w', 0.2, -4)).toEqual({ x: 1.2, z: -4 });
