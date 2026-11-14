@@ -7,6 +7,7 @@ import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixture
 import { doorSwing, type PlacedItem } from '../lib/plan-export/plan-geometry';
 import { entrancePlanOutline } from '../lib/street';
 import { INITIAL_LAYOUT } from './layout-reducer';
+import { endPlanCalibration, getPlanCalibration, startPlanCalibration } from './plan-calibration';
 import { PLAN_GESTURE_ATTR } from './scene-occluders';
 import { useCanvas2DInteraction, type UseCanvas2DInteractionParams } from './use-canvas-2d-interaction';
 import { layoutStore } from './use-layout-store';
@@ -1034,5 +1035,65 @@ describe('useCanvas2DInteraction view zoom (#678)', () => {
     zoomIn(canvas, params.layout);
     cleanup();
     expect(planZoomOf(canvas)).toBe(NO_PLAN_ZOOM);
+  });
+});
+
+describe('useCanvas2DInteraction calibrating the traced plan (#726)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    startPlanCalibration({ width: 1000, height: 500 });
+  });
+  afterEach(() => {
+    endPlanCalibration();
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const finger = (canvas: HTMLCanvasElement, type: string, x: number, y: number, id: number, isPrimary = id === 1) =>
+    canvas.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: id, pointerType: 'touch', isPrimary, button: 0, bubbles: true }));
+  const points = () => getPlanCalibration()?.points ?? [];
+
+  it('a pinch places no point, and the tap after it does', () => {
+    const { params } = setup([]);
+    const canvas = params.canvasRef.current!;
+    finger(canvas, 'pointerdown', 350, 300, 1);
+    finger(canvas, 'pointerdown', 450, 300, 2);
+    finger(canvas, 'pointermove', 300, 300, 1);
+    finger(canvas, 'pointermove', 500, 300, 2);
+    finger(canvas, 'pointerup', 300, 300, 1);
+    finger(canvas, 'pointerup', 500, 300, 2);
+    expect(planZoomOf(canvas).zoom).toBeGreaterThan(1);
+    expect(points()).toHaveLength(0);
+    finger(canvas, 'pointerdown', 400, 300, 3, true);
+    finger(canvas, 'pointerup', 402, 301, 3, true);
+    expect(points()).toHaveLength(1);
+    setPlanZoom(canvas, NO_PLAN_ZOOM);
+  });
+
+  it('a press-drag places no point, and the click after it does, where it lifts', () => {
+    const { params, fire, scale } = setup(['a']);
+    fire('pointerdown', -2, 1);
+    fire('pointermove', -1, 1);
+    fire('pointerup', -1, 1);
+    expect(points()).toHaveLength(0);
+    fire('pointerdown', -2, 1);
+    fire('pointerup', -2 + 3 / scale, 1);
+    expect(points()).toHaveLength(1);
+    expect(points()[0]!.x).toBeCloseTo(-2 + 3 / scale, 6);
+    // Calibrating claims the press: no selection changes, nothing is dragged.
+    expect(params.onDeselect).not.toHaveBeenCalled();
+    expect(params.onItemSelect).not.toHaveBeenCalled();
+    expect(params.onItemDragStart).not.toHaveBeenCalled();
+  });
+
+  it('the second tap moves on to the length', () => {
+    const { fire } = setup([]);
+    fire('pointerdown', -2, 1);
+    fire('pointerup', -2, 1);
+    fire('pointerdown', 2, 1);
+    fire('pointerup', 2, 1);
+    expect(getPlanCalibration()?.phase).toBe('distance');
+    expect(points()).toHaveLength(2);
   });
 });

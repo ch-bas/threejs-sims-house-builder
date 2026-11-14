@@ -1,6 +1,6 @@
 import { GRID_SIZE_METERS } from '../lib/constants';
 import { floorHoleOutlines, mergeHoleRects } from '../lib/floor-holes';
-import { floorPlanCanvasLayout } from '../lib/floor-plan-fit';
+import { floorPlanCanvasLayoutFor } from '../lib/floor-plan-fit';
 import { alongSide, cutoutRect, footprintOutline, shellWalls, shellWallSpan, type ShellWallId } from '../lib/footprint';
 import { FLOOR_HEIGHT_METERS } from '../lib/types';
 import { BASEBOARD_DEPTH, BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
@@ -12,7 +12,7 @@ import { ROOF_OFF_STOREY_KEY } from './roof';
 import { revealsEnabled, withMaxAnisotropy } from './texture-settings';
 import { openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
-import type { FloorPattern, FloorPlanFitMode, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
+import type { FloorPattern, FloorPlanFitMode, FloorPlanTransform, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
 import type { ZoneFloorPatch } from '../lib/zones';
 import type * as ThreeNS from 'three';
 
@@ -238,6 +238,8 @@ export interface RoomBuilderOptions {
   floorPlanImage: string | null;
   floorPlanOpacity: number;
   floorPlanFitMode: FloorPlanFitMode;
+  /** The traced plan's calibration (#726): placed as the 2D plan places it. */
+  floorPlanTransform?: FloorPlanTransform | undefined;
   floorPlan3DEffect: boolean;
   /** Vertical offset for this floor (y in metres). Defaults to 0 (ground). */
   yOffset?: number;
@@ -605,20 +607,22 @@ function fittedFloorPlan(
 ): HTMLCanvasElement | HTMLImageElement {
   const roomAspect = options.width / options.depth;
   const mode = options.floorPlanFitMode;
-  if (role === 'displacement' && mode === 'stretch') return image;
+  const transform = options.floorPlanTransform;
+  if (role === 'displacement' && mode === 'stretch' && !transform) return image;
 
+  // A calibrated image depends on the room's size, not just its aspect (#726).
+  const placed = transform ? `${options.width}x${options.depth}|${transform.scale}|${transform.offsetX}|${transform.offsetZ}` : '';
   const key = role === 'map'
-    ? `${mode}|${roomAspect}|${options.floorColor}|${options.floorPlanOpacity}`
-    : `${mode}|${roomAspect}`;
+    ? `${mode}|${roomAspect}|${placed}|${options.floorColor}|${options.floorPlanOpacity}`
+    : `${mode}|${roomAspect}|${placed}`;
   const cache = floorPlanImageCache?.image === image ? floorPlanImageCache : null;
   const cached = cache?.composites[role];
   if (cached?.key === key) return cached.canvas;
 
-  const { width, height, source, dest } = floorPlanCanvasLayout(
+  const { width, height, source, dest } = floorPlanCanvasLayoutFor(
     image.naturalWidth || image.width,
     image.naturalHeight || image.height,
-    roomAspect,
-    mode
+    { width: options.width, depth: options.depth, mode, transform }
   );
   const canvas = document.createElement('canvas');
   canvas.width = width;

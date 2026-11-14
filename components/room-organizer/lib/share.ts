@@ -82,6 +82,8 @@ export async function encodeShareUrl(
 async function encodeShareable(layout: RoomLayout, origin: string): Promise<string> {
   const shareable: RoomLayout = { ...layout };
   delete shareable.floorPlanImage;
+  // Its calibration goes with it (#726).
+  delete shareable.floorPlanTransform;
   const json = JSON.stringify(shareable);
   const compressed = await deflateRaw(new TextEncoder().encode(json));
   return `${origin}${HASH_PREFIX}${V2_PREFIX}${bytesToBase64Url(compressed)}`;

@@ -11,6 +11,7 @@ import {
 import { clipWallToCutout, fitNewShape, roofCoversCutout, withCutout } from '../lib/cutout';
 import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { floorKeepOut } from '../lib/floor-keep-out';
+import { repairFloorPlanTransform } from '../lib/floor-plan-fit';
 import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
 import { formatMetres } from '../lib/format';
 import { remapGroupIds } from '../lib/groups';
@@ -51,6 +52,7 @@ import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanTransform,
   Frontage,
   FurnitureItem,
   InteriorWall,
@@ -120,6 +122,7 @@ export type LayoutAction =
   | { type: 'setFloorPlan'; image: string | null }
   | { type: 'setFloorPlanOpacity'; opacity: number }
   | { type: 'setFloorPlanFitMode'; mode: FloorPlanFitMode }
+  | { type: 'setFloorPlanTransform'; transform: FloorPlanTransform | null }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
   | { type: 'addDormer'; dormer: DormerInput }
@@ -362,18 +365,38 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // -- floor plan ---------------------------------------------------------
     case 'setFloorPlan': {
       const { image } = action;
+      // A calibration belongs to its image (#726): another image, or none, drops it.
       if (image === null) {
         return withLayout(state, (layout) => {
-          if (layout.floorPlanImage === undefined) return layout;
+          if (layout.floorPlanImage === undefined && layout.floorPlanTransform === undefined) return layout;
           const next = { ...layout };
           delete next.floorPlanImage;
+          delete next.floorPlanTransform;
           return next;
         });
       }
-      return withLayout(state, (layout) =>
-        layout.floorPlanImage === image ? layout : { ...layout, floorPlanImage: image }
-      );
+      return withLayout(state, (layout) => {
+        if (layout.floorPlanImage === image) return layout;
+        const next = { ...layout, floorPlanImage: image };
+        delete next.floorPlanTransform;
+        return next;
+      });
     }
+    case 'setFloorPlanTransform':
+      return withLayout(state, (layout) => {
+        if (action.transform === null) {
+          if (layout.floorPlanTransform === undefined) return layout;
+          const next = { ...layout };
+          delete next.floorPlanTransform;
+          return next;
+        }
+        // Through the schema's repair, so the store never holds what a load would drop.
+        const transform = repairFloorPlanTransform(action.transform);
+        if (!transform || !layout.floorPlanImage) return layout;
+        const current = layout.floorPlanTransform;
+        if (current && current.scale === transform.scale && current.offsetX === transform.offsetX && current.offsetZ === transform.offsetZ) return layout;
+        return { ...layout, floorPlanTransform: transform };
+      });
     // Clamped like every other channel the schema bounds (#418).
     case 'setFloorPlanOpacity':
       return withLayout(state, (layout) => {
@@ -1451,7 +1474,11 @@ function clampRoomDimension(value: number): number {
  * Copy-on-write: undo, redo and loads come through here, and a fresh
  * terrain or floor object re-runs every scene effect keyed on it (#603).
  */
-function normaliseLayout(layout: RoomLayout): RoomLayout {
+function normaliseLayout(input: RoomLayout): RoomLayout {
+  // A calibration belongs to its image (#726). Restore points keep it without
+  // the image, for the History panel to re-attach both; a house that arrives
+  // without its image leaves it behind here, on every whole-house load.
+  const layout = input.floorPlanTransform && !input.floorPlanImage ? withoutKey(input, 'floorPlanTransform') : input;
   const width = clampRoomDimension(layout.width);
   const height = clampRoomDimension(layout.height);
   return {
@@ -1461,6 +1488,12 @@ function normaliseLayout(layout: RoomLayout): RoomLayout {
     floors: normaliseFloors(layout.floors),
     ...(layout.terrain !== undefined ? { terrain: clampTerrain(layout.terrain) } : {}),
   };
+}
+
+function withoutKey<K extends keyof RoomLayout>(layout: RoomLayout, key: K): RoomLayout {
+  const next = { ...layout };
+  delete next[key];
+  return next;
 }
 
 function normaliseFloors(floors: FloorLayout[]): FloorLayout[] {

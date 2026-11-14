@@ -55,6 +55,7 @@ import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeR
 import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
+import { usePlanCalibration } from './plan-calibration';
 import { observeSceneOccluders, planFit } from './scene-occluders';
 import { currentQuality } from './use-three-scene';
 import type { StampGhost } from '../canvas-2d/plan-edit';
@@ -459,6 +460,7 @@ export function useSceneEffects({
         floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
         floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
         floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
+        floorPlanTransform: layout.floorPlanTransform,
         floorPlan3DEffect: view.floorPlan3DEffect,
         yOffset: floorElevation(layout.floors, index),
         wallHeight: storeyHeight(floor),
@@ -507,7 +509,7 @@ export function useSceneEffects({
     // when interior walls do — without this dep a door claimed by a new
     // interior wall stays double-cut into the exterior wall (#119).
     layout.width, layout.height, cutoutKey, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
-    layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
+    layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode, layout.floorPlanTransform,
     view.floorPlan3DEffect, allFloors, ghostOtherFloors,
     shellActiveKey,
   ]);
@@ -1212,7 +1214,7 @@ export function useSceneEffects({
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.width, layout.height, cutoutKey, allFloors, ghostOtherFloors,
     // The rest of the shell rebuild's keys: any rebuild makes new wall meshes.
-    layout.terrain, layout.entrance, layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode,
+    layout.terrain, layout.entrance, layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode, layout.floorPlanTransform,
     view.floorPlan3DEffect, shellActiveKey,
   ]);
 
@@ -1407,8 +1409,14 @@ export function useSceneEffects({
   const wallTip = view.drawWallMode ? wallSnapResult : null;
   const selectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
   const selectedWallSide = selectedWall?.kind === 'interior' ? selectedWall.side : undefined;
-  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedWallSide' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost'>>({});
+  // The traced plan's calibration points (#726), kept on every repaint.
+  const calibration = usePlanCalibration();
+  const calibrationPoints = calibration?.points;
+  const calibrating = calibration !== null;
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedWallSide' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost' | 'calibrationPoints' | 'floorPlanUnclipped'>>({});
   planEditRef.current = {
+    calibrationPoints,
+    floorPlanUnclipped: calibrating,
     selectedWallId,
     selectedWallSide,
     selectedZoneId,
@@ -1422,7 +1430,7 @@ export function useSceneEffects({
     // Once a frame, however many moves arrive in it.
     const frame = requestAnimationFrame(() => paint2DRef.current?.());
     return () => cancelAnimationFrame(frame);
-  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedWallSide, selectedZoneId, roomsToName, stampGhost, stampArmed]);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedWallSide, selectedZoneId, roomsToName, stampGhost, stampArmed, calibrationPoints, calibrating]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;

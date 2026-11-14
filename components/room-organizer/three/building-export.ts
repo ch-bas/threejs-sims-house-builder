@@ -93,6 +93,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
       floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
       floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
+      floorPlanTransform: layout.floorPlanTransform,
       // The relief is a view effect; the file gets the flat plan.
       floorPlan3DEffect: false,
       yOffset: floorY,

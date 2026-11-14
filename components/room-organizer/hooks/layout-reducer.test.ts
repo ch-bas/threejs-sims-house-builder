@@ -1244,3 +1244,39 @@ describe('layoutReducer — room zones (#155)', () => {
     expect(layoutReducer(removed, { type: 'removeZone', id: 'z1' })).toBe(removed);
   });
 });
+
+describe('layoutReducer — traced plan calibration (#726)', () => {
+  const transform = { scale: 0.01, offsetX: 0.5, offsetZ: -1 };
+  const traced = (): LayoutState => layoutReducer(stateWith([]), { type: 'setFloorPlan', image: 'data:image/png;base64,AAAA' });
+
+  it('calibrates a traced plan, and a repeat is a no-op', () => {
+    const state = layoutReducer(traced(), { type: 'setFloorPlanTransform', transform });
+    expect(state.layout.floorPlanTransform).toEqual(transform);
+    expect(layoutReducer(state, { type: 'setFloorPlanTransform', transform: { ...transform } })).toBe(state);
+  });
+
+  it('refuses a calibration with no image or out of range, returning the same state', () => {
+    const bare = stateWith([]);
+    expect(layoutReducer(bare, { type: 'setFloorPlanTransform', transform })).toBe(bare);
+    const state = traced();
+    expect(layoutReducer(state, { type: 'setFloorPlanTransform', transform: { ...transform, scale: -1 } })).toBe(state);
+    expect(layoutReducer(state, { type: 'setFloorPlanTransform', transform: null })).toBe(state);
+  });
+
+  it('leaves a calibration behind when a whole house arrives without its image', () => {
+    const dangling = makeLayout({ floorPlanTransform: transform });
+    expect(layoutReducer(stateWith([]), { type: 'applyLayout', layout: dangling }).layout.floorPlanTransform).toBeUndefined();
+    const whole = makeLayout({ floorPlanImage: 'data:image/png;base64,AAAA', floorPlanTransform: transform });
+    expect(layoutReducer(stateWith([]), { type: 'applyLayout', layout: whole }).layout.floorPlanTransform).toEqual(transform);
+  });
+
+  it('drops the calibration with its image: removed, or another one uploaded', () => {
+    const calibrated = layoutReducer(traced(), { type: 'setFloorPlanTransform', transform });
+    expect(layoutReducer(calibrated, { type: 'setFloorPlanTransform', transform: null }).layout.floorPlanTransform).toBeUndefined();
+    expect(layoutReducer(calibrated, { type: 'setFloorPlan', image: 'data:image/png;base64,BBBB' }).layout.floorPlanTransform).toBeUndefined();
+    const removed = layoutReducer(calibrated, { type: 'setFloorPlan', image: null }).layout;
+    expect('floorPlanTransform' in removed || 'floorPlanImage' in removed).toBe(false);
+    // The same image again keeps it.
+    expect(layoutReducer(calibrated, { type: 'setFloorPlan', image: 'data:image/png;base64,AAAA' })).toBe(calibrated);
+  });
+});
