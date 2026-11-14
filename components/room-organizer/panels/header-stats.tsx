@@ -21,6 +21,8 @@ export interface HeaderStatsProps {
   remoteChange?: boolean;
   onAdoptRemote?(): void;
   onDismissRemote?(): void;
+  /** Share a link to the house (#722), through `lib/share-delivery.ts`. */
+  onShare?(): void;
 }
 
 export function HeaderStats({
@@ -30,6 +32,7 @@ export function HeaderStats({
   remoteChange = false,
   onAdoptRemote,
   onDismissRemote,
+  onShare,
 }: HeaderStatsProps): JSX.Element {
   // `layout` from the store selector — re-renders only on layout changes.
   const layout = useLayout();
@@ -55,6 +58,22 @@ export function HeaderStats({
         intent={overBudget ? 'danger' : ratio > 0.85 ? 'warning' : 'normal'}
       />
       <SaveIndicator lastSavedAt={lastSavedAt} saving={saving} saveError={saveError} />
+      {onShare && (
+        <button
+          type="button"
+          className="pc-tile pc-share-button"
+          // Icon only: the stats must stay one row at 1440 px.
+          aria-label="Share a link to this house"
+          title="Share a link to this house: it opens as a tour"
+          onClick={onShare}
+          // A held Enter shares once, not once per repeat.
+          onKeyDown={(event) => {
+            if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault();
+          }}
+        >
+          <Icon name="link" size={16} aria-hidden />
+        </button>
+      )}
       {remoteChange && (
         <RemoteChangeNotice onAdopt={onAdoptRemote} onDismiss={onDismissRemote} />
       )}
