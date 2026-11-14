@@ -216,7 +216,7 @@ components/
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
     │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits; giving way, sitting, activities
     │   ├── use-weather.ts               Rain / snow clock on the frame budget
-    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
+    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
     │   ├── use-camera-vision.ts         Vision-cone sweep on the frame budget
     │   ├── use-history.ts               Snapshot undo/redo

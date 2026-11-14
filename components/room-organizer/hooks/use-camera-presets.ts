@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { ORBIT_LENS_SCALE, ORBIT_START, focusOffset, frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset } from '../lib/scene-insets';
+import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from '../lib/camera-zoom';
+import { ORBIT_LENS_SCALE, ORBIT_MAX_POLAR, ORBIT_START, focusOffset, frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset } from '../lib/scene-insets';
 import { OCCLUDER_SELECTOR, SHEET_SELECTOR, measureRegion } from './scene-occluders';
+import { useEvent } from './use-event';
 import type { FocusCover, HouseShape, Vec3 } from '../lib/scene-insets';
 import type { CameraPreset } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -390,4 +392,80 @@ function cameraAtPose(
   const near = (v: { x: number; y: number; z: number }, p: Vec3) =>
     Math.abs(v.x - p[0]) < POSE_EPSILON && Math.abs(v.y - p[1]) < POSE_EPSILON && Math.abs(v.z - p[2]) < POSE_EPSILON;
   return near(camera.position, pose.position) && (!controls || near(controls.target, pose.target));
+}
+
+export type OrbitDirection = 'left' | 'right' | 'up' | 'down';
+
+/** One step of the camera pad's orbit about the target. */
+export function orbitCamera(
+  THREE: typeof import('../three/three-runtime'),
+  camera: ThreeNS.PerspectiveCamera,
+  controls: OrbitControlsType,
+  direction: OrbitDirection
+): void {
+  const offset = camera.position.clone().sub(controls.target);
+  const spherical = new THREE.Spherical().setFromVector3(offset);
+  const step = 0.22;
+  switch (direction) {
+    case 'left':
+      spherical.theta += step;
+      break;
+    case 'right':
+      spherical.theta -= step;
+      break;
+    case 'up':
+      spherical.phi = Math.max(0.15, spherical.phi - step / 2);
+      break;
+    case 'down':
+      spherical.phi = Math.min(ORBIT_MAX_POLAR, spherical.phi + step / 2);
+      break;
+  }
+  offset.setFromSpherical(spherical);
+  camera.position.copy(controls.target).add(offset);
+  controls.update();
+}
+
+/** One step of the camera pad's zoom towards or away from the target. */
+export function zoomCamera(
+  camera: ThreeNS.PerspectiveCamera,
+  controls: OrbitControlsType,
+  direction: '+' | '-'
+): void {
+  const offset = camera.position.clone().sub(controls.target);
+  const factor = direction === '+' ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR;
+  offset.multiplyScalar(factor);
+  camera.position.copy(controls.target).add(offset);
+  controls.update();
+}
+
+export interface UseCameraPadOptions {
+  threeModuleRef: React.MutableRefObject<typeof import('../three/three-runtime') | null>;
+  cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
+  controlsRef: React.MutableRefObject<OrbitControlsType | null>;
+  invalidate: () => void;
+}
+
+/** The on-screen camera pad's orbit and zoom, with stable identities for the memoised HUD. */
+export function useCameraPad({ threeModuleRef, cameraRef, controlsRef, invalidate }: UseCameraPadOptions): {
+  orbitByPad: (direction: OrbitDirection) => void;
+  zoomByPad: (direction: '+' | '-') => void;
+} {
+  const orbitByPad = useEvent((direction: OrbitDirection) => {
+    const THREE = threeModuleRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!THREE || !camera || !controls) return;
+    orbitCamera(THREE, camera, controls, direction);
+    // controls.update() above consumes the move, so the RAF loop won't
+    // see it; mark the frame dirty explicitly (#337).
+    invalidate();
+  });
+  const zoomByPad = useEvent((direction: '+' | '-') => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    zoomCamera(camera, controls, direction);
+    invalidate();
+  });
+  return { orbitByPad, zoomByPad };
 }

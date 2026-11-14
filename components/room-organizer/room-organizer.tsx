@@ -8,7 +8,7 @@ import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room
 import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, viewExceptTime } from './hooks/editor-view-store';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
-import { useCameraPresets } from './hooks/use-camera-presets';
+import { useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
 import { useCameraVision } from './hooks/use-camera-vision';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
@@ -36,7 +36,6 @@ import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
 import { useWeather } from './hooks/use-weather';
 import { furnitureSpend } from './lib/budget';
-import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from './lib/camera-zoom';
 import { findCatalogEntry } from './lib/catalog-drag';
 import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
@@ -48,7 +47,7 @@ import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/ha
 import { describeLayoutChange } from './lib/history-label';
 import { loadQualityChoice } from './lib/render-quality';
 import { snapshotBeforeReplace } from './lib/restore-point';
-import { ORBIT_MAX_POLAR, focusCoverFor } from './lib/scene-insets';
+import { focusCoverFor } from './lib/scene-insets';
 import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
@@ -81,46 +80,6 @@ import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
 import type { CatalogItem, FurnitureItem, GameMode, RoomLayout, ViewSettings } from './lib/types';
-
-function orbitCamera(
-  THREE: typeof import('./three/three-runtime'),
-  camera: import('three').PerspectiveCamera,
-  controls: import('three/examples/jsm/controls/OrbitControls.js').OrbitControls,
-  direction: 'left' | 'right' | 'up' | 'down'
-): void {
-  const offset = camera.position.clone().sub(controls.target);
-  const spherical = new THREE.Spherical().setFromVector3(offset);
-  const step = 0.22;
-  switch (direction) {
-    case 'left':
-      spherical.theta += step;
-      break;
-    case 'right':
-      spherical.theta -= step;
-      break;
-    case 'up':
-      spherical.phi = Math.max(0.15, spherical.phi - step / 2);
-      break;
-    case 'down':
-      spherical.phi = Math.min(ORBIT_MAX_POLAR, spherical.phi + step / 2);
-      break;
-  }
-  offset.setFromSpherical(spherical);
-  camera.position.copy(controls.target).add(offset);
-  controls.update();
-}
-
-function zoomCamera(
-  camera: import('three').PerspectiveCamera,
-  controls: import('three/examples/jsm/controls/OrbitControls.js').OrbitControls,
-  direction: '+' | '-'
-): void {
-  const offset = camera.position.clone().sub(controls.target);
-  const factor = direction === '+' ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR;
-  offset.multiplyScalar(factor);
-  camera.position.copy(controls.target).add(offset);
-  controls.update();
-}
 
 /** A stable "none" for the plan's memoised rooms to name. */
 const NO_ROOMS: readonly DetectedRoom[] = [];
@@ -1048,23 +1007,7 @@ export function RoomOrganizer(): JSX.Element {
   const stablePlaceFromCatalog = useEvent(placeFromCatalog);
   const stableRemoveItem = useEvent(removeItem);
   const stableDuplicateItem = useEvent(duplicateSelected);
-  const orbitByPad = useEvent((direction: 'left' | 'right' | 'up' | 'down') => {
-    const THREE = threeModuleRef.current;
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!THREE || !camera || !controls) return;
-    orbitCamera(THREE, camera, controls, direction);
-    // controls.update() above consumes the move, so the RAF loop won't
-    // see it; mark the frame dirty explicitly (#337).
-    invalidate();
-  });
-  const zoomByPad = useEvent((direction: '+' | '-') => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
-    zoomCamera(camera, controls, direction);
-    invalidate();
-  });
+  const { orbitByPad, zoomByPad } = useCameraPad({ threeModuleRef, cameraRef, controlsRef, invalidate });
 
   const roomEditorValue = useMemo<RoomEditorContextValue>(
     () => ({
