@@ -9,13 +9,15 @@ import { CATEGORIES, CURRENCY_SYMBOL } from '../lib/constants';
 import { buildingArea } from '../lib/footprint';
 import { footprintArea, itemCountByCategory } from '../lib/geometry';
 import { floorRooms, hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
+import { houseRoomScores, ROOM_CHECKS, ROOM_TYPE_LABELS, type RoomType } from '../lib/room-score';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entrancePlanOutline } from '../lib/street';
 import { zoneContains, zoneStats } from '../lib/zones';
 
 export function StatisticsPanel(): JSX.Element {
   // `layout` from the store selector; `collidingIds` stays on the context.
   const layout = useLayout();
-  const { collidingIds } = useRoomEditor();
+  // The editor as the drawer holds it: frozen while the drawer is closed.
+  const { collidingIds, layout: heldLayout, activeFloorIndex: heldFloorIndex } = useRoomEditor();
   const budget = budgetOf(layout);
   // Collisions are checked on the active floor only; everything else here
   // covers the whole house, and the labels say which is which (#438).
@@ -57,6 +59,20 @@ export function StatisticsPanel(): JSX.Element {
       ),
     [layout]
   );
+  // What each zone is for and how nice it is (#613). From the held editor,
+  // so a closed drawer holding this tab pays nothing on an edit; the active
+  // storey's collisions are the editor's own set, so only other storeys
+  // cost a collision pass, and those are cached.
+  const scoreRows = useMemo(
+    () =>
+      houseRoomScores(heldLayout, { floorIndex: heldFloorIndex, ids: collidingIds }).map((score) => ({
+        key: `${heldLayout.floors[score.floorIndex]?.id ?? score.floorIndex}:${score.zone.id}`,
+        label: heldLayout.floors.length > 1 ? `${score.zone.name} · ${heldLayout.floors[score.floorIndex]?.name ?? ''}` : score.zone.name,
+        ...score,
+      })),
+    [heldLayout, heldFloorIndex, collidingIds]
+  );
+  const scoredRows = scoreRows.filter((row): row is (typeof scoreRows)[number] & { type: RoomType } => row.type !== null);
   // The rooms the walls close on each floor (#719), named after the zone
   // over them. A floor with no partitions is one room, which says nothing.
   const roomRows = useMemo(
@@ -157,6 +173,33 @@ export function StatisticsPanel(): JSX.Element {
           </div>
         )}
 
+        {scoreRows.length > 0 && (
+          <div className="pt-2 border-t space-y-1" role="group" aria-label="Room scores">
+            <p className="text-muted-foreground">Room scores</p>
+            {scoredRows.map((row) => (
+              <div key={row.key}>
+                <div className="flex justify-between items-baseline gap-2">
+                  <span className="truncate text-muted-foreground">
+                    {row.label} · {ROOM_TYPE_LABELS[row.type]}
+                  </span>
+                  <Stars count={row.stars} of={ROOM_CHECKS.length} />
+                </div>
+                {row.missing.length > 0 && (
+                  <p className="text-muted-foreground">
+                    For more stars: {ROOM_CHECKS.filter((check) => row.missing.includes(check.key)).map((check) => check.label).join(', ')}
+                  </p>
+                )}
+              </div>
+            ))}
+            {scoredRows.length < scoreRows.length && (
+              <p className="text-muted-foreground">
+                A zone becomes a room from its furniture: a bed, a sofa, a desk, a dining table, a fridge with a stove and a
+                counter, or a toilet with a sink.
+              </p>
+            )}
+          </div>
+        )}
+
         {layout.floors.length > 1 && (
           <div className="pt-2 border-t space-y-1">
             <p className="text-muted-foreground">By floor</p>
@@ -189,6 +232,16 @@ function StatRow({ label, highlight = false, children }: StatRowProps): JSX.Elem
       <span className="text-muted-foreground">{label}</span>
       <span className={highlight ? 'font-semibold text-red-600' : 'font-medium'}>{children}</span>
     </div>
+  );
+}
+
+/** A room's score as filled and empty stars, read out as "3 of 5 stars". */
+function Stars({ count, of }: { count: number; of: number }): JSX.Element {
+  return (
+    <span role="img" aria-label={`${count} of ${of} stars`} className="shrink-0 font-medium tracking-wider">
+      {'★'.repeat(count)}
+      <span className="text-muted-foreground">{'☆'.repeat(of - count)}</span>
+    </span>
   );
 }
 
