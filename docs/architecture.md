@@ -242,6 +242,7 @@ components/
     │   ├── use-scroll-cue.ts            data-scrollable / data-more-before / -after on a HUD scroller (#426)
     │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308); places the touch row in the top bar
     │   ├── use-sheet-inset.ts           --pc-sheet-height while the phone item sheet is open (mode bar rides above it)
+    │   ├── use-house-loading.ts         The loads the editor makes on its own: the opening house, a share link over it (#573), another tab's save (#123), each by the load rules
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
