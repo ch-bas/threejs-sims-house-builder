@@ -51,6 +51,22 @@ describe('cutting a corner (#727)', () => {
     expect(collisionReason(tree(3, -1), [], 10, 8, { keepOut })).toEqual({ kind: 'building' });
   });
 
+  it('moves a picture out of the corner along its wall, past a door, or refuses when the wall is full (#778)', () => {
+    const picture = makeItem({ id: 'pic', type: 'painting', category: 'decor', name: 'Painting', width: 0.8, depth: 0.05, height: 0.6, position: { x: 3, z: -3.975 }, rotation: 0 });
+    const door = (id: string, x: number) =>
+      makeItem({ id, type: 'door', category: 'structure', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, position: { x, z: -4 }, rotation: 0 });
+    // The nearest spot out of the corner, at x 0.6, is over the door: the picture steps on to the next one clear of it.
+    const layout = house({ floors: [makeFloor({ items: [door('door', 0.2), picture] })] });
+    expect(cutoutRefusal(layout, cutout)).toBeNull();
+    const moved = withCutout(layout, cutout).floors[0]!.items[1]!.position!;
+    expect(moved.x).toBeCloseTo(-1.1, 9);
+    expect(moved.z).toBe(-3.975);
+    // Doors all along what is left of the wall: nowhere to hang it.
+    const full = house({ floors: [makeFloor({ items: [...[-4.5, -3.5, -2.5, -1.5, -0.5, 0.5].map((x, i) => door(`d${i}`, x)), picture] })] });
+    expect(cutoutRefusal(full, cutout)).toBe('There is no clear spot left for the Painting. Make room or remove it first.');
+    expect(withCutout(full, cutout)).toBe(full);
+  });
+
   it('refuses an indoor item in the corner, as out of bounds', () => {
     const layout = house({ cutout });
     const sofa = makeItem({ id: 's', width: 1, depth: 1, position: { x: 3, z: -3 } });
