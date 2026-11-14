@@ -45,6 +45,7 @@ export const BACKUP_VERSION = 1;
  */
 export const BACKUP_SETTINGS_KEYS: readonly string[] = [
   'standalone-room-organizer-achievements',
+  'standalone-room-organizer-first-steps',
   'standalone-room-organizer-recent-colors',
   'standalone-room-organizer-sidebar-tab',
   'standalone-room-organizer-welcome-dismissed',
