@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catalogFitsItsTiles, catalogPageSize, COMPACT_DOCK_QUERY, scrollCue, welcomeTips } from './hud-layout';
+import { catalogFitsItsTiles, catalogPageSize, COMPACT_DOCK_QUERY, revealAboveFooter, scrollCue, welcomeTips } from './hud-layout';
 
 describe('catalogFitsItsTiles', () => {
   it('drops the empty slots and the pager on touch when one page holds it all', () => {
@@ -46,4 +46,24 @@ describe('welcomeTips', () => {
 
 it('docks the HUD on portrait phones and on landscape phones', () => {
   expect(COMPACT_DOCK_QUERY).toBe('(max-width: 768px), (max-width: 1100px) and (max-height: 500px)');
+});
+
+describe('revealAboveFooter (#751)', () => {
+  const view = { top: 94, bottom: 485 };
+  it('scrolls a panel under the pinned footer up into view', () => {
+    // The 1024×768 touch column: Room Stamp 437–711 under the tools at 485.
+    expect(revealAboveFooter(0, { top: 437, bottom: 711 }, view)).toBe(226);
+  });
+
+  it('keeps the top of a panel taller than the view in sight', () => {
+    expect(revealAboveFooter(0, { top: 300, bottom: 900 }, view)).toBe(206);
+  });
+
+  it('scrolls back to a panel above the view', () => {
+    expect(revealAboveFooter(200, { top: 50, bottom: 300 }, view)).toBe(156);
+  });
+
+  it('leaves a panel that already shows where it is', () => {
+    expect(revealAboveFooter(40, { top: 443, bottom: 661 }, { top: 96, bottom: 673 })).toBe(40);
+  });
 });

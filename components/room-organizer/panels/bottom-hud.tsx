@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useRef, useState, type MutableRefObject } from 'react';
+import { memo, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useEditorView, useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
 import { useSelection } from '../contexts';
 import { useEdgeVar } from '../hooks/use-edge-var';
@@ -10,6 +10,7 @@ import { useScrollCue } from '../hooks/use-scroll-cue';
 import { useSheetInset } from '../hooks/use-sheet-inset';
 import { askConfirm } from '../lib/confirm-dialog';
 import { DEFAULT_BUDGET } from '../lib/constants';
+import { COARSE_POINTER_QUERY, revealAboveFooter } from '../lib/hud-layout';
 import { catalogCategoryForTool, resolveToolForMode } from '../lib/modes';
 import { runSurprise } from '../lib/surprise';
 import { BuildToolsPanel, type BuildToolCategory } from './build-tools-panel';
@@ -81,6 +82,29 @@ export const BottomHud = memo(function BottomHud({ selectedWall, onSelectedWallC
   const layoutKey = `${isReady}:${gameMode}:${showPaint}:${view.drawWallMode}:${view.view2D}`;
   // An overflowing column says so (#426).
   useScrollCue(leftColumnRef, layoutKey);
+  // The wall tool brings the room stamp up from under the build tools pinned
+  // at the column's foot, on a short touch tablet; Paint scrolls away (#751).
+  // It reveals when the stamp opens (the tool, or its fold in the dock); any
+  // other re-run leaves a column the user has scrolled since alone.
+  const stampRevealRef = useRef<{ wall: boolean; unfolded: boolean; top: number | null }>({ wall: false, unfolded: false, top: null });
+  useLayoutEffect(() => {
+    const last = stampRevealRef.current;
+    const opened = (view.drawWallMode && !last.wall) || (stampUnfolded && !last.unfolded);
+    stampRevealRef.current = { ...last, wall: view.drawWallMode, unfolded: stampUnfolded };
+    const column = leftColumnRef.current;
+    const stamp = column?.querySelector<HTMLElement>(':scope > .pc-room-stamp');
+    if (!column || !stamp || column.scrollHeight <= column.clientHeight) return;
+    if (!window.matchMedia?.(COARSE_POINTER_QUERY).matches) return;
+    if (!opened && (last.top === null || column.scrollTop !== last.top)) return;
+    const footer = column.querySelector<HTMLElement>(':scope > .pc-build-tools');
+    const box = column.getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(column).rowGap) || 0;
+    // Measured by height: the footer is pinned once the scroll cue marks the column.
+    const bottom = footer ? box.bottom - footer.offsetHeight - gap : box.bottom;
+    const panel = stamp.getBoundingClientRect();
+    column.scrollTop = revealAboveFooter(column.scrollTop, panel, { top: box.top, bottom });
+    stampRevealRef.current.top = column.scrollTop;
+  }, [isReady, gameMode, view.drawWallMode, stampUnfolded]);
   // The dock's top edge, for the touch buttons that must stay above it. The
   // phone item sheet lifts the dock without resizing it: `data-sheet-open`
   // and the `--pc-sheet-height` it rides on (a style change on <html>).
