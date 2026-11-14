@@ -1,7 +1,7 @@
 import { useCallback, useRef, type MutableRefObject } from 'react';
 import { ENTRANCE_WALL_ID, entrancePlanOutline } from '../lib/street';
 import { dragWalls, planWallMove, wallPatches, type WallGrip, type WallPatch } from '../lib/wall-edit';
-import type { FloorLayout, FurnitureItem, InteriorWall, RoomLayout } from '../lib/types';
+import type { FloorLayout, FurnitureItem, InteriorWall, RoomLayout, Vec2 } from '../lib/types';
 import type { HeldGesture } from '../three/drag-handlers';
 
 /** What a wall gesture shows while it is held: never in state, so nothing rebuilds per move. */
@@ -53,6 +53,33 @@ export interface UseWallEditResult {
   cancelWallHold(): boolean;
 }
 
+/** Halvings `furthestReach` makes: a 10 m jump narrows to under 0.01 mm. */
+const REACH_STEPS = 20;
+
+/**
+ * The last place on the way from `from` (which `attempt` accepts) to `to`
+ * (which it refuses) that `attempt` still accepts, by bisection, with what
+ * it gave there; null when nothing past `from` is accepted. A fast pointer
+ * jumps past where a held wall must stop (the end of the wall its end rests
+ * on, #783): the preview stops there, not at the last move's place.
+ */
+export function furthestReach<T>(from: Vec2, to: Vec2, attempt: (point: Vec2) => T | null): T | null {
+  let reached = 0;
+  let refused = 1;
+  let best: T | null = null;
+  for (let step = 0; step < REACH_STEPS; step++) {
+    const t = (reached + refused) / 2;
+    const value = attempt({ x: from.x + (to.x - from.x) * t, z: from.z + (to.z - from.z) * t });
+    if (value === null) {
+      refused = t;
+    } else {
+      reached = t;
+      best = value;
+    }
+  }
+  return best;
+}
+
 /**
  * The gesture of moving a wall, in both views (#718): each move computes the
  * floor's next walls from the state at the press and paints a preview, the
@@ -85,6 +112,8 @@ export function useWallEdit(params: UseWallEditParams): UseWallEditResult {
       porch: entrancePlanOutline(p.layout, p.activeFloorIndex),
     };
     let refused = false;
+    // The pointer's last place the wall could follow.
+    let reached: Vec2 = grab.at;
     const hold = { cancelled: false };
     holdRef.current = hold;
     return {
@@ -100,7 +129,11 @@ export function useWallEdit(params: UseWallEditParams): UseWallEditResult {
           clearPreview();
           return;
         }
-        const next = dragWalls(grab, { x, z }, { roomWidth: context.roomWidth, roomDepth: context.roomDepth, cutout: context.cutout, free });
+        const drag = { roomWidth: context.roomWidth, roomDepth: context.roomDepth, cutout: context.cutout, free };
+        const pointer = { x, z };
+        let next = dragWalls(grab, pointer, drag);
+        if (next) reached = pointer;
+        else next = furthestReach(reached, pointer, (point) => dragWalls(grab, point, drag));
         if (!next) return;
         const plan = planWallMove(floor, wallPatches(walls, next), context);
         const preview: WallMovePreview = {
