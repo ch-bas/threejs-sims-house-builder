@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type MutableRefObject, type RefObject } from 'react';
+import { onPlanZoom } from '../canvas-2d/plan-zoom';
 import { confirmOpen } from '../lib/confirm-dialog';
 import {
   footprintCorners,
@@ -215,6 +216,8 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     };
     renderRef.current = () => moveTo(live.raw);
     moveTo(live.raw);
+    // The plan zoomed or panned under the outline (#678): redraw it.
+    const stopZoom = view2D ? onPlanZoom(canvas, render) : null;
 
     let pressId: number | null = null;
     const onCanvas = (event: PointerEvent): boolean => pointerOnCanvas(canvas, event.clientX, event.clientY);
@@ -293,6 +296,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       document.removeEventListener('pointerup', onPointerUp, true);
       document.removeEventListener('pointercancel', onPointerCancel, true);
       window.removeEventListener('keydown', onKeyDown, true);
+      stopZoom?.();
       canvas.style.cursor = '';
       renderRef.current = () => {};
       if (mesh) {

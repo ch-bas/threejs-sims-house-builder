@@ -17,6 +17,7 @@ import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawSelectedWall, drawStampGhost, drawWallPreview, drawWallSideMark, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
+import { zoomedTransform, type PlanZoom } from './plan-zoom';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
@@ -93,6 +94,8 @@ export interface Render2DOptions {
    * full-size plan only drops a name wider than its zone.
    */
   thumbnail?: boolean;
+  /** The on-screen plan's view zoom and pan (`get2DViewTransform`'s `zoom`, #678). */
+  zoom?: PlanZoom | undefined;
 }
 
 const PADDING = PLAN_PADDING_PX;
@@ -120,6 +123,9 @@ export interface View2DTransform {
  * `INSET_PADDING_SHARE` of that area's short side so a short landscape band
  * still shows a usable plan. Without insets (the minimap, the blueprint) the
  * fit is the whole canvas, unchanged.
+ *
+ * `zoom` is the on-screen plan's view zoom and pan (#678), applied over the
+ * fit. Only the full-size plan passes it.
  */
 export function get2DViewTransform(
   canvasClientWidth: number,
@@ -127,7 +133,20 @@ export function get2DViewTransform(
   layout: Pick<RoomLayout, 'width' | 'height'>,
   padding: number = PADDING,
   insets?: Insets,
-  bounds?: PlanBounds
+  bounds?: PlanBounds,
+  zoom?: PlanZoom
+): View2DTransform {
+  const fitted = fitTransform(canvasClientWidth, canvasClientHeight, layout, padding, insets, bounds);
+  return zoom ? zoomedTransform(fitted, zoom, { width: canvasClientWidth, height: canvasClientHeight }) : fitted;
+}
+
+function fitTransform(
+  canvasClientWidth: number,
+  canvasClientHeight: number,
+  layout: Pick<RoomLayout, 'width' | 'height'>,
+  padding: number,
+  insets: Insets | undefined,
+  bounds: PlanBounds | undefined
 ): View2DTransform {
   const fit = bounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
   const content = boundsSize(fit);
@@ -214,7 +233,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, viewWidth, viewHeight);
 
-  const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds);
+  const { scale, offsetX, offsetY } = get2DViewTransform(viewWidth, viewHeight, layout, options.padding ?? PADDING, options.insets, options.fitBounds, options.zoom);
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale);
   drawZoneFloors(ctx, layout, floor, offsetX, offsetY, scale);

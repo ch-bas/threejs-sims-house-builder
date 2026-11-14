@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, type RefObject, type MutableRefObject } from 'react';
+import { onPlanZoom, planZoomOf } from '../canvas-2d/plan-zoom';
 import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { planContactShadow } from '../lib/contact-shadow';
@@ -1463,6 +1464,8 @@ export function useSceneEffects({
         insets,
         padding,
         hudRects,
+        // The plan's view zoom (#678), which the pointer handlers read too.
+        zoom: planZoomOf(canvas),
       });
     };
 
@@ -1472,6 +1475,14 @@ export function useSceneEffects({
 
     const observer = new ResizeObserver(paint);
     observer.observe(canvas);
+    // The view zoom (#678) repaints here, with every overlay above: once a frame.
+    let zoomFrame: number | null = null;
+    const stopZoom = onPlanZoom(canvas, () => {
+      zoomFrame ??= requestAnimationFrame(() => {
+        zoomFrame = null;
+        paint();
+      });
+    });
 
     // The ResizeObserver watches the content box, which doesn't change when
     // only devicePixelRatio does (window dragged between 1× and 2× monitors),
@@ -1493,6 +1504,8 @@ export function useSceneEffects({
     return () => {
       dprQuery?.removeEventListener('change', onDprChange);
       observer.disconnect();
+      stopZoom();
+      if (zoomFrame !== null) cancelAnimationFrame(zoomFrame);
       removeRepaintHandler();
       if (paint2DRef.current === paint) paint2DRef.current = null;
     };
