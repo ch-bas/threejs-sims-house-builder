@@ -983,6 +983,14 @@ export function RoomOrganizer(): JSX.Element {
   );
 
   const deselectAll = useCallback(() => selectOnly(null), [selectOnly]);
+  // #650: Tab on the focused scene picked an item; a selected wall lets go, as on a click.
+  const selectFromKeyboard = useCallback(
+    (id: string) => {
+      handleInteriorWallSelect(null);
+      handleSelect(id, 'replace');
+    },
+    [handleInteriorWallSelect, handleSelect]
+  );
 
   // Every catalog add (tile click, keyboard, drag-drop) comes through here,
   // so each chimes once (#460). '' = declined or refused: nothing was added.
@@ -1802,6 +1810,9 @@ export function RoomOrganizer(): JSX.Element {
           if (!newId) return;
           selectOnly(newId);
         }}
+        // Keyboard selection on the scene (#650): as a click on the item would.
+        onKeyboardSelect={selectFromKeyboard}
+        placing={placingId !== null || ghost !== null}
       />
 
       <DevDiagnostics isReady={isReady} rendererRef={rendererRef} sceneRef={sceneRef} />

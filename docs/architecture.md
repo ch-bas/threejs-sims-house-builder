@@ -88,6 +88,7 @@ components/
     │   ├── clipboard.ts                 In-memory copy/paste: the selection normalised around its centroid, pasted with fresh ids (#153)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
     │   ├── history-floor.ts             Which storey undo/redo lands on: same floor id, or the one other floor the swap changes (#578)
+    │   ├── item-cycle.ts                Keyboard selection on the scene: the floor's items in plan order, Tab's next and previous, the status line (#650)
     │   ├── history-label.ts             What an undo or redo step did, from the two snapshots, for the toolbar's tooltips
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
