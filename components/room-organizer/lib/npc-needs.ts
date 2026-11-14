@@ -8,6 +8,7 @@
  * injected, so it is tested here and the walk only asks where to go.
  */
 
+import type { NeedBias } from './npc-schedule';
 import type { NpcSeat } from './npc-seats';
 import type { FurnitureItem } from './types';
 
@@ -85,9 +86,19 @@ export function refillNeed(needs: NpcNeeds, need: NeedKind, seconds: number): vo
   needs[need] = Math.min(1, needs[need] + seconds * NEED_REFILL_PER_SECOND);
 }
 
-/** How pressing a need is: 0 at or above `NEED_URGENT`, 1 when empty. */
-export function urgency(needs: NpcNeeds, need: NeedKind): number {
-  return Math.max(0, (NEED_URGENT - needs[need]) / NEED_URGENT);
+/**
+ * How pressing a need is: 0 at or above `NEED_URGENT`, 1 when empty. A
+ * `bias` (the hour, lib/npc-schedule.ts) raises the threshold, so the need
+ * presses sooner; a bias of 1 or more makes it press even when met.
+ */
+export function urgency(needs: NpcNeeds, need: NeedKind, bias = 0): number {
+  const threshold = NEED_URGENT + Math.max(0, bias);
+  return Math.max(0, (threshold - needs[need]) / threshold);
+}
+
+/** The bias for one need; 0 when the table has none (or for a prototype key). */
+function biasOf(bias: NeedBias | undefined, need: NeedKind): number {
+  return bias && Object.hasOwn(bias, need) ? (bias[need] ?? 0) : 0;
 }
 
 /** Somewhere on the floor that meets a need. */
@@ -171,15 +182,15 @@ function facesScreen(seat: NpcSeat, screen: { x: number; z: number }, range: num
  * of its need, squared so the most pressing need dominates, and halved at
  * `NEAR_SCALE` metres away. 0 when its need isn't pressing.
  */
-export function scoreNeedSpot(needs: NpcNeeds, spot: NeedSpot, fromX: number, fromZ: number): number {
-  const pull = urgency(needs, spot.need);
+export function scoreNeedSpot(needs: NpcNeeds, spot: NeedSpot, fromX: number, fromZ: number, bias?: NeedBias): number {
+  const pull = urgency(needs, spot.need, biasOf(bias, spot.need));
   if (pull <= 0) return 0;
   const distance = Math.hypot(spot.x - fromX, spot.z - fromZ);
   return (pull * pull) / (1 + distance / NEAR_SCALE);
 }
 
-function anyUrgent(needs: NpcNeeds): boolean {
-  for (const need of NEED_KINDS) if (urgency(needs, need) > 0) return true;
+function anyUrgent(needs: NpcNeeds, bias: NeedBias | undefined): boolean {
+  for (const need of NEED_KINDS) if (urgency(needs, need, biasOf(bias, need)) > 0) return true;
   return false;
 }
 
@@ -187,7 +198,8 @@ function anyUrgent(needs: NpcNeeds): boolean {
  * Where a walker goes to meet its needs: a spot picked at random, weighted
  * by `scoreNeedSpot`, among those `usable` says it can reach and nobody
  * holds. `skip` leaves out the need being met right now (it is about to be
- * topped up). Null when no need is pressing or nothing usable meets one.
+ * topped up). `bias` is the hour's tilt (`needBias`, lib/npc-schedule.ts).
+ * Null when no need is pressing or nothing usable meets one.
  * One random draw per candidate; no allocation.
  */
 export function pickNeedSpot(
@@ -197,14 +209,15 @@ export function pickNeedSpot(
   fromZ: number,
   usable: (spot: NeedSpot) => boolean,
   random: () => number,
-  skip: NeedKind | null = null
+  skip: NeedKind | null = null,
+  bias?: NeedBias
 ): NeedSpot | null {
-  if (!anyUrgent(needs)) return null;
+  if (!anyUrgent(needs, bias)) return null;
   let chosen: NeedSpot | null = null;
   let total = 0;
   for (const spot of spots) {
     if (spot.need === skip) continue;
-    const weight = scoreNeedSpot(needs, spot, fromX, fromZ);
+    const weight = scoreNeedSpot(needs, spot, fromX, fromZ, bias);
     if (weight <= 0 || !usable(spot)) continue;
     total += weight;
     if (random() * total < weight) chosen = spot;

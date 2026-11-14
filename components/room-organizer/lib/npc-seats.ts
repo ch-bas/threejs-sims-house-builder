@@ -27,6 +27,11 @@ export interface NpcSeat {
   /** In front of the seat, outside its footprint. */
   approachX: number;
   approachZ: number;
+  /**
+   * How many people the whole item takes at once (#907): one per slot, but
+   * a bed sleeps one, a double bed (`DOUBLE_BED_WIDTH` or wider) two.
+   */
+  places: number;
 }
 
 /** What the walkers sit on; how high comes from lib/seat-surface (#623). */
@@ -40,6 +45,8 @@ const APPROACH_GAP = 0.35;
 const HIP_FORWARD = 0.08;
 /** On a bed the hips sit this far in from the foot end. */
 const BED_EDGE = 0.25;
+/** A bed this wide (m) or wider sleeps two. */
+export const DOUBLE_BED_WIDTH = 1.35;
 /**
  * Chairs that stand pushed in at a desk or a table: when their front isn't
  * free floor, the walker comes in from the side, or else from behind (#904).
@@ -90,6 +97,7 @@ export function findNpcSeats(items: readonly FurnitureItem[], ground?: SeatGroun
     const wz = -Math.sin(rotation);
     const slots = Math.max(1, Math.floor(item.width / SLOT_WIDTH));
     const seatHeight = seatSurfaceHeight(item) ?? item.height;
+    const places = item.type === 'bed' ? (item.width >= DOUBLE_BED_WIDTH ? 2 : 1) : slots;
     for (let slot = 0; slot < slots; slot++) {
       const along = (slot + 0.5) * (item.width / slots) - item.width / 2;
       const cx = item.position.x + wx * along;
@@ -123,6 +131,7 @@ export function findNpcSeats(items: readonly FurnitureItem[], ground?: SeatGroun
         seatHeight,
         approachX,
         approachZ,
+        places,
       });
     }
   }

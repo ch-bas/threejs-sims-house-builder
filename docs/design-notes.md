@@ -501,6 +501,24 @@ to respect.
   hips) keeps 0.1 m from every other item and partition. A chair tucked
   under a table, or three along one side, would put the feet under the
   table: it keeps its blocked front and the walkers pass it over.
+- **Walkers keep the clock (#907).** `lib/npc-schedule` reads the view's
+  hour: from 23:00 to 07:00 rest counts as pressing even when met (a bias
+  that raises `NEED_URGENT` for that need), and a rest at night, in a bed
+  or (no bed free) on the sofa, is a sleep of 60 to 90 real seconds; the
+  sleeper gets up at the end of it, at morning, or when the player stands
+  within 1.2 m of its spot, then wanders a while (the need it just met is
+  skipped once) before turning in again. A bed sleeps one, a double bed
+  (1.35 m or wider) two (`NpcSeat.places`), so a fixed night clock never
+  piles everyone onto one bed. Within 45 minutes of 08,
+  13 and 19 hunger presses below 0.8 instead of 0.5. The biases are shared
+  constants, so a stop allocates nothing. The hour reaches the step through
+  a ref written by a `viewStore.subscribe` in `use-scene-life`: a clock tick
+  (every 250 ms while the day cycles) re-renders nothing and never re-runs
+  the spawn effect. Needs still run down in real seconds and the auto-cycle
+  turns a day in 24 s, so the schedule shows only with the clock slow or
+  set by hand (`[` / `]`); with the day cycling a night lasts 8 s
+  (game-time decay is the next step). The rig has no lying clip: a sleeper sits on
+  the bed's end.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
