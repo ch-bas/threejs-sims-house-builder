@@ -154,6 +154,28 @@ export function houseRoomScores(layout: RoomLayout, known?: KnownCollisions): Ho
 }
 
 /**
+ * The zones the furniture makes a room of, house-wide, typed and scored: the
+ * room goals (#903) and the challenge briefs (#909) read them. Kept per
+ * layout, so the goals share one pass; `houseRoomScores` keeps each storey by
+ * identity, so an edit re-scores only the storey it changed.
+ */
+const furnishedCache = new WeakMap<RoomLayout, readonly HouseRoomScore[]>();
+
+/**
+ * `known`: the editor's collisions on the active storey, as for
+ * `houseRoomScores`. Pass them wherever the editor has them: the first call
+ * for a layout is the one kept.
+ */
+export function furnishedRooms(layout: RoomLayout, known?: KnownCollisions): readonly HouseRoomScore[] {
+  let rooms = furnishedCache.get(layout);
+  if (!rooms) {
+    rooms = houseRoomScores(layout, known).filter((room) => room.type !== null);
+    furnishedCache.set(layout, rooms);
+  }
+  return rooms;
+}
+
+/**
  * The active storey's zones alone, with the editor's collisions (#905): what
  * the on-screen plan writes under each zone's name, at no collision pass.
  */

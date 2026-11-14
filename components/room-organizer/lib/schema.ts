@@ -1,4 +1,5 @@
 import { repairHardBudget } from './budget';
+import { repairChallenge } from './challenges';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
@@ -380,6 +381,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   cutout: true,
   frontage: true,
   budget: true,
+  challenge: true,
 });
 const FLOOR_KEYS = keysOf<FloorLayout>({
   id: true,
@@ -711,15 +713,28 @@ function repairFields(layout: RoomLayout): RoomLayout {
   }
   // The hard budget (#463e) is repaired, never refused: anything that isn't
   // an object switches it off rather than costing the user their house.
+  let source = layout;
   if (layout.budget !== undefined) {
     const budget = repairHardBudget(layout.budget);
     if (budget === undefined) {
-      const { budget: _dropped, ...rest } = layout;
-      return rebuild(rest, LAYOUT_KEYS, patch);
+      const { budget: _dropped, ...rest } = source;
+      source = rest;
+    } else {
+      patch.budget = budget;
     }
-    patch.budget = budget;
   }
-  return rebuild(layout, LAYOUT_KEYS, patch);
+  // The challenge brief (#909) is repaired the same way: one this version
+  // doesn't know is dropped, and the house loads without its checklist.
+  if (layout.challenge !== undefined) {
+    const challenge = repairChallenge(layout.challenge);
+    if (challenge === undefined) {
+      const { challenge: _dropped, ...rest } = source;
+      source = rest;
+    } else {
+      patch.challenge = challenge;
+    }
+  }
+  return rebuild(source, LAYOUT_KEYS, patch);
 }
 
 /**

@@ -56,6 +56,7 @@ import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
 import { CameraPad } from './panels/camera-pad';
+import { ChallengeChip } from './panels/challenge-chip';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FirstStepsCard } from './panels/first-steps-card';
@@ -1202,6 +1203,8 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Inline zone naming and export/share status (#374) */}
       <ZoneNameChip selectedZoneId={planZoneId} />
+      {/* The challenge checklist (#909): none in a shared-link tour; a kept copy is the player's own */}
+      {!touring && <ChallengeChip />}
       <PlanCalibrationChip />
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}

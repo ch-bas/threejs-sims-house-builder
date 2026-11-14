@@ -360,6 +360,12 @@ export interface HardBudget {
   amount?: number;
 }
 
+/** A house's challenge brief (#909): which one (`CHALLENGES` id) and when it started (ms since the epoch). */
+export interface LayoutChallenge {
+  id: string;
+  startedAt: number;
+}
+
 /**
  * A multi-floor building. `floors[0]` is the ground floor; subsequent
  * entries stack upward. Footprint and floor-plan upload live on the
@@ -400,6 +406,8 @@ export interface RoomLayout {
   frontage?: Frontage;
   /** The opt-in hard budget (#463e); absent, the budget only advises. */
   budget?: HardBudget;
+  /** The challenge brief this house is played under (#909); see lib/challenges.ts. */
+  challenge?: LayoutChallenge;
 }
 
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */

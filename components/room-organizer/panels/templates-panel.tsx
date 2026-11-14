@@ -1,10 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
+import { useStartChallenge } from '../hooks/use-start-challenge';
+import { CHALLENGES, goalLabel, ZONE_HINT } from '../lib/challenges';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
+import { formatMoney } from '../lib/format';
 import { subscribeHouseReplaced } from '../lib/restore-point';
 
 // A Record, not a list, so a template added to ROOM_TEMPLATES without a label
@@ -44,6 +48,14 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
   const exploring = useExploring();
   // "Undo brings back …" stops being true once another house replaces this one.
   useEffect(() => subscribeHouseReplaced(() => setStatus(null)), []);
+  const startChallenge = useStartChallenge();
+  const start = (index: number) => {
+    const challenge = CHALLENGES[index];
+    if (!challenge) return;
+    void startChallenge(challenge).then((started) => {
+      if (started) setStatus(`Started the ${challenge.name} challenge. Undo brings back the house it replaced.`);
+    });
+  };
   const load = (key: RoomTemplateKey) => {
     void onLoadTemplate(ROOM_TEMPLATES[key]).then((loaded) => {
       if (loaded) setStatus(`Loaded the ${templateName(key)} template. Undo brings back the house it replaced.`);
@@ -73,6 +85,27 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
             </option>
           ))}
         </Select>
+        {/* Challenge briefs (#909): an empty lot, funds and goals to meet. */}
+        <h3 className="mt-3 text-sm font-semibold">Challenges</h3>
+        <p className="text-xs text-muted-foreground">An empty lot, funds and goals to meet. {ZONE_HINT}</p>
+        <ul className="mt-1 space-y-1.5" aria-label="Challenges">
+          {CHALLENGES.map((challenge, index) => (
+            <li key={challenge.id}>
+              <Button
+                variant="outline"
+                className="h-auto w-full flex-col items-start gap-0.5 whitespace-normal py-1.5 text-left"
+                disabled={exploring}
+                title={exploring ? NOT_WHILE_EXPLORING : challenge.goals.map(goalLabel).join(' · ')}
+                onClick={() => start(index)}
+              >
+                <span className="text-xs font-semibold">
+                  {challenge.name} · {formatMoney(challenge.funds)}
+                </span>
+                <span className="text-xs font-normal text-muted-foreground">{challenge.brief}</span>
+              </Button>
+            </li>
+          ))}
+        </ul>
         {status && (
           <p role="status" className="mt-2 text-xs text-muted-foreground">
             {status}
