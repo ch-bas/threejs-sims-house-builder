@@ -73,6 +73,22 @@ jobs:
       - name: Check the bundle budget
         run: npm run check:bundle -- --report-only
 
+      # The built site in headless Chrome with software WebGL (#561): /, the
+      # 404 page and the one-reload chunk recovery, failing on console and
+      # page errors, failed requests, HTTP errors and CSP violations. The
+      # runner's preinstalled Chrome is driven by playwright-core, so no
+      # browser is downloaded. Report-only until it has run green for a
+      # while: a failure, the driver's install included (a registry blip),
+      # shows as an annotation without failing the job or the deploy.
+      - name: Smoke-test the export
+        continue-on-error: true
+        timeout-minutes: 6
+        env:
+          SMOKE_BROWSER_CHANNEL: chrome
+        run: |
+          npm i --no-save --no-audit --no-fund playwright-core@1.64.1
+          npm run test:smoke
+
       - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
