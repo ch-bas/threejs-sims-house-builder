@@ -1,11 +1,15 @@
 'use client';
 
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useEditorViewActions, useViewSettings } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
+import { enterPhotoMode } from '../lib/photo-mode';
 import { QUALITY_CHOICES, saveQualityChoice, type QualityChoice } from '../lib/render-quality';
 import { toggleViewOption, VIEW_OPTION_KEYS, type ViewOptionKey } from '../lib/view-options';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
+
+/** Between the menu and its button, and its least distance from the window's top. */
+const MENU_GAP = 8;
 
 interface ViewOption {
   key: ViewOptionKey;
@@ -48,9 +52,29 @@ export interface ViewOptionsMenuProps {
  * canvas, so the first distance point can be the click that dismisses it.
  */
 export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps): JSX.Element {
-  const view = useViewSettings(...VIEW_OPTION_KEYS, 'renderQuality');
+  const view = useViewSettings(...VIEW_OPTION_KEYS, 'renderQuality', 'view2D');
   const { setView } = useEditorViewActions();
   const menuRef = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState<number | null>(null);
+
+  // Never off the top of the window, nor over the top-right pills: past
+  // that the menu scrolls inside itself.
+  useLayoutEffect(() => {
+    const fit = () => {
+      const menu = menuRef.current;
+      if (!menu) return;
+      // Its bottom edge is pinned (above the mode panel); a cap moves its top.
+      const box = menu.getBoundingClientRect();
+      const bottom = box.bottom;
+      let top = MENU_GAP;
+      const pills = document.querySelector('.pc-top-right')?.getBoundingClientRect();
+      if (pills && pills.height > 0 && pills.left < box.right && pills.right > box.left) top = Math.max(top, pills.bottom + MENU_GAP);
+      setMaxHeight(Math.max(120, bottom - top));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, []);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -86,6 +110,7 @@ export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps
         bottom: 'calc(100% + 8px)',
         width: 248,
         maxWidth: 'calc(100vw - 16px)',
+        ...(maxHeight !== null ? { maxHeight, overflowY: 'auto' as const } : {}),
         padding: 10,
         display: 'flex',
         flexDirection: 'column',
@@ -93,11 +118,34 @@ export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps
         zIndex: 40,
       }}
     >
-      {GROUPS.map((group) => (
+      {GROUPS.map((group, index) => (
         <div key={group.title} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
-            {group.title}
-          </div>
+          {index === 0 ? (
+            // Photo mode (#626) shares the first heading's row, so the menu
+            // keeps its height.
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
+                {group.title}
+              </div>
+              <button
+                type="button"
+                className="pc-tile pc-photo-entry"
+                disabled={view.view2D}
+                title={view.view2D ? 'Photo mode — switch back to 3D view' : 'Photo mode: hide the HUD and save a picture'}
+                onClick={() => {
+                  const opener = anchorRef.current;
+                  onClose();
+                  enterPhotoMode(opener);
+                }}
+              >
+                Photo mode
+              </button>
+            </div>
+          ) : (
+            <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
+              {group.title}
+            </div>
+          )}
           <div className="pc-glass--inset" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {group.options.map((option) => (
               <ViewSwitch

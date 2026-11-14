@@ -1790,3 +1790,57 @@ canvas[data-scene-canvas]:focus-visible {
 canvas[data-scene-canvas]:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* Photo mode (L2, #626) */
+/* html[data-photo]: the HUD steps aside, the 3D view and the shutter stay.
+   Hidden, not removed: nothing moves, so the camera keeps its framing. */
+html[data-photo] .pc-world * {
+  visibility: hidden;
+}
+html[data-photo] .pc-world .pc-scene-canvas,
+html[data-photo] .pc-world .pc-photo-bar,
+html[data-photo] .pc-world .pc-photo-bar * {
+  visibility: visible;
+}
+.pc-photo-bar-hint {
+  padding: 0 8px 0 12px;
+  font-family: var(--pc-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--pc-cyan-glow);
+}
+.pc-photo-bar-button {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: var(--pc-tr-caps);
+  text-transform: uppercase;
+}
+.pc-tile.pc-photo-entry {
+  position: relative;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-family: var(--pc-font-display);
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 14px;
+}
+@media (pointer: coarse) {
+  .pc-photo-bar-button {
+    min-height: 44px;
+    padding: 0 16px;
+  }
+  /* A 44 px tap around the small heading button. */
+  .pc-photo-entry::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}

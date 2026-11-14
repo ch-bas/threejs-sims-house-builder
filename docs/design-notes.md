@@ -391,6 +391,21 @@ to respect.
   passes through a closed leaf; the collider's door gap is unchanged.
   Only the pivot's `rotation.y` moves (kept groups, #404); the shadow map
   is redrawn once the leaves stop. Leaving the walk shuts every door.
+- **Photo mode hides, it doesn't remove (#626).** View options → Photo
+  mode (a button in the View heading's row, so the menu keeps its height)
+  sets `html[data-photo]`: CSS makes everything in `.pc-world` but the 3D
+  canvas and the shutter `visibility: hidden`, so no box moves and the
+  scene occluders keep their size. The projection shift that keeps the
+  house clear of the HUD and the snap grid are dropped while it is on and
+  put back after, so the shot is centred. The canvas only orbits meanwhile
+  (`orbitOnly` in the scene handlers), and a capture-phase key guard
+  (`photoKeyPasses`) lets through only the shutter's Tab, Enter and Space
+  and, while walking, the walk's keys; Escape leaves and focus goes back
+  to View options. A photo is one frame at twice the screen's pixel
+  ratio (longer edge capped at 4096 px, 3072 on a phone), read with
+  `toBlob` in the same task and the size put back, so the renderer still
+  runs without `preserveDrawingBuffer`. The View menu caps its height
+  below the top-right pills and scrolls inside past that.
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
   rasterises a storey into 0.2 m cells a walker (radius 0.22 m)
   can stand in: the walkthrough's colliders (furniture, partitions with
