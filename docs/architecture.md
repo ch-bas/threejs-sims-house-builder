@@ -33,6 +33,7 @@ scripts/
 ├── check-bundle.mjs                     CI: gzip sizes of the export (first-load JS, largest chunk, CSS) against bundle-budget.json (#732)
 ├── check-bundle.d.mts                   Types for check-bundle.mjs, for its unit test
 ├── bundle-budget.json                   The gzip budgets check-bundle.mjs enforces; raised with `npm run check:bundle -- --update`
+├── smoke-test.mjs                       CI: the export at its basePath in headless Chrome: errors, CSP, engine start, 404 page, chunk reload (#561)
 ├── build-icons.mjs                      Renders the app/ icon rasters and the preview image from SVG (Playwright, not part of the build)
 └── build-people-glb.mjs                 Rebuilds assets/people.glb from the Universal Animation Library
 components/
