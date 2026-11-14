@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import {
   AUTOSAVE_HEADROOM_MIN_CHARS,
+  batchLibraryChanges,
   countUnreadableSavedLayouts,
   deleteNamedLayout,
   layoutSlugExists,
@@ -13,6 +14,7 @@ import {
   parseLibraryIndex,
   parseSavedLayoutEntry,
   saveNamedLayout,
+  subscribeLibrary,
 } from './library';
 import { saveLayout } from './persistence';
 import { listSnapshots, recordSnapshot } from './version-history';
@@ -380,5 +382,75 @@ describe('library slots for names outside ASCII (#550)', () => {
     expect(saveNamedLayout(makeLayout(), 'بيت')).toMatchObject({ ok: true, overwrote: true });
     expect(listSavedLayouts().map((entry) => entry.id).sort()).toEqual(['layout-1', librarySlotId('بيت')].sort());
     expect(loadNamedLayout('layout-1')?.name).toBe('بيت');
+  });
+});
+
+describe('library change signal (#711)', () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('notifies subscribers on save and delete, and stops after unsubscribe', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeLibrary(listener);
+    const saved = saveNamedLayout(makeLayout(), 'Signal house');
+    expect(saved.ok).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(deleteNamedLayout(librarySlotId('Signal house'))).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(2);
+    // A failed delete signals too, like a save: the meter re-measures what is there.
+    expect(deleteNamedLayout('no-such-slot')).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(3);
+    unsubscribe();
+    saveNamedLayout(makeLayout(), 'Signal house');
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
+
+  it('signals after a failed save', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeLibrary(listener);
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+    });
+    try {
+      expect(saveNamedLayout(makeLayout(), 'Too big')).toMatchObject({ ok: false });
+    } finally {
+      vi.restoreAllMocks();
+      unsubscribe();
+    }
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the signal through a batch and gives it once at the end, only if something changed', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeLibrary(listener);
+    const result = batchLibraryChanges(() => {
+      saveNamedLayout(makeLayout(), 'One');
+      batchLibraryChanges(() => saveNamedLayout(makeLayout(), 'Two'));
+      expect(listener).not.toHaveBeenCalled();
+      return 'done';
+    });
+    expect(result).toBe('done');
+    expect(listener).toHaveBeenCalledTimes(1);
+    batchLibraryChanges(() => undefined);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(() =>
+      batchLibraryChanges(() => {
+        saveNamedLayout(makeLayout(), 'Three');
+        throw new Error('stop');
+      })
+    ).toThrow('stop');
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
+  });
+
+  it('lets the listener see the finished save', () => {
+    let seen: string[] = [];
+    const unsubscribe = subscribeLibrary(() => {
+      seen = listSavedLayouts().map((entry) => entry.name);
+    });
+    saveNamedLayout(makeLayout(), 'Seen house');
+    unsubscribe();
+    expect(seen).toEqual(['Seen house']);
   });
 });

@@ -18,7 +18,7 @@ import {
 import { askConfirm } from '../lib/confirm-dialog';
 import { subscribeCustomSets } from '../lib/custom-sets';
 import { notify } from '../lib/editor-notices';
-import { deleteNamedLayout, listSavedLayouts } from '../lib/library';
+import { deleteNamedLayout, listSavedLayouts, subscribeLibrary } from '../lib/library';
 import { localStorageOrNull } from '../lib/persistence';
 import { downloadTextFile } from '../lib/plan-export/download';
 import {
@@ -89,10 +89,12 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
     window.addEventListener('storage', onStorage);
     const unsubscribeSnapshots = subscribeSnapshots(measure);
     const unsubscribeSets = subscribeCustomSets(measure);
+    const unsubscribeLibrary = subscribeLibrary(measure);
     return () => {
       window.removeEventListener('storage', onStorage);
       unsubscribeSnapshots();
       unsubscribeSets();
+      unsubscribeLibrary();
     };
   }, [measure]);
 
