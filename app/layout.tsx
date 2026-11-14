@@ -86,13 +86,83 @@ const CHUNK_RECOVERY_SCRIPT = `(function(){
   setTimeout(watchdog, 20000);
 })();`;
 
+// With scripts off (an extension, a policy that blocks them on github.io),
+// the exported page is only the editor's "Loading the lot…" fallback, which
+// never resolves (#612). This covers it with the reason and a way to read
+// about the project; link-preview crawlers that don't run scripts read it
+// too. Static markup, so the CSP has nothing to allow.
+const README_URL = 'https://github.com/ch-bas/threejs-sims-house-builder#readme';
+
+function NoScriptNotice(): JSX.Element {
+  return (
+    <noscript>
+      <div
+        className="pc-world"
+        style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center', padding: 24 }}
+      >
+        <div
+          className="pc-glass pc-glass--dark"
+          style={{ padding: '28px 32px', textAlign: 'center', maxWidth: 440 }}
+        >
+          <h1
+            style={{
+              margin: '0 0 8px',
+              fontFamily: 'var(--pc-font-display)',
+              fontWeight: 700,
+              color: 'var(--pc-paper)',
+              letterSpacing: 'var(--pc-tr-caps)',
+              textTransform: 'uppercase',
+              fontSize: 16,
+            }}
+          >
+            JavaScript is off
+          </h1>
+          <p
+            style={{
+              margin: '0 0 16px',
+              fontFamily: 'var(--pc-font-body)',
+              color: 'var(--pc-paper-soft)',
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            This house builder runs in your browser and needs JavaScript. Allow scripts for this site and reload the
+            page.
+          </p>
+          <a
+            href={README_URL}
+            style={{
+              display: 'inline-block',
+              borderRadius: 8,
+              padding: '10px 18px',
+              fontFamily: 'var(--pc-font-display)',
+              fontWeight: 700,
+              letterSpacing: 'var(--pc-tr-caps)',
+              textTransform: 'uppercase',
+              fontSize: 12,
+              textDecoration: 'none',
+              background: 'var(--pc-cyan-glow, #22d3ee)',
+              color: '#0f172a',
+            }}
+          >
+            About the project
+          </a>
+        </div>
+      </div>
+    </noscript>
+  );
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={fontVariables}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: CHUNK_RECOVERY_SCRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <NoScriptNotice />
+        {children}
+      </body>
     </html>
   );
 }
