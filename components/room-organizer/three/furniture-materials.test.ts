@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { measureCpu } from '../lib/__testfixtures__/cpu-time';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { FURNITURE_CATALOG } from '../lib/constants';
 import { drawDetail, type DetailKind } from '../lib/detail-patterns';
@@ -130,11 +131,14 @@ describe('detail patterns (#756)', () => {
     expect(drawDetail('wood', 32).data).toEqual(drawDetail('wood', 32).data);
   });
 
+  // The intent is no blow-up (about 70 ms of CPU for all three today);
+  // measured in CPU time so a busy machine can't fail it (#733).
   it('costs little to draw at full size', () => {
-    const start = performance.now();
-    drawDetail('wood', 512);
-    drawDetail('fabric', 512);
-    drawDetail('leather', 512);
-    expect(performance.now() - start).toBeLessThan(1000);
+    const { cpuMs } = measureCpu(() => {
+      drawDetail('wood', 512);
+      drawDetail('fabric', 512);
+      drawDetail('leather', 512);
+    });
+    expect(cpuMs).toBeLessThan(1000);
   });
 });

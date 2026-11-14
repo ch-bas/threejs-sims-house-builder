@@ -48,6 +48,8 @@ function start(): LayoutState {
 }
 
 describe('reducer output always reloads unchanged (#332, #350)', () => {
+  // Deterministic and CPU-bound: a slow machine only slows it, so it gets more
+  // than the 5 s default (#733). A hang would never finish at any limit.
   it('survives a long random run of extreme edits', () => {
     const random = rng(1234);
     const pick = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)]!;
@@ -108,7 +110,7 @@ describe('reducer output always reloads unchanged (#332, #350)', () => {
       expect(floor.items.length).toBeLessThanOrEqual(MAX_ITEMS_PER_FLOOR);
       expect((floor.interiorWalls ?? []).length).toBeLessThanOrEqual(MAX_INTERIOR_WALLS_PER_FLOOR);
     }
-  });
+  }, 30_000);
 
   it('clamps a drag far past the lot instead of writing an unreadable position', () => {
     let state: LayoutState = { layout: makeLayout({ floors: [makeFloor({ items: [makeItem({ id: 'a', category: 'seating' })] })] }), activeFloorIndex: 0 };

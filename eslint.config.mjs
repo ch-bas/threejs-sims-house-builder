@@ -1,21 +1,10 @@
-import { SourceCode } from 'eslint';
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 
-// ESLint 10 removed two deprecated SourceCode methods that
-// eslint-plugin-import 2.32 (`import/order`) still calls when it builds a fix,
-// so every out-of-order import crashed the run instead of being reported.
-// These are ESLint 9's own implementations; drop them once eslint-plugin-import
-// supports ESLint 10.
-for (const [name, method] of [
-  ['getTokenOrCommentBefore', 'getTokenBefore'],
-  ['getTokenOrCommentAfter', 'getTokenAfter'],
-]) {
-  if (typeof SourceCode.prototype[name] !== 'function') {
-    SourceCode.prototype[name] = function (node, skip) {
-      return this[method](node, { includeComments: true, skip });
-    };
-  }
-}
+// ESLint stays on 9 (#599): eslint-plugin-import, eslint-plugin-jsx-a11y and
+// eslint-plugin-react, which eslint-config-next pulls in, declare ESLint 9 at
+// most, and on 10 eslint-plugin-import's import/order crashed on every
+// out-of-order import until this file patched SourceCode back. Move to 10 once
+// all three declare it.
 
 // Flat config (ESLint 9+). It reproduces the rule set of the former
 // `.eslintrc.json` (`next/core-web-vitals` plus the project rules below);
@@ -31,6 +20,12 @@ const reactCompilerRulesOff = Object.fromEntries(
     .filter((rule) => rule.startsWith('react-hooks/'))
     .map((rule) => [rule, 'off']),
 );
+
+// The TypeScript parser eslint-config-next already uses for .ts/.tsx. Its
+// own block covers only those, so a .d.mts beside a script (scripts/) would
+// otherwise go to the JavaScript parser and fail to parse.
+const typescriptParser = nextCoreWebVitals.find((entry) => entry.name === 'next/typescript')?.languageOptions?.parser;
+if (!typescriptParser) throw new Error('eslint-config-next no longer exposes its TypeScript parser as next/typescript');
 
 const config = [
   {
@@ -59,6 +54,15 @@ const config = [
       ],
       'react/self-closing-comp': 'warn',
     },
+  },
+  {
+    files: ['**/*.mts', '**/*.cts'],
+    languageOptions: { parser: typescriptParser },
+  },
+  {
+    // Build and maintenance scripts report to the terminal: that is their output.
+    files: ['scripts/**'],
+    rules: { 'no-console': 'off' },
   },
   {
     files: ['**/*.ts', '**/*.tsx'],

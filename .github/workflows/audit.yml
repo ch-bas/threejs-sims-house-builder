@@ -1,0 +1,44 @@
+name: Dependency audit
+
+# A weekly advisory scan of the whole lockfile, dev dependencies included
+# (#574). The CI gate scans production dependencies only, on push, so an
+# advisory against the build toolchain, or one published while nobody
+# pushes, went unseen. Its own workflow: a schedule in ci.yml would run on
+# main and reach the deploy and release jobs.
+#
+# The report lists every severity in the run summary; a high or critical
+# finding fails the run, which notifies the repository's watchers.
+
+on:
+  schedule:
+    # Mondays 06:17 UTC (off the hour, when scheduled runs queue).
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      # Reads package-lock.json alone: nothing is installed or run.
+      - name: Report every advisory
+        run: |
+          {
+            echo '### npm audit (all dependencies)'
+            echo
+            echo '```'
+            npm audit --package-lock-only || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail on high or critical
+        run: npm audit --package-lock-only --audit-level=high

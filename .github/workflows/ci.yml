@@ -23,9 +23,12 @@ concurrency:
 permissions:
   contents: read
 
+# Every job runs on a pinned image (#594): a floating ubuntu-latest moves to
+# a new release on GitHub's schedule and changes the build under us. Bump it
+# in its own pull request.
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,6 +63,32 @@ jobs:
       - name: Add the Content-Security-Policy
         run: node scripts/add-csp.mjs
 
+      # Gzip sizes against scripts/bundle-budget.json (#732): first-load JS,
+      # the largest chunk and the CSS, as a table in the job summary.
+      # Report-only for its first sprint: over budget is a warning
+      # annotation, not a failure. Once the numbers have held still across
+      # that sprint's CI runs (module ids, #594), drop --report-only so going
+      # over fails the job; a deliberate increase then edits the JSON in the
+      # same pull request.
+      - name: Check the bundle budget
+        run: npm run check:bundle -- --report-only
+
+      # The built site in headless Chrome with software WebGL (#561): /, the
+      # 404 page and the one-reload chunk recovery, failing on console and
+      # page errors, failed requests, HTTP errors and CSP violations. The
+      # runner's preinstalled Chrome is driven by playwright-core, so no
+      # browser is downloaded. Report-only until it has run green for a
+      # while: a failure, the driver's install included (a registry blip),
+      # shows as an annotation without failing the job or the deploy.
+      - name: Smoke-test the export
+        continue-on-error: true
+        timeout-minutes: 6
+        env:
+          SMOKE_BROWSER_CHANNEL: chrome
+        run: |
+          npm i --no-save --no-audit --no-fund playwright-core@1.64.1
+          npm run test:smoke
+
       - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
@@ -68,7 +97,7 @@ jobs:
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -101,6 +130,24 @@ jobs:
             echo "::notice title=Deploy skipped::$GITHUB_SHA is no longer the head of main ($head); the newer commit's run deploys."
           fi
 
+      # The CSP names the site's origin for scripts (#579): add-csp.mjs takes
+      # https://<owner>.github.io when the build runs here. If Pages serves
+      # the site anywhere else (a custom domain, a renamed owner), every
+      # script would be blocked, so stop before replacing the working site.
+      - name: Check the site's address matches the script policy
+        if: steps.head.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url)
+          origin=$(printf '%s' "$url" | sed -E 's#^(https?://[^/]+).*#\1#' | tr 'A-Z' 'a-z')
+          expected="https://$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr 'A-Z' 'a-z').github.io"
+          if [ "$origin" != "$expected" ]; then
+            echo "::error title=Site address changed::Pages serves $url, but the CSP allows scripts only from $expected. Set CSP_SITE_ORIGIN for the build (scripts/add-csp.mjs) before deploying."
+            exit 1
+          fi
+          echo "Pages serves $url; scripts are allowed from $expected."
+
       - id: deployment
         if: steps.head.outputs.current == 'true'
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
@@ -108,7 +155,7 @@ jobs:
   release:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write

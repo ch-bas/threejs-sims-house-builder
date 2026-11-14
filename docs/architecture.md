@@ -7,22 +7,43 @@ individual decisions is in [design-notes.md](design-notes.md).
 
 Keep this list current: a new module gets a line here in the same pull
 request. `lib/docs-drift.test.ts` fails when a source file under
-`components/room-organizer/` is missing from it, or when the furniture count
-here or in the README differs from the catalogue.
+`components/room-organizer/`, `app/` or `scripts/`, or a root `*.config.*`
+file, is missing from it, or when the furniture count here or in the README
+differs from the catalogue.
 
 ```
+./                                       Root config
+├── next.config.mjs                      Static export; the Pages basePath when GITHUB_PAGES=true; Next's own lint pass off (CI lints)
+├── eslint.config.mjs                    Flat ESLint config: next/core-web-vitals plus the project rules, type-aware for TypeScript
+├── vitest.config.mts                    Vitest: node environment by default (jsdom per file), the `@/` alias, JSX transform
+└── tailwind.config.ts, postcss.config.mjs
+                                         Tailwind theme and the PostCSS pipeline (Tailwind, autoprefixer)
 app/                                     Next.js shell
 ├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script
 ├── page.tsx                             Loads the editor (client only) and prefetches the 3D engine
+├── globals.css                          Tailwind layers, the design tokens and the app-wide styles
+├── ambient.d.ts                         Next's ambient types for a bare `tsc`, and global stylesheet imports
 ├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside (the reset loads on click, #584)
 ├── not-found.tsx                        Branded 404 (out/404.html), with a link back to the builder
 ├── manifest.ts                          Web app manifest (static at build time)
+├── fonts/                               Sora and Nunito woff2 subsets with their OFL licences (the build needs no network, #560)
+│   └── fonts.ts                         Loads them with next/font/local, one call per subset; the root's font CSS variables
 └── icon.svg, favicon.ico, apple-icon.png, opengraph-image.png
                                          Icons and link-preview image, served by Next under the basePath; rasters from scripts/build-icons.mjs
+public/                                  icon-192.png, icon-512.png: the manifest's install icons (scripts/build-icons.mjs), copied to the site root
 docs/                                    This file, the design notes, and the README screenshot
 scripts/
+├── add-preloads.d.mts                   Types for add-preloads.mjs, for the TypeScript test that imports it
 ├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
-├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445)
+├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445); script files narrowed to the basePath (#579)
+├── add-csp.d.mts                        Types of add-csp.mjs's exports, for its test
+├── third-party-notices.mjs              Post-build: out/third-party-licenses.txt, the licences of the shipped packages and assets (#569)
+├── third-party-notices.d.mts            Types of third-party-notices.mjs's exports, for its test
+├── licenses/                            Licence texts of the libraries inside Next's polyfills chunk (core-js, whatwg-fetch, object-assign), for third-party-notices.mjs
+├── check-bundle.mjs                     CI: gzip sizes of the export (first-load JS, largest chunk, CSS) against bundle-budget.json (#732)
+├── check-bundle.d.mts                   Types for check-bundle.mjs, for its unit test
+├── bundle-budget.json                   The gzip budgets check-bundle.mjs enforces; raised with `npm run check:bundle -- --update`
+├── smoke-test.mjs                       CI: the export at its basePath in headless Chrome: errors, CSP, engine start, 404 page, chunk reload (#561)
 ├── build-icons.mjs                      Renders the app/ icon rasters and the preview image from SVG (Playwright, not part of the build)
 └── build-people-glb.mjs                 Rebuilds assets/people.glb from the Universal Animation Library
 components/
@@ -207,6 +228,7 @@ components/
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
     │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop
+    │   ├── use-item-commands.ts         Rotate, twist, remove, duplicate, copy/paste, nudge and lock on the selection, with their refusals and cues
     │   ├── use-floor-keep-out.ts        Porch + stairwell keep-out for collisions, memoised (#285, #372)
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
@@ -215,9 +237,10 @@ components/
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
     │   ├── use-npcs.ts                  Animated walkers: spawn, route-following step, re-route on floor edits; giving way, sitting, activities
     │   ├── use-weather.ts               Rain / snow clock on the frame budget
-    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens
+    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
     │   ├── use-camera-vision.ts         Vision-cone sweep on the frame budget
+    │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
@@ -228,6 +251,8 @@ components/
     │   ├── use-shift-held.ts            Whether Shift is down, for tools that read it between pointer events (#723)
     │   ├── use-wall-edit.ts             The gesture of moving a selected wall, in both views: preview per move, one dispatch on release (#718)
     │   ├── use-room-stamp.ts            The room stamp in hand: ghost under the pointer, click to drop, drag to size (#724)
+    │   ├── use-selection-actions.ts     The selection: primary, extras, selected wall; the ghost-selection guards, group expansion, custom sets (#117, #154, #224)
+    │   ├── use-wall-draft.ts            The wall tool: draft anchor and snapped tip, typed length, room stamp in hand, resets on a tool or floor change (#723, #724)
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
     │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)
@@ -238,6 +263,7 @@ components/
     │   ├── use-scroll-cue.ts            data-scrollable / data-more-before / -after on a HUD scroller (#426)
     │   ├── use-edge-var.ts              Publishes an element's top or bottom edge as a CSS variable (#308); places the touch row in the top bar
     │   ├── use-sheet-inset.ts           --pc-sheet-height while the phone item sheet is open (mode bar rides above it)
+    │   ├── use-house-loading.ts         The loads the editor makes on its own: the opening house, a share link over it (#573), another tab's save (#123), each by the load rules
     │   └── use-layout-persistence.ts    Hydrate (share → local) + auto-save + cross-tab notice; save status in its own store
     └── panels/                          Presentation (most use context)
         ├── lot-badge.tsx                Top-left lot name + sidebar toggle
