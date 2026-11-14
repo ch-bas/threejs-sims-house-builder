@@ -27,6 +27,7 @@ import { createReadStream } from 'node:fs';
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
+import { siteOrigin as cspSiteOrigin } from './add-csp.mjs';
 import { pageChunks } from './add-preloads.mjs';
 
 const outDir = path.resolve(process.argv[2] ?? 'out');
@@ -115,16 +116,15 @@ function serve(basePath) {
  * https://<owner>.github.io/<basePath>/, with every request to that origin
  * answered from the local server by Playwright routing, so a policy naming
  * the site's own URL (not just 'self') is tested exactly as deployed. The
- * origin is found as scripts/add-csp.mjs finds it: CSP_SITE_ORIGIN, else
- * the GITHUB_REPOSITORY_OWNER's github.io, else package.json's homepage.
+ * origin comes from scripts/add-csp.mjs's own siteOrigin, so the check can't
+ * drift from the policy it tests.
  */
 async function siteOrigin(basePath, local) {
   if (basePath === '') return local;
-  if (process.env.CSP_SITE_ORIGIN) return new URL(process.env.CSP_SITE_ORIGIN).origin;
-  if (process.env.GITHUB_REPOSITORY_OWNER) return `https://${process.env.GITHUB_REPOSITORY_OWNER.toLowerCase()}.github.io`;
   const { homepage } = JSON.parse(await readFile(path.resolve('package.json'), 'utf8'));
-  if (!homepage) throw new Error('No site origin: set CSP_SITE_ORIGIN or package.json homepage');
-  return new URL(homepage).origin;
+  const origin = cspSiteOrigin(process.env, homepage);
+  if (!origin) throw new Error('No site origin: set CSP_SITE_ORIGIN or package.json homepage');
+  return origin;
 }
 
 let site = { origin: '', local: '' };
