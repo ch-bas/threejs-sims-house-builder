@@ -25,6 +25,8 @@
 - [ ] Type-check passes (`npm run typecheck`)
 - [ ] Lint passes with no warnings (`npm run lint -- --max-warnings=0`)
 - [ ] Unit tests pass (`npm run test`), with new tests for new logic
+- [ ] Build passes (`npm run build`) when touching `app/`, `scripts/`, `next.config.mjs` or inline scripts (the CSP step fails on inline handlers)
+- [ ] No new high or critical advisory in production dependencies (`npm audit --omit=dev --audit-level=high`)
 - [ ] `docs/architecture.md` lists any new module; `docs/design-notes.md` explains any new rule
 - [ ] Tested in Chrome and Safari
 - [ ] No console warnings or errors introduced

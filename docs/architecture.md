@@ -7,13 +7,22 @@ individual decisions is in [design-notes.md](design-notes.md).
 
 Keep this list current: a new module gets a line here in the same pull
 request. `lib/docs-drift.test.ts` fails when a source file under
-`components/room-organizer/` is missing from it, or when the furniture count
-here or in the README differs from the catalogue.
+`components/room-organizer/`, `app/` or `scripts/`, or a root `*.config.*`
+file, is missing from it, or when the furniture count here or in the README
+differs from the catalogue.
 
 ```
+./                                       Root config
+├── next.config.mjs                      Static export; the Pages basePath when GITHUB_PAGES=true; Next's own lint pass off (CI lints)
+├── eslint.config.mjs                    Flat ESLint config: next/core-web-vitals plus the project rules, type-aware for TypeScript
+├── vitest.config.ts                     Vitest: node environment by default (jsdom per file), the `@/` alias, JSX transform
+└── tailwind.config.ts, postcss.config.mjs
+                                         Tailwind theme and the PostCSS pipeline (Tailwind, autoprefixer)
 app/                                     Next.js shell
 ├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script
 ├── page.tsx                             Loads the editor (client only) and prefetches the 3D engine
+├── globals.css                          Tailwind layers, the design tokens and the app-wide styles
+├── ambient.d.ts                         Next's ambient types for a bare `tsc`, and global stylesheet imports
 ├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside (the reset loads on click, #584)
 ├── not-found.tsx                        Branded 404 (out/404.html), with a link back to the builder
 ├── manifest.ts                          Web app manifest (static at build time)
@@ -24,6 +33,7 @@ app/                                     Next.js shell
 public/                                  icon-192.png, icon-512.png: the manifest's install icons (scripts/build-icons.mjs), copied to the site root
 docs/                                    This file, the design notes, and the README screenshot
 scripts/
+├── add-preloads.d.mts                   Types for add-preloads.mjs, for the TypeScript test that imports it
 ├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
 ├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445); script files narrowed to the basePath (#579)
 ├── add-csp.d.mts                        Types of add-csp.mjs's exports, for its test

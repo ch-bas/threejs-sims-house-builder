@@ -980,5 +980,6 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 [1.4.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.0.0...v1.2.0
+[1.2.0]: https://github.com/ch-bas/threejs-sims-house-builder/releases/tag/v1.2.0
+[1.0.1]: https://github.com/ch-bas/threejs-sims-house-builder/commit/db5db0be357951a9b3f8d0f0b18494e30ffb91e6
 [1.0.0]: https://github.com/ch-bas/threejs-sims-house-builder/releases/tag/v1.0.0
