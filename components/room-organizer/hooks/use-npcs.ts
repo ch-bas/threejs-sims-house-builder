@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
+import { type NpcBody, type NpcHandOff, type PlayerBody, createNpcBody, moveNpcBody, seatTakenByPlayer } from '../lib/npc-bodies';
 import {
   MAX_PATH_POINTS,
   NPC_RADIUS,
@@ -100,6 +101,8 @@ export interface NpcState {
   standHeading: number;
   /** Seconds spent walking without getting anywhere; past `STUCK_SECONDS` it gives up. */
   stuck: number;
+  /** What the player bumps into and can't sit on (#585); moved with the walker every step. */
+  body: NpcBody;
 }
 
 export interface NpcAnimation {
@@ -135,6 +138,11 @@ const PERSONAL_SPACE = 0.9;
 const EMPTY_WALLS: readonly InteriorWall[] = [];
 /** Another walker this close and roughly ahead stops this one. */
 const BLOCKING_GAP = 0.85;
+/** A walker and the player (0.3 m) never come closer than this, centre to centre (#585). */
+const PLAYER_GAP = NPC_RADIUS + 0.3;
+/** New walkers appear at least this far from the player (#585), in the tries it takes. */
+const SPAWN_CLEARANCE = 1.2;
+const SPAWN_TRIES = 24;
 /** cos of the half-angle of the cone a walker watches for other people. */
 const NPC_VIEW_COS = 0.6;
 const BLOCKED_SECONDS = [0.7, 1.4] as const;
@@ -211,6 +219,11 @@ export interface UseNpcsOptions {
    * actually walking their shadows must keep updating — but only then.
    */
   requestShadowUpdate?: () => void;
+  /**
+   * Shared with the walkthrough (#585): the walkers read where the player
+   * stands and sits, and publish their own bodies for the player's resolve.
+   */
+  handOff?: NpcHandOff;
 }
 
 /**
@@ -227,6 +240,8 @@ interface StoreyWalkers {
   /** The items the seats were found in, so a new array rebuilds them. */
   seatItems: readonly FurnitureItem[] | null;
   floorY: number;
+  /** The storey's index now: a floor added below moves it up. */
+  index: number;
   shown: boolean;
 }
 
@@ -248,14 +263,14 @@ interface NpcStage {
 export function useNpcs(options: UseNpcsOptions): void {
   const {
     enabled, count = 3, threeModuleRef, sceneRef, building, shownFrom, shownTo,
-    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep,
+    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep, handOff,
   } = options;
   const reducedMotion = useReducedMotion();
   const storeysRef = useRef(new Map<string, StoreyWalkers>());
   const stageRef = useRef<NpcStage | null>(null);
   // Read by `sync`, which runs from both effects below.
-  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate });
-  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate };
+  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff });
+  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff };
 
   // Brings the storeys' walkers in line with the building and the storeys
   // drawn: spawn, re-route, re-seat, lift or lower, show or park, remove.
@@ -264,10 +279,12 @@ export function useNpcs(options: UseNpcsOptions): void {
     const stage = stageRef.current;
     if (!stage) return;
     const inputs = inputsRef.current;
-    if (syncNpcStoreys(storeysRef.current, stage, inputs.building, inputs.shownFrom, inputs.shownTo, inputs.count)) {
+    const player = inputs.handOff?.player.present ? inputs.handOff.player : null;
+    if (syncNpcStoreys(storeysRef.current, stage, inputs.building, inputs.shownFrom, inputs.shownTo, inputs.count, player)) {
       inputs.requestShadowUpdate?.();
       inputs.invalidate?.();
     }
+    if (inputs.handOff) publishBodies(inputs.handOff, storeysRef.current);
   };
 
   useEffect(() => {
@@ -287,13 +304,21 @@ export function useNpcs(options: UseNpcsOptions): void {
     // a repaint. Parked storeys don't step.
     const step = (delta: number): boolean => {
       let change: NpcChange = NPC_STILL;
+      const seen = inputsRef.current.handOff?.player;
       for (const storey of storeys.values()) {
         if (!storey.shown || !storey.nav || storey.npcs.length === 0) continue;
+        // The player is one more person on its own storey (#585).
+        const player = seen?.present && seen.floorIndex === storey.index ? seen : null;
+        if (revealHeld(storey.npcs, player)) {
+          change = NPC_SHADOW;
+          const shared = inputsRef.current.handOff;
+          if (shared) publishBodies(shared, storeys);
+        }
         // Repaint only when a pose changed, and recompute the 2048² shadow map
         // only when a walker moved: a rigged figure idles (breathes) every
         // frame, and re-rendering every caster for that pinned the GPU (#400).
         // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
-        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats)) as NpcChange;
+        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats, player)) as NpcChange;
       }
       if (shadowDue(performance.now(), change === NPC_SHADOW)) inputsRef.current.requestShadowUpdate?.();
       return change !== NPC_STILL;
@@ -306,6 +331,8 @@ export function useNpcs(options: UseNpcsOptions): void {
       removeStep();
       for (const storey of storeys.values()) removeNpcs(scene, storey.npcs);
       storeys.clear();
+      const shared = inputsRef.current.handOff;
+      if (shared) shared.bodies = [];
       stageRef.current = null;
       // Nothing else consumes showNpcs, so without an explicit repaint (and a
       // shadow-map refresh — walkers cast) the removed NPCs stay painted in
@@ -322,6 +349,18 @@ export function useNpcs(options: UseNpcsOptions): void {
   }, [building, shownFrom, shownTo, count]);
 }
 
+/** Hand the shown storeys' walkers to the player's resolve; a new array only when the set changed. */
+function publishBodies(handOff: NpcHandOff, storeys: ReadonlyMap<string, StoreyWalkers>): void {
+  const bodies: NpcBody[] = [];
+  for (const storey of storeys.values()) {
+    // A walker held back from appearing on the player (#585) isn't there yet.
+    if (storey.shown) for (const npc of storey.npcs) if (npc.group.visible) bodies.push(npc.body);
+  }
+  const current = handOff.bodies;
+  if (current.length === bodies.length && bodies.every((body, index) => current[index] === body)) return;
+  handOff.bodies = bodies;
+}
+
 /**
  * Bring each storey's walkers in line with the building (#580). A storey
  * gets walkers the first time it is drawn; a nav change re-routes them, an
@@ -335,7 +374,8 @@ function syncNpcStoreys(
   building: KeepOutBuilding,
   shownFrom: number,
   shownTo: number,
-  count: number
+  count: number,
+  player: PlayerBody | null = null
 ): boolean {
   let changed = false;
   const { floors } = building;
@@ -346,15 +386,22 @@ function syncNpcStoreys(
     let storey = storeys.get(floor.id);
     if (!storey) {
       if (!shown) return;
-      storey = { npcs: [], nav: null, signature: null, seats: EMPTY_SEATS, seatItems: null, floorY: 0, shown: false };
+      storey = { npcs: [], nav: null, signature: null, seats: EMPTY_SEATS, seatItems: null, floorY: 0, index, shown: false };
       storeys.set(floor.id, storey);
     }
     const floorY = floorElevation(floors, index);
     if (storey.npcs.length > 0 && floorY !== storey.floorY) {
-      for (const npc of storey.npcs) npc.group.position.y += floorY - storey.floorY;
+      for (const npc of storey.npcs) {
+        npc.group.position.y += floorY - storey.floorY;
+        moveNpcBody(npc.body, npc.position.x, npc.position.z, floorY, npc.body.floorIndex);
+      }
       changed = true;
     }
     storey.floorY = floorY;
+    if (storey.index !== index) {
+      storey.index = index;
+      for (const npc of storey.npcs) npc.body.floorIndex = index;
+    }
 
     const keepOut = floorKeepOut(building, index);
     const interiorWalls = floor.interiorWalls ?? EMPTY_WALLS;
@@ -377,6 +424,7 @@ function syncNpcStoreys(
     }
 
     const nav = storey.nav;
+    const here = player && player.floorIndex === index ? player : null;
     if (!nav || nav.freeCount === 0) {
       // A floor with no free cell holds nobody; clearing it lets them in.
       if (storey.npcs.length > 0) {
@@ -387,15 +435,18 @@ function syncNpcStoreys(
     } else if (shown && storey.npcs.length === 0) {
       const npcs: NpcState[] = [];
       // Seeded per storey too, so two storeys don't hold the same people.
-      for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, i + index * count, stage.people, npcs));
+      for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, index, i + index * count, stage.people, npcs, here));
       storey.npcs = npcs;
       stepNpcs(npcs, 0, nav, floorY, Math.random, storey.seats);
       changed = true;
     }
     storey.shown = shown;
     for (const npc of storey.npcs) {
-      if (npc.group.visible === shown) continue;
-      npc.group.visible = shown;
+      // A parked walker standing where the player is stays parked until it
+      // moves off (`revealHeld`), rather than appearing around the camera.
+      const visible = shown && (npc.group.visible || !here || !onPlayer(npc, here));
+      if (npc.group.visible === visible) continue;
+      npc.group.visible = visible;
       changed = true;
     }
   });
@@ -421,9 +472,11 @@ function createNpc(
   scene: ThreeNS.Scene,
   nav: NpcNav,
   floorY: number,
+  floorIndex: number,
   index: number,
   people: PeopleModel | null,
-  others: readonly NpcState[]
+  others: readonly NpcState[],
+  avoid: PlayerBody | null = null
 ): NpcState {
   const palette = [0xc62828, 0x2e7d32, 0x1565c0, 0xf9a825, 0x6a1b9a];
   const hairPalette = [0x2b1d14, 0x5a3825, 0x1a1a1a, 0x8d6e4a, 0x3b2a20];
@@ -485,8 +538,12 @@ function createNpc(
   }
   group.userData.type = NPC_TAG;
 
-  // Spawn in free space (never inside the sofa or the stair flight).
-  const spawn = randomFreeCell(nav, Math.random);
+  // Spawn in free space (never inside the sofa or the stair flight), and
+  // not on the player (#585) when there is room elsewhere.
+  let spawn = randomFreeCell(nav, Math.random);
+  for (let i = 0; avoid && i < SPAWN_TRIES && Math.hypot(cellX(nav, spawn) - avoid.x, cellZ(nav, spawn) - avoid.z) < SPAWN_CLEARANCE; i++) {
+    spawn = randomFreeCell(nav, Math.random);
+  }
   const position = { x: cellX(nav, spawn), z: cellZ(nav, spawn) };
   group.position.set(position.x, floorY, position.z);
   group.rotation.y = Math.random() * Math.PI * 2;
@@ -517,6 +574,7 @@ function createNpc(
     arrivalHeading: Number.NaN,
     standHeading: Number.NaN,
     stuck: 0,
+    body: createNpcBody(position.x, position.z, floorY, floorIndex),
   };
   planRoute(npc, nav, Math.random, others);
   return npc;
@@ -526,7 +584,13 @@ function createNpc(
  * Give a walker a new destination it can reach and the route there. Leaves
  * it with an empty route when its patch of floor has nowhere else to go.
  */
-export function planRoute(npc: NpcState, nav: NpcNav, random: () => number, others: readonly NpcState[] = []): void {
+export function planRoute(
+  npc: NpcState,
+  nav: NpcNav,
+  random: () => number,
+  others: readonly NpcState[] = [],
+  player: PlayerBody | null = null
+): void {
   npc.pathLength = 0;
   npc.pathIndex = 0;
   npc.destination = -1;
@@ -534,7 +598,14 @@ export function planRoute(npc: NpcState, nav: NpcNav, random: () => number, othe
   npc.arrivalHeading = Number.NaN;
   const from = standingCell(npc, nav);
   if (from < 0) return;
-  const destination = pickDestination(nav, from, random, (x, z) => others.some((other) => other !== npc && claims(other, x, z)));
+  const destination = pickDestination(
+    nav,
+    from,
+    random,
+    (x, z) =>
+      others.some((other) => other !== npc && claims(other, x, z)) ||
+      (player !== null && Math.hypot(player.x - x, player.z - z) < PERSONAL_SPACE)
+  );
   if (destination < 0) return;
   routeTo(npc, nav, from, destination);
   if (npc.pathLength === 0) return;
@@ -605,6 +676,8 @@ export function rehomeNpcs(npcs: readonly NpcState[], nav: NpcNav, floorY: numbe
         npc.position.x = cellX(nav, cell);
         npc.position.z = cellZ(nav, cell);
         npc.group.position.set(npc.position.x, floorY, npc.position.z);
+        // Where the player bumps into it, even with no step to come (reduced motion).
+        moveNpcBody(npc.body, npc.position.x, npc.position.z, floorY, npc.body.floorIndex);
       }
     }
     planRoute(npc, nav, random, npcs);
@@ -632,7 +705,8 @@ export function planSeat(
   nav: NpcNav,
   seats: NpcSeats,
   random: () => number,
-  others: readonly NpcState[] = []
+  others: readonly NpcState[] = [],
+  player: PlayerBody | null = null
 ): boolean {
   const from = standingCell(npc, nav);
   if (from < 0) return false;
@@ -645,6 +719,8 @@ export function planSeat(
     const cell = cellAt(nav, seat.approachX, seat.approachZ);
     if (nav.region[cell] !== region) continue;
     if (others.some((other) => other !== npc && other.seat?.key === seat.key)) continue;
+    // Nor where the player sits (#585).
+    if (player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z)) continue;
     eligible += 1;
     if (random() * eligible < 1) chosen = seat;
   }
@@ -693,7 +769,8 @@ export function stepNpcs(
   nav: NpcNav,
   floorY: number,
   random: () => number = Math.random,
-  seats: NpcSeats = EMPTY_SEATS
+  seats: NpcSeats = EMPTY_SEATS,
+  player: PlayerBody | null = null
 ): NpcChange {
   let change: NpcChange = NPC_STILL;
   for (const npc of npcs) {
@@ -721,13 +798,13 @@ export function stepNpcs(
         if (npc.pause > 0) break;
         if (npc.mode === 'seated') standUp(npc);
         else {
-          if (npc.mode === 'blocked' && wayAheadBlocked(npc, npcs)) {
+          if (npc.mode === 'blocked' && wayAheadBlocked(npc, npcs, player)) {
             // Still in the way: head somewhere else, preferably not straight
             // back at whatever stopped it.
             npc.seat = null;
-            planRoute(npc, nav, random, npcs);
-            for (let retry = 0; retry < UNBLOCK_TRIES && wayAheadBlocked(npc, npcs); retry++) {
-              planRoute(npc, nav, random, npcs);
+            planRoute(npc, nav, random, npcs, player);
+            for (let retry = 0; retry < UNBLOCK_TRIES && wayAheadBlocked(npc, npcs, player); retry++) {
+              planRoute(npc, nav, random, npcs, player);
             }
           }
           startWalking(npc);
@@ -781,22 +858,38 @@ export function stepNpcs(
         // The last stretch into a seat and back out crosses its footprint, so
         // it is walked straight, not routed. The spot matters: stopping short
         // leaves the feet off the mark, or the walker still inside the chair.
-        change = NPC_SHADOW;
         const dx = npc.target.x - npc.position.x;
         const dz = npc.target.z - npc.position.z;
         const distance = Math.hypot(dx, dz);
         if (distance < SEAT_SPOT_REACHED) {
+          change = NPC_SHADOW;
           if (npc.mode === 'settle' && npc.seat) {
+            npc.stuck = 0;
             npc.mode = 'turn';
             standStill(npc, floorY, npc.anim?.stand[0]);
           } else {
             // Up from a seat: walk somewhere before sitting again.
             npc.seat = null;
-            arriveAtStop(npc, nav, floorY, random, npcs, null);
+            arriveAtStop(npc, nav, floorY, random, npcs, null, player);
           }
           break;
         }
         const stride = Math.min(distance, npc.speed * delta);
+        // The player stands in the way (#585): stand and wait; a player who
+        // stays gets walked round, out to free floor clear of it.
+        if (player && bumpsPlayer(npc, player, npc.position.x + (dx / distance) * stride, npc.position.z + (dz / distance) * stride)) {
+          if (npc.stuck === 0) standStill(npc, floorY, npc.anim?.stand[0]);
+          // The shadow follows the fade into standing, then rests.
+          if (npc.stuck < FADE_SECONDS) change = NPC_SHADOW;
+          npc.stuck += delta;
+          if (npc.stuck > STUCK_SECONDS) stepAroundPlayer(npc, nav, player);
+          break;
+        }
+        if (npc.stuck > 0) {
+          npc.stuck = 0;
+          if (npc.anim) crossFadeTo(npc.anim, npc.anim.walk);
+        }
+        change = NPC_SHADOW;
         npc.position.x += (dx / distance) * stride;
         npc.position.z += (dz / distance) * stride;
         turnToward(npc.group, Math.atan2(dx, dz), delta);
@@ -805,6 +898,13 @@ export function stepNpcs(
         break;
       }
       case 'walk': {
+        // The player sat down in the seat it was heading for (#585): pick again.
+        if (npc.seat && player && seatTakenByPlayer(player, player.floorIndex, npc.seat.x, npc.seat.z)) {
+          npc.seat = null;
+          npc.pathLength = 0;
+          npc.pathIndex = 0;
+          npc.destination = -1;
+        }
         while (npc.pathIndex < npc.pathLength) {
           const wx = npc.path[npc.pathIndex * 2]!;
           const wz = npc.path[npc.pathIndex * 2 + 1]!;
@@ -816,13 +916,14 @@ export function stepNpcs(
           if (npc.seat) {
             // At the seat's approach point: shuffle in to where the feet go.
             npc.mode = 'settle';
+            npc.stuck = 0;
             sitFeet(npc, npc.seat, npc.target);
-          } else arriveAtStop(npc, nav, floorY, random, npcs, seats);
+          } else arriveAtStop(npc, nav, floorY, random, npcs, seats, player);
           change = NPC_SHADOW;
           break;
         }
 
-        if (wayAheadBlocked(npc, npcs)) {
+        if (wayAheadBlocked(npc, npcs, player)) {
           // Someone is in the way: stop, wait, try again.
           npc.mode = 'blocked';
           npc.pause = between(random, BLOCKED_SECONDS[0], BLOCKED_SECONDS[1]);
@@ -845,15 +946,21 @@ export function stepNpcs(
         // The route keeps clear of everything; the resolver is the guarantee
         // (a corner brushed between grid cells slides instead of clipping).
         resolveWalkerStep(nav.colliders, npc.position, targetScratch, NPC_RADIUS, stepScratch, nav.collisionOptions);
-        const nx = Math.max(-nav.halfW, Math.min(nav.halfW, stepScratch.x));
-        const nz = Math.max(-nav.halfD, Math.min(nav.halfD, stepScratch.z));
+        let nx = Math.max(-nav.halfW, Math.min(nav.halfW, stepScratch.x));
+        let nz = Math.max(-nav.halfD, Math.min(nav.halfD, stepScratch.z));
+        // Never into the player, who stepped in from the side or behind (#585):
+        // it stays put, and a player who stays gets walked round (STUCK_SECONDS).
+        if (player && bumpsPlayer(npc, player, nx, nz)) {
+          nx = npc.position.x;
+          nz = npc.position.z;
+        }
         const moved = Math.hypot(nx - npc.position.x, nz - npc.position.z);
         npc.position.x = nx;
         npc.position.z = nz;
         npc.stuck = moved < stride * STUCK_PROGRESS ? npc.stuck + delta : 0;
         if (npc.stuck > STUCK_SECONDS) {
           npc.seat = null;
-          planRoute(npc, nav, random, npcs);
+          planRoute(npc, nav, random, npcs, player);
         }
 
         turnToward(npc.group, Math.atan2(dx, dz), delta);
@@ -873,6 +980,12 @@ export function stepNpcs(
         throw new Error(`Unknown walker mode ${String(unreachable)}`);
       }
     }
+
+    // Where the player's resolve and seat lookup find it (#585).
+    moveNpcBody(npc.body, npc.position.x, npc.position.z, floorY, npc.body.floorIndex);
+    const sitting = inSeat(npc) ? npc.seat : null;
+    npc.body.seatX = sitting ? sitting.x : Number.NaN;
+    npc.body.seatZ = sitting ? sitting.z : Number.NaN;
   }
   return change;
 }
@@ -889,12 +1002,17 @@ function arriveAtStop(
   floorY: number,
   random: () => number,
   npcs: readonly NpcState[],
-  seats: NpcSeats | null
+  seats: NpcSeats | null,
+  player: PlayerBody | null
 ): void {
   npc.standHeading = npc.arrivalHeading;
   const toSeat =
-    Boolean(npc.anim?.sit) && seats !== null && seats.size > 0 && random() < SEAT_CHANCE && planSeat(npc, nav, seats, random, npcs);
-  if (!toSeat) planRoute(npc, nav, random, npcs);
+    Boolean(npc.anim?.sit) &&
+    seats !== null &&
+    seats.size > 0 &&
+    random() < SEAT_CHANCE &&
+    planSeat(npc, nav, seats, random, npcs, player);
+  if (!toSeat) planRoute(npc, nav, random, npcs, player);
   npc.mode = 'pause';
   const activities = npc.anim?.activities ?? [];
   if (activities.length > 0 && random() < ACTIVITY_CHANCE) {
@@ -943,6 +1061,7 @@ function standUp(npc: NpcState): void {
  */
 function leaveSeat(npc: NpcState, floorY: number, nav: NpcNav): void {
   npc.mode = 'leaveSeat';
+  npc.stuck = 0;
   npc.lift = 0;
   npc.group.position.y = floorY;
   const seat = npc.seat;
@@ -980,12 +1099,12 @@ function dropVanishedSeat(npc: NpcState, seats: NpcSeats, floorY: number, nav: N
 }
 
 /**
- * The look-ahead along the route: another person close by and roughly in
- * front. Furniture, partitions and placed people need no look-ahead: the
+ * The look-ahead along the route: another person (a walker, or the
+ * player) close by and roughly in front. Furniture, partitions and placed people need no look-ahead: the
  * route already keeps clear of them, and a change to the floor re-routes
  * every walker (`rehomeNpcs`). Allocation-free.
  */
-export function wayAheadBlocked(npc: NpcState, npcs: readonly NpcState[]): boolean {
+export function wayAheadBlocked(npc: NpcState, npcs: readonly NpcState[], player: PlayerBody | null = null): boolean {
   if (npc.pathIndex >= npc.pathLength) return false;
   const dx = npc.path[npc.pathIndex * 2]! - npc.position.x;
   const dz = npc.path[npc.pathIndex * 2 + 1]! - npc.position.z;
@@ -1001,7 +1120,69 @@ export function wayAheadBlocked(npc: NpcState, npcs: readonly NpcState[]): boole
     if (gap < 1e-6 || gap > BLOCKING_GAP) continue;
     if ((ox * ux + oz * uz) / gap > NPC_VIEW_COS) return true;
   }
+  // The player is a person too (#585).
+  if (player) {
+    const ox = player.x - npc.position.x;
+    const oz = player.z - npc.position.z;
+    const gap = Math.hypot(ox, oz);
+    if (gap < 1e-6 || (gap <= BLOCKING_GAP && (ox * ux + oz * uz) / gap > NPC_VIEW_COS)) return true;
+  }
   return false;
+}
+
+/**
+ * Held too long by the player on the straight stretch into or out of a
+ * seat (#585): give the seat up and step out to the nearest free floor
+ * clear of the player instead.
+ */
+function stepAroundPlayer(npc: NpcState, nav: NpcNav, player: PlayerBody): void {
+  let best = -1;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < nav.freeCount; i++) {
+    const cell = nav.free[i]!;
+    const x = cellX(nav, cell);
+    const z = cellZ(nav, cell);
+    if (Math.hypot(player.x - x, player.z - z) < PLAYER_GAP + NPC_RADIUS) continue;
+    const gap = Math.hypot(npc.position.x - x, npc.position.z - z);
+    if (gap < bestGap) {
+      best = cell;
+      bestGap = gap;
+    }
+  }
+  npc.seat = null;
+  npc.mode = 'leaveSeat';
+  npc.stuck = 0;
+  if (best >= 0) {
+    npc.target.x = cellX(nav, best);
+    npc.target.z = cellZ(nav, best);
+  }
+  if (npc.anim) crossFadeTo(npc.anim, npc.anim.walk);
+}
+
+/** Whether a walker stands within reach of the player's body. */
+function onPlayer(npc: NpcState, player: PlayerBody): boolean {
+  return Math.hypot(player.x - npc.position.x, player.z - npc.position.z) < PLAYER_GAP;
+}
+
+/**
+ * Show the walkers of a shown storey that were held back because they
+ * stood on the player (#585), now that it has moved off. True when one
+ * appeared.
+ */
+function revealHeld(npcs: readonly NpcState[], player: PlayerBody | null): boolean {
+  let revealed = false;
+  for (const npc of npcs) {
+    if (npc.group.visible || (player && onPlayer(npc, player))) continue;
+    npc.group.visible = true;
+    revealed = true;
+  }
+  return revealed;
+}
+
+/** Whether moving to (x, z) takes the walker into the player, closer than it already is. */
+function bumpsPlayer(npc: NpcState, player: PlayerBody, x: number, z: number): boolean {
+  const after = Math.hypot(player.x - x, player.z - z);
+  return after < PLAYER_GAP && after < Math.hypot(player.x - npc.position.x, player.z - npc.position.z);
 }
 
 /** Where the feet stand so the sitting clip lands the hips on the seat, into `out`. */

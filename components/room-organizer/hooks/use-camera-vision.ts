@@ -3,6 +3,7 @@ import { buildSightWalls, type ShellBuilding } from '../lib/walk-collision';
 import { stepVisionCones } from '../three/camera-vision';
 import { ROOM_OBJECT_TAGS } from '../three/room-builder';
 import { useReducedMotion } from './use-reduced-motion';
+import type { PlayerBody } from '../lib/npc-bodies';
 import type { FrameBudget } from '../three/frame-budget';
 import type * as ThreeNS from 'three';
 
@@ -16,6 +17,8 @@ export interface UseCameraVisionOptions {
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   /** The walls a cone can't see through (#590); absent, it sees through all. */
   building?: ShellBuilding;
+  /** The first-person walker, a target while walking (#585); read every step. */
+  player?: PlayerBody;
 }
 
 /**
@@ -28,13 +31,15 @@ export interface UseCameraVisionOptions {
  * the sweep only advances when something else (camera orbit, drag) happens
  * to request frames.
  */
-export function useCameraVision({ enabled, addDecorativeStep, threeModuleRef, sceneRef, building }: UseCameraVisionOptions): void {
+export function useCameraVision({ enabled, addDecorativeStep, threeModuleRef, sceneRef, building, player }: UseCameraVisionOptions): void {
   const reducedMotion = useReducedMotion();
   // Built when the building changes, never per frame; read through a ref so
   // an edit doesn't restart the loop.
   const sightWalls = useMemo(() => (enabled && building ? buildSightWalls(building) : undefined), [enabled, building]);
   const sightWallsRef = useRef(sightWalls);
   sightWallsRef.current = sightWalls;
+  const playerRef = useRef(player);
+  playerRef.current = player;
   useEffect(() => {
     if (!enabled) return undefined;
     const scene = sceneRef.current;
@@ -55,7 +60,8 @@ export function useCameraVision({ enabled, addDecorativeStep, threeModuleRef, sc
       // the wedge's pulse hold; detection and the alert colour still follow.
       // A step that moved nothing (the colours settled, nothing came or
       // went) asks for no frame, so a still cone costs no rendering (#556).
-      return stepVisionCones(scene, reducedMotion ? 0 : seconds, sightWallsRef.current);
+      const walker = playerRef.current;
+      return stepVisionCones(scene, reducedMotion ? 0 : seconds, sightWallsRef.current, walker?.present ? walker : null);
     });
   }, [enabled, addDecorativeStep, threeModuleRef, sceneRef, reducedMotion]);
 }

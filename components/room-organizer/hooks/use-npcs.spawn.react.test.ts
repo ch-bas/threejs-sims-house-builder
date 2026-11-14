@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react';
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
+import { createNpcHandOff } from '../lib/npc-bodies';
 import { useNpcs, type UseNpcsOptions } from './use-npcs';
 import type { RoomLayout } from '../lib/types';
 
@@ -138,5 +139,62 @@ describe('walkers per storey (#580)', () => {
     expect(walkersIn(scene)).toHaveLength(6);
     rerender({ enabled: false });
     expect(walkersIn(scene)).toHaveLength(0);
+  });
+
+  it('lifts the bodies the player bumps into with their floor', () => {
+    const handOff = createNpcHandOff();
+    const scene = new THREE.Scene();
+    const sceneRef = { current: scene };
+    const addDecorativeStep = () => () => {};
+    const { rerender } = renderHook(({ building }: { building: RoomLayout }) =>
+      useNpcs({ enabled: true, threeModuleRef, sceneRef, building, shownFrom: 1, shownTo: 1, addDecorativeStep, handOff }),
+    { initialProps: { building: twoStoreys } });
+    expect(handOff.bodies).toHaveLength(3);
+    const taller: RoomLayout = { ...twoStoreys, floors: [{ ...twoStoreys.floors[0]!, height: 3.5 }, twoStoreys.floors[1]!] };
+    rerender({ building: taller });
+    expect(handOff.bodies.every((body) => body.collider.bottom === 3.5)).toBe(true);
+  });
+});
+
+describe('walkers never appear on the player (#585)', () => {
+  const twoStoreys = makeLayout({ floors: [makeFloor({ id: 'ground' }), makeFloor({ id: 'upper', name: 'Upper' })] });
+
+  it('spawn clear of the player', () => {
+    for (let trial = 0; trial < 10; trial++) {
+      const handOff = createNpcHandOff();
+      Object.assign(handOff.player, { present: true, x: 0.3, z: -0.4, floorIndex: 0 });
+      const scene = new THREE.Scene();
+      renderHook(() =>
+        useNpcs({ enabled: true, threeModuleRef, sceneRef: { current: scene }, building: makeLayout({ width: 6, height: 6 }), shownFrom: 0, shownTo: 0, addDecorativeStep: () => () => {}, handOff })
+      );
+      for (const walker of walkersIn(scene)) expect(Math.hypot(walker.position.x - 0.3, walker.position.z + 0.4)).toBeGreaterThan(1.1);
+    }
+  });
+
+  it('a parked walker standing where the player is stays parked until the player moves off', () => {
+    const handOff = createNpcHandOff();
+    const scene = new THREE.Scene();
+    const sceneRef = { current: scene };
+    const steps: Array<(delta: number) => boolean> = [];
+    const addDecorativeStep = (step: (delta: number) => boolean) => {
+      steps.push(step);
+      return () => {};
+    };
+    const { rerender } = renderHook((props: Pick<UseNpcsOptions, 'shownFrom' | 'shownTo'>) =>
+      useNpcs({ enabled: true, threeModuleRef, sceneRef, building: twoStoreys, addDecorativeStep, handOff, ...props }),
+    { initialProps: { shownFrom: 0, shownTo: 0 } });
+    const [first, ...rest] = walkersIn(scene);
+    rerender({ shownFrom: 1, shownTo: 1 });
+    // The player comes down onto the spot the first ground walker was parked on.
+    Object.assign(handOff.player, { present: true, x: first!.position.x, z: first!.position.z, floorIndex: 0 });
+    rerender({ shownFrom: 0, shownTo: 0 });
+    expect(first!.visible).toBe(false);
+    expect(handOff.bodies).not.toContain(undefined);
+    expect(handOff.bodies).toHaveLength(rest.filter((walker) => walker.visible).length);
+    // It moves off: the walker is there again, and solid.
+    Object.assign(handOff.player, { x: first!.position.x + 3, z: first!.position.z + 3 });
+    steps[0]!(1 / 60);
+    expect(first!.visible).toBe(true);
+    expect(handOff.bodies).toHaveLength(rest.filter((walker) => walker.visible).length + 1);
   });
 });
