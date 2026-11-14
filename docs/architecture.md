@@ -17,6 +17,8 @@ app/                                     Next.js shell
 ├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside (the reset loads on click, #584)
 ├── not-found.tsx                        Branded 404 (out/404.html), with a link back to the builder
 ├── manifest.ts                          Web app manifest (static at build time)
+├── fonts/                               Sora and Nunito woff2 subsets with their OFL licences (the build needs no network, #560)
+│   └── fonts.ts                         Loads them with next/font/local, one call per subset; the root's font CSS variables
 └── icon.svg, favicon.ico, apple-icon.png, opengraph-image.png
                                          Icons and link-preview image, served by Next under the basePath; rasters from scripts/build-icons.mjs
 docs/                                    This file, the design notes, and the README screenshot

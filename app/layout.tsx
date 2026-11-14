@@ -1,13 +1,7 @@
-import { Nunito, Sora } from 'next/font/google';
 import { CHUNK_RELOAD_KEY, CHUNK_RELOAD_WINDOW_MS } from '@/components/room-organizer/lib/chunk-reload';
+import { fontVariables } from './fonts/fonts';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-
-// Fetched at build time and served from _next/static/media with preload
-// links (#417); no request reaches a font CDN at runtime. tokens.css reads
-// the variables into --pc-font-display / --pc-font-body.
-const sora = Sora({ subsets: ['latin'], display: 'swap', variable: '--pc-font-sora' });
-const nunito = Nunito({ subsets: ['latin'], display: 'swap', variable: '--pc-font-nunito' });
 
 const SITE_NAME = 'Three.js Sims-like House Builder';
 const DESCRIPTION =
@@ -94,7 +88,7 @@ const CHUNK_RECOVERY_SCRIPT = `(function(){
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sora.variable} ${nunito.variable}`}>
+    <html lang="en" className={fontVariables}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: CHUNK_RECOVERY_SCRIPT }} />
       </head>
