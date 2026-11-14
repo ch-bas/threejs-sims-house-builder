@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useLengthUnit } from '../contexts';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
-import { formatSize } from '../lib/format';
+import { formatMetres, formatSize } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { cycleItem, selectionAnnouncement } from '../lib/item-cycle';
 import { Icon, iconForItem } from '../plotcraft/icon';
@@ -406,6 +407,7 @@ interface HoverTooltipProps {
 }
 
 function HoverTooltip({ hover, containerRef }: HoverTooltipProps): JSX.Element | null {
+  const unit = useLengthUnit();
   const canvas = containerRef.current;
   if (!canvas) return null;
   const rect = canvas.getBoundingClientRect();
@@ -462,7 +464,7 @@ function HoverTooltip({ hover, containerRef }: HoverTooltipProps): JSX.Element |
           fontVariantNumeric: 'tabular-nums',
         }}
       >
-        {formatSize(hover.item.width, hover.item.depth, 2)}
+        {formatSize(hover.item.width, hover.item.depth, 2, unit)}
       </p>
     </div>
   );
@@ -505,6 +507,7 @@ function StatusChip({
 function ViewportOverlays(props: ViewportProps): JSX.Element {
   // A finger taps and there is no Escape key on a phone.
   const touch = useMediaQuery(COARSE_POINTER_QUERY);
+  const unit = useLengthUnit();
   return (
     <>
       {!props.view2D && props.showMinimap && (
@@ -535,7 +538,7 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
                 ? touch
                   ? 'Tap a second point…'
                   : 'Click a second point…'
-                : `Distance: ${(props.measurementDistance ?? 0).toFixed(2)} m`}
+                : `Distance: ${formatMetres(props.measurementDistance ?? 0, 2, unit)}`}
             </StatusChip>
           </div>
         )}

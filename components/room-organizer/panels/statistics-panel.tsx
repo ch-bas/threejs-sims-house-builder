@@ -2,20 +2,22 @@
 
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useRoomEditor } from '../contexts';
+import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useActiveFloorIndex, useLayout } from '../hooks/use-layout-store';
 import { budgetOf, budgetSpent, furnitureSpend } from '../lib/budget';
 import { CATEGORIES, CURRENCY_SYMBOL } from '../lib/constants';
 import { buildingArea } from '../lib/footprint';
+import { formatArea } from '../lib/format';
 import { footprintArea, itemCountByCategory } from '../lib/geometry';
 import { floorRooms, hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
-import { houseRoomScores, ROOM_CHECKS, ROOM_TYPE_LABELS, type RoomType } from '../lib/room-score';
+import { houseRoomScores, ROOM_CHECKS, ROOM_TYPE_LABELS, roomCheckLabel, type RoomType } from '../lib/room-score';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID, entrancePlanOutline } from '../lib/street';
 import { zoneContains, zoneStats } from '../lib/zones';
 
 export function StatisticsPanel(): JSX.Element {
   // `layout` from the store selector; `collidingIds` stays on the context.
   const layout = useLayout();
+  const unit = useLengthUnit();
   // The editor as the drawer holds it: frozen while the drawer is closed.
   const { collidingIds, layout: heldLayout, activeFloorIndex: heldFloorIndex } = useRoomEditor();
   const budget = budgetOf(layout);
@@ -100,10 +102,10 @@ export function StatisticsPanel(): JSX.Element {
         <p className="text-muted-foreground">Whole house</p>
         <StatRow label="Items">{allItems.length}</StatRow>
         <StatRow label="Floors">{layout.floors.length}</StatRow>
-        <StatRow label="Area per floor">{roomArea.toFixed(1)} m²</StatRow>
-        <StatRow label="Total floor area">{totalArea.toFixed(1)} m²</StatRow>
+        <StatRow label="Area per floor">{formatArea(roomArea, unit)}</StatRow>
+        <StatRow label="Total floor area">{formatArea(totalArea, unit)}</StatRow>
         <StatRow label="Furniture footprint">
-          {footprint.toFixed(1)} m² ({density.toFixed(0)}%)
+          {formatArea(footprint, unit)} ({density.toFixed(0)}%)
         </StatRow>
         <ProgressBar value={density / 100} label="Coverage" intent={density > 70 ? 'warning' : 'normal'} />
 
@@ -145,7 +147,7 @@ export function StatisticsPanel(): JSX.Element {
             <p className="text-muted-foreground">Rooms</p>
             {roomRows.map((row) => (
               <StatRow key={row.key} label={row.label}>
-                {row.area.toFixed(1)} m²
+                {formatArea(row.area, unit)}
               </StatRow>
             ))}
           </div>
@@ -166,7 +168,7 @@ export function StatisticsPanel(): JSX.Element {
                 </span>
                 <span className="shrink-0 font-medium">
                   {row.itemCount} · {CURRENCY_SYMBOL}
-                  {row.cost.toLocaleString()} · {row.area.toFixed(1)} m²
+                  {row.cost.toLocaleString()} · {formatArea(row.area, unit)}
                 </span>
               </div>
             ))}
@@ -186,7 +188,7 @@ export function StatisticsPanel(): JSX.Element {
                 </div>
                 {row.missing.length > 0 && (
                   <p className="text-muted-foreground">
-                    For more stars: {ROOM_CHECKS.filter((check) => row.missing.includes(check.key)).map((check) => check.label).join(', ')}
+                    For more stars: {ROOM_CHECKS.filter((check) => row.missing.includes(check.key)).map((check) => roomCheckLabel(check, unit)).join(', ')}
                   </p>
                 )}
               </div>

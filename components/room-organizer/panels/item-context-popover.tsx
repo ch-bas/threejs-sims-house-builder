@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { useRoomEditor } from '../contexts';
+import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
@@ -10,6 +10,7 @@ import { placedItemVariants } from '../lib/catalog-variants';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
 import { lockedNote } from '../lib/editor-notices';
+import { formatMetres } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { isWallMounted } from '../lib/opening-snap';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
@@ -60,6 +61,7 @@ export interface ItemContextPopoverProps {
 export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element {
   const { actions, recentColors, pushColor } = useRoomEditor();
   const { selectedItem: item } = useSelection();
+  const unit = useLengthUnit();
   // EXPLORE never edits the house, the 2D plan included (#643, #699): the
   // item can still be selected and inspected, but every control that would
   // change it is off, with the reason as its hint.
@@ -215,7 +217,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                   }}
                 >
-                  ({item.position.x.toFixed(2)}, {item.position.z.toFixed(2)})
+                  ({formatMetres(item.position.x, 2, unit)}, {formatMetres(item.position.z, 2, unit)})
                 </p>
               )
             )}
@@ -408,7 +410,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 max={sliderMax(dimension, item)}
                 step={0.1}
                 value={item[dimension.key]}
-                format={(v) => `${v.toFixed(2)} m`}
+                format={(v) => formatMetres(v, 2, unit)}
                 onChange={(value) => actions.resizeItem(item.id, dimension.key, value)}
                 labelWidth={14}
                 uppercaseLabel={false}
@@ -465,7 +467,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               max={MAX_SILL_HEIGHT}
               step={0.05}
               value={windowSillHeight(item)}
-              format={(v) => `${v.toFixed(2)} m`}
+              format={(v) => formatMetres(v, 2, unit)}
               onChange={(value) => actions.setSillHeight(item.id, value)}
               labelWidth={TYPE_LABEL_WIDTH}
               disabled={lockedOff}
@@ -480,7 +482,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
               min={2}
               max={item.isWiFiAccessPoint ? 20 : 15}
               step={0.5}
-              format={(v) => `${v.toFixed(1)} m`}
+              format={(v) => formatMetres(v, 1, unit)}
               onChange={(value) => actions.setSignalRange(item.id, value)}
               disabled={exploring}
               title={exploreHint}
@@ -735,6 +737,7 @@ interface CameraModelCardProps {
 
 function CameraModelCard({ disabled, modelId, fov, range, onPickModel, onSetFov, onSetRange }: CameraModelCardProps): JSX.Element {
   const hint = disabled ? NOT_WHILE_EXPLORING : undefined;
+  const unit = useLengthUnit();
   return (
     <div
       style={{
@@ -781,7 +784,7 @@ function CameraModelCard({ disabled, modelId, fov, range, onPickModel, onSetFov,
         min={2}
         max={100}
         step={0.5}
-        format={(v) => `${v.toFixed(1)} m`}
+        format={(v) => formatMetres(v, 1, unit)}
         onChange={onSetRange}
         disabled={disabled}
         title={hint}

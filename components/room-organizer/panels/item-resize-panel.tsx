@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { useRoomEditor } from '../contexts';
+import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { FURNITURE_CATALOG } from '../lib/constants';
 import { formatMetres } from '../lib/format';
@@ -383,11 +383,12 @@ interface DimensionSliderProps {
 
 function DimensionSlider({ item, dimension, disabled, title, onChange }: DimensionSliderProps): JSX.Element {
   const inputId = useId();
+  const unit = useLengthUnit();
   const value = item[dimension.key];
   return (
     <div title={title} className={disabled ? 'opacity-50' : undefined}>
       <Label htmlFor={inputId} className="text-xs">
-        {dimension.label}: {formatMetres(value, 2)}
+        {dimension.label}: {formatMetres(value, 2, unit)}
       </Label>
       <Input
         id={inputId}
@@ -454,14 +455,15 @@ function SignalRangeSlider({
   value,
   disabled,
   title,
-  format = (v) => formatMetres(v, 1),
+  format,
   onChange,
 }: SignalRangeSliderProps): JSX.Element {
   const id = useId();
+  const unit = useLengthUnit();
   return (
     <div>
       <Label htmlFor={id} className="text-xs">
-        {label}: {format(value)}
+        {label}: {format ? format(value) : formatMetres(value, 1, unit)}
       </Label>
       <Input
         id={id}

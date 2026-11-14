@@ -71,6 +71,8 @@ export function SliderRow(props: SliderRowProps): JSX.Element {
         max={max}
         step={step}
         value={value}
+        // Read out as shown, so a length is spoken in the unit on screen (#725).
+        aria-valuetext={format(value)}
         disabled={disabled}
         onChange={(event) => onChange(parseFloat(event.target.value))}
         // Only the track dims: the label and value are information (#640).

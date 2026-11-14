@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useEditorViewActions, useViewSettings } from '../contexts';
+import { useEditorViewActions, useLengthUnit, useViewSettings } from '../contexts';
 import { layoutStore, useActiveFloorIndex, useLayoutActions, useLayoutStore } from '../hooks/use-layout-store';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { useRefusal } from '../hooks/use-refusal';
@@ -21,6 +21,7 @@ import { DISABLED_TILE } from './wall-display-pill';
 const ROW_STYLE = { flex: 1, textAlign: 'left', padding: '6px 10px', borderRadius: 8 } as const;
 
 export function FloorSwitcher(): JSX.Element {
+  const unit = useLengthUnit();
   // Layout slices come from the store via atomic selectors; view/toggle stay on
   // the context (mixed consumption — the incremental migration path).
   const floors = useLayoutStore((s) => s.layout.floors);
@@ -240,7 +241,7 @@ export function FloorSwitcher(): JSX.Element {
                       <span>
                         {floor.items.length} item{floor.items.length === 1 ? '' : 's'}
                       </span>
-                      <span>{formatMetres(storeyHeight(floor))}</span>
+                      <span>{formatMetres(storeyHeight(floor), undefined, unit)}</span>
                     </span>
                   </span>
               </button>
@@ -322,7 +323,7 @@ export function FloorSwitcher(): JSX.Element {
         style={{ fontSize: 10, margin: 0 }}
       >
         {`${touch ? 'Tap ✎ to rename a floor.' : 'Double-click a name to rename.'} Each floor stacks its storey height above the one below — `}
-        {formatMetres(buildingHeight(floors))} to the eaves.
+        {formatMetres(buildingHeight(floors), undefined, unit)} to the eaves.
       </p>
     </div>
   );

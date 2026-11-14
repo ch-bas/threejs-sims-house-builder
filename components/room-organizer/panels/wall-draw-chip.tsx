@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useLengthUnit } from '../contexts';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { formatMetres, formatSize } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
@@ -66,6 +67,7 @@ export interface WallDrawChipProps {
  */
 export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProps): JSX.Element {
   const touch = useMediaQuery(COARSE_POINTER_QUERY);
+  const unit = useLengthUnit();
   const [text, setText] = useState<string | null>(null);
   const { hasAnchor } = status;
   const open = text !== null;
@@ -137,7 +139,7 @@ export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProp
           </div>
           {status.stamp.size && (
             <div className="pc-blurb" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', paddingLeft: 20 }}>
-              {formatSize(status.stamp.size.width, status.stamp.size.depth)}
+              {formatSize(status.stamp.size.width, status.stamp.size.depth, undefined, unit)}
             </div>
           )}
           {status.stamp.refusal && (
@@ -155,7 +157,7 @@ export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProp
           <div className="pc-blurb" style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', paddingLeft: 20, minHeight: ROW_HEIGHT }}>
             {status.currentLength !== undefined && status.currentLength !== null && (
               <>
-                {formatMetres(status.currentLength, 2)}
+                {formatMetres(status.currentLength, 2, unit)}
                 {status.angle !== undefined && status.angle !== null ? ` · ${status.angle}°` : ''}
               </>
             )}

@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { useEditorViewActions, useRoomEditor, useViewSettings } from '../contexts';
+import { useEditorViewActions, useLengthUnit, useRoomEditor, useViewSettings } from '../contexts';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { requestZoneName } from '../lib/editor-notices';
+import { formatArea } from '../lib/format';
 import { hasTooManyWalls, MAX_ROOM_WALLS } from '../lib/room-detect';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { MAX_ZONES, defaultZoneName, hasFloorFinish, nextZoneColor, roomsToName, zoneFromRoom, zoneStats } from '../lib/zones';
@@ -77,6 +78,7 @@ function ZoneFinish({ zone }: { zone: RoomZone }): JSX.Element {
 export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
   const { layout, activeFloor, actions } = useRoomEditor();
   const view = useViewSettings('drawZoneMode');
+  const unit = useLengthUnit();
   const { setView } = useEditorViewActions();
   const zones = activeFloor.zones ?? [];
   const floorIndex = planFloorIndex(layout.floors, activeFloor);
@@ -149,7 +151,7 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
           <ul className="space-y-1 border-t pt-2" aria-label="Rooms without a name">
             {rooms.map((room) => (
               <li key={`${room.anchor.x}:${room.anchor.z}`} className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground">Closed room · {room.area.toFixed(1)} m²</span>
+                <span className="text-muted-foreground">Closed room · {formatArea(room.area, unit)}</span>
                 <Button
                   variant="outline"
                   size="sm"
@@ -212,7 +214,7 @@ export function ZonesPanel({ onDrawStart }: ZonesPanelProps = {}): JSX.Element {
                     )}
                     <span className="block text-muted-foreground">
                       {stats.itemCount} {stats.itemCount === 1 ? 'item' : 'items'} · {CURRENCY_SYMBOL}
-                      {stats.cost.toLocaleString()} · {stats.area.toFixed(1)} m²
+                      {stats.cost.toLocaleString()} · {formatArea(stats.area, unit)}
                       {zone.outline ? ' · follows its walls' : ''}
                     </span>
                   </div>
