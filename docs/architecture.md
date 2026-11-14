@@ -207,6 +207,7 @@ components/
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects
     │   ├── use-item-drag.ts             Drag fast-path + camera wall-seat on drop
+    │   ├── use-item-commands.ts         Rotate, twist, remove, duplicate, copy/paste, nudge and lock on the selection, with their refusals and cues
     │   ├── use-floor-keep-out.ts        Porch + stairwell keep-out for collisions, memoised (#285, #372)
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
