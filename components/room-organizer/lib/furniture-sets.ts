@@ -1,3 +1,4 @@
+import { catalogFields } from './catalog-variants';
 import { FURNITURE_CATALOG } from './constants';
 import { rotatedHalfExtents } from './footprint';
 import { hasCollisions, itemsOverlap, type KeepOutRect } from './geometry';
@@ -136,7 +137,9 @@ function pieceKind(base: Pick<SetItemSnapshot, 'type' | 'category'>): PieceKind 
 function resolveSpecs(set: FurnitureSet): ResolvedSpec[] {
   const specs: ResolvedSpec[] = [];
   for (const spec of set.items) {
-    const base = spec.snapshot ?? FURNITURE_CATALOG.find((entry) => entry.type === spec.type);
+    const entry = FURNITURE_CATALOG.find((candidate) => candidate.type === spec.type);
+    // The entry's colour list stays in the catalogue (#621).
+    const base = spec.snapshot ?? (entry && catalogFields(entry));
     if (base) specs.push({ spec, base });
   }
   return specs;

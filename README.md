@@ -25,7 +25,7 @@ link.
   roof with dormers.
 - **Walls and openings**: exterior and drawn interior walls, doors and windows
   that cut through them, per-wall paint and procedural floor and wall patterns.
-- **69 furniture items** in 12 categories, ready-made and your own furniture
+- **73 furniture items** in 12 categories, ready-made and your own furniture
   sets, themes, room templates and a budget you can make strict.
 - **Editing in 3D and on the 2D plan**: drag with snapping, multi-select,
   groups, align and distribute, copy and paste, locks, and undo/redo for

@@ -8,6 +8,7 @@ export type FurnitureType =
   | 'dining-chair'
   | 'bench'
   | 'sofa'
+  | 'bar-stool'
   | 'table'
   | 'dining-table'
   | 'coffee-table'
@@ -23,6 +24,7 @@ export type FurnitureType =
   | 'floor-lamp'
   | 'lamppost'
   | 'pendant-light'
+  | 'ceiling-fan'
   | 'plant'
   | 'tree'
   | 'pine-tree'
@@ -46,11 +48,13 @@ export type FurnitureType =
   | 'dishwasher'
   | 'kitchen-sink'
   | 'counter'
+  | 'microwave'
   | 'bbq'
   | 'toilet'
   | 'bathtub'
   | 'shower'
   | 'bathroom-sink'
+  | 'washer'
   | 'rug'
   | 'painting'
   | 'vase'
@@ -158,9 +162,23 @@ export interface FurnitureItem {
 
 export type CameraPreset = 'iso' | 'top' | 'front' | 'corner';
 
+/**
+ * A colour a catalogue entry comes in (#621): the tile's swatch dots pick
+ * one before placing, and the item popover offers them again. Colour only:
+ * every builder already reads `color`, so a variant needs no new item field.
+ */
+export interface CatalogVariant {
+  name: string;
+  color: string;
+  /** The variant's own price; absent is the entry's. */
+  price?: number;
+}
+
 export type CatalogItem = Omit<FurnitureItem, 'id' | 'position' | 'rotation' | 'price' | 'category'> & {
   price: number;
   category: FurnitureCategory;
+  /** The colours on offer, the first one the entry's own; never copied onto a placed item. */
+  variants?: readonly CatalogVariant[];
 };
 
 export type WallId = 'north' | 'south' | 'east' | 'west';

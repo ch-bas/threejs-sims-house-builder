@@ -1,4 +1,5 @@
 import { activeWriteOff, budgetBlockedReason, furnitureSpend, hardBudgetLoss, isHardBudgetOn, purchasePrice } from './budget';
+import { catalogFields } from './catalog-variants';
 import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from './constants';
 import { notify } from './editor-notices';
 import { floorKeepOut } from './floor-keep-out';
@@ -112,7 +113,8 @@ export function surpriseLayout(options: SurpriseOptions): FurnitureItem[] {
       : floorPosition(rng, room, choice, placed);
     if (!placement) continue;
     decor.push({
-      ...choice,
+      // The entry's colour list stays in the catalogue (#621).
+      ...catalogFields(choice),
       id: `surprise-decor-${idTag}-${i}`,
       position: placement.position,
       rotation: placement.rotation,

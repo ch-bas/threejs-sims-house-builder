@@ -1,4 +1,5 @@
 import { bookSale, budgetSpent, isHardBudgetOn } from '../lib/budget';
+import { catalogFields } from '../lib/catalog-variants';
 import {
   DEFAULT_BUDGET,
   DEFAULT_ROOF,
@@ -432,7 +433,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // unreadable on the next load (#593).
       if (action.position && !isFinitePosition(action.position)) return state;
       const newItem: FurnitureItem = {
-        ...action.catalogItem,
+        // The entry's colour list stays in the catalogue (#621).
+        ...catalogFields(action.catalogItem),
         id: action.id,
         locked: true,
         position: clampPosition(action.position ?? { x: 0, z: 0 }),
@@ -1486,7 +1488,7 @@ function findEntranceDoor(floors: readonly FloorLayout[]): FurnitureItem | undef
 function catalogEntranceDoor(): FurnitureItem | undefined {
   const catalogDoor = FURNITURE_CATALOG.find((item) => item.type === 'door');
   // Structure, not furniture: it adds nothing to the furniture bill (#382).
-  return catalogDoor && { ...catalogDoor, id: ENTRANCE_DOOR_ID, locked: true, price: 0 };
+  return catalogDoor && { ...catalogFields(catalogDoor), id: ENTRANCE_DOOR_ID, locked: true, price: 0 };
 }
 
 function findEntranceWall(floors: readonly FloorLayout[]): InteriorWall | undefined {

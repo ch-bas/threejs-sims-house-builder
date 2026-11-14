@@ -1,13 +1,13 @@
 import { type BuilderContext, type FurnitureBuilder, type ThreeModule, buildFallback } from './builder-utils';
-import { buildToilet, buildBathtub, buildShower } from './builders/builders-bathroom';
+import { buildToilet, buildBathtub, buildShower, buildWasher } from './builders/builders-bathroom';
 import { buildBed, buildNightstand, buildDresser } from './builders/builders-bedroom';
 import {
   buildRug, buildPainting, buildVase, buildMirror, buildCurtains,
   buildWallShelf, buildWallClock, buildCandles, buildBooksStack,
 } from './builders/builders-decor';
 import { buildTV, buildComputer, buildWiFi, buildRouter, buildCCTV, buildSecurityCamera } from './builders/builders-electronics';
-import { buildFridge, buildStove, buildSink, buildCounter } from './builders/builders-kitchen';
-import { buildLamp, buildPendantLight, buildLamppost } from './builders/builders-lighting';
+import { buildFridge, buildStove, buildSink, buildCounter, buildMicrowave } from './builders/builders-kitchen';
+import { buildLamp, buildPendantLight, buildLamppost, buildCeilingFan } from './builders/builders-lighting';
 import {
   buildFence, buildPool, buildBbq, buildMailbox, buildBirdbath,
   buildSteppingStone, buildGardenBench, buildPicnicTable, buildPond,
@@ -17,7 +17,7 @@ import {
   buildPlant, buildFlowerpot, buildTree, buildPineTree, buildBush,
   buildHedge, buildFlowerBed, buildTulips, buildSunflower, buildRoseBush,
 } from './builders/builders-plants';
-import { buildChair, buildArmchair, buildBench, buildSofa } from './builders/builders-seating';
+import { buildChair, buildArmchair, buildBench, buildSofa, buildBarStool } from './builders/builders-seating';
 import { buildBookshelf, buildCabinet } from './builders/builders-storage';
 import { buildDoor, buildWindow, buildStairs } from './builders/builders-structure';
 import { buildTableOrDesk } from './builders/builders-tables';
@@ -31,6 +31,7 @@ const BUILDERS: Record<string, FurnitureBuilder> = {
   armchair: buildArmchair,
   bench: buildBench,
   sofa: buildSofa,
+  'bar-stool': buildBarStool,
   table: buildTableOrDesk,
   'dining-table': buildTableOrDesk,
   'coffee-table': buildTableOrDesk,
@@ -58,6 +59,8 @@ const BUILDERS: Record<string, FurnitureBuilder> = {
   'kitchen-sink': buildSink,
   'bathroom-sink': buildSink,
   counter: buildCounter,
+  microwave: buildMicrowave,
+  washer: buildWasher,
   toilet: buildToilet,
   bathtub: buildBathtub,
   shower: buildShower,
@@ -67,6 +70,7 @@ const BUILDERS: Record<string, FurnitureBuilder> = {
   mirror: buildMirror,
   curtains: buildCurtains,
   'pendant-light': buildPendantLight,
+  'ceiling-fan': buildCeilingFan,
   'wall-shelf': buildWallShelf,
   'wall-clock': buildWallClock,
   candles: buildCandles,

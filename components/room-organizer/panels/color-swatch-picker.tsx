@@ -23,6 +23,8 @@ export interface ColorSwatchPickerProps {
   value: string;
   /** Preset swatches to offer (pre-sliced by the caller). */
   swatches: readonly string[];
+  /** The colours the item's catalogue entry comes in (#621), offered first, by name. */
+  named?: readonly { name: string; color: string }[];
   /** Recently used colours from the editor context (pre-sliced by the caller). */
   recent: readonly string[];
   onChange(color: string): void;
@@ -48,7 +50,22 @@ function isSelected(value: string, swatch: string): boolean {
   return value.toLowerCase() === swatch.toLowerCase();
 }
 
-function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPickerProps): JSX.Element {
+interface Preset {
+  color: string;
+  label: string;
+  title?: string;
+}
+
+/** The named colours, then the plain swatches they don't already cover. */
+function presets(swatches: readonly string[], named: readonly { name: string; color: string }[] = []): Preset[] {
+  const list: Preset[] = named.map(({ name, color }) => ({ color, label: `Use ${name}`, title: name }));
+  for (const swatch of swatches) {
+    if (!list.some((preset) => isSelected(preset.color, swatch))) list.push({ color: swatch, label: `Use colour ${swatch}` });
+  }
+  return list;
+}
+
+function GlassSkin({ value, swatches, named, recent, onChange, onCommit }: ColorSwatchPickerProps): JSX.Element {
   const labelId = useId();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -84,13 +101,14 @@ function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchP
           }}
         />
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1 }}>
-          {swatches.map((swatch) => {
+          {presets(swatches, named).map(({ color: swatch, label, title }) => {
             const selected = isSelected(value, swatch);
             return (
               <button
                 key={swatch}
                 type="button"
-                aria-label={`Use colour ${swatch}`}
+                aria-label={label}
+                title={title}
                 aria-pressed={selected}
                 onClick={() => onChange(swatch)}
                 style={{
@@ -142,7 +160,7 @@ function GlassSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchP
   );
 }
 
-function CardSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPickerProps): JSX.Element {
+function CardSkin({ value, swatches, named, recent, onChange, onCommit }: ColorSwatchPickerProps): JSX.Element {
   const inputId = useId();
   return (
     <div className="space-y-2">
@@ -159,11 +177,12 @@ function CardSkin({ value, swatches, recent, onChange, onCommit }: ColorSwatchPi
           className="h-8 w-10 rounded border cursor-pointer"
         />
         <div className="flex flex-wrap gap-1">
-          {swatches.map((swatch) => (
+          {presets(swatches, named).map(({ color: swatch, label, title }) => (
             <button
               key={swatch}
               type="button"
-              aria-label={`Use colour ${swatch}`}
+              aria-label={label}
+              title={title}
               aria-pressed={isSelected(value, swatch)}
               onClick={() => onChange(swatch)}
               className={`h-5 w-5 rounded-full border ${
