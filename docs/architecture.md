@@ -252,6 +252,7 @@ components/
     │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
+    │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
@@ -321,7 +322,7 @@ components/
         ├── actions-panel.tsx
         ├── print-options.tsx            Print / PDF button and its folding options (paper, orientation, scale, outdoor, every floor)
         ├── shortcuts-panel.tsx
-        ├── welcome-banner.tsx
+        ├── welcome-banner.tsx           First-run start chooser: start empty, a template (with its plan), or a random one (#721)
         ├── minimap.tsx
         ├── plan-thumb.tsx
         ├── achievements-panel.tsx
