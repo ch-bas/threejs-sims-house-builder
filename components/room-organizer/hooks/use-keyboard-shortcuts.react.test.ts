@@ -2,6 +2,7 @@
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
+import { KEYMAP } from '../lib/keymap';
 import { useKeyboardShortcuts, type KeyboardShortcutHandlers } from './use-keyboard-shortcuts';
 
 function makeHandlers(): { [K in keyof KeyboardShortcutHandlers]: ReturnType<typeof vi.fn> } {
@@ -478,3 +479,73 @@ describe('useKeyboardShortcuts — locked items (#635)', () => {
     expect(dragging.toggleLock).not.toHaveBeenCalled();
   });
 });
+
+describe('every key the shortcuts bind is in the key table (#932)', () => {
+  afterEach(cleanup);
+
+  /** A chord as the table writes it: Mod for Ctrl or ⌘, letters upper case, arrows as one. */
+  function chordOf(key: string, mod: boolean, shift: boolean): string {
+    const name = key.startsWith('Arrow') ? 'Arrows' : key.length === 1 ? key.toUpperCase() : key;
+    return [...(mod ? ['Mod'] : []), ...(shift ? ['Shift'] : []), name].join('+');
+  }
+
+  it('presses every key, with and without Ctrl, ⌘ and Shift: each that does something is listed', () => {
+    const listed = new Set(KEYMAP.filter((binding) => binding.context === 'edit').flatMap((binding) => binding.keys.map((chord) => chord.join('+'))));
+    const named = ['Enter', 'Escape', 'Delete', 'Backspace', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', ' ', 'Home', 'End', 'F1'];
+    const printable = [...'abcdefghijklmnopqrstuvwxyz0123456789[]-=;\',./`'];
+    const bound: string[] = [];
+    for (const placing of [false, true]) {
+      for (const key of [...printable, ...named]) {
+        for (const modifier of [{}, { ctrlKey: true }, { metaKey: true }]) {
+          for (const shiftKey of [false, true]) {
+            cleanup();
+            const { calls } = setup(false, placing, { hasSignalItems: true });
+            press(key, { ...modifier, shiftKey });
+            const fired = calls().length > 0;
+            if (!fired) continue;
+            const mod = Object.keys(modifier).length > 0;
+            const chord = chordOf(key, mod, shiftKey);
+            // Shift on a bare letter is the same key (Caps Lock, #294) unless
+            // the table says otherwise; Escape and Enter take any modifiers.
+            if (listed.has(chord) || (shiftKey && listed.has(chordOf(key, mod, false)))) continue;
+            if ((key === 'Escape' || key === 'Enter') && listed.has(chordOf(key, false, false))) continue;
+            bound.push(chord);
+          }
+        }
+      }
+    }
+    expect(bound).toEqual([]);
+  });
+
+  it('every editing key in the table that the shortcuts own does something', () => {
+    const owned = ['Z', 'Y', 'D', 'C', 'V', 'R', 'U', 'F', '2', 'M', 'G', 'W', 'P', '[', ']', 'PageUp', 'PageDown', 'Delete', 'Backspace', 'Escape', 'Arrows'];
+    for (const name of owned) {
+      const binding = KEYMAP.find((entry) => entry.context === 'edit' && entry.keys.some((chord) => chord[chord.length - 1] === name));
+      expect(binding, name).toBeDefined();
+      const chord = binding!.keys.find((keys) => keys[keys.length - 1] === name)!;
+      cleanup();
+      const { calls } = setup(false, false, { hasSignalItems: true });
+      const key = name === 'Arrows' ? 'ArrowUp' : name.length === 1 ? name.toLowerCase() : name;
+      press(key, { ctrlKey: chord.includes('Mod'), shiftKey: chord.includes('Shift') });
+      expect(calls().length, name).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('camera keys move the camera once per press (#930)', () => {
+  afterEach(cleanup);
+
+  it.each([
+    ['F', 'f', 'focusOnSelection'],
+    ['PageUp', 'PageUp', 'changeFloor'],
+    ['PageDown', 'PageDown', 'changeFloor'],
+  ])('a held %s acts once', (_name, key, handler) => {
+    const { handlers } = setup(false);
+    press(key);
+    const repeat = press(key, { repeat: true });
+    press(key, { repeat: true });
+    expect(handlers[handler as keyof typeof handlers]).toHaveBeenCalledTimes(1);
+    expect(repeat.defaultPrevented).toBe(true);
+  });
+});
+

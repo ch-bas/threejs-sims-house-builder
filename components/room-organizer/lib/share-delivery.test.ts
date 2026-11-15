@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { INITIAL_LAYOUT } from './initial-layout';
+import { exportFileName } from './plan-export/download';
+import { parseStoredLayout } from './schema';
 import { MAX_SHARE_HASH_LENGTH } from './share';
-import { deliverShareLink } from './share-delivery';
+import { deliverHouseFile, deliverShareLink, fileActionLabel, houseFile } from './share-delivery';
 
 const URL_OK = 'https://example.test/#layout=abc';
 const encoded = (url = URL_OK, strippedFloorPlan = false) => Promise.resolve({ url, strippedFloorPlan });
@@ -80,5 +83,41 @@ describe('deliverShareLink (#685)', () => {
     share.mockImplementation(() => Promise.resolve());
     await outcome.share?.();
     expect(share).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the house as a file (#934)', () => {
+  const layout = { ...INITIAL_LAYOUT, name: 'Garden Flat' };
+
+  it('is the JSON Export writes, named the same way, and reads back as the house', async () => {
+    const file = houseFile(layout);
+    expect(file.name).toBe(exportFileName('Garden Flat', 'json'));
+    expect(file.type).toBe('application/json');
+    expect(parseStoredLayout(JSON.parse(await file.text()))?.name).toBe('Garden Flat');
+  });
+
+  it('offers the sheet where it takes the file, a download elsewhere', () => {
+    expect(fileActionLabel({ shareFile: () => Promise.resolve(), download: () => undefined })).toBe('Share file');
+    expect(fileActionLabel({ download: () => undefined })).toBe('Download file');
+  });
+
+  it('shares through the sheet, and a dismissed sheet is the end of it', async () => {
+    const download = vi.fn();
+    const file = houseFile(layout);
+    const shareFile = vi.fn(() => Promise.resolve());
+    expect(await deliverHouseFile(file, { shareFile, download })).toBe('shared');
+    expect(shareFile).toHaveBeenCalledWith(file);
+    const dismissed = () => Promise.reject(new DOMException('Dismissed', 'AbortError'));
+    expect(await deliverHouseFile(file, { shareFile: dismissed, download })).toBe('cancelled');
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('downloads when the sheet fails or there is none', async () => {
+    const download = vi.fn();
+    const file = houseFile(layout);
+    expect(await deliverHouseFile(file, { shareFile: refused, download })).toBe('downloaded');
+    expect(await deliverHouseFile(file, { download })).toBe('downloaded');
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(download).toHaveBeenCalledWith(file);
   });
 });

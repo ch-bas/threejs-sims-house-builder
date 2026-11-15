@@ -4,20 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
-import {
-  BACKUP_FAILURE_TEXT,
-  backupFileName,
-  createBackup,
-  describeRestore,
-  libraryHousesLeftOut,
-  parseBackup,
-  restoreBackup,
-  summarizeBackup,
-  type BackupSummary,
-} from '../lib/backup';
+import { layoutStore } from '../hooks/use-layout-store';
+import { browserStorageManager } from '../hooks/use-storage-persist';
+import { backupFileName, createBackup, libraryHousesLeftOut } from '../lib/backup';
+import { offerBackupRestore, plural, subscribeBackupRestored } from '../lib/backup-file';
+import { queryPersistence, readStorageCare, recordBackup, subscribeStorageCare, type StorageCare } from '../lib/backup-reminder';
 import { askConfirm } from '../lib/confirm-dialog';
 import { subscribeCustomSets } from '../lib/custom-sets';
 import { notify } from '../lib/editor-notices';
+import { formatAge } from '../lib/format';
 import { deleteNamedLayout, listSavedLayouts, subscribeLibrary } from '../lib/library';
 import { localStorageOrNull } from '../lib/persistence';
 import { downloadTextFile } from '../lib/plan-export/download';
@@ -44,6 +39,7 @@ const TENANT_COLOURS: Record<StorageTenant, string> = {
   main: 'bg-emerald-500',
   library: 'bg-sky-500',
   restorePoints: 'bg-violet-500',
+  keptVersions: 'bg-indigo-400',
   recovery: 'bg-amber-500',
   pasteboard: 'bg-pink-500',
   customSets: 'bg-teal-500',
@@ -54,29 +50,31 @@ const TENANT_COLOURS: Record<StorageTenant, string> = {
 /** The autosave is debounced; measuring sooner would show the save before it. */
 const REMEASURE_AFTER_EDIT_MS = 2_000;
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
-
-/** What a backup holds, leaving out the parts it has none of. */
-function describeContents(summary: BackupSummary): string {
-  const parts = [
-    summary.hasHouse ? 'a house' : null,
-    summary.library > 0 ? plural(summary.library, 'saved layout') : null,
-    summary.restorePoints > 0 ? plural(summary.restorePoints, 'restore point') : null,
-    summary.received > 0 ? plural(summary.received, 'received house') : null,
-    summary.customSets > 0 ? plural(summary.customSets, 'custom set') : null,
-  ].filter((part): part is string => part !== null);
-  const held = parts.length > 0 ? parts.join(', ') : 'only settings';
-  return summary.invalid > 0 ? `${held}; ${plural(summary.invalid, 'part')} can’t be read` : held;
-}
-
 export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelProps): JSX.Element {
   const exploring = useExploring();
   const editHint = exploring ? NOT_WHILE_EXPLORING : undefined;
   const [usage, setUsage] = useState<StorageUsage>(() => measureStorage(null));
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Whether the browser keeps this site's storage (#928); null where it can't say.
+  const [kept, setKept] = useState<boolean | null>(null);
+  const [care, setCare] = useState<StorageCare>(() => readStorageCare());
+
+  useEffect(() => {
+    let live = true;
+    const read = (): void => {
+      setCare(readStorageCare());
+      void queryPersistence(browserStorageManager()).then((answer) => {
+        if (live) setKept(answer);
+      });
+    };
+    read();
+    const unsubscribe = subscribeStorageCare(read);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, []);
 
   const measure = useCallback(() => {
     setUsage(measureStorage(localStorageOrNull()));
@@ -90,11 +88,14 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
     const unsubscribeSnapshots = subscribeSnapshots(measure);
     const unsubscribeSets = subscribeCustomSets(measure);
     const unsubscribeLibrary = subscribeLibrary(measure);
+    // A backup dropped on the page (#934) restores settings and sets too.
+    const unsubscribeRestored = subscribeBackupRestored(measure);
     return () => {
       window.removeEventListener('storage', onStorage);
       unsubscribeSnapshots();
       unsubscribeSets();
       unsubscribeLibrary();
+      unsubscribeRestored();
     };
   }, [measure]);
 
@@ -138,6 +139,10 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
   const handleBackup = (): void => {
     const bundle = createBackup(currentLayout);
     downloadTextFile(backupFileName(), 'application/json', JSON.stringify(bundle));
+    // Recorded once the download has been handed to the browser: a page
+    // can't tell whether the player then cancels the save dialog, so a
+    // cancelled download still counts as a backup here.
+    recordBackup(Date.now());
     const leftOut = libraryHousesLeftOut();
     if (leftOut > 0) {
       notify(
@@ -153,22 +158,8 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
     if (!file) return;
     void file.text().then(
       async (text) => {
-        const parsed = parseBackup(text);
-        if (!parsed.ok) {
-          notify(BACKUP_FAILURE_TEXT[parsed.reason], 'error');
-          return;
-        }
-        const ok = await askConfirm({
-          title: `Restore from “${file.name}”?`,
-          body: `It holds ${describeContents(summarizeBackup(parsed.bundle))}. Restoring adds what this browser lacks and never replaces or deletes your houses, sets or settings; the open house stays as it is. Older restore points may give way to make room.`,
-          confirmLabel: 'Restore',
-        });
-        if (!ok) return;
-        const report = restoreBackup(parsed.bundle, currentLayout);
-        changed();
-        const missed = report.invalid > 0 || report.skipped.received.length > 0 ||
-          report.skipped.customSets + report.skipped.restorePoints + report.skipped.recoveryCopies > 0;
-        notify(describeRestore(report), report.failed.length > 0 ? 'error' : missed ? 'info' : 'success');
+        // The house on screen after the answer, not when it asked.
+        if (await offerBackupRestore(text, file.name, () => layoutStore.getState().layout)) changed();
       },
       () => notify('Couldn’t read that file.', 'error')
     );
@@ -263,6 +254,16 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Backup</p>
+          <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="storage-care">
+            {kept !== null && (
+              <p title={kept ? undefined : 'The browser may clear this site’s data when space runs low, or after weeks without a visit. A backup file keeps a copy.'}>
+                {kept ? 'Kept by the browser' : 'May be cleared by the browser'}
+              </p>
+            )}
+            <p title={care.lastBackupAt === null ? undefined : new Date(care.lastBackupAt).toLocaleString()}>
+              {care.lastBackupAt === null ? 'No backup yet' : `Last backup ${formatAge(Math.max(0, Date.now() - care.lastBackupAt))}`}
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="outline"

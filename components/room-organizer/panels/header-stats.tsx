@@ -7,6 +7,7 @@ import { useMediaQuery } from '../hooks/use-media-query';
 import { budgetOf, budgetSpent } from '../lib/budget';
 import { formatAge, formatMoney, formatSizeCompact } from '../lib/format';
 import { HEADER_HIDDEN_QUERY } from '../lib/overlay-queue';
+import { chooseSaveHere } from '../lib/saved-by';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { OverlayStackPortal } from './overlay-stack';
@@ -288,6 +289,11 @@ const SAVE_FAILURE_COPY: Record<SaveFailureReason, { label: string; detail: stri
     label: 'Save failed — export a JSON to keep your work',
     detail: 'The browser refused to save the house. Manage → Export / share → JSON keeps your work.',
   },
+  newer: {
+    label: 'Not saved — a newer version saved this house',
+    detail:
+      'A newer version of the editor last saved this house. Saving here can drop details only that version knows, so this one waits for you: Save here anyway keeps saving in this version, and Manage → Export / share → JSON keeps what is on screen either way.',
+  },
 };
 
 function SaveIndicator({ lastSavedAt, saving, saveError, showLabel = true }: SaveIndicatorProps): JSX.Element {
@@ -350,6 +356,26 @@ function SaveIndicator({ lastSavedAt, saving, saveError, showLabel = true }: Sav
           onClick={() => setAdviceOpen((open) => !open)}
         >
           {adviceOpen ? 'Hide' : 'What to do'}
+        </button>
+      )}
+      {saveError === 'newer' && (
+        // The way through a newer version's stamp (#933), on every pointer.
+        <button
+          type="button"
+          onClick={chooseSaveHere}
+          style={{
+            border: 0,
+            borderRadius: 999,
+            padding: '2px 8px',
+            background: 'rgba(255, 255, 255, 0.12)',
+            color: 'var(--pc-paper)',
+            font: 'inherit',
+            textDecoration: 'underline',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Save here anyway
         </button>
       )}
       {failure && adviceOpen && <p className="pc-save-advice">{failure.detail}</p>}

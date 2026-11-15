@@ -17,7 +17,7 @@ import {
   subscribeLibrary,
 } from './library';
 import { saveLayout } from './persistence';
-import { listSnapshots, recordSnapshot } from './version-history';
+import { VERSION_KEPT_STORAGE_KEY, keepSnapshot, listSnapshots, recordSnapshot } from './version-history';
 
 describe('librarySlotId', () => {
   it('keeps short names unchanged (existing library saves keep their ids)', () => {
@@ -281,6 +281,21 @@ describe('saveNamedLayout — the open house keeps room to autosave (#565)', () 
     expect(librarySaveFailureMessage('autosave-room')).not.toMatch(/Delete some saved layouts/);
     expect(saveNamedLayout(makeLayout(), 'One').ok).toBe(true);
     expect(librarySaveFailureMessage('autosave-room')).toMatch(/Delete some saved layouts/);
+  });
+
+  it('names kept versions when some are kept, and the floor-plan image only when there is one (#935)', () => {
+    expect(librarySaveFailureMessage('quota')).toMatch(/Free some space in Storage & backup/);
+    expect(librarySaveFailureMessage('quota')).not.toMatch(/floor-plan/);
+    expect(librarySaveFailureMessage('quota', makeLayout({ floorPlanImage: 'data:image/png;base64,AAAA' }))).toMatch(
+      /Remove the floor-plan image, and try again/
+    );
+    localStorage.setItem(VERSION_KEPT_STORAGE_KEY, '[]');
+    expect(librarySaveFailureMessage('quota')).not.toMatch(/kept/);
+    recordSnapshot(makeLayout(), { force: true });
+    expect(keepSnapshot(listSnapshots()[0]!.id).ok).toBe(true);
+    expect(saveNamedLayout(makeLayout(), 'One').ok).toBe(true);
+    expect(librarySaveFailureMessage('autosave-room')).toMatch(/Unpin a kept version in History or delete some saved layouts, and try again/);
+    localStorage.removeItem(VERSION_KEPT_STORAGE_KEY);
   });
 
   it('evicts no restore point while finding out a copy would not fit', () => {

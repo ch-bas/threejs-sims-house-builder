@@ -18,7 +18,7 @@ import { CUSTOM_SETS_STORAGE_KEY, listCustomSets, saveCustomSet } from './custom
 import { listSavedLayouts, loadNamedLayout, saveNamedLayout, subscribeLibrary } from './library';
 import { addReceivedLayout, listReceivedLayouts } from './pasteboard';
 import { RECOVERY_STORAGE_KEY, readRecoveryCopies } from './persistence';
-import { getSnapshot, listSnapshots, recordSnapshot } from './version-history';
+import { getSnapshot, keepSnapshot, listKeptVersions, listSnapshots, recordSnapshot } from './version-history';
 import type { RoomLayout } from './types';
 
 const ACHIEVEMENTS_KEY = 'standalone-room-organizer-achievements';
@@ -147,6 +147,7 @@ describe('parseBackup', () => {
       hasHouse: false,
       library: 0,
       restorePoints: 0,
+      keptVersions: 0,
       received: 0,
       customSets: 0,
       invalid: 2,
@@ -236,18 +237,70 @@ describe('restore only adds', () => {
     expect(report.restorePoints).toBe(1);
     expect(listSnapshots().map((summary) => summary.name)).toEqual(['Here', 'Local']);
   });
+
+  it('carries kept versions in a part of their own, names and all, and restores them as kept (#935)', () => {
+    recordSnapshot(house('Liked', 3), { force: true, now: () => 10 });
+    const [point] = listSnapshots();
+    expect(keepSnapshot(point!.id, { label: 'Before the loft' }).ok).toBe(true);
+    const bundle = createBackup(null);
+    expect(bundle.restorePoints).toEqual([]);
+    expect(bundle.keptVersions).toEqual([expect.objectContaining({ id: point!.id, label: 'Before the loft' })]);
+    localStorage.clear();
+    const report = restoreBackup(reread(bundle), house('Current', 1));
+    expect(report.keptVersions).toBe(1);
+    expect(listKeptVersions().map((kept) => [kept.id, kept.label])).toEqual([[point!.id, 'Before the loft']]);
+    expect(listSnapshots()).toEqual([]);
+    expect(describeRestore(report)).toMatch(/1 kept version/);
+  });
+
+  it('a full ring in the file never costs a kept version (#935)', () => {
+    for (let i = 0; i < 5; i++) recordSnapshot(house(`Kept ${i}`, i + 1), { force: true, now: () => 100 + i });
+    for (const summary of listSnapshots()) expect(keepSnapshot(summary.id).ok).toBe(true);
+    for (let i = 0; i < 10; i++) recordSnapshot(house(`Ring ${i}`, i + 1), { force: true, now: () => 1_000 + i });
+    const keptIds = listKeptVersions().map((kept) => kept.id);
+    expect(keptIds).toHaveLength(5);
+    const bundle = createBackup(null);
+    localStorage.clear();
+    restoreBackup(reread(bundle), house('Current', 1));
+    expect(listKeptVersions().map((kept) => kept.id).sort()).toEqual([...keptIds].sort());
+    expect(listSnapshots()).toHaveLength(10);
+  });
+
+  it('restoring into the same browser adds no copy of a kept version to the ring', () => {
+    recordSnapshot(house('Liked', 3), { force: true, now: () => 10 });
+    recordSnapshot(house('Other', 2), { force: true, now: () => 20 });
+    const [, older] = listSnapshots();
+    keepSnapshot(older!.id);
+    const report = restoreBackup(reread(createBackup(null)), house('Current', 1));
+    expect(report.keptVersions + report.restorePoints).toBe(0);
+    expect(listSnapshots().map((summary) => summary.id)).not.toContain(older!.id);
+  });
+
+  it('a file from before kept versions restores its points as before', () => {
+    recordSnapshot(house('Old', 2), { force: true, now: () => 10 });
+    const bundle = createBackup(null) as Partial<BackupBundle>;
+    delete bundle.keptVersions;
+    localStorage.clear();
+    const parsed = parseBackup(JSON.stringify(bundle));
+    expect(parsed.ok && parsed.bundle.invalid).toBe(0);
+    if (!parsed.ok) return;
+    const report = restoreBackup(parsed.bundle, house('Current', 1));
+    expect(report.restorePoints).toBe(1);
+    expect(listKeptVersions()).toEqual([]);
+  });
 });
 
 describe('the restore notice', () => {
   const empty = (): RestoreReport => ({
     library: 0,
     restorePoints: 0,
+    keptVersions: 0,
     recoveryCopies: 0,
     received: 0,
     customSets: 0,
     settings: 0,
     invalid: 0,
-    skipped: { restorePoints: 0, recoveryCopies: 0, customSets: 0, received: [] },
+    skipped: { restorePoints: 0, keptVersions: 0, recoveryCopies: 0, customSets: 0, received: [] },
     failed: [],
     restorePointsDropped: 0,
   });

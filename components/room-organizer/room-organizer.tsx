@@ -8,10 +8,13 @@ import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room
 import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
-import { useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
+import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
+import { NOT_WHILE_EXPLORING, NOT_WHILE_TOURING } from './hooks/use-exploring';
+import { useFileDrop, useLaunchedFiles } from './hooks/use-file-drop';
+import { useFirstStepsAsked } from './hooks/use-first-steps';
 import { useFloorKeepOut } from './hooks/use-floor-keep-out';
 import { useHistory } from './hooks/use-history';
 import { useHouseLoading } from './hooks/use-house-loading';
@@ -23,16 +26,30 @@ import { useKeyboardPlacement } from './hooks/use-keyboard-placement';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useSaveStatus, type SaveStatus, type SaveStatusStore } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
+import { layoutStore } from './hooks/use-layout-store';
 import { usePhotoMode, usePhotoModeActive } from './hooks/use-photo-mode';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
 import { useSceneLife } from './hooks/use-scene-life';
 import { useSelectionActions } from './hooks/use-selection-actions';
+import { useServiceWorker } from './hooks/use-service-worker';
+import { useAskToKeepStorage } from './hooks/use-storage-persist';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
+import {
+  announce,
+  announceSettled,
+  cancelSettledAnnouncement,
+  describeGroupTurn,
+  describeHistoryStep,
+  describeLock,
+  describePlacement,
+  withdrawAnnouncement,
+} from './lib/announce';
+import { noteVersionOpened } from './lib/app-version';
 import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
@@ -57,11 +74,13 @@ import { sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt } from './lib/wall-sides';
 import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
+import { Announcer } from './panels/announcer';
 import { BottomHud } from './panels/bottom-hud';
 import { CameraPad } from './panels/camera-pad';
 import { ChallengeChip } from './panels/challenge-chip';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
+import { FileDropOverlay } from './panels/file-drop-overlay';
 import { FirstStepsCard } from './panels/first-steps-card';
 import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
@@ -231,6 +250,8 @@ export function RoomOrganizer(): JSX.Element {
     pending: pendingAchievements,
     dismiss: dismissAchievements,
   } = useAchievements(layout, knownCollisions);
+  // Ask the browser to keep the houses after the first real edit (#928).
+  useAskToKeepStorage(layout);
 
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
@@ -252,6 +273,11 @@ export function RoomOrganizer(): JSX.Element {
     // The haptics switch, likewise per device (#687).
     if (!loadHapticsChoice()) setView((v) => ({ ...v, hapticsEnabled: false }));
   }, [setView]);
+
+  // This browser opened this version (#931): "What's new" counts from it.
+  useEffect(() => {
+    noteVersionOpened();
+  }, []);
 
   // The zone with handles on the plan (#628). The handles are zone mode's.
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
@@ -311,7 +337,12 @@ export function RoomOrganizer(): JSX.Element {
       markLayoutLoaded();
     },
     [actions]
-  ), { describe: describeLayoutChange });
+  ), {
+    describe: describeLayoutChange,
+    // Screen readers hear what the step took back or brought back (#929).
+    // Always: two undos in a row took back two steps, even with one label.
+    onStep: (kind, label) => announce(describeHistoryStep(kind, label), { tag: 'history', always: true }),
+  });
   // The stable callbacks, so the wrappers below don't change identity every
   // time canUndo/canRedo flips.
   const { commitNow: commitHistoryNow, clear: clearHistory } = history;
@@ -361,6 +392,7 @@ export function RoomOrganizer(): JSX.Element {
   // The shared-link tour (#722): EXPLORE for as long as it lasts, then
   // DESIGN, whichever way it ends.
   const tourPhase = useTourPhase();
+  const firstStepsAsked = useFirstStepsAsked();
   const touring = tourPhase === 'touring';
   const wasTouringRef = useRef(touring);
   useEffect(() => {
@@ -586,7 +618,7 @@ export function RoomOrganizer(): JSX.Element {
   );
   // L2 photo (#626): the canvas only orbits while the HUD is hidden.
   const photoActive = usePhotoModeActive();
-  const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
+  const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, addFrameJob, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
@@ -626,6 +658,8 @@ export function RoomOrganizer(): JSX.Element {
       snapPosition,
       getDragPlaneY,
     });
+  // Offline (#933): the service worker registers after the first frame.
+  useServiceWorker(isReady && !shadersWarming);
 
   wallGhostsRef.current = (preview) => {
     const THREE = threeModuleRef.current;
@@ -791,6 +825,7 @@ export function RoomOrganizer(): JSX.Element {
     canvasRef,
     active: isReady && !view.view2D,
     walkthroughActive,
+    addFrameJob,
   });
 
   const { handleScreenshot, handleExportGlb, handleShareLink, handleImport } = useImportExport({
@@ -856,6 +891,80 @@ export function RoomOrganizer(): JSX.Element {
     if (next < 0 || next >= layout.floors.length) return;
     actions.setActiveFloorIndex(next);
   });
+  // Keyboard edits say what they did in the status line (#929); a pointer
+  // drag stays silent. Read when the keys settle, from the house as it is.
+  const announcePlacement = useEvent((id: string) => {
+    announceSettled(() => {
+      const { layout: house, activeFloorIndex: index } = layoutStore.getState();
+      const floor = house.floors[index];
+      const item = floor?.items.find((entry) => entry.id === id);
+      if (!floor || !item) return '';
+      const collision = collisionMessage(item, floor.items, house.width, house.height, {
+        keepOut,
+        interiorWalls: floor.interiorWalls,
+        storeyHeight: storeyHeight(floor),
+      });
+      const where = { width: house.width, height: house.height, cutout: house.cutout, porch: entrancePlanOutline(house, index), floorIndex: index };
+      return describePlacement(item, where, collision);
+    }, { tag: 'placement' });
+  });
+  // A turn of a multi-selection says how many turned (and how many locked
+  // ones stayed), as Lock does; a held R adds its steps up.
+  const groupTurnRef = useRef(0);
+  const announceGroupTurn = useEvent((ids: ReadonlySet<string>, radians: number) => {
+    groupTurnRef.current += radians;
+    announceSettled(() => {
+      const degrees = (groupTurnRef.current * 180) / Math.PI;
+      groupTurnRef.current = 0;
+      const { layout: house, activeFloorIndex: index } = layoutStore.getState();
+      const members = (house.floors[index]?.items ?? []).filter((entry) => ids.has(entry.id));
+      const locked = members.filter((entry) => entry.locked).length;
+      return describeGroupTurn(members.length - locked, degrees, locked);
+    }, { tag: 'placement' });
+  });
+  // What a placement or lock line describes goes with the selection: a line
+  // still waiting, or still in the region, would talk about what isn't.
+  const announcedSelection = selectedItem?.id ?? null;
+  useEffect(() => {
+    cancelSettledAnnouncement();
+    groupTurnRef.current = 0;
+    withdrawAnnouncement((tag) => tag === 'placement' || tag === 'lock');
+  }, [announcedSelection]);
+  const announcedKeys = useMemo(
+    () => ({
+      moveItem: (id: string, x: number, z: number) => {
+        nudgeItem(id, x, z);
+        announcePlacement(id);
+      },
+      rotateItem: (id: string) => {
+        const group = allSelectedIds.size > 1 && allSelectedIds.has(id) ? new Set(allSelectedIds) : null;
+        if (!rotateItemHandler(id)) return;
+        if (group) announceGroupTurn(group, Math.PI / 2);
+        else announcePlacement(id);
+      },
+      rotateItemBy: (id: string, radians: number) => {
+        const group = allSelectedIds.size > 1 && allSelectedIds.has(id) ? new Set(allSelectedIds) : null;
+        const before = layoutStore.getState();
+        rotateItemByHandler(id, radians);
+        // A refusal (a lock) changes nothing and has its own notice.
+        if (layoutStore.getState().layout === before.layout) return;
+        if (group) announceGroupTurn(group, radians);
+        else announcePlacement(id);
+      },
+      toggleLock: (id: string) => {
+        const before = layoutStore.getState().layout;
+        toggleLock(id);
+        const { layout: house, activeFloorIndex: index } = layoutStore.getState();
+        if (house === before) return;
+        const items = house.floors[index]?.items ?? [];
+        const item = items.find((entry) => entry.id === id);
+        if (!item) return;
+        const count = allSelectedIds.size > 1 && allSelectedIds.has(id) ? allSelectedIds.size : 1;
+        announce(describeLock(item.name, count, item.locked === true), { tag: 'lock' });
+      },
+    }),
+    [nudgeItem, rotateItemHandler, rotateItemByHandler, toggleLock, allSelectedIds, announcePlacement, announceGroupTurn]
+  );
   const shortcutHandlers = useMemo(
     () => ({
       removeItem: removeItemOrSelection,
@@ -863,10 +972,7 @@ export function RoomOrganizer(): JSX.Element {
       duplicateItem: duplicateSelected,
       copySelection: copySelectionToClipboard,
       pasteClipboard: pasteFromClipboard,
-      rotateItem: rotateItemHandler,
-      rotateItemBy: rotateItemByHandler,
-      moveItem: nudgeItem,
-      toggleLock,
+      ...announcedKeys,
       refuseLocked: refuseLockedItem,
       toggle2D: () => toggle('view2D'),
       toggleMeasurements: () => toggle('showMeasurements'),
@@ -940,10 +1046,7 @@ export function RoomOrganizer(): JSX.Element {
       duplicateSelected,
       copySelectionToClipboard,
       pasteFromClipboard,
-      rotateItemHandler,
-      rotateItemByHandler,
-      nudgeItem,
-      toggleLock,
+      announcedKeys,
       refuseLockedItem,
       removeInteriorWall,
       toggleExteriorWall,
@@ -1003,6 +1106,18 @@ export function RoomOrganizer(): JSX.Element {
   const stableFitToRoom = useEvent(fitToRoom);
   const stableScreenshot = useEvent(handleScreenshot);
   const stableImport = useEvent(handleImport);
+  // A house file dropped anywhere on the page opens like Import (#934)...
+  const fileDropLock = touring
+    ? NOT_WHILE_TOURING
+    : exploring
+      ? NOT_WHILE_EXPLORING
+      : photoActive
+        ? 'Leave photo mode first, then try the file again.'
+        : null;
+  const fileOpening = { lockedReason: fileDropLock, openHouse: stableImport, refuse: (message: string) => notifyRefused(message, playCue) };
+  const { dragging: fileDragging, blockedReason: fileDropBlocked } = useFileDrop(fileOpening);
+  // ...and so does a .json file the installed app is opened with.
+  useLaunchedFiles(fileOpening);
   const stableExportGlb = useEvent(handleExportGlb);
   const stableShareLink = useEvent(handleShareLink);
   const stablePlaceFromCatalog = useEvent(placeFromCatalog);
@@ -1045,6 +1160,7 @@ export function RoomOrganizer(): JSX.Element {
         overflow: 'hidden',
       }}
     >
+      <Announcer />
       <Viewport
         isReady={isReady}
         shadersWarming={shadersWarming}
@@ -1205,6 +1321,7 @@ export function RoomOrganizer(): JSX.Element {
           onDuplicate={duplicateSelected}
           onRemove={removeItem}
           onClose={clearItemSelection}
+          onBack={dismissItemPopover}
         />
       )}
 
@@ -1243,8 +1360,9 @@ export function RoomOrganizer(): JSX.Element {
           house, nor over one just kept from it (#722). */}
       {tourPhase === 'none' && <WelcomeBanner />}
       {/* Getting started (#721): offered once the start chooser is answered;
-          never over a shared house or one just kept from it (#722). */}
-      {tourPhase === 'none' && (
+          never over a shared house or one just kept from it (#722), unless
+          Help asked for it (#931). */}
+      {(tourPhase === 'none' || (tourPhase === 'kept' && firstStepsAsked)) && (
         <FirstStepsCard
           placeCatalogItem={stablePlaceFromCatalog}
           onShareLink={stableShareLink}
@@ -1263,6 +1381,7 @@ export function RoomOrganizer(): JSX.Element {
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}
       <ConfirmDialogHost />
+      {fileDragging && <FileDropOverlay lockedReason={fileDropBlocked} />}
 
       {/* Achievement toast */}
       <AchievementToast
@@ -1334,6 +1453,8 @@ function useCameraTargetOnStorey(
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
+    // An eased move lands first: its next frame would undo the slide (#930).
+    settleCameraMove(controls);
     const dy = cameraTargetY - controls.target.y;
     if (Math.abs(dy) < 0.01) return;
     // Keep the orbit target on the new storey even mid-walkthrough, so the

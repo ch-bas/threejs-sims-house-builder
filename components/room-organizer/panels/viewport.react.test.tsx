@@ -3,10 +3,25 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
+import { resetAnnouncements } from '../lib/announce';
+import { Announcer } from './announcer';
 import { Viewport, type ViewportProps } from './viewport';
 import type { WalkHudProps } from './walk-hud';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetAnnouncements();
+});
+
+/** The viewport beside the editor's one status line, as the orchestrator renders them. */
+function WithAnnouncer(props: ViewportProps) {
+  return (
+    <>
+      <Viewport {...props} />
+      <Announcer />
+    </>
+  );
+}
 
 function setup(overrides: Partial<ViewportProps> = {}) {
   const floor = makeFloor({
@@ -30,7 +45,7 @@ function setup(overrides: Partial<ViewportProps> = {}) {
     onKeyboardSelect,
     ...overrides,
   };
-  const view = render(<Viewport {...props} />);
+  const view = render(<WithAnnouncer {...props} />);
   const canvas = screen.getByRole('application', { name: /3D view/ });
   return { ...view, props, canvas, onKeyboardSelect };
 }
@@ -103,9 +118,9 @@ describe('Viewport keyboard selection (#650)', () => {
     const floor = makeFloor({ items: [makeItem({ id: 'sofa', name: 'Sofa', position: { x: -2, z: -2 } }), makeItem({ id: 'bed', name: 'Bed', position: { x: 2, z: 2 } })] });
     const { canvas, props, rerender } = setup({ activeFloor: floor });
     fireEvent.keyDown(canvas, { key: 'Tab' });
-    rerender(<Viewport {...props} selectedItem={floor.items[0]!} />);
+    rerender(<WithAnnouncer {...props} selectedItem={floor.items[0]!} />);
     expect(screen.getByRole('status').textContent).toBe('Sofa selected, 1 of 2.');
-    rerender(<Viewport {...props} selectedItem={floor.items[1]!} />);
+    rerender(<WithAnnouncer {...props} selectedItem={floor.items[1]!} />);
     expect(screen.getByRole('status').textContent).toBe('');
   });
 

@@ -73,6 +73,19 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
   const viewButtonRef = useRef<HTMLButtonElement>(null);
   const viewMenuId = useId();
   const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
+  // Help brought the Getting started card back (#931): the phone's tray
+  // closes, or the card waits under it. Focus goes back to the View button,
+  // or to the tray's button when the tray took the View button with it.
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const showCard = useCallback((hadFocus: boolean) => {
+    setMoreOpen(false);
+    if (!hadFocus) return;
+    window.requestAnimationFrame(() => {
+      const view = viewButtonRef.current;
+      if (view && view.getClientRects().length > 0) view.focus();
+      else moreButtonRef.current?.focus();
+    });
+  }, []);
 
   return (
     <div
@@ -304,6 +317,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
       </div>
       <button
         type="button"
+        ref={moreButtonRef}
         className={`pc-tile pc-mode-more${moreOpen ? ' pc-tile--active' : ''}`}
         aria-expanded={moreOpen}
         aria-label={moreOpen ? 'Fewer controls' : 'More controls'}
@@ -317,7 +331,7 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
         </svg>
       </button>
       {viewMenuOpen && (
-        <ViewOptionsMenu id={viewMenuId} anchorRef={viewButtonRef} onClose={closeViewMenu} />
+        <ViewOptionsMenu id={viewMenuId} anchorRef={viewButtonRef} onClose={closeViewMenu} onShowCard={showCard} />
       )}
     </div>
   );

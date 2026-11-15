@@ -13,9 +13,15 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '.',
     scope: '.',
     // Installable as its own window (#616). Share links don't need the
-    // address bar: Share copies the link to the clipboard. No service
-    // worker yet, so the installed app still needs the network to open.
+    // address bar: Share copies the link to the clipboard. The service
+    // worker (scripts/build-sw.mjs, #933) lets the installed app open
+    // offline once it has been opened online.
     display: 'standalone',
+    // The installed app opens the house files it writes (#934, Chromium
+    // desktop): the launch queue hands them to the editor, which opens them
+    // as a dropped file. An open window takes the file instead of a new one.
+    file_handlers: [{ action: '.', accept: { 'application/json': ['.json'] } }],
+    launch_handler: { client_mode: ['focus-existing', 'auto'] },
     background_color: '#4A8826',
     theme_color: '#1A2A33',
     icons: [

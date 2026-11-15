@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.37.0] - 2026-11-15
+
+The **Experience & reach** milestone, first wave: the app behaves well on every device. It opens offline, opens house files you drop on it, keeps your houses safer, glides the camera, says what a keyboard edit did, honours the Android back gesture and high-contrast mode, and finally has one table of shortcuts.
+
+### Added
+- The app opens offline once it has been opened online: its files are cached when it installs, checked against the build before use, and a new deploy takes over on the next reload of a single tab ([#933](https://github.com/ch-bas/threejs-sims-house-builder/issues/933))
+- Drop a house file (.json) anywhere on the page to open it, or a backup to add what this browser lacks; the installed app opens .json house files; when a share link leaves the floor plan out or is too large, the notice offers the whole house as a file ([#934](https://github.com/ch-bas/threejs-sims-house-builder/issues/934))
+- History can keep a restore point for good: up to five kept versions, renamable, carried in backups, and never cleared to make room unless your house itself needs the space ([#935](https://github.com/ch-bas/threejs-sims-house-builder/issues/935))
+- Storage & backup says whether the browser keeps your houses and when you last backed up, and the editor asks the browser to keep its storage after your first edit ([#928](https://github.com/ch-bas/threejs-sims-house-builder/issues/928))
+- Screen readers hear what a keyboard edit did: undo and redo, where a nudged or turned item stands, lock and unlock ([#929](https://github.com/ch-bas/threejs-sims-house-builder/issues/929))
+- Help in View options brings back the Getting started card, and the app remembers the last version each browser opened ([#931](https://github.com/ch-bas/threejs-sims-house-builder/issues/931))
+
+### Changed
+- Camera presets, Fit room and Focus glide into place along an arc instead of cutting; reduced motion keeps the cut ([#930](https://github.com/ch-bas/threejs-sims-house-builder/issues/930))
+- The shortcut sheet comes from one key table: it lists the missing keys and shows ⌘ and ⇧ on a Mac, and tooltips name their keys from the same table ([#932](https://github.com/ch-bas/threejs-sims-house-builder/issues/932))
+
+### Fixed
+- The Android back gesture closes the open dialog, side panels or item sheet instead of leaving the editor ([#926](https://github.com/ch-bas/threejs-sims-house-builder/issues/926))
+- In Windows high-contrast mode the selected wall mode, tool, tab and switch state can be told apart again ([#927](https://github.com/ch-bas/threejs-sims-house-builder/issues/927))
+
 ## [1.36.0] - 2026-11-15
 
 The **Building tools II** milestone, first wave: better tools for the shell and the garden. Furniture snaps to partitions, fences and hedges lay in runs, roofs take a pitch and a ridge direction, doors warn about what stands in their swing and can open outward, doors and windows come in more types, outer walls get their own outside finish, partitions take patterns and tiles, and the stairwell on the floor above gets a guard rail.
@@ -1022,7 +1042,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.36.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.37.0...HEAD
+[1.37.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.33.0...v1.34.0

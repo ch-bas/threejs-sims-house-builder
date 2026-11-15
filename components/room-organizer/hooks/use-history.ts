@@ -7,6 +7,8 @@ export interface UseHistoryOptions<T = unknown> {
   maxEntries?: number;
   /** What the step from one value to the next did, for undoLabel and redoLabel (#625). */
   describe?: (before: T, after: T) => string | null;
+  /** After each undo or redo that changed something, with `describe`'s label for it (#929). */
+  onStep?: (kind: 'undo' | 'redo', label: string | null) => void;
 }
 
 export interface UseHistoryResult<T = unknown> {
@@ -66,7 +68,14 @@ interface HistoryStacks<T> {
  * effects inside them (apply, ref writes) would corrupt the stacks in dev.
  */
 export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: UseHistoryOptions<T> = {}): UseHistoryResult<T> {
-  const { debounceMs = 600, maxEntries = 50, describe } = options;
+  const { debounceMs = 600, maxEntries = 50, describe, onStep } = options;
+  // Read at the step, so a caller's inline callbacks don't re-make undo/redo.
+  const stepRef = useRef({ describe, onStep });
+  stepRef.current = { describe, onStep };
+  const reportStep = useCallback((kind: 'undo' | 'redo', before: T, after: T): void => {
+    const { describe: label, onStep: report } = stepRef.current;
+    report?.(kind, label ? label(before, after) : null);
+  }, []);
 
   const [stacks, setStacks] = useState<HistoryStacks<T>>({ past: [], future: [] });
   // The source of truth, so event handlers read the current stacks without
@@ -142,22 +151,26 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     // so it is the only valid redo: whatever `future` held was abandoned the
     // moment it was made, as commit() and redo()'s guard agree (#546).
     if (!skipNextRef.current && !Object.is(valueRef.current, lastCommittedRef.current)) {
-      stacksRef.current = { past, future: [valueRef.current] };
+      const undone = valueRef.current;
+      stacksRef.current = { past, future: [undone] };
       setStacks(stacksRef.current);
       skipNextRef.current = true;
       apply(lastCommittedRef.current);
+      reportStep('undo', lastCommittedRef.current, undone);
       return;
     }
 
     if (past.length === 0) return;
     const last = past[past.length - 1];
     if (last === undefined) return;
-    stacksRef.current = { past: past.slice(0, -1), future: [...future, lastCommittedRef.current] };
+    const undone = lastCommittedRef.current;
+    stacksRef.current = { past: past.slice(0, -1), future: [...future, undone] };
     setStacks(stacksRef.current);
     skipNextRef.current = true;
     lastCommittedRef.current = last;
     apply(last);
-  }, [apply]);
+    reportStep('undo', last, undone);
+  }, [apply, reportStep]);
 
   const redo = useCallback(() => {
     const { past, future } = stacksRef.current;
@@ -179,12 +192,14 @@ export function useHistory<T>(value: T, apply: (snapshot: T) => void, options: U
     if (future.length === 0) return;
     const next = future[future.length - 1];
     if (next === undefined) return;
-    stacksRef.current = { past: [...past, lastCommittedRef.current], future: future.slice(0, -1) };
+    const from = lastCommittedRef.current;
+    stacksRef.current = { past: [...past, from], future: future.slice(0, -1) };
     setStacks(stacksRef.current);
     skipNextRef.current = true;
     lastCommittedRef.current = next;
     apply(next);
-  }, [apply]);
+    reportStep('redo', from, next);
+  }, [apply, reportStep]);
 
   // The baseline is explicit rather than "whatever value arrives next": the
   // hydration dispatch and this call happen inside a mount effect, and

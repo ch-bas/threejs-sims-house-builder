@@ -1977,6 +1977,26 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
   }
 }
 
+/* Help in the View menu (#931): on the Quality heading's row without
+   making it taller; a touch screen gives the button a 44 px row instead. */
+.pc-help-entries {
+  display: flex;
+  align-items: center;
+  height: 0;
+}
+@media (pointer: coarse) {
+  .pc-help-entries {
+    height: auto;
+  }
+  .pc-help-entries .pc-photo-entry {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+  .pc-help-entries .pc-photo-entry::after {
+    content: none;
+  }
+}
+
 /* Catalogue colour variants (#621) */
 /* Swatch dots in the top-right corner of a tile whose entry comes in more
    than one colour. A two-tone ring reads on the dark strip and the light
@@ -2241,5 +2261,79 @@ html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line {
     width: 44px;
     height: 44px;
     transform: translate(-50%, -50%);
+  }
+}
+
+/* Forced colours (Windows Contrast themes, #927). The system replaces the
+   tints that mark the selected option, so every toggle, radio and tab looked
+   the same: the selected one takes the system's Highlight pair, the switches
+   draw their knob, and focus rings use Highlight too (box-shadow halos are
+   dropped in this mode). Nothing here applies outside the media query. */
+@media (forced-colors: active) {
+  /* Out of the forced palette, or the text's Canvas backplate hides the
+     HighlightText label. Important: several toggles set their tint inline. */
+  [aria-checked='true'],
+  [aria-pressed='true'],
+  [aria-selected='true'] {
+    forced-color-adjust: none;
+    background: Highlight !important;
+    color: HighlightText !important;
+    border-color: Highlight !important;
+    outline: 2px solid CanvasText;
+    outline-offset: 1px;
+    /* Out of the forced palette, the cyan glows would come back. */
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  /* Their labels, icons and inner tiles follow the pair. */
+  [aria-checked='true'] *,
+  [aria-pressed='true'] *,
+  [aria-selected='true'] * {
+    background-color: transparent !important;
+    color: HighlightText !important;
+    border-color: HighlightText !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  /* Switches: the knob is a filled dot, on the track's side for the state. */
+  .pc-switch-knob,
+  .pc-budget-switch__knob {
+    forced-color-adjust: none;
+    background: CanvasText !important;
+  }
+  .pc-switch-track,
+  .pc-budget-switch__track {
+    border-color: CanvasText;
+  }
+  [aria-checked='true'] .pc-switch-knob {
+    background: HighlightText !important;
+  }
+  /* The hard budget switch is a label beside a track: the label keeps the
+     page's colours and the track carries the state. */
+  .pc-budget-switch[aria-checked='true'] {
+    forced-color-adjust: auto;
+    background: transparent !important;
+    color: CanvasText !important;
+    outline: none;
+  }
+  .pc-budget-switch[aria-checked='true'] > :not(.pc-budget-switch__track) {
+    color: CanvasText !important;
+  }
+  .pc-budget-switch[aria-checked='true'] .pc-budget-switch__track {
+    background: Highlight !important;
+    border-color: Highlight !important;
+  }
+  .pc-budget-switch[aria-checked='true'] .pc-budget-switch__knob {
+    background: HighlightText !important;
+  }
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+  [aria-checked='true']:focus-visible,
+  [aria-pressed='true']:focus-visible,
+  [aria-selected='true']:focus-visible {
+    outline-color: CanvasText;
+    outline-width: 3px;
   }
 }

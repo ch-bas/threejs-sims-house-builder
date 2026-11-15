@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLengthUnit } from '../contexts';
+import { useAppleKeys } from '../hooks/use-apple-keys';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { announce, withdrawAnnouncement } from '../lib/announce';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
 import { formatMetres, formatSize } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { cycleItem, selectionAnnouncement } from '../lib/item-cycle';
+import { EDIT_KEYS, formatBinding, keyBinding, withShortcut } from '../lib/keymap';
 import { Icon, iconForItem } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
 import { Minimap } from './minimap';
@@ -16,6 +19,9 @@ import { WalkHud, type WalkHudProps } from './walk-hud';
 import { WallDrawChip, type WallDrawStatus } from './wall-draw-chip';
 import type { FurnitureItem, RoomLayout, Vec2 } from '../lib/types';
 import type { FloorLayout } from '../lib/types';
+
+/** The status line's tag for a selection Tab made, by item id. */
+const SELECT_TAG = 'select:';
 
 export interface HoverState {
   item: FurnitureItem;
@@ -89,11 +95,11 @@ export function Viewport(props: ViewportProps): JSX.Element {
   // through the floor's items in plan order and say which, in the status
   // region below; past either end Tab leaves the scene. Enter takes focus
   // into the item's popover, which leaves it on the scene while stepping.
-  const [announcement, setAnnouncement] = useState<{ id: string; text: string } | null>(null);
+  // The line goes to the editor's one status region (lib/announce, #929).
   // The selection changed some other way: the line would describe what isn't.
   const selectedId = props.selectedItem?.id ?? null;
   useEffect(() => {
-    setAnnouncement((current) => (current && current.id !== selectedId ? null : current));
+    withdrawAnnouncement((tag) => tag !== null && tag.startsWith(SELECT_TAG) && tag !== `${SELECT_TAG}${selectedId}`);
   }, [selectedId]);
   // Only the keyboard focuses the scene: a press with a mouse or a finger
   // leaves focus where a click on the old, unfocusable canvas did (on the
@@ -124,7 +130,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
       if (!canvases.includes(event.target as HTMLCanvasElement)) pressed = null;
     };
     const onTabAfterPress = (event: KeyboardEvent): void => {
-      if (event.key !== 'Tab' || !pressed || !pressed.isConnected || getComputedStyle(pressed).display === 'none') return;
+      if (event.key !== EDIT_KEYS.tab || !pressed || !pressed.isConnected || getComputedStyle(pressed).display === 'none') return;
       const active = document.activeElement;
       if (active && active !== document.body) return;
       keyFocus = true;
@@ -157,7 +163,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
   type SceneKey = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey' | 'repeat' | 'preventDefault' | 'stopPropagation'>;
   const handleSceneKey = (event: SceneKey) => {
     if (props.walkHud || props.placing || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key === 'Enter') {
+    if (event.key === EDIT_KEYS.confirm) {
       if (event.repeat || !props.selectedItem) return;
       const popover = document.querySelector<HTMLElement>('.pc-item-popover');
       if (!popover) return;
@@ -166,14 +172,14 @@ export function Viewport(props: ViewportProps): JSX.Element {
       popover.focus();
       return;
     }
-    if (event.key !== 'Tab') return;
+    if (event.key !== EDIT_KEYS.tab) return;
     const next = cycleItem(props.activeFloor.items, props.selectedItem?.id ?? null, event.shiftKey ? -1 : 1);
     if (!next) return;
     event.preventDefault();
     // A held Tab steps once: focus stays on the scene meanwhile.
     if (event.repeat) return;
     props.onKeyboardSelect?.(next.id);
-    setAnnouncement({ id: next.id, text: selectionAnnouncement(props.activeFloor.items, next.id) });
+    announce(selectionAnnouncement(props.activeFloor.items, next.id), { tag: `${SELECT_TAG}${next.id}` });
   };
   const sceneKeyRef = useRef(handleSceneKey);
   sceneKeyRef.current = handleSceneKey;
@@ -251,14 +257,9 @@ export function Viewport(props: ViewportProps): JSX.Element {
           {...sceneKeys}
         />
         {props.onKeyboardSelect && (
-          <>
-            <p id={SCENE_KEYS_HINT_ID} className="sr-only">
-              Tab and Shift+Tab step through the items on this floor. Enter opens the selected one.
-            </p>
-            <p role="status" className="sr-only">
-              {announcement?.text ?? ''}
-            </p>
-          </>
+          <p id={SCENE_KEYS_HINT_ID} className="sr-only">
+            Tab and Shift+Tab step through the items on this floor. Enter opens the selected one.
+          </p>
         )}
 
         {showLoading && <LoadingOverlay />}
@@ -565,6 +566,9 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
 function SelectionChip(props: ViewportProps & { selectionCount: number }): JSX.Element {
   const [namingSet, setNamingSet] = useState(false);
   const onSaveSet = props.onSaveSelectionAsSet;
+  const mac = useAppleKeys();
+  const paste = keyBinding('paste');
+  const copyTitle = `${withShortcut('Copy the selection', 'copy', mac)} — ${paste ? formatBinding(paste, mac) : 'Paste'} pastes, here or on another floor`;
   return (
     <div
       className="pc-top-chip absolute left-1/2"
@@ -597,7 +601,7 @@ function SelectionChip(props: ViewportProps & { selectionCount: number }): JSX.E
             {props.onCopySelection && (
               <ChipButton
                 onClick={props.onCopySelection}
-                title="Copy the selection (Ctrl+C) — Ctrl+V pastes, here or on another floor"
+                title={copyTitle}
               >
                 Copy
               </ChipButton>

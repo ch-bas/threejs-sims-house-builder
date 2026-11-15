@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import { BACK_LAYER, useBackDismiss } from './use-back-dismiss';
 
 // Tab stops only: a roving-tabindex widget (the drawer's tabs, #434) parks its
 // inactive items at tabindex -1, and wrapping onto one would skip the widget.
@@ -40,6 +41,12 @@ export interface UseDialogFocusOptions {
    * (#650), and Enter there takes it in.
    */
   yieldTo?: string;
+  /**
+   * Where Android back stands for this dialog's Escape (#926): a dialog with
+   * `onEscape` takes back while open, at `BACK_LAYER.dialog` unless it says
+   * otherwise (the drawer sits below the dialogs it opens).
+   */
+  backLayer?: number;
 }
 
 interface OpenDialog {
@@ -190,10 +197,13 @@ export function useDialogFocus(
     companions = false,
     returnHome = false,
     yieldTo,
+    backLayer = BACK_LAYER.dialog,
   }: UseDialogFocusOptions = {}
 ): void {
   const onEscapeRef = useRef(onEscape);
   onEscapeRef.current = onEscape;
+  // Back does what Escape does, top-most dialog first (#926).
+  useBackDismiss(open && onEscape !== undefined, backLayer, () => onEscapeRef.current?.());
 
   useEffect(() => {
     if (!open) return undefined;

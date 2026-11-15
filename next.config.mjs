@@ -1,4 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 const isGitHubPages = process.env.GITHUB_PAGES === 'true';
+// The app's version, stamped into the bundle: what's new is told against
+// the last version this browser opened (#931), and a save records the
+// version that wrote it, so an older build won't save over it (#933).
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -8,6 +14,7 @@ const nextConfig = {
   // Every viewport corner holds a HUD panel, so the dev-tools badge always
   // lands on a control (bottom-left: the mode buttons on mobile, #300).
   devIndicators: false,
+  env: { NEXT_PUBLIC_APP_VERSION: version },
   // `npm run lint` is the lint gate (CI runs it with --max-warnings=0
   // before the build); Next's own pass during `next build` only ran it a
   // second time (#447).

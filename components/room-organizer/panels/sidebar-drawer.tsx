@@ -3,6 +3,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { HeldEditorContexts, useEditorView, useRoomEditor, useSelection, useViewSettings } from '../contexts';
 import { markLayoutLoaded } from '../hooks/use-achievements';
+import { BACK_LAYER } from '../hooks/use-back-dismiss';
 import { useDialogFocus, useFocusBeside } from '../hooks/use-dialog-focus';
 import { useEvent } from '../hooks/use-event';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
@@ -106,6 +107,8 @@ export const SidebarDrawer = memo(function SidebarDrawer({
     companions: true,
     returnHome: true,
     onEscape: popoverBeside ?? onCollapse,
+    // Android back does what Escape does here, below a confirm it asks (#926).
+    backLayer: BACK_LAYER.drawer,
   });
   // Storage access can throw where it is blocked; this drawer is always
   // mounted, so an unguarded read took the whole editor down (#396).
