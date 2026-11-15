@@ -279,6 +279,7 @@ components/
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
     │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d), a drag lays a run (#915)
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap (with companions), Escape, restore
+    │   ├── use-back-dismiss.ts          Android back closes the top surface (Escape dialogs, then drawer, then item sheet) via one CloseWatcher, in Escape order (#926)
     │   ├── use-shift-held.ts            Whether Shift is down, for tools that read it between pointer events (#723)
     │   ├── use-wall-edit.ts             The gesture of moving a selected wall, in both views: preview per move, one dispatch on release (#718)
     │   ├── use-room-stamp.ts            The room stamp in hand: ghost under the pointer, click to drop, drag to size (#724)

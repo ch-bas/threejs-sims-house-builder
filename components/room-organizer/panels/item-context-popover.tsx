@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
+import { BACK_LAYER, useBackDismiss } from '../hooks/use-back-dismiss';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useExploring, useNotWhileExploring } from '../hooks/use-exploring';
 import { useMediaQuery } from '../hooks/use-media-query';
@@ -61,6 +62,8 @@ export interface ItemContextPopoverProps {
   onRotate(id: string): void;
   onToggleCameraBracket(id: string): void;
   onClose(): void;
+  /** What Android back does while the popover is open: what Escape does; Close when absent (#926). */
+  onBack?: (() => void) | undefined;
 }
 
 export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element {
@@ -106,6 +109,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   // selection made with a click or a tap still brings focus in.
   useDialogFocus(item !== null, dialogRef, { returnHome: 'keyboard', yieldTo: '[data-scene-canvas]' });
   const underDrawer = useMediaQuery(DRAWER_FULL_SCREEN_QUERY);
+  useBackDismiss(item !== null, BACK_LAYER.itemSheet, () => (props.onBack ?? props.onClose)());
   if (!item) return <></>;
   const { onClose } = props;
   const setExpanded = (next: boolean) => setExpandedFor(next ? item.id : null);
