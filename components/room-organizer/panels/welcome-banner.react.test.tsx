@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetFirstStepsForTests } from '../hooks/use-first-steps';
 import { ROOM_TEMPLATES } from '../lib/constants';
 import { INITIAL_LAYOUT } from '../lib/initial-layout';
+import { snapshotBeforeReplace } from '../lib/restore-point';
 import { opensOnStartChooser, WelcomeBanner } from './welcome-banner';
 
 const loadTemplate = vi.fn((_template: unknown) => Promise.resolve(true));
@@ -31,6 +32,15 @@ describe('WelcomeBanner start chooser (#721)', () => {
     for (const template of Object.values(ROOM_TEMPLATES)) {
       expect(screen.getByRole('button', { name: template.name })).toBeTruthy();
     }
+  });
+
+  // #934: a house file dropped on the chooser answers it.
+  it('takes a dropped file and closes once a house is loaded some other way', () => {
+    render(<WelcomeBanner />);
+    expect(screen.getByRole('dialog').getAttribute('data-file-drop')).toBe('open');
+    act(() => snapshotBeforeReplace(INITIAL_LAYOUT));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(window.localStorage.getItem(DISMISSED)).toBe('1');
   });
 
   it('starts empty without loading anything, and stays closed', () => {

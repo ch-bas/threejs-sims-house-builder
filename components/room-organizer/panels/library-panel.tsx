@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { layoutStore } from '../hooks/use-layout-store';
+import { subscribeBackupRestored } from '../lib/backup-file';
 import { budgetSpent } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
 import { CURRENCY_SYMBOL } from '../lib/constants';
@@ -234,6 +235,8 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       }),
     []
   );
+  // A backup dropped on the page restores behind this panel's back (#934).
+  useEffect(() => subscribeBackupRestored(refresh), [refresh]);
 
   // A note about an earlier load is out of date once another house comes in;
   // a load from this panel writes its own note after this (#647).

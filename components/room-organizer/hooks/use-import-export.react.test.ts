@@ -4,12 +4,21 @@ import { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { autoAnswerConfirms, type AutoAnswer } from '../lib/__testfixtures__/confirm';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
+import { subscribeNotices, type Notice } from '../lib/editor-notices';
 import { INITIAL_LAYOUT } from './layout-reducer';
 import { useHistory } from './use-history';
 import { useImportExport } from './use-import-export';
 import { useLayoutState } from './use-layout-state';
 import { layoutStore } from './use-layout-store';
 import type { RoomLayout } from '../lib/types';
+
+// jsdom's Blob has no stream(), which the link codec compresses through; the
+// codec has its own tests, so here the link is a short stand-in.
+vi.mock('../lib/share', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/share')>()),
+  encodeShareUrl: (layout: RoomLayout, origin: string) =>
+    Promise.resolve({ url: `${origin}#layout=short`, strippedFloorPlan: layout.floorPlanImage !== undefined }),
+}));
 
 // #555: an edit still inside the debounce window when a whole-house load lands
 // was folded into the load's undo entry, so Ctrl+Z skipped past it.
@@ -110,5 +119,69 @@ describe('useImportExport — import keeps a pending edit as its own undo step',
     expect(replaced).toBe(false);
     expect(confirms.asked).toHaveLength(1);
     expect(layoutStore.getState().layout.name).toBe('Mine');
+  });
+});
+
+// #934: when the link leaves the floor plan out, the notice offers the file that keeps it.
+describe('useImportExport — a share link that leaves something out offers the file', () => {
+  const traced: RoomLayout = { ...INITIAL_LAYOUT, name: 'Traced', floorPlanImage: 'data:image/png;base64,AAAA' };
+  let notices: Notice[];
+  let unsubscribe: () => void;
+  beforeEach(() => {
+    notices = [];
+    unsubscribe = subscribeNotices((notice) => notices.push(notice));
+    layoutStore.setState({ layout: traced, activeFloorIndex: 0 });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(() => Promise.resolve()) } });
+  });
+  afterEach(() => {
+    unsubscribe();
+    cleanup();
+    vi.restoreAllMocks();
+    Reflect.deleteProperty(navigator, 'clipboard');
+  });
+
+  it('copies the link and offers a download of the whole house where there is no sheet', async () => {
+    const { result } = renderHook(() => {
+      const { layout, actions } = useLayoutState();
+      return useImportExport({
+        layout,
+        activeFloorName: 'Ground',
+        actions,
+        commitHistoryNow: () => undefined,
+        view2D: false,
+        canvasRef: createRef<HTMLCanvasElement>(),
+        canvas2DRef: createRef<HTMLCanvasElement>(),
+        rendererRef: { current: null },
+        sceneRef: { current: null },
+        cameraRef: { current: null },
+        onImported: () => undefined,
+      });
+    });
+    await act(async () => {
+      await result.current.handleShareLink();
+    });
+    const notice = notices.at(-1);
+    expect(notice?.message).toBe(
+      'Share link copied to clipboard. The floor-plan image was left out to keep it short; the file keeps it.'
+    );
+    expect(notice?.action?.label).toBe('Download file');
+
+    const blobs: Blob[] = [];
+    Object.assign(URL, {
+      createObjectURL: vi.fn((blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:house';
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await act(async () => {
+      void notice?.action?.run();
+      await Promise.resolve();
+    });
+    expect(click).toHaveBeenCalledOnce();
+    const saved = JSON.parse(await (blobs[0] as Blob).text()) as RoomLayout;
+    expect(saved.name).toBe('Traced');
+    expect(saved.floorPlanImage).toBe(traced.floorPlanImage);
   });
 });

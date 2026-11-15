@@ -12,6 +12,8 @@ import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-ca
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
+import { NOT_WHILE_EXPLORING, NOT_WHILE_TOURING } from './hooks/use-exploring';
+import { useFileDrop, useLaunchedFiles } from './hooks/use-file-drop';
 import { useFirstStepsAsked } from './hooks/use-first-steps';
 import { useFloorKeepOut } from './hooks/use-floor-keep-out';
 import { useHistory } from './hooks/use-history';
@@ -78,6 +80,7 @@ import { CameraPad } from './panels/camera-pad';
 import { ChallengeChip } from './panels/challenge-chip';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
+import { FileDropOverlay } from './panels/file-drop-overlay';
 import { FirstStepsCard } from './panels/first-steps-card';
 import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
@@ -1103,6 +1106,18 @@ export function RoomOrganizer(): JSX.Element {
   const stableFitToRoom = useEvent(fitToRoom);
   const stableScreenshot = useEvent(handleScreenshot);
   const stableImport = useEvent(handleImport);
+  // A house file dropped anywhere on the page opens like Import (#934)...
+  const fileDropLock = touring
+    ? NOT_WHILE_TOURING
+    : exploring
+      ? NOT_WHILE_EXPLORING
+      : photoActive
+        ? 'Leave photo mode first, then try the file again.'
+        : null;
+  const fileOpening = { lockedReason: fileDropLock, openHouse: stableImport, refuse: (message: string) => notifyRefused(message, playCue) };
+  const { dragging: fileDragging, blockedReason: fileDropBlocked } = useFileDrop(fileOpening);
+  // ...and so does a .json file the installed app is opened with.
+  useLaunchedFiles(fileOpening);
   const stableExportGlb = useEvent(handleExportGlb);
   const stableShareLink = useEvent(handleShareLink);
   const stablePlaceFromCatalog = useEvent(placeFromCatalog);
@@ -1366,6 +1381,7 @@ export function RoomOrganizer(): JSX.Element {
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}
       <ConfirmDialogHost />
+      {fileDragging && <FileDropOverlay lockedReason={fileDropBlocked} />}
 
       {/* Achievement toast */}
       <AchievementToast
