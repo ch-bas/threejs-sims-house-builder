@@ -13,8 +13,9 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '.',
     scope: '.',
     // Installable as its own window (#616). Share links don't need the
-    // address bar: Share copies the link to the clipboard. No service
-    // worker yet, so the installed app still needs the network to open.
+    // address bar: Share copies the link to the clipboard. The service
+    // worker (scripts/build-sw.mjs, #933) lets the installed app open
+    // offline once it has been opened online.
     display: 'standalone',
     background_color: '#4A8826',
     theme_color: '#1A2A33',

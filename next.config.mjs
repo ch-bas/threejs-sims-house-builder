@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 
 const isGitHubPages = process.env.GITHUB_PAGES === 'true';
-// The app's version, stamped into the bundle (#931): what's new is told
-// against the last version this browser opened.
+// The app's version, stamped into the bundle: what's new is told against
+// the last version this browser opened (#931), and a save records the
+// version that wrote it, so an older build won't save over it (#933).
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 /** @type {import('next').NextConfig} */

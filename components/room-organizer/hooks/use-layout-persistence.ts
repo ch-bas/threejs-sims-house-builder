@@ -16,6 +16,7 @@ import {
   saveOverStoredHouse,
 } from '../lib/persistence';
 import { isUntouched, snapshotBeforeReplace } from '../lib/restore-point';
+import { subscribeSaveHereChosen } from '../lib/saved-by';
 import { takeTourCrashNote } from '../lib/saved-house';
 import { parseStoredLayout } from '../lib/schema';
 import { isShareHash, isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
@@ -98,6 +99,7 @@ const COPY_NOT_SAVED: Record<SaveFailureReason, string> = {
   quota: 'Storage full: the copy couldn’t be saved, so nothing was changed. Free space in Manage → Storage, then open the link again.',
   blocked: 'This browser blocks site storage, so a copy can’t be kept here. Nothing was changed.',
   unknown: 'The copy couldn’t be saved, so nothing was changed. Try again in a moment.',
+  newer: 'A newer version of the editor saved your house, so this one didn’t replace it. Choose Save here anyway when asked (or under the save status), then keep the copy again.',
 };
 
 /** Drops a share link from the address, so a reload opens the visitor's own house. */
@@ -150,6 +152,25 @@ export function useLayoutPersistence({
   // written over it until a copy succeeds.
   const mainSaveHeldRef = useRef(false);
   const [remoteLayout, setRemoteLayout] = useState<RoomLayout | null>(null);
+
+  // "Save here anyway" over a newer version's house (#933): the edit waiting
+  // since the refusal is saved at once, not at the next edit.
+  useEffect(
+    () =>
+      subscribeSaveHereChosen(() => {
+        if (!pendingRef.current || mainSaveHeldRef.current || isTourSession()) return;
+        const result = saveLayout(layoutRef.current);
+        if (!result.ok) {
+          saveStatus.setState({ saveError: result.reason });
+          return;
+        }
+        lastSavedJsonRef.current = result.json;
+        pendingRef.current = false;
+        savingRef.current = false;
+        saveStatus.setState({ lastSavedAt: Date.now(), saving: false, saveError: null });
+      }),
+    [saveStatus]
+  );
 
   // Cross-tab guard (#123): the `storage` event only fires in OTHER tabs of
   // the same origin, so any event on our key means a different tab saved.
