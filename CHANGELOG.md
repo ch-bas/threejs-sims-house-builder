@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.35.0] - 2026-11-15
+
+The **Living house II** milestone, first wave: the parts the house gained in 1.33 now work together. Rooms earn goals and show their stars on the plan, challenge briefs give you a lot, funds and goals, walkers use the whole house, keep the clock and open doors, Statistics says what they go without, lamps switch in EXPLORE, rain and footsteps can play as you walk, and photos have an album.
+
+### Added
+- Room achievements: A Real Kitchen, Five Stars, Home Sweet Home and Night Owl; another good room earns its goal again ([#903](https://github.com/ch-bas/threejs-sims-house-builder/issues/903))
+- The 2D plan shows each scored room's type and stars over the furniture, and a selected zone lists what would earn more stars ([#905](https://github.com/ch-bas/threejs-sims-house-builder/issues/905))
+- Challenge briefs in Templates: a lot, funds and goals to meet, with a live checklist ([#909](https://github.com/ch-bas/threejs-sims-house-builder/issues/909))
+- Walkers wash at the toilet, shower, bath and basin, and sit at the desk to use the computer ([#904](https://github.com/ch-bas/threejs-sims-house-builder/issues/904))
+- Walkers keep the clock: to bed at night (one per bed, two in a double) and to the kitchen at mealtimes ([#907](https://github.com/ch-bas/threejs-sims-house-builder/issues/907))
+- Doors swing open for the walkers as well as for you, in the orbit view too ([#908](https://github.com/ch-bas/threejs-sims-house-builder/issues/908))
+- Statistics says what each floor's walkers would go without: somewhere to eat, rest or wash, or something to do ([#906](https://github.com/ch-bas/threejs-sims-house-builder/issues/906))
+- At night in EXPLORE, `E` (or the touch button) switches the lamp you face off and on ([#910](https://github.com/ch-bas/threejs-sims-house-builder/issues/910))
+- The sound tile can add ambience: rain on the roof and footsteps as you walk in EXPLORE ([#911](https://github.com/ch-bas/threejs-sims-house-builder/issues/911))
+- Photo mode keeps shots in a per-house album, stored in the browser's IndexedDB: browse, download or delete them, 30 per house ([#912](https://github.com/ch-bas/threejs-sims-house-builder/issues/912))
+
+### Fixed
+- With feet and inches on, the header stats bar stays on one row ([#939](https://github.com/ch-bas/threejs-sims-house-builder/issues/939))
+
 ## [1.34.0] - 2026-11-14
 
 The **Polish: desktop & mobile** milestone, third wave: the first minute and the shared link. A first visit offers a starting point and a Getting started card, a shared link opens as a read-only tour you can keep a copy of, and the whole app can work in feet and inches.
@@ -987,7 +1006,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.34.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.35.0...HEAD
+[1.35.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.33.0...v1.34.0
 [1.33.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.32.0...v1.33.0
 [1.32.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.31.0...v1.32.0

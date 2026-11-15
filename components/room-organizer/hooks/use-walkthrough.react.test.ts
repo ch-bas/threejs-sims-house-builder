@@ -267,6 +267,47 @@ describe('useWalkthrough — the stick sprints (#688)', () => {
   });
 });
 
+describe('useWalkthrough — switching a lamp (#910)', () => {
+  const LAMP = item({ id: 'lamp', type: 'floor-lamp', name: 'Floor Lamp', width: 0.4, depth: 0.4, height: 1.6, position: { x: 0, z: -2 } });
+  const lampSwitch = (lit: boolean) => {
+    const off = new Set<string>();
+    return {
+      off,
+      lit: () => lit,
+      isOff: (id: string) => off.has(id),
+      toggle: vi.fn((id: string) => {
+        if (!off.delete(id)) off.add(id);
+      }),
+    };
+  };
+
+  it('offers the lamp at night, and E switches it off and on again', async () => {
+    const lamps = lampSwitch(true);
+    const { lock, result } = await setup(building([FRONT_DOOR, LAMP]), { lampSwitch: lamps });
+    lock();
+    frames(10, 20);
+    expect(result.current.lamp).toEqual({ name: 'Floor Lamp', on: true });
+    expect(result.current.seatName).toBeNull();
+    key('keydown', 'KeyE', 'e');
+    expect(lamps.toggle).toHaveBeenCalledWith('lamp');
+    expect(result.current.lamp).toEqual({ name: 'Floor Lamp', on: false });
+    expect(result.current.seated).toBe(false);
+    key('keydown', 'KeyE', 'e');
+    expect(lamps.off.size).toBe(0);
+    expect(result.current.lamp?.on).toBe(true);
+  });
+
+  it('offers no lamp by day', async () => {
+    const lamps = lampSwitch(false);
+    const { lock, result } = await setup(building([FRONT_DOOR, LAMP]), { lampSwitch: lamps });
+    lock();
+    frames(10, 20);
+    expect(result.current.lamp).toBeNull();
+    key('keydown', 'KeyE', 'e');
+    expect(lamps.toggle).not.toHaveBeenCalled();
+  });
+});
+
 describe('useWalkthrough — sitting (#463b)', () => {
   it('offers the sofa, sits facing the TV with E, and stands back up on a step', async () => {
     const { camera, lock, result, facing } = await setup(building([FRONT_DOOR, SOFA, TV]));

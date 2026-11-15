@@ -150,24 +150,70 @@ export interface KnownCollisions {
  * answered from a cache.
  */
 export function houseRoomScores(layout: RoomLayout, known?: KnownCollisions): HouseRoomScore[] {
-  return layout.floors.flatMap((floor, floorIndex) => {
-    const zones = floor.zones ?? [];
-    if (zones.length === 0) return [];
-    const recess = entrancePlanOutline(layout, floorIndex);
-    const score = (collides: (item: FurnitureItem) => boolean): HouseRoomScore[] =>
-      zones.map((zone) => ({
-        floorIndex,
-        zone,
-        ...scoreZone({ zone, floorItems: floor.items, area: zoneArea(zone, recess), collides }),
-      }));
-    if (known?.floorIndex === floorIndex) return score((item) => known.ids.has(item.id));
-    const keepOut = floorKeepOut(layout, floorIndex);
-    const key = JSON.stringify([floorIndex, layout.width, layout.height, keepOut, recess]);
-    const cached = floorCache.get(floor);
-    if (cached?.key === key) return cached.scores;
-    const context = { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) };
-    const scores = score((item) => hasCollisions(item, floor.items, layout.width, layout.height, context));
-    floorCache.set(floor, { key, scores });
-    return scores;
-  });
+  return layout.floors.flatMap((_floor, floorIndex) => storeyScores(layout, floorIndex, known));
+}
+
+/**
+ * The zones the furniture makes a room of, house-wide, typed and scored: the
+ * room goals (#903) and the challenge briefs (#909) read them. Kept per
+ * layout, so the goals share one pass; `houseRoomScores` keeps each storey by
+ * identity, so an edit re-scores only the storey it changed.
+ */
+const furnishedCache = new WeakMap<RoomLayout, readonly HouseRoomScore[]>();
+
+/**
+ * `known`: the editor's collisions on the active storey, as for
+ * `houseRoomScores`. Pass them wherever the editor has them: the first call
+ * for a layout is the one kept.
+ */
+export function furnishedRooms(layout: RoomLayout, known?: KnownCollisions): readonly HouseRoomScore[] {
+  let rooms = furnishedCache.get(layout);
+  if (!rooms) {
+    rooms = houseRoomScores(layout, known).filter((room) => room.type !== null);
+    furnishedCache.set(layout, rooms);
+  }
+  return rooms;
+}
+
+/**
+ * The active storey's zones alone, with the editor's collisions (#905): what
+ * the on-screen plan writes under each zone's name, at no collision pass.
+ */
+export function activeStoreyRoomScores(layout: RoomLayout, known: KnownCollisions): ReadonlyMap<string, RoomScore> {
+  return new Map(storeyScores(layout, known.floorIndex, known).map((score) => [score.zone.id, score]));
+}
+
+/** "Kitchen · ★★★☆☆": a scored room's type and stars, as the plan writes it under the zone name (#905). */
+export function roomScoreLine(score: Pick<RoomScore, 'type' | 'stars'>): string | null {
+  if (score.type === null) return null;
+  const stars = Math.max(0, Math.min(ROOM_CHECKS.length, score.stars));
+  return `${ROOM_TYPE_LABELS[score.type]} · ${'★'.repeat(stars)}${'☆'.repeat(ROOM_CHECKS.length - stars)}`;
+}
+
+/** "For more stars: a lamp for the night, no collisions": what a room lacks, or null when it lacks nothing (#905). */
+export function moreStarsHint(missing: readonly RoomCheckKey[], unit: LengthUnit = getDisplayUnit()): string | null {
+  const labels = ROOM_CHECKS.filter((check) => missing.includes(check.key)).map((check) => roomCheckLabel(check, unit));
+  return labels.length === 0 ? null : `For more stars: ${labels.join(', ')}`;
+}
+
+function storeyScores(layout: RoomLayout, floorIndex: number, known: KnownCollisions | undefined): HouseRoomScore[] {
+  const floor = layout.floors[floorIndex];
+  const zones = floor?.zones ?? [];
+  if (!floor || zones.length === 0) return [];
+  const recess = entrancePlanOutline(layout, floorIndex);
+  const score = (collides: (item: FurnitureItem) => boolean): HouseRoomScore[] =>
+    zones.map((zone) => ({
+      floorIndex,
+      zone,
+      ...scoreZone({ zone, floorItems: floor.items, area: zoneArea(zone, recess), collides }),
+    }));
+  if (known?.floorIndex === floorIndex) return score((item) => known.ids.has(item.id));
+  const keepOut = floorKeepOut(layout, floorIndex);
+  const key = JSON.stringify([floorIndex, layout.width, layout.height, keepOut, recess]);
+  const cached = floorCache.get(floor);
+  if (cached?.key === key) return cached.scores;
+  const context = { keepOut, interiorWalls: floor.interiorWalls, storeyHeight: storeyHeight(floor) };
+  const scores = score((item) => hasCollisions(item, floor.items, layout.width, layout.height, context));
+  floorCache.set(floor, { key, scores });
+  return scores;
 }

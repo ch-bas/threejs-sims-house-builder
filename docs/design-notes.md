@@ -383,14 +383,25 @@ to respect.
   shadow map only while moving, plus the 0.35 s settle after a stop (#400).
 - **Doors swing for the walker (#605).** A door's leaf and handle hang in a
   pivot group on the hinge jamb (`DOOR_LEAF_NAME`), shut at rest, so the
-  plan, the exports, the GLB and DESIGN never see it open. In EXPLORE the
+  plan, the exports and the GLB never see it open. In EXPLORE the
   walk loop steps `three/door-leaves.ts`: within 1.8 m of a door's centre
   on the walker's storey the leaf opens over 0.45 s, swinging away from
   the walker, and shuts again behind. It is never less open than the
   walker's distance asks, fully open inside 0.9 m, so a sprinter never
   passes through a closed leaf; the collider's door gap is unchanged.
   Only the pivot's `rotation.y` moves (kept groups, #404); the shadow map
-  is redrawn once the leaves stop. Leaving the walk shuts every door.
+  is redrawn once the leaves stop. Since #908 the swinger belongs to
+  `use-scene-life` and runs on the frame budget, for everyone: the player
+  and every walker shown (their bodies in the `NpcHandOff`, read into a
+  reused array). Each leaf follows the nearest person on its storey and
+  swings away from that one's side; a door still shutting reopens for the
+  next, since it is never less open than the distance asks. They swing in
+  every mode while walkers are shown (an opt-in), since EXPLORE's orbit
+  view is rare (the walk starts with it); only the leaf turns, so a
+  selection or a drag still finds the door item. Turning the walkers off
+  with no walk on, or the 2D plan, shuts every door. Under reduced motion
+  the walkers stand where they spawned, so only the player opens doors:
+  a walker parked by a door never holds it open.
 - **Photo mode hides, it doesn't remove (#626).** View options → Photo
   mode (a button in the View heading's row, so the menu keeps its height)
   sets `html[data-photo]`: CSS makes everything in `.pc-world` but the 3D
@@ -406,6 +417,28 @@ to respect.
   `toBlob` in the same task and the size put back, so the renderer still
   runs without `preserveDrawingBuffer`. The View menu caps its height
   below the top-right pills and scrolls inside past that.
+- **The photo album is IndexedDB's only tenant (#912).** "Save to album"
+  keeps a JPEG copy of the shot (quality 0.9, at most 2048 px on the long
+  edge; "Take photo" still downloads the full-size PNG) and a 320 px
+  thumbnail per house, with the scene's hour and weather, in
+  `lib/photo-album.ts`: never localStorage, restore points or backups.
+  Records hold an `ArrayBuffer` and a data-URL thumbnail, never a Blob:
+  Safari's private windows open IndexedDB but refuse to store Blobs, and
+  the page policy allows `data:` images, not `blob:` ones. When the
+  database fails for anything but the quota, the album moves to memory
+  for the session and says so; a `VersionError` (a newer page in another
+  tab) says "close the other tabs" instead. The connection is dropped on
+  `versionchange`/`close` and reopened on the next use, and a quota abort
+  is read from the request when WebKit leaves `transaction.error` empty.
+  A house keeps 30; the 31st asks first, then the oldest go after the new
+  one is written, so a full disk loses nothing. Albums follow `layout.id`,
+  so copies of a house (which share the id) share one album. Other tabs
+  hear of saves and deletes over a BroadcastChannel. The module loads with
+  `import()` when photo mode shows the bar. A question asked in photo mode
+  shows over the shot and owns its keys; with one open, every other key
+  outside the dialog stops at the guard (focus can be on `<body>` after a
+  backdrop click), and leaving photo mode withdraws it and stops the save.
+  Escape closes an open album before it leaves (`claimPhotoEscape`).
 - **Walkers path on a grid, not by steering (#452).** `lib/npc-path.ts`
   rasterises a storey into 0.2 m cells a walker (radius 0.22 m)
   can stand in: the walkthrough's colliders (furniture, partitions with
@@ -469,6 +502,46 @@ to respect.
   round (`bedId` in `lib/npc-bodies`). The spots are built
   with the seats when the floor's items change, never per frame. Still to
   come: the garden (the nav grid is indoors only) and a mood marker.
+  Hygiene (#904) runs out in 200 s and is met standing at the toilet, the
+  shower, the bath or the basin, with the reach clip. A computer is fun
+  used like a TV, from a seat facing it within 1.3 m (the desk chair), or
+  standing. A chair pushed in at a desk or a table has no free floor in
+  front, so the seats are found against the nav grid: such a chair is
+  entered from whichever side is free, or else from behind, but only when
+  the straight walk from there to where the feet go (0.24 m in front of the
+  hips) keeps 0.1 m from every other item and partition. A chair tucked
+  under a table, or three along one side, would put the feet under the
+  table: it keeps its blocked front and the walkers pass it over.
+- **The house says what its walkers lack (#906).** `householdLacks` runs
+  `findNpcSeats` and `findNeedSpots` per storey over the items standing on
+  the building (walkers stay indoors and keep to their storey), and
+  `unmetNeeds` names the needs no spot meets (a toilet alone is not
+  somewhere to wash: that takes a basin, a shower or a bath). Statistics
+  shows them as a Household block, led by "Walkers would go without:"
+  ("First floor: nowhere to eat, nowhere to wash"; a storey with nothing
+  for them, "First floor: nothing yet"), from
+  the held editor layout like the room scores, so it costs nothing while
+  the drawer is closed and nothing at runtime. Reachability is not checked:
+  a fridge boxed in by furniture still counts. The thought bubbles and the
+  walker card are the next step.
+- **Walkers keep the clock (#907).** `lib/npc-schedule` reads the view's
+  hour: from 23:00 to 07:00 rest counts as pressing even when met (a bias
+  that raises `NEED_URGENT` for that need), and a rest at night, in a bed
+  or (no bed free) on the sofa, is a sleep of 60 to 90 real seconds; the
+  sleeper gets up at the end of it, at morning, or when the player stands
+  within 1.2 m of its spot, then wanders a while (the need it just met is
+  skipped once) before turning in again. A bed sleeps one, a double bed
+  (1.35 m or wider) two (`NpcSeat.places`), so a fixed night clock never
+  piles everyone onto one bed. Within 45 minutes of 08,
+  13 and 19 hunger presses below 0.8 instead of 0.5. The biases are shared
+  constants, so a stop allocates nothing. The hour reaches the step through
+  a ref written by a `viewStore.subscribe` in `use-scene-life`: a clock tick
+  (every 250 ms while the day cycles) re-renders nothing and never re-runs
+  the spawn effect. Needs still run down in real seconds and the auto-cycle
+  turns a day in 24 s, so the schedule shows only with the clock slow or
+  set by hand (`[` / `]`); with the day cycling a night lasts 8 s
+  (game-time decay is the next step). The rig has no lying clip: a sleeper sits on
+  the bed's end.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`

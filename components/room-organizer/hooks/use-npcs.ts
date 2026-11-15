@@ -26,6 +26,7 @@ import {
   pickDestination,
   randomFreeCell,
 } from '../lib/npc-path';
+import { type NeedBias, NO_BIAS, isSleepHour, needBias } from '../lib/npc-schedule';
 import { type NpcSeat, findNpcSeats } from '../lib/npc-seats';
 import { floorElevation } from '../lib/storeys';
 import { type WalkerPosition, resolveWalkerStep } from '../lib/walk-collision';
@@ -113,12 +114,14 @@ export interface NpcState {
   stuck: number;
   /** What the player bumps into and can't sit on (#585); moved with the walker every step. */
   body: NpcBody;
-  /** Hunger, energy and fun, running down (#617). */
+  /** Hunger, energy, fun and hygiene, running down (#617, #904). */
   needs: NpcNeeds;
   /** The need the trip under way (or the seat headed for) is to meet; null for a wander. */
   seeking: NeedKind | null;
   /** The need being met at this stop or in this seat, topped up while it lasts. */
   using: NeedKind | null;
+  /** Sleeping in a bed or on a sofa at night (#907): up after `SLEEP_SECONDS`, at morning, or for the player. */
+  asleep: boolean;
 }
 
 export interface NpcAnimation {
@@ -170,6 +173,13 @@ const SEAT_CHANCE = 0.35;
 const SEATED_SECONDS = [5, 11] as const;
 /** A rest in the sofa or a programme on TV takes longer than a sit down (#617). */
 const SEATED_USE_SECONDS = [8, 14] as const;
+/**
+ * A night's sleep, in real seconds (#907): then the sleeper gets up and
+ * wanders a while, so a fixed night clock doesn't pin everyone in bed.
+ */
+const SLEEP_SECONDS = [60, 90] as const;
+/** The player standing this close to a sleeper's spot (m) wakes it: the bed is theirs (#907). */
+const PLAYER_WAKE_GAP = 1.2;
 /** Standing at something that meets a need with no clip to play: the TV, or a procedural figure. */
 const STAND_USE_SECONDS = [4, 7] as const;
 const NO_SPOTS: readonly NeedSpot[] = [];
@@ -248,6 +258,12 @@ export interface UseNpcsOptions {
    * stands and sits, and publish their own bodies for the player's resolve.
    */
   handOff?: NpcHandOff;
+  /**
+   * The hour of the day the walkers keep (#907), read every step: a ref
+   * written by a store subscription, so a clock tick never re-runs the
+   * spawn effect. NaN or absent: no clock.
+   */
+  clock?: { readonly current: number };
 }
 
 /**
@@ -289,14 +305,14 @@ interface NpcStage {
 export function useNpcs(options: UseNpcsOptions): void {
   const {
     enabled, count = 3, threeModuleRef, sceneRef, building, shownFrom, shownTo,
-    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep, handOff,
+    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep, handOff, clock,
   } = options;
   const reducedMotion = useReducedMotion();
   const storeysRef = useRef(new Map<string, StoreyWalkers>());
   const stageRef = useRef<NpcStage | null>(null);
   // Read by `sync`, which runs from both effects below.
-  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff });
-  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff };
+  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock });
+  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock };
 
   // Brings the storeys' walkers in line with the building and the storeys
   // drawn: spawn, re-route, re-seat, lift or lower, show or park, remove.
@@ -331,6 +347,7 @@ export function useNpcs(options: UseNpcsOptions): void {
     const step = (delta: number): boolean => {
       let change: NpcChange = NPC_STILL;
       const seen = inputsRef.current.handOff?.player;
+      const hour = inputsRef.current.clock?.current ?? Number.NaN;
       for (const storey of storeys.values()) {
         if (!storey.shown || !storey.nav || storey.npcs.length === 0) continue;
         // The player is one more person on its own storey (#585).
@@ -344,7 +361,7 @@ export function useNpcs(options: UseNpcsOptions): void {
         // only when a walker moved: a rigged figure idles (breathes) every
         // frame, and re-rendering every caster for that pinned the GPU (#400).
         // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
-        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats, player, storey.spots)) as NpcChange;
+        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats, player, storey.spots, hour)) as NpcChange;
       }
       if (shadowDue(performance.now(), change === NPC_SHADOW)) inputsRef.current.requestShadowUpdate?.();
       return change !== NPC_STILL;
@@ -434,7 +451,8 @@ function syncNpcStoreys(
     // Rebuilt only when what it reads changes (not on a recolour or a lock,
     // which still hand over new arrays).
     const signature = `${building.width}:${building.height}|${npcNavSignature({ items: floor.items, interiorWalls, keepOut })}`;
-    if (signature !== storey.signature) {
+    const navChanged = signature !== storey.signature;
+    if (navChanged) {
       storey.signature = signature;
       storey.nav = buildNpcNav({ items: floor.items, interiorWalls, keepOut, roomWidth: building.width, roomDepth: building.height });
       if (storey.nav && storey.nav.freeCount > 0 && storey.npcs.length > 0) {
@@ -443,10 +461,12 @@ function syncNpcStoreys(
       }
     }
     // Cheap to rebuild, and a rebuild disturbs nobody (a sitter whose seat
-    // moved stands up), so this keys on the items themselves.
-    if (floor.items !== storey.seatItems) {
+    // moved stands up), so this keys on the items themselves, and on the nav:
+    // a chair pushed in at a desk is entered from wherever is free (#904).
+    if (floor.items !== storey.seatItems || navChanged) {
       storey.seatItems = floor.items;
-      const seats = findNpcSeats(floor.items);
+      const nav = storey.nav;
+      const seats = findNpcSeats(floor.items, nav ? { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders } : undefined);
       storey.seats = new Map(seats.map((seat) => [seat.key, seat]));
       storey.spots = findNeedSpots(floor.items, seats);
     }
@@ -604,6 +624,7 @@ function createNpc(
     needs: randomNeeds(Math.random),
     seeking: null,
     using: null,
+    asleep: false,
   };
   planRoute(npc, nav, Math.random, others);
   return npc;
@@ -757,13 +778,20 @@ export function planSeat(
     if (!isFreeAt(nav, seat.approachX, seat.approachZ)) continue;
     const cell = cellAt(nav, seat.approachX, seat.approachZ);
     if (nav.region[cell] !== region) continue;
-    if (others.some((other) => other !== npc && other.seat?.key === seat.key)) continue;
+    if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) continue;
     // Nor where the player sits (#585).
     if (player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat))) continue;
     eligible += 1;
     if (random() * eligible < 1) chosen = seat;
   }
   return chosen !== null && headForSeat(npc, nav, from, chosen);
+}
+
+/** Whether the item a seat is on already has as many people as it takes: a bed sleeps one, a double two (#907). */
+function seatFull(npc: NpcState, seat: NpcSeat, others: readonly NpcState[]): boolean {
+  let taken = 0;
+  for (const other of others) if (other !== npc && other.seat?.itemId === seat.itemId) taken += 1;
+  return taken >= seat.places;
 }
 
 /** Route from `from` to a seat's approach point and claim the seat; false when there is no way. */
@@ -796,7 +824,8 @@ export function planNeed(
   random: () => number,
   others: readonly NpcState[] = [],
   player: PlayerBody | null = null,
-  skip: NeedKind | null = null
+  skip: NeedKind | null = null,
+  bias: NeedBias = NO_BIAS
 ): boolean {
   if (spots.length === 0) return false;
   const from = standingCell(npc, nav);
@@ -812,10 +841,10 @@ export function planNeed(
     // Only the rigged figure sits; one sitter per seat (#585).
     const seat = seats.get(spot.seatKey);
     if (!seat || !npc.anim?.sit) return false;
-    if (others.some((other) => other !== npc && other.seat?.key === seat.key)) return false;
+    if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) return false;
     return !(player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat)));
   };
-  const spot = pickNeedSpot(npc.needs, spots, npc.position.x, npc.position.z, usable, random, skip);
+  const spot = pickNeedSpot(npc.needs, spots, npc.position.x, npc.position.z, usable, random, skip, bias);
   if (!spot) return false;
   if (spot.seatKey !== null) {
     if (!headForSeat(npc, nav, from, seats.get(spot.seatKey)!)) return false;
@@ -868,7 +897,8 @@ export function stepNpcs(
   random: () => number = Math.random,
   seats: NpcSeats = EMPTY_SEATS,
   player: PlayerBody | null = null,
-  spots: readonly NeedSpot[] = NO_SPOTS
+  spots: readonly NeedSpot[] = NO_SPOTS,
+  hour = Number.NaN
 ): NpcChange {
   let change: NpcChange = NPC_STILL;
   for (const npc of npcs) {
@@ -896,6 +926,8 @@ export function stepNpcs(
         if (npc.mode === 'pause' && !Number.isNaN(npc.standHeading) && turnToward(npc.group, npc.standHeading, delta)) {
           change = NPC_SHADOW;
         }
+        // Asleep (#907): up at morning, or when the player comes for the bed or the sofa.
+        if (npc.asleep && npc.pause > 0 && (!isSleepHour(hour) || playerWantsSeat(npc, player))) npc.pause = 0;
         if (npc.pause > 0) break;
         // A use that ran its course meets the need (#617).
         if (npc.using) refillNeed(npc.needs, npc.using, Number.POSITIVE_INFINITY);
@@ -932,7 +964,9 @@ export function stepNpcs(
           // In the seat for a need: resting, or watching TV (#617).
           npc.using = npc.seeking;
           npc.seeking = null;
-          const sitFor = npc.using ? SEATED_USE_SECONDS : SEATED_SECONDS;
+          // At night a rest in a bed or on the sofa is a sleep (#907).
+          npc.asleep = npc.using === 'energy' && isSleepHour(hour);
+          const sitFor = npc.asleep ? SLEEP_SECONDS : npc.using ? SEATED_USE_SECONDS : SEATED_SECONDS;
           npc.pause = between(random, sitFor[0], sitFor[1]);
           crossFadeTo(npc.anim, randomOf(sit.idle, random));
           npc.shadowSettle = FADE_SECONDS;
@@ -977,7 +1011,7 @@ export function stepNpcs(
           } else {
             // Up from a seat: walk somewhere before sitting again.
             npc.seat = null;
-            arriveAtStop(npc, nav, floorY, random, npcs, null, player, spots);
+            arriveAtStop(npc, nav, floorY, random, npcs, null, player, spots, hour);
           }
           break;
         }
@@ -1026,7 +1060,7 @@ export function stepNpcs(
             npc.mode = 'settle';
             npc.stuck = 0;
             sitFeet(npc, npc.seat, npc.target);
-          } else arriveAtStop(npc, nav, floorY, random, npcs, seats, player, spots);
+          } else arriveAtStop(npc, nav, floorY, random, npcs, seats, player, spots, hour);
           change = NPC_SHADOW;
           break;
         }
@@ -1105,7 +1139,8 @@ export function stepNpcs(
  * plan where it goes next: what meets its most pressing need (#617), or
  * else sometimes one of `seats` (null: not a seat). At something that meets
  * a need it uses it instead: reaches into the fridge, takes a book, watches
- * the TV. It sets off after the pause.
+ * the TV. It sets off after the pause. The hour (#907) tilts the pick: to
+ * bed at night, to the kitchen at mealtimes.
  */
 function arriveAtStop(
   npc: NpcState,
@@ -1115,14 +1150,15 @@ function arriveAtStop(
   npcs: readonly NpcState[],
   seats: NpcSeats | null,
   player: PlayerBody | null,
-  spots: readonly NeedSpot[]
+  spots: readonly NeedSpot[],
+  hour: number
 ): void {
   npc.standHeading = npc.arrivalHeading;
   // Arrived where it set out for (not dropped short of a seat it lost).
   npc.using = npc.destination >= 0 ? npc.seeking : null;
   npc.seeking = null;
   const using = npc.using;
-  const toNeed = planNeed(npc, nav, seats ?? EMPTY_SEATS, spots, random, npcs, player, using);
+  const toNeed = planNeed(npc, nav, seats ?? EMPTY_SEATS, spots, random, npcs, player, using, needBias(hour));
   const toSeat =
     !toNeed &&
     Boolean(npc.anim?.sit) &&
@@ -1136,10 +1172,11 @@ function arriveAtStop(
   npc.mode = 'pause';
   const activities = npc.anim?.activities ?? [];
   if (using) {
-    // Reach into the fridge or the stove, take a book; the TV, watched
-    // standing, has no clip: just a while in front of it.
+    // Reach into the fridge or the stove, take a book, wash at the basin or
+    // the shower (#904); a screen, used standing, has no clip: just a while
+    // in front of it.
     const itemType = nearestSpotType(spots, using, npc.position.x, npc.position.z);
-    const use = itemType === 'bookshelf' ? npc.anim?.pickUp : using === 'hunger' ? npc.anim?.interact : null;
+    const use = itemType === 'bookshelf' ? npc.anim?.pickUp : using === 'hunger' || using === 'hygiene' ? npc.anim?.interact : null;
     if (use) {
       npc.pause = use.getClip().duration + 0.3;
       standStill(npc, floorY, use);
@@ -1171,6 +1208,13 @@ function standStill(npc: NpcState, floorY: number, action: ThreeNS.AnimationActi
   }
 }
 
+/** The player, on its feet on the sleeper's storey, came up to the sleeper's spot (#907). */
+function playerWantsSeat(npc: NpcState, player: PlayerBody | null): boolean {
+  const seat = npc.seat;
+  if (!player?.present || !seat || player.floorIndex !== npc.body.floorIndex || !Number.isNaN(player.seatX)) return false;
+  return Math.hypot(player.x - seat.x, player.z - seat.z) < PLAYER_WAKE_GAP;
+}
+
 function startWalking(npc: NpcState): void {
   npc.using = null;
   npc.mode = 'walk';
@@ -1180,6 +1224,7 @@ function startWalking(npc: NpcState): void {
 }
 
 function standUp(npc: NpcState): void {
+  npc.asleep = false;
   npc.mode = 'standUp';
   npc.pause = 0;
   if (!npc.anim?.sit) return;

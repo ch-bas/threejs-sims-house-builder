@@ -360,6 +360,12 @@ export interface HardBudget {
   amount?: number;
 }
 
+/** A house's challenge brief (#909): which one (`CHALLENGES` id) and when it started (ms since the epoch). */
+export interface LayoutChallenge {
+  id: string;
+  startedAt: number;
+}
+
 /**
  * A multi-floor building. `floors[0]` is the ground floor; subsequent
  * entries stack upward. Footprint and floor-plan upload live on the
@@ -400,6 +406,8 @@ export interface RoomLayout {
   frontage?: Frontage;
   /** The opt-in hard budget (#463e); absent, the budget only advises. */
   budget?: HardBudget;
+  /** The challenge brief this house is played under (#909); see lib/challenges.ts. */
+  challenge?: LayoutChallenge;
 }
 
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */
@@ -436,6 +444,8 @@ export interface ViewSettings {
   measurementMode: boolean;
   /** When true, the UI plays short Web Audio cues on key actions. */
   soundsEnabled: boolean;
+  /** When true (with `soundsEnabled`), EXPLORE plays its ambience: rain on the roof and footsteps (#911). */
+  ambienceEnabled: boolean;
   /** When true, a touch device buzzes for a placement, a wall snap and a refusal (#687). */
   hapticsEnabled: boolean;
   /** When true, clicking pairs of floor points draws an interior wall. */

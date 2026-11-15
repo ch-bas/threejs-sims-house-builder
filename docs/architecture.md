@@ -72,7 +72,7 @@ components/
     │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214); per-item build keys + diff (#404)
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
     │   ├── alignment.ts                 Align/distribute pure functions
-    │   ├── achievements.ts              15 predicate-based achievements with count progress; `achievementsEarned` (loaded / edit)
+    │   ├── achievements.ts              19 predicate-based achievements with count progress, four of them room goals read from `houseRoomScores` (#903); `achievementsEarned` (loaded / edit)
     │   ├── first-steps.ts               The Getting started card's five steps: progress from edits like achievements (loads do none), per-step tips, the stored record (card state, a boolean per step) (#721)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
@@ -99,6 +99,7 @@ components/
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
     │   ├── catalog-variants.ts          Colour variants (#621): the entry in a picked colour, drag keys, a placed item's colours
     │   ├── budget.ts                    Hard budget (#463e): the house's funds (#609), spend, funds left, 80 % sell-back, purchase refusal, over-budget tile reason, schema repair
+    │   ├── challenges.ts                Challenge briefs (#909): five lots with funds and goals read from the room scores, spend and storeys; the starting house, live progress, `layout.challenge` repair
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)
@@ -116,27 +117,29 @@ components/
     │   ├── history-label.ts             What an undo or redo step did, from the two snapshots, for the toolbar's tooltips
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
-    │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused)
+    │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused); owns the page's one AudioContext
+    │   ├── ambience.ts                  EXPLORE ambience (#911): rain gain by weather and indoors, footsteps by distance walked, and the Web Audio graph on the shared context
     │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
     │   ├── wall-edit.ts                 Moving drawn walls: slide, end moves, corners that follow, what rides along (#718)
     │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-bodies.ts                The player and the walkers as each other's obstacles: walker bodies for the player's resolve, the player's spot and seat for the walkers (#585)
-    │   ├── npc-needs.ts                 Walkers' hunger, energy and fun: decay, refill, what meets each (fridge/stove, bed/sofa, TV/bookshelf) and the weighted destination pick (#617)
+    │   ├── npc-needs.ts                 Walkers' hunger, energy, fun and hygiene: decay, refill, what meets each (fridge/stove, bed/sofa, TV/computer/bookshelf, toilet/shower/bath/basin) and the weighted destination pick (#617, #904); what each storey lacks for the Statistics Household block (`householdLacks`, #906)
+    │   ├── npc-schedule.ts              The hour the walkers keep: the sleep window (23:00 to 07:00) and how the hour tilts the needs (rest at night, hunger at mealtimes) (#907)
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
-    │   ├── npc-seats.ts                 Where walkers sit: seat slots (the end of a bed too), facing, approach points
+    │   ├── npc-seats.ts                 Where walkers sit: seat slots (the end of a bed too), facing, approach points (from the side or behind for a chair pushed in, #904)
     │   ├── seat-surface.ts              Sitting-surface height per seat type, from the builders: one table for the walkers and the seated player (#623)
     │   ├── walk-input.ts                Walkthrough frame-time cap, which keydowns walk (no Ctrl/Cmd/Alt chords), E to interact, keys typed into a field ignored
     │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
     │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
-    │   ├── walk-interact.ts             Seats in reach and the seated pose (facing the TV), never through a wall or across the shell (#566)
+    │   ├── walk-interact.ts             Seats and (at night) lamps in reach for `E` (#910), and the seated pose (facing the TV), never through a wall or across the shell (#566)
     │   ├── wall-sides.ts                The two faces of a partition: which one faces a point, painting one (#720)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359); the mode to return to on exit
     │   ├── room-stamp.ts                The room stamp as a held placement: snapped position, drag to size, the walls a drop adds (#724)
     │   ├── room-detect.ts               Rooms closed by walls: planar faces of the footprint, partitions and keep-out, with areas (#719)
     │   ├── room-shapes.ts               Predefined room shape presets
-    │   ├── room-score.ts                Room types from a zone's furniture and a five-check score (decor, window, lamp, no collisions, space) for Statistics (#613)
+    │   ├── room-score.ts                Room types from a zone's furniture and a five-check score (decor, window, lamp, no collisions, space) for Statistics (#613), the room goals (#903), the plan's stars line and the zone chip's hint (#905)
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
     │   ├── site.ts                      Sloped ground (garden items stand on it, #665), neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
@@ -151,6 +154,7 @@ components/
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
     │   ├── photo-mode.ts                Photo mode switch (enter/leave/subscribe) and the photo's size and file name (#626)
+    │   ├── photo-album.ts               The photo album (#912, loaded with import()): per-house JPEG copies in IndexedDB (memory fallback), the 30-photo cap with oldest-out after asking, cross-tab notices
     │   ├── confirm-dialog.ts            askConfirm(): the in-app question queue that replaces window.confirm (#649)
     │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
@@ -172,7 +176,7 @@ components/
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
     │   ├── drag-handlers.ts             Canvas mouse events: select/drag/hover/wall-pick
-    │   ├── door-leaves.ts               Finds the door leaves in the scene and swings them for the walker; shuts them on exit (#605)
+    │   ├── door-leaves.ts               Finds the door leaves in the scene and swings each for the nearest person on its storey, the player or a walker (#605, #908); shuts them all
     │   ├── builders/                    Per-category builder functions
     │   │   ├── builders-seating.ts      Chair, armchair, bench, sofa
     │   │   ├── builders-bedroom.ts      Bed, nightstand, dresser
@@ -242,19 +246,22 @@ components/
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
-    │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob (#626)
+    │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob, downloaded or kept in the album (#626, #912)
+    │   ├── use-photo-album.ts           One house's album photos, newest first, kept current across saves and deletes (#912)
     │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
     │   ├── use-npcs.ts                  Animated walkers per storey (keyed by floor id, parked while not drawn): spawn, route-following step, re-route on floor edits; giving way, sitting, activities
     │   ├── use-weather.ts               Rain / snow clock on the frame budget
+    │   ├── use-ambience.ts              Rain on the roof and footsteps in EXPLORE, the sound tile's third setting (#911): steps on the frame budget, muted while hidden
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom
     │   ├── plan-calibration.ts          The traced plan's calibration session (#726): points picked, length step, move step
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
     │   ├── use-camera-vision.ts         Vision-cone sweep on the frame budget
-    │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones
+    │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones; the clock ref the walkers read (#907); the door swinger, for the player and the walkers (#908)
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
+    │   ├── use-start-challenge.ts       A challenge brief's empty house through the whole-house load path (#909)
     │   ├── use-first-steps.ts           Getting started session: steps done (edits, `markFirstStep` for walk and share), stored with the offered/dismissed card (#721)
     │   ├── use-set-game-mode.ts         DESIGN / FURNISH / EXPLORE switch with what it brings along (mode panel, First steps card)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
@@ -305,7 +312,8 @@ components/
         ├── item-resize-panel.tsx
         ├── stair-headroom-note.tsx      Warning in the stairs controls when a flight is short of headroom
         ├── align-panel.tsx
-        ├── templates-panel.tsx
+        ├── templates-panel.tsx          Template select and the Challenges list (#909)
+        ├── challenge-chip.tsx           The brief's checklist, pinned under the house card, ticking off live; none in a tour or on a walk, hidden under a top chip (#909)
         ├── themes-panel.tsx
         ├── library-panel.tsx
         ├── recovery-entry.tsx           History rows for kept recovery copies: restore, download, delete
@@ -335,11 +343,12 @@ components/
         ├── achievement-toast.tsx        Unlock toasts, one at a time: above the mode panel on desktop, the toast slot on small screens
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement or a ghost is pending (Cancel for touch)
-        ├── photo-bar.tsx                Photo mode's shutter: Take photo and Done, the one HUD left on screen (#626)
+        ├── photo-bar.tsx                Photo mode's shutter: Take photo, Save to album, Album and Done, the one HUD left on screen (#626, #912)
+        ├── photo-album.tsx              The album above the shutter: each photo's age, hour and weather, Download and Delete (#912)
         ├── tour-banner.tsx              The shared-link tour's HUD: the house's name, Walk through, Keep a copy, Build your own (#722)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── confirm-dialog.tsx           The askConfirm() modal: focus trap, Enter confirms, Escape cancels (#649)
-        ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), then the inline name field
+        ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), the selected room's stars and what it lacks (#905), then the inline name field
         ├── plan-calibration-chip.tsx    Floor plan calibration chip (#726): pick two points, type the length, drag into place
         ├── dev-diagnostics.tsx          `?debug` overlay: draw calls, triangles, geometries, textures, programs, frames
         ├── chip-controls.tsx            Chip buttons + inline name field (no native prompts)

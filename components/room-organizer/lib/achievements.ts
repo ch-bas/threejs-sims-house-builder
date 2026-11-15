@@ -1,5 +1,6 @@
 import { CURRENCY_SYMBOL, DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import { totalCost } from './geometry';
+import { furnishedRooms, ROOM_CHECKS, type HouseRoomScore, type KnownCollisions, type RoomType } from './room-score';
 import { ENTRANCE_DOOR_ID, ENTRANCE_WALL_ID } from './street';
 import type { RoomLayout } from './types';
 
@@ -18,6 +19,10 @@ const PLANTED_TYPES: ReadonlySet<string> = new Set([
   'sunflower',
   'rose-bush',
 ]);
+
+/** The rooms Home Sweet Home asks for, and the stars each needs. */
+const HOME_ROOMS: readonly RoomType[] = ['bedroom', 'kitchen', 'bathroom', 'living'];
+const HOME_MIN_STARS = 3;
 
 export interface Achievement {
   id: string;
@@ -172,6 +177,44 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
       return items.length >= 5 && totalCost(items) < 3_000;
     },
   },
+  {
+    id: 'real-kitchen',
+    name: 'A Real Kitchen',
+    description: 'Furnished a zone as a kitchen: a fridge, a stove and a counter or sink.',
+    icon: '🍳',
+    isMet: (layout) => roomsOfType(layout, 'kitchen') >= 1,
+    progress: (layout) => roomsOfType(layout, 'kitchen'),
+  },
+  {
+    id: 'five-stars',
+    name: 'Five Stars',
+    description: `Made a room that meets every check: ${ROOM_CHECKS.length} stars.`,
+    icon: '⭐',
+    isMet: (layout) => fiveStarRooms(layout) >= 1,
+    // Another five-star room is doing the thing (#450). Before the first,
+    // the best room's stars keep it a count: 3 to 4 stars is progress.
+    progress: (layout) => fiveStarRooms(layout) * (ROOM_CHECKS.length + 1) + bestStars(layout),
+  },
+  {
+    id: 'home-sweet-home',
+    name: 'Home Sweet Home',
+    description: `A bedroom, kitchen, bathroom and living room, each with ${HOME_MIN_STARS} stars or more.`,
+    icon: '🏡',
+    isMet: (layout) => homeRoomsMet(layout) === HOME_ROOMS.length,
+    // Every room of the four kinds at three stars counts: a second good bedroom too.
+    progress: (layout) => homeRooms(layout).length,
+  },
+  {
+    id: 'night-owl',
+    name: 'Night Owl',
+    description: 'Gave every furnished room a lamp for the night.',
+    icon: '🦉',
+    isMet: (layout) => {
+      const rooms = furnishedRooms(layout);
+      return rooms.length > 0 && rooms.every(hasLamp);
+    },
+    progress: (layout) => furnishedRooms(layout).filter(hasLamp).length,
+  },
 ];
 
 /**
@@ -196,9 +239,16 @@ export function achievementsEarned(
   change: LayoutChange,
   before: RoomLayout | null,
   now: RoomLayout,
-  unlocked: ReadonlySet<string>
+  unlocked: ReadonlySet<string>,
+  known: { before?: KnownCollisions | undefined; now?: KnownCollisions | undefined } = {}
 ): Achievement[] {
   if (change === 'loaded' || before === null) return [];
+  // The room goals score the active storey with the editor's own collisions
+  // (`collidingIds`, as each layout was on screen): no collision pass per edit.
+  if (ROOM_GOAL_IDS.some((id) => !unlocked.has(id))) {
+    primeRooms(now, known.now);
+    primeRooms(before, known.before);
+  }
   return ACHIEVEMENTS.filter((achievement) => {
     if (unlocked.has(achievement.id) || !achievement.isMet(now)) return false;
     if (!achievement.isMet(before)) return true;
@@ -216,6 +266,39 @@ function allItems(layout: RoomLayout): RoomLayout['floors'][number]['items'] {
 
 function countType(layout: RoomLayout, type: string): number {
   return allItems(layout).filter((item) => item.type === type).length;
+}
+
+/** Scores `layout` with what the editor knew of its active storey, before a goal asks without it. */
+function primeRooms(layout: RoomLayout, known: KnownCollisions | undefined): void {
+  if (known) furnishedRooms(layout, known);
+}
+
+const ROOM_GOAL_IDS: readonly string[] = ['real-kitchen', 'five-stars', 'home-sweet-home', 'night-owl'];
+
+function roomsOfType(layout: RoomLayout, type: RoomType): number {
+  return furnishedRooms(layout).filter((room) => room.type === type).length;
+}
+
+function bestStars(layout: RoomLayout): number {
+  return furnishedRooms(layout).reduce((best, room) => Math.max(best, room.stars), 0);
+}
+
+function fiveStarRooms(layout: RoomLayout): number {
+  return furnishedRooms(layout).filter((room) => room.stars >= ROOM_CHECKS.length).length;
+}
+
+/** The rooms Home Sweet Home counts: the four kinds, at its stars or more. */
+function homeRooms(layout: RoomLayout): readonly HouseRoomScore[] {
+  return furnishedRooms(layout).filter((room) => room.type !== null && HOME_ROOMS.includes(room.type) && room.stars >= HOME_MIN_STARS);
+}
+
+function homeRoomsMet(layout: RoomLayout): number {
+  const rooms = homeRooms(layout);
+  return HOME_ROOMS.filter((type) => rooms.some((room) => room.type === type)).length;
+}
+
+function hasLamp(room: HouseRoomScore): boolean {
+  return !room.missing.includes('lamp');
 }
 
 const STORAGE_KEY = 'standalone-room-organizer-achievements';

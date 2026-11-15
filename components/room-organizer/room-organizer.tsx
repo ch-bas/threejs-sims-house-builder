@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { EditorViewProvider, useEditorView } from './contexts/editor-view-context';
@@ -43,6 +43,7 @@ import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
 import { loadQualityChoice } from './lib/render-quality';
+import { activeStoreyRoomScores } from './lib/room-score';
 import { focusCoverFor } from './lib/scene-insets';
 import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
@@ -55,6 +56,7 @@ import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
 import { BottomHud } from './panels/bottom-hud';
 import { CameraPad } from './panels/camera-pad';
+import { ChallengeChip } from './panels/challenge-chip';
 import { ConfirmDialogHost } from './panels/confirm-dialog';
 import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FirstStepsCard } from './panels/first-steps-card';
@@ -62,7 +64,6 @@ import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
-import { PhotoBar } from './panels/photo-bar';
 import { PlacementHint } from './panels/placement-hint';
 import { PlanCalibrationChip } from './panels/plan-calibration-chip';
 import { SidebarDrawer } from './panels/sidebar-drawer';
@@ -80,6 +81,9 @@ import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
 import type { CatalogItem, FurnitureItem, RoomLayout, ViewSettings } from './lib/types';
+
+// G4 album (#912): the shutter and its album load as photo mode opens.
+const PhotoBar = lazy(() => import('./panels/photo-bar').then((module) => ({ default: module.PhotoBar })));
 
 /** A stable "none" for the plan's memoised rooms to name. */
 const NO_ROOMS: readonly DetectedRoom[] = [];
@@ -101,6 +105,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   wallDisplay: 'cutaway',
   measurementMode: false,
   soundsEnabled: false,
+  ambienceEnabled: false,
   hapticsEnabled: true,
   drawWallMode: false,
   drawZoneMode: false,
@@ -121,11 +126,6 @@ export function RoomOrganizer(): JSX.Element {
   const { layout, activeFloor, activeFloorIndex, actions } = useLayoutState();
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   const activeStoreyHeight = storeyHeight(activeFloor);
-  const {
-    unlocked: unlockedAchievements,
-    pending: pendingAchievements,
-    dismiss: dismissAchievements,
-  } = useAchievements(layout);
   const { recent: recentColors, pushColor } = useRecentColors();
   // View and game state live in a per-editor store (#3). The orchestrator
   // reads every view field but the time of day, so an auto-cycle tick
@@ -222,6 +222,13 @@ export function RoomOrganizer(): JSX.Element {
     }
     return matches;
   }, [activeFloor.items, activeFloor.interiorWalls, activeStoreyHeight, layout.width, layout.height, keepOut]);
+  // The room goals score the active storey with these collisions (#903).
+  const knownCollisions = useMemo(() => ({ floorIndex: activeFloorIndex, ids: collidingIds }), [activeFloorIndex, collidingIds]);
+  const {
+    unlocked: unlockedAchievements,
+    pending: pendingAchievements,
+    dismiss: dismissAchievements,
+  } = useAchievements(layout, knownCollisions);
 
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
@@ -482,6 +489,13 @@ export function RoomOrganizer(): JSX.Element {
     [view.drawZoneMode, exploring, layout, activeFloorIndex]
   );
 
+  // The active storey's room types and stars, written on the plan under each
+  // zone's name (#905). Only while the plan shows; the collisions are the editor's.
+  const planRoomScores = useMemo(
+    () => (view.view2D ? activeStoreyRoomScores(layout, { floorIndex: activeFloorIndex, ids: collidingIds }) : undefined),
+    [view.view2D, layout, activeFloorIndex, collidingIds]
+  );
+
   // Moving a selected wall, in both views (#718). The 3D ghosts are wired below,
   // once the scene exists.
   const interiorSelectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
@@ -537,6 +551,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedZoneId: planZoneId,
     onZoneSelect: setSelectedZoneId,
     roomsToName: planRoomsToName,
+    roomScores: planRoomScores,
   });
 
   const orbitGroundAt = useCallback(
@@ -697,6 +712,7 @@ export function RoomOrganizer(): JSX.Element {
     selectedWall,
     selectedZoneId: planZoneId,
     roomsToName: planRoomsToName,
+    roomScores: planRoomScores,
     wallDraft,
     stampGhost,
     stampArmed: roomStamp.armed,
@@ -756,6 +772,12 @@ export function RoomOrganizer(): JSX.Element {
   const photo = usePhotoMode({
     available: isReady && !view.view2D,
     houseName: layout.name,
+    // G4 album (#912): photos are kept per house, with the scene's hour and weather.
+    houseId: layout.id,
+    readConditions: () => {
+      const { timeOfDay, weather } = viewStore.getState().view;
+      return { hour: timeOfDay, weather };
+    },
     rendererRef,
     sceneRef,
     cameraRef,
@@ -1007,6 +1029,7 @@ export function RoomOrganizer(): JSX.Element {
                 locked: walk.locked,
                 lockRefused: walk.lockRefused,
                 seatName: walk.seatName,
+                lamp: walk.lamp,
                 seated: walk.seated,
                 floorName: activeFloor.name,
                 multiFloor: layout.floors.length > 1,
@@ -1167,7 +1190,11 @@ export function RoomOrganizer(): JSX.Element {
       )}
 
       {/* L2 photo (#626): the shutter, the one HUD photo mode keeps. */}
-      {photo.active && <PhotoBar onTake={photo.take} onDone={photo.leave} />}
+      {photo.active && (
+        <Suspense fallback={null}>
+          <PhotoBar onTake={photo.take} onKeep={photo.keep} houseId={layout.id} houseName={layout.name} onDone={photo.leave} />
+        </Suspense>
+      )}
 
       {/* Touch mode toggle — visible on mobile only */}
       <TouchModeToggle controlsRef={controlsRef} isReady={isReady} onFit={fitToRoom} />
@@ -1189,7 +1216,9 @@ export function RoomOrganizer(): JSX.Element {
       <PlacementHint active={placingId !== null} ghost={ghost} onCancel={placementGhost.cancel} />
 
       {/* Inline zone naming and export/share status (#374) */}
-      <ZoneNameChip />
+      <ZoneNameChip selectedZoneId={planZoneId} />
+      {/* The challenge checklist (#909): none in a shared-link tour; a kept copy is the player's own */}
+      {!touring && <ChallengeChip />}
       <PlanCalibrationChip />
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}
@@ -1235,7 +1264,7 @@ function SaveStatusHeaderStats({
   return <HeaderStats {...props} {...useSaveStatus(saveStatus)} />;
 }
 
-type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds'>;
+type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds' | 'lampsOff'>;
 
 // Renders nothing: it owns the scene effects, subscribed to the whole view
 // (time of day included) and to the catalog search's highlighted items.
@@ -1245,8 +1274,10 @@ function SceneEffects(props: SceneEffectsProps): null {
   // identity and leaves the furniture effect alone.
   const highlightKey = useEditorView((state) => catalogHighlightKey(state.catalogQuery, props.activeFloor.items));
   const highlightedIds = useMemo(() => highlightIdsFromKey(highlightKey), [highlightKey]);
+  // Lamps switched off in EXPLORE (#910).
+  const lampsOff = useEditorView((state) => state.lampsOff);
   useCameraTargetOnStorey(props, view.walkthroughMode && !view.view2D);
-  useSceneEffects({ ...props, view, highlightedIds });
+  useSceneEffects({ ...props, view, highlightedIds, lampsOff });
   return null;
 }
 

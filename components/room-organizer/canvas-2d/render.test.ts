@@ -210,7 +210,15 @@ describe('zone labels (#433)', () => {
   }
 
   const zone = (name: string, x: number, z: number, w: number, d: number) => ({ id: name, name, color: '#3b82f6', x, z, w, d });
-  const render = (width: number, height: number, padding: number, zones: ReturnType<typeof zone>[], thumbnail = width < 400): string[] => {
+  const render = (
+    width: number,
+    height: number,
+    padding: number,
+    zones: ReturnType<typeof zone>[],
+    thumbnail = width < 400,
+    roomScores?: Map<string, { type: 'kitchen' | 'bedroom' | null; stars: number }>,
+    showMeasurements = false
+  ): string[] => {
     const { canvas, texts } = recordingCanvas(width, height);
     const floor = makeFloor({ zones });
     render2DTopDown({
@@ -218,11 +226,12 @@ describe('zone labels (#433)', () => {
       layout: makeLayout({ floors: [floor] }),
       floor,
       selectedItemId: null,
-      showMeasurements: false,
+      showMeasurements,
       showWiFiSignals: false,
       hasCollision: () => false,
       padding,
       thumbnail,
+      roomScores,
     });
     return texts;
   };
@@ -247,6 +256,41 @@ describe('zone labels (#433)', () => {
 
   it('leaves off a name wider than its zone', () => {
     expect(render(1440, 900, 60, [zone('A very long zone name indeed', -4, -4, 1, 3)])).not.toContain('A very long zone name indeed');
+  });
+
+  describe('room type and stars (#905)', () => {
+    const scores = new Map([
+      ['Kitchen', { type: 'kitchen' as const, stars: 3 }],
+      ['Living Room', { type: null, stars: 0 }],
+    ]);
+
+    it('writes the room and its stars under a scored zone, under the area when it shows', () => {
+      expect(render(1440, 900, 60, twoRooms, false, scores)).toContain('Kitchen · ★★★☆☆');
+      const withArea = render(1440, 900, 60, twoRooms, false, scores, true);
+      expect(withArea.indexOf('Kitchen · ★★★☆☆')).toBeGreaterThan(withArea.indexOf('Kitchen'));
+      // A zone the furniture makes no room of says nothing more.
+      expect(render(1440, 900, 60, twoRooms, false, scores).filter((text) => text.includes('★'))).toHaveLength(1);
+    });
+
+    it('goes over the furniture, so a counter along the wall does not hide it', () => {
+      const { canvas, texts } = recordingCanvas(1440, 900);
+      const counter = makeItem({ id: 'c', type: 'counter', icon: 'COUNTER', width: 3, depth: 0.6, position: { x: 2.5, z: -3.6 } });
+      const floor = makeFloor({ zones: twoRooms, items: [counter] });
+      render2DTopDown({ canvas, layout: makeLayout({ floors: [floor] }), floor, selectedItemId: null, showMeasurements: false, showWiFiSignals: false, hasCollision: () => false, roomScores: scores });
+      expect(texts.indexOf('Kitchen · ★★★☆☆')).toBeGreaterThan(texts.indexOf('COUNTER'));
+      // The name itself stays under the furniture, as before.
+      expect(texts.indexOf('Kitchen')).toBeLessThan(texts.indexOf('COUNTER'));
+    });
+
+    it('never on a thumbnail or the minimap, and not wider than its zone', () => {
+      expect(render(1440, 900, 60, twoRooms, true, scores).some((text) => text.includes('★'))).toBe(false);
+      expect(render(180, 130, 6, twoRooms, true, scores).some((text) => text.includes('★'))).toBe(false);
+      // A 1 m zone at ~100 px/m fits "Kitchen" but not the stars line.
+      const narrow = [zone('Kitchen', -4, -4, 1, 3)];
+      const texts = render(1440, 900, 60, narrow, false, scores);
+      expect(texts).toContain('Kitchen');
+      expect(texts.some((text) => text.includes('★'))).toBe(false);
+    });
   });
 });
 

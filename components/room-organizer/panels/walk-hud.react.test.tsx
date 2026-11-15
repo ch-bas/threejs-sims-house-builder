@@ -80,3 +80,20 @@ describe('the touch walk HUD extras (#688)', () => {
     expect(props.onStick).toHaveBeenLastCalledWith(0, 0, false);
   });
 });
+
+describe('switching a lamp from the walk HUD (#910)', () => {
+  it('offers the lamp in reach on touch, and says which way it switches', () => {
+    const props = setup({ lamp: { name: 'Floor Lamp', on: true } });
+    fireEvent.click(screen.getByRole('button', { name: 'Switch off Floor Lamp' }));
+    expect(props.onToggleSit).toHaveBeenCalledTimes(1);
+    cleanup();
+    setup({ lamp: { name: 'Floor Lamp', on: false } });
+    expect(screen.getByRole('button', { name: 'Switch on Floor Lamp' }).textContent).toContain('Switch on');
+  });
+
+  it('prompts `E` on a desktop under the lock', () => {
+    window.matchMedia = ((query: string) => ({ media: query, matches: false, addEventListener: () => undefined, removeEventListener: () => undefined })) as unknown as typeof window.matchMedia;
+    setup({ locked: true, lamp: { name: 'Lamp', on: true } });
+    expect(screen.getByText('Switch off Lamp')).toBeTruthy();
+  });
+});

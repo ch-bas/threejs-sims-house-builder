@@ -52,6 +52,41 @@ describe('editor view store (#3, #148)', () => {
   });
 });
 
+describe('lamps switched in EXPLORE (#910)', () => {
+  it('switches a lamp off and back on, outside the view and the house', () => {
+    const store = createEditorViewStore(makeViewSettings());
+    const before = store.getState();
+    const { switchLamp } = before.actions;
+    expect(before.lampsOff.size).toBe(0);
+    switchLamp('lamp-1');
+    const off = store.getState();
+    expect([...off.lampsOff]).toEqual(['lamp-1']);
+    // Its own field: the view settings keep their identity.
+    expect(off.view).toBe(before.view);
+    switchLamp('lamp-1');
+    expect(store.getState().lampsOff.size).toBe(0);
+    // A new set each time, so a selector sees the change.
+    expect(store.getState().lampsOff).not.toBe(off.lampsOff);
+  });
+
+  it('forgets the switched lamps, or only those no longer in the house', () => {
+    const store = createEditorViewStore(makeViewSettings());
+    const { switchLamp, resetLamps } = store.getState().actions;
+    const empty = store.getState();
+    resetLamps();
+    expect(store.getState()).toBe(empty);
+    switchLamp('a');
+    switchLamp('b');
+    const both = store.getState();
+    resetLamps(new Set(['a', 'b', 'c']));
+    expect(store.getState()).toBe(both);
+    resetLamps(new Set(['a']));
+    expect([...store.getState().lampsOff]).toEqual(['a']);
+    resetLamps();
+    expect(store.getState().lampsOff.size).toBe(0);
+  });
+});
+
 describe('catalogHighlightKey', () => {
   const items = [
     makeItem({ id: 'a', name: 'Corner Sofa', type: 'sofa' }),

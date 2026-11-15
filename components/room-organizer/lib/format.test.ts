@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asLengthUnit, formatAge, formatAmount, formatArea, formatMetres, formatMoney, formatSize, getDisplayUnit, imperialStep, lengthInputValue, lengthSliderStep, lengthUnitName, lengthUnitSymbol, lengthRefusal, parseLength, setDisplayUnit } from './format';
+import { asLengthUnit, formatAge, formatAmount, formatArea, formatMetres, formatMoney, formatSize, formatSizeCompact, getDisplayUnit, imperialStep, lengthInputValue, lengthSliderStep, lengthUnitName, lengthUnitSymbol, lengthRefusal, parseLength, setDisplayUnit } from './format';
 
 describe('formatMetres', () => {
   it('puts a space before the unit', () => {
@@ -73,6 +73,15 @@ describe('feet and inches (#725)', () => {
     expect(formatArea(12.5, 'metric')).toBe('12.5 m²');
     expect(formatArea(12.5, 'imperial')).toBe('135 sq ft');
     expect(formatArea(200, 'imperial')).toBe('2,153 sq ft');
+  });
+
+  it('writes a compact size for the header without inner spaces in feet, as formatSize in metres (#939)', () => {
+    expect(formatSizeCompact(6, 5, 'imperial')).toBe(`19'8" × 16'5"`);
+    expect(formatSizeCompact(30, 30, 'imperial')).toBe(`98'5" × 98'5"`);
+    expect(formatSizeCompact(0.15, 3.048, 'imperial')).toBe(`6" × 10'0"`);
+    for (const [w, d] of [[6, 5], [30, 30], [29.97, 12.5]] as const) {
+      expect(formatSizeCompact(w, d, 'metric')).toBe(formatSize(w, d, undefined, 'metric'));
+    }
   });
 
   it('follows the display unit when none is passed, metres by default', () => {

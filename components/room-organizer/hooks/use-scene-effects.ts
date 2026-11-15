@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type RefObject, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type RefObject, type MutableRefObject } from 'react';
 import { onPlanZoom, planZoomOf } from '../canvas-2d/plan-zoom';
 import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { useLengthUnit } from '../contexts';
@@ -159,6 +159,8 @@ export interface UseSceneEffectsParams {
   /** The zone showing handles on the plan (#628). */
   selectedZoneId: string | null;
   roomsToName: readonly DetectedRoom[];
+  /** The active storey's room scores, written under the zone names on the plan (#905). */
+  roomScores?: Render2DOptions['roomScores'];
   wallDraft: { x: number; z: number } | null;
   /** The room stamp in hand (#724). */
   stampGhost: StampGhost | null;
@@ -179,7 +181,11 @@ export interface UseSceneEffectsParams {
   walkNearStairs?: boolean;
   /** The storey whose lamps light the walker (`walkLampStorey`, lib/walk-world). */
   walkLampStorey?: number;
+  /** Lamps the walker switched off in EXPLORE (#910), by item id: session state, never the house's. */
+  lampsOff?: ReadonlySet<string>;
 }
+
+const NO_LAMPS_OFF: ReadonlySet<string> = new Set();
 
 export function useSceneEffects({
   isReady,
@@ -202,6 +208,7 @@ export function useSceneEffects({
   selectedWall,
   selectedZoneId,
   roomsToName,
+  roomScores,
   wallDraft,
   stampGhost,
   stampArmed,
@@ -210,6 +217,7 @@ export function useSceneEffects({
   walkIndoors = false,
   walkNearStairs = false,
   walkLampStorey,
+  lampsOff = NO_LAMPS_OFF,
 }: UseSceneEffectsParams): void {
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   // The furniture groups in the scene by furnitureMeshKey, with the build
@@ -338,22 +346,24 @@ export function useSceneEffects({
   // top tread, rather than once it is on the floor plate.
   const litAllFloors = view.showAllFloors && !walkthroughActive;
   const litStorey = walkthroughActive && walkLampStorey !== undefined ? walkLampStorey : activeFloorIndex;
-  const lampsKey = useMemo(
-    () => JSON.stringify(
-        collectLampLights(
-          layout.floors,
-          { activeFloorIndex: litStorey, showAllFloors: litAllFloors },
-          {
-            width: layout.width,
-            height: layout.height,
-            ...(layout.cutout ? { cutout: layout.cutout } : {}),
-            // A garden lamp's bulb rides the slope with its post (#665).
-            ...(layout.terrain ? { terrain: layout.terrain } : {}),
-          }
-        )
-      ),
-    [layout.floors, litStorey, litAllFloors, layout.width, layout.height, layout.cutout, layout.terrain]
-  );
+  // A lamp the walker switched off lights nothing (#910). While any lamp is
+  // placed on a lit storey the pool stays lit (`keepLit`), even with every
+  // one switched off, so the last switch recompiles nothing.
+  const isLampOff = useCallback((id: string) => lampsOff.has(id), [lampsOff]);
+  const lampsKeys = useMemo(() => {
+    const rendered = { activeFloorIndex: litStorey, showAllFloors: litAllFloors };
+    const building = {
+      width: layout.width,
+      height: layout.height,
+      ...(layout.cutout ? { cutout: layout.cutout } : {}),
+      // A garden lamp's bulb rides the slope with its post (#665).
+      ...(layout.terrain ? { terrain: layout.terrain } : {}),
+    };
+    const lamps = collectLampLights(layout.floors, rendered, building, isLampOff);
+    const keepLit = lamps.length === 0 && lampsOff.size > 0 && collectLampLights(layout.floors, rendered, building).length > 0;
+    return { lampsKey: JSON.stringify(lamps), keepLampPoolLit: keepLit };
+  }, [layout.floors, litStorey, litAllFloors, layout.width, layout.height, layout.cutout, layout.terrain, isLampOff, lampsOff.size]);
+  const { lampsKey, keepLampPoolLit } = lampsKeys;
 
   // Wall preview during draw mode. On the plan it is the plan's to draw: the
   // tip stays out of the key there, so a pointer move doesn't redraw the
@@ -966,7 +976,7 @@ export function useSceneEffects({
     let last = focusPoint();
     const assign = (focus: { x: number; y: number; z: number }) => {
       last = focus;
-      applyLampPool(scene, planLampPool(lamps, focus, lampLevel));
+      applyLampPool(scene, planLampPool(lamps, focus, lampLevel, LAMP_POOL_SIZE, keepLampPoolLit));
       invalidate();
     };
     assign(last);
@@ -984,7 +994,7 @@ export function useSceneEffects({
       if (Math.hypot(focus.x - last.x, focus.y - last.y, focus.z - last.z) > LAMP_REASSIGN_DISTANCE) assign(focus);
     }, 400);
     return () => window.clearInterval(timer);
-  }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, lampLevel, view.timeOfDay, walkthroughActive]);
+  }, [isReady, invalidate, sceneRef, controlsRef, rendererRef, cameraRef, lampsKey, keepLampPoolLit, lampLevel, view.timeOfDay, walkthroughActive]);
 
   // Outdoor
   // Read once per choice: it asks matchMedia.
@@ -1225,8 +1235,8 @@ export function useSceneEffects({
   // hand it new materials. A pane seen from inside shows the dark outside:
   // the walker's, and the orbit camera's over cut or lowered walls.
   const nightGlowKey = useMemo(
-    () => JSON.stringify(nightGlowPlan(layout.floors, entranceBuilding)),
-    [layout.floors, entranceBuilding]
+    () => JSON.stringify(nightGlowPlan(layout.floors, entranceBuilding, isLampOff)),
+    [layout.floors, entranceBuilding, isLampOff]
   );
   const panesSeenFromInside = (walkthroughActive && walkIndoors) || wallDisplay !== 'up';
   useEffect(() => {
@@ -1478,6 +1488,7 @@ export function useSceneEffects({
         // The plan's view zoom (#678), which the pointer handlers read too.
         zoom: planZoomOf(canvas),
         unit: lengthUnit,
+        roomScores,
       });
     };
 
@@ -1521,7 +1532,7 @@ export function useSceneEffects({
       removeRepaintHandler();
       if (paint2DRef.current === paint) paint2DRef.current = null;
     };
-  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, view.showFloorBelow, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds, lengthUnit]);
+  }, [invalidate, canvas2DRef, view.view2D, view.showMeasurements, view.showWiFiSignals, view.showHeatmap, view.showFloorBelow, layout, activeFloor, activeFloorIndex, entranceBuilding, selectedItemId, extraSelectedIds, lengthUnit, roomScores]);
 
   // The dock folding, the tray opening or a panel mounting moves the plan's
   // free area: repaint. Keyed on the view alone, so a layout edit doesn't

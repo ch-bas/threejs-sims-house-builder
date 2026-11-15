@@ -115,3 +115,25 @@ export function subscribePhotoMode(listener: Listener): () => void {
     listeners.delete(listener);
   };
 }
+
+/**
+ * Escape in photo mode leaves it, unless something inside the shutter
+ * (the open album, #912) claims it first. One claimant at a time; returns
+ * the release.
+ */
+let escapeClaim: (() => void) | null = null;
+
+export function claimPhotoEscape(handler: () => void): () => void {
+  escapeClaim = handler;
+  return () => {
+    if (escapeClaim === handler) escapeClaim = null;
+  };
+}
+
+/** Run the claimed Escape, if any: true when it was handled. */
+export function runPhotoEscape(): boolean {
+  const handler = escapeClaim;
+  if (!handler) return false;
+  handler();
+  return true;
+}

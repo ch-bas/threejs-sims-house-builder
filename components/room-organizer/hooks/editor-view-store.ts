@@ -24,6 +24,14 @@ export interface EditorViewActions {
   readonly setAutoCycleLighting: Dispatch<SetStateAction<boolean>>;
   /** Shows lengths in the unit and remembers it on this browser (#725). */
   setLengthUnit(unit: LengthUnit): void;
+  /** Switch a lamp off, or back on (#910). Not an edit: no undo, no save. */
+  switchLamp(id: string): void;
+  /**
+   * Forget the switched lamps (#910): when EXPLORE ends, and on a whole-house
+   * load, since templates and copies reuse item ids. With `keep`, only the
+   * ids not in it are forgotten (items deleted or gone with the house).
+   */
+  resetLamps(keep?: ReadonlySet<string>): void;
 }
 
 export interface EditorViewState {
@@ -34,6 +42,13 @@ export interface EditorViewState {
   readonly autoCycleLighting: boolean;
   /** Metres or feet and inches, for what is shown; geometry stays in metres (#725). */
   readonly lengthUnit: LengthUnit;
+  /**
+   * Lamps the walker switched off in EXPLORE (#910), by item id. Only for
+   * the walk: cleared when EXPLORE ends and on a whole-house load, never in
+   * the house, since switching a lamp is not an edit. A new set on every
+   * change.
+   */
+  readonly lampsOff: ReadonlySet<string>;
   /** Created once per store, so selecting it never re-renders. */
   readonly actions: EditorViewActions;
 }
@@ -98,8 +113,30 @@ export function createEditorViewStore(initialView: ViewSettings, options: Editor
           return { ...state, lengthUnit: unit };
         });
       },
+      switchLamp: (id) => {
+        set((state) => {
+          const lampsOff = new Set(state.lampsOff);
+          if (!lampsOff.delete(id)) lampsOff.add(id);
+          return { ...state, lampsOff };
+        });
+      },
+      resetLamps: (keep) => {
+        set((state) => {
+          if (state.lampsOff.size === 0) return state;
+          const lampsOff = keep ? new Set([...state.lampsOff].filter((id) => keep.has(id))) : new Set<string>();
+          return lampsOff.size === state.lampsOff.size ? state : { ...state, lampsOff };
+        });
+      },
     };
-    return { view: initialView, catalogQuery: '', gameMode: 'build', autoCycleLighting: false, lengthUnit: initialUnit, actions };
+    return {
+      view: initialView,
+      catalogQuery: '',
+      gameMode: 'build',
+      autoCycleLighting: false,
+      lengthUnit: initialUnit,
+      lampsOff: new Set<string>(),
+      actions,
+    };
   });
 }
 

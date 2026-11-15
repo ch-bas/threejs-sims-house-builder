@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { DOOR_LEAF_NAME, DOOR_OPEN_ANGLE } from '../lib/door-swing';
-import { createDoorSwinger } from './door-leaves';
+import { createNpcBody, createNpcHandOff } from '../lib/npc-bodies';
+import { createDoorSwinger, doorWalkersOf } from './door-leaves';
 import { FURNITURE_REVISION_KEY } from './drag-handlers';
 import { createFurnitureModel } from './furniture-builders';
 import { ROOM_OBJECT_TAGS } from './room-builder';
@@ -42,7 +43,7 @@ function slabBox(scene: THREE.Scene, index = 0): THREE.Box3 {
 }
 
 function settle(swinger: ReturnType<typeof createDoorSwinger>, walker: { x: number; z: number; floorIndex: number }): void {
-  for (let i = 0; i < 120; i++) swinger.step(walker, 1 / 60, false);
+  for (let i = 0; i < 120; i++) swinger.step([walker], 1 / 60, false);
 }
 
 describe('door leaves (#605)', () => {
@@ -120,7 +121,7 @@ describe('door leaves (#605)', () => {
       { item: door({ id: 'far', position: { x: 6, z: 0 } }), floorIndex: 0 },
     ]);
     const swinger = createDoorSwinger(scene);
-    expect(swinger.step({ x: 0, z: 0.5, floorIndex: 0 }, 1 / 60, false)).toBe(false);
+    expect(swinger.step([{ x: 0, z: 0.5, floorIndex: 0 }], 1 / 60, false)).toBe(false);
     expect(leafOf(scene, 0).rotation.y).toBe(0);
     expect(leafOf(scene, 1).rotation.y).toBe(0);
   });
@@ -133,9 +134,98 @@ describe('door leaves (#605)', () => {
     scene.remove(scene.children[0]!);
     scene.add(rebuilt);
     scene.userData[FURNITURE_REVISION_KEY] = 2;
-    swinger.step({ x: 0, z: 1, floorIndex: 0 }, 1 / 60, false);
+    swinger.step([{ x: 0, z: 1, floorIndex: 0 }], 1 / 60, false);
     const leaf = rebuilt.getObjectByName(DOOR_LEAF_NAME)!;
     expect(Math.abs(leaf.rotation.y)).toBeGreaterThan(0);
     expect(Math.abs(leaf.rotation.y)).toBeLessThan(DOOR_OPEN_ANGLE);
+  });
+
+  describe('for several people (#908)', () => {
+    const steps = (swinger: ReturnType<typeof createDoorSwinger>, walkers: Array<{ x: number; z: number; floorIndex: number }>, frames = 120) => {
+      for (let i = 0; i < frames; i++) swinger.step(walkers, 1 / 60, false);
+    };
+
+    it('opens each door for the nearest person on its storey, away from that person', () => {
+      const scene = sceneWith([
+        { item: door(), floorIndex: 0 },
+        { item: door({ id: 'east', position: { x: 4, z: 0 } }), floorIndex: 0 },
+        { item: door({ id: 'up' }), floorIndex: 1 },
+      ]);
+      const swinger = createDoorSwinger(scene);
+      // One walker in the room by the first door, one outside by the second,
+      // a third far off; nobody upstairs.
+      steps(swinger, [
+        { x: 8, z: 8, floorIndex: 0 },
+        { x: 0.2, z: 1, floorIndex: 0 },
+        { x: 4, z: -1, floorIndex: 0 },
+      ]);
+      expect(Math.abs(leafOf(scene, 0).rotation.y)).toBeCloseTo(DOOR_OPEN_ANGLE);
+      expect(leafBox(scene, 0).min.z).toBeLessThan(-0.7);
+      expect(Math.abs(leafOf(scene, 1).rotation.y)).toBeCloseTo(DOOR_OPEN_ANGLE);
+      expect(leafBox(scene, 1).max.z).toBeGreaterThan(0.7);
+      expect(leafOf(scene, 2).rotation.y).toBe(0);
+    });
+
+    it('takes the side from whoever is nearest as the door starts to open', () => {
+      const scene = sceneWith([{ item: door(), floorIndex: 0 }]);
+      const swinger = createDoorSwinger(scene);
+      // Both in reach; the one outside (local −Z) is nearer: the leaf swings into the room.
+      steps(swinger, [
+        { x: 0, z: 1.5, floorIndex: 0 },
+        { x: 0, z: -1, floorIndex: 0 },
+      ]);
+      expect(leafBox(scene, 0).max.z).toBeGreaterThan(0.7);
+    });
+
+    it('reopens a door still shutting when someone else comes up to it', () => {
+      const scene = sceneWith([{ item: door(), floorIndex: 0 }]);
+      const settled = vi.fn();
+      const swinger = createDoorSwinger(scene, settled);
+      steps(swinger, [{ x: 0, z: 1, floorIndex: 0 }]);
+      // Gone: it starts to shut.
+      steps(swinger, [], 10);
+      const shutting = Math.abs(leafOf(scene).rotation.y);
+      expect(shutting).toBeGreaterThan(0);
+      expect(shutting).toBeLessThan(DOOR_OPEN_ANGLE);
+      // A walker steps into the doorway: never less open than that asks.
+      swinger.step([{ x: 0, z: 0.3, floorIndex: 0 }], 1 / 60, false);
+      expect(Math.abs(leafOf(scene).rotation.y)).toBeCloseTo(DOOR_OPEN_ANGLE);
+      steps(swinger, [{ x: 0, z: 0.3, floorIndex: 0 }]);
+      // One shadow pass per settle (open, then open again), not per frame.
+      expect(settled).toHaveBeenCalledTimes(2);
+    });
+
+    it('stays shut with nobody about, and asks for nothing', () => {
+      const scene = sceneWith([{ item: door(), floorIndex: 0 }]);
+      const settled = vi.fn();
+      const swinger = createDoorSwinger(scene, settled);
+      expect(swinger.step([], 1 / 60, false)).toBe(false);
+      expect(settled).not.toHaveBeenCalled();
+    });
+  });
+
+  it('reads the player and the walkers from the hand-off into a reused list (#908)', () => {
+    const handOff = createNpcHandOff();
+    handOff.bodies = [createNpcBody(1, 2, 0, 0), createNpcBody(-1, 3, 3, 1)];
+    const out: Array<{ x: number; z: number; floorIndex: number }> = [];
+    expect(doorWalkersOf(handOff, out)).toEqual([
+      { x: 1, z: 2, floorIndex: 0 },
+      { x: -1, z: 3, floorIndex: 1 },
+    ]);
+    const first = out[0];
+    Object.assign(handOff.player, { present: true, x: 5, z: 6, floorIndex: 0 });
+    handOff.bodies = [handOff.bodies[0]!];
+    const again = doorWalkersOf(handOff, out);
+    expect(again).toBe(out);
+    expect(again).toEqual([
+      { x: 5, z: 6, floorIndex: 0 },
+      { x: 1, z: 2, floorIndex: 0 },
+    ]);
+    // Same entry objects, rewritten in place.
+    expect(out[0]).toBe(first);
+    // Reduced motion: the walkers stand still and open nothing; the player still does.
+    expect(doorWalkersOf(handOff, out, false)).toEqual([{ x: 5, z: 6, floorIndex: 0 }]);
+    handOff.player.present = false;
+    expect(doorWalkersOf(handOff, out, false)).toEqual([]);
   });
 });

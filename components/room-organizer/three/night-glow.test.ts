@@ -4,7 +4,7 @@ import { ROOF_TAG } from './roof';
 import * as THREE from './three-runtime';
 import type { NightGlowPlan } from '../lib/night-lights';
 
-const PLAN: NightGlowPlan = { windows: { win: 1, far: 0 }, lamps: ['lamp'], dormers: 1 };
+const PLAN: NightGlowPlan = { windows: { win: 1, far: 0 }, lamps: ['lamp'], lampsOff: [], dormers: 1 };
 
 function pane(flag: string, opacity = 0.4): THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial> {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ transparent: true, opacity }));
@@ -69,6 +69,22 @@ describe('applyNightGlow (#759)', () => {
     expect(stem.material.emissiveIntensity).toBe(new THREE.MeshStandardMaterial().emissiveIntensity);
     applyNightGlow(THREE, scene, { plan: PLAN, level: 0, indoors: false });
     expect(shade.material.emissiveIntensity).toBeCloseTo(0.3);
+  });
+
+  it('darkens a lamp switched off and restores it switched on (#910)', () => {
+    const shade = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ emissive: 0xffff88, emissiveIntensity: 0.3 }));
+    const scene = new THREE.Scene();
+    scene.add(furniture('lamp', shade));
+    applyNightGlow(THREE, scene, { plan: PLAN, level: 1, indoors: false });
+    const night = shade.material.emissiveIntensity;
+    const off: NightGlowPlan = { ...PLAN, lamps: [], lampsOff: ['lamp'] };
+    applyNightGlow(THREE, scene, { plan: off, level: 1, indoors: false });
+    expect(shade.material.emissiveIntensity).toBe(0);
+    // By day lamps aren't switched: it shows as the builder made it.
+    applyNightGlow(THREE, scene, { plan: off, level: 0, indoors: false });
+    expect(shade.material.emissiveIntensity).toBeCloseTo(0.3);
+    applyNightGlow(THREE, scene, { plan: PLAN, level: 1, indoors: false });
+    expect(shade.material.emissiveIntensity).toBe(night);
   });
 
   it('drives the dormers through the roof tag and the street through its part', () => {
