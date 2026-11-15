@@ -31,6 +31,7 @@ import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
 import { useSceneLife } from './hooks/use-scene-life';
 import { useSelectionActions } from './hooks/use-selection-actions';
+import { useAskToKeepStorage } from './hooks/use-storage-persist';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
 import { useWallDraft } from './hooks/use-wall-draft';
@@ -245,6 +246,8 @@ export function RoomOrganizer(): JSX.Element {
     pending: pendingAchievements,
     dismiss: dismissAchievements,
   } = useAchievements(layout, knownCollisions);
+  // Ask the browser to keep the houses after the first real edit (#928).
+  useAskToKeepStorage(layout);
 
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {

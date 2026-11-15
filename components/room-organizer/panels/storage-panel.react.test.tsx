@@ -6,10 +6,16 @@ import { createEditorViewStore } from '../hooks/editor-view-store';
 import { autoAnswerConfirms, type AutoAnswer } from '../lib/__testfixtures__/confirm';
 import { makeFloor, makeItem, makeLayout, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { createBackup } from '../lib/backup';
+import { readStorageCare } from '../lib/backup-reminder';
 import { deleteNamedLayout, listSavedLayouts, loadNamedLayout, saveNamedLayout } from '../lib/library';
 import { listSnapshots, recordSnapshot } from '../lib/version-history';
 import { StoragePanel } from './storage-panel';
 import type { GameMode, RoomLayout } from '../lib/types';
+
+vi.mock('../lib/plan-export/download', async (original) => ({
+  ...(await original<typeof import('../lib/plan-export/download')>()),
+  downloadTextFile: vi.fn(),
+}));
 
 function house(name: string, items: number): RoomLayout {
   return makeLayout({
@@ -128,5 +134,29 @@ describe('storage card (#615, #620)', () => {
     const { button } = setup('live');
     expect(button(/Restore…/).disabled).toBe(true);
     expect(button(/Back up all/).disabled).toBe(false);
+  });
+
+  it('says whether the browser keeps the houses, and when the last backup was (#928)', async () => {
+    vi.stubGlobal('navigator', { ...navigator, storage: { persisted: () => Promise.resolve(false) } });
+    try {
+      const { button } = setup();
+      expect(screen.getByText('No backup yet')).toBeTruthy();
+      await waitFor(() => expect(screen.getByText('May be cleared by the browser')).toBeTruthy());
+      act(() => button(/Back up all/).click());
+      expect(screen.getByText('Last backup just now')).toBeTruthy();
+      expect(readStorageCare().lastBackupAt).not.toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('shows no keep line where the browser can’t say', () => {
+    vi.stubGlobal('navigator', { ...navigator, storage: undefined });
+    try {
+      setup();
+      expect(screen.queryByText(/by the browser/)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
