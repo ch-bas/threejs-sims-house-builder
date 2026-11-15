@@ -7,6 +7,7 @@ import {
   snapToWall as snapPositionToWall,
 } from '../lib/geometry';
 import { NO_WALLS, wallContact, wallLineKey, type WallContact } from '../lib/haptics';
+import { runPrice } from '../lib/item-run';
 import { isOpening, settleWallMountedItem, snapOpeningToWall, snapWallMountedItem, type WallGap } from '../lib/opening-snap';
 import { ghostItem } from '../lib/placement-ghost';
 import type { LayoutActions } from './use-layout-state';
@@ -50,6 +51,8 @@ export interface UseItemPlacementParams {
    * was added) and the entry it was asked about.
    */
   onPlacedAfterConfirm?(id: string, catalogItem: CatalogItem): void;
+  /** The same for a run (#915): its sections' ids ([] if nothing was added). */
+  onRunPlacedAfterConfirm?(ids: string[]): void;
 }
 
 export interface UseItemPlacementResult {
@@ -83,6 +86,13 @@ export interface UseItemPlacementResult {
    * first and places through `onPlacedAfterConfirm` on a yes.
    */
   placeCatalogItem(catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string;
+  /**
+   * Lay a run of garden items (#915, `layRun`) in one dispatch: one undo
+   * step. Bought as a whole: the hard budget refuses all of it, the soft one
+   * asks once, and `onRunPlacedAfterConfirm` gets the sections' ids on a
+   * yes. The first section's id, or '' when nothing was added.
+   */
+  placeRun(items: FurnitureItem[]): string;
 }
 
 export function useItemPlacement({
@@ -99,6 +109,7 @@ export function useItemPlacement({
   cutout,
   refusePurchase,
   onPlacedAfterConfirm,
+  onRunPlacedAfterConfirm,
 }: UseItemPlacementParams): UseItemPlacementResult {
   // Keyed on the numbers, so a fresh outline object each render doesn't
   // rebuild the callbacks.
@@ -278,8 +289,8 @@ export function useItemPlacement({
   );
 
   // The answer comes back after later renders: place with what is current then.
-  const latestRef = useRef({ placeNow, refusePurchase, onPlacedAfterConfirm });
-  latestRef.current = { placeNow, refusePurchase, onPlacedAfterConfirm };
+  const latestRef = useRef({ placeNow, refusePurchase, onPlacedAfterConfirm, onRunPlacedAfterConfirm });
+  latestRef.current = { placeNow, refusePurchase, onPlacedAfterConfirm, onRunPlacedAfterConfirm };
 
   const placeCatalogItem = useCallback(
     (catalogItem: CatalogItem, position?: { x: number; z: number }, rotation?: number): string => {
@@ -308,7 +319,43 @@ export function useItemPlacement({
     [buildingCost, budget, refusePurchase, placeNow]
   );
 
+  const layRunNow = useCallback(
+    (items: FurnitureItem[]): string => {
+      // Garden items stand on the ground, as one placed alone (#73c).
+      const first = items[0];
+      if (!first || activeFloorY > 0) return '';
+      actions.addItems(items);
+      return first.id;
+    },
+    [actions, activeFloorY]
+  );
+  const layRunRef = useRef(layRunNow);
+  layRunRef.current = layRunNow;
+
+  const placeRun = useCallback(
+    (items: FurnitureItem[]): string => {
+      const price = runPrice(items);
+      if (refusePurchase?.(price)) return '';
+      if (price > 0 && buildingCost + price > budget) {
+        void askConfirm({
+          title:
+            `These ${items.length} pieces cost ${CURRENCY_SYMBOL}${price.toLocaleString()} and put you over the ` +
+            `${CURRENCY_SYMBOL}${budget.toLocaleString()} budget. Lay them anyway?`,
+          confirmLabel: 'Lay them anyway',
+        }).then((proceed) => {
+          if (!proceed) return;
+          if (latestRef.current.refusePurchase?.(price)) return;
+          const id = layRunRef.current(items);
+          latestRef.current.onRunPlacedAfterConfirm?.(id ? items.map((item) => item.id) : []);
+        });
+        return '';
+      }
+      return layRunNow(items);
+    },
+    [buildingCost, budget, refusePurchase, layRunNow]
+  );
+
   const lastSnapWall = useCallback(() => snapWallRef.current, []);
 
-  return { snapPosition, lastSnapWall, getDragPlaneY, snapCatalogPlacement, placeCatalogItem };
+  return { snapPosition, lastSnapWall, getDragPlaneY, snapCatalogPlacement, placeCatalogItem, placeRun };
 }

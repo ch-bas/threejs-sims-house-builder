@@ -53,6 +53,12 @@ function toObb(item: FurnitureItem): Obb {
   };
 }
 
+/**
+ * Boxes that touch to within this (m) don't overlap: sections laid end to end
+ * along a turned line (#915) meet with float error either way.
+ */
+const TOUCH_TOLERANCE = 1e-9;
+
 function obbOverlap(a: Obb, b: Obb): boolean {
   // SAT: two convex boxes are disjoint iff a separating axis exists among the
   // four face normals. Project each box's half-extents and the centre delta
@@ -69,7 +75,7 @@ function obbOverlap(a: Obb, b: Obb): boolean {
     const projectedDistance = Math.abs(dx * x + dz * z);
     const extentA = a.hw * Math.abs(a.ax * x + a.az * z) + a.hd * Math.abs(a.bx * x + a.bz * z);
     const extentB = b.hw * Math.abs(b.ax * x + b.az * z) + b.hd * Math.abs(b.bx * x + b.bz * z);
-    if (projectedDistance >= extentA + extentB) return false;
+    if (projectedDistance >= extentA + extentB - TOUCH_TOLERANCE) return false;
   }
   return true;
 }
@@ -272,7 +278,7 @@ export interface KeepOutRect {
 }
 
 /** True when the item's footprint overlaps the rect (touching edges don't count). */
-function itemEntersRect(item: FurnitureItem, rect: KeepOutRect): boolean {
+export function itemEntersRect(item: FurnitureItem, rect: KeepOutRect): boolean {
   if (!item.position) return false;
   if (rect.rotation) {
     const cos = Math.cos(rect.rotation);
