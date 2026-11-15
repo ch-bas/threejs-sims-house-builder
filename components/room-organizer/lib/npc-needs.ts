@@ -8,9 +8,10 @@
  * injected, so it is tested here and the walk only asks where to go.
  */
 
+import { type FootprintBuilding, isInsideBuilding } from './footprint';
+import { type NpcSeat, findNpcSeats } from './npc-seats';
 import type { NeedBias } from './npc-schedule';
-import type { NpcSeat } from './npc-seats';
-import type { FurnitureItem } from './types';
+import type { FloorLayout, FurnitureItem } from './types';
 
 export type NeedKind = 'hunger' | 'energy' | 'fun' | 'hygiene';
 
@@ -223,4 +224,41 @@ export function pickNeedSpot(
     if (random() * total < weight) chosen = spot;
   }
   return chosen;
+}
+
+/**
+ * The needs no spot meets (#906), in `NEED_KINDS` order: what the walkers
+ * on that storey go without. Empty when every need is met somewhere. A
+ * toilet alone is not somewhere to wash: that takes a basin, a shower or
+ * a bath, though a walker in need uses the toilet too.
+ */
+export function unmetNeeds(spots: readonly NeedSpot[]): NeedKind[] {
+  return NEED_KINDS.filter((need) => !spots.some((spot) => spot.need === need && !(need === 'hygiene' && spot.itemType === 'toilet')));
+}
+
+/** What a storey lacks, as the Household block in Statistics says it (#906). */
+export const NEED_LACK_LABELS: Readonly<Record<NeedKind, string>> = {
+  hunger: 'nowhere to eat',
+  energy: 'nowhere to rest',
+  fun: 'nothing to do',
+  hygiene: 'nowhere to wash',
+};
+
+/** One storey's unmet needs. */
+export interface StoreyLacks {
+  floorIndex: number;
+  lacks: NeedKind[];
+}
+
+/**
+ * For each storey, the needs nothing on it meets (#906): walkers keep to
+ * their storey (#580), so a fridge upstairs feeds nobody downstairs. Only
+ * what stands on the building counts: the walkers stay indoors. Pure; for
+ * a panel, not per frame.
+ */
+export function householdLacks(building: FootprintBuilding & { floors: readonly Pick<FloorLayout, 'items'>[] }): StoreyLacks[] {
+  return building.floors.map((floor, floorIndex) => {
+    const items = floor.items.filter((item) => item.position && isInsideBuilding(building, item.position.x, item.position.z));
+    return { floorIndex, lacks: unmetNeeds(findNeedSpots(items, findNpcSeats(items))) };
+  });
 }
