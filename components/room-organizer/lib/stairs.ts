@@ -409,7 +409,7 @@ export interface FloorOpening {
  * should have a rectangular hole at that position. Pure: the 3D floor
  * builder cuts these, and the 2D plan and exporters draw them (#290).
  */
-export function computeFloorOpenings(floorBelow: FloorLayout | undefined): readonly FloorOpening[] {
+export function computeFloorOpenings(floorBelow: Pick<FloorLayout, 'items' | 'height'> | undefined): readonly FloorOpening[] {
   if (!floorBelow) return [];
   const openings: FloorOpening[] = [];
   for (const item of floorBelow.items) {

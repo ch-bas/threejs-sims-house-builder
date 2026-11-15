@@ -37,6 +37,7 @@
 import { footprintOutline } from '../footprint';
 import { stripXmlIllegal } from '../html-escape';
 import { planDrawOrder } from '../plan-order';
+import { stairwellRailSegments } from '../stairwell-rail';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
 import { zoneArea, zoneLabelSpot, zoneRings } from '../zones';
 import {
@@ -559,6 +560,8 @@ function emitFloor(
       true
     );
   }
+  // Its guard rail (#923), on the same layer.
+  for (const s of stairwellRailSegments(layout, floorIndex)) doc.line('STAIRWELL', cad(s.x1, s.z1), cad(s.x2, s.z2));
 
   if (options.coverage !== false) emitCoverage(doc, floor, frame ?? planFrameBounds(layout, floor, dxfCoverageMode(options)), cad);
 

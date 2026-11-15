@@ -19,6 +19,7 @@ import { formatArea, formatSize, getDisplayUnit, type LengthUnit } from '../form
 import { escapeHtml } from '../html-escape';
 import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
+import { planRailInset, stairwellRailSegments } from '../stairwell-rail';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
 import { hasFloorFinish, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings } from '../zones';
 import {
@@ -377,7 +378,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     renderZones(floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), px, py, scale, theme, unit),
     renderRoomOutline(layout, floor, margin, scale, theme),
     renderInteriorWalls(floor, px, py, scale, theme),
-    renderStairwellHoles(layout, floor, px, py, theme),
+    renderStairwellHoles(layout, floor, px, py, scale, theme),
     options.coverage === false ? '' : renderCoverage(floor, px, py, scale, frame, theme, idPrefix),
     ...openings.map((item) => renderOpening(item, px, py, scale, theme)),
     ...furniture.map((item) => renderFurniture(item, px, py, scale, theme)),
@@ -746,22 +747,26 @@ function renderStairsSymbol(
 /**
  * The stairwell the floor below cuts through this floor's slab (#290): a
  * dashed void outline over the floor, under the furniture — so the export
- * of an upper floor shows the drop, not a solid slab.
+ * of an upper floor shows the drop, not a solid slab — and its guard rail.
  */
 function renderStairwellHoles(
   layout: RoomLayout,
   floor: FloorLayout,
   px: (x: number) => string,
   py: (z: number) => string,
+  scale: number,
   theme: SvgPlanTheme
 ): string {
   const floorIndex = layout.floors.findIndex((candidate) => candidate === floor || candidate.id === floor.id);
-  return stairwellOutlines(layout, floorIndex)
-    .map(
-      (outline) =>
-        `<polygon class="stairwell" points="${outline.map((p) => `${px(p.x)},${py(p.z)}`).join(' ')}" fill="${theme.furnitureStroke}" fill-opacity="0.12" stroke="${theme.furnitureStroke}" stroke-width="1.5" stroke-dasharray="6 4"/>`
-    )
-    .join('\n');
+  const holes = stairwellOutlines(layout, floorIndex).map(
+    (outline) =>
+      `<polygon class="stairwell" points="${outline.map((p) => `${px(p.x)},${py(p.z)}`).join(' ')}" fill="${theme.furnitureStroke}" fill-opacity="0.12" stroke="${theme.furnitureStroke}" stroke-width="1.5" stroke-dasharray="6 4"/>`
+  );
+  // The guard rail round it (#923), as the plan draws it.
+  const rail = stairwellRailSegments(layout, floorIndex, planRailInset(scale)).map(
+    (s) => `<line class="stairwell-rail" x1="${px(s.x1)}" y1="${py(s.z1)}" x2="${px(s.x2)}" y2="${py(s.z2)}" stroke="${theme.furnitureStroke}" stroke-width="1.5"/>`
+  );
+  return [...holes, ...rail].join('\n');
 }
 
 /**

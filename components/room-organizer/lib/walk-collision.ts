@@ -17,6 +17,7 @@ import { LOW_PROFILE_MAX_HEIGHT, isInsideBuilding, rotatedHalfExtents, shellWall
 import { isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan, isWallMounted } from './opening-snap';
 import { gardenGroundY, hasNeighbours } from './site';
+import { STAIRWELL_RAIL_HEIGHT, STAIRWELL_RAIL_INSET, stairwellRailSegments } from './stairwell-rail';
 import { floorElevation, interiorWallHeight, storeyHeight } from './storeys';
 import { entranceGeometry, entranceWallCut } from './street';
 import { generateStreet, type StreetSite } from './street-row';
@@ -743,6 +744,46 @@ export function walkClearance(
   return clearance;
 }
 
+/** How thick the stairwell rail's collider is (m): its posts, with a little to spare. */
+const STAIRWELL_RAIL_THICKNESS = 0.06;
+/**
+ * A walker on the flight below meets the rail only with its feet this close
+ * (m) under the floor above: on the top treads, from which it could step up
+ * sideways onto the landing. Lower down it passes under the rail, as under
+ * the slab's edge.
+ */
+const RAIL_TOP_TREADS = 0.6;
+/**
+ * The walker's radius (as `use-walkthrough`'s): from below, the boxes stand
+ * this much further out, so a walker on the treads stops with its centre on
+ * the rail's line, not a radius short of it, and a narrow flight still fits.
+ */
+const RAIL_WALKER_RADIUS = 0.3;
+
+/**
+ * The guard rail round storey `index`'s stairwells (#923): a thin box along
+ * each run, from the floor to the handrail. It stops the walker, not the view.
+ * `fromBelow` gives the boxes a walker on the flight below meets, set out
+ * from the hole by its radius: they block only one on the top treads (`blocksAt` reads `bottom` as the lowest head
+ * height that meets a box, so it sits `WALKER_HEIGHT − RAIL_TOP_TREADS` up).
+ */
+export function stairwellRailColliders(building: ShellBuilding, index: number, fromBelow = false): WalkCollider[] {
+  const inset = fromBelow ? STAIRWELL_RAIL_INSET - RAIL_WALKER_RADIUS - STAIRWELL_RAIL_THICKNESS / 2 : STAIRWELL_RAIL_INSET;
+  const segments = stairwellRailSegments(
+    { floors: building.floors, width: building.width, height: building.depth, cutout: building.cutout },
+    index,
+    inset
+  );
+  if (segments.length === 0) return [];
+  const baseY = floorElevation(building.floors, index);
+  const bottom = fromBelow ? baseY - RAIL_TOP_TREADS + WALKER_HEIGHT : baseY;
+  return segments.map((s) => {
+    const length = Math.hypot(s.x2 - s.x1, s.z2 - s.z1);
+    const rotation = -Math.atan2(s.z2 - s.z1, s.x2 - s.x1);
+    return boxCollider((s.x1 + s.x2) / 2, (s.z1 + s.z2) / 2, length, STAIRWELL_RAIL_THICKNESS, rotation, false, bottom, baseY + STAIRWELL_RAIL_HEIGHT);
+  });
+}
+
 /**
  * The walker's colliders for each storey it can stand on (#446): that
  * storey's furniture, partitions and shell with the storeys directly below
@@ -773,5 +814,9 @@ export function buildWalkerColliders(
     ...perStorey[index]!,
     ...(perStorey[index + 1] ?? []),
     ...street,
+    // The stairwell rail (#923): in full on its storey; from the flight
+    // below, only where the top treads meet it.
+    ...stairwellRailColliders(building, index),
+    ...(index + 1 < building.floors.length ? stairwellRailColliders(building, index + 1, true) : []),
   ]);
 }
