@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useEditorViewActions, useLengthUnit, useViewSettings } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
+import { reopenFirstSteps } from '../hooks/use-first-steps';
+import { APP_VERSION } from '../lib/app-version';
 import { LENGTH_UNITS, type LengthUnit } from '../lib/format';
 import { enterPhotoMode } from '../lib/photo-mode';
 import { QUALITY_CHOICES, saveQualityChoice, type QualityChoice } from '../lib/render-quality';
@@ -44,6 +46,12 @@ export interface ViewOptionsMenuProps {
   /** The button that opened the menu: a press on it toggles, not dismisses. */
   anchorRef: RefObject<HTMLElement>;
   onClose(): void;
+  /**
+   * Help brought the Getting started card back (#931). The opener takes
+   * focus and clears the way (the phone's tray would hide the card); without
+   * it, focus goes back to the anchor.
+   */
+  onShowCard?(hadFocus: boolean): void;
 }
 
 /**
@@ -52,7 +60,7 @@ export interface ViewOptionsMenuProps {
  * Escape or a press anywhere else closes it — that press still reaches the
  * canvas, so the first distance point can be the click that dismisses it.
  */
-export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps): JSX.Element {
+export function ViewOptionsMenu({ id, anchorRef, onClose, onShowCard }: ViewOptionsMenuProps): JSX.Element {
   const view = useViewSettings(...VIEW_OPTION_KEYS, 'renderQuality', 'view2D');
   const lengthUnit = useLengthUnit();
   const { setView, setLengthUnit } = useEditorViewActions();
@@ -169,7 +177,39 @@ export function ViewOptionsMenu({ id, anchorRef, onClose }: ViewOptionsMenuProps
           saveQualityChoice(renderQuality);
           setView((current) => ({ ...current, renderQuality }));
         }}
+        aside={
+          <HelpEntries
+            onGettingStarted={() => {
+              const hadFocus = menuRef.current?.contains(document.activeElement) ?? false;
+              onClose();
+              reopenFirstSteps();
+              if (onShowCard) onShowCard(hadFocus);
+              else if (hadFocus) anchorRef.current?.focus();
+            }}
+          />
+        }
       />
+    </div>
+  );
+}
+
+/**
+ * Help (#931): the Getting started card and its tips again. On the Quality
+ * heading's row in a box of no height (`.pc-help-entries`), so the menu
+ * keeps its height with a mouse; a touch screen gives the button a 44 px
+ * row of its own. The version it names is the one "What's new" counts from.
+ */
+function HelpEntries({ onGettingStarted }: { onGettingStarted(): void }): JSX.Element {
+  return (
+    <div role="group" aria-label="Help" className="pc-help-entries">
+      <button
+        type="button"
+        className="pc-tile pc-photo-entry"
+        title={`Show the Getting started card and its tips again (version ${APP_VERSION})`}
+        onClick={onGettingStarted}
+      >
+        Getting started
+      </button>
     </div>
   );
 }
@@ -217,11 +257,14 @@ const QUALITY_LABELS: Record<QualityChoice, string> = { auto: 'Auto', low: 'Low'
  * Render quality (#760). Radios rather than a switch: one of four, remembered
  * on this device. One tab stop; the arrows move and choose (hooks/roving-keys).
  */
-function QualityPicker({ choice, onChoose }: { choice: QualityChoice; onChoose(next: QualityChoice): void }): JSX.Element {
+function QualityPicker({ choice, onChoose, aside }: { choice: QualityChoice; onChoose(next: QualityChoice): void; aside?: ReactNode }): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
-        Quality
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div className="pc-hud-header" style={{ fontSize: 9, opacity: 0.8, padding: '0 4px' }}>
+          Quality
+        </div>
+        {aside}
       </div>
       <div role="radiogroup" aria-label="Render quality" className="pc-glass--inset" style={{ display: 'flex', gap: 3 }}>
         {QUALITY_CHOICES.map((option) => (

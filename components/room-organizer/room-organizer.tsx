@@ -12,6 +12,7 @@ import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-ca
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
+import { useFirstStepsAsked } from './hooks/use-first-steps';
 import { useFloorKeepOut } from './hooks/use-floor-keep-out';
 import { useHistory } from './hooks/use-history';
 import { useHouseLoading } from './hooks/use-house-loading';
@@ -33,6 +34,7 @@ import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
+import { noteVersionOpened } from './lib/app-version';
 import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
@@ -253,6 +255,11 @@ export function RoomOrganizer(): JSX.Element {
     if (!loadHapticsChoice()) setView((v) => ({ ...v, hapticsEnabled: false }));
   }, [setView]);
 
+  // This browser opened this version (#931): "What's new" counts from it.
+  useEffect(() => {
+    noteVersionOpened();
+  }, []);
+
   // The zone with handles on the plan (#628). The handles are zone mode's.
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   useEffect(() => {
@@ -361,6 +368,7 @@ export function RoomOrganizer(): JSX.Element {
   // The shared-link tour (#722): EXPLORE for as long as it lasts, then
   // DESIGN, whichever way it ends.
   const tourPhase = useTourPhase();
+  const firstStepsAsked = useFirstStepsAsked();
   const touring = tourPhase === 'touring';
   const wasTouringRef = useRef(touring);
   useEffect(() => {
@@ -1244,8 +1252,9 @@ export function RoomOrganizer(): JSX.Element {
           house, nor over one just kept from it (#722). */}
       {tourPhase === 'none' && <WelcomeBanner />}
       {/* Getting started (#721): offered once the start chooser is answered;
-          never over a shared house or one just kept from it (#722). */}
-      {tourPhase === 'none' && (
+          never over a shared house or one just kept from it (#722), unless
+          Help asked for it (#931). */}
+      {(tourPhase === 'none' || (tourPhase === 'kept' && firstStepsAsked)) && (
         <FirstStepsCard
           placeCatalogItem={stablePlaceFromCatalog}
           onShareLink={stableShareLink}

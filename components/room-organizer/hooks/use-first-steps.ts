@@ -21,6 +21,8 @@ let record: FirstStepsRecord | null | undefined;
 /** Steps done before the card was offered, kept for when it is. */
 let sessionDone: ReadonlySet<FirstStepId> = new Set();
 let showing: boolean | undefined;
+/** Help asked for the card in this tab (#931): it shows even over a kept shared house. */
+let asked = false;
 const changed = createChannel<void>();
 
 function subscribe(listener: () => void): () => void {
@@ -83,6 +85,27 @@ export function dismissFirstSteps(): void {
   changed.emit();
 }
 
+/**
+ * Help → Getting started (#931): the card again, dismissed or never
+ * offered, with the ticks it had.
+ */
+export function reopenFirstSteps(): void {
+  record = { card: 'offered', done: doneSteps() };
+  saveFirstSteps(record);
+  showing = true;
+  asked = true;
+  changed.emit();
+}
+
+function wasAsked(): boolean {
+  return asked;
+}
+
+/** Whether Help asked for the card in this tab. */
+export function useFirstStepsAsked(): boolean {
+  return useSyncExternalStore(subscribe, wasAsked, () => false);
+}
+
 /** Whether the card shows: offered by the start chooser and not dismissed in this tab. */
 export function useFirstStepsOffered(): boolean {
   return useSyncExternalStore(subscribe, isShowing, () => false);
@@ -115,4 +138,5 @@ export function resetFirstStepsForTests(): void {
   record = undefined;
   sessionDone = new Set();
   showing = undefined;
+  asked = false;
 }

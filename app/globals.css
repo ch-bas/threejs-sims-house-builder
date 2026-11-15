@@ -1977,6 +1977,26 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
   }
 }
 
+/* Help in the View menu (#931): on the Quality heading's row without
+   making it taller; a touch screen gives the button a 44 px row instead. */
+.pc-help-entries {
+  display: flex;
+  align-items: center;
+  height: 0;
+}
+@media (pointer: coarse) {
+  .pc-help-entries {
+    height: auto;
+  }
+  .pc-help-entries .pc-photo-entry {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+  .pc-help-entries .pc-photo-entry::after {
+    content: none;
+  }
+}
+
 /* Catalogue colour variants (#621) */
 /* Swatch dots in the top-right corner of a tile whose entry comes in more
    than one colour. A two-tone ring reads on the dark strip and the light
