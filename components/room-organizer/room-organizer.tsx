@@ -1214,6 +1214,7 @@ export function RoomOrganizer(): JSX.Element {
           onDuplicate={duplicateSelected}
           onRemove={removeItem}
           onClose={clearItemSelection}
+          onBack={dismissItemPopover}
         />
       )}
 
