@@ -5,6 +5,7 @@ import { EditorViewProvider } from '../contexts/editor-view-context';
 import { RoomEditorProvider, type RoomEditorContextValue } from '../contexts/room-editor-context';
 import { createEditorViewStore } from '../hooks/editor-view-store';
 import { NOT_WHILE_EXPLORING } from '../hooks/use-exploring';
+import { resetFirstStepsForTests } from '../hooks/use-first-steps';
 import { layoutStore } from '../hooks/use-layout-store';
 import { makeLayout, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { subscribeNotices, type Notice } from '../lib/editor-notices';
@@ -161,3 +162,21 @@ describe('the funds field (#609)', () => {
     expect(document.querySelector('.pc-funds-delta')?.textContent).toBe('−$40');
   });
 });
+
+describe('Help in the View menu (#931)', () => {
+  it('Getting started closes the More tray, so the phone card shows at once', () => {
+    localStorage.clear();
+    resetFirstStepsForTests();
+    setup('build');
+    fireEvent.click(screen.getByRole('button', { name: 'More controls' }));
+    const panel = document.querySelector('.pc-mode-panel')!;
+    expect(panel.hasAttribute('data-more-open')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'View options' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Getting started' }));
+    expect(panel.hasAttribute('data-more-open')).toBe(false);
+    expect(screen.queryByRole('group', { name: 'View options' })).toBeNull();
+    localStorage.clear();
+    resetFirstStepsForTests();
+  });
+});
+
