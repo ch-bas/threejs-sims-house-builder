@@ -1,10 +1,10 @@
-import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
+import { ROOF_EAVE_OVERHANG, ridgeAlongX as ridgeRunsAlongX, roofPeakHeight } from '../lib/roof-shape';
 import { GRASS_DROP } from '../lib/site';
 import { WINDOW_WIDTH, windowCount, windowRow, type StreetFinish, type StreetHouseSpec } from '../lib/street-row';
 import { removeAndDispose } from './builder-utils';
 import { LIT_PANES_PART, litPaneMaterialProps } from './night-glow';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
-import { buildRoof, roofPeakHeight } from './roof';
+import { buildRoof } from './roof';
 import { buildWallMaterial } from './wall-patterns';
 import type * as ThreeNS from 'three';
 
@@ -202,8 +202,8 @@ function buildHouse(
 
   const baseY = Math.min(groundFrontY, groundBackY, floorYs[0] ?? 0) - PLINTH;
   const storeyTop = (i: number) => floorYs[i + 1] ?? eavesY;
-  const peak = roofPeakHeight(spec.roof.style, w, d, spec.roof.pitch);
-  const ridgeAlongX = w >= d;
+  const peak = roofPeakHeight(spec.roof, w, d);
+  const ridgeAlongX = ridgeRunsAlongX(spec.roof, w, d);
   const doorSign = spec.door.offset === 0 ? 1 : -Math.sign(spec.door.offset);
   // Turned-round houses mirror x, so their open sides swap in local space.
   const open = spec.facing < 0 ? spec.openSides : { west: spec.openSides.east, east: spec.openSides.west };
@@ -340,8 +340,7 @@ function buildHouse(
       width: w,
       depth: d,
       baseY: roofY,
-      spec: { style: spec.roof.style, color: spec.roof.color },
-      pitch: spec.roof.pitch,
+      spec: { style: spec.roof.style, color: spec.roof.color, pitch: spec.roof.pitch },
       // The gable ends carry the facade up to the roof (#661), its courses
       // running on from the block's, whose pattern starts at its foot.
       gableWalls: {

@@ -1,4 +1,4 @@
-import type { InteriorWall, Vec2 } from './types';
+import type { InteriorWall, Vec2, WallPattern } from './types';
 
 /**
  * The two faces of a partition (#720). Side 'a' faces the wall's left going
@@ -41,4 +41,24 @@ export function paintWallSide(wall: InteriorWall, color: string, side: WallSide 
   const back = side === 'a' ? wallSideColor(wall, 'b') : color;
   const next: InteriorWall = { ...plain, ...(side === 'b' && wall.color === undefined ? {} : { color: front }), ...(front === back ? {} : { colorB: back }) };
   return next.color === wall.color && next.colorB === wall.colorB ? wall : next;
+}
+
+/** A partition face's pattern (#919): 'solid' when none was laid. */
+export function wallSidePattern(wall: InteriorWall, side: WallSide): WallPattern {
+  const front = wall.pattern ?? 'solid';
+  return side === 'b' ? wall.patternB ?? front : front;
+}
+
+/**
+ * The wall with one face's pattern set, or both when `side` is undefined; the
+ * same object when nothing changes. Like `colorB`, `patternB` exists only
+ * while the faces differ, and 'solid' is stored as no pattern at all, so a
+ * wall back to plain paint is the wall it was.
+ */
+export function patternWallSide(wall: InteriorWall, pattern: WallPattern, side: WallSide | undefined): InteriorWall {
+  const front = side === 'b' ? wallSidePattern(wall, 'a') : pattern;
+  const back = side === 'a' ? wallSidePattern(wall, 'b') : pattern;
+  const { pattern: _pattern, patternB: _patternB, ...plain } = wall;
+  const next: InteriorWall = { ...plain, ...(front === 'solid' ? {} : { pattern: front }), ...(front === back ? {} : { patternB: back }) };
+  return next.pattern === wall.pattern && next.patternB === wall.patternB ? wall : next;
 }

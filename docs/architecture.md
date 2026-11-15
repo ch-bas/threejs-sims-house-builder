@@ -59,13 +59,14 @@ components/
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
-    │   ├── constants.ts                 Catalog (73 items in 12 categories) with colour variants, templates, MAX_FLOORS
+    │   ├── constants.ts                 Catalog (78 items in 12 categories) with colour variants, templates, MAX_FLOORS
     │   ├── schema.ts                    Type guards, legacy migration, caps that repair (never refuse)
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
     │   ├── collision-reason.ts          The sentence for why an item shows red (rules live in geometry.ts)
     │   ├── cutout.ts                    The L-shaped footprint's rules: why a cut is refused, and bringing every storey inside it (#727)
     │   ├── footprint.ts                 Shared footprint primitives: rotatedHalfExtents, LOW_PROFILE_MAX_HEIGHT, clampToFootprint; the building's outline: the optional corner cut-out, footprintOutline, isInsideBuilding, clampToBuilding, shellWalls (a leaf, so walk-collision can import it)
     │   ├── html-escape.ts               escapeHtml for the blueprint and print popups and the SVG export
+    │   ├── facade.ts                    The outer walls' outside finish: the facade's own pattern and colours, the inside finish for the rest; setting and clearing it (#918)
     │   ├── floor-holes.ts               The stairwell holes a floor is cut with: clamped, merged, kept off the L's cut; 3D slab, shafts and plan share them (#559)
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
@@ -117,6 +118,7 @@ components/
     │   ├── history-label.ts             What an undo or redo step did, from the two snapshots, for the toolbar's tooltips
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
+    │   ├── item-run.ts                  Fence, hedge and stepping-stone runs: sections along a line, end snap, corner insets (#915)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused); owns the page's one AudioContext
     │   ├── ambience.ts                  EXPLORE ambience (#911): rain gain by weather and indoors, footsteps by distance walked, and the Web Audio graph on the shared context
     │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
@@ -146,9 +148,13 @@ components/
     │   ├── sun-shadow.ts                Shadow-caster box + sun shadow-camera fit (#282)
     │   ├── night-lights.ts              Which items light the night, bulb heights, candela; the lamp pool (#215, #393)
     │   ├── street.ts                    Window sills, recessed entrance, frontage
-    │   ├── dormers.ts                   Dormer slope fitting + opening layout
+    │   ├── dormers.ts                   Dormer slope fitting + opening layout; dormers swapping across when a gable's ridge turns, the ones a pitch can't take (#916)
+    │   ├── roof-shape.ts                The roof's shape: peak height, pitch, ridge axis, eave overhang, the party walls that rule out a north–south ridge; read by the roof, dormers, GLB, street and camera framing (#916)
+    │   ├── door-clearance.ts            What stands in a door's swing: a soft warning for the plan and the popover, never a collision (#917)
     │   ├── door-swing.ts                How a door swings open in EXPLORE: openness by distance, eased angle, side away from the walker (#605)
+    │   ├── opening-style.ts             Door and window types: single, double, sliding, arch; standard, tall, fixed; leaf spans and the arch head (#922)
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
+    │   ├── stairwell-rail.ts            The guard rail round a stairwell on the floor above: runs along the hole, open at the arrival and along walls; scene, walker, plan and exports (#923)
     │   ├── zones.ts                     Room zones: rect and polygon validation, clamping, re-fit to detected rooms (#719), per-zone stats (porch left out, #582)
     │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
@@ -199,9 +205,10 @@ components/
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
     │   ├── reveals.ts                   Window and door reveals in the outer walls: linings, and the set-back of the frame (#758)
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
+    │   ├── stairwell-rail.ts            The stairwell guard rail mesh: posts, handrail, bottom rail and balusters merged per storey; hides with the partitions (#923)
     │   ├── measurement.ts               Distance-tool spheres + line
     │   ├── item-labels.ts               Floating sprite labels above items
-    │   ├── roof.ts                      Flat / gable / hipped roof; walkthrough attic ceiling (#487)
+    │   ├── roof.ts                      Flat / gable / hipped roof at its pitch and ridge (lib/roof-shape.ts); walkthrough attic ceiling (#487)
     │   ├── ceiling.ts                   Walkthrough ceiling + stairwell shafts up and down (#359)
     │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails; attic wells (#487)
     │   ├── neighbours.ts                The street's houses from their specs (merged + instanced)
@@ -267,7 +274,7 @@ components/
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
-    │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d)
+    │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d), a drag lays a run (#915)
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap (with companions), Escape, restore
     │   ├── use-shift-held.ts            Whether Shift is down, for tools that read it between pointer events (#723)
     │   ├── use-wall-edit.ts             The gesture of moving a selected wall, in both views: preview per move, one dispatch on release (#718)

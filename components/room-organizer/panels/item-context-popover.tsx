@@ -6,13 +6,16 @@ import { useSelection } from '../contexts';
 import { useDialogFocus } from '../hooks/use-dialog-focus';
 import { useExploring, useNotWhileExploring } from '../hooks/use-exploring';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { useRefusal } from '../hooks/use-refusal';
+import { purchaseRefusal } from '../lib/budget';
 import { placedItemVariants } from '../lib/catalog-variants';
 import { CCTV_MODELS, getCctvModel } from '../lib/cctv-models';
 import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, FURNITURE_CATALOG } from '../lib/constants';
 import { lockedNote } from '../lib/editor-notices';
 import { formatMetres, lengthSliderStep } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
-import { isWallMounted } from '../lib/opening-snap';
+import { isOpening, isWallMounted } from '../lib/opening-snap';
+import { doorStyle, hasDoorSwing, openingStylePatch, windowStyle } from '../lib/opening-style';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { MAX_STAIRS_LEAD_IN } from '../lib/stairs';
 import { MAX_SILL_HEIGHT, MIN_SILL_HEIGHT, windowSillHeight } from '../lib/street';
@@ -21,7 +24,7 @@ import { COLOR_SWATCHES, ColorSwatchPicker } from './color-swatch-picker';
 import { DRAWER_FULL_SCREEN_QUERY } from './sidebar-tabs';
 import { SliderRow } from './slider-row';
 import { StairHeadroomNote } from './stair-headroom-note';
-import type { FurnitureItem, SofaShape, StairsShape } from '../lib/types';
+import type { DoorStyle, FurnitureItem, OpeningStyle, SofaShape, StairsShape, WindowStyle } from '../lib/types';
 
 type ResizableDimension = 'width' | 'depth' | 'height';
 
@@ -51,6 +54,8 @@ function sliderMax(dimension: DimensionConfig, item: FurnitureItem): number {
 export interface ItemContextPopoverProps {
   /** Why the item shows red, as a sentence; null when it stands clear (#627). */
   collision: string | null;
+  /** What stands in a door's swing, or whose swing the item stands in: a warning, not a collision (#917). */
+  swingNote?: string | null | undefined;
   onRemove(id: string): void;
   onDuplicate(id: string): void;
   onRotate(id: string): void;
@@ -59,7 +64,8 @@ export interface ItemContextPopoverProps {
 }
 
 export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element {
-  const { actions, recentColors, pushColor } = useRoomEditor();
+  const { actions, recentColors, pushColor, layout } = useRoomEditor();
+  const refuse = useRefusal();
   const { selectedItem: item } = useSelection();
   const unit = useLengthUnit();
   // EXPLORE never edits the house, the 2D plan included (#643, #699): the
@@ -109,6 +115,13 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
   const lockedOff = exploring || item.locked === true;
   const lockedHere = item.locked === true && !exploring;
   const variants = placedItemVariants(FURNITURE_CATALOG, item);
+  // A dearer door or window type is a purchase (#922): the hard budget can refuse it, and says why.
+  const changeStyle = (style: OpeningStyle): void => {
+    const extra = (openingStylePatch(item, style)?.price ?? item.price ?? 0) - (item.price ?? 0);
+    const refusal = extra > 0 ? purchaseRefusal(layout, extra) : null;
+    if (refusal !== null) refuse(refusal);
+    else actions.setOpeningStyle(item.id, style);
+  };
   const colorPicker = (
     <ColorSwatchPicker
       variant="glass"
@@ -175,7 +188,7 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
             }}
             aria-hidden
           >
-            <Icon name={iconForItem(item.type, item.category)} size={18} />
+            <Icon name={iconForItem(item.type, item.category, item.openingStyle)} size={18} />
           </div>
           <div style={{ minWidth: 0 }}>
             <p
@@ -245,7 +258,16 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
 
       <div
         className="pc-item-popover__body"
-        style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}
+        style={{
+          padding: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          // A door or window's rows (#922) would reach down over the cost
+          // panel on a short desktop screen: its body scrolls first.
+          maxHeight: isOpening(item.type) && !sheet ? OPENING_BODY_MAX_HEIGHT : 'calc(100vh - 180px)',
+          overflowY: 'auto',
+        }}
       >
         {exploring && (
           <p role="note" className="pc-body" style={{ margin: 0, fontSize: 11, opacity: 0.85 }}>
@@ -279,6 +301,23 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         {/* A collapsed sheet shows only the warning and the action row; the
             `pc-sheet-more` wrappers are `display: contents` everywhere else. */}
         <div className="pc-sheet-more">
+          {props.swingNote && (
+            <div
+              role="note"
+              className="pc-body"
+              style={{
+                fontSize: 11,
+                color: 'var(--pc-paper)',
+                background: 'rgba(245,158,11,0.16)',
+                border: '1px solid rgba(245,158,11,0.8)',
+                borderRadius: 8,
+                padding: '6px 8px',
+              }}
+            >
+              {props.swingNote}
+            </div>
+          )}
+
           {item.type === 'security-camera' && (
             <CameraModelCard
               disabled={exploring}
@@ -459,6 +498,47 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 />
               )}
             </>
+          )}
+
+          {item.type === 'door' && (
+            <SegmentedRow
+              label="Type"
+              compact
+              value={doorStyle(item)}
+              options={DOOR_STYLE_OPTIONS}
+              labelWidth={TYPE_LABEL_WIDTH}
+              disabled={lockedOff}
+              title={offHint('Locked — unlock to change the door')}
+              onChange={(style) => changeStyle(style)}
+            />
+          )}
+
+          {item.type === 'window' && (
+            <SegmentedRow
+              label="Type"
+              compact
+              value={windowStyle(item)}
+              options={WINDOW_STYLE_OPTIONS}
+              labelWidth={TYPE_LABEL_WIDTH}
+              disabled={lockedOff}
+              title={offHint('Locked — unlock to change the window')}
+              onChange={(style) => changeStyle(style)}
+            />
+          )}
+
+          {hasDoorSwing(item) && (
+            <SegmentedRow
+              label="Opens"
+              compact
+              value={item.swingOut ? 'out' : 'in'}
+              options={DOOR_SWING_SIDES}
+              labelWidth={TYPE_LABEL_WIDTH}
+              disabled={lockedOff}
+              title={offHint('Locked — unlock to flip the swing')}
+              onChange={(side) => {
+                if ((side === 'out') !== (item.swingOut === true)) actions.toggleSwingOut(item.id);
+              }}
+            />
           )}
 
           {item.type === 'window' && (
@@ -643,9 +723,31 @@ const SOFA_SHAPES: ReadonlyArray<SegmentOption<SofaShape>> = [
 /** Label column of the stairs and window rows: wide enough for "Lead-in" on one line. */
 const TYPE_LABEL_WIDTH = 58;
 
+/** The tallest a door or window popover's body grows on a desktop, clear of the cost panel below it. */
+const OPENING_BODY_MAX_HEIGHT = 'max(220px, calc(100vh - 480px))';
+
 const STAIRS_SHAPES: ReadonlyArray<SegmentOption<StairsShape>> = [
   { key: 'straight', label: 'Straight' },
   { key: 'winder', label: 'Winder' },
+];
+
+/** Door and window types (#922). */
+const DOOR_STYLE_OPTIONS: ReadonlyArray<SegmentOption<DoorStyle>> = [
+  { key: 'single', label: 'Single' },
+  { key: 'double', label: 'Double' },
+  { key: 'sliding', label: 'Sliding' },
+  { key: 'arch', label: 'Arch' },
+];
+const WINDOW_STYLE_OPTIONS: ReadonlyArray<SegmentOption<WindowStyle>> = [
+  { key: 'standard', label: 'Panes' },
+  { key: 'tall', label: 'Tall' },
+  { key: 'fixed', label: 'Fixed' },
+];
+
+/** Which side of its wall a door opens to (#917): into the room it faces, or out of it. */
+const DOOR_SWING_SIDES: ReadonlyArray<SegmentOption<'in' | 'out'>> = [
+  { key: 'in', label: 'Inward' },
+  { key: 'out', label: 'Outward' },
 ];
 
 function SofaShapeSegmented({ value, onChange, disabled, title }: SofaShapeSegmentedProps): JSX.Element {
@@ -669,14 +771,20 @@ interface SegmentedRowProps<T extends string> {
   disabled?: boolean | undefined;
   /** Tooltip explaining why the row is disabled. */
   title?: string | undefined;
+  /**
+   * Door and window rows (#922): the label keeps its width and the choices
+   * share what is left, untracked, so a row of four lines up with a row of two.
+   */
+  compact?: boolean;
 }
 
-function SegmentedRow<T extends string>({ label, value, options, onChange, labelWidth = 48, disabled, title }: SegmentedRowProps<T>): JSX.Element {
+function SegmentedRow<T extends string>({ label, value, options, onChange, labelWidth = 48, disabled, title, compact = false }: SegmentedRowProps<T>): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span
         style={{
           width: labelWidth,
+          ...(compact ? { flexShrink: 0 } : {}),
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 600,
           fontSize: 10,
@@ -690,7 +798,7 @@ function SegmentedRow<T extends string>({ label, value, options, onChange, label
       <div
         role="group"
         aria-label={label}
-        style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${options.length}, 1fr)`, gap: 4 }}
+        style={{ flex: 1, display: 'grid', gridTemplateColumns: compact ? `repeat(${options.length}, minmax(0, 1fr))` : `repeat(${options.length}, 1fr)`, gap: 4 }}
       >
         {options.map((option) => (
           <button
@@ -708,12 +816,12 @@ function SegmentedRow<T extends string>({ label, value, options, onChange, label
               ...(disabled && value !== option.key
                 ? { borderStyle: 'dashed', boxShadow: 'none', background: 'transparent', color: 'rgba(255, 255, 255, 0.62)' }
                 : {}),
-              padding: '4px 6px',
+              padding: compact ? '4px 2px' : '4px 6px',
               borderRadius: 8,
               fontFamily: 'var(--pc-font-display)',
               fontWeight: 700,
               fontSize: 10,
-              letterSpacing: 'var(--pc-tr-caps)',
+              letterSpacing: compact ? 0 : 'var(--pc-tr-caps)',
               textTransform: 'uppercase',
             }}
           >

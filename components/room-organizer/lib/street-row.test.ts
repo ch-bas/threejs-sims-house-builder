@@ -42,6 +42,16 @@ describe('street generator (#310)', () => {
     }
   });
 
+  it('gives the matched pair our pitch, only when we set one (#916)', () => {
+    const pitched = generateStreet({ ...SITE, roofPitch: 1.4, neighbours: { west: true, east: true, street: true, seed: 3 } });
+    const plain = generateStreet({ ...SITE, neighbours: { west: true, east: true, street: true, seed: 3 } });
+    expect(pitched.filter((house) => house.attached && house.side).map((house) => house.roof.pitch)).toEqual([1.4, 1.4]);
+    // Further down the street every house keeps its own: the same as without ours.
+    const rest = (houses: typeof plain) => houses.filter((house) => !(house.attached && house.side)).map((house) => house.roof);
+    expect(rest(pitched)).toEqual(rest(plain));
+    expect(plain.filter((house) => house.attached && house.side).map((house) => house.roof.pitch)).toEqual([1, 1]);
+  });
+
   it('gives the same street for the same seed and a different one for another', () => {
     const a = street();
     expect(street()).toEqual(a);

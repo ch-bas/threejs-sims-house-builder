@@ -59,6 +59,8 @@ export interface StreetSite {
   floorYs: readonly number[];
   eavesY: number;
   roof?: { style: RoofStyle; color?: string };
+  /** Our roof's pitch, when one is set (#916): the party-wall neighbours copy it. */
+  roofPitch?: number;
   terrain?: TerrainSpec;
   frontage?: Frontage;
   neighbours?: NeighbourSpec;
@@ -233,7 +235,7 @@ export function generateStreet(site: StreetSite): StreetHouseSpec[] {
         groundBackY: groundAt(frontZ + depth),
         floorY: 0,
         attached,
-        matched: immediate ? { floorYs: [...site.floorYs], eavesY: site.eavesY, roof: site.roof } : null,
+        matched: immediate ? { floorYs: [...site.floorYs], eavesY: site.eavesY, roof: site.roof, pitch: site.roofPitch ?? 1 } : null,
       });
       if (immediate && partyWall) house.side = side;
       // The wall nearer ours is open when this house stands off the last;
@@ -302,7 +304,7 @@ interface HouseSeed {
   floorY: number;
   attached: boolean;
   /** Set for the party-wall neighbours: they copy our storeys and roof line. */
-  matched: { floorYs: number[]; eavesY: number; roof: StreetSite['roof'] } | null;
+  matched: { floorYs: number[]; eavesY: number; roof: StreetSite['roof']; pitch: number } | null;
 }
 
 function houseSpec(rng: () => number, seed: HouseSeed): StreetHouseSpec {
@@ -330,7 +332,7 @@ function houseSpec(rng: () => number, seed: HouseSeed): StreetHouseSpec {
     ? {
         style: seed.matched.roof?.style ?? 'none',
         color: seed.matched.roof?.color ?? ROOF_STYLE_DEFAULT_COLORS[seed.matched.roof?.style ?? 'none'],
-        pitch: 1,
+        pitch: seed.matched.pitch,
       }
     : { style: roofStyle, color: roofColor, pitch: roofStyle === 'flat' ? 1 : pitch };
 

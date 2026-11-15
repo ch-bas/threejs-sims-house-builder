@@ -1,6 +1,6 @@
 import { LOW_PROFILE_MAX_HEIGHT, rotatedHalfExtents, shellWalls } from './footprint';
 import { isCeilingHung, isWallHung, mountBand } from './mount-band';
-import { INTERIOR_WALL_THICKNESS, isOpening, isWallMounted } from './opening-snap';
+import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan, isOpening, isWallMounted } from './opening-snap';
 import { interiorWallHeight } from './storeys';
 import { buildWalkColliders, type WalkCollider } from './walk-collision';
 import type { FootprintCutout, FurnitureItem, InteriorWall, Vec2 } from './types';
@@ -53,6 +53,12 @@ function toObb(item: FurnitureItem): Obb {
   };
 }
 
+/**
+ * Boxes that touch to within this (m) don't overlap: sections laid end to end
+ * along a turned line (#915) meet with float error either way.
+ */
+const TOUCH_TOLERANCE = 1e-9;
+
 function obbOverlap(a: Obb, b: Obb): boolean {
   // SAT: two convex boxes are disjoint iff a separating axis exists among the
   // four face normals. Project each box's half-extents and the centre delta
@@ -69,7 +75,7 @@ function obbOverlap(a: Obb, b: Obb): boolean {
     const projectedDistance = Math.abs(dx * x + dz * z);
     const extentA = a.hw * Math.abs(a.ax * x + a.az * z) + a.hd * Math.abs(a.bx * x + a.bz * z);
     const extentB = b.hw * Math.abs(b.ax * x + b.az * z) + b.hd * Math.abs(b.bx * x + b.bz * z);
-    if (projectedDistance >= extentA + extentB) return false;
+    if (projectedDistance >= extentA + extentB - TOUCH_TOLERANCE) return false;
   }
   return true;
 }
@@ -272,7 +278,7 @@ export interface KeepOutRect {
 }
 
 /** True when the item's footprint overlaps the rect (touching edges don't count). */
-function itemEntersRect(item: FurnitureItem, rect: KeepOutRect): boolean {
+export function itemEntersRect(item: FurnitureItem, rect: KeepOutRect): boolean {
   if (!item.position) return false;
   if (rect.rotation) {
     const cos = Math.cos(rect.rotation);
@@ -581,8 +587,80 @@ export interface SnapToWallOptions {
   roomDepth: number;
   /** The corner cut out of the building (#727): its two walls snap, the stretches it took don't. */
   cutout?: FootprintCutout | undefined;
+  /** The storey's partitions (#914): an indoor item snaps to the face of an axis-aligned one too. */
+  interiorWalls?: readonly InteriorWall[] | undefined;
+  /** The storey's items: an item whose centre is in a doorway of a partition doesn't snap to it. */
+  items?: readonly FurnitureItem[] | undefined;
   /** Maximum distance (m) from the wall at which snapping is applied. */
   threshold?: number;
+}
+
+/** Below this (m), a partition's ends differ too little on an axis for it to count as running along the other one. */
+const AXIS_EPSILON = 1e-6;
+
+/**
+ * Where an item's centre sits flush against a partition face (#914): `axis`
+ * is the coordinate the face fixes, `value` that coordinate, `id` names the
+ * face (the partition and its side). Only axis-aligned partitions, and only
+ * ones beside the item (its extent overlaps their run, the shell's rule);
+ * the face on the side the centre is on. Angled partitions have none, and
+ * neither has one with a door or window in it across from the item's centre:
+ * an item in a doorway isn't pulled against the wall beside it.
+ */
+export interface PartitionFace {
+  id: string;
+  axis: 'x' | 'z';
+  value: number;
+}
+
+export function partitionFaces(
+  position: Vec2,
+  halfW: number,
+  halfD: number,
+  interiorWalls: readonly InteriorWall[],
+  items: readonly FurnitureItem[] = []
+): PartitionFace[] {
+  const faces: PartitionFace[] = [];
+  const reach = INTERIOR_WALL_THICKNESS / 2;
+  const openings = items.filter((item) => item.position && isOpening(item.type));
+  for (const wall of interiorWalls) {
+    if (openings.length > 0 && inDoorway(position, wall, openings)) continue;
+    if (Math.abs(wall.x2 - wall.x1) < AXIS_EPSILON) {
+      // Runs north-south: the face fixes x.
+      const z1 = Math.min(wall.z1, wall.z2);
+      const z2 = Math.max(wall.z1, wall.z2);
+      if (z2 - z1 < AXIS_EPSILON || position.z - halfD >= z2 || position.z + halfD <= z1) continue;
+      const side = position.x >= wall.x1 ? 1 : -1;
+      faces.push({ id: `${wall.id}:${side > 0 ? 'east' : 'west'}`, axis: 'x', value: wall.x1 + side * (reach + halfW) });
+    } else if (Math.abs(wall.z2 - wall.z1) < AXIS_EPSILON) {
+      // Runs east-west: the face fixes z.
+      const x1 = Math.min(wall.x1, wall.x2);
+      const x2 = Math.max(wall.x1, wall.x2);
+      if (position.x - halfW >= x2 || position.x + halfW <= x1) continue;
+      const side = position.z >= wall.z1 ? 1 : -1;
+      faces.push({ id: `${wall.id}:${side > 0 ? 'south' : 'north'}`, axis: 'z', value: wall.z1 + side * (reach + halfD) });
+    }
+  }
+  return faces;
+}
+
+/** Whether `position` lies across from an opening in the partition, within its span along it. */
+function inDoorway(position: Vec2, wall: InteriorWall, openings: readonly FurnitureItem[]): boolean {
+  const length = Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
+  if (length < AXIS_EPSILON) return false;
+  const ux = (wall.x2 - wall.x1) / length;
+  const uz = (wall.z2 - wall.z1) / length;
+  const midX = (wall.x1 + wall.x2) / 2;
+  const midZ = (wall.z1 + wall.z2) / 2;
+  const along = (point: Vec2): number => (point.x - midX) * ux + (point.z - midZ) * uz;
+  const across = (point: Vec2): number => Math.abs((point.x - midX) * uz - (point.z - midZ) * ux);
+  return openings.some((opening) => {
+    const at = opening.position!;
+    // In this partition: on its line, as the walker's door gaps take it.
+    if (across(at) > INTERIOR_WALL_THICKNESS) return false;
+    const span = interiorWallOpeningSpan(wall, { width: opening.width, position: at });
+    return span !== null && Math.abs(along(position) - span.centre) < span.width / 2;
+  });
 }
 
 /**
@@ -590,7 +668,9 @@ export interface SnapToWallOptions {
  * `threshold` of it, on either side. Indoor items snap to the inner face,
  * outdoor items to the outer one (they live outside the footprint), and only
  * alongside the wall: an item far from the building is left alone (#380).
- * Uses the item's rotated axis-aligned half-extents.
+ * An indoor item also snaps to the nearer face of a partition beside it
+ * (#914), when that is closer than the shell's. Uses the item's rotated
+ * axis-aligned half-extents.
  */
 export function snapToWall({
   position,
@@ -598,6 +678,8 @@ export function snapToWall({
   roomWidth,
   roomDepth,
   cutout,
+  interiorWalls,
+  items,
   threshold = 0.35,
 }: SnapToWallOptions): Vec2 {
   const { halfW, halfD } = rotatedHalfExtents(item);
@@ -605,14 +687,17 @@ export function snapToWall({
   const sign = item.category === 'outdoor' ? 1 : -1;
 
   let { x, z } = position;
+  let gapX = threshold;
+  let gapZ = threshold;
   const walls = shellWalls({ width: roomWidth, height: roomDepth, cutout });
   // Beside the wall: the item's extent overlaps the wall's run.
   for (const wall of walls) {
     if (wall.side !== 'west' && wall.side !== 'east') continue;
     if (position.z - halfD >= wall.z2 || position.z + halfD <= wall.z1) continue;
     const face = wall.x1 + (wall.side === 'east' ? 1 : -1) * sign * halfW;
-    if (Math.abs(x - face) < threshold) {
+    if (Math.abs(position.x - face) < threshold) {
       x = face;
+      gapX = Math.abs(position.x - face);
       break;
     }
   }
@@ -620,9 +705,23 @@ export function snapToWall({
     if (wall.side !== 'north' && wall.side !== 'south') continue;
     if (position.x - halfW >= wall.x2 || position.x + halfW <= wall.x1) continue;
     const face = wall.z1 + (wall.side === 'south' ? 1 : -1) * sign * halfD;
-    if (Math.abs(z - face) < threshold) {
+    if (Math.abs(position.z - face) < threshold) {
       z = face;
+      gapZ = Math.abs(position.z - face);
       break;
+    }
+  }
+  // Partitions stand inside: an outdoor item never meets one.
+  if (sign < 0 && interiorWalls && interiorWalls.length > 0) {
+    for (const face of partitionFaces(position, halfW, halfD, interiorWalls, items)) {
+      const gap = Math.abs((face.axis === 'x' ? position.x : position.z) - face.value);
+      if (face.axis === 'x' && gap < gapX) {
+        x = face.value;
+        gapX = gap;
+      } else if (face.axis === 'z' && gap < gapZ) {
+        z = face.value;
+        gapZ = gap;
+      }
     }
   }
 

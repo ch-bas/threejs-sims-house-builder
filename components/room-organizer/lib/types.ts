@@ -119,6 +119,12 @@ export interface CategoryMeta {
   icon: string;
 }
 
+/** How a door opens (#922): one swinging leaf, two, a sliding pane, or an open archway. */
+export type DoorStyle = 'single' | 'double' | 'sliding' | 'arch';
+/** A window's glazing (#922): four panes, tall and narrow, or one fixed pane. */
+export type WindowStyle = 'standard' | 'tall' | 'fixed';
+export type OpeningStyle = DoorStyle | WindowStyle;
+
 export interface FurnitureItem {
   id: string;
   type: FurnitureType | string;
@@ -158,6 +164,10 @@ export interface FurnitureItem {
   sofaShape?: SofaShape;
   locked?: boolean;
   mirrored?: boolean;
+  /** A door only: its leaf swings to its local −Z, out of the room, rather than into it (#917). */
+  swingOut?: true;
+  /** A door or window type (#922, `lib/opening-style.ts`); absent is a single swinging door or a four-pane window. */
+  openingStyle?: OpeningStyle;
   /** Straight flight (default) or half-turn winder (#205). */
   stairsShape?: StairsShape;
   /** Winder only: extra steps on the up flight, taken from the return flight. */
@@ -197,7 +207,7 @@ export type WallId = 'north' | 'south' | 'east' | 'west';
 
 export type FloorPattern = 'solid' | 'wood' | 'tile' | 'carpet' | 'concrete';
 
-export type WallPattern = 'solid' | 'brick' | 'wallpaper' | 'panel' | 'plaster' | 'siding';
+export type WallPattern = 'solid' | 'brick' | 'wallpaper' | 'panel' | 'plaster' | 'siding' | 'tile';
 
 export type RoofStyle = 'none' | 'flat' | 'gable' | 'hipped';
 
@@ -231,9 +241,16 @@ export interface DormerSpec {
   color?: string;
 }
 
+/** The world axis a gable's ridge runs along (#916). */
+export type RoofRidge = 'x' | 'z';
+
 export interface RoofSpec {
   style: RoofStyle;
   color?: string;
+  /** Multiplier on the roof's rise (#916), 0.5 to 1.6; absent is 1. See lib/roof-shape.ts. */
+  pitch?: number;
+  /** A gable's ridge axis (#916); absent runs it along the longer side. */
+  ridge?: RoofRidge;
   /** Dormers; built on gable and hipped roofs, ignored on flat or none. */
   dormers?: DormerSpec[];
 }
@@ -251,6 +268,10 @@ export interface InteriorWall {
   color?: string;
   /** The second face, when it differs from `color` (#720); see lib/wall-sides.ts. */
   colorB?: string;
+  /** Side 'a''s pattern (#919); absent is plain paint. */
+  pattern?: WallPattern;
+  /** The second face's pattern, when it differs from `pattern`. */
+  patternB?: WallPattern;
 }
 
 /**
@@ -278,6 +299,15 @@ export interface RoomZone {
   floorColor?: string;
 }
 
+/**
+ * The outside of a storey's outer walls, where it differs from the inside
+ * (#918); see lib/facade.ts. A field left out follows the inside finish.
+ */
+export interface FacadeFinish {
+  pattern?: WallPattern;
+  colors?: Partial<Record<WallId, string>>;
+}
+
 export interface FloorLayout {
   id: string;
   name: string;
@@ -286,6 +316,8 @@ export interface FloorLayout {
   floorPattern?: FloorPattern;
   wallPattern?: WallPattern;
   wallColors?: Partial<Record<WallId, string>>;
+  /** The outer walls' outside finish (#918); absent, the outside wears the inside one. */
+  facade?: FacadeFinish;
   hiddenWalls?: WallId[];
   interiorWalls?: InteriorWall[];
   /** Room zones drawn on this floor (#155). */

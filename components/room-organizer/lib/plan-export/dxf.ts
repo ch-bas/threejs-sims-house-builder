@@ -36,7 +36,9 @@
 
 import { footprintOutline } from '../footprint';
 import { stripXmlIllegal } from '../html-escape';
+import { doorLeafSpans } from '../opening-style';
 import { planDrawOrder } from '../plan-order';
+import { stairwellRailSegments } from '../stairwell-rail';
 import { entrancePlanOutline, planFloorIndex, type EntrancePlanOutline } from '../street';
 import { zoneArea, zoneLabelSpot, zoneRings } from '../zones';
 import {
@@ -46,8 +48,9 @@ import {
   coverageRings,
   interiorWallDimensions,
   itemWorldCorners,
-  doorSwing,
+  doorSwings,
   openingAxes,
+  openingPlanMarks,
   planContentBounds,
   planFrameBounds,
   polarPoint,
@@ -111,6 +114,9 @@ export interface DxfExportOptions {
 
 /** Perpendicular jamb-tick length at each end of an opening, in metres. */
 const OPENING_TICK_M = 0.25;
+/** The DASHED linetype's dash and gap, metres (an archway's head, #922). */
+const DASH_M = 0.1;
+const DASH_GAP_M = 0.06;
 /** TEXT heights in metres. */
 const LABEL_TEXT_HEIGHT = 0.18;
 const TITLE_TEXT_HEIGHT = 0.35;
@@ -183,9 +189,17 @@ class DxfDocument {
     pair(out, 8, layer);
   }
 
-  line(layer: DxfLayer, from: CadPoint, to: CadPoint): void {
+  /** A dashed LINE uses the DASHED linetype, which the LTYPE table then carries (#922). */
+  private dashed = false;
+
+  line(layer: DxfLayer, from: CadPoint, to: CadPoint, dashed = false): void {
     const out = this.entities;
     this.head('LINE', layer, out);
+    if (dashed) {
+      // An overhead line (an archway's head): drawn dashed, by the convention.
+      pair(out, 6, 'DASHED');
+      this.dashed = true;
+    }
     pair(out, 100, 'AcDbLine');
     pair(out, 10, fmt(from[0]));
     pair(out, 20, fmt(from[1]));
@@ -362,7 +376,8 @@ class DxfDocument {
       pair(out, 40, fmt(height * 1.1));
       pair(out, 41, fmt(width / height));
     });
-    table('LTYPE', 3, (owner) => {
+    // DASHED only when a line uses it, so a drawing without one is unchanged.
+    table('LTYPE', this.dashed ? 4 : 3, (owner) => {
       for (const [name, description] of [
         ['BYBLOCK', ''],
         ['BYLAYER', ''],
@@ -373,6 +388,17 @@ class DxfDocument {
         pair(out, 72, 65);
         pair(out, 73, 0);
         pair(out, 40, fmt(0));
+      }
+      if (this.dashed) {
+        record('LTYPE', owner, 'AcDbLinetypeTableRecord', 'DASHED');
+        pair(out, 3, 'Dashed __ __ __');
+        pair(out, 72, 65);
+        pair(out, 73, 2);
+        pair(out, 40, fmt(DASH_M + DASH_GAP_M));
+        pair(out, 49, fmt(DASH_M));
+        pair(out, 74, 0);
+        pair(out, 49, fmt(-DASH_GAP_M));
+        pair(out, 74, 0);
       }
     });
     table('LAYER', DXF_LAYERS.length + 1, (owner) => {
@@ -559,6 +585,8 @@ function emitFloor(
       true
     );
   }
+  // Its guard rail (#923), on the same layer.
+  for (const s of stairwellRailSegments(layout, floorIndex)) doc.line('STAIRWELL', cad(s.x1, s.z1), cad(s.x2, s.z2));
 
   if (options.coverage !== false) emitCoverage(doc, floor, frame ?? planFrameBounds(layout, floor, dxfCoverageMode(options)), cad);
 
@@ -627,6 +655,18 @@ function emitStairs(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: numb
   }
 }
 
+/**
+ * The CCW CAD arc of a door leaf's quarter swing. In CAD coords `along` sits
+ * at angle θ and `into` at θ − 90°: from the −X jamb the shut leaf points
+ * along θ, from the +X jamb (a mirrored door, a double door's second leaf)
+ * back along θ + 180, and it opens to θ − 90, or θ + 90 on a door set to
+ * open out (#917). The arc runs CCW between the two, the short way round.
+ */
+function swingArcDegrees(thetaDeg: number, hingeOnPlusX: boolean, swingOut: boolean): [number, number] {
+  if (!swingOut) return hingeOnPlusX ? [thetaDeg + 180, thetaDeg + 270] : [thetaDeg - 90, thetaDeg];
+  return hingeOnPlusX ? [thetaDeg + 90, thetaDeg + 180] : [thetaDeg, thetaDeg + 90];
+}
+
 function emitOpening(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: number) => CadPoint): void {
   const { along, into } = openingAxes(item);
   const half = item.width / 2;
@@ -642,15 +682,22 @@ function emitOpening(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: num
 
   if (item.type === 'door') {
     // Swing: `doorSwing`'s leaf, plus the quarter arc from the closed to the
-    // open position. In CAD coords `along` sits at angle θ and `into` at
-    // θ − 90°: from the −X jamb the closed leaf points along θ and the CCW
-    // arc runs θ−90 → θ; from the +X jamb of a mirrored door it points back
-    // along θ+180 and the arc runs θ+180 → θ+270.
-    const { hinge, leafTip } = doorSwing(item);
-    doc.line('OPENINGS', cad(hinge.x, hinge.z), cad(leafTip.x, leafTip.z));
+    // open position, the CCW way round in CAD angles whichever jamb hinges
+    // it (#386) and whichever side it opens to (#917).
+    // A double door has two leaves; a sliding door draws its panes and an
+    // archway its head instead (#922): the head is
+    // two dashed lines along the wall faces.
     const thetaDeg = ((item.rotation ?? 0) * 180) / Math.PI;
-    const [start, end] = item.mirrored ? [thetaDeg + 180, thetaDeg + 270] : [thetaDeg - 90, thetaDeg];
-    doc.arc('OPENINGS', cad(hinge.x, hinge.z), item.width, start, end);
+    const leaves = doorLeafSpans(item);
+    doorSwings(item).forEach((swing, index) => {
+      const { hinge, strike, leafTip } = swing;
+      doc.line('OPENINGS', cad(hinge.x, hinge.z), cad(leafTip.x, leafTip.z));
+      const [start, end] = swingArcDegrees(thetaDeg, leaves[index]?.hinge === 1, item.swingOut === true);
+      doc.arc('OPENINGS', cad(hinge.x, hinge.z), leaves[index]?.width ?? Math.hypot(strike.x - hinge.x, strike.z - hinge.z), start, end);
+    });
+    const { solid, overhead } = openingPlanMarks(item, OPENING_TICK_M);
+    for (const { from, to } of solid) doc.line('OPENINGS', cad(from.x, from.z), cad(to.x, to.z));
+    for (const { from, to } of overhead) doc.line('OPENINGS', cad(from.x, from.z), cad(to.x, to.z), true);
   } else {
     // Window: the double-line symbol's centre line along the wall.
     doc.line('OPENINGS', cad(endA.x, endA.z), cad(endB.x, endB.z));

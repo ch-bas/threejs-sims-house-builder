@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { autoAnswerConfirms } from '../lib/__testfixtures__/confirm';
 import { makeCatalogItem, makeFloor, makeItem } from '../lib/__testfixtures__/fixtures';
 import { DEFAULT_BUDGET } from '../lib/constants';
+import { layRun } from '../lib/item-run';
 import { snapOpeningToWall, snapWallMountedItem } from '../lib/opening-snap';
 import { INITIAL_LAYOUT } from './layout-reducer';
 import { useItemPlacement } from './use-item-placement';
@@ -104,6 +105,62 @@ describe('useItemPlacement — wall-aligned catalog placement', () => {
     expect(result.current.placeCatalogItem(makeCatalogItem({ price: 100 }), { x: 0, z: 0 })).toBe('');
     expect(layoutStore.getState().layout).toBe(before);
     expect(result.current.placeCatalogItem(makeCatalogItem({ price: 40 }), { x: 0, z: 0 })).not.toBe('');
+  });
+
+  describe('runs (#915)', () => {
+    const fence = makeCatalogItem({ type: 'fence', name: 'Fence Section', category: 'outdoor', width: 2, depth: 0.15, price: 120 });
+    const mountRun = (
+      overrides: { activeFloorY?: number; refusePurchase?: (price: number) => boolean; buildingCost?: number; onRunPlacedAfterConfirm?: (ids: string[]) => void } = {}
+    ) => {
+      const { layout, activeFloorIndex, actions } = layoutStore.getState();
+      return renderHook(() =>
+        useItemPlacement({
+          activeFloor: layout.floors[activeFloorIndex]!,
+          activeFloorY: overrides.activeFloorY ?? 0,
+          roomWidth: layout.width,
+          roomDepth: layout.height,
+          buildingCost: overrides.buildingCost ?? 0,
+          actions,
+          view: { snapToGrid: false, snapToWall: false, snapToItems: false },
+          ...(overrides.refusePurchase ? { refusePurchase: overrides.refusePurchase } : {}),
+          ...(overrides.onRunPlacedAfterConfirm ? { onRunPlacedAfterConfirm: overrides.onRunPlacedAfterConfirm } : {}),
+        })
+      );
+    };
+    const run = () => layRun({ x: -3, z: 20 }, { x: 4, z: 20 }, fence, { makeId: (i) => `f-${i}` });
+
+    it('lays every section in one edit', () => {
+      const { result } = mountRun();
+      const before = layoutStore.getState().layout.floors[0]!.items.length;
+      expect(result.current.placeRun(run())).toBe('f-0');
+      const items = layoutStore.getState().layout.floors[0]!.items;
+      expect(items.length).toBe(before + 4);
+      expect(activeItem('f-3').width).toBe(1);
+    });
+
+    it('refuses the whole run under the hard budget, priced as a whole, and above the ground floor', () => {
+      const prices: number[] = [];
+      const { result } = mountRun({ refusePurchase: (price) => (prices.push(price), price > 400) });
+      const before = layoutStore.getState().layout;
+      expect(result.current.placeRun(run())).toBe('');
+      expect(prices).toEqual([480]);
+      expect(layoutStore.getState().layout).toBe(before);
+      const upstairs = mountRun({ activeFloorY: 3 });
+      expect(upstairs.result.current.placeRun(run())).toBe('');
+      expect(layoutStore.getState().layout).toBe(before);
+    });
+
+    it('asks once over the soft budget', async () => {
+      const answers = autoAnswerConfirms(true);
+      const laid = vi.fn<(ids: string[]) => void>();
+      const { result } = mountRun({ buildingCost: DEFAULT_BUDGET - 10, onRunPlacedAfterConfirm: laid });
+      expect(result.current.placeRun(run())).toBe('');
+      await vi.waitFor(() => expect(layoutStore.getState().layout.floors[0]!.items.some((item) => item.id === 'f-3')).toBe(true));
+      expect(answers.asked).toHaveLength(1);
+      // Every section's id, so the caller selects the whole run.
+      expect(laid).toHaveBeenCalledWith(['f-0', 'f-1', 'f-2', 'f-3']);
+      answers.stop();
+    });
   });
 
   describe('over the soft budget (#136), asked in the app (#649)', () => {
@@ -273,6 +330,24 @@ describe('useItemPlacement — snapPosition', () => {
     // An opening keys on its wall line.
     result.current.snapPosition('w', 1, -3.9);
     expect(result.current.lastSnapWall().touching).toHaveLength(1);
+  });
+
+  it('snaps a dragged item flush to a partition on its storey (#914)', () => {
+    const box = makeItem({ id: 'box', width: 1, depth: 1, rotation: 0, category: 'seating', position: { x: 0, z: 0 } });
+    const { result } = renderHook(() =>
+      useItemPlacement({
+        activeFloor: makeFloor({ items: [box], interiorWalls: [{ id: 'p', x1: 1, z1: -4, x2: 1, z2: 4 }] }),
+        activeFloorY: 0,
+        roomWidth: 8,
+        roomDepth: 8,
+        buildingCost: 0,
+        actions: layoutStore.getState().actions,
+        view: { snapToGrid: false, snapToWall: true, snapToItems: false },
+      })
+    );
+    const snapped = result.current.snapPosition('box', 0.3, 0);
+    expect(snapped.x).toBeCloseTo(1 - 0.08 - 0.5, 12);
+    expect(result.current.lastSnapWall().touching).toEqual(['p:west']);
   });
 
   it('keeps a dragged window out of the porch recess span (#394)', () => {

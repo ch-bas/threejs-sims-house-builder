@@ -353,6 +353,52 @@ describe('layoutToDxf', () => {
     expect([tag(leaf, 10), tag(leaf, 20), tag(leaf, 11), tag(leaf, 21)]).toEqual(['0.000', '1.950', '0.900', '1.950']);
   });
 
+  it('turns the swing to the other side of the wall on a door that opens out (#917)', () => {
+    // West wall as above: unmirrored, hinged at CAD (0, 1.05), opening west.
+    const door = makeItem({ id: 'd', type: 'door', name: 'Door', width: 0.9, depth: 0.1, position: { x: -4, z: 2.5 }, rotation: Math.PI / 2, swingOut: true });
+    for (const [mirrored, centreY, arc] of [
+      [false, '1.050', ['90.000', '180.000']],
+      [true, '1.950', ['180.000', '270.000']],
+    ] as const) {
+      const floor = makeFloor({ items: [{ ...door, mirrored }] });
+      const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+      const swing = entities(dxf, 'ARC', 'OPENINGS')[0]!;
+      expect([tag(swing, 10), tag(swing, 20), tag(swing, 50), tag(swing, 51)]).toEqual(['0.000', centreY, ...arc]);
+      const leaf = entities(dxf, 'LINE', 'OPENINGS')[2]!;
+      expect([tag(leaf, 11), tag(leaf, 21)]).toEqual(['-0.900', centreY]);
+    }
+  });
+
+  it('draws each door type: two leaves and arcs, a sliding door\'s panes, an archway\'s head (#922)', () => {
+    const base = makeItem({ id: 'd', type: 'door', name: 'Door', width: 1.6, depth: 0.12, position: { x: 0, z: -4 }, rotation: 0 });
+    const count = (style: 'double' | 'sliding' | 'arch') => {
+      const floor = makeFloor({ items: [{ ...base, openingStyle: style }] });
+      const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+      return { arcs: entities(dxf, 'ARC', 'OPENINGS'), lines: entities(dxf, 'LINE', 'OPENINGS').length };
+    };
+    const double = count('double');
+    // Two jamb ticks plus a leaf per side; two quarter arcs of half the width.
+    expect(double.lines).toBe(4);
+    expect(double.arcs.map((arc) => [tag(arc, 10), tag(arc, 40), tag(arc, 50), tag(arc, 51)])).toEqual([
+      ['3.200', '0.800', '270.000', '0.000'],
+      ['4.800', '0.800', '180.000', '270.000'],
+    ]);
+    // Two ticks and two panes; two ticks and the head's two lines: no arcs.
+    expect(count('sliding')).toEqual({ arcs: [], lines: 4 });
+    expect(count('arch')).toEqual({ arcs: [], lines: 4 });
+  });
+
+  it('dashes an archway\'s head with a DASHED linetype the drawing only carries when it uses it (#922)', () => {
+    const arch = makeItem({ id: 'a', type: 'door', name: 'Archway', width: 1.2, depth: 0.12, position: { x: 0, z: -4 }, rotation: 0, openingStyle: 'arch' });
+    const archFloor = makeFloor({ items: [arch] });
+    const dxf = layoutToDxf(makeLayout({ floors: [archFloor] }), archFloor);
+    const dashed = entities(dxf, 'LINE', 'OPENINGS').filter((line) => tag(line, 6) === 'DASHED');
+    expect(dashed).toHaveLength(2);
+    expect(dxf).toMatch(/LTYPE\n5\n[0-9A-F]+\n330\n[0-9A-F]+\n100\nAcDbSymbolTableRecord\n100\nAcDbLinetypeTableRecord\n2\nDASHED/);
+    const { layout, floor } = makeFixture();
+    expect(layoutToDxf(layout, floor)).not.toContain('DASHED');
+  });
+
   it('labels each furniture item and the floor itself with TEXT', () => {
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);

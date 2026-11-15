@@ -4,6 +4,7 @@ import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } fro
 import { useLengthUnit } from '../contexts';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { planContactShadow } from '../lib/contact-shadow';
+import { facadeColorOf, withPorchFacade } from '../lib/facade';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { cutoutRect } from '../lib/footprint';
 import {
@@ -20,6 +21,7 @@ import { LAMP_POOL_SIZE, collectLampLights, nightGlowPlan, planLampPool, roomLam
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
 import { boundsSize, planViewFit } from '../lib/plan-view-fit';
 import { gardenGroundY, hasNeighbours, lowestGround } from '../lib/site';
+import { stairwellRailSegments } from '../lib/stairwell-rail';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { generateStreet } from '../lib/street-row';
@@ -55,6 +57,7 @@ import { revealSetbacks } from '../three/reveals';
 import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
 import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
+import { STAIRWELL_RAIL_TAG, buildStairwellRail, clearStairwellRails } from '../three/stairwell-rail';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
 import { usePlanCalibration } from './plan-calibration';
 import { observeSceneOccluders, planFit } from './scene-occluders';
@@ -99,9 +102,9 @@ function applyStoreyRange(scene: ThreeNS.Scene, range: { from: number; to: numbe
     if (obj.userData[OFF_STOREY_KEY] === off) continue;
     obj.userData[OFF_STOREY_KEY] = off;
     const tag = obj.userData.type;
-    // Walls and partitions are shown by applyWallDisplay, which owns their
+    // Walls, partitions and the stairwell rail are shown by applyWallDisplay, which owns their
     // visibility; so are the doors and windows stamped with a wall (#659).
-    if (tag !== ROOM_OBJECT_TAGS.Wall && tag !== 'interior-wall' && obj.userData.ownerTag === undefined) obj.visible = !off;
+    if (tag !== ROOM_OBJECT_TAGS.Wall && tag !== 'interior-wall' && tag !== STAIRWELL_RAIL_TAG && obj.userData.ownerTag === undefined) obj.visible = !off;
   }
 }
 
@@ -304,6 +307,7 @@ export function useSceneEffects({
           floor.floorPattern,
           floor.wallPattern,
           floor.wallColors,
+          floor.facade,
           floor.hiddenWalls,
           zoneFinishesKey(floor),
         ])
@@ -320,6 +324,12 @@ export function useSceneEffects({
 
   const interiorWallsKey = useMemo(
     () => JSON.stringify(layout.floors.map((floor) => floor.interiorWalls ?? [])),
+    [layout.floors]
+  );
+
+  // The porch back wall's street side wears the facade (#918).
+  const porchFacadeKey = useMemo(
+    () => JSON.stringify(layout.floors.map((floor) => facadeColorOf(floor, 'north') ?? null)),
     [layout.floors]
   );
 
@@ -464,6 +474,7 @@ export function useSceneEffects({
         ...(floor.floorPattern ? { floorPattern: floor.floorPattern } : {}),
         ...(floor.wallPattern ? { wallPattern: floor.wallPattern } : {}),
         ...(floor.wallColors ? { wallColors: floor.wallColors } : {}),
+        ...(floor.facade ? { facade: floor.facade } : {}),
         wallOpenings,
         ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
         floorOpenings,
@@ -488,7 +499,9 @@ export function useSceneEffects({
         const northHidden = floor.hiddenWalls?.includes('north') ?? false;
         for (const group of buildEntrance(THREE, {
           geometry: entrance,
+          // The porch is outdoors: it wears the facade where it faces it (#918).
           wallColor: floor.wallColors?.north ?? '#e8dcc4',
+          facadeColor: facadeColorOf(floor, 'north'),
           wallTag: ROOM_OBJECT_TAGS.Wall,
           floorTag: ROOM_OBJECT_TAGS.Floor,
           ...(ghostOpacity !== undefined ? { ghostOpacity } : {}),
@@ -1027,6 +1040,8 @@ export function useSceneEffects({
   // picker tick doesn't rebuild the street (#283).
   const neighboursKey = JSON.stringify(layout.neighbours ?? null);
   const roofColor = layout.roof?.color;
+  // The attached houses copy our pitch, only when one is set (#916).
+  const roofPitch = layout.roof?.pitch;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -1042,6 +1057,7 @@ export function useSceneEffects({
         floorYs: layout.floors.map((_floor, index) => floorElevation(layout.floors, index)),
         eavesY: buildingHeight(layout.floors),
         ...(roofStyle ? { roof: { style: roofStyle, ...(roofColor ? { color: roofColor } : {}) } } : {}),
+        ...(roofPitch !== undefined ? { roofPitch } : {}),
         ...(terrainFrontY !== undefined && terrainBackY !== undefined
           ? { terrain: { frontY: terrainFrontY, backY: terrainBackY } }
           : {}),
@@ -1055,7 +1071,7 @@ export function useSceneEffects({
     // floor count), and layout.neighbours / roof / terrain through the
     // narrow keys above, so an item edit doesn't rebuild the neighbours.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.width, layout.height, layout.floors.length, storeyHeightsKey, neighboursKey, roofStyle, roofColor, terrainFrontY, terrainBackY, layout.frontage]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.width, layout.height, layout.floors.length, storeyHeightsKey, neighboursKey, roofStyle, roofColor, roofPitch, terrainFrontY, terrainBackY, layout.frontage]);
 
   // Interior walls
   useEffect(() => {
@@ -1086,7 +1102,11 @@ export function useSceneEffects({
       : null;
 
     for (const { floor, index } of floorsToRender) {
-      const walls = floor.interiorWalls ?? [];
+      // The porch back wall wears the facade on its street side (#918).
+      const walls =
+        entrance && index === entrance.floorIndex
+          ? withPorchFacade(floor.interiorWalls ?? [], facadeColorOf(floor, 'north'), { x: (entrance.x0 + entrance.x1) / 2, z: entrance.frontZ })
+          : floor.interiorWalls ?? [];
       if (walls.length === 0) continue;
       const firstChild = scene.children.length;
       const isActive = index === activeFloorIndex;
@@ -1132,7 +1152,40 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, walkthroughActive, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, porchFacadeKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, walkthroughActive, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
+
+  // The guard rail round each storey's stairwells (#923), shown and hidden
+  // with the partitions.
+  useEffect(() => {
+    invalidate();
+    if (!isReady) return;
+    const THREE = threeModuleRef.current;
+    const scene = sceneRef.current;
+    if (!THREE || !scene) return;
+
+    clearStairwellRails(scene);
+    const indices = allFloors ? layout.floors.map((_floor, index) => index) : [activeFloorIndex];
+    for (const index of indices) {
+      const rail = buildStairwellRail(
+        THREE,
+        stairwellRailSegments(layout, index),
+        floorElevation(layout.floors, index),
+        otherFloorGhostOpacity(allFloors, wallDisplay, index === activeFloorIndex)
+      );
+      if (!rail) continue;
+      rail.userData[STOREY_KEY] = index;
+      scene.add(rail);
+    }
+    applyStoreyRange(scene, storeyRangeRef.current);
+    const camera = cameraRef.current;
+    if (camera) {
+      applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
+    }
+    requestShadowUpdate();
+    // The rail reads the stairs (wallOpeningsKey), the partitions upstairs,
+    // the storey heights and the footprint only, so an item edit leaves it be.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, layout.width, layout.height, cutoutKey]);
 
   // Which storeys are drawn while walking indoors (#446). Declared after the
   // shell, partition and furniture effects, so a rebuild in the same commit
@@ -1468,6 +1521,7 @@ export function useSceneEffects({
       render2DTopDown({
         canvas,
         layout,
+        swingWarnings: true,
         floor: activeFloor,
         selectedItemId,
         extraSelectedIds,

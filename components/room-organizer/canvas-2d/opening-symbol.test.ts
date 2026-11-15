@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { applyTheme, THEME_LIST } from '../lib/themes';
 import { COLOR_SWATCHES } from '../panels/color-swatch-picker';
-import { contrastRatio, drawOpeningSymbol, relativeLuminance, symbolInk, traceOpeningGaps } from './opening-symbol';
+import { contrastRatio, drawOpeningSymbol, relativeLuminance, SWING_BLOCKED_FILL, symbolInk, traceOpeningGaps } from './opening-symbol';
 
 type Call = { op: string; args: number[]; style?: string };
 
@@ -115,6 +115,26 @@ describe('drawOpeningSymbol (#576)', () => {
     const last = calls.filter((c) => c.op === 'moveTo' || c.op === 'lineTo').slice(-2);
     expect(last.map((c) => c.args[0])).toEqual([260 - 35, 260 + 35]);
     expect(last.map((c) => c.args[1])).toEqual([NORTH_DOOR_Y, NORTH_DOOR_Y]);
+  });
+
+  it('opens out of the room on a door that swings out (#917)', () => {
+    const { ctx, calls } = recordingContext();
+    drawOpeningSymbol(ctx, { ...door, swingOut: true }, FLOOR, layout, view);
+    const [ex, ey] = sweepEnd(arcOf(calls));
+    expect(ex).toBeCloseTo(260 - 22.5, 6);
+    expect(ey).toBeCloseTo(NORTH_DOOR_Y - 45, 6);
+  });
+
+  it('washes a blocked swing amber under the ink, and only a blocked one (#917)', () => {
+    const plain = recordingContext();
+    drawOpeningSymbol(plain.ctx, door, FLOOR, layout, view);
+    expect(plain.calls.some((c) => c.op === 'fill')).toBe(false);
+    const { ctx, calls } = recordingContext();
+    drawOpeningSymbol(ctx, door, FLOOR, layout, view, true);
+    const fill = calls.findIndex((c) => c.op === 'fill');
+    expect(calls[fill]!.style).toBe(SWING_BLOCKED_FILL);
+    // Before any stroke: the leaf and the arc stay on top.
+    expect(calls.findIndex((c) => c.op === 'stroke')).toBeGreaterThan(fill);
   });
 
   it('skips an unplaced item', () => {

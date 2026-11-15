@@ -5,6 +5,8 @@ import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { repairFloorPlanTransform } from './floor-plan-fit';
 import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
+import { isOpeningStyle } from './opening-style';
+import { clampRoofPitch } from './roof-shape';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
@@ -14,6 +16,7 @@ import type {
   DormerOpening,
   DormerSpec,
   EntranceSpec,
+  FacadeFinish,
   FootprintCutout,
   FloorLayout,
   FloorPattern,
@@ -83,6 +86,7 @@ const WALL_PATTERNS: readonly WallPattern[] = [
   'panel',
   'plaster',
   'siding',
+  'tile',
 ];
 const ROOF_STYLES: readonly RoofStyle[] = ['none', 'flat', 'gable', 'hipped'];
 const SOFA_SHAPES: readonly SofaShape[] = ['standard', 'L-shape', 'U-shape'];
@@ -188,6 +192,9 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   // keyboard-delete guards yet fails `=== true` drag checks, desyncing the two.
   if (!isOptionalBoolean(v.locked)) return false;
   if (!isOptionalBoolean(v.mirrored)) return false;
+  if (!isOptionalBoolean(v.swingOut)) return false;
+  // Any string: a style this type doesn't come in is dropped by repairItem (#922).
+  if (!isOptionalString(v.openingStyle)) return false;
   if (!isOptionalBoolean(v.cameraBracket)) return false;
   if (!isOptionalBoolean(v.isCCTV)) return false;
   if (!isOptionalBoolean(v.isWiFiAccessPoint)) return false;
@@ -216,6 +223,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
   // Keys other than the four walls, and unknown or repeated hidden walls,
   // are dropped by parseStoredLayout rather than refused (#350).
   if (v.wallColors !== undefined && !isWallColors(v.wallColors)) return false;
+  if (v.facade !== undefined && !isFacade(v.facade)) return false;
   if (v.hiddenWalls !== undefined) {
     if (!Array.isArray(v.hiddenWalls)) return false;
     if (!v.hiddenWalls.every((wall) => typeof wall === 'string')) return false;
@@ -234,6 +242,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
         return false;
       }
       if (!isOptionalString(wall.color) || !isOptionalString(wall.colorB)) return false;
+      if (!isOptionalWallPattern(wall.pattern) || !isOptionalWallPattern(wall.patternB)) return false;
     }
   }
   // Storey height feeds every floor's elevation and the roof base: a zero,
@@ -250,6 +259,17 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
     }
   }
   return true;
+}
+
+function isOptionalWallPattern(value: unknown): boolean {
+  return value === undefined || WALL_PATTERNS.includes(value as WallPattern);
+}
+
+/** The outside finish (#918): its pattern from the list, its colours strings, like the inside's. */
+function isFacade(value: unknown): value is FacadeFinish {
+  if (!isPlainObject(value)) return false;
+  if (value.pattern !== undefined && !WALL_PATTERNS.includes(value.pattern as WallPattern)) return false;
+  return value.colors === undefined || isWallColors(value.colors);
 }
 
 function isItemList(value: unknown): value is FurnitureItem[] {
@@ -391,6 +411,7 @@ const FLOOR_KEYS = keysOf<FloorLayout>({
   floorPattern: true,
   wallPattern: true,
   wallColors: true,
+  facade: true,
   hiddenWalls: true,
   interiorWalls: true,
   zones: true,
@@ -421,15 +442,18 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
   sofaShape: true,
   locked: true,
   mirrored: true,
+  swingOut: true,
+  openingStyle: true,
   stairsShape: true,
   stairsLeadIn: true,
   sillHeight: true,
   groupId: true,
 });
 const VEC2_KEYS = ['x', 'z'] as const;
-const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true });
+const FACADE_KEYS = keysOf<FacadeFinish>({ pattern: true, colors: true });
+const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true, pattern: true, patternB: true });
 const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true, floorPattern: true, floorColor: true });
-const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, dormers: true });
+const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, pitch: true, ridge: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({
   id: true,
   side: true,
@@ -556,9 +580,23 @@ export function repairItem(item: FurnitureItem): FurnitureItem {
   const knownCategory = item.category !== undefined && KNOWN_CATEGORIES.has(item.category);
   const catalogCategory = CATALOG_CATEGORY.get(item.type);
   if (!knownCategory && catalogCategory) patch.category = catalogCategory;
-  const repaired = rebuild(item, ITEM_KEYS, patch);
+  const rebuilt = rebuild(item, ITEM_KEYS, patch);
+  // `swingOut` is only ever `true`; a stored `false` means the default (#917).
+  const swung = (rebuilt.swingOut as boolean | undefined) === false ? withoutSwingOut(rebuilt) : rebuilt;
+  // A style no door or window comes in is no style (#922); readers ignore one on the wrong type.
+  const repaired = swung.openingStyle !== undefined && !isOpeningStyle(swung.openingStyle) ? withoutOpeningStyle(swung) : swung;
   if (knownCategory || catalogCategory || repaired.category === undefined) return repaired;
   const { category: _unknown, ...rest } = repaired;
+  return rest;
+}
+
+function withoutSwingOut(item: FurnitureItem): FurnitureItem {
+  const { swingOut: _default, ...rest } = item;
+  return rest;
+}
+
+function withoutOpeningStyle(item: FurnitureItem): FurnitureItem {
+  const { openingStyle: _none, ...rest } = item;
   return rest;
 }
 
@@ -582,6 +620,27 @@ function withoutEmptyFinish(zone: RoomZone): RoomZone {
   return rest;
 }
 
+function repairWallColors(all: Partial<Record<WallId, string>>): Partial<Record<WallId, string>> {
+  const colors = Object.entries(all).filter(([wall]) => WALL_IDS.includes(wall as WallId));
+  const clean = colors.every(([, color]) => color.length <= MAX_COLOR_LENGTH);
+  return clean && colors.length === Object.keys(all).length
+    ? all
+    : Object.fromEntries(colors.map(([wall, color]) => [wall, capText(color, MAX_COLOR_LENGTH)]));
+}
+
+/** Only its own fields, its colours repaired like the inside's (#918). */
+function repairFacade(facade: FacadeFinish): FacadeFinish | null {
+  const colors = facade.colors ? repairWallColors(facade.colors) : undefined;
+  const repaired = rebuild(facade, FACADE_KEYS, colors ? { colors } : {});
+  // An empty colour map or facade says nothing: drop it, so a load shows
+  // "Match inside" only when something differs.
+  if (repaired.colors && Object.keys(repaired.colors).length === 0) {
+    const { colors: _empty, ...rest } = repaired;
+    return rest.pattern ? rest : null;
+  }
+  return repaired.pattern || repaired.colors ? repaired : null;
+}
+
 function repairFloor(floor: FloorLayout): FloorLayout {
   const patch: Partial<FloorLayout> = {
     id: capText(floor.id, MAX_ID_LENGTH),
@@ -589,15 +648,9 @@ function repairFloor(floor: FloorLayout): FloorLayout {
     floorColor: capText(floor.floorColor, MAX_COLOR_LENGTH),
     items: mapSame(capKeeping(floor.items, MAX_ITEMS_PER_FLOOR, ENTRANCE_DOOR_ID), repairItem),
   };
-  if (floor.wallColors) {
-    const all = floor.wallColors;
-    const colors = Object.entries(all).filter(([wall]) => WALL_IDS.includes(wall as WallId));
-    const clean = colors.every(([, color]) => color.length <= MAX_COLOR_LENGTH);
-    patch.wallColors =
-      clean && colors.length === Object.keys(all).length
-        ? all
-        : Object.fromEntries(colors.map(([wall, color]) => [wall, capText(color, MAX_COLOR_LENGTH)]));
-  }
+  if (floor.wallColors) patch.wallColors = repairWallColors(floor.wallColors);
+  const facade = floor.facade ? repairFacade(floor.facade) : undefined;
+  if (facade) patch.facade = facade;
   if (floor.hiddenWalls) {
     const all = floor.hiddenWalls;
     const clean = all.filter((wall, index) => WALL_IDS.includes(wall) && all.indexOf(wall) === index);
@@ -625,12 +678,29 @@ function repairFloor(floor: FloorLayout): FloorLayout {
       })
     );
   }
-  return rebuild(floor, FLOOR_KEYS, patch);
+  const repaired = rebuild(floor, FLOOR_KEYS, patch);
+  if (facade !== null) return repaired;
+  const { facade: _empty, ...rest } = repaired;
+  return rest;
 }
 
 function repairRoof(roof: RoofSpec): RoofSpec {
+  // Pitch and ridge (#916) came after the validator: a pitch that isn't a
+  // number, or a ridge that isn't an axis, goes, and the roof keeps today's
+  // shape; a pitch out of range is brought into it.
+  const pitch: unknown = roof.pitch;
+  const ridge: unknown = roof.ridge;
+  if ((pitch !== undefined && (typeof pitch !== 'number' || !Number.isFinite(pitch))) || (ridge !== undefined && ridge !== 'x' && ridge !== 'z')) {
+    const { pitch: _pitch, ridge: _ridge, ...rest } = roof;
+    return repairRoof({
+      ...rest,
+      ...(typeof pitch === 'number' && Number.isFinite(pitch) ? { pitch } : {}),
+      ...(ridge === 'x' || ridge === 'z' ? { ridge } : {}),
+    });
+  }
   const patch: Partial<RoofSpec> = {};
   if (roof.color !== undefined) patch.color = capText(roof.color, MAX_COLOR_LENGTH);
+  if (roof.pitch !== undefined) patch.pitch = clampRoofPitch(roof.pitch);
   if (roof.dormers) {
     patch.dormers = mapSame(roof.dormers, (dormer) => {
       const fields: Partial<DormerSpec> = { id: capText(dormer.id, MAX_ID_LENGTH) };

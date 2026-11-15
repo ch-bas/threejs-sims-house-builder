@@ -373,7 +373,7 @@ interface CatalogTileProps {
 }
 
 function CatalogTile({ item, entry, picked, onPick, blockedReason, onAdd, roving, showName, docked, overBudget }: CatalogTileProps): JSX.Element {
-  const icon = iconForItem(item.type, item.category);
+  const icon = iconForItem(item.type, item.category, item.openingStyle);
   const blocked = blockedReason !== null;
   // The colour the tile places, named (#621): "Sofa, Rust, $650".
   const colour = entry.variants?.[picked]?.name;

@@ -8,7 +8,8 @@ import {
   MAX_ROOM_DIMENSION,
 } from '../lib/constants';
 import { clipWallToCutout, fitNewShape, roofCoversCutout, withCutout } from '../lib/cutout';
-import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
+import { MAX_DORMERS, clampDormer, roofWithRidge, roofWithStyle, type DormerInput, type DormerPatch } from '../lib/dormers';
+import { clearFacade, setFacadeColor, setFacadePattern } from '../lib/facade';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { repairFloorPlanTransform } from '../lib/floor-plan-fit';
 import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
@@ -16,6 +17,8 @@ import { formatMetres } from '../lib/format';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
+import { openingStylePatch } from '../lib/opening-style';
+import { DEFAULT_ROOF_PITCH, clampRoofPitch, partyWallsHoldRidge } from '../lib/roof-shape';
 import { floorRooms } from '../lib/room-detect';
 import {
   MAX_INTERIOR_WALLS_PER_FLOOR,
@@ -43,7 +46,7 @@ import {
   sameEntrance,
 } from '../lib/street';
 import { planWallMove, type WallPatch } from '../lib/wall-edit';
-import { paintWallSide, type WallSide } from '../lib/wall-sides';
+import { paintWallSide, patternWallSide, type WallSide } from '../lib/wall-sides';
 import { MAX_ZONES, clampZoneRect, isRoomZone, refitZonesToRooms, sameZone, sweptStrips, zoneInPorch, zoneShapeFits } from '../lib/zones';
 import type {
   CatalogItem,
@@ -56,6 +59,8 @@ import type {
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
+  OpeningStyle,
+  RoofRidge,
   RoofStyle,
   RoomLayout,
   RoomZone,
@@ -83,6 +88,11 @@ export type LayoutAction =
   | { type: 'setStoreyHeight'; height: number | null }
   | { type: 'setWallColor'; wall: WallId; color: string | null }
   | { type: 'setInteriorWallColor'; id: string; color: string; side?: WallSide | undefined }
+  | { type: 'setInteriorWallPattern'; id: string; pattern: WallPattern; side?: WallSide | undefined }
+  // The outer walls' outside (#918); `null` hands it back to the inside finish.
+  | { type: 'setFacadePattern'; pattern: WallPattern | null }
+  | { type: 'setFacadeColor'; wall: WallId; color: string | null }
+  | { type: 'clearFacade' }
   // floor-scoped items — target the active floor
   | { type: 'addCatalogItem'; catalogItem: CatalogItem; id: string; position?: { x: number; z: number } }
   | { type: 'removeItem'; id: string }
@@ -99,6 +109,8 @@ export type LayoutAction =
   | { type: 'setColor'; id: string; color: string }
   | { type: 'setLocked'; id: string; locked: boolean }
   | { type: 'toggleMirror'; id: string }
+  | { type: 'toggleSwingOut'; id: string }
+  | { type: 'setOpeningStyle'; id: string; style: OpeningStyle }
   | { type: 'setRotation'; id: string; rotation: number }
   | { type: 'replaceItems'; items: FurnitureItem[] }
   | { type: 'addItems'; items: FurnitureItem[] }
@@ -125,6 +137,10 @@ export type LayoutAction =
   | { type: 'setFloorPlanTransform'; transform: FloorPlanTransform | null }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
+  /** Roof pitch (#916): a multiplier on the rise, clamped; 1 clears it. */
+  | { type: 'setRoofPitch'; pitch: number }
+  /** A gable's ridge axis (#916); `null` gives it back to the longer side. */
+  | { type: 'setRoofRidge'; ridge: RoofRidge | null }
   | { type: 'addDormer'; dormer: DormerInput }
   | { type: 'updateDormer'; id: string; patch: DormerPatch }
   | { type: 'removeDormer'; id: string }
@@ -298,6 +314,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         const neighbours = { ...layout.neighbours };
         if (action.present) neighbours[action.side] = true;
         else delete neighbours[action.side];
+        // A house joining a terrace gives up a north–south ridge (#916), in
+        // the same step, its dormers turning with it.
+        if (layout.roof?.ridge === 'z' && partyWallsHoldRidge(neighbours)) {
+          return { ...layout, neighbours, roof: roofWithRidge(layout.roof, undefined, layout.width, layout.height) };
+        }
         if (Object.keys(neighbours).length > 0) return { ...layout, neighbours };
         const { neighbours: _none, ...rest } = layout;
         return rest;
@@ -348,6 +369,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         else next[action.wall] = action.color;
         return { ...floor, wallColors: next };
       });
+    case 'setFacadePattern':
+      return withActiveFloor(state, (floor) => setFacadePattern(floor, action.pattern));
+    case 'setFacadeColor':
+      return withActiveFloor(state, (floor) => setFacadeColor(floor, action.wall, action.color));
+    case 'clearFacade':
+      return withActiveFloor(state, clearFacade);
     case 'setInteriorWallColor':
       return withActiveFloor(state, (floor) => {
         const walls = floor.interiorWalls;
@@ -360,6 +387,15 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           return next;
         });
         return changed ? { ...floor, interiorWalls: painted } : floor;
+      });
+    case 'setInteriorWallPattern':
+      return withActiveFloor(state, (floor) => {
+        const walls = floor.interiorWalls;
+        const index = walls?.findIndex((wall) => wall.id === action.id) ?? -1;
+        const wall = walls?.[index];
+        if (!walls || !wall) return floor;
+        const next = patternWallSide(wall, action.pattern, action.side);
+        return next === wall ? floor : { ...floor, interiorWalls: walls.map((each, i) => (i === index ? next : each)) };
       });
 
     // -- floor plan ---------------------------------------------------------
@@ -416,12 +452,32 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withLayout(state, (layout) => {
         if ((layout.roof?.style ?? 'none') === action.style) return layout;
         if (layout.cutout && !roofCoversCutout(action.style)) return layout;
-        return { ...layout, roof: { ...(layout.roof ?? { style: 'none' }), style: action.style } };
+        return { ...layout, roof: roofWithStyle(layout.roof ?? { style: 'none' }, action.style, layout.width, layout.height) };
       });
     case 'setRoofColor':
       return withLayout(state, (layout) => {
         if (layout.roof?.color === action.color) return layout;
         return { ...layout, roof: { ...(layout.roof ?? { style: 'none' }), color: action.color } };
+      });
+
+    // Pitch and ridge (#916), like the colour, don't add a roof to a roof-less
+    // house. Turning the ridge moves or drops the dormers in the same step.
+    case 'setRoofPitch':
+      return withLayout(state, (layout) => {
+        const roof = layout.roof ?? { style: 'none' as const };
+        const pitch = clampRoofPitch(action.pitch);
+        if ((roof.pitch ?? DEFAULT_ROOF_PITCH) === pitch) return layout;
+        const { pitch: _old, ...rest } = roof;
+        return { ...layout, roof: pitch === DEFAULT_ROOF_PITCH ? rest : { ...rest, pitch } };
+      });
+
+    case 'setRoofRidge':
+      return withLayout(state, (layout) => {
+        // Attached houses east or west rule out a north–south ridge (#916).
+        if (action.ridge === 'z' && partyWallsHoldRidge(layout.neighbours)) return layout;
+        const roof = layout.roof ?? { style: 'none' as const };
+        const next = roofWithRidge(roof, action.ridge ?? undefined, layout.width, layout.height);
+        return next === roof ? layout : { ...layout, roof: next };
       });
 
     // -- dormers (#203) -----------------------------------------------------
@@ -670,6 +726,36 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // items refuse it (#408).
     case 'toggleMirror':
       return patchItem(state, action.id, (item) => (item.locked ? null : { mirrored: !item.mirrored }));
+
+    // Which side of the wall a door opens to (#917): locked like Mirror, beside which it sits.
+    case 'toggleSwingOut':
+      return patchItem(state, action.id, (item) =>
+        item.locked || item.type !== 'door' ? null : { swingOut: item.swingOut ? undefined : true }
+      );
+
+    // A door or window type (#922): it changes the mesh and, for a door,
+    // the swing, so a locked item refuses it like Mirror.
+    // It takes the new type's name, price and size (`openingStylePatch`); a
+    // dearer type is refused over a hard budget like any purchase, and a new
+    // width re-seats the opening on its wall like a resize (#408).
+    case 'setOpeningStyle':
+      return patchItem(state, action.id, (item) => {
+        if (item.locked) return null;
+        const patch = openingStylePatch(item, action.style);
+        if (!patch) return null;
+        const settled = item.position
+          ? settleWallMountedItem(
+              { ...item, ...patch } as FurnitureItem,
+              item.position,
+              state.layout.width,
+              state.layout.height,
+              activeInteriorWalls(state),
+              activeFrontGap(state),
+              state.layout.cutout
+            )
+          : null;
+        return { ...patch, ...settled };
+      });
 
     case 'setRotation':
       // Raw on purpose apart from the lock: this is the channel the camera
@@ -1541,7 +1627,7 @@ function findEntranceWall(floors: readonly FloorLayout[]): InteriorWall | undefi
 }
 
 function sameWall(a: InteriorWall, b: InteriorWall): boolean {
-  return a.id === b.id && a.x1 === b.x1 && a.z1 === b.z1 && a.x2 === b.x2 && a.z2 === b.z2 && a.color === b.color && a.colorB === b.colorB;
+  return a.id === b.id && a.x1 === b.x1 && a.z1 === b.z1 && a.x2 === b.x2 && a.z2 === b.z2 && a.color === b.color && a.colorB === b.colorB && a.pattern === b.pattern && a.patternB === b.patternB;
 }
 
 function sameItem(a: FurnitureItem, b: FurnitureItem): boolean {
@@ -1612,6 +1698,8 @@ function syncEntrance(layout: RoomLayout, requested: EntranceSpec | null, previo
     wall = { id: ENTRANCE_WALL_ID, ...entranceBackWall(geometry) };
     if (existingWall?.color !== undefined) wall.color = existingWall.color;
     if (existingWall?.colorB !== undefined) wall.colorB = existingWall.colorB;
+    if (existingWall?.pattern !== undefined) wall.pattern = existingWall.pattern;
+    if (existingWall?.patternB !== undefined) wall.patternB = existingWall.patternB;
     if (entrance.door !== false) {
       const existing = findEntranceDoor(layout.floors) ?? findEntranceDoor(previous.floors) ?? catalogEntranceDoor();
       if (existing) door = { ...existing, position: { x: (geometry.x0 + geometry.x1) / 2, z: geometry.backZ }, rotation: 0 };

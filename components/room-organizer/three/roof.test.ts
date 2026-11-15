@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { roofSlope, roofSlopeSides } from '../lib/dormers';
 import {
   ATTIC_CEILING_GAP,
   ATTIC_TAG,
@@ -11,7 +12,7 @@ import {
   setRoofOnStorey,
   setRoofShellHidden,
 } from './roof';
-import type { RoofStyle } from '../lib/types';
+import type { RoofSpec, RoofStyle } from '../lib/types';
 
 function roofMeshes(style: RoofStyle, width: number, depth: number): THREE.Mesh[] {
   const scene = new THREE.Scene();
@@ -82,6 +83,51 @@ describe('buildRoof surface UVs (#211)', () => {
       return max - min;
     };
     expect(vSpan(16, 12) / vSpan(8, 6)).toBeLessThanOrEqual(2 + 1e-6);
+  });
+});
+
+describe('the slope dormers fit to is the slope built (#916)', () => {
+  const roofs: RoofSpec[] = [];
+  for (const style of ['gable', 'hipped'] as const) {
+    for (const pitch of [undefined, 0.6, 1.5]) {
+      for (const ridge of [undefined, 'x', 'z'] as const) {
+        roofs.push({ style, ...(pitch === undefined ? {} : { pitch }), ...(ridge ? { ridge } : {}) });
+      }
+    }
+  }
+  const sizes: [number, number][] = [[10, 8], [6, 9], [5, 12], [3, 3]];
+  const cases = roofs.flatMap((roof) => sizes.map(([w, d]) => [JSON.stringify(roof), w, d, roof] as const));
+
+  it.each(cases)('%s on %d × %d', (_name, width, depth, roof) => {
+    const scene = new THREE.Scene();
+    const baseY = 3;
+    buildRoof(THREE, { scene, width, depth, baseY, spec: roof });
+    let body: THREE.Mesh | undefined;
+    scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.name === 'Roof') body = obj;
+    });
+    scene.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(body!);
+    const sides = roofSlopeSides(roof, width, depth);
+    expect(sides.length).toBe(roof.style === 'hipped' ? 4 : 2);
+    for (const side of sides) {
+      const slope = roofSlope(roof, width, depth, side)!;
+      expect(box.max.y - baseY).toBeCloseTo(slope.peak, 5);
+      // The eaves the slope runs down to are where the built roof ends.
+      const across = side === 'north' || side === 'south' ? box.max.z - box.min.z : box.max.x - box.min.x;
+      expect(across / 2).toBeCloseTo(slope.halfRun, 5);
+    }
+    if (roof.style !== 'gable') return;
+    // The ridge: the top vertices run along the axis the dormer slopes don't face.
+    const position = body!.geometry.getAttribute('position');
+    const top = new THREE.Box3();
+    const point = new THREE.Vector3();
+    for (let i = 0; i < position.count; i++) {
+      point.fromBufferAttribute(position, i).applyMatrix4(body!.matrixWorld);
+      if (point.y > box.max.y - 1e-4) top.expandByPoint(point);
+    }
+    const alongX = top.max.x - top.min.x > top.max.z - top.min.z;
+    expect(alongX).toBe(sides.includes('north'));
   });
 });
 

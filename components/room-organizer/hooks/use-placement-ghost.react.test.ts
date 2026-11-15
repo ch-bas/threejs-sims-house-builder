@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { makeCatalogItem } from '../lib/__testfixtures__/fixtures';
+import { makeCatalogItem, makeItem } from '../lib/__testfixtures__/fixtures';
 import { askConfirm, cancelPendingConfirms } from '../lib/confirm-dialog';
-import { usePlacementGhost, type UsePlacementGhostParams } from './use-placement-ghost';
-import type { CatalogItem } from '../lib/types';
+import { usePlacementGhost, type GhostRunParams, type UsePlacementGhostParams } from './use-placement-ghost';
+import type { CatalogItem, FurnitureItem } from '../lib/types';
 
 const W = 800;
 const H = 600;
@@ -103,6 +103,222 @@ describe('usePlacementGhost (#463 d)', () => {
     });
     expect(place).toHaveBeenCalledWith(expect.anything(), { x: 0, z: 0 }, Math.PI / 2, true);
     expect(endGhost).not.toHaveBeenCalled();
+  });
+
+  describe('runs (#915)', () => {
+    const fence = () => makeCatalogItem({ type: 'fence', name: 'Fence Section', category: 'outdoor', width: 2, depth: 0.15, price: 120 });
+    type Sections = Array<{ id: string; width: number; position: { x: number; z: number }; rotation: number }>;
+    const runParams = (overrides: Partial<GhostRunParams> = {}) => {
+      const place = vi.fn((_item: CatalogItem, _items: FurnitureItem[], _keep: boolean) => true);
+      const refuse = vi.fn();
+      const run: GhostRunParams = {
+        lot: { x0: -100, x1: 100, z0: -100, z1: 100 },
+        fit: (sections) => ({ sections: [...sections], dropped: 0, blocker: null }),
+        place,
+        refuse,
+        ...overrides,
+      };
+      return { run, place: overrides.place ?? place, refuse };
+    };
+    const drawRun = (plan: HTMLCanvasElement, extra: PointerEventInit = {}) => {
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2 - 200, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 150, H / 2 + 260));
+        plan.dispatchEvent(pointer('pointerup', W / 2 + 150, H / 2 + 260, extra));
+      });
+    };
+
+    it('lays a run from the press to the release, in one call, sections end to end', () => {
+      const { run, place: placeRun } = runParams();
+      const { plan, host, place, endGhost } = setup({ ghost: fence(), run, collides: () => false });
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2 - 200, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2, H / 2 + 255));
+      });
+      // The preview: one outline per section and the length at the tip.
+      expect(host.querySelectorAll('polygon').length).toBeGreaterThanOrEqual(2);
+      expect(host.querySelector('text')?.textContent).toContain('2 × Fence Section');
+      act(() => {
+        document.dispatchEvent(pointer('pointermove', W / 2 + 150, H / 2 + 260));
+        plan.dispatchEvent(pointer('pointerup', W / 2 + 150, H / 2 + 260));
+      });
+      expect(place).not.toHaveBeenCalled();
+      expect(placeRun).toHaveBeenCalledTimes(1);
+      const [, items, keep] = vi.mocked(placeRun).mock.calls[0] as unknown as [CatalogItem, Sections, boolean];
+      expect(keep).toBe(false);
+      // (-4, 5) to (3, 5): straight along x, on the 15° step.
+      expect(items.map((item) => item.width)).toEqual([2, 2, 2, 1]);
+      expect(items.every((item) => item.rotation === 0 && item.position.z === 5)).toBe(true);
+      expect(new Set(items.map((item) => item.id)).size).toBe(4);
+      expect(endGhost).toHaveBeenCalled();
+    });
+
+    it('places one section for a click or a jitter under 12 px, and drops a run when a second finger lands', () => {
+      const { run, place: placeRun } = runParams();
+      const { plan, place } = setup({ ghost: fence(), run });
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 8, H / 2 + 254));
+        plan.dispatchEvent(pointer('pointerup', W / 2 + 8, H / 2 + 254));
+      });
+      expect(place).toHaveBeenCalledTimes(1);
+      expect(placeRun).not.toHaveBeenCalled();
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 200, H / 2 + 250));
+        plan.dispatchEvent(pointer('pointerdown', W / 2 + 200, H / 2, { pointerId: 2, isPrimary: false }));
+        plan.dispatchEvent(pointer('pointerup', W / 2 + 200, H / 2 + 250));
+      });
+      expect(placeRun).not.toHaveBeenCalled();
+    });
+
+    it('keeps the ghost in hand after a Shift run, and lays a chair without runs', () => {
+      const { run, place: placeRun } = runParams();
+      const { plan, endGhost } = setup({ ghost: fence(), run });
+      drawRun(plan, { shiftKey: true });
+      expect(placeRun).toHaveBeenCalledWith(expect.anything(), expect.any(Array), true);
+      expect(endGhost).not.toHaveBeenCalled();
+      cleanup();
+      const chair = setup({ run });
+      act(() => {
+        chair.plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2));
+        chair.plan.dispatchEvent(pointer('pointerup', W / 2 + 200, H / 2));
+      });
+      expect(placeRun).toHaveBeenCalledTimes(1);
+      expect(chair.place).toHaveBeenCalledTimes(1);
+    });
+
+    it('lays only what fits, the gaps left out of the preview too', () => {
+      const { run, place: placeRun } = runParams({
+        fit: (sections) => ({ sections: sections.filter((_, index) => index !== 1), dropped: 1, blocker: null }),
+      });
+      const { plan, host } = setup({ ghost: fence(), run, collides: () => false });
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2 - 200, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 150, H / 2 + 260));
+      });
+      const shown = [...host.querySelectorAll('polygon')].filter((shape) => (shape as SVGElement).style.display !== 'none');
+      expect(shown).toHaveLength(3);
+      act(() => {
+        plan.dispatchEvent(pointer('pointerup', W / 2 + 150, H / 2 + 260));
+      });
+      const [, items] = vi.mocked(placeRun).mock.calls[0] as unknown as [CatalogItem, Sections];
+      expect(items.map((item) => item.position.x)).toEqual([-3, 1, 2.5]);
+    });
+
+    it('refuses a run standing in an item as a whole, naming it, and puts the ghost down unless Shift', () => {
+      const blocker = makeItem({ id: 'tree', name: 'Oak Tree' });
+      const { run, place: placeRun, refuse } = runParams({
+        fit: (sections) => ({ sections: [...sections], dropped: 0, blocker }),
+      });
+      const { plan, host, endGhost } = setup({ ghost: fence(), run, collides: () => false });
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2 - 200, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 150, H / 2 + 260));
+      });
+      expect(host.querySelector('text')?.textContent).toContain('Oak Tree in the way');
+      expect(host.querySelector('polygon')?.getAttribute('fill')).toContain('228,82,72');
+      act(() => {
+        plan.dispatchEvent(pointer('pointerup', W / 2 + 150, H / 2 + 260));
+      });
+      expect(placeRun).not.toHaveBeenCalled();
+      expect(refuse).toHaveBeenCalledWith(blocker);
+      expect(endGhost).toHaveBeenCalledTimes(1);
+      drawRun(plan, { shiftKey: true });
+      expect(refuse).toHaveBeenCalledTimes(2);
+      expect(endGhost).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the cancel of its own press from the camera controls', () => {
+      const { plan } = setup({ ghost: fence(), run: runParams().run });
+      const controls = vi.fn();
+      plan.addEventListener('pointercancel', controls);
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2));
+        plan.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }));
+        // Another pointer's cancel is not the ghost's.
+        plan.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 7, bubbles: true }));
+      });
+      expect(controls).toHaveBeenCalledTimes(1);
+    });
+
+    it('is put down by a refusal or the soft question, as one item is; Shift keeps it while asked', () => {
+      const refused = runParams({ place: vi.fn(() => false) });
+      const first = setup({ ghost: fence(), run: refused.run });
+      drawRun(first.plan);
+      expect(first.endGhost).toHaveBeenCalled();
+      cleanup();
+      const asking = runParams({
+        place: vi.fn(() => {
+          void askConfirm({ title: 'Lay them anyway?' });
+          return false;
+        }),
+      });
+      const second = setup({ ghost: fence(), run: asking.run });
+      drawRun(second.plan, { shiftKey: true });
+      expect(second.endGhost).not.toHaveBeenCalled();
+      cancelPendingConfirms();
+      drawRun(second.plan);
+      expect(second.endGhost).toHaveBeenCalled();
+      cancelPendingConfirms();
+    });
+
+    it('drops a press whose release was lost, so the next click places (blur, or a mouse move with no button)', () => {
+      const { run, place: placeRun } = runParams();
+      const { plan, place } = setup({ ghost: fence(), run });
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2 - 200, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 150, H / 2 + 260, { pointerType: 'mouse', buttons: 1 }));
+        // The release happened outside the window: the next move has no button down.
+        document.dispatchEvent(pointer('pointermove', W / 2 + 160, H / 2 + 260, { pointerType: 'mouse', buttons: 0 }));
+      });
+      expect(placeRun).not.toHaveBeenCalled();
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2));
+        plan.dispatchEvent(pointer('pointerup', W / 2, H / 2));
+      });
+      expect(place).toHaveBeenCalledTimes(1);
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2 - 200, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 150, H / 2 + 260));
+        window.dispatchEvent(new Event('blur'));
+        plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2));
+        plan.dispatchEvent(pointer('pointerup', W / 2, H / 2));
+      });
+      expect(placeRun).not.toHaveBeenCalled();
+      expect(place).toHaveBeenCalledTimes(2);
+    });
+
+    it('a single item loses its press the same way', () => {
+      const { plan, place } = setup();
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2));
+        window.dispatchEvent(new Event('blur'));
+        plan.dispatchEvent(pointer('pointerup', W / 2, H / 2));
+      });
+      expect(place).not.toHaveBeenCalled();
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2, H / 2));
+        plan.dispatchEvent(pointer('pointerup', W / 2, H / 2));
+      });
+      expect(place).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for the release on Enter or Space mid-press, which then lays the run', () => {
+      const { run, place: placeRun } = runParams();
+      const { plan, place } = setup({ ghost: fence(), run });
+      act(() => {
+        plan.dispatchEvent(pointer('pointerdown', W / 2 - 200, H / 2 + 250));
+        document.dispatchEvent(pointer('pointermove', W / 2 + 150, H / 2 + 260));
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      });
+      expect(place).not.toHaveBeenCalled();
+      act(() => {
+        plan.dispatchEvent(pointer('pointerup', W / 2 + 150, H / 2 + 260));
+      });
+      expect(placeRun).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('lets right-button drags through to the camera', () => {

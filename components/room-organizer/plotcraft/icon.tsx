@@ -18,6 +18,12 @@ export type PlotcraftIconName =
   | 'wall'
   | 'window'
   | 'door'
+  // Door and window types (#922)
+  | 'double-door'
+  | 'sliding-door'
+  | 'archway'
+  | 'tall-window'
+  | 'fixed-window'
   | 'floor'
   | 'stairs'
   | 'roof'
@@ -119,6 +125,40 @@ const PATHS: Record<PlotcraftIconName, ReactNode> = {
       <path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17" />
       <path d="M3 21h18" />
       <circle cx="14.5" cy="13" r=".7" fill="currentColor" />
+    </>
+  ),
+  'double-door': (
+    <>
+      <path d="M4 21V4a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v17" />
+      <path d="M12 3v18M2 21h20" />
+      <circle cx="10" cy="13" r=".7" fill="currentColor" />
+      <circle cx="14" cy="13" r=".7" fill="currentColor" />
+    </>
+  ),
+  'sliding-door': (
+    <>
+      <path d="M3 21V4h18v17M2 21h20" />
+      <path d="M6 6h7v15M11 8h7v13" />
+      <path d="M8 13h2M13 13h2" />
+    </>
+  ),
+  archway: (
+    <>
+      <path d="M5 21V11a7 7 0 0 1 14 0v10" />
+      <path d="M8 21V11.5a4 4 0 0 1 8 0V21" />
+      <path d="M2 21h20" />
+    </>
+  ),
+  'tall-window': (
+    <>
+      <rect x="7" y="2" width="10" height="20" rx="1" />
+      <path d="M7 7h10" />
+    </>
+  ),
+  'fixed-window': (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="1.5" />
+      <path d="M7 15l4-4M12 15l2-2" />
     </>
   ),
   floor: (
@@ -678,6 +718,10 @@ export function Icon({ name, size = 24, ...props }: IconProps): JSX.Element {
  * PlotCraft icon. Shared by the catalog tiles, the item-edit popover, and
  * the in-world hover tooltip so the same item always reads as the same glyph.
  */
+const STYLE_TO_ICON: Record<string, PlotcraftIconName> = {
+  double: 'double-door', sliding: 'sliding-door', arch: 'archway', tall: 'tall-window', fixed: 'fixed-window',
+};
+
 const TYPE_TO_ICON: Record<string, PlotcraftIconName> = {
   // seating
   chair: 'chair', 'dining-chair': 'chair', armchair: 'armchair',
@@ -721,7 +765,12 @@ const CATEGORY_TO_ICON: Record<string, PlotcraftIconName> = {
   security: 'vision', decor: 'plant', outdoor: 'tree', people: 'person', structure: 'window',
 };
 
-export function iconForItem(type: string, category?: string): PlotcraftIconName {
+export function iconForItem(type: string, category?: string, openingStyle?: string): PlotcraftIconName {
+  // A door or window type has its own glyph (#922).
+  if (openingStyle !== undefined && Object.hasOwn(STYLE_TO_ICON, openingStyle) && (type === 'door' || type === 'window')) {
+    const styled = STYLE_TO_ICON[openingStyle];
+    if (styled) return styled;
+  }
   // Own-property lookups only: `type` comes from saved/imported layouts, so a
   // crafted "constructor"/"toString" would otherwise resolve an inherited
   // Object.prototype member and render a blank glyph instead of the fallback (#122).

@@ -56,7 +56,8 @@ function describeFloorFields(before: FloorLayout, after: FloorLayout): string {
   if (before.zones !== after.zones) return 'change the zones';
   if (before.height !== after.height) return 'change the storey height';
   const finishes = before.floorColor !== after.floorColor || before.floorPattern !== after.floorPattern;
-  if (finishes || before.wallPattern !== after.wallPattern || before.wallColors !== after.wallColors) return 'change the finish';
+  const walls = before.wallPattern !== after.wallPattern || before.wallColors !== after.wallColors || before.facade !== after.facade;
+  if (finishes || walls) return 'change the finish';
   return 'edit the floor';
 }
 

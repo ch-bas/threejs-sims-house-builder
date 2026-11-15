@@ -2,6 +2,7 @@
 
 import { useMediaQuery } from '../hooks/use-media-query';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
+import { isRunItem } from '../lib/item-run';
 import { COMPACT_OVERLAY_QUERY } from '../lib/overlay-queue';
 import { Icon } from '../plotcraft/icon';
 import type { CatalogItem } from '../lib/types';
@@ -13,6 +14,15 @@ export interface PlacementHintProps {
   ghost?: CatalogItem | null;
   /** Puts the ghost down: touch has no Escape key. */
   onCancel?(): void;
+}
+
+/** How to place the ghost: a fence, hedge or stepping stone also lays in runs (#915). */
+function ghostHint(ghost: CatalogItem, touch: boolean): string {
+  const runs = isRunItem(ghost.type);
+  if (touch) return runs ? 'Tap to place · drag for a run' : `Tap to place the ${ghost.name}`;
+  return runs
+    ? `${ghost.name}: click to place · drag to lay a run · Shift for another · Esc cancel`
+    : `${ghost.name}: click to place · Shift+click for another · R rotate · Esc cancel`;
 }
 
 /**
@@ -60,9 +70,7 @@ export function PlacementHint({ active, ghost = null, onCancel }: PlacementHintP
           <>
             <Icon name="target" size={14} />
             <span>
-              {touch
-                ? `Tap to place the ${ghost.name}`
-                : `${ghost.name}: click to place · Shift+click for another · R rotate · Esc cancel`}
+              {ghostHint(ghost, touch)}
             </span>
             <button
               type="button"

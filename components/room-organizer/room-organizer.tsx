@@ -37,12 +37,15 @@ import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
-import { ROOF_EAVE_OVERHANG } from './lib/dormers';
+import { swingClearanceNote } from './lib/door-clearance';
+import { notifyRefused } from './lib/editor-notices';
 import { isInsideBuilding } from './lib/footprint';
 import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
+import { fitRun, runLot } from './lib/item-run';
 import { loadQualityChoice } from './lib/render-quality';
+import { ROOF_EAVE_OVERHANG, roofPeakHeight } from './lib/roof-shape';
 import { activeStoreyRoomScores } from './lib/room-score';
 import { focusCoverFor } from './lib/scene-insets';
 import { gardenGroundY, groundHeightAt } from './lib/site';
@@ -76,7 +79,6 @@ import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { revealSetbacks } from './three/reveals';
-import { roofPeakHeight } from './three/roof';
 import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
@@ -387,8 +389,9 @@ export function RoomOrganizer(): JSX.Element {
 
   // Set once the keyboard placement and the ghost exist, below.
   const placedAfterConfirmRef = useRef<(id: string, catalogItem: CatalogItem) => void>(() => {});
+  const runPlacedAfterConfirmRef = useRef<(ids: string[]) => void>(() => {});
 
-  const { snapPosition: snapPlacement, lastSnapWall, getDragPlaneY, snapCatalogPlacement, placeCatalogItem } = useItemPlacement({
+  const { snapPosition: snapPlacement, lastSnapWall, getDragPlaneY, snapCatalogPlacement, placeCatalogItem, placeRun } = useItemPlacement({
     activeFloor,
     activeFloorY,
     roomWidth: layout.width,
@@ -404,6 +407,7 @@ export function RoomOrganizer(): JSX.Element {
     // A soft-budget buy agreed to in the in-app question lands after the
     // place call returned '' (#649).
     onPlacedAfterConfirm: (id: string, catalogItem: CatalogItem) => placedAfterConfirmRef.current(id, catalogItem),
+    onRunPlacedAfterConfirm: (ids: string[]) => runPlacedAfterConfirmRef.current(ids),
   });
 
   // A drag, in either view, buzzes once as the item snaps onto a wall (#687):
@@ -448,6 +452,22 @@ export function RoomOrganizer(): JSX.Element {
     },
     [commitHistoryNow, placeCatalogItem, chimePlacement]
   );
+  // A run of fence, hedge or stones (#915): one undo step, one cue.
+  const placeRunDiscrete = useCallback(
+    (items: FurnitureItem[]): string => {
+      commitHistoryNow();
+      return chimePlacement(placeRun(items));
+    },
+    [commitHistoryNow, placeRun, chimePlacement]
+  );
+  // A laid run is selected whole, so Demolish takes it back in one go.
+  const selectRun = useCallback(
+    (ids: readonly string[]) => {
+      setSelectedItemId(ids[0] ?? null);
+      setExtraSelectedIds(new Set(ids.slice(1)));
+    },
+    [setSelectedItemId, setExtraSelectedIds]
+  );
 
   // Keyboard placement (#168): Enter on a catalog tile places through the
   // wrapped `placeCatalogItem` and keeps the item unlocked until Enter/Escape.
@@ -479,6 +499,12 @@ export function RoomOrganizer(): JSX.Element {
     if (ghost) return;
     selectOnly(placed);
     adoptDeferredPlacement(placed, catalogItem);
+  };
+  // The same for a run (#915): chimed once, the whole run selected.
+  runPlacedAfterConfirmRef.current = (ids) => {
+    const placed = chimePlacement(ids[0] ?? '');
+    if (!placed || ghost) return;
+    selectRun(ids);
   };
 
   // EXPLORE edits nothing, so it shows no handles either.
@@ -656,6 +682,19 @@ export function RoomOrganizer(): JSX.Element {
       selectOnly(keep ? null : id);
       return true;
     },
+    run: {
+      lot: runLot(layout),
+      fit: (sections) =>
+        fitRun(sections, { items: activeFloor.items, roomWidth: layout.width, roomDepth: layout.height, keepOut }),
+      place: (_catalogItem, items, keep) => {
+        const id = placeRunDiscrete(items);
+        if (!id) return false;
+        if (keep) selectOnly(null);
+        else selectRun(items.map((item) => item.id));
+        return true;
+      },
+      refuse: (blocker) => notifyRefused(`The run would stand in the ${blocker.name}. Draw it clear of it.`, playCue),
+    },
     threeModuleRef,
     sceneRef,
     invalidate,
@@ -735,7 +774,7 @@ export function RoomOrganizer(): JSX.Element {
   const sceneWalls = sceneWallDisplay(view.wallDisplay, walkthroughActive);
   // A traced ground floor builds no shell walls.
   const tracedGround = !!layout.floorPlanImage;
-  const roofPeak = roofShows ? roofPeakHeight(roofStyle, layout.width, layout.height) : 0;
+  const roofPeak = roofShows && layout.roof ? roofPeakHeight(layout.roof, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),
     [roofShows, roofPeak]
@@ -1160,6 +1199,7 @@ export function RoomOrganizer(): JSX.Element {
             layout.height,
             { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight }
           )}
+          swingNote={swingClearanceNote(selectedItem, activeFloor.items)}
           onRotate={rotateItemHandler}
           onToggleCameraBracket={toggleCameraBracket}
           onDuplicate={duplicateSelected}

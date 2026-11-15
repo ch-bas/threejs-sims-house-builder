@@ -1,4 +1,4 @@
-import { doorSwing, openingAxes, openingGap, type PlacedItem, type PlanPoint } from '../lib/plan-export/plan-geometry';
+import { doorSwings, openingAxes, openingGap, openingPlanMarks, type PlacedItem, type PlanPoint, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import type { View2DTransform } from './render';
 import type { FurnitureItem, RoomLayout } from '../lib/types';
 
@@ -20,6 +20,12 @@ const GAP_M = 0.2;
 const MIN_GAP_PX = 7;
 /** A window frame's narrowest paint (px): two lines that stay apart. */
 const MIN_FRAME_PX = 5;
+
+/**
+ * A door whose swing something stands in (#917): the swing's quarter is
+ * washed amber under the usual ink. A warning, not the collision red.
+ */
+export const SWING_BLOCKED_FILL = 'rgba(245, 158, 11, 0.38)';
 
 const DARK_INK = '#222222';
 const LIGHT_INK = '#f5f5f5';
@@ -70,6 +76,30 @@ function tracePolygon(ctx: CanvasRenderingContext2D, points: readonly PlanPoint[
   ctx.closePath();
 }
 
+/** The dash of a line drawn overhead, such as an archway's head (#922), in px. */
+const OVERHEAD_DASH: readonly number[] = [4, 3];
+
+function strokeSegments(
+  ctx: CanvasRenderingContext2D,
+  segments: readonly PlanSegment[],
+  width: number,
+  dash: readonly number[],
+  layout: PlanSize,
+  view: View2DTransform
+): void {
+  if (segments.length === 0) return;
+  ctx.save();
+  ctx.lineWidth = width;
+  ctx.setLineDash([...dash]);
+  ctx.beginPath();
+  for (const { from, to } of segments) {
+    ctx.moveTo(...toCanvas(from, layout, view));
+    ctx.lineTo(...toCanvas(to, layout, view));
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 /**
  * Add the strip each opening cuts out of its wall to the current path, for
  * the renderer to clip to while it puts back what lies under the wall.
@@ -89,14 +119,16 @@ export function traceOpeningGaps(
 /**
  * Draw an opening's symbol in world→canvas space, in the ink that reads on
  * the floor. The wall gap is the renderer's (`traceOpeningGaps`); the caller
- * paints the footprint's state marks (selection, collision) over this.
+ * paints the footprint's state marks (selection, collision) over this. A
+ * `swingBlocked` door has its swing washed amber first (#917).
  */
 export function drawOpeningSymbol(
   ctx: CanvasRenderingContext2D,
   item: FurnitureItem,
   floorColor: string,
   layout: PlanSize,
-  view: View2DTransform
+  view: View2DTransform,
+  swingBlocked = false
 ): void {
   if (!item.position) return;
   const placed = item as PlacedItem;
@@ -107,24 +139,38 @@ export function drawOpeningSymbol(
   ctx.lineWidth = 1;
 
   if (item.type === 'door') {
-    const { hinge, strike, leafTip } = doorSwing(placed);
-    const [hx, hy] = toCanvas(hinge, layout, view);
-    const [sx, sy] = toCanvas(strike, layout, view);
-    const [lx, ly] = toCanvas(leafTip, layout, view);
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(hx, hy);
-    ctx.lineTo(lx, ly);
-    ctx.stroke();
-    // The quarter turn from shut to open: the short way round, whichever
-    // way the axes wind on this wall.
-    const from = Math.atan2(sy - hy, sx - hx);
-    const to = Math.atan2(ly - hy, lx - hx);
-    const counterClockwise = (sx - hx) * (ly - hy) - (sy - hy) * (lx - hx) < 0;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(hx, hy, Math.hypot(sx - hx, sy - hy), from, to, counterClockwise);
-    ctx.stroke();
+    for (const { hinge, strike, leafTip } of doorSwings(placed)) {
+      const [hx, hy] = toCanvas(hinge, layout, view);
+      const [sx, sy] = toCanvas(strike, layout, view);
+      const [lx, ly] = toCanvas(leafTip, layout, view);
+      // The quarter turn from shut to open: the short way round, whichever
+      // way the axes wind on this wall.
+      const from = Math.atan2(sy - hy, sx - hx);
+      const to = Math.atan2(ly - hy, lx - hx);
+      const counterClockwise = (sx - hx) * (ly - hy) - (sy - hy) * (lx - hx) < 0;
+      const radius = Math.hypot(sx - hx, sy - hy);
+      if (swingBlocked) {
+        ctx.beginPath();
+        ctx.moveTo(hx, hy);
+        ctx.arc(hx, hy, radius, from, to, counterClockwise);
+        ctx.closePath();
+        ctx.fillStyle = SWING_BLOCKED_FILL;
+        ctx.fill();
+      }
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(lx, ly);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(hx, hy, radius, from, to, counterClockwise);
+      ctx.stroke();
+    }
+    // A sliding door's panes, an archway's head overhead (#922).
+    const { solid, overhead } = openingPlanMarks(placed, Math.max(GAP_M, MIN_GAP_PX / view.scale));
+    strokeSegments(ctx, solid, 1.5, [], layout, view);
+    strokeSegments(ctx, overhead, 1, OVERHEAD_DASH, layout, view);
   } else {
     // The window: its frame in the wall and the glass down the middle.
     ctx.beginPath();

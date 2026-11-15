@@ -95,7 +95,9 @@ export function npcNavSignature(input: Omit<NpcNavInput, 'roomWidth' | 'roomDept
     if (!item.position) continue;
     parts.push(
       `${item.id}:${item.type}:${item.category === 'outdoor' ? 1 : 0}:${item.position.x}:${item.position.z}:` +
-        `${item.width}:${item.depth}:${item.height}:${item.rotation ?? 0}`
+        `${item.width}:${item.depth}:${item.height}:${item.rotation ?? 0}` +
+        // A sliding door's fixed pane narrows its gap (#922); nothing else changes the walk.
+        (item.type === 'door' && item.openingStyle === 'sliding' ? `:sliding${item.mirrored ? '-m' : ''}` : '')
     );
   }
   parts.push('|');

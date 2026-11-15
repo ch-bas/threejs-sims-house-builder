@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { STAIR_STEP_COUNT } from '../lib/stairs';
+import { stairwellRailSegments } from '../lib/stairwell-rail';
 import { drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 
 type Call = { op: string; args: number[] };
@@ -111,9 +112,12 @@ describe('drawStairwellHoles (#290)', () => {
   it('draws one dashed outline per stair below, and nothing on the ground floor', () => {
     const upstairs = recordingContext();
     drawStairwellHoles(upstairs.ctx, building, 1, view);
-    // The straight flight's rectangle (4 corners) and the winder's L (6).
-    expect(points(upstairs.calls, 'moveTo')).toHaveLength(2);
-    expect(points(upstairs.calls, 'lineTo')).toHaveLength(3 + 5);
+    // The straight flight's rectangle (4 corners) and the winder's L (6),
+    // then one line per run of the guard rail round them (#923).
+    const rails = stairwellRailSegments(building, 1).length;
+    expect(rails).toBeGreaterThan(0);
+    expect(points(upstairs.calls, 'moveTo')).toHaveLength(2 + rails);
+    expect(points(upstairs.calls, 'lineTo')).toHaveLength(3 + 5 + rails);
     expect(upstairs.dashes[0]).toEqual([6, 4]);
     expect(upstairs.texts).toEqual(['open below', 'open below']);
 

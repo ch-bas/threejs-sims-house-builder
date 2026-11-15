@@ -157,6 +157,58 @@ describe('layoutReducer — item CRUD', () => {
     expect(activeItems(state)[0]!.mirrored).toBe(false);
   });
 
+  it('toggleSwingOut flips a door to open out and back, and refuses a locked door or anything else (#917)', () => {
+    let state = stateWith([makeItem({ id: 'd', type: 'door' }), makeItem({ id: 'c' }), makeItem({ id: 'l', type: 'door', locked: true })]);
+    state = layoutReducer(state, { type: 'toggleSwingOut', id: 'd' });
+    expect(activeItems(state)[0]!.swingOut).toBe(true);
+    state = layoutReducer(state, { type: 'toggleSwingOut', id: 'd' });
+    expect(activeItems(state)[0]!.swingOut).toBeUndefined();
+    expect(layoutReducer(state, { type: 'toggleSwingOut', id: 'c' })).toBe(state);
+    expect(layoutReducer(state, { type: 'toggleSwingOut', id: 'l' })).toBe(state);
+  });
+
+  it('setOpeningStyle sets a door or window type, stores the default as none, and refuses a lock or the wrong type (#922)', () => {
+    let state = stateWith([makeItem({ id: 'd', type: 'door' }), makeItem({ id: 'w', type: 'window' }), makeItem({ id: 'l', type: 'door', locked: true })]);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'arch' });
+    expect(activeItems(state)[0]!.openingStyle).toBe('arch');
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'arch' })).toBe(state);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'single' });
+    expect(activeItems(state)[0]!.openingStyle).toBeUndefined();
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'single' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'double' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'l', style: 'double' })).toBe(state);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'tall' });
+    expect(activeItems(state)[1]!.openingStyle).toBe('tall');
+  });
+
+  it('setOpeningStyle takes the new type\'s name, price and size, and a sill only with the tall window (#922)', () => {
+    const door = makeItem({ id: 'd', type: 'door', name: 'Double Door', width: 1.6, depth: 0.12, height: 2.1, price: 640, openingStyle: 'double' });
+    const window = makeItem({ id: 'w', type: 'window', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, price: 240, sillHeight: 1.1 });
+    let state = stateWith([door, window]);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'single' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Door', price: 320, width: 0.9, height: 2.05 });
+    expect(activeItems(state)[0]!.openingStyle).toBeUndefined();
+    // A name of the player's own stays.
+    state = layoutReducer(stateWith([{ ...door, name: 'Garden doors' }]), { type: 'setOpeningStyle', id: 'd', style: 'arch' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Garden doors', price: 180, width: 1.2, height: 2.2, openingStyle: 'arch' });
+    // A sill set by hand survives a change that has none of its own; the tall window's comes and goes with it.
+    state = layoutReducer(stateWith([window]), { type: 'setOpeningStyle', id: 'w', style: 'fixed' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Picture Window', width: 1.8, sillHeight: 1.1 });
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'tall' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Tall Window', sillHeight: 0.3 });
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'standard' });
+    expect(activeItems(state)[0]!.sillHeight).toBeUndefined();
+  });
+
+  it('setOpeningStyle refuses a dearer type the hard budget cannot pay for (#922)', () => {
+    const door = makeItem({ id: 'd', type: 'door', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, price: 320 });
+    const base = stateWith([door]);
+    const tight = { ...base, layout: { ...base.layout, budget: { writeOff: 0, amount: 500 } } };
+    expect(layoutReducer(tight, { type: 'setOpeningStyle', id: 'd', style: 'sliding' })).toBe(tight);
+    // A cheaper one is fine.
+    expect(activeItems(layoutReducer(tight, { type: 'setOpeningStyle', id: 'd', style: 'arch' }))[0]!.price).toBe(180);
+  });
+
   it('setRotation / setColor / setLocked / setSofaShape / setSignalRange patch fields', () => {
     let state = stateWith([makeItem({ id: 'a', type: 'sofa' })]);
     state = layoutReducer(state, { type: 'setRotation', id: 'a', rotation: 1.23 });
@@ -656,6 +708,20 @@ describe('layoutReducer — floor-scoped finishes', () => {
     expect(state.layout.floors[0]!.wallColors).toEqual({});
   });
 
+  it('setFacadePattern / setFacadeColor paint the outside only, and a no-op keeps the state (#918)', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setWallPattern', pattern: 'plaster' });
+    expect(layoutReducer(state, { type: 'setFacadePattern', pattern: 'plaster' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setFacadeColor', wall: 'north', color: null })).toBe(state);
+    expect(layoutReducer(state, { type: 'clearFacade' })).toBe(state);
+    state = layoutReducer(state, { type: 'setFacadePattern', pattern: 'brick' });
+    state = layoutReducer(state, { type: 'setFacadeColor', wall: 'north', color: '#ffffff' });
+    expect(state.layout.floors[0]).toMatchObject({ wallPattern: 'plaster', facade: { pattern: 'brick', colors: { north: '#ffffff' } } });
+    expect(layoutReducer(state, { type: 'setFacadeColor', wall: 'north', color: '#ffffff' })).toBe(state);
+    state = layoutReducer(state, { type: 'clearFacade' });
+    expect(state.layout.floors[0]).not.toHaveProperty('facade');
+  });
+
   it('toggleExteriorWall hides then unhides a wall', () => {
     let state = stateWith([]);
     state = layoutReducer(state, { type: 'toggleExteriorWall', wallId: 'east' });
@@ -720,6 +786,56 @@ describe('layoutReducer — roof + floor plan', () => {
     state = layoutReducer(state, { type: 'setRoofStyle', style: 'hipped' });
     state = layoutReducer(state, { type: 'setRoofColor', color: '#111' });
     expect(state.layout.roof).toMatchObject({ style: 'hipped', color: '#111' });
+  });
+
+  it('setRoofPitch clamps the pitch and clears it at 1 (#916)', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    state = layoutReducer(state, { type: 'setRoofPitch', pitch: 1.3 });
+    expect(state.layout.roof).toMatchObject({ style: 'gable', pitch: 1.3 });
+    state = layoutReducer(state, { type: 'setRoofPitch', pitch: 7 });
+    expect(state.layout.roof!.pitch).toBe(1.6);
+    expect(layoutReducer(state, { type: 'setRoofPitch', pitch: 2 })).toBe(state);
+    state = layoutReducer(state, { type: 'setRoofPitch', pitch: 1 });
+    expect(state.layout.roof).not.toHaveProperty('pitch');
+  });
+
+  it('setRoofRidge turns the ridge and its dormers in one step, and back (#916)', () => {
+    let state = stateWith([]);
+    state = { ...state, layout: { ...state.layout, width: 10, height: 8 } };
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    state = layoutReducer(state, { type: 'addDormer', dormer: { id: 'd', side: 'south', width: 2 } });
+    const before = state;
+    state = layoutReducer(state, { type: 'setRoofRidge', ridge: 'z' });
+    expect(state.layout.roof).toMatchObject({ ridge: 'z', dormers: [{ id: 'd', side: 'west' }] });
+    expect(layoutReducer(state, { type: 'setRoofRidge', ridge: 'z' })).toBe(state);
+    state = layoutReducer(state, { type: 'setRoofRidge', ridge: null });
+    expect(state.layout.roof).toEqual(before.layout.roof);
+  });
+
+  it('refuses a north–south ridge against party walls, and a terrace drops one (#916)', () => {
+    let state = stateWith([]);
+    state = { ...state, layout: { ...state.layout, width: 10, height: 8 } };
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    state = layoutReducer(state, { type: 'addDormer', dormer: { id: 'd', side: 'south', width: 2 } });
+    const detached = state;
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'east', present: true });
+    expect(layoutReducer(state, { type: 'setRoofRidge', ridge: 'z' })).toBe(state);
+    // East–west keeps its gable ends on the party walls.
+    expect(layoutReducer(state, { type: 'setRoofRidge', ridge: 'x' }).layout.roof?.ridge).toBe('x');
+    // A house with a north–south ridge joining a terrace gives it up, its dormer turning back.
+    const turned = layoutReducer(detached, { type: 'setRoofRidge', ridge: 'z' });
+    expect(turned.layout.roof?.dormers?.[0]?.side).toBe('west');
+    const joined = layoutReducer(turned, { type: 'setNeighbour', side: 'west', present: true });
+    expect(joined.layout.roof).toEqual(detached.layout.roof);
+    expect(joined.layout.neighbours).toEqual({ west: true });
+  });
+
+  it('setRoofStyle back to a gable with a stored ridge moves dormers off its ends (#916)', () => {
+    let state = stateWith([]);
+    state = { ...state, layout: { ...state.layout, width: 10, height: 8, roof: { style: 'hipped', ridge: 'z', dormers: [{ id: 'd', side: 'north', width: 2 }] } } };
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    expect(state.layout.roof?.dormers?.[0]?.side).toBe('east');
   });
 
   it('setFloorPlan sets and clears the image', () => {

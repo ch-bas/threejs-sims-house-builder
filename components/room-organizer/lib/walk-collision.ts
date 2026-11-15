@@ -16,7 +16,9 @@
 import { LOW_PROFILE_MAX_HEIGHT, isInsideBuilding, rotatedHalfExtents, shellWalls, type ShellWall } from './footprint';
 import { isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan, isWallMounted } from './opening-snap';
+import { doorStyle, doorWalkSpan } from './opening-style';
 import { gardenGroundY, hasNeighbours } from './site';
+import { STAIRWELL_RAIL_HEIGHT, STAIRWELL_RAIL_INSET, stairwellRailSegments } from './stairwell-rail';
 import { floorElevation, interiorWallHeight, storeyHeight } from './storeys';
 import { entranceGeometry, entranceWallCut } from './street';
 import { generateStreet, type StreetSite } from './street-row';
@@ -260,7 +262,11 @@ function solidRuns(
       // The renderer's cut exactly: a door lying past the end cuts nothing (#399).
       const span = interiorWallOpeningSpan(wall, { width: item.width, position: item.position });
       if (!span) continue;
-      gaps.push([span.centre - span.width / 2, span.centre + span.width / 2]);
+      const ux = (wall.x2 - wall.x1) / length;
+      const uz = (wall.z2 - wall.z1) / length;
+      const itemAlong = (item.position.x - (wall.x1 + wall.x2) / 2) * ux + (item.position.z - (wall.z1 + wall.z2) / 2) * uz;
+      const gap = walkGap(item, span.centre - span.width / 2, span.centre + span.width / 2, itemAlong, ux, uz);
+      if (gap) gaps.push(gap);
     }
   }
   if (gaps.length === 0) return [[-half, half]];
@@ -273,6 +279,22 @@ function solidRuns(
   }
   if (half - cursor >= MIN_RUN_LENGTH) runs.push([cursor, half]);
   return runs;
+}
+
+/**
+ * The part of a door's cut a walker can pass, along a wall running (ux, uz):
+ * the whole cut `[from, to]`, or on a sliding door only the slid-open span
+ * (`doorWalkSpan`, #922) of it, which may be too narrow to pass at all.
+ */
+function walkGap(item: FurnitureItem, from: number, to: number, itemAlong: number, ux: number, uz: number): [number, number] | null {
+  if (doorStyle(item) !== 'sliding') return [from, to];
+  // The door's local +X in plan is (cos r, −sin r): which way it runs along the wall.
+  const r = item.rotation ?? 0;
+  const sign = Math.cos(r) * ux - Math.sin(r) * uz >= 0 ? 1 : -1;
+  const [a, b] = doorWalkSpan(item);
+  const lo = Math.max(from, itemAlong + Math.min(sign * a, sign * b));
+  const hi = Math.min(to, itemAlong + Math.max(sign * a, sign * b));
+  return hi > lo ? [lo, hi] : null;
 }
 
 function distanceToSegment(px: number, pz: number, x1: number, z1: number, x2: number, z2: number): number {
@@ -526,8 +548,10 @@ export function buildShellColliders(building: ShellBuilding, floorIndex: number)
     for (const item of floor.items) {
       if (!item.position || exteriorDoorShellWall(item, interiorWalls, building.width, building.depth, cutout)?.id !== wall.id) continue;
       const width = Math.min(item.width, Math.max(0, high - low - EXTERIOR_CUT_END_MARGIN));
-      const centre = Math.max(low + width / 2, Math.min(high - width / 2, alongX ? item.position.x : item.position.z));
-      gaps.push([centre - width / 2, centre + width / 2]);
+      const itemAlong = alongX ? item.position.x : item.position.z;
+      const centre = Math.max(low + width / 2, Math.min(high - width / 2, itemAlong));
+      const gap = walkGap(item, centre - width / 2, centre + width / 2, itemAlong, alongX ? 1 : 0, alongX ? 0 : 1);
+      if (gap) gaps.push(gap);
     }
     if (wall.id === 'north' && porch) gaps.push([porch.x0, porch.x1]);
     for (const [from, to] of subtractGaps(low, high, gaps)) {
@@ -743,6 +767,46 @@ export function walkClearance(
   return clearance;
 }
 
+/** How thick the stairwell rail's collider is (m): its posts, with a little to spare. */
+const STAIRWELL_RAIL_THICKNESS = 0.06;
+/**
+ * A walker on the flight below meets the rail only with its feet this close
+ * (m) under the floor above: on the top treads, from which it could step up
+ * sideways onto the landing. Lower down it passes under the rail, as under
+ * the slab's edge.
+ */
+const RAIL_TOP_TREADS = 0.6;
+/**
+ * The walker's radius (as `use-walkthrough`'s): from below, the boxes stand
+ * this much further out, so a walker on the treads stops with its centre on
+ * the rail's line, not a radius short of it, and a narrow flight still fits.
+ */
+const RAIL_WALKER_RADIUS = 0.3;
+
+/**
+ * The guard rail round storey `index`'s stairwells (#923): a thin box along
+ * each run, from the floor to the handrail. It stops the walker, not the view.
+ * `fromBelow` gives the boxes a walker on the flight below meets, set out
+ * from the hole by its radius: they block only one on the top treads (`blocksAt` reads `bottom` as the lowest head
+ * height that meets a box, so it sits `WALKER_HEIGHT − RAIL_TOP_TREADS` up).
+ */
+export function stairwellRailColliders(building: ShellBuilding, index: number, fromBelow = false): WalkCollider[] {
+  const inset = fromBelow ? STAIRWELL_RAIL_INSET - RAIL_WALKER_RADIUS - STAIRWELL_RAIL_THICKNESS / 2 : STAIRWELL_RAIL_INSET;
+  const segments = stairwellRailSegments(
+    { floors: building.floors, width: building.width, height: building.depth, cutout: building.cutout },
+    index,
+    inset
+  );
+  if (segments.length === 0) return [];
+  const baseY = floorElevation(building.floors, index);
+  const bottom = fromBelow ? baseY - RAIL_TOP_TREADS + WALKER_HEIGHT : baseY;
+  return segments.map((s) => {
+    const length = Math.hypot(s.x2 - s.x1, s.z2 - s.z1);
+    const rotation = -Math.atan2(s.z2 - s.z1, s.x2 - s.x1);
+    return boxCollider((s.x1 + s.x2) / 2, (s.z1 + s.z2) / 2, length, STAIRWELL_RAIL_THICKNESS, rotation, false, bottom, baseY + STAIRWELL_RAIL_HEIGHT);
+  });
+}
+
 /**
  * The walker's colliders for each storey it can stand on (#446): that
  * storey's furniture, partitions and shell with the storeys directly below
@@ -773,5 +837,9 @@ export function buildWalkerColliders(
     ...perStorey[index]!,
     ...(perStorey[index + 1] ?? []),
     ...street,
+    // The stairwell rail (#923): in full on its storey; from the flight
+    // below, only where the top treads meet it.
+    ...stairwellRailColliders(building, index),
+    ...(index + 1 < building.floors.length ? stairwellRailColliders(building, index + 1, true) : []),
   ]);
 }

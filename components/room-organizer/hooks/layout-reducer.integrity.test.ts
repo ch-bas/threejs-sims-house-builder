@@ -70,6 +70,8 @@ describe('layoutReducer — no-op edits keep state identity (#416)', () => {
     ['setFloorPlanFitMode with the same mode', { type: 'setFloorPlanFitMode', mode: 'stretch' }],
     ['setRoofStyle with the same style', { type: 'setRoofStyle', style: 'gable' }],
     ['setRoofColor with the same colour', { type: 'setRoofColor', color: '#5d3a23' }],
+    ['setRoofPitch with the default pitch', { type: 'setRoofPitch', pitch: 1 }],
+    ['setRoofRidge with the ridge it has', { type: 'setRoofRidge', ridge: null }],
     ['removeItem with an unknown id', { type: 'removeItem', id: 'nope' }],
     ['updateItem with unchanged fields', { type: 'updateItem', id: 'chair', patch: { position: { x: 1, z: 1 }, color: '#ffffff' } }],
     ['updateItem with an unknown id', { type: 'updateItem', id: 'nope', patch: { color: '#000000' } }],

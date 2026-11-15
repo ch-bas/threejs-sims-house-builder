@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem } from './__testfixtures__/fixtures';
-import { buildSightWalls, buildWalkColliders, buildWalkerColliders, resolveWalkerPosition, resolveWalkerStep, sightBlocked, walkClearance } from './walk-collision';
+import { buildShellColliders, buildSightWalls, buildWalkColliders, buildWalkerColliders, resolveWalkerPosition, resolveWalkerStep, sightBlocked, walkClearance } from './walk-collision';
 import type { FurnitureCategory, FurnitureItem, InteriorWall } from './types';
 
 const RADIUS = 0.3;
@@ -308,5 +308,43 @@ describe('garden colliders on a sloped site (#665)', () => {
   it('stands at the datum on a level site', () => {
     const [ground] = buildWalkerColliders(building());
     expect(walkClearance(ground!, 0, 6, false, 0)).toBe(0);
+  });
+});
+
+describe('sliding doors (#922)', () => {
+  const wall: InteriorWall = { id: 'w', x1: -3, z1: 0, x2: 3, z2: 0 };
+  const sliding = (patch: Partial<FurnitureItem> = {}): FurnitureItem =>
+    makeItem({ id: 's', type: 'door', name: 'Sliding Door', width: 2, depth: 0.12, height: 2.1, position: { x: 0, z: 0 }, rotation: 0, openingStyle: 'sliding', ...patch });
+  const through = (item: FurnitureItem, x: number): boolean =>
+    resolveWalkerPosition({ x, z: 1 }, { x, z: -1 }, 0.3, [item], [wall], { roomWidth: 10, roomDepth: 10 }).z < 0;
+
+  it('lets a walker through the slid-open side of a 2 m door, not through its fixed pane', () => {
+    // Inside its 6 cm casings the fixed pane covers x −0.94 … 0.094; the clear span is 0.094 … 0.94.
+    expect(through(sliding(), 0.5)).toBe(true);
+    expect(through(sliding(), -0.6)).toBe(false);
+    // Mirrored, the fixed pane is on the other side.
+    expect(through(sliding({ mirrored: true }), -0.5)).toBe(true);
+    expect(through(sliding({ mirrored: true }), 0.6)).toBe(false);
+    // Turned half a turn in the same wall, its local +X runs the other way.
+    expect(through(sliding({ rotation: Math.PI }), -0.5)).toBe(true);
+  });
+
+  it('blocks a 0.9 m sliding door, whose slid-open span is narrower than a walker', () => {
+    for (const x of [-0.3, 0, 0.2]) expect(through(sliding({ width: 0.9 }), x)).toBe(false);
+    // A swinging door of the same width lets one through.
+    const { openingStyle: _sliding, ...single } = sliding({ width: 0.9 });
+    expect(through(single, 0)).toBe(true);
+  });
+
+  it('narrows the gap in an outer wall too', () => {
+    const building = {
+      width: 8,
+      depth: 8,
+      floors: [{ items: [sliding({ position: { x: 0, z: 4 }, rotation: Math.PI })] }],
+    };
+    const shell = buildShellColliders(building, 0);
+    // Rotation π on the south wall: local +X runs to world −X, so the clear span is x −0.94 … −0.094.
+    expect(sightBlocked(shell, -0.5, 3.5, -0.5, 4.5)).toBe(false);
+    expect(sightBlocked(shell, 0.5, 3.5, 0.5, 4.5)).toBe(true);
   });
 });

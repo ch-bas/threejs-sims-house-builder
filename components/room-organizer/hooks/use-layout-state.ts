@@ -24,6 +24,8 @@ import type {
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
+  OpeningStyle,
+  RoofRidge,
   RoofStyle,
   RoomLayout,
   RoomZone,
@@ -56,6 +58,12 @@ export interface LayoutActions {
   setWallColor(wall: WallId, color: string | null): void;
   /** Without a side, both faces. */
   setInteriorWallColor(id: string, color: string, side?: WallSide): void;
+  /** A partition's pattern (#919); without a side, both faces. */
+  setInteriorWallPattern(id: string, pattern: WallPattern, side?: WallSide): void;
+  /** The outer walls' outside finish (#918); `null` follows the inside again. */
+  setFacadePattern(pattern: WallPattern | null): void;
+  setFacadeColor(wall: WallId, color: string | null): void;
+  clearFacade(): void;
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
@@ -65,6 +73,9 @@ export interface LayoutActions {
   /** Cut a corner out of the building, or fill it back in (#727). */
   setCutout(cutout: FootprintCutout | null): void;
   setRoofColor(color: string): void;
+  /** Roof pitch and a gable's ridge axis (#916); a `null` ridge runs it along the longer side. */
+  setRoofPitch(pitch: number): void;
+  setRoofRidge(ridge: RoofRidge | null): void;
   /** Roof dormers (#203). `addDormer` returns the new dormer's id. */
   addDormer(dormer: Omit<DormerInput, 'id'>): string;
   updateDormer(id: string, patch: DormerPatch): void;
@@ -99,6 +110,10 @@ export interface LayoutActions {
   setColor(id: string, color: string): void;
   setLocked(id: string, locked: boolean): void;
   toggleMirror(id: string): void;
+  /** A door opens out of the room instead of into it, or back (#917). */
+  toggleSwingOut(id: string): void;
+  /** A door or window type (#922). */
+  setOpeningStyle(id: string, style: OpeningStyle): void;
   setRotation(id: string, rotation: number): void;
   replaceItems(items: FurnitureItem[]): void;
   addItems(items: FurnitureItem[]): void;

@@ -40,6 +40,7 @@ import type {
   FloorPattern,
   FloorPlanFitMode,
   InteriorWall,
+  RoofRidge,
   RoofStyle,
   RoomLayout,
   SofaShape,
@@ -73,6 +74,10 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setStoreyHeight: (height) => dispatch({ type: 'setStoreyHeight', height }),
     setWallColor: (wall: WallId, color: string | null) => dispatch({ type: 'setWallColor', wall, color }),
     setInteriorWallColor: (id: string, color: string, side?: WallSide) => dispatch({ type: 'setInteriorWallColor', id, color, side }),
+    setInteriorWallPattern: (id, pattern, side) => dispatch({ type: 'setInteriorWallPattern', id, pattern, side }),
+    setFacadePattern: (pattern) => dispatch({ type: 'setFacadePattern', pattern }),
+    setFacadeColor: (wall, color) => dispatch({ type: 'setFacadeColor', wall, color }),
+    clearFacade: () => dispatch({ type: 'clearFacade' }),
     setFloorPlan: (image) => dispatch({ type: 'setFloorPlan', image }),
     setFloorPlanOpacity: (opacity) => dispatch({ type: 'setFloorPlanOpacity', opacity }),
     setFloorPlanFitMode: (mode: FloorPlanFitMode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
@@ -80,6 +85,8 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setRoofStyle: (style: RoofStyle) => dispatch({ type: 'setRoofStyle', style }),
     setCutout: (cutout) => dispatch({ type: 'setCutout', cutout }),
     setRoofColor: (color) => dispatch({ type: 'setRoofColor', color }),
+    setRoofPitch: (pitch) => dispatch({ type: 'setRoofPitch', pitch }),
+    setRoofRidge: (ridge: RoofRidge | null) => dispatch({ type: 'setRoofRidge', ridge }),
     addDormer: (dormer) => {
       const id = nextId('dormer');
       dispatch({ type: 'addDormer', dormer: { ...dormer, id } });
@@ -118,6 +125,8 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setColor: (id, color) => dispatch({ type: 'setColor', id, color }),
     setLocked: (id, locked) => dispatch({ type: 'setLocked', id, locked }),
     toggleMirror: (id) => dispatch({ type: 'toggleMirror', id }),
+    toggleSwingOut: (id) => dispatch({ type: 'toggleSwingOut', id }),
+    setOpeningStyle: (id, style) => dispatch({ type: 'setOpeningStyle', id, style }),
     setRotation: (id, rotation) => dispatch({ type: 'setRotation', id, rotation }),
     replaceItems: (items: FurnitureItem[]) => dispatch({ type: 'replaceItems', items }),
     addItems: (items: FurnitureItem[]) => dispatch({ type: 'addItems', items }),
