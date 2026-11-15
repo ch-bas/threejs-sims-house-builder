@@ -163,6 +163,15 @@ export function useSceneLife({
   // them. From outside the other storeys' rooms are barely seen through
   // the windows, and a phone pays for every figure: theirs stay parked.
   const walkSpan = walkthroughActive && !walk.outside && walk.nearStairs ? 1 : 0;
+  // The hour the walkers keep (#907): a ref the store writes, so a clock
+  // tick (every 250 ms while the day cycles) re-renders nothing here.
+  const clockRef = useRef(viewStore.getState().view.timeOfDay);
+  useEffect(() => {
+    clockRef.current = viewStore.getState().view.timeOfDay;
+    return viewStore.subscribe((state) => {
+      clockRef.current = state.view.timeOfDay;
+    });
+  }, [viewStore]);
   const npcShownFrom = activeFloorIndex - walkSpan;
   const npcShownTo = activeFloorIndex + walkSpan;
 
@@ -178,6 +187,7 @@ export function useSceneLife({
     shownTo: npcShownTo,
     riggedModelReady: peopleModelReady,
     handOff: npcHandOff,
+    clock: clockRef,
   });
 
   // Rebuilt with the street, not on every edit: it re-seeds the whole field.

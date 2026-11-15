@@ -4,7 +4,8 @@ import { ROOM_TEMPLATES } from '../lib/constants';
 import { type PlayerBody, createNpcBody, createNpcHandOff } from '../lib/npc-bodies';
 import { findNeedSpots } from '../lib/npc-needs';
 import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath, isFreeAt } from '../lib/npc-path';
-import { findNpcSeats } from '../lib/npc-seats';
+import { needBias } from '../lib/npc-schedule';
+import { type NpcSeat, findNpcSeats } from '../lib/npc-seats';
 import {
   NPC_REPAINT,
   NPC_SHADOW,
@@ -76,6 +77,7 @@ function walker(overrides: Partial<NpcState> = {}, to = { x: 2, z: 0 }): NpcStat
     needs: { hunger: 1, energy: 1, fun: 1, hygiene: 1 },
     seeking: null,
     using: null,
+    asleep: false,
     ...overrides,
   };
 }
@@ -779,6 +781,92 @@ describe('walkers with needs (#617)', () => {
     }
     expect(inside).toBe(0);
   }, 30_000);
+
+  describe('sleeping (#907)', () => {
+    const bed = { ...furniture('bed', 'bed', 0, -1, 2, 1.6), height: 0.6 };
+    const single = { ...furniture('single', 'bed', -2.5, 2, 1, 2, Math.PI / 2), height: 0.6 };
+    const bedItems = [bed, single];
+    const bedNav = makeNav(bedItems);
+    const bedSeats = seatsOf(bedItems);
+    const bedSpots = findNeedSpots(bedItems, findNpcSeats(bedItems));
+    const doubleSeat = bedSeats.get('bed:1')!;
+
+    /** A walker that has just sat down on the double bed to rest. */
+    function lyingDown(hour: number): NpcState {
+      const npc = needy({ hunger: 1, energy: 0.2, fun: 1, hygiene: 1 });
+      Object.assign(npc, { seat: doubleSeat, seeking: 'energy', mode: 'sitDown', pause: 0, position: { x: doubleSeat.x, z: doubleSeat.z } });
+      stepNpcs([npc], FRAME, bedNav, 0, seeded(1), bedSeats, null, bedSpots, hour);
+      return npc;
+    }
+    const runFor = (npc: NpcState, seconds: number, hour: number, player: PlayerBody | null = null) => {
+      const random = seeded(907);
+      for (let t = 0; t < seconds && npc.mode === 'seated'; t += FRAME) stepNpcs([npc], FRAME, bedNav, 0, random, bedSeats, player, bedSpots, hour);
+    };
+
+    it('a rest at night is a sleep of a minute or so; by day it is a short rest', () => {
+      const night = lyingDown(3);
+      expect(night).toMatchObject({ mode: 'seated', using: 'energy', asleep: true });
+      expect(night.pause).toBeGreaterThanOrEqual(60);
+      runFor(night, 59, 3);
+      expect(night.mode).toBe('seated');
+      // Capped: up within the minute and a half, though it is still night.
+      runFor(night, 40, 3);
+      expect(night.mode).toBe('standUp');
+      expect(night.asleep).toBe(false);
+      const day = lyingDown(15);
+      expect(day.asleep).toBe(false);
+      expect(day.pause).toBeLessThan(15);
+    });
+
+    it('gets up in the morning, and for the player who comes for the bed', () => {
+      const morning = lyingDown(3);
+      runFor(morning, 5, 3);
+      expect(morning.mode).toBe('seated');
+      runFor(morning, FRAME, 7.5);
+      expect(morning.mode).toBe('standUp');
+      const sleeper = lyingDown(3);
+      const you = { ...createNpcHandOff().player, present: true, x: doubleSeat.x + 2.5, z: doubleSeat.z };
+      runFor(sleeper, 2, 3, you);
+      expect(sleeper.mode).toBe('seated');
+      runFor(sleeper, FRAME, 3, { ...you, x: doubleSeat.x + 0.8 });
+      expect(sleeper.mode).toBe('standUp');
+    });
+
+    it('a double bed sleeps two, a single one; nobody else gets in', () => {
+      const asleepIn = (seat: NpcSeat): NpcState =>
+        Object.assign(needy({ hunger: 1, energy: 1, fun: 1, hygiene: 1 }), { seat, mode: 'seated' as const, asleep: true, pause: 60 });
+      const tired = () => {
+        const npc = needy({ hunger: 1, energy: 0.05, fun: 1, hygiene: 1 });
+        npc.position = { x: 2.5, z: 2.5 };
+        return npc;
+      };
+      const one = asleepIn(bedSeats.get('bed:0')!);
+      const npc = tired();
+      // One in the double: there is room for one more.
+      expect(planNeed(npc, bedNav, bedSeats, bedSpots, seeded(1), [npc, one], null, null, needBias(2))).toBe(true);
+      const two = asleepIn(bedSeats.get('bed:2')!);
+      const single = asleepIn(bedSeats.get('single:0')!);
+      for (let trial = 0; trial < 10; trial++) {
+        const next = tired();
+        expect(planNeed(next, bedNav, bedSeats, bedSpots, seeded(trial), [next, one, two, single], null, null, needBias(2))).toBe(false);
+        expect(planSeat(next, bedNav, bedSeats, seeded(trial), [next, one, two, single])).toBe(false);
+      }
+    });
+  });
+
+  it('heads for bed at night though rested, and nowhere in particular by day (#907)', () => {
+    const bed = { ...furniture('bed', 'bed', 0, -1, 2, 1.6), height: 0.6 };
+    const bedItems = [bed];
+    const bedNav = makeNav(bedItems);
+    const bedSeats = seatsOf(bedItems);
+    const bedSpots = findNeedSpots(bedItems, findNpcSeats(bedItems));
+    const npc = needy({ hunger: 1, energy: 1, fun: 1, hygiene: 1 });
+    npc.position = { x: 2, z: 2 };
+    expect(planNeed(npc, bedNav, bedSeats, bedSpots, seeded(1), [npc], null, null, needBias(14))).toBe(false);
+    expect(planNeed(npc, bedNav, bedSeats, bedSpots, seeded(1), [npc], null, null, needBias(1))).toBe(true);
+    expect(npc.seat?.itemId).toBe('bed');
+    expect(npc.seeking).toBe('energy');
+  });
 
   it('wanders as before while every need is met', () => {
     const npc = needy({ hunger: 1, energy: 1, fun: 1, hygiene: 1 });
