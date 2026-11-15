@@ -86,6 +86,7 @@ const WALL_PATTERNS: readonly WallPattern[] = [
   'panel',
   'plaster',
   'siding',
+  'tile',
 ];
 const ROOF_STYLES: readonly RoofStyle[] = ['none', 'flat', 'gable', 'hipped'];
 const SOFA_SHAPES: readonly SofaShape[] = ['standard', 'L-shape', 'U-shape'];
@@ -241,6 +242,7 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
         return false;
       }
       if (!isOptionalString(wall.color) || !isOptionalString(wall.colorB)) return false;
+      if (!isOptionalWallPattern(wall.pattern) || !isOptionalWallPattern(wall.patternB)) return false;
     }
   }
   // Storey height feeds every floor's elevation and the roof base: a zero,
@@ -257,6 +259,10 @@ export function isFloorLayout(value: unknown): value is FloorLayout {
     }
   }
   return true;
+}
+
+function isOptionalWallPattern(value: unknown): boolean {
+  return value === undefined || WALL_PATTERNS.includes(value as WallPattern);
 }
 
 /** The outside finish (#918): its pattern from the list, its colours strings, like the inside's. */
@@ -445,7 +451,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
 });
 const VEC2_KEYS = ['x', 'z'] as const;
 const FACADE_KEYS = keysOf<FacadeFinish>({ pattern: true, colors: true });
-const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true });
+const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true, pattern: true, patternB: true });
 const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true, floorPattern: true, floorColor: true });
 const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, pitch: true, ridge: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({

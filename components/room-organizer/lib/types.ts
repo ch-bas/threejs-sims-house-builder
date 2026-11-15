@@ -207,7 +207,7 @@ export type WallId = 'north' | 'south' | 'east' | 'west';
 
 export type FloorPattern = 'solid' | 'wood' | 'tile' | 'carpet' | 'concrete';
 
-export type WallPattern = 'solid' | 'brick' | 'wallpaper' | 'panel' | 'plaster' | 'siding';
+export type WallPattern = 'solid' | 'brick' | 'wallpaper' | 'panel' | 'plaster' | 'siding' | 'tile';
 
 export type RoofStyle = 'none' | 'flat' | 'gable' | 'hipped';
 
@@ -268,6 +268,10 @@ export interface InteriorWall {
   color?: string;
   /** The second face, when it differs from `color` (#720); see lib/wall-sides.ts. */
   colorB?: string;
+  /** Side 'a''s pattern (#919); absent is plain paint. */
+  pattern?: WallPattern;
+  /** The second face's pattern, when it differs from `pattern`. */
+  patternB?: WallPattern;
 }
 
 /**

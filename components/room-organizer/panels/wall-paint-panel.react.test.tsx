@@ -18,6 +18,7 @@ function setup(floor: FloorLayout, selectedWall: Wall) {
     removeInteriorWall: vi.fn(),
     setWallPattern: vi.fn(),
     setFacadePattern: vi.fn(),
+    setInteriorWallPattern: vi.fn(),
     setFacadeColor: vi.fn(),
     clearFacade: vi.fn(),
   };
@@ -112,6 +113,25 @@ describe('WallPaintPanel — inside and outside of the outer walls (#918)', () =
   it('offers no face choice for a partition', () => {
     setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0 }] }), { id: 'iw-1', kind: 'interior' });
     expect(screen.queryByRole('radio', { name: 'Outside' })).toBeNull();
+  });
+});
+
+describe('WallPaintPanel — partition patterns (#919)', () => {
+  afterEach(cleanup);
+
+  it('lays the pattern on the selected partition, on the side the click picked', () => {
+    const floor = makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0, pattern: 'tile' }] });
+    const { actions } = setup(floor, { id: 'iw-1', kind: 'interior', side: 'b' });
+    expect(screen.getByRole('button', { name: 'Tile' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Paper' }));
+    expect(actions.setInteriorWallPattern).toHaveBeenCalledWith('iw-1', 'wallpaper', 'b');
+    expect(actions.setWallPattern).not.toHaveBeenCalled();
+  });
+
+  it('offers the tile on the outer walls too', () => {
+    const { actions } = setup(makeFloor(), null);
+    fireEvent.click(screen.getByRole('button', { name: 'Tile' }));
+    expect(actions.setWallPattern).toHaveBeenCalledWith('tile');
   });
 });
 

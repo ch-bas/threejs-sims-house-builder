@@ -2,9 +2,11 @@ import { onFootprintEdge } from '../lib/footprint';
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan } from '../lib/opening-snap';
 import { OPENING_HEAD_CLEARANCE, fitOpeningToStorey } from '../lib/storeys';
 import { FLOOR_HEIGHT_METERS, type FootprintCutout, type FurnitureItem, type InteriorWall } from '../lib/types';
+import { wallSideColor, wallSidePattern, type WallSide } from '../lib/wall-sides';
 import { BASEBOARD_HEIGHT, BASEBOARD_WALL_GAP, baseboardRuns } from './baseboard';
 import { removeAndDispose } from './builder-utils';
 import { classifyOpeningOwners, mergeHoleRects, type OpeningOwner } from './wall-openings';
+import { buildWallMaterial } from './wall-patterns';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -118,7 +120,10 @@ export function renderInteriorWalls(
     // Local +z is side 'a' (lib/wall-sides.ts). A second material only when
     // the faces differ, so a plain wall stays one draw call.
     let wallMaterial: ThreeNS.Material | ThreeNS.Material[] = material;
-    if (wall.colorB !== undefined) {
+    if (wall.pattern !== undefined || wall.patternB !== undefined) {
+      material.dispose();
+      wallMaterial = patternedMaterials(THREE, wall, geometry, openings.length > 0 ? 0 : wallHeight / 2, yOffset, ghostOpacity);
+    } else if (wall.colorB !== undefined) {
       const back = material.clone();
       back.color.set(wall.colorB);
       wallMaterial = openings.length > 0 ? splitExtrudedFaces(geometry, material, back) : [material, material, material, material, material, back];
@@ -216,6 +221,62 @@ function buildExtrudedWallGeometry(
   // Centre the extrude on Z so the wall sits symmetrically around its line.
   geometry.translate(0, 0, -thickness / 2);
   return geometry;
+}
+
+/**
+ * A patterned partition's material, or its two (#919): each face's pattern
+ * in its own colour, from the shell's pattern textures, still at most two
+ * materials and one mesh. The UVs are made metres first, so a tile is the
+ * same size on a long wall and a short one, and its courses run on from the
+ * storey below like the shell's (`yOffset`).
+ */
+function patternedMaterials(
+  THREE: ThreeModule,
+  wall: InteriorWall,
+  geometry: ThreeNS.BufferGeometry,
+  floorY: number,
+  yOffset: number,
+  ghostOpacity: number | undefined
+): ThreeNS.Material | ThreeNS.Material[] {
+  metreUvs(geometry, floorY);
+  const faceMaterial = (side: WallSide): ThreeNS.MeshStandardMaterial => {
+    const made = buildWallMaterial(THREE, { pattern: wallSidePattern(wall, side), color: wallSideColor(wall, side), width: 1, height: 1, yOffset });
+    // A closed box: each face is seen from its own side only, as the plain wall's.
+    made.side = THREE.FrontSide;
+    if (ghostOpacity !== undefined) {
+      made.transparent = true;
+      made.opacity = ghostOpacity;
+    }
+    return made;
+  };
+  const front = faceMaterial('a');
+  const same = wallSidePattern(wall, 'a') === wallSidePattern(wall, 'b') && wallSideColor(wall, 'a') === wallSideColor(wall, 'b');
+  if (same) return front;
+  const back = faceMaterial('b');
+  return geometry.type === 'BoxGeometry' ? [front, front, front, front, front, back] : splitExtrudedFaces(geometry, front, back);
+}
+
+/**
+ * UVs in metres on a partition's box or extrusion: along the wall and up
+ * from the floor on its faces, across its thickness on its ends and top.
+ * `floorY` is how far the geometry's y = 0 stands above the floor.
+ */
+export function metreUvs(geometry: ThreeNS.BufferGeometry, floorY: number): void {
+  const position = geometry.getAttribute('position');
+  const normal = geometry.getAttribute('normal');
+  const uv = geometry.getAttribute('uv');
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i) + floorY;
+    const z = position.getZ(i);
+    const nx = Math.abs(normal.getX(i));
+    const ny = Math.abs(normal.getY(i));
+    const nz = Math.abs(normal.getZ(i));
+    if (nz >= nx && nz >= ny) uv.setXY(i, x, y);
+    else if (nx >= ny) uv.setXY(i, z, y);
+    else uv.setXY(i, x, z);
+  }
+  uv.needsUpdate = true;
 }
 
 /**
