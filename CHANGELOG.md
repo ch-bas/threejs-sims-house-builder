@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.36.0] - 2026-11-15
+
+The **Building tools II** milestone, first wave: better tools for the shell and the garden. Furniture snaps to partitions, fences and hedges lay in runs, roofs take a pitch and a ridge direction, doors warn about what stands in their swing and can open outward, doors and windows come in more types, outer walls get their own outside finish, partitions take patterns and tiles, and the stairwell on the floor above gets a guard rail.
+
+### Added
+- Roofs get a pitch (shown in degrees) for gable and hipped roofs, and a ridge direction for gables; dormers move to the turned slopes and back exactly, and a terrace keeps its ridge off the party walls ([#916](https://github.com/ch-bas/threejs-sims-house-builder/issues/916))
+- One drag with a fence, hedge or stepping stone in hand lays a whole run round the house, priced and undone as one ([#915](https://github.com/ch-bas/threejs-sims-house-builder/issues/915))
+- Double, sliding and archway doors, and tall and fixed windows; change a door or window's type from its editor ([#922](https://github.com/ch-bas/threejs-sims-house-builder/issues/922))
+- Doors can open outward, and the plan washes a door's swing amber when something stands in it ([#917](https://github.com/ch-bas/threejs-sims-house-builder/issues/917))
+- Outer walls can have their own outside finish, pattern and colour per side, carried onto the gable ends, porch and window reveals ([#918](https://github.com/ch-bas/threejs-sims-house-builder/issues/918))
+- Partitions take a pattern on each face, and a new Tile finish suits kitchens and bathrooms ([#919](https://github.com/ch-bas/threejs-sims-house-builder/issues/919))
+- A guard rail round the stairwell on the floor above, open where the stairs arrive and along walls, drawn on the plan and in the exports ([#923](https://github.com/ch-bas/threejs-sims-house-builder/issues/923))
+
+### Changed
+- Snap to walls pulls furniture flush against interior partitions too, except in a doorway ([#914](https://github.com/ch-bas/threejs-sims-house-builder/issues/914))
+
 ## [1.35.0] - 2026-11-15
 
 The **Living house II** milestone, first wave: the parts the house gained in 1.33 now work together. Rooms earn goals and show their stars on the plan, challenge briefs give you a lot, funds and goals, walkers use the whole house, keep the clock and open doors, Statistics says what they go without, lamps switch in EXPLORE, rain and footsteps can play as you walk, and photos have an album.
@@ -1006,7 +1022,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.35.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.36.0...HEAD
+[1.36.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.34.0...v1.35.0
 [1.34.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.33.0...v1.34.0
 [1.33.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.32.0...v1.33.0
