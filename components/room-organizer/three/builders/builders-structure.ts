@@ -1,8 +1,10 @@
-import { DOOR_LEAF_NAME } from '../../lib/door-swing';
+import { DOOR_LEAF_NAME, DOOR_LEAF_PARTS } from '../../lib/door-swing';
+import { INTERIOR_WALL_THICKNESS } from '../../lib/opening-snap';
+import { DOOR_FRAME, SLIDING_PANE_SHARE, archHead, doorStyle, windowStyle } from '../../lib/opening-style';
 import { STAIR_STEP_COUNT, stairSteps, winderLayout } from '../../lib/stairs';
 import { windowSillHeight } from '../../lib/street';
 import { type BuilderContext, material, mesh } from '../builder-utils';
-import { EXTERIOR_SILL_KEY } from '../reveals';
+import { EXTERIOR_SILL_KEY, REVEAL_FILL_KEY } from '../reveals';
 import type * as ThreeNS from 'three';
 
 /**
@@ -14,8 +16,189 @@ import type * as ThreeNS from 'three';
  */
 /** Between a door's open leaf and its jamb: no shared face to z-fight. */
 const DOOR_LEAF_JAMB_GAP = 0.004;
+/** How far an archway's casings stand proud of a partition's faces, and its reveal fill's soffit over the head's. */
+const ARCH_PROUD = 0.002;
+/** A tall window's transom, as a share of its height from the sill. */
+const TALL_WINDOW_TRANSOM = 0.78;
+/** Between a double door's two leaves where they meet. */
+const DOOR_LEAF_MEETING_GAP = 0.004;
 
-export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+/** A door, by its type (#922): one leaf, two, a sliding pane or an open archway. */
+export function buildDoor(ctx: BuilderContext): ThreeNS.Group {
+  switch (doorStyle(ctx.item)) {
+    case 'double':
+      return buildDoubleDoor(ctx);
+    case 'sliding':
+      return buildSlidingDoor(ctx);
+    case 'arch':
+      return buildArchway(ctx);
+    case 'single':
+      return buildSingleDoor(ctx);
+  }
+}
+
+/** The jambs either side and the lintel over the top, flush with the wall hole. */
+function addDoorFrame(THREE: BuilderContext['THREE'], group: ThreeNS.Group, item: BuilderContext['item'], frameMat: ThreeNS.Material, lintel = true): void {
+  const sideGeo = new THREE.BoxGeometry(DOOR_FRAME, item.height, item.depth);
+  for (const dx of [-1, 1]) {
+    const side = mesh(THREE, sideGeo, frameMat);
+    side.position.set(dx * (item.width / 2 - DOOR_FRAME / 2), item.height / 2, 0);
+    group.add(side);
+  }
+  if (!lintel) return;
+  const head = mesh(THREE, new THREE.BoxGeometry(item.width, DOOR_FRAME, item.depth), frameMat);
+  head.position.set(0, item.height - DOOR_FRAME / 2, 0);
+  group.add(head);
+}
+
+/**
+ * Two leaves meeting in the middle (#922), each on a pivot of its own named
+ * `DOOR_LEAF_NAME`, so EXPLORE swings both. The +X leaf runs back towards
+ * −X from its hinge, so it turns the other way (`DOOR_LEAF_PARTS` sign −1).
+ * Each leaf reaches back past its pivot to just short of the casing, so no
+ * slit of light shows down the jamb while it is shut.
+ */
+function buildDoubleDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+  const group = new THREE.Group();
+  const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
+  const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 1, roughness: 0.2 });
+  const leafThickness = item.depth * 0.5;
+  const hingeX = -item.width / 2 + DOOR_FRAME + leafThickness / 2 + DOOR_LEAF_JAMB_GAP;
+  // Each leaf from just inside its casing to just short of the middle.
+  const leafWidth = -hingeX - DOOR_LEAF_MEETING_GAP;
+  const back = hingeX - (-item.width / 2 + DOOR_FRAME + DOOR_LEAF_MEETING_GAP);
+  const leafGeo = new THREE.BoxGeometry(leafWidth + back, item.height * 0.97, leafThickness);
+  const side = item.swingOut ? -1 : undefined;
+  const handleGeo = new THREE.SphereGeometry(0.04, 12, 10);
+  for (const sign of [1, -1] as const) {
+    const pivot = new THREE.Group();
+    pivot.name = DOOR_LEAF_NAME;
+    DOOR_LEAF_PARTS.set(pivot, { ...(sign === -1 ? { sign } : {}), ...(side ? { side } : {}) });
+    pivot.position.set(sign * hingeX, 0, 0);
+    group.add(pivot);
+    const slab = mesh(THREE, leafGeo, frameMat);
+    slab.position.set((sign * (leafWidth - back)) / 2, item.height / 2, 0);
+    pivot.add(slab);
+    const handle = mesh(THREE, handleGeo, handleMat);
+    handle.position.set(sign * (leafWidth - 0.08), item.height * 0.5, item.depth * 0.28);
+    pivot.add(handle);
+  }
+  addDoorFrame(THREE, group, item, frameMat);
+  return group;
+}
+
+/**
+ * Two glazed panes in the frame (#922), one either side of the wall's
+ * centre line as the plan draws them: −X fixed, +X sliding behind it. The
+ * sliding pane is the door's `DOOR_LEAF_NAME` part with a slide (`DOOR_LEAF_PARTS`),
+ * so EXPLORE slides it open instead of turning it.
+ */
+function buildSlidingDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+  const group = new THREE.Group();
+  const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.5 });
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x90caf9,
+    roughness: 0.05,
+    metalness: 0,
+    transparent: true,
+    opacity: hasCollision ? 0.5 : 0.35,
+  });
+  const inner = item.width - 2 * DOOR_FRAME;
+  const paneWidth = inner * SLIDING_PANE_SHARE;
+  const paneHeight = item.height - DOOR_FRAME;
+  const paneDepth = item.depth * 0.18;
+  const rail = 0.05;
+  const offset = item.depth / 6;
+  const paneGeo = {
+    glass: new THREE.BoxGeometry(paneWidth - 2 * rail, paneHeight - 2 * rail, paneDepth * 0.4),
+    stile: new THREE.BoxGeometry(rail, paneHeight, paneDepth),
+    bar: new THREE.BoxGeometry(paneWidth - 2 * rail, rail, paneDepth),
+  };
+  for (const side of [-1, 1] as const) {
+    const pane = new THREE.Group();
+    // −X pane on the −Z side, +X pane on the +Z side: the plan's offsets.
+    pane.position.set(side * (inner - paneWidth) / 2, 0, side * offset);
+    const glass = mesh(THREE, paneGeo.glass, glassMat);
+    glass.position.set(0, paneHeight / 2, 0);
+    // Like window glass: the shadow pass would plug the opening (#551).
+    glass.castShadow = false;
+    pane.add(glass);
+    for (const dx of [-1, 1]) {
+      const stile = mesh(THREE, paneGeo.stile, frameMat);
+      stile.position.set(dx * (paneWidth / 2 - rail / 2), paneHeight / 2, 0);
+      pane.add(stile);
+    }
+    for (const y of [rail / 2, paneHeight - rail / 2]) {
+      const bar = mesh(THREE, paneGeo.bar, frameMat);
+      bar.position.set(0, y, 0);
+      pane.add(bar);
+    }
+    if (side === 1) {
+      pane.name = DOOR_LEAF_NAME;
+      DOOR_LEAF_PARTS.set(pane, { slide: -(inner - paneWidth) });
+    }
+    group.add(pane);
+  }
+  addDoorFrame(THREE, group, item, frameMat);
+  return group;
+}
+
+/**
+ * An open archway (#922): no leaf, casings up both jambs, and the head filled
+ * in down to the arch's curve (`archHead`), which springs from the casings'
+ * inner faces so the two meet without a step. The wall's hole stays the
+ * rectangle every opening cuts; the head covers its top corners. Casings
+ * and head run a hair deeper than a partition is thick, so the hole's square
+ * corners show on neither face of one. In an outer wall the frame is set
+ * back into its reveal: a second head (`REVEAL_FILL_KEY`) fills the reveal
+ * between the facade and the frame, so the facade's hole reads as an arch
+ * too (three/reveals.ts `setBackOpening`).
+ */
+function buildArchway({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
+  const group = new THREE.Group();
+  const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.85 });
+  const half = item.width / 2;
+  const inner = Math.max(0, half - DOOR_FRAME);
+  const depth = Math.max(item.depth, INTERIOR_WALL_THICKNESS + 2 * ARCH_PROUD);
+  const { spring, crown, rise } = archHead(inner * 2, item.height);
+  if (rise > 0) {
+    // The circle through both springing points and the crown.
+    const radius = (rise * rise + inner * inner) / (2 * rise);
+    const centreY = crown - radius;
+    const headShape = (lift: number) => {
+      const r = radius + lift;
+      const startAngle = Math.asin(Math.max(-1, Math.min(1, inner / r)));
+      const shape = new THREE.Shape();
+      shape.moveTo(half, spring);
+      shape.lineTo(half, item.height);
+      shape.lineTo(-half, item.height);
+      shape.lineTo(-half, spring);
+      // Back along the arch, from the −X springing over the crown: clockwise.
+      shape.absarc(0, centreY, r, Math.PI / 2 + startAngle, Math.PI / 2 - startAngle, true);
+      shape.lineTo(half, spring);
+      return shape;
+    };
+    const head = mesh(THREE, new THREE.ExtrudeGeometry(headShape(0), { depth, bevelEnabled: false, curveSegments: 24 }), frameMat);
+    head.position.set(0, 0, -depth / 2);
+    group.add(head);
+    // Its soffit a couple of millimetres above the head's, where the two overlap.
+    const fill = mesh(THREE, new THREE.ExtrudeGeometry(headShape(ARCH_PROUD), { depth: 1, bevelEnabled: false, curveSegments: 24 }), frameMat);
+    fill.userData[REVEAL_FILL_KEY] = depth / 2;
+    fill.visible = false;
+    group.add(fill);
+  }
+  // Casings up to the springing, where the head takes over.
+  const jambHeight = rise > 0 ? spring : item.height;
+  const jambGeo = new THREE.BoxGeometry(DOOR_FRAME, jambHeight, depth);
+  for (const dx of [-1, 1]) {
+    const side = mesh(THREE, jambGeo, frameMat);
+    side.position.set(dx * (half - DOOR_FRAME / 2), jambHeight / 2, 0);
+    group.add(side);
+  }
+  return group;
+}
+
+function buildSingleDoor({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
   const group = new THREE.Group();
   const frameMat = material(THREE, baseColor, hasCollision, opacity, { roughness: 0.7 });
   const handleMat = material(THREE, 0xd7c483, hasCollision, opacity, { metalness: 1, roughness: 0.2 });
@@ -32,6 +215,8 @@ export function buildDoor({ THREE, item, hasCollision, baseColor, opacity }: Bui
   const hingeX = -item.width / 2 + frameThickness + leafThickness / 2 + DOOR_LEAF_JAMB_GAP;
   const pivot = new THREE.Group();
   pivot.name = DOOR_LEAF_NAME;
+  // A door set to open out always opens that way in EXPLORE (#917).
+  if (item.swingOut) DOOR_LEAF_PARTS.set(pivot, { side: -1 });
   pivot.position.set(hingeX, 0, 0);
   group.add(pivot);
 
@@ -114,22 +299,28 @@ export function buildWindow({ THREE, item, hasCollision, baseColor, opacity }: B
     group.add(side);
   }
 
-  // Cross mullion — vertical + horizontal — for the classic 4-pane look.
+  // Cross mullion — vertical + horizontal — for the classic 4-pane look;
+  // a tall window has a transom high up instead, a fixed one no bars (#922).
+  const style = windowStyle(item);
   const mullionThickness = frameThickness * 0.5;
-  const vMullion = mesh(
-    THREE,
-    new THREE.BoxGeometry(mullionThickness, item.height * 0.93, item.depth * 0.55),
-    frameMat
-  );
-  vMullion.position.set(0, sillHeight + item.height / 2, 0);
-  group.add(vMullion);
-  const hMullion = mesh(
-    THREE,
-    new THREE.BoxGeometry(item.width * 0.93, mullionThickness, item.depth * 0.55),
-    frameMat
-  );
-  hMullion.position.set(0, sillHeight + item.height / 2, 0);
-  group.add(hMullion);
+  if (style === 'standard') {
+    const vMullion = mesh(
+      THREE,
+      new THREE.BoxGeometry(mullionThickness, item.height * 0.93, item.depth * 0.55),
+      frameMat
+    );
+    vMullion.position.set(0, sillHeight + item.height / 2, 0);
+    group.add(vMullion);
+  }
+  if (style !== 'fixed') {
+    const hMullion = mesh(
+      THREE,
+      new THREE.BoxGeometry(item.width * 0.93, mullionThickness, item.depth * 0.55),
+      frameMat
+    );
+    hMullion.position.set(0, sillHeight + item.height * (style === 'tall' ? TALL_WINDOW_TRANSOM : 0.5), 0);
+    group.add(hMullion);
+  }
 
   // Outer sill — the ledge under the window. The wall below it is the
   // wall itself: the hole starts at the sill (#212), so no filler (#362).

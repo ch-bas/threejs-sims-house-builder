@@ -5,6 +5,7 @@ import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { repairFloorPlanTransform } from './floor-plan-fit';
 import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
+import { isOpeningStyle } from './opening-style';
 import { clampRoofPitch } from './roof-shape';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
@@ -190,6 +191,8 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   if (!isOptionalBoolean(v.locked)) return false;
   if (!isOptionalBoolean(v.mirrored)) return false;
   if (!isOptionalBoolean(v.swingOut)) return false;
+  // Any string: a style this type doesn't come in is dropped by repairItem (#922).
+  if (!isOptionalString(v.openingStyle)) return false;
   if (!isOptionalBoolean(v.cameraBracket)) return false;
   if (!isOptionalBoolean(v.isCCTV)) return false;
   if (!isOptionalBoolean(v.isWiFiAccessPoint)) return false;
@@ -424,6 +427,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
   locked: true,
   mirrored: true,
   swingOut: true,
+  openingStyle: true,
   stairsShape: true,
   stairsLeadIn: true,
   sillHeight: true,
@@ -561,7 +565,9 @@ export function repairItem(item: FurnitureItem): FurnitureItem {
   if (!knownCategory && catalogCategory) patch.category = catalogCategory;
   const rebuilt = rebuild(item, ITEM_KEYS, patch);
   // `swingOut` is only ever `true`; a stored `false` means the default (#917).
-  const repaired = (rebuilt.swingOut as boolean | undefined) === false ? withoutSwingOut(rebuilt) : rebuilt;
+  const swung = (rebuilt.swingOut as boolean | undefined) === false ? withoutSwingOut(rebuilt) : rebuilt;
+  // A style no door or window comes in is no style (#922); readers ignore one on the wrong type.
+  const repaired = swung.openingStyle !== undefined && !isOpeningStyle(swung.openingStyle) ? withoutOpeningStyle(swung) : swung;
   if (knownCategory || catalogCategory || repaired.category === undefined) return repaired;
   const { category: _unknown, ...rest } = repaired;
   return rest;
@@ -569,6 +575,11 @@ export function repairItem(item: FurnitureItem): FurnitureItem {
 
 function withoutSwingOut(item: FurnitureItem): FurnitureItem {
   const { swingOut: _default, ...rest } = item;
+  return rest;
+}
+
+function withoutOpeningStyle(item: FurnitureItem): FurnitureItem {
+  const { openingStyle: _none, ...rest } = item;
   return rest;
 }
 

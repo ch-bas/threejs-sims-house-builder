@@ -582,3 +582,22 @@ describe('SVG in feet and inches (#725)', () => {
     expect(svg).toContain('>W × D × H (m)</text>');
   });
 });
+
+describe('door types in the SVG (#922)', () => {
+  const svgOf = (openingStyle: 'double' | 'sliding' | 'arch') => {
+    const door = makeItem({ id: 'd', type: 'door', name: 'Door', width: 1.6, depth: 0.12, position: { x: 0, z: -4 }, rotation: 0, openingStyle });
+    const floor = makeFloor({ items: [door] });
+    const svg = layoutToSvg(makeLayout({ floors: [floor] }), floor);
+    return svg.slice(svg.indexOf('<g class="opening"'), svg.indexOf('</g>', svg.indexOf('<g class="opening"')));
+  };
+
+  it('draws a double door\'s two swings, a sliding door\'s two panes and an archway\'s dashed head', () => {
+    expect(svgOf('double').match(/<path /g)).toHaveLength(2);
+    const sliding = svgOf('sliding');
+    expect(sliding).not.toContain('<path ');
+    expect(sliding.match(/<line /g)).toHaveLength(2);
+    const arch = svgOf('arch');
+    expect(arch).not.toContain('<path ');
+    expect(arch.match(/stroke-dasharray/g)).toHaveLength(2);
+  });
+});

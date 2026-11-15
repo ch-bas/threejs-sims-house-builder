@@ -119,6 +119,12 @@ export interface CategoryMeta {
   icon: string;
 }
 
+/** How a door opens (#922): one swinging leaf, two, a sliding pane, or an open archway. */
+export type DoorStyle = 'single' | 'double' | 'sliding' | 'arch';
+/** A window's glazing (#922): four panes, tall and narrow, or one fixed pane. */
+export type WindowStyle = 'standard' | 'tall' | 'fixed';
+export type OpeningStyle = DoorStyle | WindowStyle;
+
 export interface FurnitureItem {
   id: string;
   type: FurnitureType | string;
@@ -160,6 +166,8 @@ export interface FurnitureItem {
   mirrored?: boolean;
   /** A door only: its leaf swings to its local −Z, out of the room, rather than into it (#917). */
   swingOut?: true;
+  /** A door or window type (#922, `lib/opening-style.ts`); absent is a single swinging door or a four-pane window. */
+  openingStyle?: OpeningStyle;
   /** Straight flight (default) or half-turn winder (#205). */
   stairsShape?: StairsShape;
   /** Winder only: extra steps on the up flight, taken from the return flight. */

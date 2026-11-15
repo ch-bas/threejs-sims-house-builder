@@ -438,7 +438,7 @@ function HoverTooltip({ hover, containerRef }: HoverTooltipProps): JSX.Element |
           color: 'var(--pc-paper)',
         }}
       >
-        <Icon name={iconForItem(hover.item.type, hover.item.category)} size={14} />
+        <Icon name={iconForItem(hover.item.type, hover.item.category, hover.item.openingStyle)} size={14} />
         {hover.item.name}
       </p>
       {hover.item.price !== undefined && (

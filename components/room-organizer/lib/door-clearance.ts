@@ -2,7 +2,7 @@ import { rotatedHalfExtents } from './footprint';
 import { isLowProfile } from './geometry';
 import { isWallHung } from './mount-band';
 import { isWallMounted } from './opening-snap';
-import { doorSwing, itemWorldCorners, type DoorSwing, type PlacedItem, type PlanPoint } from './plan-export/plan-geometry';
+import { doorSwings, itemWorldCorners, type DoorSwing, type PlacedItem, type PlanPoint } from './plan-export/plan-geometry';
 import type { FurnitureItem } from './types';
 
 /**
@@ -28,10 +28,10 @@ function canBlockSwing(item: FurnitureItem): boolean {
   return !isWallMounted(item.type) && !isWallHung(item.type) && !isLowProfile(item);
 }
 
-/** The swings of a placed door: none for anything else. */
+/** The swings of a placed door, one per leaf (none for a sliding door or an archway, #922); none for anything else. */
 function swingsOf(door: FurnitureItem): DoorSwing[] {
   if (door.type !== 'door' || !door.position) return [];
-  return [doorSwing(door as PlacedItem)];
+  return doorSwings(door as PlacedItem);
 }
 
 /** The items whose footprint stands in `door`'s swing, in `items` order. */

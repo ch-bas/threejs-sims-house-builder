@@ -711,6 +711,7 @@ describe('persisted-field whitelist and bounds (#350)', () => {
       locked: true,
       mirrored: true,
       swingOut: true,
+      openingStyle: 'double',
       stairsShape: 'winder',
       stairsLeadIn: 1,
       sillHeight: 0.9,

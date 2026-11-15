@@ -59,7 +59,7 @@ components/
     │   └── index.ts                    Barrel
     ├── lib/                             Pure domain code, no React/Three
     │   ├── types.ts                     RoomLayout / FloorLayout / ViewSettings / etc.
-    │   ├── constants.ts                 Catalog (73 items in 12 categories) with colour variants, templates, MAX_FLOORS
+    │   ├── constants.ts                 Catalog (78 items in 12 categories) with colour variants, templates, MAX_FLOORS
     │   ├── schema.ts                    Type guards, legacy migration, caps that repair (never refuse)
     │   ├── geometry.ts                  Collision (items, keep-out, partitions), bounds, snap, auto-organize
     │   ├── collision-reason.ts          The sentence for why an item shows red (rules live in geometry.ts)
@@ -150,6 +150,7 @@ components/
     │   ├── roof-shape.ts                The roof's shape: peak height, pitch, ridge axis, eave overhang, the party walls that rule out a north–south ridge; read by the roof, dormers, GLB, street and camera framing (#916)
     │   ├── door-clearance.ts            What stands in a door's swing: a soft warning for the plan and the popover, never a collision (#917)
     │   ├── door-swing.ts                How a door swings open in EXPLORE: openness by distance, eased angle, side away from the walker (#605)
+    │   ├── opening-style.ts             Door and window types: single, double, sliding, arch; standard, tall, fixed; leaf spans and the arch head (#922)
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── stairwell-rail.ts            The guard rail round a stairwell on the floor above: runs along the hole, open at the arrival and along walls; scene, walker, plan and exports (#923)
     │   ├── zones.ts                     Room zones: rect and polygon validation, clamping, re-fit to detected rooms (#719), per-zone stats (porch left out, #582)

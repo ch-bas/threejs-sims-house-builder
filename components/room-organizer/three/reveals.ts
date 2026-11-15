@@ -30,6 +30,13 @@ export const REVEAL_BOARD = 0.05;
 export const REVEAL_WALL_GAP = 0.004;
 /** userData flag on a part that stays on the wall plane when its window is set back: the outside sill. */
 export const EXTERIOR_SILL_KEY = 'exteriorSill';
+/**
+ * userData on a part that fills the reveal between the facade and a set-back
+ * frame (an archway's head, #922): the half-depth of the frame part it meets.
+ * Built one unit deep along z and hidden; `setBackOpening` shows it, stretched
+ * from just behind the wall plane to that frame, only while the opening is set back.
+ */
+export const REVEAL_FILL_KEY = 'revealFill';
 /** Clearance between hung decor and the set-back frame or lining behind it. */
 export const REVEAL_DECOR_GAP = 0.01;
 
@@ -141,7 +148,15 @@ export function setBackOpening(group: ThreeNS.Object3D, setback: number): void {
   const current = (group.userData.revealSetback as number | undefined) ?? 0;
   if (setback === current) return;
   for (const child of group.children) {
-    if (child.userData[EXTERIOR_SILL_KEY] !== true) child.position.z += setback - current;
+    const fill: unknown = child.userData[REVEAL_FILL_KEY];
+    if (typeof fill === 'number') {
+      // From just behind the facade to the set-back frame's face, a hair into it.
+      const reach = Math.abs(setback) - fill + REVEAL_WALL_GAP;
+      child.visible = reach > REVEAL_WALL_GAP;
+      const sign = setback < 0 ? -1 : 1;
+      child.position.z = sign * REVEAL_WALL_GAP;
+      child.scale.z = child.visible ? sign * (reach - REVEAL_WALL_GAP) : 1;
+    } else if (child.userData[EXTERIOR_SILL_KEY] !== true) child.position.z += setback - current;
   }
   group.userData.revealSetback = setback;
 }

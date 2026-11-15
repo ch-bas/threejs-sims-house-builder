@@ -210,6 +210,12 @@ export const FURNITURE_CATALOG = [
   { type: 'stairs', category: 'structure', name: 'Winder Stairs', width: 2.0, depth: 2.6, height: 3.0, color: '#8B4513', icon: '🪜', price: 2200, stairsShape: 'winder' },
   { type: 'door', category: 'structure', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, color: '#6D4C41', icon: '🚪', price: 320 },
   { type: 'window', category: 'structure', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, color: '#90CAF9', icon: '🪟', price: 240 },
+  // Door and window types (#922), each at its usual size.
+  { type: 'door', category: 'structure', name: 'Double Door', width: 1.6, depth: 0.12, height: 2.1, color: '#6D4C41', icon: '🚪', price: 640, openingStyle: 'double' },
+  { type: 'door', category: 'structure', name: 'Sliding Door', width: 2.0, depth: 0.12, height: 2.1, color: '#ECEFF1', icon: '🚪', price: 980, openingStyle: 'sliding' },
+  { type: 'door', category: 'structure', name: 'Archway', width: 1.2, depth: 0.12, height: 2.2, color: '#EFE8DA', icon: '🚪', price: 180, openingStyle: 'arch' },
+  { type: 'window', category: 'structure', name: 'Tall Window', width: 0.8, depth: 0.12, height: 2.0, color: '#90CAF9', icon: '🪟', price: 360, sillHeight: 0.3, openingStyle: 'tall' },
+  { type: 'window', category: 'structure', name: 'Picture Window', width: 1.8, depth: 0.12, height: 1.4, color: '#90CAF9', icon: '🪟', price: 420, openingStyle: 'fixed' },
 ] as const satisfies readonly CatalogItem[];
 
 export type RoomTemplateKey = 'bedroom' | 'livingRoom' | 'office' | 'kitchen' | 'bathroom' | 'studio' | 'twoStory';
