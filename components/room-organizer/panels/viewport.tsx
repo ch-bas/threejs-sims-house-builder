@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLengthUnit } from '../contexts';
 import { useAppleKeys } from '../hooks/use-apple-keys';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { announce, withdrawAnnouncement } from '../lib/announce';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
@@ -18,6 +19,9 @@ import { WalkHud, type WalkHudProps } from './walk-hud';
 import { WallDrawChip, type WallDrawStatus } from './wall-draw-chip';
 import type { FurnitureItem, RoomLayout, Vec2 } from '../lib/types';
 import type { FloorLayout } from '../lib/types';
+
+/** The status line's tag for a selection Tab made, by item id. */
+const SELECT_TAG = 'select:';
 
 export interface HoverState {
   item: FurnitureItem;
@@ -91,11 +95,11 @@ export function Viewport(props: ViewportProps): JSX.Element {
   // through the floor's items in plan order and say which, in the status
   // region below; past either end Tab leaves the scene. Enter takes focus
   // into the item's popover, which leaves it on the scene while stepping.
-  const [announcement, setAnnouncement] = useState<{ id: string; text: string } | null>(null);
+  // The line goes to the editor's one status region (lib/announce, #929).
   // The selection changed some other way: the line would describe what isn't.
   const selectedId = props.selectedItem?.id ?? null;
   useEffect(() => {
-    setAnnouncement((current) => (current && current.id !== selectedId ? null : current));
+    withdrawAnnouncement((tag) => tag !== null && tag.startsWith(SELECT_TAG) && tag !== `${SELECT_TAG}${selectedId}`);
   }, [selectedId]);
   // Only the keyboard focuses the scene: a press with a mouse or a finger
   // leaves focus where a click on the old, unfocusable canvas did (on the
@@ -175,7 +179,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
     // A held Tab steps once: focus stays on the scene meanwhile.
     if (event.repeat) return;
     props.onKeyboardSelect?.(next.id);
-    setAnnouncement({ id: next.id, text: selectionAnnouncement(props.activeFloor.items, next.id) });
+    announce(selectionAnnouncement(props.activeFloor.items, next.id), { tag: `${SELECT_TAG}${next.id}` });
   };
   const sceneKeyRef = useRef(handleSceneKey);
   sceneKeyRef.current = handleSceneKey;
@@ -253,14 +257,9 @@ export function Viewport(props: ViewportProps): JSX.Element {
           {...sceneKeys}
         />
         {props.onKeyboardSelect && (
-          <>
-            <p id={SCENE_KEYS_HINT_ID} className="sr-only">
-              Tab and Shift+Tab step through the items on this floor. Enter opens the selected one.
-            </p>
-            <p role="status" className="sr-only">
-              {announcement?.text ?? ''}
-            </p>
-          </>
+          <p id={SCENE_KEYS_HINT_ID} className="sr-only">
+            Tab and Shift+Tab step through the items on this floor. Enter opens the selected one.
+          </p>
         )}
 
         {showLoading && <LoadingOverlay />}
