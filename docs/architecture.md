@@ -108,6 +108,7 @@ components/
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)
     │   ├── backup.ts                    One-file backup of everything stored in this browser; versioned bundle, an add-only restore through the schema (#620)
+    │   ├── backup-reminder.ts           Keeping the houses (#928): the browser's persist answer and the last backup time (one small record), the backup-reminder rule over dates
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── hud-layout.ts                Phone-dock and sheet media queries, catalog page size, scroll cue, touch welcome tips
@@ -271,6 +272,7 @@ components/
     │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones; the clock ref the walkers read (#907); the door swinger, for the player and the walkers (#908)
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
+    │   ├── use-storage-persist.ts       Asks `navigator.storage.persist()` after the first real edit of a session (not a load); a no is asked again, Firefox only after a week (#928)
     │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
     │   ├── use-start-challenge.ts       A challenge brief's empty house through the whole-house load path (#909)
     │   ├── use-first-steps.ts           Getting started session: steps done (edits, `markFirstStep` for walk and share), stored with the offered/dismissed card (#721)
@@ -332,7 +334,7 @@ components/
         ├── recovery-entry.tsx           History rows for kept recovery copies: restore, download, delete
         ├── sets-panel.tsx
         ├── statistics-panel.tsx
-        ├── storage-panel.tsx            Manage card: storage meter, delete restore points / saved layouts, back up and restore everything (#615, #620)
+        ├── storage-panel.tsx            Manage card: storage meter, delete restore points / saved layouts, back up and restore everything, kept-by-browser and last-backup lines (#615, #620, #928)
         ├── header-stats.tsx
         ├── time-of-day-panel.tsx
         ├── camera-presets-panel.tsx

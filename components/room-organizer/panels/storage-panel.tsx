@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
+import { browserStorageManager } from '../hooks/use-storage-persist';
 import {
   BACKUP_FAILURE_TEXT,
   backupFileName,
@@ -15,9 +16,11 @@ import {
   summarizeBackup,
   type BackupSummary,
 } from '../lib/backup';
+import { queryPersistence, readStorageCare, recordBackup, subscribeStorageCare, type StorageCare } from '../lib/backup-reminder';
 import { askConfirm } from '../lib/confirm-dialog';
 import { subscribeCustomSets } from '../lib/custom-sets';
 import { notify } from '../lib/editor-notices';
+import { formatAge } from '../lib/format';
 import { deleteNamedLayout, listSavedLayouts, subscribeLibrary } from '../lib/library';
 import { localStorageOrNull } from '../lib/persistence';
 import { downloadTextFile } from '../lib/plan-export/download';
@@ -77,6 +80,25 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
   const [usage, setUsage] = useState<StorageUsage>(() => measureStorage(null));
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Whether the browser keeps this site's storage (#928); null where it can't say.
+  const [kept, setKept] = useState<boolean | null>(null);
+  const [care, setCare] = useState<StorageCare>(() => readStorageCare());
+
+  useEffect(() => {
+    let live = true;
+    const read = (): void => {
+      setCare(readStorageCare());
+      void queryPersistence(browserStorageManager()).then((answer) => {
+        if (live) setKept(answer);
+      });
+    };
+    read();
+    const unsubscribe = subscribeStorageCare(read);
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, []);
 
   const measure = useCallback(() => {
     setUsage(measureStorage(localStorageOrNull()));
@@ -138,6 +160,10 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
   const handleBackup = (): void => {
     const bundle = createBackup(currentLayout);
     downloadTextFile(backupFileName(), 'application/json', JSON.stringify(bundle));
+    // Recorded once the download has been handed to the browser: a page
+    // can't tell whether the player then cancels the save dialog, so a
+    // cancelled download still counts as a backup here.
+    recordBackup(Date.now());
     const leftOut = libraryHousesLeftOut();
     if (leftOut > 0) {
       notify(
@@ -263,6 +289,16 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
 
         <div className="space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Backup</p>
+          <div className="space-y-0.5 text-xs text-muted-foreground" data-testid="storage-care">
+            {kept !== null && (
+              <p title={kept ? undefined : 'The browser may clear this site’s data when space runs low, or after weeks without a visit. A backup file keeps a copy.'}>
+                {kept ? 'Kept by the browser' : 'May be cleared by the browser'}
+              </p>
+            )}
+            <p title={care.lastBackupAt === null ? undefined : new Date(care.lastBackupAt).toLocaleString()}>
+              {care.lastBackupAt === null ? 'No backup yet' : `Last backup ${formatAge(Math.max(0, Date.now() - care.lastBackupAt))}`}
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant="outline"
