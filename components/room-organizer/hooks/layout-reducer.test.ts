@@ -167,6 +167,48 @@ describe('layoutReducer — item CRUD', () => {
     expect(layoutReducer(state, { type: 'toggleSwingOut', id: 'l' })).toBe(state);
   });
 
+  it('setOpeningStyle sets a door or window type, stores the default as none, and refuses a lock or the wrong type (#922)', () => {
+    let state = stateWith([makeItem({ id: 'd', type: 'door' }), makeItem({ id: 'w', type: 'window' }), makeItem({ id: 'l', type: 'door', locked: true })]);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'arch' });
+    expect(activeItems(state)[0]!.openingStyle).toBe('arch');
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'arch' })).toBe(state);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'single' });
+    expect(activeItems(state)[0]!.openingStyle).toBeUndefined();
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'single' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'double' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setOpeningStyle', id: 'l', style: 'double' })).toBe(state);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'tall' });
+    expect(activeItems(state)[1]!.openingStyle).toBe('tall');
+  });
+
+  it('setOpeningStyle takes the new type\'s name, price and size, and a sill only with the tall window (#922)', () => {
+    const door = makeItem({ id: 'd', type: 'door', name: 'Double Door', width: 1.6, depth: 0.12, height: 2.1, price: 640, openingStyle: 'double' });
+    const window = makeItem({ id: 'w', type: 'window', name: 'Window', width: 1.2, depth: 0.12, height: 1.2, price: 240, sillHeight: 1.1 });
+    let state = stateWith([door, window]);
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'd', style: 'single' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Door', price: 320, width: 0.9, height: 2.05 });
+    expect(activeItems(state)[0]!.openingStyle).toBeUndefined();
+    // A name of the player's own stays.
+    state = layoutReducer(stateWith([{ ...door, name: 'Garden doors' }]), { type: 'setOpeningStyle', id: 'd', style: 'arch' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Garden doors', price: 180, width: 1.2, height: 2.2, openingStyle: 'arch' });
+    // A sill set by hand survives a change that has none of its own; the tall window's comes and goes with it.
+    state = layoutReducer(stateWith([window]), { type: 'setOpeningStyle', id: 'w', style: 'fixed' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Picture Window', width: 1.8, sillHeight: 1.1 });
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'tall' });
+    expect(activeItems(state)[0]).toMatchObject({ name: 'Tall Window', sillHeight: 0.3 });
+    state = layoutReducer(state, { type: 'setOpeningStyle', id: 'w', style: 'standard' });
+    expect(activeItems(state)[0]!.sillHeight).toBeUndefined();
+  });
+
+  it('setOpeningStyle refuses a dearer type the hard budget cannot pay for (#922)', () => {
+    const door = makeItem({ id: 'd', type: 'door', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, price: 320 });
+    const base = stateWith([door]);
+    const tight = { ...base, layout: { ...base.layout, budget: { writeOff: 0, amount: 500 } } };
+    expect(layoutReducer(tight, { type: 'setOpeningStyle', id: 'd', style: 'sliding' })).toBe(tight);
+    // A cheaper one is fine.
+    expect(activeItems(layoutReducer(tight, { type: 'setOpeningStyle', id: 'd', style: 'arch' }))[0]!.price).toBe(180);
+  });
+
   it('setRotation / setColor / setLocked / setSofaShape / setSignalRange patch fields', () => {
     let state = stateWith([makeItem({ id: 'a', type: 'sofa' })]);
     state = layoutReducer(state, { type: 'setRotation', id: 'a', rotation: 1.23 });

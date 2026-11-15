@@ -12,6 +12,22 @@
 
 /** The pivot group that carries a door's leaf and handle (three/builders). */
 export const DOOR_LEAF_NAME = 'door-leaf';
+/**
+ * What the door builders tell the swinger about a leaf part beyond its name
+ * (#922, #917), kept off the object so the GLB export never writes it into
+ * the file's extras: `sign` −1 on a leaf hung on the +X jamb, which runs
+ * back towards −X and so turns the other way; `slide`, a sliding pane's full
+ * travel along local X, which slides instead of turning; `side`, the side a
+ * door set to open out always opens to (−1, its local −Z).
+ */
+export interface DoorLeafPart {
+  sign?: -1;
+  slide?: number;
+  side?: -1 | 1;
+}
+
+/** Leaf part → what it is (a WeakMap keyed by the part object, so nothing leaks). */
+export const DOOR_LEAF_PARTS = new WeakMap<object, DoorLeafPart>();
 
 /** A walker this close to a door's centre (m, in plan) opens it. */
 export const DOOR_SENSE_RADIUS = 1.8;
@@ -49,7 +65,8 @@ export function stepDoorSwing(
   distance: number,
   localZ: number,
   seconds: number,
-  reducedMotion = false
+  reducedMotion = false,
+  fixedSide?: 1 | -1
 ): DoorSwingState {
   const target = distance < DOOR_SENSE_RADIUS ? 1 : 0;
   const rate = Math.max(0, seconds) / DOOR_SWING_SECONDS;
@@ -59,8 +76,9 @@ export function stepDoorSwing(
       ? Math.min(target, state.open + rate)
       : Math.max(target, state.open - rate);
   open = Math.max(open, requiredOpenness(distance));
-  // The side is chosen as the door starts to open: away from the walker.
-  const side: 1 | -1 = state.open === 0 && open > 0 ? (localZ > 0 ? -1 : 1) : state.side;
+  // The side is chosen as the door starts to open: away from the walker, or
+  // always the side a door set to open out opens to (#917).
+  const side: 1 | -1 = state.open === 0 && open > 0 ? (fixedSide ?? (localZ > 0 ? -1 : 1)) : state.side;
   if (open === state.open && side === state.side) return state;
   return { open, side };
 }
@@ -69,6 +87,11 @@ export function stepDoorSwing(
 function ease(t: number): number {
   const x = Math.min(1, Math.max(0, t));
   return x * x * (3 - 2 * x);
+}
+
+/** How far open a leaf stands for a swing state, eased: 0 shut … 1 open. A sliding pane moves by this (#922). */
+export function doorLeafOpenness(state: DoorSwingState): number {
+  return state.open <= 0 ? 0 : ease(state.open);
 }
 
 /**

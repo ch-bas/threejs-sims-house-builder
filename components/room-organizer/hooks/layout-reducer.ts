@@ -16,6 +16,7 @@ import { formatMetres } from '../lib/format';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
+import { openingStylePatch } from '../lib/opening-style';
 import { DEFAULT_ROOF_PITCH, clampRoofPitch, partyWallsHoldRidge } from '../lib/roof-shape';
 import { floorRooms } from '../lib/room-detect';
 import {
@@ -57,6 +58,7 @@ import type {
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
+  OpeningStyle,
   RoofRidge,
   RoofStyle,
   RoomLayout,
@@ -102,6 +104,7 @@ export type LayoutAction =
   | { type: 'setLocked'; id: string; locked: boolean }
   | { type: 'toggleMirror'; id: string }
   | { type: 'toggleSwingOut'; id: string }
+  | { type: 'setOpeningStyle'; id: string; style: OpeningStyle }
   | { type: 'setRotation'; id: string; rotation: number }
   | { type: 'replaceItems'; items: FurnitureItem[] }
   | { type: 'addItems'; items: FurnitureItem[] }
@@ -708,6 +711,30 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return patchItem(state, action.id, (item) =>
         item.locked || item.type !== 'door' ? null : { swingOut: item.swingOut ? undefined : true }
       );
+
+    // A door or window type (#922): it changes the mesh and, for a door,
+    // the swing, so a locked item refuses it like Mirror.
+    // It takes the new type's name, price and size (`openingStylePatch`); a
+    // dearer type is refused over a hard budget like any purchase, and a new
+    // width re-seats the opening on its wall like a resize (#408).
+    case 'setOpeningStyle':
+      return patchItem(state, action.id, (item) => {
+        if (item.locked) return null;
+        const patch = openingStylePatch(item, action.style);
+        if (!patch) return null;
+        const settled = item.position
+          ? settleWallMountedItem(
+              { ...item, ...patch } as FurnitureItem,
+              item.position,
+              state.layout.width,
+              state.layout.height,
+              activeInteriorWalls(state),
+              activeFrontGap(state),
+              state.layout.cutout
+            )
+          : null;
+        return { ...patch, ...settled };
+      });
 
     case 'setRotation':
       // Raw on purpose apart from the lock: this is the channel the camera

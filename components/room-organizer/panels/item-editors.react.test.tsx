@@ -18,6 +18,7 @@ function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: Ga
   const actions = {
     toggleMirror: vi.fn(),
     toggleSwingOut: vi.fn(),
+    setOpeningStyle: vi.fn(),
     setSofaShape: vi.fn(),
     resizeItem: vi.fn(),
     setLocked: vi.fn(),

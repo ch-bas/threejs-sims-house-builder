@@ -229,3 +229,84 @@ describe('door leaves (#605)', () => {
     expect(doorWalkersOf(handOff, out, false)).toEqual([]);
   });
 });
+
+describe('door types in EXPLORE (#922)', () => {
+  const leavesOf = (scene: THREE.Scene): THREE.Object3D[] => {
+    const found: THREE.Object3D[] = [];
+    scene.children[0]!.traverse((part) => {
+      if (part.name === DOOR_LEAF_NAME) found.push(part);
+    });
+    return found;
+  };
+
+  it('swings both leaves of a double door open to the same side', () => {
+    const scene = sceneWith([{ item: door({ width: 1.6, openingStyle: 'double' }), floorIndex: 0 }]);
+    const leaves = leavesOf(scene);
+    expect(leaves).toHaveLength(2);
+    const swinger = createDoorSwinger(scene);
+    settle(swinger, { x: 0, z: -0.5, floorIndex: 0 });
+    scene.updateMatrixWorld(true);
+    for (const leaf of leaves) {
+      const box = new THREE.Box3().setFromObject(leaf.children[0]!);
+      // Away from the walker on −z: both into +z.
+      expect(box.max.z).toBeGreaterThan(0.5);
+      expect(box.min.z).toBeGreaterThan(-0.1);
+    }
+    expect(leaves[0]!.rotation.y).toBeCloseTo(-DOOR_OPEN_ANGLE);
+    expect(leaves[1]!.rotation.y).toBeCloseTo(DOOR_OPEN_ANGLE);
+    swinger.shutAll();
+    expect(leaves.map((leaf) => leaf.rotation.y)).toEqual([0, 0]);
+  });
+
+  it('slides a sliding door\'s pane open behind the other, and back', () => {
+    const scene = sceneWith([{ item: door({ width: 2, openingStyle: 'sliding' }), floorIndex: 0 }]);
+    const [pane] = leavesOf(scene);
+    const shutX = pane!.position.x;
+    expect(shutX).toBeGreaterThan(0);
+    const swinger = createDoorSwinger(scene);
+    settle(swinger, { x: 0, z: 0.5, floorIndex: 0 });
+    expect(pane!.rotation.y).toBe(0);
+    expect(pane!.position.x).toBeCloseTo(-shutX);
+    swinger.shutAll();
+    expect(pane!.position.x).toBeCloseTo(shutX);
+  });
+
+  it('has nothing to open on an archway', () => {
+    const scene = sceneWith([{ item: door({ width: 1.2, height: 2.2, openingStyle: 'arch' }), floorIndex: 0 }]);
+    expect(leavesOf(scene)).toEqual([]);
+  });
+});
+
+describe('a door set to open out (#917)', () => {
+  it('opens to its own side whichever side the walker comes from; a default door opens away from them', () => {
+    for (const walkerZ of [-0.5, 0.5]) {
+      const out = sceneWith([{ item: door({ swingOut: true }), floorIndex: 0 }]);
+      settle(createDoorSwinger(out), { x: 0, z: walkerZ, floorIndex: 0 });
+      expect(slabBox(out).min.z).toBeLessThan(-0.5);
+      const plain = sceneWith([{ item: door(), floorIndex: 0 }]);
+      settle(createDoorSwinger(plain), { x: 0, z: walkerZ, floorIndex: 0 });
+      expect(walkerZ < 0 ? slabBox(plain).max.z : -slabBox(plain).min.z).toBeGreaterThan(0.5);
+    }
+  });
+
+  it('keeps what the swinger needs off the leaves, so the GLB extras carry none of it (#922)', () => {
+    for (const patch of [{ swingOut: true as const }, { width: 1.6, openingStyle: 'double' as const }, { width: 2, openingStyle: 'sliding' as const }]) {
+      const scene = sceneWith([{ item: door(patch), floorIndex: 0 }]);
+      scene.children[0]!.traverse((part) => {
+        if (part.name === DOOR_LEAF_NAME) expect(Object.keys(part.userData)).toEqual([]);
+      });
+    }
+  });
+
+  it('closes the jamb on a shut double door: each leaf reaches its casing', () => {
+    const scene = sceneWith([{ item: door({ width: 1.6, openingStyle: 'double' }), floorIndex: 0 }]);
+    scene.updateMatrixWorld(true);
+    const parts: THREE.Object3D[] = [];
+    scene.children[0]!.traverse((part) => {
+      if (part.name === DOOR_LEAF_NAME) parts.push(part);
+    });
+    const boxes = parts.map((leaf) => new THREE.Box3().setFromObject(leaf.children[0]!));
+    expect(boxes[0]!.min.x).toBeCloseTo(-0.8 + 0.06 + 0.004, 3);
+    expect(boxes[1]!.max.x).toBeCloseTo(0.8 - 0.06 - 0.004, 3);
+  });
+});

@@ -16,6 +16,7 @@
 import { LOW_PROFILE_MAX_HEIGHT, isInsideBuilding, rotatedHalfExtents, shellWalls, type ShellWall } from './footprint';
 import { isWallHung } from './mount-band';
 import { INTERIOR_WALL_THICKNESS, interiorWallOpeningSpan, isWallMounted } from './opening-snap';
+import { doorStyle, doorWalkSpan } from './opening-style';
 import { gardenGroundY, hasNeighbours } from './site';
 import { STAIRWELL_RAIL_HEIGHT, STAIRWELL_RAIL_INSET, stairwellRailSegments } from './stairwell-rail';
 import { floorElevation, interiorWallHeight, storeyHeight } from './storeys';
@@ -261,7 +262,11 @@ function solidRuns(
       // The renderer's cut exactly: a door lying past the end cuts nothing (#399).
       const span = interiorWallOpeningSpan(wall, { width: item.width, position: item.position });
       if (!span) continue;
-      gaps.push([span.centre - span.width / 2, span.centre + span.width / 2]);
+      const ux = (wall.x2 - wall.x1) / length;
+      const uz = (wall.z2 - wall.z1) / length;
+      const itemAlong = (item.position.x - (wall.x1 + wall.x2) / 2) * ux + (item.position.z - (wall.z1 + wall.z2) / 2) * uz;
+      const gap = walkGap(item, span.centre - span.width / 2, span.centre + span.width / 2, itemAlong, ux, uz);
+      if (gap) gaps.push(gap);
     }
   }
   if (gaps.length === 0) return [[-half, half]];
@@ -274,6 +279,22 @@ function solidRuns(
   }
   if (half - cursor >= MIN_RUN_LENGTH) runs.push([cursor, half]);
   return runs;
+}
+
+/**
+ * The part of a door's cut a walker can pass, along a wall running (ux, uz):
+ * the whole cut `[from, to]`, or on a sliding door only the slid-open span
+ * (`doorWalkSpan`, #922) of it, which may be too narrow to pass at all.
+ */
+function walkGap(item: FurnitureItem, from: number, to: number, itemAlong: number, ux: number, uz: number): [number, number] | null {
+  if (doorStyle(item) !== 'sliding') return [from, to];
+  // The door's local +X in plan is (cos r, −sin r): which way it runs along the wall.
+  const r = item.rotation ?? 0;
+  const sign = Math.cos(r) * ux - Math.sin(r) * uz >= 0 ? 1 : -1;
+  const [a, b] = doorWalkSpan(item);
+  const lo = Math.max(from, itemAlong + Math.min(sign * a, sign * b));
+  const hi = Math.min(to, itemAlong + Math.max(sign * a, sign * b));
+  return hi > lo ? [lo, hi] : null;
 }
 
 function distanceToSegment(px: number, pz: number, x1: number, z1: number, x2: number, z2: number): number {
@@ -527,8 +548,10 @@ export function buildShellColliders(building: ShellBuilding, floorIndex: number)
     for (const item of floor.items) {
       if (!item.position || exteriorDoorShellWall(item, interiorWalls, building.width, building.depth, cutout)?.id !== wall.id) continue;
       const width = Math.min(item.width, Math.max(0, high - low - EXTERIOR_CUT_END_MARGIN));
-      const centre = Math.max(low + width / 2, Math.min(high - width / 2, alongX ? item.position.x : item.position.z));
-      gaps.push([centre - width / 2, centre + width / 2]);
+      const itemAlong = alongX ? item.position.x : item.position.z;
+      const centre = Math.max(low + width / 2, Math.min(high - width / 2, itemAlong));
+      const gap = walkGap(item, centre - width / 2, centre + width / 2, itemAlong, alongX ? 1 : 0, alongX ? 0 : 1);
+      if (gap) gaps.push(gap);
     }
     if (wall.id === 'north' && porch) gaps.push([porch.x0, porch.x1]);
     for (const [from, to] of subtractGaps(low, high, gaps)) {

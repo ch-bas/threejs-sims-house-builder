@@ -27,13 +27,14 @@ import {
   DEFAULT_SVG_MARGIN,
   coverageRings,
   gridLinePositions,
-  doorSwing,
+  doorSwings,
   growBounds,
   interiorWallDimensions,
   isWallHidden,
   itemSchedule,
   openingAxes,
   openingGap,
+  openingPlanMarks,
   planContentBounds,
   planFrameBounds,
   polarPoint,
@@ -631,20 +632,31 @@ function renderOpening(
   scale: number,
   theme: SvgPlanTheme
 ): string {
-  const w = item.width * scale;
   const gapPoints = openingGap(item, OPENING_GAP_M)
     .map((p) => `${px(p.x)},${py(p.z)}`)
     .join(' ');
   const parts: string[] = [`<g class="opening" data-type="${escapeHtml(item.type)}">`];
   parts.push(`<polygon points="${gapPoints}" fill="${theme.background}"/>`);
   if (item.type === 'door') {
-    // World points, shared with the plan and the DXF: mirroring moves the hinge (#386).
-    const { hinge, strike, leafTip } = doorSwing(item);
-    const sweep = (strike.x - hinge.x) * (leafTip.z - hinge.z) - (strike.z - hinge.z) * (leafTip.x - hinge.x) > 0 ? 1 : 0;
-    parts.push(
-      `<line x1="${px(hinge.x)}" y1="${py(hinge.z)}" x2="${px(leafTip.x)}" y2="${py(leafTip.z)}" stroke="${theme.opening}" stroke-width="1.5"/>`,
-      `<path d="M ${px(strike.x)} ${py(strike.z)} A ${fmt(w)} ${fmt(w)} 0 0 ${sweep} ${px(leafTip.x)} ${py(leafTip.z)}" stroke="${theme.opening}" stroke-width="1" fill="none"/>`
-    );
+    // World points, shared with the plan and the DXF: mirroring moves the
+    // hinge (#386); a double door has two leaves, sliding and arch none (#922).
+    for (const { hinge, strike, leafTip } of doorSwings(item)) {
+      const sweep = (strike.x - hinge.x) * (leafTip.z - hinge.z) - (strike.z - hinge.z) * (leafTip.x - hinge.x) > 0 ? 1 : 0;
+      const r = Math.hypot(strike.x - hinge.x, strike.z - hinge.z) * scale;
+      parts.push(
+        `<line x1="${px(hinge.x)}" y1="${py(hinge.z)}" x2="${px(leafTip.x)}" y2="${py(leafTip.z)}" stroke="${theme.opening}" stroke-width="1.5"/>`,
+        `<path d="M ${px(strike.x)} ${py(strike.z)} A ${fmt(r)} ${fmt(r)} 0 0 ${sweep} ${px(leafTip.x)} ${py(leafTip.z)}" stroke="${theme.opening}" stroke-width="1" fill="none"/>`
+      );
+    }
+    const { solid, overhead } = openingPlanMarks(item, OPENING_GAP_M);
+    for (const { from, to } of solid) {
+      parts.push(`<line x1="${px(from.x)}" y1="${py(from.z)}" x2="${px(to.x)}" y2="${py(to.z)}" stroke="${theme.opening}" stroke-width="1.5"/>`);
+    }
+    for (const { from, to } of overhead) {
+      parts.push(
+        `<line x1="${px(from.x)}" y1="${py(from.z)}" x2="${px(to.x)}" y2="${py(to.z)}" stroke="${theme.opening}" stroke-width="1" stroke-dasharray="4 3"/>`
+      );
+    }
   } else {
     const { along } = openingAxes(item);
     const half = item.width / 2;

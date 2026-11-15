@@ -24,6 +24,7 @@ import type {
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
+  OpeningStyle,
   RoofRidge,
   RoofStyle,
   RoomLayout,
@@ -105,6 +106,8 @@ export interface LayoutActions {
   toggleMirror(id: string): void;
   /** A door opens out of the room instead of into it, or back (#917). */
   toggleSwingOut(id: string): void;
+  /** A door or window type (#922). */
+  setOpeningStyle(id: string, style: OpeningStyle): void;
   setRotation(id: string, rotation: number): void;
   replaceItems(items: FurnitureItem[]): void;
   addItems(items: FurnitureItem[]): void;

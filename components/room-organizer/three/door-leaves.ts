@@ -1,4 +1,4 @@
-import { DOOR_LEAF_NAME, DOOR_SHUT, doorLeafAngle, stepDoorSwing, type DoorSwingState } from '../lib/door-swing';
+import { DOOR_LEAF_NAME, DOOR_LEAF_PARTS, DOOR_SHUT, doorLeafAngle, doorLeafOpenness, stepDoorSwing, type DoorSwingState } from '../lib/door-swing';
 import { FURNITURE_REVISION_KEY } from './drag-handlers';
 import { ROOM_OBJECT_TAGS } from './room-builder';
 import type { NpcHandOff } from '../lib/npc-bodies';
@@ -8,6 +8,18 @@ interface DoorLeaf {
   group: ThreeNS.Object3D;
   pivot: ThreeNS.Object3D;
   state: DoorSwingState;
+  /** −1 on a leaf hung on the +X jamb, which turns the other way (#922). */
+  sign: number;
+  /** A sliding pane's full travel along local X, and where it rests shut; null for a turning leaf. */
+  slide: { travel: number; shutX: number } | null;
+  /** The side a door set to open out always opens to (#917); absent, away from the walker. */
+  side?: 1 | -1;
+}
+
+/** Turn or slide a leaf to a swing state. */
+function poseLeaf(leaf: DoorLeaf): void {
+  if (leaf.slide) leaf.pivot.position.x = leaf.slide.shutX + leaf.slide.travel * doorLeafOpenness(leaf.state);
+  else leaf.pivot.rotation.y = leaf.state.open > 0 ? leaf.sign * doorLeafAngle(leaf.state) : 0;
 }
 
 /** Someone who opens doors (the player or a walker): plan position and the storey its feet are on. */
@@ -78,9 +90,17 @@ export function createDoorSwinger(scene: ThreeNS.Object3D, onSettled?: () => voi
     leaves = [];
     for (const group of scene.children) {
       if (group.userData.type !== ROOM_OBJECT_TAGS.Furniture) continue;
-      const pivot = group.getObjectByName(DOOR_LEAF_NAME);
-      if (!pivot) continue;
-      leaves.push({ group, pivot, state: previous.get(pivot) ?? DOOR_SHUT });
+      // A double door has two leaves (#922): every part by that name.
+      group.traverse((pivot) => {
+        if (pivot.name !== DOOR_LEAF_NAME) return;
+        const part = DOOR_LEAF_PARTS.get(pivot);
+        const sign = part?.sign ?? 1;
+        const travel = part?.slide;
+        // A rebuilt pane is new and shut; a kept one stays where its state put it, so read the rest from that.
+        const state = previous.get(pivot) ?? DOOR_SHUT;
+        const slide = travel !== undefined ? { travel, shutX: pivot.position.x - travel * doorLeafOpenness(state) } : null;
+        leaves.push({ group, pivot, state, sign, slide, ...(part?.side ? { side: part.side } : {}) });
+      });
     }
     return leaves;
   };
@@ -109,10 +129,10 @@ export function createDoorSwinger(scene: ThreeNS.Object3D, onSettled?: () => voi
         }
         // Across the wall: the door's local +Z is (sin r, cos r) in plan.
         const localZ = dx * Math.sin(group.rotation.y) + dz * Math.cos(group.rotation.y);
-        const next = stepDoorSwing(leaf.state, distance, localZ, seconds, reducedMotion);
+        const next = stepDoorSwing(leaf.state, distance, localZ, seconds, reducedMotion, leaf.side);
         if (next === leaf.state) continue;
         leaf.state = next;
-        leaf.pivot.rotation.y = doorLeafAngle(next);
+        poseLeaf(leaf);
         moved = true;
       }
       if (moved) swinging = true;
@@ -127,7 +147,7 @@ export function createDoorSwinger(scene: ThreeNS.Object3D, onSettled?: () => voi
       for (const leaf of leaves) {
         if (leaf.state.open === 0) continue;
         leaf.state = DOOR_SHUT;
-        leaf.pivot.rotation.y = 0;
+        poseLeaf(leaf);
         moved = true;
       }
       if (moved || swinging) onSettled?.();
