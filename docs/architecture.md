@@ -66,6 +66,7 @@ components/
     │   ├── cutout.ts                    The L-shaped footprint's rules: why a cut is refused, and bringing every storey inside it (#727)
     │   ├── footprint.ts                 Shared footprint primitives: rotatedHalfExtents, LOW_PROFILE_MAX_HEIGHT, clampToFootprint; the building's outline: the optional corner cut-out, footprintOutline, isInsideBuilding, clampToBuilding, shellWalls (a leaf, so walk-collision can import it)
     │   ├── html-escape.ts               escapeHtml for the blueprint and print popups and the SVG export
+    │   ├── facade.ts                    The outer walls' outside finish: the facade's own pattern and colours, the inside finish for the rest; setting and clearing it (#918)
     │   ├── floor-holes.ts               The stairwell holes a floor is cut with: clamped, merged, kept off the L's cut; 3D slab, shafts and plan share them (#559)
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)

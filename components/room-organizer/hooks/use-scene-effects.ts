@@ -4,6 +4,7 @@ import { addFloorPlanRepaintHandler, render2DTopDown, type Render2DOptions } fro
 import { useLengthUnit } from '../contexts';
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { planContactShadow } from '../lib/contact-shadow';
+import { facadeColorOf, withPorchFacade } from '../lib/facade';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
 import { cutoutRect } from '../lib/footprint';
 import {
@@ -306,6 +307,7 @@ export function useSceneEffects({
           floor.floorPattern,
           floor.wallPattern,
           floor.wallColors,
+          floor.facade,
           floor.hiddenWalls,
           zoneFinishesKey(floor),
         ])
@@ -322,6 +324,12 @@ export function useSceneEffects({
 
   const interiorWallsKey = useMemo(
     () => JSON.stringify(layout.floors.map((floor) => floor.interiorWalls ?? [])),
+    [layout.floors]
+  );
+
+  // The porch back wall's street side wears the facade (#918).
+  const porchFacadeKey = useMemo(
+    () => JSON.stringify(layout.floors.map((floor) => facadeColorOf(floor, 'north') ?? null)),
     [layout.floors]
   );
 
@@ -466,6 +474,7 @@ export function useSceneEffects({
         ...(floor.floorPattern ? { floorPattern: floor.floorPattern } : {}),
         ...(floor.wallPattern ? { wallPattern: floor.wallPattern } : {}),
         ...(floor.wallColors ? { wallColors: floor.wallColors } : {}),
+        ...(floor.facade ? { facade: floor.facade } : {}),
         wallOpenings,
         ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
         floorOpenings,
@@ -490,7 +499,9 @@ export function useSceneEffects({
         const northHidden = floor.hiddenWalls?.includes('north') ?? false;
         for (const group of buildEntrance(THREE, {
           geometry: entrance,
+          // The porch is outdoors: it wears the facade where it faces it (#918).
           wallColor: floor.wallColors?.north ?? '#e8dcc4',
+          facadeColor: facadeColorOf(floor, 'north'),
           wallTag: ROOM_OBJECT_TAGS.Wall,
           floorTag: ROOM_OBJECT_TAGS.Floor,
           ...(ghostOpacity !== undefined ? { ghostOpacity } : {}),
@@ -1091,7 +1102,11 @@ export function useSceneEffects({
       : null;
 
     for (const { floor, index } of floorsToRender) {
-      const walls = floor.interiorWalls ?? [];
+      // The porch back wall wears the facade on its street side (#918).
+      const walls =
+        entrance && index === entrance.floorIndex
+          ? withPorchFacade(floor.interiorWalls ?? [], facadeColorOf(floor, 'north'), { x: (entrance.x0 + entrance.x1) / 2, z: entrance.frontZ })
+          : floor.interiorWalls ?? [];
       if (walls.length === 0) continue;
       const firstChild = scene.children.length;
       const isActive = index === activeFloorIndex;
@@ -1137,7 +1152,7 @@ export function useSceneEffects({
     // door/window opening candidates only; the two keys cover exactly that,
     // so a furniture edit doesn't re-extrude every interior wall.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, walkthroughActive, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, cameraRef, interiorWallsKey, porchFacadeKey, wallOpeningsKey, storeyHeightsKey, shellActiveKey, allFloors, ghostOtherFloors, walkthroughActive, layout.width, layout.height, cutoutKey, layout.entrance, layout.terrain]);
 
   // The guard rail round each storey's stairwells (#923), shown and hidden
   // with the partitions.

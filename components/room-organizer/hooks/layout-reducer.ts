@@ -9,6 +9,7 @@ import {
 } from '../lib/constants';
 import { clipWallToCutout, fitNewShape, roofCoversCutout, withCutout } from '../lib/cutout';
 import { MAX_DORMERS, clampDormer, roofWithRidge, roofWithStyle, type DormerInput, type DormerPatch } from '../lib/dormers';
+import { clearFacade, setFacadeColor, setFacadePattern } from '../lib/facade';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { repairFloorPlanTransform } from '../lib/floor-plan-fit';
 import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
@@ -87,6 +88,10 @@ export type LayoutAction =
   | { type: 'setStoreyHeight'; height: number | null }
   | { type: 'setWallColor'; wall: WallId; color: string | null }
   | { type: 'setInteriorWallColor'; id: string; color: string; side?: WallSide | undefined }
+  // The outer walls' outside (#918); `null` hands it back to the inside finish.
+  | { type: 'setFacadePattern'; pattern: WallPattern | null }
+  | { type: 'setFacadeColor'; wall: WallId; color: string | null }
+  | { type: 'clearFacade' }
   // floor-scoped items — target the active floor
   | { type: 'addCatalogItem'; catalogItem: CatalogItem; id: string; position?: { x: number; z: number } }
   | { type: 'removeItem'; id: string }
@@ -363,6 +368,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         else next[action.wall] = action.color;
         return { ...floor, wallColors: next };
       });
+    case 'setFacadePattern':
+      return withActiveFloor(state, (floor) => setFacadePattern(floor, action.pattern));
+    case 'setFacadeColor':
+      return withActiveFloor(state, (floor) => setFacadeColor(floor, action.wall, action.color));
+    case 'clearFacade':
+      return withActiveFloor(state, clearFacade);
     case 'setInteriorWallColor':
       return withActiveFloor(state, (floor) => {
         const walls = floor.interiorWalls;

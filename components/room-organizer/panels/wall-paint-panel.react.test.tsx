@@ -11,7 +11,16 @@ import type { SelectedWall } from '../lib/wall-sides';
 type Wall = SelectedWall | null;
 
 function setup(floor: FloorLayout, selectedWall: Wall) {
-  const actions = { setWallColor: vi.fn(), setInteriorWallColor: vi.fn(), toggleExteriorWall: vi.fn(), removeInteriorWall: vi.fn() };
+  const actions = {
+    setWallColor: vi.fn(),
+    setInteriorWallColor: vi.fn(),
+    toggleExteriorWall: vi.fn(),
+    removeInteriorWall: vi.fn(),
+    setWallPattern: vi.fn(),
+    setFacadePattern: vi.fn(),
+    setFacadeColor: vi.fn(),
+    clearFacade: vi.fn(),
+  };
   const value = { activeFloor: floor, actions } as unknown as RoomEditorContextValue;
   render(
     <RoomEditorProvider value={value}>
@@ -70,6 +79,39 @@ describe('WallPaintPanel — Apply-to truthfulness (#221)', () => {
 
   it('treats unpainted walls as the default colour', () => {
     expect(setup(makeFloor(), null).ringedSwatches()).toEqual(['Use colour #e8dcc4']);
+  });
+});
+
+describe('WallPaintPanel — inside and outside of the outer walls (#918)', () => {
+  afterEach(cleanup);
+
+  it('paints the inside by default', () => {
+    const { actions } = setup(makeFloor(), { id: 'north', kind: 'exterior' });
+    fireEvent.click(screen.getByRole('button', { name: 'Use colour #ffffff' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Brick' }));
+    expect(actions.setWallColor).toHaveBeenCalledWith('north', '#ffffff');
+    expect(actions.setWallPattern).toHaveBeenCalledWith('brick');
+    expect(actions.setFacadeColor).not.toHaveBeenCalled();
+  });
+
+  it('paints the facade once Outside is picked, and shows what the outside wears', () => {
+    const floor = makeFloor({ wallPattern: 'plaster', facade: { pattern: 'brick', colors: { north: '#fff4d6' } } });
+    const { actions } = setup(floor, null);
+    expect(screen.getByRole('button', { name: 'Plaster' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('radio', { name: 'Outside' }));
+    expect(screen.getByRole('button', { name: 'Brick' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Siding' }));
+    expect(actions.setFacadePattern).toHaveBeenCalledWith('siding');
+    fireEvent.click(screen.getByRole('button', { name: 'Use colour #ffffff' }));
+    expect(actions.setFacadeColor.mock.calls.map(([wall]) => wall as string).sort()).toEqual(['east', 'north', 'south', 'west']);
+    expect(actions.setWallColor).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Match inside' }));
+    expect(actions.clearFacade).toHaveBeenCalled();
+  });
+
+  it('offers no face choice for a partition', () => {
+    setup(makeFloor({ interiorWalls: [{ id: 'iw-1', x1: 0, z1: 0, x2: 2, z2: 0 }] }), { id: 'iw-1', kind: 'interior' });
+    expect(screen.queryByRole('radio', { name: 'Outside' })).toBeNull();
   });
 });
 
@@ -132,7 +174,7 @@ describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
     setup(makeFloor(), null);
     const stops = (role: 'tab' | 'radio') => screen.getAllByRole(role).filter((el) => el.tabIndex === 0);
     expect(stops('tab').map((el) => el.textContent)).toEqual(['Walls', 'Pastels']);
-    expect(stops('radio').map((el) => el.textContent)).toEqual(['All']);
+    expect(stops('radio').map((el) => el.textContent)).toEqual(['In', 'All']);
   });
 
   it('keeps Apply-to reachable when nothing is checked', () => {
@@ -193,7 +235,7 @@ describe('WallPaintPanel — tabs and radios (#557, #646)', () => {
     setup(makeFloor(), null);
     const stops = (role: 'tab' | 'radio') => screen.getAllByRole(role).filter((el) => el.tabIndex === 0);
     expect(stops('tab').map((el) => el.textContent)).toEqual(['Walls', 'Pastels']);
-    expect(stops('radio').map((el) => el.textContent)).toEqual(['All']);
+    expect(stops('radio').map((el) => el.textContent)).toEqual(['In', 'All']);
   });
 
   it('keeps Apply-to reachable when nothing is checked', () => {

@@ -1,4 +1,5 @@
 import { GRID_SIZE_METERS } from '../lib/constants';
+import { facadeFinish } from '../lib/facade';
 import { floorHoleOutlines, mergeHoleRects } from '../lib/floor-holes';
 import { floorPlanCanvasLayoutFor } from '../lib/floor-plan-fit';
 import { alongSide, cutoutRect, footprintOutline, shellWalls, shellWallSpan, type ShellWallId } from '../lib/footprint';
@@ -13,7 +14,7 @@ import { STAIRWELL_RAIL_TAG } from './stairwell-rail';
 import { revealsEnabled, withMaxAnisotropy } from './texture-settings';
 import { openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
-import type { FloorPattern, FloorPlanFitMode, FloorPlanTransform, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
+import type { FacadeFinish, FloorPattern, FloorPlanFitMode, FloorPlanTransform, FootprintCutout, Vec2, WallId, WallPattern } from '../lib/types';
 import type { ZoneFloorPatch } from '../lib/zones';
 import type * as ThreeNS from 'three';
 
@@ -231,6 +232,8 @@ export interface RoomBuilderOptions {
   floorPattern?: FloorPattern;
   wallPattern?: WallPattern;
   wallColors?: Partial<Record<WallId, string>>;
+  /** The outside faces' own finish (#918); absent, they wear the inside one. */
+  facade?: FacadeFinish | undefined;
   /** Door / window cutouts to punch through the relevant walls. */
   wallOpenings?: ReadonlyMap<ShellWallId, WallOpening[]>;
   /** The corner taken out of the footprint (#727): floor, plinth and walls follow the L. */
@@ -337,7 +340,8 @@ export function buildRoom(THREE: ThreeModule, input: RoomBuilderOptions): void {
       options.wallOpenings,
       options.hiddenWalls,
       options.wallHeight,
-      options.cutout
+      options.cutout,
+      options.facade
     );
   }
 }
@@ -741,7 +745,8 @@ function buildWalls(
   openings?: ReadonlyMap<ShellWallId, WallOpening[]>,
   hiddenWalls?: readonly WallId[],
   wallHeight = FLOOR_HEIGHT_METERS,
-  cutout?: FootprintCutout
+  cutout?: FootprintCutout,
+  facade?: FacadeFinish
 ): void {
   const centerY = yOffset + wallHeight / 2;
   const building = { width, height: depth, cutout };
@@ -772,18 +777,26 @@ function buildWalls(
   for (const spec of wallSpecs) {
     if (hiddenWalls?.includes(spec.side)) continue;
     const color = colors?.[spec.side] ?? DEFAULT_WALL_COLOR;
-    const material = buildWallMaterial(THREE, {
-      pattern: pattern ?? 'solid',
-      color,
-      width: spec.width,
-      height: wallHeight,
-      yOffset,
-    });
-
-    if (ghostOpacity !== undefined) {
-      material.transparent = true;
-      material.opacity *= ghostOpacity;
-    }
+    const finish = (finishPattern: WallPattern, finishColor: string): ThreeNS.MeshStandardMaterial => {
+      const made = buildWallMaterial(THREE, { pattern: finishPattern, color: finishColor, width: spec.width, height: wallHeight, yOffset });
+      if (ghostOpacity !== undefined) {
+        made.transparent = true;
+        made.opacity *= ghostOpacity;
+      }
+      // Single-sided, so each face keeps its own normal; see withOutsideFace.
+      // The shadow pass still has to draw whichever face the light meets.
+      made.side = THREE.FrontSide;
+      made.shadowSide = THREE.DoubleSide;
+      // The lamps indoors light the inside face only: an L's notch wall faces
+      // the lamp in the other wing across the corner (#814).
+      shutOutIndoorLampsOutside(THREE, made);
+      return made;
+    };
+    const insidePattern = pattern ?? 'solid';
+    const material = finish(insidePattern, color);
+    // The facade (#918): its own material on the outside copy, only when it
+    // differs, so a house with one finish stays one material per wall.
+    const outside = facadeFinish(facade, spec.side, insidePattern, color);
 
     // Into the wall's own frame: a shortened wall's middle isn't the side's.
     const wallCutouts = (openings ? openingsForWall(openings, spec.id) : []).map((opening) =>
@@ -795,15 +808,10 @@ function buildWalls(
         ? buildWallGeometryWithCutouts(THREE, spec.width, wallHeight, wallCutouts)
         : new THREE.PlaneGeometry(spec.width, wallHeight)
     );
-    // Single-sided, so each face keeps its own normal; see withOutsideFace.
-    // The shadow pass still has to draw whichever face the light meets.
-    material.side = THREE.FrontSide;
-    material.shadowSide = THREE.DoubleSide;
-    // The lamps indoors light the inside face only: an L's notch wall faces
-    // the lamp in the other wing across the corner (#814).
-    shutOutIndoorLampsOutside(THREE, material);
+    const wallMaterial = outside ? [material, finish(outside.pattern, outside.color)] : material;
+    if (outside) splitOutsideFace(geometry);
 
-    const wall = new THREE.Mesh(geometry, material);
+    const wall = new THREE.Mesh(geometry, wallMaterial);
     wall.rotation.y = spec.rotateY;
     wall.position.set(spec.position[0], spec.position[1], spec.position[2]);
     wall.name = `Wall ${spec.id}`;
@@ -828,7 +836,9 @@ function buildWalls(
     // Dark wood baseboard along the floor of every wall — the build-mode-style
     // trim that grounds the room and hides the floor/wall seam.
     addBaseboard(THREE, scene, spec, yOffset, ghostOpacity, skirtingOpenings(wallCutouts));
-    addReveals(THREE, scene, spec, color, wallHeight, ghostOpacity, wallCutouts);
+    // A facade that differs only by pattern lines the reveals in one colour.
+    const revealFacade = outside && outside.color.toLowerCase() !== color.toLowerCase() ? outside.color : undefined;
+    addReveals(THREE, scene, spec, color, wallHeight, ghostOpacity, wallCutouts, revealFacade);
   }
 
   if (yOffset === 0 && ghostOpacity === undefined) {
@@ -854,6 +864,55 @@ function buildWalls(
 
 const SNAP_GRID_FLOOR_GAP = 0.003;
 
+/**
+ * Two material groups on a reveal lining (#918): the faces that look into a
+ * hole or out to the street on material 1, the rest (seen from the room) on
+ * material 0. Triangles are reordered so each
+ * group is one run.
+ */
+export function splitRevealFaces(geometry: ThreeNS.BufferGeometry, openings: readonly WallOpening[], wallHeight: number): void {
+  const halfH = wallHeight / 2;
+  const holes = openings.map((o) => [o.centerAlongWall - o.width / 2, -halfH + o.bottomFromFloor, o.centerAlongWall + o.width / 2, -halfH + o.bottomFromFloor + o.height] as const);
+  const position = geometry.getAttribute('position');
+  const normal = geometry.getAttribute('normal');
+  const probe = 0.01;
+  const room: number[] = [];
+  const street: number[] = [];
+  for (let first = 0; first < position.count; first += 3) {
+    const nx = normal.getX(first);
+    const ny = normal.getY(first);
+    const x = (position.getX(first) + position.getX(first + 1) + position.getX(first + 2)) / 3 + nx * probe;
+    const y = (position.getY(first) + position.getY(first + 1) + position.getY(first + 2)) / 3 + ny * probe;
+    const nz = normal.getZ(first);
+    const intoHole = Math.abs(nz) < 0.5 && holes.some(([x0, y0, x1, y1]) => x > x0 && x < x1 && y > y0 && y < y1);
+    // The street ends (local -z) show as a hairline round the opening.
+    (intoHole || nz < -0.5 ? street : room).push(first);
+  }
+  const order = [...room, ...street];
+  for (const name of Object.keys(geometry.attributes)) {
+    const attribute = geometry.getAttribute(name);
+    const size = attribute.itemSize;
+    const source = Float32Array.from(attribute.array as ArrayLike<number>);
+    const target = attribute.array as Float32Array;
+    order.forEach((first, slot) => target.set(source.subarray(first * size, (first + 3) * size), slot * 3 * size));
+    attribute.needsUpdate = true;
+  }
+  geometry.clearGroups();
+  geometry.addGroup(0, room.length * 3, 0);
+  geometry.addGroup(room.length * 3, street.length * 3, 1);
+}
+
+/**
+ * Two material groups on a `withOutsideFace` sheet: the inside copy (the
+ * first half) on material 0, the outside one on material 1, still one mesh.
+ */
+export function splitOutsideFace(geometry: ThreeNS.BufferGeometry): void {
+  const half = geometry.getAttribute('position').count / 2;
+  geometry.clearGroups();
+  geometry.addGroup(0, half, 0);
+  geometry.addGroup(half, half, 1);
+}
+
 /** Each side's wall mesh turned to face into the house. */
 const WALL_ROTATIONS: Record<WallId, number> = { north: 0, south: Math.PI, west: Math.PI / 2, east: -Math.PI / 2 };
 
@@ -878,7 +937,8 @@ const BASEBOARD_COLOR = 0x4a3a2a;
  * The lining of every door and window cut into this wall (#758): one mesh in
  * the wall's colour, tagged like the wall so cutaway and walls-down hide it
  * with the wall, and a shadow caster, since the shade it throws on the frame
- * is the point.
+ * is the point. With a facade colour (#918) the faces into the hole wear it
+ * and the faces the room sees keep the inside colour.
  */
 function addReveals(
   THREE: ThreeModule,
@@ -887,15 +947,21 @@ function addReveals(
   color: string,
   wallHeight: number,
   ghostOpacity: number | undefined,
-  openings: readonly WallOpening[]
+  openings: readonly WallOpening[],
+  facadeColor?: string
 ): void {
   const geometry = revealsEnabled() ? buildRevealGeometry(THREE, openings, spec.width, wallHeight) : null;
   if (!geometry) return;
-  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
-  if (ghostOpacity !== undefined) {
-    material.transparent = true;
-    material.opacity = ghostOpacity;
-  }
+  const lined = (finish: string): ThreeNS.MeshStandardMaterial => {
+    const made = new THREE.MeshStandardMaterial({ color: finish, roughness: 0.85 });
+    if (ghostOpacity !== undefined) {
+      made.transparent = true;
+      made.opacity = ghostOpacity;
+    }
+    return made;
+  };
+  const material = facadeColor === undefined ? lined(color) : [lined(color), lined(facadeColor)];
+  if (facadeColor !== undefined) splitRevealFaces(geometry, openings, wallHeight);
   const lining = new THREE.Mesh(geometry, material);
   lining.rotation.y = spec.rotateY;
   lining.position.set(spec.position[0], spec.position[1], spec.position[2]);

@@ -58,6 +58,10 @@ export interface LayoutActions {
   setWallColor(wall: WallId, color: string | null): void;
   /** Without a side, both faces. */
   setInteriorWallColor(id: string, color: string, side?: WallSide): void;
+  /** The outer walls' outside finish (#918); `null` follows the inside again. */
+  setFacadePattern(pattern: WallPattern | null): void;
+  setFacadeColor(wall: WallId, color: string | null): void;
+  clearFacade(): void;
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
