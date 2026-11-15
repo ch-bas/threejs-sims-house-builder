@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { EditorViewProvider, useEditorView } from './contexts/editor-view-context';
@@ -64,7 +64,6 @@ import { FloorPill } from './panels/floor-pill';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
-import { PhotoBar } from './panels/photo-bar';
 import { PlacementHint } from './panels/placement-hint';
 import { PlanCalibrationChip } from './panels/plan-calibration-chip';
 import { SidebarDrawer } from './panels/sidebar-drawer';
@@ -82,6 +81,9 @@ import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
 import type { CatalogItem, FurnitureItem, RoomLayout, ViewSettings } from './lib/types';
+
+// G4 album (#912): the shutter and its album load as photo mode opens.
+const PhotoBar = lazy(() => import('./panels/photo-bar').then((module) => ({ default: module.PhotoBar })));
 
 /** A stable "none" for the plan's memoised rooms to name. */
 const NO_ROOMS: readonly DetectedRoom[] = [];
@@ -769,6 +771,12 @@ export function RoomOrganizer(): JSX.Element {
   const photo = usePhotoMode({
     available: isReady && !view.view2D,
     houseName: layout.name,
+    // G4 album (#912): photos are kept per house, with the scene's hour and weather.
+    houseId: layout.id,
+    readConditions: () => {
+      const { timeOfDay, weather } = viewStore.getState().view;
+      return { hour: timeOfDay, weather };
+    },
     rendererRef,
     sceneRef,
     cameraRef,
@@ -1180,7 +1188,11 @@ export function RoomOrganizer(): JSX.Element {
       )}
 
       {/* L2 photo (#626): the shutter, the one HUD photo mode keeps. */}
-      {photo.active && <PhotoBar onTake={photo.take} onDone={photo.leave} />}
+      {photo.active && (
+        <Suspense fallback={null}>
+          <PhotoBar onTake={photo.take} onKeep={photo.keep} houseId={layout.id} houseName={layout.name} onDone={photo.leave} />
+        </Suspense>
+      )}
 
       {/* Touch mode toggle — visible on mobile only */}
       <TouchModeToggle controlsRef={controlsRef} isReady={isReady} onFit={fitToRoom} />

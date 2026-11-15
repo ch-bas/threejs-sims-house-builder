@@ -1830,6 +1830,11 @@ html[data-photo] .pc-world .pc-photo-bar,
 html[data-photo] .pc-world .pc-photo-bar * {
   visibility: visible;
 }
+/* G4 album (#912): a question asked from the shutter shows over the shot. */
+html[data-photo] .pc-world [data-confirm-dialog],
+html[data-photo] .pc-world [data-confirm-dialog] * {
+  visibility: visible;
+}
 .pc-photo-bar-hint {
   padding: 0 8px 0 12px;
   font-family: var(--pc-font-display);
@@ -1855,6 +1860,105 @@ html[data-photo] .pc-world .pc-photo-bar * {
   font-weight: 700;
   font-size: 10px;
   line-height: 14px;
+}
+/* G4 album (#912): the house's photos, above the shutter. */
+.pc-photo-album {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 14px;
+}
+.pc-photo-album-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pc-photo-album-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pc-photo-album-thumb {
+  flex: none;
+  width: 72px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+.pc-photo-album-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--pc-font-display);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pc-photo-album-age {
+  font-weight: 700;
+  color: var(--pc-paper);
+}
+.pc-photo-album-scene {
+  color: var(--pc-paper-soft);
+}
+.pc-photo-album-delete {
+  color: var(--pc-demolish-ink);
+}
+.pc-photo-album-note {
+  margin: 4px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pc-paper-soft);
+  white-space: normal;
+}
+@media (max-width: 768px), (max-height: 500px) {
+  /* A phone: the hint over two rows of two buttons, not one long pill. */
+  .pc-photo-bar-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    width: min(340px, calc(100vw - 32px));
+    border-radius: 22px !important;
+  }
+  .pc-photo-bar-row:not(:has(.pc-photo-bar-album)) {
+    display: inline-flex !important;
+    width: auto;
+    border-radius: 999px !important;
+  }
+  .pc-photo-bar-row:has(.pc-photo-bar-album) .pc-photo-bar-hint {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 4px 0 2px;
+  }
+  /* The album's row: the thumbnail beside its age, its buttons under that. */
+  .pc-photo-album-row {
+    display: grid;
+    grid-template-columns: 96px 1fr 1fr;
+    grid-template-areas: 'thumb meta meta' 'thumb download delete';
+    gap: 4px 8px;
+  }
+  .pc-photo-album-thumb {
+    grid-area: thumb;
+    align-self: center;
+    width: 96px;
+    height: 64px;
+  }
+  .pc-photo-album-meta {
+    grid-area: meta;
+    flex-direction: row;
+    gap: 8px;
+  }
 }
 @media (pointer: coarse) {
   .pc-photo-bar-button {
