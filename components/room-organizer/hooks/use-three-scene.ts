@@ -26,6 +26,9 @@ const SHADER_WARMUP_LIMIT_MS = 4000;
 
 export type { HoverInfo, SelectionMode } from '../three/drag-handlers';
 
+/** A one-off per-frame job (#930); `now` is `performance.now()`. False when finished. */
+export type FrameJob = (now: number) => boolean;
+
 export interface UseThreeSceneOptions extends SceneEventHandlers {
   /** Ground height at world z, which the orbit camera stays above. */
   groundAt?: (z: number) => number;
@@ -53,6 +56,13 @@ export interface UseThreeSceneResult {
    * the page is hidden. Returns its removal.
    */
   addDecorativeStep: (step: DecorativeStep) => () => void;
+  /**
+   * Run a one-off job every animation frame, ahead of the controls update
+   * (#930: an eased camera move). Not decorative: never throttled, and the
+   * frame is owed while it runs. It ends when it returns false or when the
+   * returned removal is called.
+   */
+  addFrameJob: (job: FrameJob) => () => void;
   threeModuleRef: React.MutableRefObject<ThreeModule | null>;
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
@@ -98,10 +108,20 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
   const frameBudget = (): FrameBudget =>
     (frameBudgetRef.current ??= createFrameBudget({ document }));
   const addDecorativeStepRef = useRef((step: DecorativeStep) => frameBudget().add(step));
+  // One-off frame jobs (#930), run by the loop below until they finish.
+  const frameJobsRef = useRef(new Set<FrameJob>());
+  const addFrameJobRef = useRef((job: FrameJob) => {
+    frameJobsRef.current.add(job);
+    dirtyRef.current = true;
+    return () => {
+      frameJobsRef.current.delete(job);
+    };
+  });
   useEffect(
     () => () => {
       frameBudgetRef.current?.dispose();
       frameBudgetRef.current = null;
+      frameJobsRef.current.clear();
     },
     []
   );
@@ -342,6 +362,13 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
         // would re-aim the camera at the stale orbit target and clamp it back
         // into the polar cone before every render (#114). Walkthrough marks
         // frames dirty itself, so skipping update() here loses nothing.
+        const jobs = frameJobsRef.current;
+        if (jobs.size > 0) {
+          const now = performance.now();
+          // A copy: a job may remove itself (or another) while running.
+          for (const job of [...jobs]) if (!job(now)) jobs.delete(job);
+          dirtyRef.current = true;
+        }
         const controlsMoved = handlersRef.current.walkthroughActive ? false : controls.update();
         // #730: no frame until the first scene's shaders are compiled (below).
         if (contextLost || warmingShadersRef.current) return;
@@ -499,6 +526,7 @@ export function useThreeScene(options: UseThreeSceneOptions): UseThreeSceneResul
     invalidate: invalidateRef.current,
     requestShadowUpdate: requestShadowUpdateRef.current,
     addDecorativeStep: addDecorativeStepRef.current,
+    addFrameJob: addFrameJobRef.current,
     threeModuleRef,
     sceneRef,
     cameraRef,

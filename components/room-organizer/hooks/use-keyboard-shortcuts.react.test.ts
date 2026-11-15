@@ -478,3 +478,21 @@ describe('useKeyboardShortcuts — locked items (#635)', () => {
     expect(dragging.toggleLock).not.toHaveBeenCalled();
   });
 });
+
+describe('camera keys move the camera once per press (#930)', () => {
+  afterEach(cleanup);
+
+  it.each([
+    ['F', 'f', 'focusOnSelection'],
+    ['PageUp', 'PageUp', 'changeFloor'],
+    ['PageDown', 'PageDown', 'changeFloor'],
+  ])('a held %s acts once', (_name, key, handler) => {
+    const { handlers } = setup(false);
+    press(key);
+    const repeat = press(key, { repeat: true });
+    press(key, { repeat: true });
+    expect(handlers[handler as keyof typeof handlers]).toHaveBeenCalledTimes(1);
+    expect(repeat.defaultPrevented).toBe(true);
+  });
+});
+
