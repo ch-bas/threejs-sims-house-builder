@@ -12,7 +12,8 @@
 // 1. / at a desktop viewport (and a phone one with SMOKE_PHONE=1): any
 //    console error, page error, failed request, response >= 400, CSP
 //    violation or reload fails, and the 3D engine must signal ready
-//    (window.__pcReady) within 60 s;
+//    (window.__pcReady) within 60 s; at the desktop viewport, the selected
+//    radio must also look different under forced colours (#927);
 // 2. /404.html and an unknown path (served as Pages does, status 404) must
 //    show the branded page with its link back to the builder;
 // 3. with the editor chunk answering 404, the page must reload exactly once
@@ -229,6 +230,7 @@ async function checkEditor(launch, origin, basePath, name, contextOptions) {
     const violations = await within(page.evaluate(() => window.__smokeCsp), 10_000, []);
     for (const violation of violations) fail(name, `CSP violation: ${violation}`);
     if (loads !== 1) fail(name, `expected no reload (1 document), saw ${loads}`);
+    if (name === 'desktop') await checkForcedColours(page, name);
   } catch (err) {
     fail(name, `${err instanceof Error ? err.message.split('\n')[0] : String(err)} (after ${loads} document(s))`);
   } finally {
@@ -238,6 +240,42 @@ async function checkEditor(launch, origin, basePath, name, contextOptions) {
     trace(name, 'closed');
   }
   return Date.now() - started;
+}
+
+/**
+ * Forced colours (#927): a Windows Contrast theme replaces the tint that marks
+ * the selected option, so the selected radio of a group must still draw
+ * differently from the others there.
+ */
+async function checkForcedColours(page, name) {
+  await page.emulateMedia({ forcedColors: 'active' });
+  const looks = await within(
+    page.evaluate(() => {
+      const look = (el) => {
+        // The tiles ease their colours, and a page busy compiling shaders
+        // holds the transition at its start: read where it ends.
+        for (const animation of el.getAnimations()) animation.finish();
+        const style = getComputedStyle(el);
+        // The hue only: the forced palette keeps each tint's own alpha, so
+        // two tints of the same system colour differ in alpha alone.
+        const hue = (colour) => colour.replace(/^rgba?\(([^,]+),([^,]+),([^,)]+).*$/, 'rgb($1,$2,$3)');
+        return [style.backgroundColor, style.color, style.borderTopColor].map(hue).join(' ');
+      };
+      for (const group of document.querySelectorAll('[role="radiogroup"]')) {
+        const on = group.querySelector('[role="radio"][aria-checked="true"]');
+        const off = group.querySelector('[role="radio"][aria-checked="false"]');
+        if (on && off) return { group: group.getAttribute('aria-label') ?? '?', on: look(on), off: look(off) };
+      }
+      return null;
+    }),
+    10_000,
+    undefined,
+  );
+  await page.emulateMedia({ forcedColors: 'none' });
+  if (looks === undefined) return fail(name, 'forced colours: the page did not answer');
+  if (looks === null) return fail(name, 'forced colours: no radio group with a selected and an unselected option');
+  trace(name, 'forced colours', JSON.stringify(looks));
+  if (looks.on === looks.off) fail(name, `forced colours: the selected option of "${looks.group}" looks like the others (${looks.on})`);
 }
 
 async function checkNotFound(browser, origin, basePath) {

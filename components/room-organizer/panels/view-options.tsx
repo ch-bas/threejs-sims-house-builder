@@ -338,6 +338,7 @@ function ViewSwitch({
       </span>
       <span
         aria-hidden
+        className="pc-switch-track"
         style={{
           flexShrink: 0,
           width: 26,
@@ -351,7 +352,7 @@ function ViewSwitch({
           boxSizing: 'content-box',
         }}
       >
-        <span style={{ width: 14, height: 14, borderRadius: 999, background: 'var(--pc-paper)' }} />
+        <span className="pc-switch-knob" style={{ width: 14, height: 14, borderRadius: 999, background: 'var(--pc-paper)' }} />
       </span>
     </button>
   );
