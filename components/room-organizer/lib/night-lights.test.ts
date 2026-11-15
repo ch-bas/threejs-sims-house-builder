@@ -208,3 +208,34 @@ describe('a garden lamp on a sloped site (#665)', () => {
     expect(sloped!.y).toBe(flat!.y);
   });
 });
+
+describe('lamps switched off in EXPLORE (#910)', () => {
+  const house = { width: 10, height: 8 };
+  const desk = item('lamp', 1.5, -4, 0);
+  const standing = item('floor-lamp', 1.6, 4, 3);
+  const pane = item('window', 1.2, -5, 0);
+  const off = (id: string) => id === desk.id;
+
+  it('collects no light for a lamp switched off', () => {
+    const lights = collectLampLights([floor([desk, standing])], GROUND, undefined, off);
+    expect(lights.map((light) => light.x)).toEqual([4]);
+  });
+
+  it('keeps it out of the lit windows and lists it as off', () => {
+    const plan = nightGlowPlan([floor([desk, standing, pane])], house, off);
+    expect(plan.windows[pane.id]).toBe(0);
+    expect(plan.lamps).toEqual([standing.id]);
+    expect(plan.lampsOff).toEqual([desk.id]);
+    expect(nightGlowPlan([floor([desk, pane])], house).windows[pane.id]).toBe(1);
+  });
+
+  it('keeps the pool lit, every slot dark, when the last lamp goes off', () => {
+    // Unlit, the pool would leave the scene and recompile every shader.
+    const plan = planLampPool([], { x: 0, y: 0, z: 0 }, 1, LAMP_POOL_SIZE, true);
+    expect(plan.lit).toBe(true);
+    expect(plan.slots).toHaveLength(LAMP_POOL_SIZE);
+    for (const slot of plan.slots) expect(slot.intensity).toBe(0);
+    // By day it is unlit as ever.
+    expect(planLampPool([], { x: 0, y: 0, z: 0 }, 0, LAMP_POOL_SIZE, true).lit).toBe(false);
+  });
+});

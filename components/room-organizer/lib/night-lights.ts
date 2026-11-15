@@ -37,6 +37,11 @@ export function isNightLit(type: string): type is NightLitType {
  */
 export const LAMP_POOL_SIZE = 8;
 
+/** Whether the lamp with this id is switched off (#910); a session's choice, never the house's. */
+export type LampSwitch = (id: string) => boolean;
+
+const NONE_OFF: LampSwitch = () => false;
+
 export interface LampLight {
   x: number;
   /** World y of the bulb. */
@@ -63,19 +68,21 @@ export interface RenderedFloors {
  * outside the walls is marked `outdoors`, whatever its type: it goes by where
  * the lamp stands, so a lamppost in an L's cut corner counts and one inside
  * doesn't (#664). With its `terrain`, a garden lamp's bulb rides the slope
- * with the post (#665).
+ * with the post (#665). A lamp `isOff` says the walker switched off lights
+ * nothing (#910).
  */
 export function collectLampLights(
   floors: readonly FloorLayout[],
   rendered: RenderedFloors,
-  building?: FootprintBuilding & { terrain?: TerrainSpec | undefined }
+  building?: FootprintBuilding & { terrain?: TerrainSpec | undefined },
+  isOff: LampSwitch = NONE_OFF
 ): LampLight[] {
   return floors.flatMap((floor, index) => {
     if (!rendered.showAllFloors && index !== rendered.activeFloorIndex) return [];
     const floorY = floorElevation(floors, index);
     const storey = storeyHeight(floor);
     return floor.items.flatMap((item) => {
-      if (!item.position || !isNightLit(item.type)) return [];
+      if (!item.position || !isNightLit(item.type) || isOff(item.id)) return [];
       const spec = NIGHT_LIGHTS[item.type];
       // The floor offset is added once, not scaled by the bulb factor, or
       // upper-floor glows sink 0.3 m per storey (#146).
@@ -102,8 +109,10 @@ export function collectLampLights(
 export interface NightGlowPlan {
   /** Window item id to how lit its room is at it, 0..1. Every placed window has an entry. */
   windows: Record<string, number>;
-  /** Item ids of the lamps, on every storey. */
+  /** Item ids of the lamps that are on, on every storey. */
   lamps: string[];
+  /** Item ids of the lamps switched off (#910): at night their shades and bulbs go dark. */
+  lampsOff: string[];
   /** 0..1: the top storey has a lamp on, so the dormers show it. */
   dormers: number;
 }
@@ -118,17 +127,18 @@ function segmentsCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
  * not, and it isn't limited to the eight pooled lamps: a window is only a
  * colour, so an upstairs room stays lit seen from the garden while the walker
  * is downstairs. A lamp reaches a window within its range unless a partition
- * stands between them. Doorways in partitions are ignored.
+ * stands between them. Doorways in partitions are ignored. A lamp `isOff`
+ * lights no window and its shade stays dark (#910).
  */
-export function nightGlowPlan(floors: readonly FloorLayout[], building: FootprintBuilding): NightGlowPlan {
-  const plan: NightGlowPlan = { windows: {}, lamps: [], dormers: 0 };
+export function nightGlowPlan(floors: readonly FloorLayout[], building: FootprintBuilding, isOff: LampSwitch = NONE_OFF): NightGlowPlan {
+  const plan: NightGlowPlan = { windows: {}, lamps: [], lampsOff: [], dormers: 0 };
   const notch = cutoutRect(building);
   floors.forEach((floor, index) => {
-    const indoor = collectLampLights([floor], { activeFloorIndex: 0, showAllFloors: false }, building).filter((lamp) => !lamp.outdoors);
+    const indoor = collectLampLights([floor], { activeFloorIndex: 0, showAllFloors: false }, building, isOff).filter((lamp) => !lamp.outdoors);
     const walls = floor.interiorWalls ?? [];
     for (const item of floor.items) {
       if (!item.position) continue;
-      if (isNightLit(item.type)) plan.lamps.push(item.id);
+      if (isNightLit(item.type)) (isOff(item.id) ? plan.lampsOff : plan.lamps).push(item.id);
       if (item.type !== 'window') continue;
       plan.windows[item.id] = roomLampReach(indoor, item.position, walls, notch);
     }
@@ -222,14 +232,20 @@ export interface Point3 {
  * Assign the pool to the `size` lamps nearest `focus` (the point the camera
  * looks at), each at its night intensity times `level`. Unused slots stay
  * dark, so the light count never follows the lamp count.
+ *
+ * `keepLit`: lamps are placed but the walker switched every one off (#910).
+ * The pool stays lit with every slot dark: unlit, it would leave the scene,
+ * and the light count and the outdoor-lamp program key would change with it,
+ * recompiling every shader on the switch of a single lamp.
  */
 export function planLampPool(
   lamps: readonly LampLight[],
   focus: Point3,
   level: number,
-  size: number = LAMP_POOL_SIZE
+  size: number = LAMP_POOL_SIZE,
+  keepLit = false
 ): LampPoolPlan {
-  const lit = level > 0 && lamps.length > 0;
+  const lit = level > 0 && (lamps.length > 0 || keepLit);
   const nearest = lit ? nearestLamps(lamps, focus, size) : [];
   const slots = Array.from({ length: size }, (_, index): LampPoolSlot => {
     const lamp = nearest[index];

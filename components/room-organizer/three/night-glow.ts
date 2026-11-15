@@ -97,10 +97,16 @@ export function applyNightGlow(THREE: ThreeModule, scene: ThreeNS.Scene, input: 
   const { plan, level, indoors } = input;
   scene.userData[NIGHT_LEVEL_KEY] = level;
   const lamps = new Set(plan.lamps);
+  const lampsOff = new Set(plan.lampsOff);
   for (const obj of scene.children) {
     const id = obj.userData.id as string | undefined;
     if (id !== undefined && lamps.has(id)) {
       forEachStandard(obj, (material) => glowLamp(material, level));
+    } else if (id !== undefined && lampsOff.has(id)) {
+      // Switched off in EXPLORE (#910): the bulb and the shade go dark while
+      // the lamps are lit. By day a lamp can't be switched, so it shows as
+      // the builder made it, like any other.
+      forEachStandard(obj, (material) => glowLamp(material, level, level > 0));
     } else if (obj.userData.part === LIT_PANES_PART) {
       ((obj as ThreeNS.Mesh).material as ThreeNS.MeshStandardMaterial).emissiveIntensity = LIT_GLASS_INTENSITY * level;
       continue;
@@ -126,11 +132,11 @@ function forEachStandard(root: ThreeNS.Object3D, visit: (material: ThreeNS.MeshS
   });
 }
 
-/** Whatever the builder made glow keeps glowing, stronger as the night comes. */
-function glowLamp(material: ThreeNS.MeshStandardMaterial, level: number): void {
+/** Whatever the builder made glow keeps glowing, stronger as the night comes; nothing glows once switched `off`. */
+function glowLamp(material: ThreeNS.MeshStandardMaterial, level: number, off = false): void {
   const base = (material.userData.dayGlow as number | undefined) ?? material.emissiveIntensity;
   material.userData.dayGlow = base;
-  if (material.emissive.getHex() !== 0) material.emissiveIntensity = base * (1 + level * LAMP_GLOW_GAIN);
+  if (material.emissive.getHex() !== 0) material.emissiveIntensity = off ? 0 : base * (1 + level * LAMP_GLOW_GAIN);
 }
 
 function glowGlass(THREE: ThreeModule, material: ThreeNS.MeshStandardMaterial, strength: number): void {

@@ -11,7 +11,7 @@ import {
   type WalkerState,
 } from '../lib/walk-collision';
 import { interacts, isTypingTarget, releasesHeldKeys, startsWalking, walkFrameSeconds } from '../lib/walk-input';
-import { findSeat, seatPose } from '../lib/walk-interact';
+import { findInteractable, seatPose } from '../lib/walk-interact';
 import { walkArrival, walkSpawn, type WalkPose } from '../lib/walk-spawn';
 import {
   buildWalkWorld,
@@ -34,6 +34,23 @@ const NO_ITEMS: readonly FurnitureItem[] = [];
 const NO_COLLIDERS: readonly WalkCollider[] = [];
 const NO_STOREYS: readonly (readonly WalkCollider[])[] = [];
 const NO_BODIES: readonly NpcBody[] = [];
+
+/**
+ * The lamps `E` switches (#910): session state outside the house, read live,
+ * so a switch or an hour step never re-inits the walk.
+ */
+export interface WalkLampSwitch {
+  /** The clock has the lamps on: only then are they offered. */
+  lit(): boolean;
+  isOff(id: string): boolean;
+  toggle(id: string): void;
+}
+
+/** The lamp in reach (#910), and whether it is on now. */
+export interface WalkLampTarget {
+  name: string;
+  on: boolean;
+}
 
 /** The building the walker moves through: storeys, shell and the street around it. */
 export interface WalkthroughBuilding extends ShellBuilding, Pick<StreetSite, 'neighbours' | 'roof'> {}
@@ -71,6 +88,8 @@ export interface UseWalkthroughOptions {
    * stands and sits, and bumps into the walkers' bodies.
    */
   npcs?: NpcHandOff;
+  /** Lamps in reach switch on and off with `E` (#910). */
+  lampSwitch?: WalkLampSwitch;
 }
 
 export interface UseWalkthroughResult {
@@ -83,6 +102,8 @@ export interface UseWalkthroughResult {
   locked: boolean;
   /** The seat in reach, by name, while standing; null when none (#463b). */
   seatName: string | null;
+  /** The lamp in reach while standing, instead of a seat (#910); null when none. */
+  lamp: WalkLampTarget | null;
   seated: boolean;
   /** The walker is out on the lot (or in the porch): the whole house is drawn (#446). */
   outside: boolean;
@@ -95,7 +116,7 @@ export interface UseWalkthroughResult {
   lampStorey: number;
   /** The touch stick (#446): x right, y forward, each in [−1, 1]; full throw sprints (#688). */
   setStick(x: number, y: number, sprint?: boolean): void;
-  /** Sit on the seat in reach, or stand up (`E`, or the HUD's button on touch). */
+  /** Sit on the seat in reach, switch the lamp in reach, or stand up (`E`, or the HUD's button on touch). */
   toggleSit(): void;
 }
 
@@ -130,6 +151,9 @@ interface WalkSession {
   /** Where the walker stood before sitting, or null while standing. */
   seated: { x: number; z: number } | null;
   seatTargetId: string | null;
+  /** The lamp in reach (#910), and whether it showed as on. */
+  lampTargetId: string | null;
+  lampOn: boolean;
   outside: boolean;
   nearStairs: boolean;
   /** The floor the walker last reported, and the reports React hasn't echoed yet. */
@@ -149,7 +173,8 @@ interface WalkSession {
  *  - Moves the walker over `lib/walk-world`: furniture, partitions and the
  *    shell are solid, exterior doors lead out onto the lot, and stairs are a
  *    ramp — reaching the other storey makes it the active floor.
- *  - `E` sits on the seat in reach, facing the TV, and stands up again.
+ *  - `E` sits on the seat in reach, facing the TV, and stands up again;
+ *    near a lamp at night it switches the lamp off or on (#910).
  *  - On disable / unmount, restores orbit controls and the camera pose.
  *
  * Live inputs are read from refs, so a floor switch or an edit mid-walk never
@@ -171,11 +196,13 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     npcs,
     sceneRef,
     requestShadowUpdate,
+    lampSwitch,
   } = options;
 
   const [lockRefused, setLockRefused] = useState(false);
   const [locked, setLocked] = useState(false);
   const [seatName, setSeatName] = useState<string | null>(null);
+  const [lamp, setLamp] = useState<WalkLampTarget | null>(null);
   const [seated, setSeated] = useState(false);
   const [outside, setOutside] = useState(false);
   const [nearStairs, setNearStairs] = useState(false);
@@ -207,6 +234,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   const activeFloorRef = useRef(activeFloorIndex);
   const npcsRef = useRef(npcs);
   npcsRef.current = npcs;
+  const lampSwitchRef = useRef(lampSwitch);
+  lampSwitchRef.current = lampSwitch;
   worldRef.current = world;
   collidersRef.current = colliders;
   buildingRef.current = building;
@@ -227,6 +256,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     touch: false,
     seated: null,
     seatTargetId: null,
+    lampTargetId: null,
+    lampOn: false,
     outside: false,
     nearStairs: false,
     reportedFloor: 0,
@@ -391,6 +422,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     session.stickY = 0;
     session.stickSprint = false;
     session.seatTargetId = null;
+    session.lampTargetId = null;
     if (initial) placeAt(walkSpawn(initial, initial.floorIndex));
 
     // A floor change the walker didn't walk: land at the stairs on it (#446).
@@ -443,9 +475,20 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       startTransition(pose.x, pose.eyeY, pose.z, pose.lookX, pose.lookY, pose.lookZ);
     };
 
+    // The lamp in reach (#910): a session switch, never an edit of the house.
+    const switchLamp = (id: string): void => {
+      const lamps = lampSwitchRef.current;
+      if (!lamps) return;
+      lamps.toggle(id);
+      session.lampOn = !lamps.isOff(id);
+      const item = itemsRef.current.find((candidate) => candidate.id === id);
+      setLamp(item ? { name: item.name, on: session.lampOn } : null);
+    };
+
     const toggleSit = (): void => {
       if (transition.active) return;
       if (session.seated) standUp();
+      else if (session.lampTargetId !== null) switchLamp(session.lampTargetId);
       else sitDown();
       invalidateRef.current?.();
     };
@@ -669,12 +712,13 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
           }
         }
 
-        // What's in reach to sit on, for the HUD's prompt (#463b).
+        // What's in reach to sit on or switch, for the HUD's prompt (#463b, #910).
         if (!session.seated && now - lastSeatLookup > SEAT_LOOKUP_MS) {
           lastSeatLookup = now;
           camera.getWorldDirection(forward);
+          const lamps = lampSwitchRef.current;
           // Never through a wall, nor across the shell (#566).
-          const seat = findSeat(itemsRef.current, walker.x, walker.z, forward.x, forward.z, {
+          const target = findInteractable(itemsRef.current, walker.x, walker.z, forward.x, forward.z, {
             colliders: collidersRef.current[walker.floorIndex] ?? NO_COLLIDERS,
             feetY: walker.y,
             outside: walker.kind === 'ground',
@@ -689,7 +733,15 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
                   },
                 }
               : {}),
-          });
+          }, { lamps: lamps?.lit() ?? false });
+          const seat = target?.kind === 'seat' ? target.item : null;
+          const lampItem = target?.kind === 'lamp' && lamps ? target.item : null;
+          const lampOn = lampItem !== null && !lamps?.isOff(lampItem.id);
+          if ((lampItem?.id ?? null) !== session.lampTargetId || lampOn !== session.lampOn) {
+            session.lampTargetId = lampItem?.id ?? null;
+            session.lampOn = lampOn;
+            setLamp(lampItem ? { name: lampItem.name, on: lampOn } : null);
+          }
           // A seat a walker sits on offers no prompt (#585).
           const spot = seat ? seatPose(seat, itemsRef.current, 0) : null;
           const free = seat && !(spot && walkerSitsAt(seat, spot.x, spot.z)) ? seat : null;
@@ -712,6 +764,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       arriveRef.current = null;
       session.touch = false;
       session.seated = null;
+      session.lampTargetId = null;
+      setLamp(null);
       setLockRefused(false);
       setLocked(false);
       setSeated(false);
@@ -770,5 +824,5 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   }, []);
   const toggleSit = useCallback(() => toggleSitRef.current?.(), []);
 
-  return { lockRefused, locked, seatName: seated ? null : seatName, seated, outside, nearStairs, lampStorey, setStick, toggleSit };
+  return { lockRefused, locked, seatName: seated ? null : seatName, lamp: seated ? null : lamp, seated, outside, nearStairs, lampStorey, setStick, toggleSit };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { findNpcSeats } from './npc-seats';
 import { buildWalkerColliders } from './walk-collision';
-import { SEATED_EYE, findSeat, isSeat, seatPose } from './walk-interact';
+import { SEATED_EYE, findInteractable, findSeat, isSeat, seatPose } from './walk-interact';
 import type { FurnitureItem } from './types';
 
 function item(overrides: Partial<FurnitureItem> & { type: string; position: { x: number; z: number } }): FurnitureItem {
@@ -180,5 +180,57 @@ describe('seats and the TV behind walls (#566)', () => {
     const tvHere = item({ id: 'tv', type: 'tv', width: 1, depth: 0.3, height: 0.5, position: { x: 0, z: -0.2 } });
     const open = seatPose(chair, [chair, tvHere], 0, { colliders: buildWalkerColliders({ width: 6, depth: 5, floors: [{ items: [chair, tvHere], interiorWalls: [PARTITION] }] })[0]! })!;
     expect([open.lookX, open.lookZ]).toEqual([0, -0.2]);
+  });
+});
+
+describe('findInteractable: lamps (#910)', () => {
+  const LAMP = item({ id: 'lamp', type: 'floor-lamp', name: 'Floor Lamp', width: 0.4, depth: 0.4, height: 1.6, position: { x: 0, z: -1 } });
+  const SIDE_SOFA = { ...SOFA, position: { x: 2, z: 0 } };
+
+  it('offers a lamp in reach only while the lamps are lit', () => {
+    expect(findInteractable([LAMP], 0, 0, 0, -1)).toBeNull();
+    expect(findInteractable([LAMP], 0, 0, 0, -1, undefined, { lamps: true })).toEqual({ kind: 'lamp', item: LAMP });
+  });
+
+  it('keeps the seat rules: out of reach or behind the walker, no lamp', () => {
+    expect(findInteractable([LAMP], 0, 2, 0, -1, undefined, { lamps: true })).toBeNull();
+    expect(findInteractable([LAMP], 0, 0, 0, 1, undefined, { lamps: true })).toBeNull();
+    // Right beside it counts whichever way the walker faces.
+    expect(findInteractable([LAMP], 0, -0.5, 0, 1, undefined, { lamps: true })?.item.id).toBe('lamp');
+  });
+
+  it('picks whichever of a seat and a lamp is straighter ahead', () => {
+    const items = [LAMP, SIDE_SOFA];
+    expect(findInteractable(items, 0.3, -0.2, 0, -1, undefined, { lamps: true })?.kind).toBe('lamp');
+    expect(findInteractable(items, 0.3, -0.2, 1, 0, undefined, { lamps: true })?.kind).toBe('seat');
+  });
+
+  it('leaves E to the sofa the walker faces, with a floor lamp beside it', () => {
+    const sofa = { ...SOFA, position: { x: 0, z: 0 } };
+    const lamp = { ...LAMP, position: { x: 1.25, z: 0 } };
+    // In front of the sofa's end, facing it: Sit, though the lamp is nearer.
+    expect(findInteractable([sofa, lamp], 0.9, 0.9, 0, -1, undefined, { lamps: true })?.kind).toBe('seat');
+    expect(findInteractable([lamp, sofa], 0.5, 1.2, 0, -1, undefined, { lamps: true })?.kind).toBe('seat');
+    // Turned to the lamp, the lamp.
+    expect(findInteractable([sofa, lamp], 0.9, 0.9, 0.6, -0.8, undefined, { lamps: true })?.kind).toBe('lamp');
+  });
+
+  it('offers every night light, and nothing else that is not a seat', () => {
+    for (const type of ['lamp', 'floor-lamp', 'pendant-light', 'lamppost']) {
+      expect(findInteractable([{ ...LAMP, type }], 0, 0, 0, -1, undefined, { lamps: true })?.kind).toBe('lamp');
+    }
+    expect(findInteractable([{ ...LAMP, type: 'tv' }], 0, 0, 0, -1, undefined, { lamps: true })).toBeNull();
+  });
+
+  it('never reaches a lamp through a partition', () => {
+    const PARTITION = { id: 'p', x1: -2, z1: -0.6, x2: 2, z2: -0.6 };
+    const colliders = buildWalkerColliders({ width: 6, depth: 5, floors: [{ items: [LAMP], interiorWalls: [PARTITION] }] })[0]!;
+    expect(findInteractable([LAMP], 0, 0, 0, -1, { colliders, feetY: 0 }, { lamps: true })).toBeNull();
+    const open = buildWalkerColliders({ width: 6, depth: 5, floors: [{ items: [LAMP], interiorWalls: [] }] })[0]!;
+    expect(findInteractable([LAMP], 0, 0, 0, -1, { colliders: open, feetY: 0 }, { lamps: true })?.item.id).toBe('lamp');
+  });
+
+  it('findSeat still offers seats only', () => {
+    expect(findSeat([LAMP], 0, 0, 0, -1)).toBeNull();
   });
 });

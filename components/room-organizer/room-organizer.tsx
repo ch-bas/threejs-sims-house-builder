@@ -1028,6 +1028,7 @@ export function RoomOrganizer(): JSX.Element {
                 locked: walk.locked,
                 lockRefused: walk.lockRefused,
                 seatName: walk.seatName,
+                lamp: walk.lamp,
                 seated: walk.seated,
                 floorName: activeFloor.name,
                 multiFloor: layout.floors.length > 1,
@@ -1262,7 +1263,7 @@ function SaveStatusHeaderStats({
   return <HeaderStats {...props} {...useSaveStatus(saveStatus)} />;
 }
 
-type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds'>;
+type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds' | 'lampsOff'>;
 
 // Renders nothing: it owns the scene effects, subscribed to the whole view
 // (time of day included) and to the catalog search's highlighted items.
@@ -1272,8 +1273,10 @@ function SceneEffects(props: SceneEffectsProps): null {
   // identity and leaves the furniture effect alone.
   const highlightKey = useEditorView((state) => catalogHighlightKey(state.catalogQuery, props.activeFloor.items));
   const highlightedIds = useMemo(() => highlightIdsFromKey(highlightKey), [highlightKey]);
+  // Lamps switched off in EXPLORE (#910).
+  const lampsOff = useEditorView((state) => state.lampsOff);
   useCameraTargetOnStorey(props, view.walkthroughMode && !view.view2D);
-  useSceneEffects({ ...props, view, highlightedIds });
+  useSceneEffects({ ...props, view, highlightedIds, lampsOff });
   return null;
 }
 
