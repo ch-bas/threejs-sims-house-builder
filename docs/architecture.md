@@ -146,7 +146,8 @@ components/
     │   ├── sun-shadow.ts                Shadow-caster box + sun shadow-camera fit (#282)
     │   ├── night-lights.ts              Which items light the night, bulb heights, candela; the lamp pool (#215, #393)
     │   ├── street.ts                    Window sills, recessed entrance, frontage
-    │   ├── dormers.ts                   Dormer slope fitting + opening layout
+    │   ├── dormers.ts                   Dormer slope fitting + opening layout; dormers swapping across when a gable's ridge turns, the ones a pitch can't take (#916)
+    │   ├── roof-shape.ts                The roof's shape: peak height, pitch, ridge axis, eave overhang, the party walls that rule out a north–south ridge; read by the roof, dormers, GLB, street and camera framing (#916)
     │   ├── door-swing.ts                How a door swings open in EXPLORE: openness by distance, eased angle, side away from the walker (#605)
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── zones.ts                     Room zones: rect and polygon validation, clamping, re-fit to detected rooms (#719), per-zone stats (porch left out, #582)
@@ -201,7 +202,7 @@ components/
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
     │   ├── measurement.ts               Distance-tool spheres + line
     │   ├── item-labels.ts               Floating sprite labels above items
-    │   ├── roof.ts                      Flat / gable / hipped roof; walkthrough attic ceiling (#487)
+    │   ├── roof.ts                      Flat / gable / hipped roof at its pitch and ridge (lib/roof-shape.ts); walkthrough attic ceiling (#487)
     │   ├── ceiling.ts                   Walkthrough ceiling + stairwell shafts up and down (#359)
     │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails; attic wells (#487)
     │   ├── neighbours.ts                The street's houses from their specs (merged + instanced)

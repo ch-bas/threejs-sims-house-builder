@@ -12,9 +12,12 @@ import {
   julietRailSpan,
   roofSlope,
   roofSlopeSides,
+  roofWithRidge,
+  roofWithStyle,
+  unfittedDormers,
   type DormerPreset,
 } from './dormers';
-import type { DormerSpec } from './types';
+import type { DormerSpec, RoofSpec } from './types';
 
 const dormer = (overrides: Partial<DormerSpec> = {}): DormerSpec => ({ id: 'd', side: 'south', width: 2, ...overrides });
 /** `dormer()` wearing a preset, with the fields the preset clears dropped. */
@@ -171,5 +174,106 @@ describe('dormer data (#203)', () => {
   it('clamps numbers and drops cleared fields', () => {
     const clamped = clampDormer({ ...dormer({ width: 99, height: 0.1, setback: 9 }), window: undefined });
     expect(clamped).toEqual({ id: 'd', side: 'south', width: MAX_DORMER_WIDTH, height: 0.8, setback: 2 });
+  });
+});
+
+describe('turning the ridge (#916)', () => {
+  const gable = (dormers: DormerSpec[], extra: Partial<RoofSpec> = {}): RoofSpec => ({ style: 'gable', color: '#555555', dormers, ...extra });
+
+  it('fits dormers to a turned ridge and a pitch', () => {
+    expect(roofSlopeSides({ style: 'gable', ridge: 'z' }, 10, 8)).toEqual(['east', 'west']);
+    // Across a 10 m width the gable rises 2.5 m; scaled by 0.6, 1.5 m.
+    expect(roofSlope({ style: 'gable', ridge: 'z', pitch: 0.6 }, 10, 8, 'east')).toMatchObject({ peak: 1.5, halfRun: 5.35, wallHalfRun: 5 });
+    expect(dormerFrame({ style: 'gable', ridge: 'z' }, 10, 8, 6, dormer({ side: 'east' }))).not.toBeNull();
+    expect(dormerFrame({ style: 'gable', ridge: 'z' }, 10, 8, 6, dormer({ side: 'south' }))).toBeNull();
+    // A shallow pitch leaves no room for a face.
+    expect(dormerFrame({ style: 'gable', pitch: 0.5 }, 4, 3, 6, dormer())).toBeNull();
+  });
+
+  it('swaps every dormer across, built or not, and back', () => {
+    const roof = gable([dormer({ id: 'a', side: 'south', offset: 1 }), dormer({ id: 'b', side: 'north' }), dormer({ id: 'end', side: 'east' })]);
+    const turned = roofWithRidge(roof, 'z', 10, 8);
+    expect(turned).toMatchObject({ style: 'gable', color: '#555555', ridge: 'z' });
+    expect(turned.dormers!.map((d) => [d.id, d.side, d.offset])).toEqual([
+      ['a', 'west', 1],
+      ['b', 'east', undefined],
+      // The one on a gable end goes across too: it no longer lands on 'b'.
+      ['end', 'north', undefined],
+    ]);
+    expect(roofWithRidge(turned, undefined, 10, 8)).toEqual(roof);
+  });
+
+  it('never stacks two dormers that weren’t stacked (#916 review)', () => {
+    // 'b' slopes north, 'end' waits on the east gable end at the same offset.
+    const roof = gable([dormer({ id: 'b', side: 'north' }), dormer({ id: 'end', side: 'east' })]);
+    const sides = roofWithRidge(roof, 'z', 10, 8).dormers!.map((d) => d.side);
+    expect(new Set(sides).size).toBe(2);
+  });
+
+  it('turns back to the exact list, for any dormers, ridge and footprint', () => {
+    let seed = 7;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    const SIDES = ['north', 'south', 'east', 'west'] as const;
+    const RIDGES = [undefined, 'x', 'z'] as const;
+    for (let run = 0; run < 300; run++) {
+      const width = 3 + Math.floor(rand() * 12);
+      const depth = 3 + Math.floor(rand() * 12);
+      const dormers = Array.from({ length: Math.floor(rand() * 7) }, (_, i) =>
+        dormer({ id: `d${i}`, side: SIDES[Math.floor(rand() * 4)]!, width: 0.6 + rand() * 4, offset: Math.round((rand() - 0.5) * 80) / 10 })
+      );
+      const from = RIDGES[Math.floor(rand() * 3)];
+      const to = RIDGES[Math.floor(rand() * 3)];
+      const roof = gable(dormers, from ? { ridge: from } : {});
+      expect(roofWithRidge(roofWithRidge(roof, to, width, depth), from, width, depth)).toEqual(roof);
+    }
+  });
+
+  it('leaves dormers alone when the ridge keeps its way, or the roof has no ridge', () => {
+    const roof = gable([dormer()]);
+    // The longer side of 10 × 8 already runs east–west.
+    const named = roofWithRidge(roof, 'x', 10, 8);
+    expect(named).toEqual({ ...roof, ridge: 'x' });
+    expect(named.dormers).toBe(roof.dormers);
+    const hipped: RoofSpec = { style: 'hipped', dormers: [dormer({ side: 'east' })] };
+    expect(roofWithRidge(hipped, 'z', 10, 8)).toEqual({ ...hipped, ridge: 'z' });
+  });
+
+  it('returns the roof itself for the ridge it already has', () => {
+    const roof = gable([dormer()], { ridge: 'z' });
+    expect(roofWithRidge(roof, 'z', 10, 8)).toBe(roof);
+    const auto = gable([]);
+    expect(roofWithRidge(auto, undefined, 10, 8)).toBe(auto);
+  });
+});
+
+describe('a gable coming back with a stored ridge (#916)', () => {
+  it('moves a dormer off a gable end to the slope across', () => {
+    const hipped: RoofSpec = { style: 'hipped', ridge: 'z', dormers: [dormer({ id: 'n', side: 'north' }), dormer({ id: 'w', side: 'west' })] };
+    const gabled = roofWithStyle(hipped, 'gable', 10, 8);
+    expect(gabled.dormers!.map((d) => [d.id, d.side])).toEqual([['n', 'east'], ['w', 'west']]);
+  });
+
+  it('leaves it on the end when another dormer stands in the way', () => {
+    const hipped: RoofSpec = { style: 'hipped', ridge: 'z', dormers: [dormer({ id: 'n', side: 'north' }), dormer({ id: 'e', side: 'east' })] };
+    expect(roofWithStyle(hipped, 'gable', 10, 8).dormers!.map((d) => d.side)).toEqual(['north', 'east']);
+  });
+
+  it('changes nothing else: no stored ridge, other styles, the same style', () => {
+    const plain: RoofSpec = { style: 'hipped', dormers: [dormer({ side: 'east' })] };
+    expect(roofWithStyle(plain, 'gable', 10, 8)).toEqual({ ...plain, style: 'gable' });
+    const ridged: RoofSpec = { style: 'gable', ridge: 'z', dormers: [dormer({ side: 'west' })] };
+    expect(roofWithStyle(ridged, 'hipped', 10, 8)).toEqual({ ...ridged, style: 'hipped' });
+    expect(roofWithStyle(ridged, 'gable', 10, 8)).toBe(ridged);
+  });
+});
+
+describe('unfittedDormers (#916)', () => {
+  it('names the dormers a low pitch can’t take, not those on a gable end', () => {
+    const roof: RoofSpec = { style: 'gable', pitch: 0.5, dormers: [dormer({ id: 'tall', setback: 1 }), dormer({ id: 'end', side: 'east' })] };
+    expect(unfittedDormers({ ...roof, pitch: 1 }, 5, 4)).toEqual([]);
+    expect(unfittedDormers(roof, 5, 4).map((d) => d.id)).toEqual(['tall']);
   });
 });

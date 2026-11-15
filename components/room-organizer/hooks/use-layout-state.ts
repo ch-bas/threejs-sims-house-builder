@@ -24,6 +24,7 @@ import type {
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
+  RoofRidge,
   RoofStyle,
   RoomLayout,
   RoomZone,
@@ -65,6 +66,9 @@ export interface LayoutActions {
   /** Cut a corner out of the building, or fill it back in (#727). */
   setCutout(cutout: FootprintCutout | null): void;
   setRoofColor(color: string): void;
+  /** Roof pitch and a gable's ridge axis (#916); a `null` ridge runs it along the longer side. */
+  setRoofPitch(pitch: number): void;
+  setRoofRidge(ridge: RoofRidge | null): void;
   /** Roof dormers (#203). `addDormer` returns the new dormer's id. */
   addDormer(dormer: Omit<DormerInput, 'id'>): string;
   updateDormer(id: string, patch: DormerPatch): void;

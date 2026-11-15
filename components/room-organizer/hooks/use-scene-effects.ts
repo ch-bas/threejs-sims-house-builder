@@ -1027,6 +1027,8 @@ export function useSceneEffects({
   // picker tick doesn't rebuild the street (#283).
   const neighboursKey = JSON.stringify(layout.neighbours ?? null);
   const roofColor = layout.roof?.color;
+  // The attached houses copy our pitch, only when one is set (#916).
+  const roofPitch = layout.roof?.pitch;
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -1042,6 +1044,7 @@ export function useSceneEffects({
         floorYs: layout.floors.map((_floor, index) => floorElevation(layout.floors, index)),
         eavesY: buildingHeight(layout.floors),
         ...(roofStyle ? { roof: { style: roofStyle, ...(roofColor ? { color: roofColor } : {}) } } : {}),
+        ...(roofPitch !== undefined ? { roofPitch } : {}),
         ...(terrainFrontY !== undefined && terrainBackY !== undefined
           ? { terrain: { frontY: terrainFrontY, backY: terrainBackY } }
           : {}),
@@ -1055,7 +1058,7 @@ export function useSceneEffects({
     // floor count), and layout.neighbours / roof / terrain through the
     // narrow keys above, so an item edit doesn't rebuild the neighbours.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.width, layout.height, layout.floors.length, storeyHeightsKey, neighboursKey, roofStyle, roofColor, terrainFrontY, terrainBackY, layout.frontage]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, layout.width, layout.height, layout.floors.length, storeyHeightsKey, neighboursKey, roofStyle, roofColor, roofPitch, terrainFrontY, terrainBackY, layout.frontage]);
 
   // Interior walls
   useEffect(() => {

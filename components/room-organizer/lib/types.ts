@@ -231,9 +231,16 @@ export interface DormerSpec {
   color?: string;
 }
 
+/** The world axis a gable's ridge runs along (#916). */
+export type RoofRidge = 'x' | 'z';
+
 export interface RoofSpec {
   style: RoofStyle;
   color?: string;
+  /** Multiplier on the roof's rise (#916), 0.5 to 1.6; absent is 1. See lib/roof-shape.ts. */
+  pitch?: number;
+  /** A gable's ridge axis (#916); absent runs it along the longer side. */
+  ridge?: RoofRidge;
   /** Dormers; built on gable and hipped roofs, ignored on flat or none. */
   dormers?: DormerSpec[];
 }

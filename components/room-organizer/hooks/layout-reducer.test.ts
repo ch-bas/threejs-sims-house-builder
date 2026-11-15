@@ -722,6 +722,56 @@ describe('layoutReducer — roof + floor plan', () => {
     expect(state.layout.roof).toMatchObject({ style: 'hipped', color: '#111' });
   });
 
+  it('setRoofPitch clamps the pitch and clears it at 1 (#916)', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    state = layoutReducer(state, { type: 'setRoofPitch', pitch: 1.3 });
+    expect(state.layout.roof).toMatchObject({ style: 'gable', pitch: 1.3 });
+    state = layoutReducer(state, { type: 'setRoofPitch', pitch: 7 });
+    expect(state.layout.roof!.pitch).toBe(1.6);
+    expect(layoutReducer(state, { type: 'setRoofPitch', pitch: 2 })).toBe(state);
+    state = layoutReducer(state, { type: 'setRoofPitch', pitch: 1 });
+    expect(state.layout.roof).not.toHaveProperty('pitch');
+  });
+
+  it('setRoofRidge turns the ridge and its dormers in one step, and back (#916)', () => {
+    let state = stateWith([]);
+    state = { ...state, layout: { ...state.layout, width: 10, height: 8 } };
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    state = layoutReducer(state, { type: 'addDormer', dormer: { id: 'd', side: 'south', width: 2 } });
+    const before = state;
+    state = layoutReducer(state, { type: 'setRoofRidge', ridge: 'z' });
+    expect(state.layout.roof).toMatchObject({ ridge: 'z', dormers: [{ id: 'd', side: 'west' }] });
+    expect(layoutReducer(state, { type: 'setRoofRidge', ridge: 'z' })).toBe(state);
+    state = layoutReducer(state, { type: 'setRoofRidge', ridge: null });
+    expect(state.layout.roof).toEqual(before.layout.roof);
+  });
+
+  it('refuses a north–south ridge against party walls, and a terrace drops one (#916)', () => {
+    let state = stateWith([]);
+    state = { ...state, layout: { ...state.layout, width: 10, height: 8 } };
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    state = layoutReducer(state, { type: 'addDormer', dormer: { id: 'd', side: 'south', width: 2 } });
+    const detached = state;
+    state = layoutReducer(state, { type: 'setNeighbour', side: 'east', present: true });
+    expect(layoutReducer(state, { type: 'setRoofRidge', ridge: 'z' })).toBe(state);
+    // East–west keeps its gable ends on the party walls.
+    expect(layoutReducer(state, { type: 'setRoofRidge', ridge: 'x' }).layout.roof?.ridge).toBe('x');
+    // A house with a north–south ridge joining a terrace gives it up, its dormer turning back.
+    const turned = layoutReducer(detached, { type: 'setRoofRidge', ridge: 'z' });
+    expect(turned.layout.roof?.dormers?.[0]?.side).toBe('west');
+    const joined = layoutReducer(turned, { type: 'setNeighbour', side: 'west', present: true });
+    expect(joined.layout.roof).toEqual(detached.layout.roof);
+    expect(joined.layout.neighbours).toEqual({ west: true });
+  });
+
+  it('setRoofStyle back to a gable with a stored ridge moves dormers off its ends (#916)', () => {
+    let state = stateWith([]);
+    state = { ...state, layout: { ...state.layout, width: 10, height: 8, roof: { style: 'hipped', ridge: 'z', dormers: [{ id: 'd', side: 'north', width: 2 }] } } };
+    state = layoutReducer(state, { type: 'setRoofStyle', style: 'gable' });
+    expect(state.layout.roof?.dormers?.[0]?.side).toBe('east');
+  });
+
   it('setFloorPlan sets and clears the image', () => {
     let state = stateWith([]);
     state = layoutReducer(state, { type: 'setFloorPlan', image: 'data:img' });
