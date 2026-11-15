@@ -8,7 +8,14 @@ import {
 import { exportFileName } from '../lib/plan-export/download';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl } from '../lib/share';
-import { browserShareChannels, deliverShareLink } from '../lib/share-delivery';
+import {
+  browserFileChannels,
+  browserShareChannels,
+  deliverHouseFile,
+  deliverShareLink,
+  fileActionLabel,
+  houseFile,
+} from '../lib/share-delivery';
 import { markLayoutLoaded } from './use-achievements';
 import { markFirstStep } from './use-first-steps';
 import { layoutStore } from './use-layout-store';
@@ -96,21 +103,40 @@ export function useImportExport({
     });
     // The link left the page, or is there to copy: shared, as First steps count it (#721).
     if (outcome.kind !== 'cancelled' && outcome.kind !== 'too-large') markFirstStep('share');
-    const leftOut = 'The floor-plan image was left out to keep it short.';
+    // When the link can't carry the whole house, the notice offers the file
+    // that does (#934): the share sheet where it takes files, else a download.
+    const channels = browserFileChannels();
+    const label = fileActionLabel(channels);
+    const fileAction = {
+      action: {
+        label,
+        name: label === 'Share file' ? 'Share the house as a file' : 'Download the house as a file',
+        run: () => {
+          // Called in the click: the sheet opens inside the tap.
+          void deliverHouseFile(houseFile(layout), channels).then((sent) => {
+            if (sent === 'shared') notify('House file sent.', 'success');
+          });
+        },
+      },
+    };
+    const leftOut = 'The floor-plan image was left out to keep it short; the file keeps it.';
     switch (outcome.kind) {
       case 'cancelled':
         return;
       case 'too-large':
         notify(
-          'This layout is too large to fit in a share link. Try exporting it as JSON and sharing the file instead.',
-          'error'
+          `This layout is too large to fit in a share link. ${label === 'Share file' ? 'Share it as a file instead.' : 'Download it as a file and send that instead.'}`,
+          'error',
+          fileAction
         );
         return;
       case 'shared':
-        notify(`Share link sent.${outcome.strippedFloorPlan ? ` ${leftOut}` : ''}`, 'success');
+        if (outcome.strippedFloorPlan) notify(`Share link sent. ${leftOut}`, 'success', fileAction);
+        else notify('Share link sent.', 'success');
         return;
       case 'copied':
-        notify(`Share link copied to clipboard.${outcome.strippedFloorPlan ? ` ${leftOut}` : ''}`, 'success');
+        if (outcome.strippedFloorPlan) notify(`Share link copied to clipboard. ${leftOut}`, 'success', fileAction);
+        else notify('Share link copied to clipboard.', 'success');
         return;
       case 'manual': {
         // Nothing took it: hand the link over to copy by hand.

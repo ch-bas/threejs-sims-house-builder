@@ -1,5 +1,7 @@
 import { COARSE_POINTER_QUERY } from './hud-layout';
+import { downloadBlob, exportFileName } from './plan-export/download';
 import { isShareUrlReasonablySized, type EncodeShareUrlResult } from './share';
+import type { RoomLayout } from './types';
 
 /**
  * Getting a share link off the page (#685). Encoding is asynchronous, and
@@ -94,5 +96,63 @@ export function browserShareChannels(): ShareChannels {
         }
       : {}),
     ...(canWriteText ? { writeText: (text: string) => clipboard.writeText(text) } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The house as a file, when a link won't carry all of it (#934): the link
+// leaves the floor-plan image out, or the house is too large for a link.
+
+/** Where a house file can go: the share sheet when it takes files, else a download. */
+export interface FileChannels {
+  /** The share sheet with the file: touch screens whose sheet accepts it. */
+  shareFile?(file: File): Promise<void>;
+  download(file: File): void;
+}
+
+export type FileOutcome = 'shared' | 'cancelled' | 'downloaded';
+
+/** The house as the same JSON file Export writes, named the same way. */
+export function houseFile(layout: RoomLayout): File {
+  return new File([JSON.stringify(layout, null, 2)], exportFileName(layout.name, 'json'), { type: 'application/json' });
+}
+
+/** The notice button's label for these channels. */
+export function fileActionLabel(channels: FileChannels): 'Share file' | 'Download file' {
+  return channels.shareFile ? 'Share file' : 'Download file';
+}
+
+/** Hands the file over: the sheet first, a download when the sheet fails (never when it is dismissed). */
+export async function deliverHouseFile(file: File, channels: FileChannels): Promise<FileOutcome> {
+  if (channels.shareFile) {
+    try {
+      await channels.shareFile(file);
+      return 'shared';
+    } catch (error) {
+      if (isShareCancelled(error)) return 'cancelled';
+    }
+  }
+  channels.download(file);
+  return 'downloaded';
+}
+
+/**
+ * The browser's channels for house files: the sheet on a touch screen whose
+ * `canShare` takes a JSON file (Chrome on Android refuses JSON, so it
+ * downloads there), a download everywhere else. Asked with a small file of
+ * the same name and type, so the house is only serialised on the click.
+ */
+export function browserFileChannels(): FileChannels {
+  const touch = typeof window.matchMedia === 'function' && window.matchMedia(COARSE_POINTER_QUERY).matches;
+  let canShareFile = false;
+  try {
+    const probe = new File(['{}'], 'house.json', { type: 'application/json' });
+    canShareFile = touch && typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [probe] });
+  } catch {
+    canShareFile = false;
+  }
+  return {
+    ...(canShareFile ? { shareFile: (shared: File) => navigator.share({ files: [shared], title: shared.name }) } : {}),
+    download: (downloaded: File) => downloadBlob(downloaded.name, downloaded),
   };
 }

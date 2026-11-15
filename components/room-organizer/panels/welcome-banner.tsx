@@ -6,7 +6,7 @@ import { offerFirstSteps } from '../hooks/use-first-steps';
 import { useLoadTemplate } from '../hooks/use-load-template';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
 import { parseLayoutJson } from '../lib/persistence';
-import { isUntouched } from '../lib/restore-point';
+import { isUntouched, subscribeHouseReplaced } from '../lib/restore-point';
 import { safeGetItem, safeSetItem } from '../lib/safe-storage';
 import { STORAGE_KEY as HOUSE_KEY } from '../lib/saved-house';
 import { isShareHash } from '../lib/share';
@@ -68,6 +68,10 @@ export function WelcomeBanner(): JSX.Element | null {
     if (key) start(key);
   };
 
+  // Any house loaded meanwhile answers the chooser: a file dropped on it
+  // (#934), a link, a restore.
+  useEffect(() => (visible ? subscribeHouseReplaced(dismiss) : undefined), [visible, dismiss]);
+
   // A11y: focus the primary action on mount, close on Escape, and keep Tab
   // focus trapped inside the modal dialog (it renders with aria-modal="true").
   useDialogFocus(visible, dialogRef, { initialFocusRef: primaryButtonRef, onEscape: dismiss, trap: true });
@@ -89,6 +93,8 @@ export function WelcomeBanner(): JSX.Element | null {
       }}
       role="dialog"
       aria-modal="true"
+      // A house file dropped here answers the chooser (#934).
+      data-file-drop="open"
       aria-labelledby="pc-welcome-title"
       onClick={dismiss}
     >

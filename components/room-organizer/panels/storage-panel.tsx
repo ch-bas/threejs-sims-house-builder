@@ -4,18 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
+import { layoutStore } from '../hooks/use-layout-store';
 import { browserStorageManager } from '../hooks/use-storage-persist';
-import {
-  BACKUP_FAILURE_TEXT,
-  backupFileName,
-  createBackup,
-  describeRestore,
-  libraryHousesLeftOut,
-  parseBackup,
-  restoreBackup,
-  summarizeBackup,
-  type BackupSummary,
-} from '../lib/backup';
+import { backupFileName, createBackup, libraryHousesLeftOut } from '../lib/backup';
+import { offerBackupRestore, plural, subscribeBackupRestored } from '../lib/backup-file';
 import { queryPersistence, readStorageCare, recordBackup, subscribeStorageCare, type StorageCare } from '../lib/backup-reminder';
 import { askConfirm } from '../lib/confirm-dialog';
 import { subscribeCustomSets } from '../lib/custom-sets';
@@ -58,24 +50,6 @@ const TENANT_COLOURS: Record<StorageTenant, string> = {
 /** The autosave is debounced; measuring sooner would show the save before it. */
 const REMEASURE_AFTER_EDIT_MS = 2_000;
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
-
-/** What a backup holds, leaving out the parts it has none of. */
-function describeContents(summary: BackupSummary): string {
-  const parts = [
-    summary.hasHouse ? 'a house' : null,
-    summary.library > 0 ? plural(summary.library, 'saved layout') : null,
-    summary.restorePoints > 0 ? plural(summary.restorePoints, 'restore point') : null,
-    summary.keptVersions > 0 ? plural(summary.keptVersions, 'kept version') : null,
-    summary.received > 0 ? plural(summary.received, 'received house') : null,
-    summary.customSets > 0 ? plural(summary.customSets, 'custom set') : null,
-  ].filter((part): part is string => part !== null);
-  const held = parts.length > 0 ? parts.join(', ') : 'only settings';
-  return summary.invalid > 0 ? `${held}; ${plural(summary.invalid, 'part')} can’t be read` : held;
-}
-
 export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelProps): JSX.Element {
   const exploring = useExploring();
   const editHint = exploring ? NOT_WHILE_EXPLORING : undefined;
@@ -114,11 +88,14 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
     const unsubscribeSnapshots = subscribeSnapshots(measure);
     const unsubscribeSets = subscribeCustomSets(measure);
     const unsubscribeLibrary = subscribeLibrary(measure);
+    // A backup dropped on the page (#934) restores settings and sets too.
+    const unsubscribeRestored = subscribeBackupRestored(measure);
     return () => {
       window.removeEventListener('storage', onStorage);
       unsubscribeSnapshots();
       unsubscribeSets();
       unsubscribeLibrary();
+      unsubscribeRestored();
     };
   }, [measure]);
 
@@ -181,22 +158,8 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
     if (!file) return;
     void file.text().then(
       async (text) => {
-        const parsed = parseBackup(text);
-        if (!parsed.ok) {
-          notify(BACKUP_FAILURE_TEXT[parsed.reason], 'error');
-          return;
-        }
-        const ok = await askConfirm({
-          title: `Restore from “${file.name}”?`,
-          body: `It holds ${describeContents(summarizeBackup(parsed.bundle))}. Restoring adds what this browser lacks and never replaces or deletes your houses, sets or settings; the open house stays as it is. Older restore points may give way to make room.`,
-          confirmLabel: 'Restore',
-        });
-        if (!ok) return;
-        const report = restoreBackup(parsed.bundle, currentLayout);
-        changed();
-        const missed = report.invalid > 0 || report.skipped.received.length > 0 ||
-          report.skipped.customSets + report.skipped.restorePoints + report.skipped.keptVersions + report.skipped.recoveryCopies > 0;
-        notify(describeRestore(report), report.failed.length > 0 ? 'error' : missed ? 'info' : 'success');
+        // The house on screen after the answer, not when it asked.
+        if (await offerBackupRestore(text, file.name, () => layoutStore.getState().layout)) changed();
       },
       () => notify('Couldn’t read that file.', 'error')
     );

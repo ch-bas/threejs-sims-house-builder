@@ -25,7 +25,7 @@ app/                                     Next.js shell
 ├── ambient.d.ts                         Next's ambient types for a bare `tsc`, and global stylesheet imports
 ├── error.tsx, global-error.tsx          Error boundaries: reload first, then offer to move the saved house aside (the reset loads on click, #584)
 ├── not-found.tsx                        Branded 404 (out/404.html), with a link back to the builder
-├── manifest.ts                          Web app manifest (static at build time)
+├── manifest.ts                          Web app manifest (static at build time); opens .json house files in the installed app (#934)
 ├── fonts/                               Sora and Nunito woff2 subsets with their OFL licences (the build needs no network, #560)
 │   └── fonts.ts                         Loads them with next/font/local, one call per subset; the root's font CSS variables
 └── icon.svg, favicon.ico, apple-icon.png, opengraph-image.png
@@ -96,7 +96,7 @@ components/
     │   ├── initial-layout.ts            INITIAL_LAYOUT / INITIAL_GROUND_FLOOR, the house every session starts from
     │   ├── ids.ts                       Collision-resistant ids; withHouseId mints a house id (#342, #479)
     │   ├── share.ts                     Share-URL encode/decode (base64url); positions rounded to mm on encode
-    │   ├── share-delivery.ts            Share-link delivery: share sheet on touch, clipboard inside the tap, copy field last
+    │   ├── share-delivery.ts            Share-link delivery: share sheet on touch, clipboard inside the tap, copy field last; the house as a file when a link leaves part of it out (#934)
     │   ├── tour-session.ts              The shared-link tour's page phase (touring, kept, none), read from the hash on first use (#722)
     │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
     │   ├── service-worker.ts            The offline worker's registration: production only, after the first frame; NEXT_PUBLIC_SERVICE_WORKER=off removes this site's worker and caches; a newer worker takes over once installed when this is the only tab (#933)
@@ -113,6 +113,7 @@ components/
     │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)
     │   ├── backup.ts                    One-file backup of everything stored in this browser; versioned bundle, an add-only restore through the schema (#620); kept versions in a part of their own (#935)
     │   ├── backup-reminder.ts           Keeping the houses (#928): the browser's persist answer and the last backup time (one small record), the backup-reminder rule over dates
+    │   ├── backup-file.ts               Restoring a backup file: the question, the add-only restore and the notice, for the Restore button and a dropped file (#934)
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
     │   ├── hud-layout.ts                Phone-dock and sheet media queries, catalog page size, scroll cue, touch welcome tips
@@ -175,6 +176,7 @@ components/
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
     │   ├── floor-plan-fit.ts            Floor-plan image placement per fit mode or calibration, the one rectangle the 2D plan, blueprint and 3D floor paint (#191, #726); two-point calibration maths
     │   ├── file-io.ts                   JSON / image / PNG / CSV + schedule / GLB I/O
+    │   ├── file-drop.ts                 A file dropped on the page: files in the drag, JSON or not, backup or house, why a drop is refused (#934)
     │   ├── format.ts                    The one length and age format: formatMetres ("2.00 m", or 8' 2" in feet and inches, #725), formatSize, formatArea (m² / sq ft), parseLength (12'6", 12.5 ft, 3.5 m), the display-unit mirror the view store sets; formatAge ("3 min ago", #438); money with one fixed grouping, formatMoney ("$1,200", compact "$100M", #609)
     │   └── plan-export/                 2D-plan exporters (#230); svg, dxf, print and the blueprint load on click (#589)
     │       ├── plan-geometry.ts         Shared plan-space maths (corners, grid, openings, stairs, coverage, dimensions, schedule, bounds)
@@ -262,6 +264,7 @@ components/
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
+    │   ├── use-file-drop.ts             The page-wide drop target for house and backup files, and the installed app's launch queue (#934)
     │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob, downloaded or kept in the album (#626, #912)
     │   ├── use-photo-album.ts           One house's album photos, newest first, kept current across saves and deletes (#912)
     │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
@@ -340,6 +343,7 @@ components/
         ├── sets-panel.tsx
         ├── statistics-panel.tsx
         ├── storage-panel.tsx            Manage card: storage meter, delete restore points / saved layouts, back up and restore everything, kept-by-browser and last-backup lines (#615, #620, #928)
+        ├── file-drop-overlay.tsx        Shown while a file is dragged over the page: what dropping it does, or why it can't (#934)
         ├── header-stats.tsx
         ├── time-of-day-panel.tsx
         ├── camera-presets-panel.tsx
