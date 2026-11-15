@@ -10,7 +10,7 @@ import {
   tenantOfKey,
   type MeteredStore,
 } from './storage-meter';
-import { VERSION_HISTORY_META_KEY, VERSION_HISTORY_STORAGE_KEY } from './version-history';
+import { VERSION_HISTORY_META_KEY, VERSION_HISTORY_STORAGE_KEY, VERSION_KEPT_STORAGE_KEY } from './version-history';
 
 function storeOf(entries: Record<string, string>): MeteredStore {
   const keys = Object.keys(entries);
@@ -30,6 +30,7 @@ describe('storage meter (#615)', () => {
     expect(tenantOfKey(`${LIBRARY_KEY_PREFIX}cottage`)).toBe('library');
     expect(tenantOfKey(VERSION_HISTORY_STORAGE_KEY)).toBe('restorePoints');
     expect(tenantOfKey(VERSION_HISTORY_META_KEY)).toBe('restorePoints');
+    expect(tenantOfKey(VERSION_KEPT_STORAGE_KEY)).toBe('keptVersions');
     expect(tenantOfKey(RECOVERY_STORAGE_KEY)).toBe('recovery');
     expect(tenantOfKey(`${RECOVERY_STORAGE_KEY}-1700000000000-ab12cd`)).toBe('recovery');
     expect(tenantOfKey(PASTEBOARD_STORAGE_KEY)).toBe('pasteboard');

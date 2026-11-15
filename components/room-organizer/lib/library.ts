@@ -1,10 +1,12 @@
 import { safeGetItem, safeRemoveItem } from './safe-storage';
+import { localStorageOrNull } from './saved-house';
 import { MAX_NAME_LENGTH, capText, parseStoredLayout } from './schema';
 import { classifyStorageError, type StorageErrorKind } from './storage-errors';
 import {
   MAX_STORAGE_ENTRY_CHARS,
   VERSION_HISTORY_META_KEY,
   VERSION_HISTORY_STORAGE_KEY,
+  listKeptVersions,
   readStoredSnapshots,
   setItemEvictingSnapshots,
 } from './version-history';
@@ -314,14 +316,21 @@ export type LibrarySaveFailure = StorageErrorKind | 'autosave-room';
 export type LibrarySaveOutcome = ({ ok: true } & SaveResult) | { ok: false; reason: LibrarySaveFailure };
 
 /**
- * What to tell the user about a library save that didn't happen. Deleting
- * saved layouts is only offered when there are some.
+ * What to tell the user about a library save that didn't happen. Each way
+ * to free room is offered only when it applies: unpinning a kept version
+ * (#935) when some are kept, deleting saved layouts when there are some,
+ * removing the floor-plan image when `layout` has one.
  */
-export function librarySaveFailureMessage(reason: LibrarySaveFailure): string {
-  const remedy =
-    readIndex().entries.length > 0
-      ? 'Delete some saved layouts or remove the floor-plan image and try again.'
-      : 'Remove the floor-plan image to free space and try again.';
+export function librarySaveFailureMessage(reason: LibrarySaveFailure, layout?: RoomLayout): string {
+  const ways = [
+    listKeptVersions().length > 0 ? 'unpin a kept version in History' : null,
+    readIndex().entries.length > 0 ? 'delete some saved layouts' : null,
+    layout?.floorPlanImage ? 'remove the floor-plan image' : null,
+  ].filter((way): way is string => way !== null);
+  const listed = ways.length > 1 ? `${ways.slice(0, -1).join(', ')} or ${ways[ways.length - 1]}` : ways[0];
+  const remedy = listed
+    ? `${listed.charAt(0).toUpperCase()}${listed.slice(1)}, and try again.`
+    : 'Free some space in Storage & backup and try again.';
   switch (reason) {
     case 'autosave-room':
       return `This copy was not saved: it would leave no room for autosave, so the house you are editing would stop saving. ${remedy}`;
@@ -393,7 +402,7 @@ function probeRoom(storage: Storage, chars: number): StorageErrorKind | null {
   } catch (error) {
     return classifyStorageError(error);
   } finally {
-    safeRemoveItem(PROBE_KEY);
+    safeRemoveItem(PROBE_KEY, storage);
   }
 }
 
@@ -410,6 +419,22 @@ function roomShortfall(storage: Storage, growth: number, headroom: number): Libr
   if (shortfall === null) return null;
   if (shortfall !== 'quota') return shortfall;
   return probeRoom(storage, growth - reclaimable) === null ? 'autosave-room' : 'quota';
+}
+
+/**
+ * The library's autosave rule for keeping a restore point (#935): a kept
+ * version stops being room the autosave can take back, so the keep is
+ * refused when, without it, the open house `layout` would have less than
+ * its headroom to grow into. `pinnedChars` is what the kept copy holds.
+ * The check evicts nothing; storage it can't measure doesn't refuse.
+ */
+export function keepRoomShortfall(layout: RoomLayout, pinnedChars: number, storage?: Storage): 'autosave-room' | null {
+  const target = storage ?? localStorageOrNull();
+  if (!target) return null;
+  // The keep moves the point out of the ring: free room stays about the
+  // same, and what the autosave could take back shrinks by the kept copy.
+  const reclaimable = reclaimableChars(target) - pinnedChars;
+  return probeRoom(target, autosaveHeadroom(layout) - reclaimable) === 'quota' ? 'autosave-room' : null;
 }
 
 /**

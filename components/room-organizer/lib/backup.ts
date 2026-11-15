@@ -4,6 +4,7 @@ import {
   LIBRARY_KEY_PREFIX,
   batchLibraryChanges,
   countUnreadableSavedLayouts,
+  keepRoomShortfall,
   layoutSlugExists,
   listSavedLayouts,
   loadNamedLayout,
@@ -19,7 +20,14 @@ import {
 } from './persistence';
 import { isUntouched } from './restore-point';
 import { parseStoredLayout } from './schema';
-import { MAX_STORAGE_ENTRY_CHARS, VERSION_HISTORY_STORAGE_KEY, importSnapshots, listSnapshots } from './version-history';
+import {
+  MAX_STORAGE_ENTRY_CHARS,
+  VERSION_HISTORY_STORAGE_KEY,
+  importKeptVersions,
+  importSnapshots,
+  listSnapshots,
+  readKeptEntriesForBackup,
+} from './version-history';
 import type { RoomLayout } from './types';
 
 /**
@@ -82,13 +90,19 @@ export interface BackupBundle {
   library: BackupLibraryEntry[];
   /** The restore-point ring's entries, as stored. */
   restorePoints: unknown[];
+  /**
+   * Kept versions (#935), with their names and when they were kept. Files
+   * written before it lack the part, which reads as empty; an older editor
+   * ignores it.
+   */
+  keptVersions: unknown[];
   recoveryCopies: BackupRecoveryCopy[];
   received: BackupReceivedEntry[];
   customSets: unknown[];
   settings: Record<string, string>;
 }
 
-type BackupPart = 'library' | 'restorePoints' | 'recoveryCopies' | 'received' | 'customSets';
+type BackupPart = 'library' | 'restorePoints' | 'keptVersions' | 'recoveryCopies' | 'received' | 'customSets';
 
 /** A file read and validated: what a restore works from. */
 export interface ParsedBackup {
@@ -98,6 +112,8 @@ export interface ParsedBackup {
   library: { name: string; savedAt: number; stored: RoomLayout; layout: RoomLayout }[];
   /** Entries whose layout passed the schema; `importSnapshots` reads them again. */
   restorePoints: unknown[];
+  /** Kept versions whose layout passed the schema; `importKeptVersions` reads them again. */
+  keptVersions: unknown[];
   recoveryCopies: BackupRecoveryCopy[];
   received: { name: string; receivedAt: number; layout: RoomLayout }[];
   customSets: CustomFurnitureSet[];
@@ -158,6 +174,7 @@ export function createBackup(current: RoomLayout | null, now: number = Date.now(
     main: current ?? parseJson(readKey(storage, STORAGE_KEY)),
     library,
     restorePoints: Array.isArray(ring) ? ring : [],
+    keptVersions: storage ? readKeptEntriesForBackup(storage) : [],
     recoveryCopies: readRecoveryCopies().map(({ savedAt, raw }) => ({ savedAt, raw })),
     received: listReceivedLayouts().map(({ name, receivedAt, layout }) => ({ name, receivedAt, layout })),
     customSets: listCustomSets(),
@@ -235,6 +252,12 @@ export function parseBackup(text: string): BackupParseResult {
     else invalid += 1;
   }
 
+  const keptVersions: unknown[] = [];
+  for (const entry of part('keptVersions')) {
+    if (isRecord(entry) && finite(entry.savedAt) !== null && parseStoredLayout(entry.layout)) keptVersions.push(entry);
+    else invalid += 1;
+  }
+
   const recoveryCopies: BackupRecoveryCopy[] = [];
   for (const entry of part('recoveryCopies')) {
     if (isRecord(entry) && typeof entry.raw === 'string' && entry.raw.length <= MAX_STORAGE_ENTRY_CHARS) {
@@ -285,6 +308,7 @@ export function parseBackup(text: string): BackupParseResult {
       house,
       library,
       restorePoints,
+      keptVersions,
       recoveryCopies,
       received,
       customSets,
@@ -299,6 +323,7 @@ export interface BackupSummary {
   hasHouse: boolean;
   library: number;
   restorePoints: number;
+  keptVersions: number;
   received: number;
   customSets: number;
   /** Entries or parts left out because they couldn't be read. */
@@ -310,6 +335,7 @@ export function summarizeBackup(backup: ParsedBackup): BackupSummary {
     hasHouse: backup.house !== null,
     library: backup.library.length,
     restorePoints: backup.restorePoints.length,
+    keptVersions: backup.keptVersions.length,
     received: backup.received.length,
     customSets: backup.customSets.length,
     invalid: backup.invalid,
@@ -320,6 +346,7 @@ export function summarizeBackup(backup: ParsedBackup): BackupSummary {
 export interface RestoreReport {
   library: number;
   restorePoints: number;
+  keptVersions: number;
   recoveryCopies: number;
   received: number;
   customSets: number;
@@ -329,6 +356,7 @@ export interface RestoreReport {
   /** Left out for lack of room under a cap, beside what this browser keeps. */
   skipped: {
     restorePoints: number;
+    keptVersions: number;
     recoveryCopies: number;
     customSets: number;
     /** Names of the received houses the paste-board had no room for. */
@@ -388,12 +416,13 @@ export function restoreBackup(backup: ParsedBackup, current: RoomLayout): Restor
   const report: RestoreReport = {
     library: 0,
     restorePoints: 0,
+    keptVersions: 0,
     recoveryCopies: 0,
     received: 0,
     customSets: 0,
     settings: 0,
     invalid: backup.invalid,
-    skipped: { restorePoints: 0, recoveryCopies: 0, customSets: 0, received: [] },
+    skipped: { restorePoints: 0, keptVersions: 0, recoveryCopies: 0, customSets: 0, received: [] },
     failed: [],
     restorePointsDropped: 0,
   };
@@ -417,13 +446,22 @@ export function restoreBackup(backup: ParsedBackup, current: RoomLayout): Restor
 
   restoreSettings(backup.settings, report);
 
+  // Kept versions before restore points, so a point the file keeps is
+  // restored as kept, not into the ring; within the kept caps and the
+  // library's autosave rule, like a library save.
+  const kept = importKeptVersions(backup.keptVersions, {
+    roomCheck: (chars) => keepRoomShortfall(current, chars),
+  });
+  report.keptVersions = kept.added;
+  report.skipped.keptVersions = kept.skipped;
+
   const points = importSnapshots(backup.restorePoints);
   report.restorePoints = points.added;
   report.skipped.restorePoints = points.skipped;
 
   restoreRecoveryCopies(backup.recoveryCopies, report);
-  const kept = new Set(listSnapshots().map((summary) => summary.id));
-  report.restorePointsDropped = localPoints.filter((id) => !kept.has(id)).length;
+  const remaining = new Set(listSnapshots().map((summary) => summary.id));
+  report.restorePointsDropped = localPoints.filter((id) => !remaining.has(id)).length;
   return report;
 }
 
@@ -511,6 +549,7 @@ export function describeRestore(report: RestoreReport): string {
   const added: string[] = [];
   if (report.library > 0) added.push(plural(report.library, 'saved layout'));
   if (report.restorePoints > 0) added.push(plural(report.restorePoints, 'restore point'));
+  if (report.keptVersions > 0) added.push(plural(report.keptVersions, 'kept version'));
   if (report.recoveryCopies > 0) added.push(plural(report.recoveryCopies, 'recovery copy', 'recovery copies'));
   if (report.received > 0) added.push(plural(report.received, 'received house'));
   if (report.customSets > 0) added.push(plural(report.customSets, 'custom set'));
@@ -523,6 +562,7 @@ export function describeRestore(report: RestoreReport): string {
   }
   if (skipped.customSets > 0) left.push(`${plural(skipped.customSets, 'custom set')}: the sets are full`);
   if (skipped.restorePoints > 0) left.push(`${plural(skipped.restorePoints, 'restore point')}: no room beside yours`);
+  if (skipped.keptVersions > 0) left.push(`${plural(skipped.keptVersions, 'kept version')}: no room beside yours`);
   if (skipped.recoveryCopies > 0) {
     left.push(`${plural(skipped.recoveryCopies, 'recovery copy', 'recovery copies')}: no room beside yours`);
   }

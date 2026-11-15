@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { formatAge, formatClock } from '../lib/format';
 import {
   countUnreadableSavedLayouts,
   deleteNamedLayout,
+  keepRoomShortfall,
   layoutSlugExists,
   librarySaveFailureMessage,
   listSavedLayouts,
@@ -31,20 +32,31 @@ import { confirmReplace, subscribeHouseReplaced } from '../lib/restore-point';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
 import {
+  KEEP_REFUSAL_TEXT,
+  KEPT_LABEL_MAX_LENGTH,
   VERSION_HISTORY_STORAGE_KEY,
+  VERSION_KEPT_STORAGE_KEY,
   floorPlanFingerprint,
+  getKeptVersion,
   getSnapshot,
+  keepLayout,
+  keepSnapshot,
+  listKeptVersions,
   listSnapshots,
+  renameKeptVersion,
   snapshotBelongsTo,
   snapshotIsLayout,
   snapshotsShareHouse,
   subscribeSnapshots,
+  unkeepOutcome,
+  unkeepVersion,
 } from '../lib/version-history';
 import { PlanThumb } from './plan-thumb';
 import { RecoveryEntry } from './recovery-entry';
+import type { ConfirmOptions } from '../lib/confirm-dialog';
 import type { PasteboardEntry } from '../lib/pasteboard';
 import type { RoomLayout, SavedLayoutEntry } from '../lib/types';
-import type { VersionSummary } from '../lib/version-history';
+import type { KeepResult, KeptVersionSummary, UnkeepPlan, VersionSummary } from '../lib/version-history';
 
 export interface LibraryPanelProps {
   currentLayout: RoomLayout;
@@ -84,6 +96,47 @@ function describeChange(summary: VersionSummary, older: VersionSummary | undefin
   return parts.length > 0 ? parts.join(' · ') : 'no items added or removed';
 }
 
+/** "the oldest restore point, from 14:05" / "the 2 oldest restore points, from 14:05 on". */
+function clearedPoints(clears: readonly number[]): string {
+  const [first] = clears;
+  if (first === undefined) return '';
+  return clears.length === 1
+    ? `the oldest restore point, from ${formatClock(first)}`
+    : `the ${clears.length} oldest restore points, from ${formatClock(first)} on`;
+}
+
+/** The question before an Unpin (#935), saying what will happen. */
+function unkeepQuestion(label: string, plan: UnkeepPlan): ConfirmOptions {
+  if (plan.outcome === 'deleted') {
+    return {
+      title: `Delete “${label}”?`,
+      body: 'History is full of newer restore points, so once it is no longer kept it is deleted. This can’t be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    };
+  }
+  return {
+    title: `Stop keeping “${label}”?`,
+    body:
+      plan.clears.length > 0
+        ? `It goes back among the restore points, and ${clearedPoints(plan.clears)}, will be cleared to make room.`
+        : 'It goes back among the restore points, which are cleared oldest first as new ones come in.',
+    confirmLabel: 'Stop keeping',
+    danger: true,
+  };
+}
+
+function samePlan(a: UnkeepPlan, b: UnkeepPlan): boolean {
+  return a.outcome === b.outcome && a.clears.join() === b.clears.join();
+}
+
+function unkeptNote(label: string, plan: UnkeepPlan & { lost?: true }): string {
+  if (plan.lost) return `“${label}” is no longer kept, and couldn’t go back among the restore points: storage filled up meanwhile.`;
+  if (plan.outcome === 'deleted') return `Deleted “${label}”: it was older than every restore point History holds.`;
+  const cleared = plan.clears.length > 0 ? ` To make room, ${clearedPoints(plan.clears)}, ${plan.clears.length === 1 ? 'was' : 'were'} cleared.` : '';
+  return `No longer kept: “${label}” is back among the restore points.${cleared}`;
+}
+
 /** The header's figure (#463e): porch door excluded, sale losses included under the hard budget. */
 function layoutCost(layout: RoomLayout): number {
   return budgetSpent(layout);
@@ -118,6 +171,20 @@ function LoadedStatus({ note, section }: { note: LoadedNote | null; section: Loa
 export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.Element {
   const [entries, setEntries] = useState<SavedLayoutEntry[]>([]);
   const [snapshots, setSnapshots] = useState<VersionSummary[]>([]);
+  const [kept, setKept] = useState<KeptVersionSummary[]>([]);
+  // Where focus goes once a Keep or Unpin re-renders the list: the button
+  // that had it is gone (#935).
+  const [focusTarget, setFocusTarget] = useState<{ kept: string } | 'heading' | null>(null);
+  const historyHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focusTarget !== 'heading') return;
+    // After the confirm dialog hands focus back to the opener, now gone.
+    const timer = window.setTimeout(() => {
+      historyHeadingRef.current?.focus();
+      setFocusTarget(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [focusTarget]);
   const [received, setReceived] = useState<PasteboardEntry[]>([]);
   // Counted when the lists are re-read from storage, not on every render:
   // this panel re-renders on each layout edit (#340, #348).
@@ -133,6 +200,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     setEntries(listSavedLayouts());
     setUnreadableSaved(countUnreadableSavedLayouts());
     setSnapshots(listSnapshots());
+    setKept(listKeptVersions());
     setReceived(listReceivedLayouts());
     setUnreadableReceived(countUnreadableReceivedLayouts());
   }, []);
@@ -145,6 +213,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
   useEffect(() => {
     const onStorage = (event: StorageEvent): void => {
       if (event.key === null || event.key === VERSION_HISTORY_STORAGE_KEY) setSnapshots(listSnapshots());
+      if (event.key === null || event.key === VERSION_KEPT_STORAGE_KEY) setKept(listKeptVersions());
       if (event.key === null || event.key === PASTEBOARD_STORAGE_KEY) {
         setReceived(listReceivedLayouts());
         setUnreadableReceived(countUnreadableReceivedLayouts());
@@ -156,7 +225,14 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
 
   // This tab's own restore points — autosave cadence, and the forced one
   // every replacement takes — have no `storage` event (#367).
-  useEffect(() => subscribeSnapshots(() => setSnapshots(listSnapshots())), []);
+  useEffect(
+    () =>
+      subscribeSnapshots(() => {
+        setSnapshots(listSnapshots());
+        setKept(listKeptVersions());
+      }),
+    []
+  );
 
   // A note about an earlier load is out of date once another house comes in;
   // a load from this panel writes its own note after this (#647).
@@ -200,7 +276,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     }
     const result = saveNamedLayout(currentLayout, trimmed);
     if (!result.ok) {
-      setLoaded({ section: 'saved', text: librarySaveFailureMessage(result.reason), error: true });
+      setLoaded({ section: 'saved', text: librarySaveFailureMessage(result.reason, currentLayout), error: true });
       return;
     }
     // A save that worked clears the reason an earlier one failed.
@@ -239,10 +315,10 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     setLoaded({ section: 'saved', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
   };
 
-  const handleRestore = async (summary: VersionSummary) => {
+  const handleRestore = async (summary: VersionSummary, read: (id: string) => RoomLayout | null = getSnapshot) => {
     const house = summary.name === null ? 'the restore point' : `“${summary.name}”`;
     if (!(await confirmReplace(currentLayout, `${house} from ${formatClock(summary.savedAt)}`))) return;
-    const snapshot = getSnapshot(summary.id);
+    const snapshot = read(summary.id);
     if (!snapshot) {
       setLoaded({
         section: 'history',
@@ -272,6 +348,79 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       section: 'history',
       text: `Restored ${summary.name ?? 'the house'} from ${formatAge(Date.now() - summary.savedAt)}. Undo brings back the house it replaced.`,
     });
+  };
+
+  // Kept versions (#935): pinned out of the ring, so they outlive it. A keep
+  // is refused when it would leave the open house no room to save.
+  const roomCheck = (chars: number) => keepRoomShortfall(layoutStore.getState().layout, chars);
+
+  const afterKeep = (result: KeepResult, note: string) => {
+    refresh();
+    if (result.ok) {
+      setLoaded({ section: 'history', text: note });
+      setFocusTarget({ kept: result.id });
+    } else {
+      setLoaded({ section: 'history', text: KEEP_REFUSAL_TEXT[result.reason], error: true });
+      // The row stays; the button keeps focus.
+    }
+  };
+
+  const handleKeep = (summary: VersionSummary) => {
+    afterKeep(keepSnapshot(summary.id, { roomCheck }), 'Kept. It stays at the top of History until you stop keeping it.');
+  };
+
+  const handleKeepCurrent = () => {
+    afterKeep(
+      keepLayout(layoutStore.getState().layout, { roomCheck }),
+      'Kept the house as it is now. It stays at the top of History until you stop keeping it.'
+    );
+  };
+
+  const handleUnkeep = async (version: KeptVersionSummary) => {
+    const plan = unkeepOutcome(version.id);
+    if (plan === null) {
+      refresh();
+      return;
+    }
+    const ok = await askConfirm(unkeepQuestion(version.label, plan));
+    if (!ok) return;
+    // The ring may have moved on while the question was up (an autosave,
+    // another tab): what was agreed to must still be what happens.
+    const now = unkeepOutcome(version.id);
+    if (now === null || !samePlan(plan, now)) {
+      refresh();
+      setLoaded({
+        section: 'history',
+        text: `History changed while you were deciding, so “${version.label}” is still kept. Try again.`,
+        error: true,
+      });
+      return;
+    }
+    const result = unkeepVersion(version.id);
+    refresh();
+    setFocusTarget('heading');
+    if (result.removed) {
+      setLoaded({ section: 'history', text: unkeptNote(version.label, result) });
+      return;
+    }
+    setLoaded({
+      section: 'history',
+      text:
+        result.reason === 'missing'
+          ? `“${version.label}” was no longer kept.`
+          : result.reason === 'no-room'
+            ? `“${version.label}” stays kept: browser storage is too full to put it back among the restore points.`
+            : `“${version.label}” stays kept: the browser’s storage is blocked.`,
+      error: true,
+    });
+  };
+
+  const handleRenameKept = (version: KeptVersionSummary, label: string): boolean => {
+    const ok = renameKeptVersion(version.id, label);
+    if (!ok) setLoaded({ section: 'history', text: 'Enter a name for this version first.', error: true });
+    else setLoaded((note) => (note?.error ? null : note));
+    refresh();
+    return ok;
   };
 
   const handlePaste = async () => {
@@ -480,12 +629,40 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
           )}
         </div>
         <div className="border-t pt-3 space-y-2">
-          <div className="text-sm font-semibold">🕘 History</div>
+          <div className="flex items-center justify-between gap-2">
+            <h3 ref={historyHeadingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
+              🕘 History
+            </h3>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              onClick={handleKeepCurrent}
+              title="Keep the house as it is now: it stays until you stop keeping it"
+            >
+              📌 Keep this version
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Automatic restore points, saved every few minutes while you build.
+            Automatic restore points, saved every few minutes while you build. Keep one to hold on to it.
           </p>
           <LoadedStatus note={loaded} section="history" />
           <RecoveryEntry currentLayout={currentLayout} onLoad={onLoad} />
+          {kept.length > 0 && (
+            <ul className="space-y-1" aria-label="Kept versions">
+              {kept.map((version) => (
+                <KeptRow
+                  key={version.id}
+                  version={version}
+                  takeFocus={focusTarget !== null && focusTarget !== 'heading' && focusTarget.kept === version.id}
+                  onFocused={() => setFocusTarget(null)}
+                  onRestore={() => void handleRestore(version, getKeptVersion)}
+                  onRename={(label) => handleRenameKept(version, label)}
+                  onUnkeep={() => void handleUnkeep(version)}
+                />
+              ))}
+            </ul>
+          )}
           {snapshots.every((summary) => summary.id === liveSnapshotId) ? (
             <p className="text-xs text-muted-foreground py-2 text-center">
               {snapshots.length === 0 ? 'No restore points yet.' : 'Nothing older than the house on screen yet.'}
@@ -500,6 +677,7 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
                     // Newest first, so the row below is the older neighbour.
                     change={describeChange(summary, snapshots[index + 1])}
                     onRestore={() => void handleRestore(summary)}
+                    onKeep={() => handleKeep(summary)}
                   />
                 )
               )}
@@ -550,9 +728,10 @@ interface HistoryRowProps {
   summary: VersionSummary;
   change: string | null;
   onRestore(): void;
+  onKeep(): void;
 }
 
-function HistoryRow({ summary, change, onRestore }: HistoryRowProps): JSX.Element {
+function HistoryRow({ summary, change, onRestore, onKeep }: HistoryRowProps): JSX.Element {
   // The ring is parsed lazily, per row, when it scrolls into view (#303) —
   // never all ten snapshots at once.
   const load = useCallback(() => getSnapshot(summary.id), [summary.id]);
@@ -582,6 +761,124 @@ function HistoryRow({ summary, change, onRestore }: HistoryRowProps): JSX.Elemen
         >
           ↩️ Restore
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 mt-1"
+          onClick={onKeep}
+          title="Keep this version: it stays until you stop keeping it"
+          aria-label={`Keep ${summary.name ?? 'version'} from ${new Date(summary.savedAt).toLocaleString()}`}
+        >
+          📌 Keep
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+interface KeptRowProps {
+  version: KeptVersionSummary;
+  /** Move focus to this row's first control (after a Keep), then call `onFocused`. */
+  takeFocus: boolean;
+  onFocused(): void;
+  onRestore(): void;
+  /** False when the name was refused: the field stays open. */
+  onRename(label: string): boolean;
+  onUnkeep(): void;
+}
+
+function KeptRow({ version, takeFocus, onFocused, onRestore, onRename, onUnkeep }: KeptRowProps): JSX.Element {
+  const load = useCallback(() => getKeptVersion(version.id), [version.id]);
+  const [draft, setDraft] = useState<string | null>(null);
+  const restoreRef = useRef<HTMLButtonElement>(null);
+  const renameRef = useRef<HTMLButtonElement>(null);
+  // Set when the field closes: focus goes back to Rename, never to <body>.
+  const refocusRename = useRef(false);
+  const when = new Date(version.savedAt).toLocaleString();
+
+  useEffect(() => {
+    if (!takeFocus) return;
+    restoreRef.current?.focus();
+    onFocused();
+  }, [takeFocus, onFocused]);
+
+  useEffect(() => {
+    if (draft !== null || !refocusRename.current) return;
+    refocusRename.current = false;
+    renameRef.current?.focus();
+  }, [draft]);
+
+  const close = (): void => {
+    refocusRename.current = true;
+    setDraft(null);
+  };
+  const save = (): void => {
+    if (draft !== null && onRename(draft)) close();
+  };
+  return (
+    <li className="flex items-center gap-2 rounded border border-primary/40 bg-primary/5 p-2 text-xs">
+      <PlanThumb layout={load} width={THUMB_WIDTH} height={THUMB_HEIGHT} className="rounded border bg-muted shrink-0" />
+      <div className="flex-1 min-w-0" title={when}>
+        {draft === null ? (
+          <div className="font-medium truncate">📌 {version.label}</div>
+        ) : (
+          <Input
+            value={draft}
+            maxLength={KEPT_LABEL_MAX_LENGTH}
+            autoFocus
+            aria-label="Name of this kept version"
+            className="h-7 text-xs"
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.repeat) return;
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                save();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+              }
+            }}
+          />
+        )}
+        <div className="text-muted-foreground truncate">
+          {version.name ?? 'Unknown house'} · {formatAge(Date.now() - version.savedAt)}
+        </div>
+        <div className="text-muted-foreground">
+          {plural(version.itemCount, 'item')} · {plural(version.floorCount, 'floor')}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-1">
+          {draft === null ? (
+            <>
+              <Button ref={restoreRef} size="sm" variant="ghost" className="h-6 px-2" onClick={onRestore} aria-label={`Restore ${version.label} from ${when}`}>
+                ↩️ Restore
+              </Button>
+              <Button ref={renameRef} size="sm" variant="ghost" className="h-6 px-2" onClick={() => setDraft(version.label)} aria-label={`Rename ${version.label}`}>
+                ✏️ Rename
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2"
+                onClick={onUnkeep}
+                title="Stop keeping: it goes back among the restore points"
+                aria-label={`Stop keeping ${version.label}`}
+              >
+                Unpin
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" variant="ghost" className="h-6 px-2" onClick={save}>
+                Save
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 px-2" onClick={close}>
+                Cancel
+              </Button>
+            </>
+          )}
+        </div>
       </div>
     </li>
   );

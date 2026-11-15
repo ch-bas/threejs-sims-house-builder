@@ -3,7 +3,12 @@ import { CUSTOM_SETS_STORAGE_KEY } from './custom-sets';
 import { LIBRARY_KEY_PREFIX, libraryHouseSlot } from './library';
 import { PASTEBOARD_STORAGE_KEY } from './pasteboard';
 import { isRecoveryKey } from './persistence';
-import { MAX_STORAGE_ENTRY_CHARS, VERSION_HISTORY_META_KEY, VERSION_HISTORY_STORAGE_KEY } from './version-history';
+import {
+  MAX_STORAGE_ENTRY_CHARS,
+  VERSION_HISTORY_META_KEY,
+  VERSION_HISTORY_STORAGE_KEY,
+  VERSION_KEPT_STORAGE_KEY,
+} from './version-history';
 
 /**
  * What each part of the editor holds in this browser's localStorage (#615):
@@ -25,6 +30,7 @@ export type StorageTenant =
   | 'main'
   | 'library'
   | 'restorePoints'
+  | 'keptVersions'
   | 'recovery'
   | 'pasteboard'
   | 'customSets'
@@ -36,6 +42,7 @@ export const STORAGE_TENANTS: readonly StorageTenant[] = [
   'main',
   'library',
   'restorePoints',
+  'keptVersions',
   'recovery',
   'pasteboard',
   'customSets',
@@ -47,6 +54,7 @@ export const TENANT_LABELS: Record<StorageTenant, string> = {
   main: 'Open house',
   library: 'Saved layouts',
   restorePoints: 'Restore points',
+  keptVersions: 'Kept versions',
   recovery: 'Recovery copies',
   pasteboard: 'Received houses',
   customSets: 'Custom sets',
@@ -64,6 +72,7 @@ export function tenantOfKey(key: string): StorageTenant {
   if (key === STORAGE_KEY) return 'main';
   if (key.startsWith(LIBRARY_KEY_PREFIX)) return 'library';
   if (key === VERSION_HISTORY_STORAGE_KEY || key === VERSION_HISTORY_META_KEY) return 'restorePoints';
+  if (key === VERSION_KEPT_STORAGE_KEY) return 'keptVersions';
   if (isRecoveryKey(key)) return 'recovery';
   if (key === PASTEBOARD_STORAGE_KEY) return 'pasteboard';
   if (key === CUSTOM_SETS_STORAGE_KEY) return 'customSets';
@@ -83,7 +92,7 @@ export interface StorageUsage {
 export type MeteredStore = Pick<Storage, 'length' | 'key' | 'getItem'>;
 
 function emptyTenants(): Record<StorageTenant, number> {
-  return { main: 0, library: 0, restorePoints: 0, recovery: 0, pasteboard: 0, customSets: 0, settings: 0, other: 0 };
+  return { main: 0, library: 0, restorePoints: 0, keptVersions: 0, recovery: 0, pasteboard: 0, customSets: 0, settings: 0, other: 0 };
 }
 
 /** Tally what `store` holds. Never throws: unreadable storage measures as empty. */

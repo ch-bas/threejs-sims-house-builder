@@ -296,7 +296,8 @@ export type SaveResult = { ok: true; json: string } | { ok: false; reason: SaveF
 /**
  * Persist the layout, or say why it couldn't be (#472). Restore points are
  * the lowest-priority tenant of the quota: a failed write evicts them
- * oldest-first and retries before giving up (#295). `storage` is injectable
+ * oldest-first and retries before giving up (#295); then kept versions,
+ * oldest kept first, each named in a notice (#935). `storage` is injectable
  * for tests and defaults to `window.localStorage`.
  */
 export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): SaveResult {
@@ -305,7 +306,16 @@ export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): S
     const target = storage ?? localStorageOrNull();
     if (!target) return { ok: false, reason: 'blocked' };
     const json = JSON.stringify(layout);
-    setItemEvictingSnapshots(target, STORAGE_KEY, json);
+    // The house outranks everything else stored, kept versions too (#935).
+    const evicted = setItemEvictingSnapshots(target, STORAGE_KEY, json, { evictKept: true });
+    for (const label of evicted) {
+      notify(
+        label
+          ? `A kept version, “${label}”, was removed so your house could be saved.`
+          : 'Unreadable kept versions were removed so your house could be saved.',
+        'info'
+      );
+    }
     return { ok: true, json };
   } catch (error) {
     // Reported to the caller so the HUD never shows "Saved" for a layout that
