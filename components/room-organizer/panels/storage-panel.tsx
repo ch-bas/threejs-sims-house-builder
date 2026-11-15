@@ -47,6 +47,7 @@ const TENANT_COLOURS: Record<StorageTenant, string> = {
   main: 'bg-emerald-500',
   library: 'bg-sky-500',
   restorePoints: 'bg-violet-500',
+  keptVersions: 'bg-indigo-400',
   recovery: 'bg-amber-500',
   pasteboard: 'bg-pink-500',
   customSets: 'bg-teal-500',
@@ -67,6 +68,7 @@ function describeContents(summary: BackupSummary): string {
     summary.hasHouse ? 'a house' : null,
     summary.library > 0 ? plural(summary.library, 'saved layout') : null,
     summary.restorePoints > 0 ? plural(summary.restorePoints, 'restore point') : null,
+    summary.keptVersions > 0 ? plural(summary.keptVersions, 'kept version') : null,
     summary.received > 0 ? plural(summary.received, 'received house') : null,
     summary.customSets > 0 ? plural(summary.customSets, 'custom set') : null,
   ].filter((part): part is string => part !== null);
@@ -193,7 +195,7 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
         const report = restoreBackup(parsed.bundle, currentLayout);
         changed();
         const missed = report.invalid > 0 || report.skipped.received.length > 0 ||
-          report.skipped.customSets + report.skipped.restorePoints + report.skipped.recoveryCopies > 0;
+          report.skipped.customSets + report.skipped.restorePoints + report.skipped.keptVersions + report.skipped.recoveryCopies > 0;
         notify(describeRestore(report), report.failed.length > 0 ? 'error' : missed ? 'info' : 'success');
       },
       () => notify('Couldn’t read that file.', 'error')

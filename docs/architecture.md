@@ -89,7 +89,7 @@ components/
     │   ├── persistence.ts               Active-layout localStorage I/O, save-failure reasons, dated recovery copies (two kept)
     │   ├── saved-house.ts               The saved house's key, raw read and download, crash flag and reload marker: what the error screens load before hydration, without the schema (#584)
     │   ├── library.ts                   Named-layout library I/O: an index of entries (name, saved-at, item and floor counts) + one blob per house; unreadable entries kept verbatim (#348); ASCII names keep their historical slot, other names get a `u_` Unicode slot (#550); a copy that would leave autosave no room is refused (#565)
-    │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id
+    │   ├── version-history.ts           Automatic restore-point ring (coarse autosave snapshots), stable entry ids, per-house cadence by house id; kept versions (`-versions-kept`, at most 5 and 512 KB; the ring never evicts them, the open house's save does as a last resort; keep, keep the house on screen, rename, unkeep back to the ring, backup import) (#935)
     │   ├── restore-point.ts             Forced restore point before a whole-layout replacement; "untouched" = equal to INITIAL_LAYOUT
     │   ├── initial-layout.ts            INITIAL_LAYOUT / INITIAL_GROUND_FLOOR, the house every session starts from
     │   ├── ids.ts                       Collision-resistant ids; withHouseId mints a house id (#342, #479)
@@ -107,7 +107,7 @@ components/
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)
-    │   ├── backup.ts                    One-file backup of everything stored in this browser; versioned bundle, an add-only restore through the schema (#620)
+    │   ├── backup.ts                    One-file backup of everything stored in this browser; versioned bundle, an add-only restore through the schema (#620); kept versions in a part of their own (#935)
     │   ├── backup-reminder.ts           Keeping the houses (#928): the browser's persist answer and the last backup time (one small record), the backup-reminder rule over dates
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
