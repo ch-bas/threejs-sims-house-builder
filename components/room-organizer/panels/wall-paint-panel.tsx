@@ -6,7 +6,7 @@ import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useScrollCue } from '../hooks/use-scroll-cue';
 import { outsideColor, outsidePattern } from '../lib/facade';
 import { ENTRANCE_WALL_ID } from '../lib/street';
-import { DEFAULT_INTERIOR_WALL_COLOR, wallSideColor, type SelectedWall, type WallSide } from '../lib/wall-sides';
+import { DEFAULT_INTERIOR_WALL_COLOR, wallSideColor, wallSidePattern, type SelectedWall, type WallSide } from '../lib/wall-sides';
 import { Icon } from '../plotcraft/icon';
 import { DockFoldButton, useDockFold, type PanelFold } from './dock-fold';
 import type {
@@ -27,6 +27,7 @@ const WALL_PATTERNS: ReadonlyArray<{ id: WallPattern; label: string; thumb: Patt
   { id: 'panel',     label: 'Panel',     thumb: 'panel'   },
   { id: 'wallpaper', label: 'Paper',     thumb: 'dots'    },
   { id: 'plaster',   label: 'Plaster',   thumb: 'speckle' },
+  { id: 'tile',      label: 'Tile',      thumb: 'wallTile' },
 ];
 
 const FLOOR_PATTERNS: ReadonlyArray<{ id: FloorPattern; label: string; thumb: PatternThumbName }> = [
@@ -213,11 +214,19 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
   const applyTo: WallId | 'all' | null = selectedInteriorId ? null : selectedExteriorId ?? 'all';
 
   const outsideFace = face === 'outside' && !selectedInteriorId;
-  const currentWallPattern = outsideFace ? outsidePattern(floor) : floor.wallPattern ?? 'solid';
   const currentFloorPattern = floor.floorPattern ?? 'solid';
   const exteriorColor = (wall: WallId) =>
     outsideFace ? outsideColor(floor, wall) : floor.wallColors?.[wall] ?? DEFAULT_EXTERIOR_WALL_COLOR;
   const selectedPartition = selectedInteriorId ? floor.interiorWalls?.find((wall) => wall.id === selectedInteriorId) : undefined;
+  // A partition's own pattern (#919), on the face the click picked.
+  const currentWallPattern = selectedInteriorId
+    ? selectedPartition ? wallSidePattern(selectedPartition, props.selectedWall?.side ?? 'a') : 'solid'
+    : outsideFace ? outsidePattern(floor) : floor.wallPattern ?? 'solid';
+  const applyWallPattern = (pattern: WallPattern) => {
+    if (selectedInteriorId !== null) actions.setInteriorWallPattern(selectedInteriorId, pattern, props.selectedWall?.side);
+    else if (outsideFace) actions.setFacadePattern(pattern);
+    else actions.setWallPattern(pattern);
+  };
   const currentWallColor = selectedInteriorId
     ? selectedPartition ? wallSideColor(selectedPartition, props.selectedWall?.side ?? 'a') : DEFAULT_INTERIOR_WALL_COLOR
     : selectedExteriorId
@@ -288,14 +297,15 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       {surface === 'walls' ? (
         <>
           <SectionLabel>Wall Pattern</SectionLabel>
-          <PatternGrid>
+          <PatternGrid columns={WALL_PATTERNS.length}>
             {WALL_PATTERNS.map((p) => (
               <PatternTile
                 key={p.id}
                 label={p.label}
                 thumb={p.thumb}
                 active={currentWallPattern === p.id}
-                onClick={() => (outsideFace ? actions.setFacadePattern(p.id) : actions.setWallPattern(p.id))}
+                onClick={() => applyWallPattern(p.id)}
+                dense
               />
             ))}
           </PatternGrid>
@@ -798,7 +808,7 @@ function SectionLabel({ children }: { children: React.ReactNode }): JSX.Element 
   );
 }
 
-function PatternGrid({ children }: { children: React.ReactNode }): JSX.Element {
+function PatternGrid({ children, columns = 6 }: { children: React.ReactNode; columns?: number }): JSX.Element {
   return (
     <div
       className="pc-glass--inset pc-paint-patterns"
@@ -807,7 +817,7 @@ function PatternGrid({ children }: { children: React.ReactNode }): JSX.Element {
         padding: 4,
         boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.35)',
         display: 'grid',
-        gridTemplateColumns: 'repeat(6, 1fr)',
+        gridTemplateColumns: `repeat(${columns}, 1fr)`,
         gap: 4,
       }}
     >
@@ -821,9 +831,11 @@ interface PatternTileProps {
   thumb: PatternThumbName;
   active: boolean;
   onClick(): void;
+  /** Seven to a row (the wall finishes since #919): tighter label, so PLASTER fits. */
+  dense?: boolean;
 }
 
-function PatternTile({ label, thumb, active, onClick }: PatternTileProps): JSX.Element {
+function PatternTile({ label, thumb, active, onClick, dense = false }: PatternTileProps): JSX.Element {
   return (
     <button
       type="button"
@@ -833,7 +845,7 @@ function PatternTile({ label, thumb, active, onClick }: PatternTileProps): JSX.E
       className={`pc-tile${active ? ' pc-tile--active' : ''}`}
       style={{
         height: 36,
-        padding: 2,
+        padding: dense ? '2px 0' : 2,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -847,8 +859,9 @@ function PatternTile({ label, thumb, active, onClick }: PatternTileProps): JSX.E
         style={{
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 700,
-          fontSize: 7,
-          letterSpacing: '0.04em',
+          fontSize: dense ? 6.5 : 7,
+          letterSpacing: dense ? 0 : '0.04em',
+          whiteSpace: 'nowrap',
           textTransform: 'uppercase',
           color: active ? 'var(--pc-cyan-glow)' : 'var(--pc-paper-soft)',
           lineHeight: 1,
@@ -868,7 +881,8 @@ type PatternThumbName =
   | 'dots'
   | 'speckle'
   | 'wood'
-  | 'tile';
+  | 'tile'
+  | 'wallTile';
 
 function PatternThumb({ name }: { name: PatternThumbName }): JSX.Element {
   const common = { width: 22, height: 12 };
@@ -933,6 +947,13 @@ function PatternThumb({ name }: { name: PatternThumbName }): JSX.Element {
         <svg viewBox="0 0 22 12" {...common} aria-hidden>
           <rect width="22" height="12" fill="rgba(240,232,218,0.85)" />
           <path d="M11 0 L11 12 M0 6 L22 6" stroke="rgba(0,0,0,0.40)" strokeWidth="0.6" />
+        </svg>
+      );
+    case 'wallTile':
+      return (
+        <svg viewBox="0 0 22 12" {...common} aria-hidden>
+          <rect width="22" height="12" fill="rgba(236,244,246,0.85)" />
+          <path d="M5.5 0 L5.5 12 M11 0 L11 12 M16.5 0 L16.5 12 M0 4 L22 4 M0 8 L22 8" stroke="rgba(0,0,0,0.35)" strokeWidth="0.5" />
         </svg>
       );
     case 'solid':

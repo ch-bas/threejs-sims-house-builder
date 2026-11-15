@@ -74,6 +74,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setStoreyHeight: (height) => dispatch({ type: 'setStoreyHeight', height }),
     setWallColor: (wall: WallId, color: string | null) => dispatch({ type: 'setWallColor', wall, color }),
     setInteriorWallColor: (id: string, color: string, side?: WallSide) => dispatch({ type: 'setInteriorWallColor', id, color, side }),
+    setInteriorWallPattern: (id, pattern, side) => dispatch({ type: 'setInteriorWallPattern', id, pattern, side }),
     setFacadePattern: (pattern) => dispatch({ type: 'setFacadePattern', pattern }),
     setFacadeColor: (wall, color) => dispatch({ type: 'setFacadeColor', wall, color }),
     clearFacade: () => dispatch({ type: 'clearFacade' }),

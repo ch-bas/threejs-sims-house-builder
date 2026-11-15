@@ -358,6 +358,13 @@ describe('schema hardening (#208)', () => {
     expect(isFloorLayout(makeFloor({ floorPattern: 'wood', wallPattern: 'brick' }))).toBe(true);
   });
 
+  it('accepts and keeps the tiled wall finish (#919)', () => {
+    expect(isFloorLayout(makeFloor({ wallPattern: 'tile' }))).toBe(true);
+    const layout = makeLayout({ floors: [makeFloor({ wallPattern: 'tile', facade: { pattern: 'tile' } })] });
+    const floor = parseStoredLayout(JSON.parse(JSON.stringify(layout)))?.floors[0];
+    expect(floor).toMatchObject({ wallPattern: 'tile', facade: { pattern: 'tile' } });
+  });
+
   it('legacy migration clamps an out-of-range floorPlanOpacity', () => {
     const parsed = parseStoredLayout({ ...legacyBase, floorPlanOpacity: 5 });
     expect(parsed?.floorPlanOpacity).toBe(1);

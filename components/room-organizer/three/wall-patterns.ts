@@ -13,6 +13,7 @@ export const WALL_PATTERN_LABELS: Record<WallPattern, string> = {
   panel: 'Wood Panel',
   plaster: 'Plaster',
   siding: 'Siding',
+  tile: 'Tile',
 };
 
 /** An outer wall with no colour of its own: warm cream, never a neutral grey. Gable ends share it. */
@@ -39,6 +40,25 @@ function strokeBricks(ctx: CanvasRenderingContext2D, size: number, lineWidth: nu
 }
 
 const SIDING_BOARDS = 12;
+
+/** Wall tiles across one tile of texture: 0.9 m a tile, so 15 cm ceramic squares (#919). */
+const WALL_TILES = 6;
+
+/** Strokes the grout lines of the wall tile. */
+function strokeGrout(ctx: CanvasRenderingContext2D, size: number, lineWidth: number): void {
+  const cell = size / WALL_TILES;
+  ctx.lineWidth = lineWidth;
+  for (let i = 0; i <= WALL_TILES; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * cell, 0);
+    ctx.lineTo(i * cell, size);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i * cell);
+    ctx.lineTo(size, i * cell);
+    ctx.stroke();
+  }
+}
 
 const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
   brick: {
@@ -196,6 +216,37 @@ const PATTERNS: Record<Exclude<WallPattern, 'solid'>, PatternRenderer> = {
           ctx.fillStyle = grad;
           ctx.fillRect(0, y, size, boardHeight);
         }
+      },
+    },
+  },
+  // Square ceramic tiles for a bathroom or a splashback (#919), after the
+  // floor tile (floor-patterns.ts) at wall scale: smaller, thinner grout.
+  tile: {
+    repeatPerMeter: 1 / 0.9,
+    draw(ctx, size, baseColor) {
+      ctx.fillStyle = baseColor;
+      ctx.fillRect(0, 0, size, size);
+      const cell = size / WALL_TILES;
+      // A faint tone per tile, as fired tiles vary; the pattern wraps, so the texture still tiles.
+      for (let i = 0; i < WALL_TILES; i++) {
+        for (let j = 0; j < WALL_TILES; j++) {
+          const tone = ((i * 5 + j * 3) % 7) / 6 - 0.5;
+          ctx.fillStyle = tone > 0 ? `rgba(255,255,255,${(tone * 0.08).toFixed(3)})` : `rgba(0,0,0,${(-tone * 0.06).toFixed(3)})`;
+          ctx.fillRect(i * cell, j * cell, cell, cell);
+        }
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+      strokeGrout(ctx, size, Math.max(1, size / 256));
+    },
+    relief: {
+      // Glazed faces, matt grout.
+      roughness: [0.95, 0.25],
+      strength: 2.5,
+      draw(ctx, size) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#000';
+        strokeGrout(ctx, size, Math.max(1.5, size / 170));
       },
     },
   },
