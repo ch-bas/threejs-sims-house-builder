@@ -28,8 +28,8 @@ function seeded(seed: number): () => number {
   };
 }
 
-function needs(hunger: number, energy: number, fun: number): NpcNeeds {
-  return { hunger, energy, fun };
+function needs(hunger: number, energy: number, fun: number, hygiene = 1): NpcNeeds {
+  return { hunger, energy, fun, hygiene };
 }
 
 describe('needs run down and are met (#617)', () => {
@@ -37,10 +37,13 @@ describe('needs run down and are met (#617)', () => {
     const n = needs(1, 1, 1);
     decayNeeds(n, 60);
     expect(n.fun).toBeLessThan(n.hunger);
-    expect(n.hunger).toBeLessThan(n.energy);
+    expect(n.hunger).toBeLessThan(n.hygiene);
+    expect(n.hygiene).toBeLessThan(n.energy);
     expect(n.energy).toBeLessThan(1);
+    // Hygiene runs out in about 200 s (#904).
+    expect(n.hygiene).toBeCloseTo(1 - 60 / 200);
     decayNeeds(n, 10_000);
-    expect(n).toEqual(needs(0, 0, 0));
+    expect(n).toEqual(needs(0, 0, 0, 0));
   });
 
   it('a few seconds of use meet a need, never past full', () => {
@@ -62,7 +65,7 @@ describe('needs run down and are met (#617)', () => {
     const random = seeded(1);
     for (let i = 0; i < 50; i++) {
       const n = randomNeeds(random);
-      for (const level of [n.hunger, n.energy, n.fun]) {
+      for (const level of [n.hunger, n.energy, n.fun, n.hygiene]) {
         expect(level).toBeGreaterThan(0.34);
         expect(level).toBeLessThanOrEqual(1);
       }
@@ -71,8 +74,11 @@ describe('needs run down and are met (#617)', () => {
 
   it('knows what each item is for, and nothing for a prototype key', () => {
     expect(['fridge', 'stove', 'bed', 'sofa', 'tv', 'bookshelf'].map(needOfType)).toEqual(['hunger', 'hunger', 'energy', 'energy', 'fun', 'fun']);
+    expect(['toilet', 'shower', 'bathtub', 'bathroom-sink'].map(needOfType)).toEqual(['hygiene', 'hygiene', 'hygiene', 'hygiene']);
+    expect(needOfType('computer')).toBe('fun');
     expect(needOfType('chair')).toBeNull();
-    expect(needOfType('constructor')).toBeNull();
+    expect(needOfType('desk')).toBeNull();
+    for (const key of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(needOfType(key)).toBeNull();
   });
 });
 
@@ -115,6 +121,44 @@ describe('findNeedSpots', () => {
     expect(spots[1]!.x).toBeCloseTo(3 - 0.15 - 0.35);
   });
 
+  it('washes standing in front of the toilet, the shower, the bath and the basin (#904)', () => {
+    const toilet = makeItem({ id: 'toilet', type: 'toilet', width: 0.4, depth: 0.7, height: 0.8, position: { x: 0, z: -2 }, rotation: 0 });
+    const shower = makeItem({ id: 'shower', type: 'shower', width: 0.9, depth: 0.9, height: 2.1, position: { x: 2, z: -2 }, rotation: 0 });
+    const bath = makeItem({ id: 'bath', type: 'bathtub', width: 1.7, depth: 0.8, height: 0.55, position: { x: -3, z: 0 }, rotation: Math.PI / 2 });
+    const basin = makeItem({ id: 'basin', type: 'bathroom-sink', width: 0.6, depth: 0.45, height: 0.85, position: { x: 3, z: 1 }, rotation: Math.PI });
+    const spots = spotsOf([toilet, shower, bath, basin]);
+    expect(spots.map((spot) => [spot.itemId, spot.need, spot.seatKey])).toEqual([
+      ['toilet', 'hygiene', null],
+      ['shower', 'hygiene', null],
+      ['bath', 'hygiene', null],
+      ['basin', 'hygiene', null],
+    ]);
+    expect(spots[0]!.z).toBeCloseTo(-2 + 0.35 + 0.35);
+    expect(spots[1]!.z).toBeCloseTo(-2 + 0.45 + 0.35);
+    // The bath turned to face +x: stand on its +x side, facing back at it.
+    expect(spots[2]!.x).toBeCloseTo(-3 + 0.4 + 0.35);
+    expect(Math.sin(spots[2]!.heading)).toBeCloseTo(-1);
+    // The basin faces −z.
+    expect(spots[3]!.z).toBeCloseTo(1 - 0.225 - 0.35);
+  });
+
+  it('uses the computer from the desk chair facing it, and stands at one no seat faces (#904)', () => {
+    const desk = makeItem({ id: 'desk', type: 'desk', width: 1.2, depth: 0.6, height: 0.75, position: { x: 0, z: -2 }, rotation: 0 });
+    const computer = makeItem({ id: 'pc', type: 'computer', width: 0.5, depth: 0.5, height: 0.5, position: { x: 0, z: -2 }, rotation: 0 });
+    // The desk chair faces the desk (−z), just in front of it.
+    const deskChair = makeItem({ id: 'desk-chair', type: 'chair', width: 0.5, depth: 0.5, height: 0.9, position: { x: 0, z: -1.25 }, rotation: Math.PI });
+    // Facing the computer, but across the room: too far to use it.
+    const farChair = makeItem({ id: 'far-chair', type: 'chair', width: 0.5, depth: 0.5, height: 0.9, position: { x: 0, z: 2 }, rotation: Math.PI });
+    const spots = spotsOf([desk, computer, deskChair, farChair]);
+    expect(spots.map((spot) => [spot.key, spot.itemId, spot.need, spot.seatKey])).toEqual([
+      ['pc>desk-chair:0', 'desk-chair', 'fun', 'desk-chair:0'],
+    ]);
+    const alone = spotsOf([desk, computer, farChair]);
+    expect(alone).toHaveLength(1);
+    expect(alone[0]).toMatchObject({ itemId: 'pc', need: 'fun', seatKey: null, x: 0 });
+    expect(alone[0]!.z).toBeCloseTo(-2 + 0.25 + 0.35);
+  });
+
   it('meets nothing with a chair or a table', () => {
     expect(spotsOf([chair, makeItem({ id: 't', type: 'table' })])).toEqual([]);
   });
@@ -155,6 +199,14 @@ describe('pickNeedSpot', () => {
   it('prefers the nearer of two that meet the same need', () => {
     const counts = tally(needs(0.1, 1, 1));
     expect(counts.get('fridge')!).toBeGreaterThan(counts.get('far-fridge')! * 1.5);
+  });
+
+  it('heads for the toilet when hygiene is what is pressing (#904)', () => {
+    const toilet = spot('toilet', 'hygiene', 4);
+    expect(pickNeedSpot(needs(1, 1, 1, 0.6), [...all, toilet], 0, 0, always, seeded(1))).toBeNull();
+    expect(tally(needs(1, 1, 1, 0.1), [...all, toilet]).get('toilet')).toBe(2000);
+    const counts = tally(needs(0.4, 1, 1, 0.05), [...all, toilet]);
+    expect(counts.get('toilet')!).toBeGreaterThan((counts.get('fridge') ?? 0) + (counts.get('far-fridge') ?? 0));
   });
 
   it('only weighs what meets a pressing need', () => {
