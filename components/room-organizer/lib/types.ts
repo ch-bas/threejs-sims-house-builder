@@ -295,6 +295,15 @@ export interface RoomZone {
   floorColor?: string;
 }
 
+/**
+ * The outside of a storey's outer walls, where it differs from the inside
+ * (#918); see lib/facade.ts. A field left out follows the inside finish.
+ */
+export interface FacadeFinish {
+  pattern?: WallPattern;
+  colors?: Partial<Record<WallId, string>>;
+}
+
 export interface FloorLayout {
   id: string;
   name: string;
@@ -303,6 +312,8 @@ export interface FloorLayout {
   floorPattern?: FloorPattern;
   wallPattern?: WallPattern;
   wallColors?: Partial<Record<WallId, string>>;
+  /** The outer walls' outside finish (#918); absent, the outside wears the inside one. */
+  facade?: FacadeFinish;
   hiddenWalls?: WallId[];
   interiorWalls?: InteriorWall[];
   /** Room zones drawn on this floor (#155). */

@@ -29,6 +29,8 @@ export const ENTRANCE_WALL_GAP = 0.01;
 export interface BuildEntranceOptions {
   geometry: EntranceGeometry;
   wallColor: string;
+  /** The facade's north colour where it differs (#918): on the faces toward the porch. */
+  facadeColor?: string | undefined;
   wallTag: string;
   floorTag: string;
   ghostOpacity?: number;
@@ -46,19 +48,25 @@ export function buildEntrance(THREE: ThreeModule, options: BuildEntranceOptions)
 
   const shell = new THREE.Group();
   const finish = translucent(new THREE.MeshStandardMaterial({ color: options.wallColor, roughness: 0.9 }));
+  const facade = options.facadeColor === undefined ? null : translucent(new THREE.MeshStandardMaterial({ color: options.facadeColor, roughness: 0.9 }));
+  // BoxGeometry's groups run +x, -x, +y, -y, +z, -z: the porch sees the
+  // reveals' inner sides and the soffit's underside, the street their -z
+  // ends at the wall's edge; the rooms see the rest.
+  const faces = (toward: 0 | 1 | 3): ThreeNS.Material | ThreeNS.Material[] =>
+    facade ? [0, 1, 2, 3, 4, 5].map((face) => (face === toward || face === 5 ? facade : finish)) : finish;
   const shellFrontZ = g.frontZ + ENTRANCE_WALL_GAP;
   const depth = g.backZ - shellFrontZ;
   const height = g.topY - g.bottomY;
   const midZ = (shellFrontZ + g.backZ) / 2;
   // Reveals sit inside the house, just beyond the hole's edges.
-  for (const x of [g.x0 - REVEAL_THICKNESS / 2, g.x1 + REVEAL_THICKNESS / 2]) {
-    const reveal = new THREE.Mesh(new THREE.BoxGeometry(REVEAL_THICKNESS, height, depth), finish);
+  for (const [x, toward] of [[g.x0 - REVEAL_THICKNESS / 2, 0], [g.x1 + REVEAL_THICKNESS / 2, 1]] as const) {
+    const reveal = new THREE.Mesh(new THREE.BoxGeometry(REVEAL_THICKNESS, height, depth), faces(toward));
     reveal.position.set(x, g.bottomY + height / 2, midZ);
     shell.add(reveal);
   }
   const soffit = new THREE.Mesh(
     new THREE.BoxGeometry(g.x1 - g.x0 + REVEAL_THICKNESS * 2, SOFFIT_THICKNESS, depth),
-    finish
+    faces(3)
   );
   soffit.position.set((g.x0 + g.x1) / 2, g.topY + SOFFIT_THICKNESS / 2, midZ);
   shell.add(soffit);

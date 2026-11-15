@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useRoomEditor } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useScrollCue } from '../hooks/use-scroll-cue';
+import { outsideColor, outsidePattern } from '../lib/facade';
 import { ENTRANCE_WALL_ID } from '../lib/street';
 import { DEFAULT_INTERIOR_WALL_COLOR, wallSideColor, type SelectedWall, type WallSide } from '../lib/wall-sides';
 import { Icon } from '../plotcraft/icon';
@@ -119,6 +120,8 @@ const FLOOR_PALETTES: readonly SwatchGroup[] = [
 /** Unpainted exterior walls render in this colour (room-builder's default). */
 const DEFAULT_EXTERIOR_WALL_COLOR = '#e8dcc4';
 const EXTERIOR_WALLS: readonly WallId[] = ['north', 'east', 'south', 'west'];
+/** The order "All" paints the four sides in. */
+const ALL_SIDES: readonly WallId[] = ['north', 'south', 'east', 'west'];
 
 /** The colour every entry shares, or undefined if they differ. */
 function sharedColor(colors: readonly string[]): string | undefined {
@@ -185,18 +188,14 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
       actions.setInteriorWallColor(selectedInteriorId, color, props.selectedWall?.side);
       return;
     }
-    if (target === 'all') {
-      actions.setWallColor('north', color);
-      actions.setWallColor('south', color);
-      actions.setWallColor('east', color);
-      actions.setWallColor('west', color);
-    } else {
-      actions.setWallColor(target, color);
-    }
+    const paint = face === 'outside' ? actions.setFacadeColor : actions.setWallColor;
+    for (const wall of target === 'all' ? ALL_SIDES : [target]) paint(wall, color);
   };
   const surfaceId = useId();
   const paletteId = useId();
   const [surface, setSurface] = useState<Surface>('walls');
+  // Which face of the outer walls takes pattern and colour (#918).
+  const [face, setFace] = useState<WallFace>('inside');
   const [wallGroup, setWallGroup] = useState<string>('pastel');
   const [floorGroup, setFloorGroup] = useState<string>('wood');
 
@@ -213,9 +212,11 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
   // target — showing "All" checked promised a repaint that never happened (#221).
   const applyTo: WallId | 'all' | null = selectedInteriorId ? null : selectedExteriorId ?? 'all';
 
-  const currentWallPattern = floor.wallPattern ?? 'solid';
+  const outsideFace = face === 'outside' && !selectedInteriorId;
+  const currentWallPattern = outsideFace ? outsidePattern(floor) : floor.wallPattern ?? 'solid';
   const currentFloorPattern = floor.floorPattern ?? 'solid';
-  const exteriorColor = (wall: WallId) => floor.wallColors?.[wall] ?? DEFAULT_EXTERIOR_WALL_COLOR;
+  const exteriorColor = (wall: WallId) =>
+    outsideFace ? outsideColor(floor, wall) : floor.wallColors?.[wall] ?? DEFAULT_EXTERIOR_WALL_COLOR;
   const selectedPartition = selectedInteriorId ? floor.interiorWalls?.find((wall) => wall.id === selectedInteriorId) : undefined;
   const currentWallColor = selectedInteriorId
     ? selectedPartition ? wallSideColor(selectedPartition, props.selectedWall?.side ?? 'a') : DEFAULT_INTERIOR_WALL_COLOR
@@ -267,7 +268,19 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
           Paint
         </div>
         )}
-        {fold.open && <SurfaceTabs surface={surface} onChange={setSurface} baseId={surfaceId} />}
+        {fold.open && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* In the header, so the facade costs the panel no height (#918). */}
+            {surface === 'walls' && !selectedInteriorId && (
+              <FaceToggle
+                value={face}
+                onChange={setFace}
+                {...(floor.facade ? { onMatchInside: () => actions.clearFacade() } : {})}
+              />
+            )}
+            <SurfaceTabs surface={surface} onChange={setSurface} baseId={surfaceId} />
+          </div>
+        )}
       </div>
 
       {fold.open && (
@@ -282,7 +295,7 @@ export function WallPaintPanel(props: WallPaintPanelProps): JSX.Element {
                 label={p.label}
                 thumb={p.thumb}
                 active={currentWallPattern === p.id}
-                onClick={() => actions.setWallPattern(p.id)}
+                onClick={() => (outsideFace ? actions.setFacadePattern(p.id) : actions.setWallPattern(p.id))}
               />
             ))}
           </PatternGrid>
@@ -464,6 +477,76 @@ function SurfaceTabs({ surface, onChange, baseId }: SurfaceTabsProps): JSX.Eleme
           </button>
         );
       })}
+    </div>
+  );
+}
+
+type WallFace = 'inside' | 'outside';
+
+const FACES: ReadonlyArray<{ id: WallFace; label: string; short: string; title: string }> = [
+  { id: 'inside', label: 'Inside', short: 'In', title: 'Paint the rooms’ side of the outer walls' },
+  { id: 'outside', label: 'Outside', short: 'Out', title: 'Paint the facade' },
+];
+
+interface FaceToggleProps {
+  value: WallFace;
+  onChange(face: WallFace): void;
+  /** Present while the facade differs from the inside: puts it back. */
+  onMatchInside?(): void;
+}
+
+/** Inside or outside of the outer walls (#918): a compact pair in the panel header. */
+function FaceToggle({ value, onChange, onMatchInside }: FaceToggleProps): JSX.Element {
+  const compact = {
+    height: 22,
+    borderRadius: 5,
+    fontFamily: 'var(--pc-font-display)',
+    fontWeight: 800,
+    fontSize: 9,
+    letterSpacing: 'var(--pc-tr-caps)',
+    textTransform: 'uppercase',
+  } as const;
+  return (
+    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+      {value === 'outside' && onMatchInside && (
+        <button
+          type="button"
+          onClick={onMatchInside}
+          title="Match inside: give the facade the inside finish again"
+          aria-label="Match inside"
+          className="pc-tile"
+          style={{ ...compact, width: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Icon name="undo" size={11} />
+        </button>
+      )}
+      <div role="radiogroup" aria-label="Paint which face of the outer walls" className="pc-glass--inset pc-paint-tabs" style={{ display: 'inline-flex', gap: 3 }}>
+        {FACES.map((target) => {
+          const active = value === target.id;
+          return (
+            <button
+              key={target.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={target.label}
+              tabIndex={active ? 0 : -1}
+              onClick={() => onChange(target.id)}
+              onKeyDown={(event) =>
+                onRovingKeyDown(event, (next) => {
+                  const landed = FACES[next];
+                  if (landed) onChange(landed.id);
+                })
+              }
+              title={target.title}
+              className={`pc-tile${active ? ' pc-tile--active' : ''}`}
+              style={{ ...compact, padding: '4px 6px' }}
+            >
+              {target.short}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

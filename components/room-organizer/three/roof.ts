@@ -1,4 +1,5 @@
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
+import { outsideFinish } from '../lib/facade';
 import { footprintOutline } from '../lib/footprint';
 import { FLAT_ROOF_THICKNESS, ROOF_EAVE_OVERHANG, ridgeAlongX as ridgeRunsAlongX, roofPeakHeight } from '../lib/roof-shape';
 import { removeAndDispose } from './builder-utils';
@@ -69,7 +70,8 @@ export interface GableWalls {
 export function gableWallsOf(style: RoofStyle | undefined, floors: readonly FloorLayout[]): GableWalls | undefined {
   const top = floors[floors.length - 1];
   if (style !== 'gable' || !top) return undefined;
-  return { pattern: top.wallPattern, colors: top.wallColors };
+  // The outside finish: a gable end is facade (#918).
+  return outsideFinish(top);
 }
 
 export function buildRoof(THREE: ThreeModule, options: BuildRoofOptions): void {

@@ -708,6 +708,20 @@ describe('layoutReducer — floor-scoped finishes', () => {
     expect(state.layout.floors[0]!.wallColors).toEqual({});
   });
 
+  it('setFacadePattern / setFacadeColor paint the outside only, and a no-op keeps the state (#918)', () => {
+    let state = stateWith([]);
+    state = layoutReducer(state, { type: 'setWallPattern', pattern: 'plaster' });
+    expect(layoutReducer(state, { type: 'setFacadePattern', pattern: 'plaster' })).toBe(state);
+    expect(layoutReducer(state, { type: 'setFacadeColor', wall: 'north', color: null })).toBe(state);
+    expect(layoutReducer(state, { type: 'clearFacade' })).toBe(state);
+    state = layoutReducer(state, { type: 'setFacadePattern', pattern: 'brick' });
+    state = layoutReducer(state, { type: 'setFacadeColor', wall: 'north', color: '#ffffff' });
+    expect(state.layout.floors[0]).toMatchObject({ wallPattern: 'plaster', facade: { pattern: 'brick', colors: { north: '#ffffff' } } });
+    expect(layoutReducer(state, { type: 'setFacadeColor', wall: 'north', color: '#ffffff' })).toBe(state);
+    state = layoutReducer(state, { type: 'clearFacade' });
+    expect(state.layout.floors[0]).not.toHaveProperty('facade');
+  });
+
   it('toggleExteriorWall hides then unhides a wall', () => {
     let state = stateWith([]);
     state = layoutReducer(state, { type: 'toggleExteriorWall', wallId: 'east' });
