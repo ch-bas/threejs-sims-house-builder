@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type BodiesCache, type NpcBody, type NpcHandOff, seatTakenByWalker, withNpcBodies } from '../lib/npc-bodies';
-import { prefersReducedMotion, REDUCED_MOTION_QUERY } from '../lib/reduced-motion';
+import { prefersReducedMotion } from '../lib/reduced-motion';
 import { WALK_FOV_DEG } from '../lib/scene-insets';
 import { groundHeightAt } from '../lib/site';
 import {
@@ -21,7 +21,6 @@ import {
   walkLampStorey,
   type WalkWorld,
 } from '../lib/walk-world';
-import { createDoorSwinger } from '../three/door-leaves';
 import type { StreetSite } from '../lib/street-row';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -73,10 +72,6 @@ export interface UseWalkthroughOptions {
   onFloorChange?(index: number): void;
   /** Request a render on the next animation frame (render-on-demand). */
   invalidate?: () => void;
-  // L2 doors (#605): the scene whose door leaves swing, and the shadow pass
-  // once they stop.
-  sceneRef?: React.MutableRefObject<ThreeNS.Scene | null>;
-  requestShadowUpdate?: () => void;
   /**
    * Called when the user presses Escape a second time (while pointer lock is
    * already released) to leave walkthrough entirely (see #67). The first Esc is
@@ -201,8 +196,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     invalidate,
     onExit,
     npcs,
-    sceneRef,
-    requestShadowUpdate,
     lampSwitch,
   } = options;
 
@@ -235,7 +228,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   const itemsRef = useRef(floor?.items ?? NO_ITEMS);
   const walkSpeedRef = useRef(walkSpeed);
   const invalidateRef = useRef(invalidate);
-  const requestShadowUpdateRef = useRef(requestShadowUpdate);
   const onExitRef = useRef(onExit);
   const onFloorChangeRef = useRef(onFloorChange);
   const activeFloorRef = useRef(activeFloorIndex);
@@ -249,7 +241,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
   itemsRef.current = floor?.items ?? NO_ITEMS;
   walkSpeedRef.current = walkSpeed;
   invalidateRef.current = invalidate;
-  requestShadowUpdateRef.current = requestShadowUpdate;
   onExitRef.current = onExit;
   onFloorChangeRef.current = onFloorChange;
   activeFloorRef.current = activeFloorIndex;
@@ -306,15 +297,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     camera.fov = WALK_FOV_DEG;
     camera.updateProjectionMatrix();
     let rafId = 0;
-    // L2 doors (#605): doors open as the walker comes up to them and shut
-    // behind; all shut again on exit.
-    const doorScene = sceneRef?.current ?? null;
-    const doors = doorScene ? createDoorSwinger(doorScene, () => requestShadowUpdateRef.current?.()) : null;
-    // Read live: the system setting may change mid-walk.
-    const reducedMotionQuery = typeof window.matchMedia === 'function' ? window.matchMedia(REDUCED_MOTION_QUERY) : null;
-    cleanup.push(() => {
-      if (doors?.shutAll()) invalidateRef.current?.();
-    });
+    // L2 doors (#605) swing for the player and the walkers alike, on the
+    // scene's frame budget (`use-scene-life`, #908).
 
     // Scratch, reused every frame so the loop allocates nothing (#156).
     const forward = new THREE.Vector3();
@@ -646,10 +630,6 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
         lastTime = now;
 
         const isLocked = Boolean(controls?.isLocked);
-        // L2 doors (#605): a step of the swing, ahead of the lock check, so a
-        // leaf swinging as the lock is released finishes and its shadow
-        // settles. Draws only when a leaf moves.
-        if (doors?.step(session.walker, delta, reducedMotionQuery?.matches === true)) invalidateRef.current?.();
         if (!isLocked && !session.touch) return;
         // Mouse-look and touch-look invalidate from their own handlers; this
         // loop draws only for what it moves itself (#666).
@@ -804,7 +784,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
       invalidateRef.current?.();
       if (orbit) orbit.enabled = true;
     };
-  }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef, sceneRef]);
+  }, [enabled, canvasRef, threeModuleRef, cameraRef, orbitRef]);
 
   // The active floor changed. An echo of the walker's own climb is ignored;
   // anything else (PgUp/PgDn, the floor pills) moves the walker onto that
