@@ -40,6 +40,7 @@ import type {
   FloorPattern,
   FloorPlanFitMode,
   InteriorWall,
+  RoofRidge,
   RoofStyle,
   RoomLayout,
   SofaShape,
@@ -80,6 +81,8 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setRoofStyle: (style: RoofStyle) => dispatch({ type: 'setRoofStyle', style }),
     setCutout: (cutout) => dispatch({ type: 'setCutout', cutout }),
     setRoofColor: (color) => dispatch({ type: 'setRoofColor', color }),
+    setRoofPitch: (pitch) => dispatch({ type: 'setRoofPitch', pitch }),
+    setRoofRidge: (ridge: RoofRidge | null) => dispatch({ type: 'setRoofRidge', ridge }),
     addDormer: (dormer) => {
       const id = nextId('dormer');
       dispatch({ type: 'addDormer', dormer: { ...dormer, id } });

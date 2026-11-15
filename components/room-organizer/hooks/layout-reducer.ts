@@ -8,7 +8,7 @@ import {
   MAX_ROOM_DIMENSION,
 } from '../lib/constants';
 import { clipWallToCutout, fitNewShape, roofCoversCutout, withCutout } from '../lib/cutout';
-import { MAX_DORMERS, clampDormer, type DormerInput, type DormerPatch } from '../lib/dormers';
+import { MAX_DORMERS, clampDormer, roofWithRidge, roofWithStyle, type DormerInput, type DormerPatch } from '../lib/dormers';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { repairFloorPlanTransform } from '../lib/floor-plan-fit';
 import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
@@ -16,6 +16,7 @@ import { formatMetres } from '../lib/format';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
+import { DEFAULT_ROOF_PITCH, clampRoofPitch, partyWallsHoldRidge } from '../lib/roof-shape';
 import { floorRooms } from '../lib/room-detect';
 import {
   MAX_INTERIOR_WALLS_PER_FLOOR,
@@ -56,6 +57,7 @@ import type {
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
+  RoofRidge,
   RoofStyle,
   RoomLayout,
   RoomZone,
@@ -125,6 +127,10 @@ export type LayoutAction =
   | { type: 'setFloorPlanTransform'; transform: FloorPlanTransform | null }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
+  /** Roof pitch (#916): a multiplier on the rise, clamped; 1 clears it. */
+  | { type: 'setRoofPitch'; pitch: number }
+  /** A gable's ridge axis (#916); `null` gives it back to the longer side. */
+  | { type: 'setRoofRidge'; ridge: RoofRidge | null }
   | { type: 'addDormer'; dormer: DormerInput }
   | { type: 'updateDormer'; id: string; patch: DormerPatch }
   | { type: 'removeDormer'; id: string }
@@ -298,6 +304,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         const neighbours = { ...layout.neighbours };
         if (action.present) neighbours[action.side] = true;
         else delete neighbours[action.side];
+        // A house joining a terrace gives up a north–south ridge (#916), in
+        // the same step, its dormers turning with it.
+        if (layout.roof?.ridge === 'z' && partyWallsHoldRidge(neighbours)) {
+          return { ...layout, neighbours, roof: roofWithRidge(layout.roof, undefined, layout.width, layout.height) };
+        }
         if (Object.keys(neighbours).length > 0) return { ...layout, neighbours };
         const { neighbours: _none, ...rest } = layout;
         return rest;
@@ -416,12 +427,32 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withLayout(state, (layout) => {
         if ((layout.roof?.style ?? 'none') === action.style) return layout;
         if (layout.cutout && !roofCoversCutout(action.style)) return layout;
-        return { ...layout, roof: { ...(layout.roof ?? { style: 'none' }), style: action.style } };
+        return { ...layout, roof: roofWithStyle(layout.roof ?? { style: 'none' }, action.style, layout.width, layout.height) };
       });
     case 'setRoofColor':
       return withLayout(state, (layout) => {
         if (layout.roof?.color === action.color) return layout;
         return { ...layout, roof: { ...(layout.roof ?? { style: 'none' }), color: action.color } };
+      });
+
+    // Pitch and ridge (#916), like the colour, don't add a roof to a roof-less
+    // house. Turning the ridge moves or drops the dormers in the same step.
+    case 'setRoofPitch':
+      return withLayout(state, (layout) => {
+        const roof = layout.roof ?? { style: 'none' as const };
+        const pitch = clampRoofPitch(action.pitch);
+        if ((roof.pitch ?? DEFAULT_ROOF_PITCH) === pitch) return layout;
+        const { pitch: _old, ...rest } = roof;
+        return { ...layout, roof: pitch === DEFAULT_ROOF_PITCH ? rest : { ...rest, pitch } };
+      });
+
+    case 'setRoofRidge':
+      return withLayout(state, (layout) => {
+        // Attached houses east or west rule out a north–south ridge (#916).
+        if (action.ridge === 'z' && partyWallsHoldRidge(layout.neighbours)) return layout;
+        const roof = layout.roof ?? { style: 'none' as const };
+        const next = roofWithRidge(roof, action.ridge ?? undefined, layout.width, layout.height);
+        return next === roof ? layout : { ...layout, roof: next };
       });
 
     // -- dormers (#203) -----------------------------------------------------

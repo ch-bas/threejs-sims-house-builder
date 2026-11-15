@@ -1,4 +1,13 @@
-import type { DormerOpening, DormerOpeningKind, DormerSpec, RoofStyle, WallId } from './types';
+import {
+  ROOF_EAVE_OVERHANG,
+  TURNED_SIDE,
+  ridgeAlongX,
+  roofPeakHeight,
+  roofShapeOf,
+  roofSlopes,
+  type RoofShapeInput,
+} from './roof-shape';
+import type { DormerOpening, DormerOpeningKind, DormerSpec, RoofRidge, RoofSpec, RoofStyle, WallId } from './types';
 
 /**
  * Roof dormers (#203): loft boxes standing on a roof slope, with a vertical
@@ -10,8 +19,8 @@ import type { DormerOpening, DormerOpeningKind, DormerSpec, RoofStyle, WallId } 
  * with x along the ridge; the builder rotates it onto its real side.
  */
 
-/** Must match three/roof.ts — how far the roof overhangs the walls. */
-export const ROOF_EAVE_OVERHANG = 0.35;
+/** How far the roof overhangs the walls; it lives with the roof's shape (lib/roof-shape.ts). */
+export { ROOF_EAVE_OVERHANG };
 
 export const MAX_DORMERS = 6;
 const MAX_DORMER_OPENINGS = 8;
@@ -181,31 +190,24 @@ interface RoofSlope {
 
 /**
  * The slope on one side of the roof, or null when that side has none: flat
- * and absent roofs have no slopes, and a gable only slopes on its two long
- * sides (its ends are vertical gables). Mirrors three/roof.ts.
+ * and absent roofs have no slopes, and a gable only slopes on the two sides
+ * either side of its ridge (its ends are vertical gables). The rise is the
+ * roof's own (lib/roof-shape.ts), so a dormer fits the slope that is built.
  */
-export function roofSlope(style: RoofStyle, width: number, depth: number, side: WallId): RoofSlope | null {
+export function roofSlope(roof: RoofShapeInput, width: number, depth: number, side: WallId): RoofSlope | null {
+  const shape = roofShapeOf(roof);
+  if (!roofSlopes(shape, width, depth, side)) return null;
   const northSouth = side === 'north' || side === 'south';
   const wallHalfRun = (northSouth ? depth : width) / 2;
   const wallHalfAlong = (northSouth ? width : depth) / 2;
   const halfRun = wallHalfRun + ROOF_EAVE_OVERHANG;
   const halfAlong = wallHalfAlong + ROOF_EAVE_OVERHANG;
-  if (style === 'gable') {
-    const ridgeAlongX = width >= depth;
-    if (ridgeAlongX !== northSouth) return null;
-    return { peak: Math.min(2.5, halfRun), halfRun, wallHalfRun, halfAlong, wallHalfAlong, tapers: false };
-  }
-  if (style === 'hipped') {
-    const w = width + ROOF_EAVE_OVERHANG * 2;
-    const d = depth + ROOF_EAVE_OVERHANG * 2;
-    const peak = Math.min(2.2, Math.min(w, d) * 0.45);
-    return { peak, halfRun, wallHalfRun, halfAlong, wallHalfAlong, tapers: true };
-  }
-  return null;
+  const peak = roofPeakHeight(shape, width, depth);
+  return { peak, halfRun, wallHalfRun, halfAlong, wallHalfAlong, tapers: shape.style === 'hipped' };
 }
 
-export function roofSlopeSides(style: RoofStyle, width: number, depth: number): WallId[] {
-  return DORMER_SIDES.filter((side) => roofSlope(style, width, depth, side) !== null);
+export function roofSlopeSides(roof: RoofShapeInput, width: number, depth: number): WallId[] {
+  return DORMER_SIDES.filter((side) => roofSlopes(roof, width, depth, side));
 }
 
 /** Where a dormer actually sits, in its local (north-facing) frame. */
@@ -271,13 +273,13 @@ function dormerRise(slope: RoofSlope, baseY: number, dormer: DormerSpec): Dormer
  * the side has no slope or the dormer doesn't fit at all.
  */
 export function dormerOffsetRange(
-  style: RoofStyle,
+  roof: RoofShapeInput,
   roomWidth: number,
   roomDepth: number,
   baseY: number,
   dormer: DormerSpec
 ): [number, number] | null {
-  const slope = roofSlope(style, roomWidth, roomDepth, dormer.side);
+  const slope = roofSlope(roof, roomWidth, roomDepth, dormer.side);
   const rise = slope && dormerRise(slope, baseY, dormer);
   if (!rise || rise.halfAvailable * 2 < MIN_DORMER_WIDTH) return null;
   const width = Math.min(dormer.width, rise.halfAvailable * 2);
@@ -287,13 +289,13 @@ export function dormerOffsetRange(
 
 /** The widest face this slope takes at the dormer's height (#281), or null when nothing fits. */
 export function dormerMaxWidth(
-  style: RoofStyle,
+  roof: RoofShapeInput,
   roomWidth: number,
   roomDepth: number,
   baseY: number,
   dormer: DormerSpec
 ): number | null {
-  const slope = roofSlope(style, roomWidth, roomDepth, dormer.side);
+  const slope = roofSlope(roof, roomWidth, roomDepth, dormer.side);
   const rise = slope && dormerRise(slope, baseY, dormer);
   if (!rise || rise.halfAvailable * 2 < MIN_DORMER_WIDTH) return null;
   return Math.min(MAX_DORMER_WIDTH, toCentimetre(rise.halfAvailable * 2));
@@ -306,13 +308,13 @@ export function dormerMaxWidth(
  * the narrowing face). Null when the side has no slope or nothing fits.
  */
 export function dormerFrame(
-  style: RoofStyle,
+  roof: RoofShapeInput,
   roomWidth: number,
   roomDepth: number,
   baseY: number,
   dormer: DormerSpec
 ): DormerFrame | null {
-  const slope = roofSlope(style, roomWidth, roomDepth, dormer.side);
+  const slope = roofSlope(roof, roomWidth, roomDepth, dormer.side);
   const rise = slope && dormerRise(slope, baseY, dormer);
   if (!rise || rise.halfAvailable * 2 < MIN_DORMER_WIDTH) return null;
   const { faceZ, backZ, bottomY, topY, halfAvailable } = rise;
@@ -321,6 +323,57 @@ export function dormerFrame(
   const centerX = Math.max(-maxCenter, Math.min(maxCenter, localX(dormer.side, dormer.offset ?? 0)));
 
   return { rotationY: SIDE_ROTATION[dormer.side], centerX, width, faceZ, backZ, bottomY, topY };
+}
+
+/**
+ * The roof with its ridge set (#916); `undefined` gives the ridge back to the
+ * longer-side rule. When that turns a gable's ridge, every dormer swaps to
+ * the slope across (`TURNED_SIDE`), built or not, so turning back restores
+ * the list exactly. Two dormers on one side stay on one side, so the swap
+ * never stacks a dormer on another. Returns `roof` itself when nothing changes.
+ */
+export function roofWithRidge(roof: RoofSpec, ridge: RoofRidge | undefined, width: number, depth: number): RoofSpec {
+  if (roof.ridge === ridge) return roof;
+  const { ridge: _old, ...rest } = roof;
+  const next: RoofSpec = ridge ? { ...rest, ridge } : rest;
+  if (!next.dormers?.length || ridgeAlongX(roof, width, depth) === ridgeAlongX(next, width, depth)) return next;
+  return { ...next, dormers: next.dormers.map((dormer) => ({ ...dormer, side: TURNED_SIDE[dormer.side] })) };
+}
+
+/** Whether two dormers would stand on one stretch of the same slope. */
+function dormersClash(roof: RoofSpec, width: number, depth: number, a: DormerSpec, b: DormerSpec): boolean {
+  if (a.side !== b.side) return false;
+  const fa = dormerFrame(roof, width, depth, 0, a);
+  const fb = dormerFrame(roof, width, depth, 0, b);
+  return !!fa && !!fb && Math.abs(fa.centerX - fb.centerX) < (fa.width + fb.width) / 2;
+}
+
+/**
+ * The roof in `style` (#916). A gable coming back with a stored ridge moves a
+ * dormer left on one of its ends to the slope across, as turning the ridge
+ * would, unless another dormer already stands in the way there; then it stays
+ * on the end, unbuilt, which the Roof panel says. Without a stored ridge the
+ * dormers stay put, as they always have.
+ */
+export function roofWithStyle(roof: RoofSpec, style: RoofStyle, width: number, depth: number): RoofSpec {
+  if (roof.style === style) return roof;
+  const next: RoofSpec = { ...roof, style };
+  if (style !== 'gable' || !roof.ridge || !roof.dormers?.length) return next;
+  const dormers = [...roof.dormers];
+  dormers.forEach((dormer, index) => {
+    if (roofSlopes(next, width, depth, dormer.side)) return;
+    const moved = { ...dormer, side: TURNED_SIDE[dormer.side] };
+    if (dormers.some((other, at) => at !== index && dormersClash(next, width, depth, moved, other))) return;
+    dormers[index] = moved;
+  });
+  return { ...next, dormers };
+}
+
+/** The dormers on a sloping side that its slope can't take (#916): the Roof panel names them. */
+export function unfittedDormers(roof: RoofSpec, width: number, depth: number): DormerSpec[] {
+  return (roof.dormers ?? []).filter(
+    (dormer) => roofSlopes(roof, width, depth, dormer.side) && !dormerFrame(roof, width, depth, 0, dormer)
+  );
 }
 
 // ---------------------------------------------------------------------------

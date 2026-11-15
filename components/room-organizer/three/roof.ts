@@ -1,6 +1,6 @@
 import { ROOF_STYLE_DEFAULT_COLORS } from '../lib/constants';
-import { ROOF_EAVE_OVERHANG } from '../lib/dormers';
 import { footprintOutline } from '../lib/footprint';
+import { FLAT_ROOF_THICKNESS, ROOF_EAVE_OVERHANG, ridgeAlongX as ridgeRunsAlongX, roofPeakHeight } from '../lib/roof-shape';
 import { removeAndDispose } from './builder-utils';
 import { buildDormers, buildDormerWell, dormerWells } from './dormers';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
@@ -25,9 +25,8 @@ export const ROOF_TAG = 'roof';
  */
 const shingleTextureCache = new DisposableLruCache<ThreeNS.CanvasTexture>();
 
-/** Eaves: how far the roof overhangs past the wall plane (metres). Mirrored by lib/dormers.ts. */
+/** Eaves: how far the roof overhangs past the wall plane (metres); see lib/roof-shape.ts. */
 const EAVE_OVERHANG = ROOF_EAVE_OVERHANG;
-const FLAT_ROOF_THICKNESS = 0.2;
 /** Shingle texture tiles per metre of roof surface, the same on every roof style and size (#211). */
 const SHINGLE_TILES_PER_METRE = 0.6;
 
@@ -51,12 +50,6 @@ export interface BuildRoofOptions {
    * roofs off an L, and one that reaches here all the same builds flat.
    */
   cutout?: FootprintCutout | undefined;
-  /**
-   * Multiplier on the peak height (default 1). Only the dormer-less
-   * neighbour roofs use it (#310): lib/dormers.ts fits dormers to the
-   * unscaled slope, so our own roof always builds at 1.
-   */
-  pitch?: number;
   /**
    * The top storey's walls (#661): a gable end is the wall carried up to the
    * roof, so it wears that side's colour and pattern. Without it the ends
@@ -119,7 +112,7 @@ function buildRoofParts(THREE: ThreeModule, options: BuildRoofOptions): void {
   // Dormers (#203) stand on the gable / hipped slopes; flat roofs have none.
   if (options.spec.dormers?.length) {
     const dormers = buildDormers(THREE, options.spec.dormers, {
-      style: options.spec.style,
+      roof: options.spec,
       width: options.width,
       depth: options.depth,
       baseY: options.baseY,
@@ -127,27 +120,6 @@ function buildRoofParts(THREE: ThreeModule, options: BuildRoofOptions): void {
       tag: ROOF_TAG,
     });
     for (const dormer of dormers) options.scene.add(dormer);
-  }
-}
-
-/**
- * Rise of the roof above its base for a footprint: the gable ridge or the
- * hipped apex (a flat roof is its slab). Exported so chimneys and dormers
- * built outside this module can find the slope.
- */
-export function roofPeakHeight(style: RoofStyle, width: number, depth: number, pitch = 1): number {
-  const w = width + EAVE_OVERHANG * 2;
-  const d = depth + EAVE_OVERHANG * 2;
-  switch (style) {
-    case 'gable':
-      // The ridge runs along the longer axis; the span is the shorter one.
-      return Math.min(2.5, Math.min(w, d) * 0.5) * pitch;
-    case 'hipped':
-      return Math.min(2.2, Math.min(w, d) * 0.45) * pitch;
-    case 'flat':
-      return FLAT_ROOF_THICKNESS;
-    case 'none':
-      return 0;
   }
 }
 
@@ -211,7 +183,7 @@ export function buildAtticCeiling(THREE: ThreeModule, options: AtticCeilingOptio
   removeAtticCeiling(scene);
   if (spec.style === 'none') return null;
 
-  const wells = spec.style === 'flat' ? [] : dormerWells(spec.style, width, depth, baseY, spec.dormers ?? []);
+  const wells = spec.style === 'flat' ? [] : dormerWells(spec, width, depth, baseY, spec.dormers ?? []);
   const group = new THREE.Group();
   group.name = 'Attic ceiling';
   group.userData.type = ATTIC_TAG;
@@ -318,15 +290,16 @@ function buildFlatRoof(
 
 function buildGableRoof(
   THREE: ThreeModule,
-  { width, depth, baseY, pitch = 1, gableWalls }: BuildRoofOptions,
+  { width, depth, baseY, spec, gableWalls }: BuildRoofOptions,
   color: string
 ): ThreeNS.Object3D {
-  // Ridge runs along the longer axis so the slopes shed water from the long sides.
-  const ridgeAlongX = width >= depth;
+  // The ridge runs along the longer axis, so the slopes shed water from the
+  // long sides, unless the house chose otherwise (#916).
+  const ridgeAlongX = ridgeRunsAlongX(spec, width, depth);
   const wallLength = ridgeAlongX ? width : depth;
   const length = wallLength + EAVE_OVERHANG * 2;
   const span = (ridgeAlongX ? depth : width) + EAVE_OVERHANG * 2;
-  const peakHeight = roofPeakHeight('gable', width, depth, pitch);
+  const peakHeight = roofPeakHeight(spec, width, depth);
 
   // Built with the ridge along local z. The body is a triangular prism that
   // stops at the gable walls, so each end is the wall carried up to the roof
@@ -478,12 +451,12 @@ function groupByFace(
 
 function buildHippedRoof(
   THREE: ThreeModule,
-  { width, depth, baseY, pitch = 1 }: BuildRoofOptions,
+  { width, depth, baseY, spec }: BuildRoofOptions,
   color: string
 ): ThreeNS.Object3D {
   const w = width + EAVE_OVERHANG * 2;
   const d = depth + EAVE_OVERHANG * 2;
-  const peakHeight = roofPeakHeight('hipped', width, depth, pitch);
+  const peakHeight = roofPeakHeight(spec, width, depth);
   const halfW = w / 2;
   const halfD = d / 2;
 

@@ -5,6 +5,7 @@ import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { repairFloorPlanTransform } from './floor-plan-fit';
 import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
+import { clampRoofPitch } from './roof-shape';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
 import { isStoreyHeight } from './storeys';
@@ -429,7 +430,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
 const VEC2_KEYS = ['x', 'z'] as const;
 const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true });
 const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true, floorPattern: true, floorColor: true });
-const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, dormers: true });
+const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, pitch: true, ridge: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({
   id: true,
   side: true,
@@ -629,8 +630,22 @@ function repairFloor(floor: FloorLayout): FloorLayout {
 }
 
 function repairRoof(roof: RoofSpec): RoofSpec {
+  // Pitch and ridge (#916) came after the validator: a pitch that isn't a
+  // number, or a ridge that isn't an axis, goes, and the roof keeps today's
+  // shape; a pitch out of range is brought into it.
+  const pitch: unknown = roof.pitch;
+  const ridge: unknown = roof.ridge;
+  if ((pitch !== undefined && (typeof pitch !== 'number' || !Number.isFinite(pitch))) || (ridge !== undefined && ridge !== 'x' && ridge !== 'z')) {
+    const { pitch: _pitch, ridge: _ridge, ...rest } = roof;
+    return repairRoof({
+      ...rest,
+      ...(typeof pitch === 'number' && Number.isFinite(pitch) ? { pitch } : {}),
+      ...(ridge === 'x' || ridge === 'z' ? { ridge } : {}),
+    });
+  }
   const patch: Partial<RoofSpec> = {};
   if (roof.color !== undefined) patch.color = capText(roof.color, MAX_COLOR_LENGTH);
+  if (roof.pitch !== undefined) patch.pitch = clampRoofPitch(roof.pitch);
   if (roof.dormers) {
     patch.dormers = mapSame(roof.dormers, (dormer) => {
       const fields: Partial<DormerSpec> = { id: capText(dormer.id, MAX_ID_LENGTH) };

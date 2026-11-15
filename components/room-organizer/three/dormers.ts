@@ -1,7 +1,8 @@
 import { dormerFrame, dormerOpeningRects, julietRailSpan, type DormerFrame, type DormerOpeningRect } from '../lib/dormers';
 import { withOutsideFace } from './builder-utils';
 import { shutOutIndoorLamps, shutOutIndoorLampsOutside } from './outdoor-lamps';
-import type { DormerSpec, RoofStyle } from '../lib/types';
+import type { RoofShapeInput } from '../lib/roof-shape';
+import type { DormerSpec } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -26,7 +27,8 @@ const TOP_THICKNESS = 0.08;
 const TOP_OVERHANG = 0.1;
 
 export interface BuildDormersOptions {
-  style: RoofStyle;
+  /** The roof's shape: its style, pitch and ridge (lib/roof-shape.ts). */
+  roof: RoofShapeInput;
   width: number;
   depth: number;
   baseY: number;
@@ -41,7 +43,7 @@ export function buildDormers(
 ): ThreeNS.Group[] {
   const groups: ThreeNS.Group[] = [];
   for (const dormer of dormers) {
-    const frame = dormerFrame(options.style, options.width, options.depth, options.baseY, dormer);
+    const frame = dormerFrame(options.roof, options.width, options.depth, options.baseY, dormer);
     if (!frame) continue;
     const group = buildDormer(THREE, dormer, frame, options.roofColor);
     group.userData.type = options.tag;
@@ -228,7 +230,7 @@ const WELL_INSET = 0.01;
  * holes break the plate's triangulation.
  */
 export function dormerWells(
-  style: RoofStyle,
+  roof: RoofShapeInput,
   width: number,
   depth: number,
   baseY: number,
@@ -236,7 +238,7 @@ export function dormerWells(
 ): DormerWell[] {
   const wells: DormerWell[] = [];
   for (const dormer of dormers) {
-    const frame = dormerFrame(style, width, depth, baseY, dormer);
+    const frame = dormerFrame(roof, width, depth, baseY, dormer);
     if (!frame) continue;
     const half = frame.width / 2 - WELL_INSET;
     const cos = Math.cos(frame.rotationY);

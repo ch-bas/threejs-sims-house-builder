@@ -184,6 +184,20 @@ to respect.
   back up. Labels and the Wi-Fi/vision overlays key on `lib/overlay-keys.ts`,
   not on every item edit, and the wall-draw preview re-poses one unit box per
   pointer move (#283, #409).
+- **One roof shape.** The peak, the pitch multiplier and the gable's ridge
+  axis live in `lib/roof-shape.ts`; the roof builder, the dormer fitting
+  (`roofSlope`), the street houses and the camera framing all read it, so a
+  dormer stands on the slope that is built. Without `pitch` or `ridge` a roof
+  is the one it always was. Turning the ridge swaps every dormer to the slope
+  across, built or not (north with east, south with west), in the same
+  reducer step: two turns give back the exact list, and since dormers that
+  shared a side still share one, the swap never stacks one on another.
+  Nothing is dropped; a dormer a pitch can't take stays in the house, unbuilt,
+  and the Roof panel says so (`unfittedDormers`). A gable coming back with a
+  stored ridge moves a dormer off its ends unless another stands in the way.
+  Party walls east or west rule out a north–south ridge, which would run our
+  eaves into the attached houses; joining a terrace drops one. The matched
+  party-wall houses copy our pitch only when one is set (#916).
 - **An opening goes with its wall.** Every door and window group is stamped
   with the wall it is cut into (`ownerTag` + `wallId`, from
   `classifyOpeningOwners`, the same map the cuts use), and

@@ -37,12 +37,12 @@ import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
-import { ROOF_EAVE_OVERHANG } from './lib/dormers';
 import { isInsideBuilding } from './lib/footprint';
 import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
 import { loadQualityChoice } from './lib/render-quality';
+import { ROOF_EAVE_OVERHANG, roofPeakHeight } from './lib/roof-shape';
 import { activeStoreyRoomScores } from './lib/room-score';
 import { focusCoverFor } from './lib/scene-insets';
 import { gardenGroundY, groundHeightAt } from './lib/site';
@@ -76,7 +76,6 @@ import { WelcomeBanner } from './panels/welcome-banner';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { revealSetbacks } from './three/reveals';
-import { roofPeakHeight } from './three/roof';
 import { classifyOpeningOwners } from './three/wall-openings';
 import type { HoverInfo } from './hooks/use-three-scene';
 import type { DetectedRoom } from './lib/room-detect';
@@ -735,7 +734,7 @@ export function RoomOrganizer(): JSX.Element {
   const sceneWalls = sceneWallDisplay(view.wallDisplay, walkthroughActive);
   // A traced ground floor builds no shell walls.
   const tracedGround = !!layout.floorPlanImage;
-  const roofPeak = roofShows ? roofPeakHeight(roofStyle, layout.width, layout.height) : 0;
+  const roofPeak = roofShows && layout.roof ? roofPeakHeight(layout.roof, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),
     [roofShows, roofPeak]

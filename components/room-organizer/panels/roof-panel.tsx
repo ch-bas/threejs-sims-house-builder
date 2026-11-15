@@ -19,13 +19,15 @@ import {
   dormerPresetFields,
   dormerPresetOf,
   roofSlopeSides,
+  unfittedDormers,
   type DormerPreset,
 } from '../lib/dormers';
 import { lengthUnitSymbol } from '../lib/format';
+import { DEFAULT_ROOF_PITCH, MAX_ROOF_PITCH, MIN_ROOF_PITCH, partyWallsHoldRidge, ridgeAlongX, roofPitchDegrees } from '../lib/roof-shape';
 import { buildingHeight } from '../lib/storeys';
 import { ROOF_LABELS } from '../three/roof';
 import { RoomDimensionInput } from './room-settings-panel';
-import type { DormerSpec, RoofStyle, WallId } from '../lib/types';
+import type { DormerSpec, RoofRidge, RoofStyle, WallId } from '../lib/types';
 
 const ROOF_STYLES: ReadonlyArray<RoofStyle> = ['none', 'flat', 'gable', 'hipped'];
 
@@ -84,12 +86,80 @@ export function RoofPanel(): JSX.Element {
             />
           </div>
         )}
+        {(style === 'gable' || style === 'hipped') && <RoofShapeControls />}
         {(style === 'gable' || style === 'hipped') && <DormersSection />}
         <p className="text-[10px] text-muted-foreground">
-          The roof sits on top of the highest floor. Gable sheds along the longer side.
+          The roof sits on top of the highest floor. A gable&apos;s ridge runs along the longer side unless you turn it.
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+const RIDGE_LABELS: Record<RoofRidge, string> = { x: 'East–west', z: 'North–south' };
+const AUTO_RIDGE = 'auto';
+
+/** Pitch for a gable or hipped roof, and which way a gable's ridge runs (#916). */
+function RoofShapeControls(): JSX.Element | null {
+  const { layout, actions } = useRoomEditor();
+  const id = useId();
+  const roof = layout.roof;
+  if (!roof) return null;
+  const pitch = roof.pitch ?? DEFAULT_ROOF_PITCH;
+  const degrees = `${Math.round(roofPitchDegrees(roof, layout.width, layout.height))}°`;
+  const longer: RoofRidge = ridgeAlongX('gable', layout.width, layout.height) ? 'x' : 'z';
+  // Attached houses east or west rule out a north–south ridge (the reducer refuses it).
+  const terrace = partyWallsHoldRidge(layout.neighbours);
+  const unfitted = unfittedDormers(roof, layout.width, layout.height).length;
+  // Picking the axis the longer side gives keeps it there when the house is resized.
+  const axisLabel = (axis: RoofRidge) => `${RIDGE_LABELS[axis]}${axis === longer ? ' (pinned)' : ''}`;
+  return (
+    <div className="space-y-2">
+      <div>
+        <Label htmlFor={`${id}-pitch`} className="text-xs">
+          Pitch: {degrees}
+        </Label>
+        <Input
+          id={`${id}-pitch`}
+          type="range"
+          min={MIN_ROOF_PITCH}
+          max={MAX_ROOF_PITCH}
+          step={0.05}
+          value={pitch}
+          aria-valuetext={degrees}
+          onChange={(event) => actions.setRoofPitch(parseFloat(event.target.value))}
+          className="w-full"
+        />
+        {unfitted > 0 && (
+          <p className="mt-1 text-[10px] text-muted-foreground" role="note">
+            {unfitted === 1 ? 'A dormer doesn’t fit at this pitch.' : 'Some dormers don’t fit at this pitch.'} Raise the pitch, or make the dormer lower.
+          </p>
+        )}
+      </div>
+      {roof.style === 'gable' && (
+        <div>
+          <Label htmlFor={`${id}-ridge`} className="text-xs">Ridge</Label>
+          <Select
+            id={`${id}-ridge`}
+            value={roof.ridge ?? AUTO_RIDGE}
+            onValueChange={(value) => actions.setRoofRidge(value === 'x' || value === 'z' ? value : null)}
+            className="text-xs"
+            aria-label="Ridge direction"
+          >
+            <option value={AUTO_RIDGE}>Along the longer side ({RIDGE_LABELS[longer].toLowerCase()})</option>
+            <option value="x">{axisLabel('x')}</option>
+            <option value="z" disabled={terrace && roof.ridge !== 'z'}>
+              {axisLabel('z')}
+            </option>
+          </Select>
+          {terrace && (
+            <p className="mt-1 text-[10px] text-muted-foreground" role="note">
+              The attached houses keep the ridge from running north–south.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -101,7 +171,7 @@ function DormersSection(): JSX.Element {
   const { layout, actions } = useRoomEditor();
   const style = layout.roof?.style ?? 'none';
   const dormers = layout.roof?.dormers ?? [];
-  const sides = roofSlopeSides(style, layout.width, layout.height);
+  const sides = roofSlopeSides(layout.roof ?? style, layout.width, layout.height);
   // Rear (garden) dormers first, the usual loft conversion.
   const defaultSide = sides.includes('south') ? 'south' : sides[0];
 
@@ -138,10 +208,10 @@ function DormerRow({ dormer, index, sides }: { dormer: DormerSpec; index: number
   const onSlope = sides.includes(dormer.side);
   // The fields clamp to what the slope can take, so the value shown is the
   // value built (#281): typing 8 into a 6 m house lands on the roof edge.
-  const style = layout.roof?.style ?? 'none';
+  const roof = layout.roof ?? 'none';
   const baseY = buildingHeight(layout.floors);
-  const offsetRange = dormerOffsetRange(style, layout.width, layout.height, baseY, dormer);
-  const maxWidth = dormerMaxWidth(style, layout.width, layout.height, baseY, dormer);
+  const offsetRange = dormerOffsetRange(roof, layout.width, layout.height, baseY, dormer);
+  const maxWidth = dormerMaxWidth(roof, layout.width, layout.height, baseY, dormer);
 
   return (
     <div className="space-y-2 rounded-md border p-2" aria-label={`Dormer ${index + 1}`} role="group">

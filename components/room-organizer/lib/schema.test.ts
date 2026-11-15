@@ -614,7 +614,7 @@ describe('persisted-field whitelist and bounds (#350)', () => {
             note: 'x',
           } as never,
         ],
-        roof: { style: 'gable', dormers: [{ id: 'd', side: 'south', width: 2, openings: [{ kind: 'casement', from: 0.1, to: 0.9, x: 1 }], tint: 1 }], pitch: 30 } as never,
+        roof: { style: 'gable', dormers: [{ id: 'd', side: 'south', width: 2, openings: [{ kind: 'casement', from: 0.1, to: 0.9, x: 1 }], tint: 1 }], eaves: 30 } as never,
         terrain: { frontY: 0, backY: -1, slope: 3 } as never,
         entrance: { width: 1.4, depth: 1.2, glow: true } as never,
       }),
@@ -632,7 +632,7 @@ describe('persisted-field whitelist and bounds (#350)', () => {
     expect(floor.items[0]!.position).toEqual({ x: 1, z: 2 });
     expect(floor.interiorWalls![0]).not.toHaveProperty('thickness');
     expect(floor.zones![0]).not.toHaveProperty('area');
-    expect(parsed!.roof).not.toHaveProperty('pitch');
+    expect(parsed!.roof).not.toHaveProperty('eaves');
     expect(parsed!.roof!.dormers![0]).not.toHaveProperty('tint');
     expect(parsed!.roof!.dormers![0]!.openings![0]).toEqual({ kind: 'casement', from: 0.1, to: 0.9 });
     expect(parsed!.terrain).toEqual({ frontY: 0, backY: -1 });
