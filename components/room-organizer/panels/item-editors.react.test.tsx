@@ -17,6 +17,7 @@ import type { FurnitureItem, GameMode } from '../lib/types';
 function renderEditor(editor: 'popover' | 'panel', item: FurnitureItem, mode: GameMode = 'build', floorAboveHeight = 2.8, lengthUnit: LengthUnit = 'metric') {
   const actions = {
     toggleMirror: vi.fn(),
+    toggleSwingOut: vi.fn(),
     setSofaShape: vi.fn(),
     resizeItem: vi.fn(),
     setLocked: vi.fn(),

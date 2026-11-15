@@ -465,6 +465,7 @@ export function useCanvas2DInteraction(
       render2DTopDown({
         canvas,
         layout,
+        swingWarnings: true,
         floor: session || edit || wallMove ? { ...activeFloor, items, ...zones, ...(wallMove ? { interiorWalls: wallMove.walls } : {}) } : activeFloor,
         selectedItemId,
         extraSelectedIds,

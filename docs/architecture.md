@@ -148,6 +148,7 @@ components/
     │   ├── street.ts                    Window sills, recessed entrance, frontage
     │   ├── dormers.ts                   Dormer slope fitting + opening layout; dormers swapping across when a gable's ridge turns, the ones a pitch can't take (#916)
     │   ├── roof-shape.ts                The roof's shape: peak height, pitch, ridge axis, eave overhang, the party walls that rule out a north–south ridge; read by the roof, dormers, GLB, street and camera framing (#916)
+    │   ├── door-clearance.ts            What stands in a door's swing: a soft warning for the plan and the popover, never a collision (#917)
     │   ├── door-swing.ts                How a door swings open in EXPLORE: openness by distance, eased angle, side away from the walker (#605)
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── stairwell-rail.ts            The guard rail round a stairwell on the floor above: runs along the hole, open at the arrival and along walls; scene, walker, plan and exports (#923)

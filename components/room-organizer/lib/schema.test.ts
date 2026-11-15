@@ -710,6 +710,7 @@ describe('persisted-field whitelist and bounds (#350)', () => {
       sofaShape: 'standard',
       locked: true,
       mirrored: true,
+      swingOut: true,
       stairsShape: 'winder',
       stairsLeadIn: 1,
       sillHeight: 0.9,

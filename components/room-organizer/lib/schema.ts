@@ -189,6 +189,7 @@ export function isFurnitureItem(value: unknown): value is FurnitureItem {
   // keyboard-delete guards yet fails `=== true` drag checks, desyncing the two.
   if (!isOptionalBoolean(v.locked)) return false;
   if (!isOptionalBoolean(v.mirrored)) return false;
+  if (!isOptionalBoolean(v.swingOut)) return false;
   if (!isOptionalBoolean(v.cameraBracket)) return false;
   if (!isOptionalBoolean(v.isCCTV)) return false;
   if (!isOptionalBoolean(v.isWiFiAccessPoint)) return false;
@@ -422,6 +423,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
   sofaShape: true,
   locked: true,
   mirrored: true,
+  swingOut: true,
   stairsShape: true,
   stairsLeadIn: true,
   sillHeight: true,
@@ -557,9 +559,16 @@ export function repairItem(item: FurnitureItem): FurnitureItem {
   const knownCategory = item.category !== undefined && KNOWN_CATEGORIES.has(item.category);
   const catalogCategory = CATALOG_CATEGORY.get(item.type);
   if (!knownCategory && catalogCategory) patch.category = catalogCategory;
-  const repaired = rebuild(item, ITEM_KEYS, patch);
+  const rebuilt = rebuild(item, ITEM_KEYS, patch);
+  // `swingOut` is only ever `true`; a stored `false` means the default (#917).
+  const repaired = (rebuilt.swingOut as boolean | undefined) === false ? withoutSwingOut(rebuilt) : rebuilt;
   if (knownCategory || catalogCategory || repaired.category === undefined) return repaired;
   const { category: _unknown, ...rest } = repaired;
+  return rest;
+}
+
+function withoutSwingOut(item: FurnitureItem): FurnitureItem {
+  const { swingOut: _default, ...rest } = item;
   return rest;
 }
 

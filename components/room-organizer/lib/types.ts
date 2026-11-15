@@ -158,6 +158,8 @@ export interface FurnitureItem {
   sofaShape?: SofaShape;
   locked?: boolean;
   mirrored?: boolean;
+  /** A door only: its leaf swings to its local −Z, out of the room, rather than into it (#917). */
+  swingOut?: true;
   /** Straight flight (default) or half-turn winder (#205). */
   stairsShape?: StairsShape;
   /** Winder only: extra steps on the up flight, taken from the return flight. */

@@ -353,6 +353,22 @@ describe('layoutToDxf', () => {
     expect([tag(leaf, 10), tag(leaf, 20), tag(leaf, 11), tag(leaf, 21)]).toEqual(['0.000', '1.950', '0.900', '1.950']);
   });
 
+  it('turns the swing to the other side of the wall on a door that opens out (#917)', () => {
+    // West wall as above: unmirrored, hinged at CAD (0, 1.05), opening west.
+    const door = makeItem({ id: 'd', type: 'door', name: 'Door', width: 0.9, depth: 0.1, position: { x: -4, z: 2.5 }, rotation: Math.PI / 2, swingOut: true });
+    for (const [mirrored, centreY, arc] of [
+      [false, '1.050', ['90.000', '180.000']],
+      [true, '1.950', ['180.000', '270.000']],
+    ] as const) {
+      const floor = makeFloor({ items: [{ ...door, mirrored }] });
+      const dxf = layoutToDxf(makeLayout({ floors: [floor] }), floor);
+      const swing = entities(dxf, 'ARC', 'OPENINGS')[0]!;
+      expect([tag(swing, 10), tag(swing, 20), tag(swing, 50), tag(swing, 51)]).toEqual(['0.000', centreY, ...arc]);
+      const leaf = entities(dxf, 'LINE', 'OPENINGS')[2]!;
+      expect([tag(leaf, 11), tag(leaf, 21)]).toEqual(['-0.900', centreY]);
+    }
+  });
+
   it('labels each furniture item and the floor itself with TEXT', () => {
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);

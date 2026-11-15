@@ -103,6 +103,8 @@ export interface LayoutActions {
   setColor(id: string, color: string): void;
   setLocked(id: string, locked: boolean): void;
   toggleMirror(id: string): void;
+  /** A door opens out of the room instead of into it, or back (#917). */
+  toggleSwingOut(id: string): void;
   setRotation(id: string, rotation: number): void;
   replaceItems(items: FurnitureItem[]): void;
   addItems(items: FurnitureItem[]): void;

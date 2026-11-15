@@ -101,6 +101,7 @@ export type LayoutAction =
   | { type: 'setColor'; id: string; color: string }
   | { type: 'setLocked'; id: string; locked: boolean }
   | { type: 'toggleMirror'; id: string }
+  | { type: 'toggleSwingOut'; id: string }
   | { type: 'setRotation'; id: string; rotation: number }
   | { type: 'replaceItems'; items: FurnitureItem[] }
   | { type: 'addItems'; items: FurnitureItem[] }
@@ -701,6 +702,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // items refuse it (#408).
     case 'toggleMirror':
       return patchItem(state, action.id, (item) => (item.locked ? null : { mirrored: !item.mirrored }));
+
+    // Which side of the wall a door opens to (#917): locked like Mirror, beside which it sits.
+    case 'toggleSwingOut':
+      return patchItem(state, action.id, (item) =>
+        item.locked || item.type !== 'door' ? null : { swingOut: item.swingOut ? undefined : true }
+      );
 
     case 'setRotation':
       // Raw on purpose apart from the lock: this is the channel the camera
