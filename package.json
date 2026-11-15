@@ -41,7 +41,10 @@
     "zustand": "^5.0.16"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.10",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.8"
+    }
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
