@@ -8,11 +8,12 @@
  */
 
 import { rotatedHalfExtents, shellWalls, type FootprintBuilding } from './footprint';
+import { partitionFaces } from './geometry';
 import { COARSE_POINTER_QUERY } from './hud-layout';
 import { prefersReducedMotion } from './reduced-motion';
 import { safeGetItem, safeSetItem } from './safe-storage';
 import type { SoundCue } from './sounds';
-import type { FurnitureItem } from './types';
+import type { FurnitureItem, InteriorWall } from './types';
 
 export type HapticKind = 'place' | 'snap' | 'refused';
 
@@ -126,11 +127,14 @@ const FLUSH = 1e-6;
  * ones it is within WALL_RELEASE of, by the same faces snap-to-wall uses:
  * inside for an indoor item, outside for an outdoor one. However it got
  * there: the wall snap, or a grid step that already landed on the face.
+ * An indoor item meets the storey's axis-aligned partitions too (#914).
  */
 export function wallContact(
   position: { x: number; z: number },
   item: Pick<FurnitureItem, 'width' | 'depth' | 'rotation' | 'category'>,
-  building: FootprintBuilding
+  building: FootprintBuilding,
+  interiorWalls: readonly InteriorWall[] = [],
+  items: readonly FurnitureItem[] = []
 ): WallContact {
   const { halfW, halfD } = rotatedHalfExtents(item);
   const sign = item.category === 'outdoor' ? 1 : -1;
@@ -147,6 +151,13 @@ export function wallContact(
     }
     if (gap < FLUSH) touching.push(wall.id);
     if (gap < WALL_RELEASE) near.push(wall.id);
+  }
+  if (sign < 0) {
+    for (const face of partitionFaces(position, halfW, halfD, interiorWalls, items)) {
+      const gap = Math.abs((face.axis === 'x' ? position.x : position.z) - face.value);
+      if (gap < FLUSH) touching.push(face.id);
+      if (gap < WALL_RELEASE) near.push(face.id);
+    }
   }
   return { touching, near };
 }

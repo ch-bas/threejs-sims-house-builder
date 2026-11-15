@@ -137,14 +137,16 @@ export function useItemPlacement({
           roomWidth,
           roomDepth,
           cutout,
+          interiorWalls: activeFloor.interiorWalls,
+          items: activeFloor.items,
         });
         // Against the face, whichever snap put it there: the grid can land
         // it flush before the wall snap has anything to move.
-        snapWallRef.current = wallContact(result, item, { width: roomWidth, height: roomDepth, cutout });
+        snapWallRef.current = wallContact(result, item, { width: roomWidth, height: roomDepth, cutout }, activeFloor.interiorWalls, activeFloor.items);
       }
       return result;
     },
-    [view.snapToGrid, view.snapToItems, view.snapToWall, activeFloor.items, roomWidth, roomDepth, cutout]
+    [view.snapToGrid, view.snapToItems, view.snapToWall, activeFloor.items, activeFloor.interiorWalls, roomWidth, roomDepth, cutout]
   );
 
   const snapPosition = useCallback(
