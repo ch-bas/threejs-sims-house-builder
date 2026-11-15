@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { EDIT_KEYS } from '../lib/keymap';
 import { type BodiesCache, type NpcBody, type NpcHandOff, seatTakenByWalker, withNpcBodies } from '../lib/npc-bodies';
 import { prefersReducedMotion } from '../lib/reduced-motion';
 import { WALK_FOV_DEG } from '../lib/scene-insets';
@@ -510,7 +511,7 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     // lock, so we only act on an Escape received while already unlocked — that
     // second press leaves walkthrough mode entirely (see #67).
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || isTypingTarget(event.target)) return;
+      if (event.key !== EDIT_KEYS.escape || isTypingTarget(event.target)) return;
       if (controls?.isLocked) return;
       onExitRef.current?.();
     };

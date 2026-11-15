@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLengthUnit } from '../contexts';
+import { useAppleKeys } from '../hooks/use-apple-keys';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
@@ -9,6 +10,7 @@ import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
 import { formatMetres, formatSize } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { cycleItem, selectionAnnouncement } from '../lib/item-cycle';
+import { EDIT_KEYS, formatBinding, keyBinding, withShortcut } from '../lib/keymap';
 import { Icon, iconForItem } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
 import { Minimap } from './minimap';
@@ -124,7 +126,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
       if (!canvases.includes(event.target as HTMLCanvasElement)) pressed = null;
     };
     const onTabAfterPress = (event: KeyboardEvent): void => {
-      if (event.key !== 'Tab' || !pressed || !pressed.isConnected || getComputedStyle(pressed).display === 'none') return;
+      if (event.key !== EDIT_KEYS.tab || !pressed || !pressed.isConnected || getComputedStyle(pressed).display === 'none') return;
       const active = document.activeElement;
       if (active && active !== document.body) return;
       keyFocus = true;
@@ -157,7 +159,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
   type SceneKey = Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey' | 'repeat' | 'preventDefault' | 'stopPropagation'>;
   const handleSceneKey = (event: SceneKey) => {
     if (props.walkHud || props.placing || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.key === 'Enter') {
+    if (event.key === EDIT_KEYS.confirm) {
       if (event.repeat || !props.selectedItem) return;
       const popover = document.querySelector<HTMLElement>('.pc-item-popover');
       if (!popover) return;
@@ -166,7 +168,7 @@ export function Viewport(props: ViewportProps): JSX.Element {
       popover.focus();
       return;
     }
-    if (event.key !== 'Tab') return;
+    if (event.key !== EDIT_KEYS.tab) return;
     const next = cycleItem(props.activeFloor.items, props.selectedItem?.id ?? null, event.shiftKey ? -1 : 1);
     if (!next) return;
     event.preventDefault();
@@ -565,6 +567,9 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
 function SelectionChip(props: ViewportProps & { selectionCount: number }): JSX.Element {
   const [namingSet, setNamingSet] = useState(false);
   const onSaveSet = props.onSaveSelectionAsSet;
+  const mac = useAppleKeys();
+  const paste = keyBinding('paste');
+  const copyTitle = `${withShortcut('Copy the selection', 'copy', mac)} — ${paste ? formatBinding(paste, mac) : 'Paste'} pastes, here or on another floor`;
   return (
     <div
       className="pc-top-chip absolute left-1/2"
@@ -597,7 +602,7 @@ function SelectionChip(props: ViewportProps & { selectionCount: number }): JSX.E
             {props.onCopySelection && (
               <ChipButton
                 onClick={props.onCopySelection}
-                title="Copy the selection (Ctrl+C) — Ctrl+V pastes, here or on another floor"
+                title={copyTitle}
               >
                 Copy
               </ChipButton>

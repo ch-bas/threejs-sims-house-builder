@@ -3,18 +3,10 @@
  * the walkthrough hook's RAF loop stays thin and the rules are testable.
  */
 
-const WALK_MOVEMENT_KEYS: ReadonlySet<string> = new Set([
-  'KeyW',
-  'KeyA',
-  'KeyS',
-  'KeyD',
-  'ArrowUp',
-  'ArrowDown',
-  'ArrowLeft',
-  'ArrowRight',
-  'ShiftLeft',
-  'ShiftRight',
-]);
+import { WALK_INTERACT_CODE, WALK_MOVE_CODES, WALK_SPRINT_CODES } from './keymap';
+
+/** The keys that walk, and Shift's sprint: from the one key table (#932). */
+const WALK_MOVEMENT_KEYS: ReadonlySet<string> = new Set([...WALK_MOVE_CODES, ...WALK_SPRINT_CODES]);
 
 /**
  * The longest frame the walker integrates, in seconds. Anything up to it
@@ -52,7 +44,7 @@ export function startsWalking(event: KeyChord): boolean {
  */
 export function interacts(event: KeyChord & { repeat: boolean }): boolean {
   if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return false;
-  return event.code === 'KeyE';
+  return event.code === WALK_INTERACT_CODE;
 }
 
 /**

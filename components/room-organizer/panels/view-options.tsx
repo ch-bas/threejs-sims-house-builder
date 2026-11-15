@@ -3,9 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useEditorViewActions, useLengthUnit, useViewSettings } from '../contexts';
 import { onRovingKeyDown } from '../hooks/roving-keys';
+import { useAppleKeys } from '../hooks/use-apple-keys';
 import { reopenFirstSteps } from '../hooks/use-first-steps';
 import { APP_VERSION } from '../lib/app-version';
 import { LENGTH_UNITS, type LengthUnit } from '../lib/format';
+import { withShortcut } from '../lib/keymap';
 import { enterPhotoMode } from '../lib/photo-mode';
 import { QUALITY_CHOICES, saveQualityChoice, type QualityChoice } from '../lib/render-quality';
 import { toggleViewOption, VIEW_OPTION_KEYS, type ViewOptionKey } from '../lib/view-options';
@@ -364,13 +366,14 @@ function ViewSwitch({
 export function PlanViewToggle(): JSX.Element {
   const { view2D } = useViewSettings('view2D');
   const { toggle } = useEditorViewActions();
+  const mac = useAppleKeys();
   return (
     <button
       type="button"
       aria-pressed={view2D}
       aria-label="2D plan"
       aria-keyshortcuts="2"
-      title={view2D ? 'Back to the 3D view (2)' : 'Show the 2D plan (2)'}
+      title={withShortcut(view2D ? 'Back to the 3D view' : 'Show the 2D plan', 'plan', mac)}
       onClick={() => toggle('view2D')}
       className={`pc-tile pc-view-switch${view2D ? ' pc-tile--active' : ''}`}
     >

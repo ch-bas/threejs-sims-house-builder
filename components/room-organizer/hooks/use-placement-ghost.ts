@@ -13,6 +13,7 @@ import {
   type RunLot,
   type RunSnap,
 } from '../lib/item-run';
+import { GHOST_KEYS } from '../lib/keymap';
 import {
   footprintCorners,
   GHOST_ROTATION_STEP,
@@ -500,15 +501,15 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       // An open question (#649) owns Enter and Escape until it is answered.
       if (confirmOpen()) return;
       const key = event.key.toLowerCase();
-      if (key !== 'r' && key !== 'enter' && key !== ' ' && key !== 'escape') return;
+      if (key !== GHOST_KEYS.turn && key !== GHOST_KEYS.put && key !== GHOST_KEYS.putToo && key !== GHOST_KEYS.end) return;
       // Enter and Space on a focused button (the hint's Cancel, Undo, …) belong
       // to that button; the picked tile is blurred, so it never lands here.
-      if ((key === 'enter' || key === ' ') && isFocusedControl(event.target)) return;
+      if ((key === GHOST_KEYS.put || key === GHOST_KEYS.putToo) && isFocusedControl(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
-      if (key === 'escape') {
+      if (key === GHOST_KEYS.end) {
         paramsRef.current.endGhost();
-      } else if (key === 'r') {
+      } else if (key === GHOST_KEYS.turn) {
         live.turn = (live.turn + (event.shiftKey ? -1 : 1) * GHOST_ROTATION_STEP) % (2 * Math.PI);
         moveTo(live.raw);
       } else if (!event.repeat && pressId === null) {

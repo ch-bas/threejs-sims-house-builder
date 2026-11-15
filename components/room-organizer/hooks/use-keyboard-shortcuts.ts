@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { EDIT_KEYS as K } from '../lib/keymap';
 import { isTypingTarget } from '../lib/walk-input';
 import type { FurnitureItem } from '../lib/types';
 import type { SelectedWall } from '../lib/wall-sides';
@@ -71,17 +72,17 @@ const ARROW_DELTAS: Record<string, readonly [number, number]> = {
   ArrowRight: [1, 0],
 };
 
-const DRAG_INTERRUPTING_CHORDS = new Set(['z', 'y', 'd', 'v']);
-const DRAG_INTERRUPTING_KEYS = new Set([
-  'Delete',
-  'Backspace',
-  'r',
-  'R',
-  'u',
-  'U',
-  '2',
-  'PageUp',
-  'PageDown',
+const DRAG_INTERRUPTING_CHORDS = new Set<string>([K.undo, K.redo, K.duplicate, K.paste]);
+const DRAG_INTERRUPTING_KEYS = new Set<string>([
+  K.deleteKey,
+  K.backspace,
+  K.rotate,
+  K.rotate.toUpperCase(),
+  K.lock,
+  K.lock.toUpperCase(),
+  K.plan,
+  K.floorUp,
+  K.floorDown,
   ...Object.keys(ARROW_DELTAS),
 ]);
 
@@ -118,13 +119,13 @@ export function useKeyboardShortcuts({
       // Letter shortcuts match regardless of case, so Caps Lock doesn't
       // silently disable them (#294).
       const key = event.key.toLowerCase();
-      if (ctrlOrCmd && key === 'z') {
+      if (ctrlOrCmd && key === K.undo) {
         event.preventDefault();
         if (event.shiftKey) handlers.redo();
         else handlers.undo();
         return;
       }
-      if (ctrlOrCmd && key === 'y') {
+      if (ctrlOrCmd && key === K.redo) {
         event.preventDefault();
         handlers.redo();
         return;
@@ -134,7 +135,7 @@ export function useKeyboardShortcuts({
       // walkthrough owns the keyboard, like the bare keys below, and in
       // EXPLORE on the 2D plan too (#699); undo/redo above stay (#339).
       const editsOff = walkthroughActive || exploring;
-      if (ctrlOrCmd && key === 'd' && selectedItem && !editsOff) {
+      if (ctrlOrCmd && key === K.duplicate && selectedItem && !editsOff) {
         event.preventDefault();
         handlers.duplicateItem(selectedItem.id);
         return;
@@ -143,23 +144,23 @@ export function useKeyboardShortcuts({
       // Furniture clipboard (#153). Ctrl+C only engages while furniture is
       // selected, so copying text elsewhere in the page keeps working; Ctrl+V
       // engages only when the clipboard actually has furniture.
-      if (ctrlOrCmd && key === 'c' && selectedItem && !editsOff) {
+      if (ctrlOrCmd && key === K.copy && selectedItem && !editsOff) {
         if (handlers.copySelection()) event.preventDefault();
         return;
       }
-      if (ctrlOrCmd && key === 'v' && !editsOff) {
+      if (ctrlOrCmd && key === K.paste && !editsOff) {
         if (handlers.pasteClipboard()) event.preventDefault();
         return;
       }
 
       // A pending keyboard placement owns Enter/Escape (#168).
-      if (event.key === 'Enter' && handlers.confirmPlacement) {
+      if (event.key === K.confirm && handlers.confirmPlacement) {
         event.preventDefault();
         handlers.confirmPlacement();
         return;
       }
 
-      if (event.key === 'Escape') {
+      if (event.key === K.escape) {
         event.preventDefault();
         if (handlers.cancelPlacement) handlers.cancelPlacement();
         else handlers.deselect();
@@ -178,16 +179,16 @@ export function useKeyboardShortcuts({
       // The clock and the floor only change what you look at, so they work
       // while walking too: day to night with `[`/`]` (#463c), another storey
       // with PageUp/PageDown, landing at its stairs (#446).
-      if (event.key === '[' || event.key === ']') {
+      if (event.key === K.earlier || event.key === K.later) {
         event.preventDefault();
-        handlers.advanceTime(event.key === ']' ? 1 : -1);
+        handlers.advanceTime(event.key === K.later ? 1 : -1);
         return;
       }
-      if (event.key === 'PageUp' || event.key === 'PageDown') {
+      if (event.key === K.floorUp || event.key === K.floorDown) {
         event.preventDefault();
         // One storey per press: a held key would rebuild the scene thirty
         // times a second and skip storeys unseen.
-        if (!event.repeat) handlers.changeFloor(event.key === 'PageUp' ? 1 : -1);
+        if (!event.repeat) handlers.changeFloor(event.key === K.floorUp ? 1 : -1);
         return;
       }
 
@@ -198,7 +199,7 @@ export function useKeyboardShortcuts({
       // walkthrough hook owns its own Esc-to-exit handling.
       if (walkthroughActive) return;
 
-      if (key === 'f' && selectedItem) {
+      if (key === K.focus && selectedItem) {
         event.preventDefault();
         // Once per press: each repeat would restart the camera's glide (#930).
         if (!event.repeat) handlers.focusOnSelection();
@@ -207,8 +208,8 @@ export function useKeyboardShortcuts({
 
       // EXPLORE on the 2D plan: the view keys (f, 2, m, g, w, p) work, the
       // keys that change the house below do not (#699).
-      const deleteKey = event.key === 'Delete' || event.key === 'Backspace';
-      if (exploring && (deleteKey || key === 'r' || key === 'u' || Object.hasOwn(ARROW_DELTAS, event.key))) return;
+      const deleteKey = event.key === K.deleteKey || event.key === K.backspace;
+      if (exploring && (deleteKey || key === K.rotate || key === K.lock || Object.hasOwn(ARROW_DELTAS, event.key))) return;
 
       // A held delete key takes one thing. Focus moves on after a removal, so
       // its repeats would otherwise land on whatever comes next: another row,
@@ -246,7 +247,7 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if (key === 'r' && selectedItem) {
+      if (key === K.rotate && selectedItem) {
         event.preventDefault();
         if (event.shiftKey) {
           // Fine-grained 15° rotations when Shift is held.
@@ -257,38 +258,38 @@ export function useKeyboardShortcuts({
         return;
       }
 
-      if (key === 'u' && selectedItem) {
+      if (key === K.lock && selectedItem) {
         event.preventDefault();
         // Once per press: a held key would flip it on every repeat.
         if (!event.repeat) handlers.toggleLock(selectedItem.id);
         return;
       }
 
-      if (event.key === '2') {
+      if (event.key === K.plan) {
         event.preventDefault();
         handlers.toggle2D();
         return;
       }
 
-      if (key === 'm') {
+      if (key === K.measurements) {
         event.preventDefault();
         handlers.toggleMeasurements();
         return;
       }
 
-      if (key === 'g') {
+      if (key === K.snap) {
         event.preventDefault();
         handlers.toggleSnap();
         return;
       }
 
-      if (key === 'w' && hasSignalItems) {
+      if (key === K.signals && hasSignalItems) {
         event.preventDefault();
         handlers.toggleSignals();
         return;
       }
 
-      if (key === 'p') {
+      if (key === K.panels) {
         event.preventDefault();
         handlers.toggleSidebar();
         return;
@@ -334,5 +335,5 @@ function ownsKey(event: KeyboardEvent): boolean {
   if (!isTypingTarget(event.target)) return false;
   if (!(event.target instanceof HTMLSelectElement)) return true;
   const key = event.key.toLowerCase();
-  return !((event.ctrlKey || event.metaKey) && (key === 'z' || key === 'y'));
+  return !((event.ctrlKey || event.metaKey) && (key === K.undo || key === K.redo));
 }
