@@ -8,7 +8,7 @@ import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room
 import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
-import { useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
+import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
@@ -586,7 +586,7 @@ export function RoomOrganizer(): JSX.Element {
   );
   // L2 photo (#626): the canvas only orbits while the HUD is hidden.
   const photoActive = usePhotoModeActive();
-  const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
+  const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, addFrameJob, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
       walkthroughActive,
@@ -791,6 +791,7 @@ export function RoomOrganizer(): JSX.Element {
     canvasRef,
     active: isReady && !view.view2D,
     walkthroughActive,
+    addFrameJob,
   });
 
   const { handleScreenshot, handleExportGlb, handleShareLink, handleImport } = useImportExport({
@@ -1334,6 +1335,8 @@ function useCameraTargetOnStorey(
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
+    // An eased move lands first: its next frame would undo the slide (#930).
+    settleCameraMove(controls);
     const dy = cameraTargetY - controls.target.y;
     if (Math.abs(dy) < 0.01) return;
     // Keep the orbit target on the new storey even mid-walkthrough, so the

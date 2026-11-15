@@ -21,6 +21,7 @@ import {
   walkLampStorey,
   type WalkWorld,
 } from '../lib/walk-world';
+import { settleCameraMove } from './use-camera-presets';
 import type { StreetSite } from '../lib/street-row';
 import type { FurnitureItem } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -275,6 +276,8 @@ export function useWalkthrough(options: UseWalkthroughOptions): UseWalkthroughRe
     if (!canvas || !THREE || !camera) return undefined;
 
     const orbit = orbitRef.current;
+    // An eased orbit move (#930) lands before the walk saves the pose to come back to.
+    settleCameraMove(orbit);
     if (orbit) orbit.enabled = false;
 
     const cleanup: Array<() => void> = [];

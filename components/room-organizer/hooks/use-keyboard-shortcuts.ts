@@ -185,7 +185,9 @@ export function useKeyboardShortcuts({
       }
       if (event.key === 'PageUp' || event.key === 'PageDown') {
         event.preventDefault();
-        handlers.changeFloor(event.key === 'PageUp' ? 1 : -1);
+        // One storey per press: a held key would rebuild the scene thirty
+        // times a second and skip storeys unseen.
+        if (!event.repeat) handlers.changeFloor(event.key === 'PageUp' ? 1 : -1);
         return;
       }
 
@@ -198,7 +200,8 @@ export function useKeyboardShortcuts({
 
       if (key === 'f' && selectedItem) {
         event.preventDefault();
-        handlers.focusOnSelection();
+        // Once per press: each repeat would restart the camera's glide (#930).
+        if (!event.repeat) handlers.focusOnSelection();
         return;
       }
 

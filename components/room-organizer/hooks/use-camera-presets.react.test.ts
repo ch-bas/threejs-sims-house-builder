@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { ORBIT_LENS_SCALE, ORBIT_START, frameInRegion, houseFrameBox, type Vec3 } from '../lib/scene-insets';
-import { useCameraPresets, type UseCameraPresetsOptions } from './use-camera-presets';
+import { settleCameraMove, useCameraPad, useCameraPresets, type UseCameraPresetsOptions } from './use-camera-presets';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 // #608: the camera presets, item focus and the house framing, including the
@@ -273,5 +273,214 @@ describe('framing on a compact screen (phone layout contract)', () => {
     expect(r.camera.view?.enabled).toBe(false);
     rerender({ walkthroughActive: false });
     expect(r.camera.view).toMatchObject({ enabled: true, offsetX: shifted.offsetX, offsetY: shifted.offsetY });
+  });
+});
+
+describe('eased moves (#930)', () => {
+  /** The render loop's frame jobs, run by hand. */
+  function frameJobs() {
+    const jobs = new Set<(now: number) => boolean>();
+    return {
+      jobs,
+      addFrameJob: (job: (now: number) => boolean) => {
+        jobs.add(job);
+        return () => {
+          jobs.delete(job);
+        };
+      },
+      run(now: number) {
+        for (const job of [...jobs]) if (!job(now)) jobs.delete(job);
+      },
+    };
+  }
+
+  it('glides into a preset and ends exactly where the cut puts it', () => {
+    const cut = rig();
+    const cutHook = render(cut).result;
+    act(() => cutHook.current.applyPreset('front'));
+    cleanup();
+
+    vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const r = rig();
+    const loop = frameJobs();
+    const { result } = render(r, { addFrameJob: loop.addFrameJob });
+    act(() => result.current.applyPreset('front'));
+    // Nothing moves until the first frame.
+    near(pose(r.camera), ORBIT_START);
+    loop.run(1100);
+    const mid = pose(r.camera);
+    expect(mid).not.toEqual([...ORBIT_START]);
+    expect(loop.jobs.size).toBe(1);
+    loop.run(1400);
+    expect(loop.jobs.size).toBe(0);
+    near(pose(r.camera), pose(cut.camera));
+    near(r.controls.target, [cut.controls.target.x, cut.controls.target.y, cut.controls.target.z]);
+    expect(r.invalidate).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('cuts with reduced motion', () => {
+    const matchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+    try {
+      const r = rig();
+      const loop = frameJobs();
+      const { result } = render(r, { addFrameJob: loop.addFrameJob });
+      act(() => result.current.focusOn({ x: 2, z: -1 }));
+      expect(loop.jobs.size).toBe(0);
+      near(r.controls.target, [2, 0, -1]);
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  });
+
+  /** A Fit glide on a desktop window, `ms` along; the scene's canvas is in the page. */
+  function glide(ms: number, options: Partial<UseCameraPresetsOptions> = {}) {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    setViewport(1440, 900);
+    const r = rig();
+    const loop = frameJobs();
+    const canvas = canvasOf(1440, 900);
+    document.body.appendChild(canvas);
+    const hook = render(r, { addFrameJob: loop.addFrameJob, canvasRef: { current: canvas }, ...options });
+    act(() => hook.result.current.fitToRoom());
+    loop.run(ms);
+    return { r, loop, canvas, hook };
+  }
+  /** Where a cut Fit puts the camera. */
+  function cutFit(): Vec3 {
+    setViewport(1440, 900);
+    const cut = rig();
+    const hook = render(cut, { canvasRef: { current: canvasOf(1440, 900) } }).result;
+    act(() => hook.current.fitToRoom());
+    return pose(cut.camera);
+  }
+
+  it('a key or a press on the scene stops the move where it is', () => {
+    for (const input of ['keydown', 'pointerdown'] as const) {
+      const { r, loop, canvas } = glide(100);
+      const stopped = pose(r.camera);
+      canvas.dispatchEvent(input === 'keydown' ? new KeyboardEvent('keydown', { key: 'a', bubbles: true }) : new Event('pointerdown', { bubbles: true }));
+      expect(loop.jobs.size).toBe(0);
+      loop.run(1000);
+      near(pose(r.camera), stopped);
+      cleanup();
+      document.body.innerHTML = '';
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('a press or a key anywhere else lands it first, so the button acts from the end pose', () => {
+    const target = cutFit();
+    for (const input of ['keydown', 'pointerdown'] as const) {
+      const { r, loop } = glide(100);
+      document.body.dispatchEvent(input === 'keydown' ? new KeyboardEvent('keydown', { key: 'PageUp', bubbles: true }) : new Event('pointerdown', { bubbles: true }));
+      expect(loop.jobs.size).toBe(0);
+      near(pose(r.camera), target);
+      cleanup();
+      document.body.innerHTML = '';
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('a new move replaces the old one', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const r = rig();
+    const loop = frameJobs();
+    const { result } = render(r, { addFrameJob: loop.addFrameJob });
+    act(() => result.current.applyPreset('top'));
+    act(() => result.current.applyPreset('corner'));
+    expect(loop.jobs.size).toBe(1);
+    vi.restoreAllMocks();
+  });
+
+  it('the pad zoom and a floor switch land the glide first, and keep their own move', () => {
+    const target = cutFit();
+    const { r, loop } = glide(100);
+    const pad = renderHook(() =>
+      useCameraPad({
+        threeModuleRef: { current: null },
+        cameraRef: { current: r.camera },
+        controlsRef: { current: r.controls as unknown as OrbitControls },
+        invalidate: vi.fn(),
+      })
+    ).result;
+    act(() => pad.current.zoomByPad('+'));
+    expect(loop.jobs.size).toBe(0);
+    const zoomed = pose(r.camera);
+    expect(zoomed).not.toEqual(target);
+    loop.run(1000);
+    near(pose(r.camera), zoomed);
+    vi.restoreAllMocks();
+
+    // A floor switch slides the target after settleCameraMove, as useCameraTargetOnStorey does.
+    const second = glide(100);
+    settleCameraMove(second.r.controls);
+    expect(second.loop.jobs.size).toBe(0);
+    near(pose(second.r.camera), target);
+    const landedY = second.r.controls.target.y;
+    second.r.controls.target.y += 3;
+    second.loop.run(1000);
+    expect(second.r.controls.target.y).toBeCloseTo(landedY + 3, 6);
+    vi.restoreAllMocks();
+  });
+
+  it('the 2D plan or the walkthrough lands it at its end pose', () => {
+    const target = cutFit();
+    for (const change of [{ active: false }, { walkthroughActive: true }]) {
+      const { r, loop, hook } = glide(100, { active: true });
+      hook.rerender(change);
+      expect(loop.jobs.size).toBe(0);
+      near(pose(r.camera), target);
+      cleanup();
+      document.body.innerHTML = '';
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('a phone turned mid-Fit ends at the Fit for the new shape (re-framed, not the old distance)', () => {
+    vi.useFakeTimers();
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const size = { width: 390, height: 844 };
+    const canvas = document.createElement('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { get: () => size.width });
+    Object.defineProperty(canvas, 'clientHeight', { get: () => size.height });
+    canvas.getBoundingClientRect = () => rectOf(0, 0, size.width, size.height);
+    document.body.appendChild(canvas);
+    setViewport(size.width, size.height);
+    const panel = { current: rectOf(0, 600, 390, 844) };
+    occluder(panel);
+    const r = rig();
+    const loop = frameJobs();
+    const { result } = render(r, { active: true, addFrameJob: loop.addFrameJob, canvasRef: { current: canvas } });
+    // Moved away, so Fit has somewhere to go.
+    r.camera.position.set(9, 4, -7);
+    act(() => result.current.fitToRoom());
+    now = 40;
+    loop.run(now);
+    // The phone turns.
+    size.width = 844;
+    size.height = 390;
+    setViewport(844, 390);
+    panel.current = rectOf(0, 300, 844, 390);
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+      vi.advanceTimersByTime(200);
+    });
+    now = 5000;
+    loop.run(now);
+    expect(loop.jobs.size).toBe(0);
+    const fit = frameInRegion({
+      canvasWidth: 844,
+      canvasHeight: 390,
+      region: { left: 0, top: 0, right: 844, bottom: 300 },
+      fovDeg: r.camera.fov,
+      ...houseFrameBox({ width: 8, depth: 8, height: 3, roof: null }),
+      direction: [0.6, 0.7, 0.6],
+    });
+    near(pose(r.camera), fit.position);
+    near(r.controls.target, fit.target);
+    vi.restoreAllMocks();
   });
 });

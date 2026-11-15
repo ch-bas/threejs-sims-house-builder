@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { useViewSettings } from '../contexts';
+import { settleCameraMove } from '../hooks/use-camera-presets';
 import { useTopBarSlot } from '../hooks/use-edge-var';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -61,6 +62,8 @@ export function TouchModeToggle({ controlsRef, isReady, onFit }: TouchModeToggle
   const handleZoom = (direction: '+' | '-') => {
     const controls = controlsRef.current;
     if (!controls) return;
+    // A Fit still gliding lands first, or its next frame undoes the zoom.
+    settleCameraMove(controls);
     const camera = controls.object;
     const offset = camera.position.clone().sub(controls.target);
     offset.multiplyScalar(direction === '+' ? 0.75 : 1.3);

@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { cameraTweenDuration, createCameraTween, samePose } from '../lib/camera-tween';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from '../lib/camera-zoom';
 import { ORBIT_LENS_SCALE, ORBIT_MAX_POLAR, ORBIT_START, focusOffset, frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset } from '../lib/scene-insets';
 import { OCCLUDER_SELECTOR, SHEET_SELECTOR, measureRegion } from './scene-occluders';
 import { useEvent } from './use-event';
+import { useReducedMotion } from './use-reduced-motion';
+import type { FrameJob } from './use-three-scene';
+import type { CameraPose } from '../lib/camera-tween';
 import type { FocusCover, HouseShape, Vec3 } from '../lib/scene-insets';
 import type { CameraPreset } from '../lib/types';
 import type * as ThreeNS from 'three';
@@ -49,6 +53,11 @@ export interface UseCameraPresetsOptions {
   active?: boolean;
   /** First-person mode: the projection shift is dropped while it runs. */
   walkthroughActive?: boolean;
+  /**
+   * The render loop's one-off frame jobs (#930). With it, presets, Fit and
+   * Focus ease into place; without it (or with reduced motion) they cut.
+   */
+  addFrameJob?: (job: FrameJob) => () => void;
 }
 
 /** Settle time before re-framing after a resize or a HUD change. */
@@ -77,6 +86,30 @@ export interface FocusView {
   cover?: FocusCover | null;
 }
 
+interface Glide {
+  end: CameraPose;
+  /** A frame-to-fit's mode; null for a preset or a focus. */
+  frameMode: FrameMode | null;
+  arrive: (() => void) | undefined;
+  /** Stop where it is. */
+  stop(): void;
+  /** Land on the end pose now. */
+  finish(): void;
+}
+
+/** Each camera's move in flight, for the other code that moves it. */
+const settlers = new WeakMap<object, () => void>();
+
+/**
+ * Land an eased camera move (#930) at its end pose now. Anything else that
+ * moves the orbit camera (the pad, the touch zoom, a floor switch, the
+ * walkthrough taking it) calls this first, so the glide's next frame
+ * doesn't write over it.
+ */
+export function settleCameraMove(controls: object | null): void {
+  if (controls) settlers.get(controls)?.();
+}
+
 export function useCameraPresets({
   cameraRef,
   controlsRef,
@@ -89,6 +122,7 @@ export function useCameraPresets({
   canvasRef,
   active = false,
   walkthroughActive = false,
+  addFrameJob,
 }: UseCameraPresetsOptions): {
   applyPreset(preset: CameraPreset): void;
   focusOn(target: { x: number; z: number }, view?: FocusView): void;
@@ -99,23 +133,116 @@ export function useCameraPresets({
   // re-frame; once they orbit, pan or zoom, their view is left alone.
   const framedRef = useRef<FramedPose | null>(null);
 
-  const applyPreset = useCallback(
-    (preset: CameraPreset) => {
+  // The eased move in flight, if any (#930).
+  const reducedMotion = useReducedMotion();
+  const glideRef = useRef<Glide | null>(null);
+  /** Stop the move where it is: the player took the camera. */
+  const stopTween = useCallback(() => {
+    glideRef.current?.stop();
+  }, []);
+  /** Put the move's end pose on now: something else is about to use the camera. */
+  const settleTween = useCallback(() => {
+    glideRef.current?.finish();
+  }, []);
+
+  /**
+   * Take the camera to `end`: at once, or eased along an arc when `eased`
+   * and motion is welcome. The end pose goes on exactly as a cut puts it
+   * (controls update, ground clearance and all), then `arrive` runs.
+   * `frameMode` marks a frame-to-fit, which a resize mid-move frames again.
+   *
+   * A pointer down, a wheel or a key on the scene stops the move where it
+   * is: the player has the camera. Any other press or key lands it at once,
+   * before the button or key acts (the pad, a floor switch, 2D, EXPLORE),
+   * and so do `settleCameraMove` callers. A new move starts where the old
+   * one stopped.
+   */
+  const moveCamera = useCallback(
+    (end: CameraPose, eased: boolean, arrive?: () => void, frameMode: FrameMode | null = null) => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       if (!camera) return;
-
-      const view = PRESETS[preset](Math.max(2, roomSize));
-      camera.position.set(view.position[0], view.position[1], view.position[2]);
-      camera.lookAt(view.target[0], view.target[1], view.target[2]);
-
-      if (controls) {
-        controls.target.set(view.target[0], view.target[1], view.target[2]);
-        controls.update();
+      const current = glideRef.current;
+      // The same move asked again (a re-frame that lands where this one
+      // goes): let it run on.
+      if (eased && current && samePose(current.end, end)) {
+        current.arrive = arrive;
+        return;
       }
-      invalidate?.();
+      current?.stop();
+      const place = (then?: () => void) => {
+        placeCamera(camera, controls, end);
+        then?.();
+        invalidate?.();
+      };
+      const from: CameraPose | null = controls
+        ? { position: [camera.position.x, camera.position.y, camera.position.z], target: [controls.target.x, controls.target.y, controls.target.z] }
+        : null;
+      const duration = eased && from && addFrameJob && !walkthroughActive ? cameraTweenDuration(from, end, reducedMotion) : 0;
+      if (!from || !controls || !addFrameJob || duration === 0) {
+        place(arrive);
+        return;
+      }
+      const tween = createCameraTween(from, end, performance.now(), duration);
+      const canvas = canvasRef?.current ?? null;
+      const onScene = (event: Event) => canvas !== null && event.target instanceof Node && canvas.contains(event.target);
+      const onInput = (event: Event) => {
+        if (onScene(event)) glide.stop();
+        else glide.finish();
+      };
+      const onWheel = () => glide.stop();
+      let removeJob: (() => void) | null = null;
+      const end_ = () => {
+        removeJob?.();
+        window.removeEventListener('pointerdown', onInput, true);
+        window.removeEventListener('keydown', onInput, true);
+        canvas?.removeEventListener('wheel', onWheel, true);
+        settlers.delete(controls);
+        if (glideRef.current === glide) glideRef.current = null;
+      };
+      const glide: Glide = {
+        end,
+        frameMode,
+        arrive,
+        stop: end_,
+        finish: () => {
+          end_();
+          place(glide.arrive);
+        },
+      };
+      removeJob = addFrameJob((now) => {
+        const { pose, done } = tween.sample(now);
+        if (done) {
+          glide.finish();
+          return false;
+        }
+        // The loop's controls.update() aims the camera right after this.
+        camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+        controls.target.set(pose.target[0], pose.target[1], pose.target[2]);
+        return true;
+      });
+      // Capture: ahead of the button or shortcut the press or key is for.
+      window.addEventListener('pointerdown', onInput, true);
+      window.addEventListener('keydown', onInput, true);
+      canvas?.addEventListener('wheel', onWheel, { capture: true, passive: true });
+      settlers.set(controls, glide.finish);
+      glideRef.current = glide;
     },
-    [cameraRef, controlsRef, roomSize, invalidate]
+    [cameraRef, controlsRef, canvasRef, addFrameJob, walkthroughActive, reducedMotion, invalidate]
+  );
+
+  // The 2D plan hides the camera and the walkthrough takes it: a move in
+  // flight lands at once rather than freezing half-way. Unmounting stops it.
+  useEffect(() => {
+    if (!active || walkthroughActive) settleTween();
+  }, [active, walkthroughActive, settleTween]);
+  useEffect(() => stopTween, [stopTween]);
+
+  const applyPreset = useCallback(
+    (preset: CameraPreset) => {
+      moveCamera(PRESETS[preset](Math.max(2, roomSize)), true);
+    },
+    [moveCamera, roomSize]
   );
 
   const focusOn = useCallback(
@@ -123,21 +250,10 @@ export function useCameraPresets({
     // floor plane — without it, focusing an upper-floor item dives the camera
     // into the storey below and frames empty floor (#126).
     (target: { x: number; z: number }, { floorY = 0, size = 1, cover = null }: FocusView = {}) => {
-      const camera = cameraRef.current;
-      const controls = controlsRef.current;
-      if (!camera) return;
-
       const [x, y, z] = focusOffset(target, size, cover);
-      camera.position.set(target.x + x, floorY + y, target.z + z);
-      camera.lookAt(target.x, floorY, target.z);
-
-      if (controls) {
-        controls.target.set(target.x, floorY, target.z);
-        controls.update();
-      }
-      invalidate?.();
+      moveCamera({ position: [target.x + x, floorY + y, target.z + z], target: [target.x, floorY, target.z] }, true);
     },
-    [cameraRef, controlsRef, invalidate]
+    [moveCamera]
   );
 
   /**
@@ -145,10 +261,11 @@ export function useCameraPresets({
    * three-quarter view, and on load the camera's untouched (0, 8, 8) start.
    * A compact one fits the house inside the canvas area the HUD leaves
    * visible, and shifts the projection so the house sits in its middle.
-   * Returns false when nothing was framed.
+   * Returns false when nothing was framed. `eased`: the player asked for
+   * it (Fit), so the camera glides there; re-framing after a resize cuts.
    */
   const frame = useCallback(
-    (mode: FrameMode): boolean => {
+    (mode: FrameMode, eased = false): boolean => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       const canvas = canvasRef?.current ?? null;
@@ -189,26 +306,26 @@ export function useCameraPresets({
         if (camera.view?.enabled) camera.clearViewOffset();
       }
 
-      camera.position.set(...position);
-      camera.lookAt(...target);
-      if (controls) {
-        controls.target.set(...target);
-        controls.update();
-      }
-      // Read back after controls.update(), which may clamp the pose.
-      framedRef.current = {
-        mode,
-        position: [camera.position.x, camera.position.y, camera.position.z],
-        target: controls ? [controls.target.x, controls.target.y, controls.target.z] : target,
-      };
-      invalidate?.();
+      moveCamera(
+        { position, target },
+        eased,
+        () => {
+          // Read back after controls.update(), which may clamp the pose.
+          framedRef.current = {
+            mode,
+            position: [camera.position.x, camera.position.y, camera.position.z],
+            target: controls ? [controls.target.x, controls.target.y, controls.target.z] : target,
+          };
+        },
+        mode
+      );
       return true;
     },
-    [cameraRef, controlsRef, canvasRef, roomSize, roomWidth, roomDepth, buildingHeight, roof, walkthroughActive, invalidate]
+    [cameraRef, controlsRef, canvasRef, roomSize, roomWidth, roomDepth, buildingHeight, roof, walkthroughActive, moveCamera]
   );
 
   const fitToRoom = useCallback(() => {
-    frame('fit');
+    frame('fit', true);
   }, [frame]);
 
   // Latest `frame` for the long-lived listeners below.
@@ -257,6 +374,12 @@ export function useCameraPresets({
       if (!camera) return;
       if (!loadFramedRef.current) {
         loadFramedRef.current = frameRef.current('load');
+        return;
+      }
+      // A Fit still gliding frames again for the new size, from where it is.
+      const gliding = glideRef.current?.frameMode ?? null;
+      if (gliding) {
+        frameRef.current(gliding, true);
         return;
       }
       const framed = framedRef.current;
@@ -383,6 +506,16 @@ export function useCameraPresets({
   return { applyPreset, focusOn, fitToRoom };
 }
 
+/** Put a pose on the camera at once: every move's end, and the whole move before #930. */
+function placeCamera(camera: ThreeNS.PerspectiveCamera, controls: OrbitControlsType | null, { position, target }: CameraPose): void {
+  camera.position.set(position[0], position[1], position[2]);
+  camera.lookAt(target[0], target[1], target[2]);
+  if (controls) {
+    controls.target.set(target[0], target[1], target[2]);
+    controls.update();
+  }
+}
+
 function cameraAtPose(
   camera: ThreeNS.PerspectiveCamera | null,
   controls: OrbitControlsType | null,
@@ -455,6 +588,7 @@ export function useCameraPad({ threeModuleRef, cameraRef, controlsRef, invalidat
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!THREE || !camera || !controls) return;
+    settleCameraMove(controls);
     orbitCamera(THREE, camera, controls, direction);
     // controls.update() above consumes the move, so the RAF loop won't
     // see it; mark the frame dirty explicitly (#337).
@@ -464,6 +598,7 @@ export function useCameraPad({ threeModuleRef, cameraRef, controlsRef, invalidat
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
+    settleCameraMove(controls);
     zoomCamera(camera, controls, direction);
     invalidate();
   });
