@@ -105,6 +105,7 @@ const INITIAL_VIEW_SETTINGS: ViewSettings = {
   wallDisplay: 'cutaway',
   measurementMode: false,
   soundsEnabled: false,
+  ambienceEnabled: false,
   hapticsEnabled: true,
   drawWallMode: false,
   drawZoneMode: false,

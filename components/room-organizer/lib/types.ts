@@ -444,6 +444,8 @@ export interface ViewSettings {
   measurementMode: boolean;
   /** When true, the UI plays short Web Audio cues on key actions. */
   soundsEnabled: boolean;
+  /** When true (with `soundsEnabled`), EXPLORE plays its ambience: rain on the roof and footsteps (#911). */
+  ambienceEnabled: boolean;
   /** When true, a touch device buzzes for a placement, a wall snap and a refusal (#687). */
   hapticsEnabled: boolean;
   /** When true, clicking pairs of floor points draws an interior wall. */

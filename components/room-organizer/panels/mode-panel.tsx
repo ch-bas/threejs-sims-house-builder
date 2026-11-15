@@ -13,6 +13,7 @@ import { formatAmount, formatMoney } from '../lib/format';
 import { canVibrate, saveHapticsChoice } from '../lib/haptics';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { ENTRANCE_DOOR_ID } from '../lib/street';
+import { nextSoundSetting, soundTileLabel } from '../lib/view-options';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 import { ViewOptionsMenu } from './view-options';
 import { DISABLED_TILE } from './wall-display-pill';
@@ -41,11 +42,11 @@ const MODES: ReadonlyArray<{
 
 export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Element {
   const { layout, history } = useRoomEditor();
-  const view = useViewSettings('showCameraVision', 'showMinimap', 'showNpcs', 'snapToGrid', 'soundsEnabled', 'hapticsEnabled', 'view2D');
+  const view = useViewSettings('showCameraVision', 'showMinimap', 'showNpcs', 'snapToGrid', 'soundsEnabled', 'ambienceEnabled', 'hapticsEnabled', 'view2D');
   // Only where a buzz can happen: a touch-first device with the API (#687).
   const coarsePointer = useMediaQuery(COARSE_POINTER_QUERY);
   const hapticsSwitch = coarsePointer && canVibrate();
-  const { setAutoCycleLighting, toggle } = useEditorViewActions();
+  const { setAutoCycleLighting, setView, toggle } = useEditorViewActions();
   const gameMode = useEditorView((state) => state.gameMode);
   const exploring = useExploring();
   /** A 3D-only control's label, which says so while the plan is shown. */
@@ -258,11 +259,12 @@ export function ModePanel({ onSetMode, onSurprise }: ModePanelProps): JSX.Elemen
           active={view.snapToGrid}
           onClick={() => toggle('snapToGrid')}
         />
+        {/* Off, cues, cues with EXPLORE's ambience (#911). */}
         <ActionButton
-          label={view.soundsEnabled ? 'Mute sounds' : 'Enable sounds'}
+          label={soundTileLabel(view)}
           icon="sound"
           active={view.soundsEnabled}
-          onClick={() => toggle('soundsEnabled')}
+          onClick={() => setView(nextSoundSetting)}
         />
         {hapticsSwitch && (
           <ActionButton

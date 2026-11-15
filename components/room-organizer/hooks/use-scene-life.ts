@@ -6,6 +6,7 @@ import { streetSiteOf } from '../lib/walk-collision';
 import { modeAfterExplore, rememberModeBeforeExplore } from '../lib/walkthrough-view';
 import { computeSkyProfile } from '../three/lighting';
 import { isLoadedLayout } from './use-achievements';
+import { useAmbience } from './use-ambience';
 import { useCameraVision } from './use-camera-vision';
 import { useNpcs } from './use-npcs';
 import { usePeopleModel } from './use-people-model';
@@ -18,7 +19,7 @@ import type { GameMode, RoomLayout, ViewSettings } from '../lib/types';
 
 export interface UseSceneLifeOptions {
   viewStore: EditorViewStore;
-  view: Pick<ViewSettings, 'showNpcs' | 'view2D' | 'weather' | 'showCameraVision'>;
+  view: Pick<ViewSettings, 'showNpcs' | 'view2D' | 'weather' | 'showCameraVision' | 'soundsEnabled' | 'ambienceEnabled'>;
   walkthroughActive: boolean;
   layout: RoomLayout;
   activeFloorIndex: number;
@@ -134,6 +135,15 @@ export function useSceneLife({
     onExit: exitWalkthrough,
     npcs: npcHandOff,
     lampSwitch,
+  });
+
+  // Rain on the roof and footsteps, in EXPLORE only (#911).
+  useAmbience({
+    enabled: isReady && walkthroughActive && view.soundsEnabled && view.ambienceEnabled && !view.view2D,
+    weather: view.weather,
+    indoors: !walk.outside,
+    walkedDistance: walk.walkedDistance,
+    addDecorativeStep,
   });
 
   // people.glb is fetched only once a person is placed or the walkers are on.

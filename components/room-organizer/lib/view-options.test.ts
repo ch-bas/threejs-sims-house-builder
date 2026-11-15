@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeViewSettings as makeView } from './__testfixtures__/fixtures';
-import { toggleViewOption, VIEW_OPTION_KEYS, withViewInvariants } from './view-options';
+import { nextSoundSetting, soundTileLabel, toggleViewOption, VIEW_OPTION_KEYS, withViewInvariants } from './view-options';
 
 describe('toggleViewOption (#341)', () => {
   it('flips each key both ways', () => {
@@ -52,5 +52,18 @@ describe('withViewInvariants (#439)', () => {
     expect(withViewInvariants(drawing)).toBe(drawing);
     const plain = makeView();
     expect(withViewInvariants(plain)).toBe(plain);
+  });
+});
+
+describe('the sound tile (#911)', () => {
+  it('steps off, cues, cues with ambience, and mutes both', () => {
+    const off = makeView({ soundsEnabled: false, ambienceEnabled: false });
+    const cues = nextSoundSetting(off);
+    expect([cues.soundsEnabled, cues.ambienceEnabled]).toEqual([true, false]);
+    const ambience = nextSoundSetting(cues);
+    expect([ambience.soundsEnabled, ambience.ambienceEnabled]).toEqual([true, true]);
+    const muted = nextSoundSetting(ambience);
+    expect([muted.soundsEnabled, muted.ambienceEnabled]).toEqual([false, false]);
+    expect([off, cues, ambience].map(soundTileLabel)).toEqual(['Enable sounds', 'Add ambience: rain and footsteps in EXPLORE', 'Mute sounds and ambience']);
   });
 });

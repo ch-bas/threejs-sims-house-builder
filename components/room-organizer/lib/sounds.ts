@@ -9,6 +9,11 @@ export type SoundCue = 'place' | 'remove' | 'rotate' | 'success' | 'refused';
 
 let audioContext: AudioContext | null = null;
 
+/** The one AudioContext of the page, shared with the ambience (#911); null without Web Audio. */
+export function sharedAudioContext(): AudioContext | null {
+  return getContext();
+}
+
 function getContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   if (audioContext) return audioContext;
