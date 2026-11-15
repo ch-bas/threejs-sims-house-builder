@@ -51,6 +51,8 @@ function sliderMax(dimension: DimensionConfig, item: FurnitureItem): number {
 export interface ItemContextPopoverProps {
   /** Why the item shows red, as a sentence; null when it stands clear (#627). */
   collision: string | null;
+  /** What stands in a door's swing, or whose swing the item stands in: a warning, not a collision (#917). */
+  swingNote?: string | null | undefined;
   onRemove(id: string): void;
   onDuplicate(id: string): void;
   onRotate(id: string): void;
@@ -279,6 +281,23 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
         {/* A collapsed sheet shows only the warning and the action row; the
             `pc-sheet-more` wrappers are `display: contents` everywhere else. */}
         <div className="pc-sheet-more">
+          {props.swingNote && (
+            <div
+              role="note"
+              className="pc-body"
+              style={{
+                fontSize: 11,
+                color: 'var(--pc-paper)',
+                background: 'rgba(245,158,11,0.16)',
+                border: '1px solid rgba(245,158,11,0.8)',
+                borderRadius: 8,
+                padding: '6px 8px',
+              }}
+            >
+              {props.swingNote}
+            </div>
+          )}
+
           {item.type === 'security-camera' && (
             <CameraModelCard
               disabled={exploring}
@@ -459,6 +478,20 @@ export function ItemContextPopover(props: ItemContextPopoverProps): JSX.Element 
                 />
               )}
             </>
+          )}
+
+          {item.type === 'door' && (
+            <SegmentedRow
+              label="Opens"
+              value={item.swingOut ? 'out' : 'in'}
+              options={DOOR_SWING_SIDES}
+              labelWidth={TYPE_LABEL_WIDTH}
+              disabled={lockedOff}
+              title={offHint('Locked — unlock to flip the swing')}
+              onChange={(side) => {
+                if ((side === 'out') !== (item.swingOut === true)) actions.toggleSwingOut(item.id);
+              }}
+            />
           )}
 
           {item.type === 'window' && (
@@ -646,6 +679,12 @@ const TYPE_LABEL_WIDTH = 58;
 const STAIRS_SHAPES: ReadonlyArray<SegmentOption<StairsShape>> = [
   { key: 'straight', label: 'Straight' },
   { key: 'winder', label: 'Winder' },
+];
+
+/** Which side of its wall a door opens to (#917): into the room it faces, or out of it. */
+const DOOR_SWING_SIDES: ReadonlyArray<SegmentOption<'in' | 'out'>> = [
+  { key: 'in', label: 'Inward' },
+  { key: 'out', label: 'Outward' },
 ];
 
 function SofaShapeSegmented({ value, onChange, disabled, title }: SofaShapeSegmentedProps): JSX.Element {

@@ -5,6 +5,7 @@ import {
   DEFAULT_VISION_RANGE_M,
   GRID_SIZE_METERS,
 } from '../lib/constants';
+import { blockedDoorIds } from '../lib/door-clearance';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { floorPlanFitOf, floorPlanPlacement } from '../lib/floor-plan-fit';
 import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
@@ -65,6 +66,8 @@ export interface Render2DOptions {
    */
   floorPlanUnclipped?: boolean | undefined;
   hasCollision: (item: FurnitureItem) => boolean;
+  /** Wash a door's swing amber where something stands in it (#917): the editor's plan, not prints or thumbnails. */
+  swingWarnings?: boolean | undefined;
   /**
    * Margin (CSS px) around the room. The default suits the full-screen 2D
    * view; small consumers (the 180×130 minimap) must pass a small value or
@@ -1025,6 +1028,8 @@ function drawVisionCones(
   }
 }
 
+const NO_IDS: ReadonlySet<string> = new Set();
+
 function drawFurniture(
   ctx: CanvasRenderingContext2D,
   options: Render2DOptions,
@@ -1035,6 +1040,8 @@ function drawFurniture(
 ): void {
   // Layer order (#286): rugs first, then floor furniture, tabletop items,
   // wall-mounted — so a rug listed after its sofa still paints beneath it.
+  // Doors with something standing in their swing (#917): a warning wash, not a collision.
+  const swingBlocked = options.swingWarnings ? blockedDoorIds(options.floor.items) : NO_IDS;
   for (const item of planDrawOrder(options.floor.items)) {
     if (!item.position) continue;
     const collision = options.hasCollision(item);
@@ -1045,7 +1052,7 @@ function drawFurniture(
     // Doors and windows are symbols in the wall (#576); their footprint is
     // painted only to mark a state, and stays the hit target either way.
     const opening = isOpening(item.type);
-    if (opening) drawOpeningSymbol(ctx, item, options.floor.floorColor, options.layout, { scale, offsetX, offsetY });
+    if (opening) drawOpeningSymbol(ctx, item, options.floor.floorColor, options.layout, { scale, offsetX, offsetY }, swingBlocked.has(item.id));
 
     ctx.save();
     ctx.translate(cx, cy);

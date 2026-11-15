@@ -1506,6 +1506,7 @@ export function useSceneEffects({
       render2DTopDown({
         canvas,
         layout,
+        swingWarnings: true,
         floor: activeFloor,
         selectedItemId,
         extraSelectedIds,

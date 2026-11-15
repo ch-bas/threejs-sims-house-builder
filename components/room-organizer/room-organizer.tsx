@@ -37,6 +37,7 @@ import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
+import { swingClearanceNote } from './lib/door-clearance';
 import { isInsideBuilding } from './lib/footprint';
 import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
@@ -1159,6 +1160,7 @@ export function RoomOrganizer(): JSX.Element {
             layout.height,
             { keepOut, interiorWalls: activeFloor.interiorWalls, storeyHeight: activeStoreyHeight }
           )}
+          swingNote={swingClearanceNote(selectedItem, activeFloor.items)}
           onRotate={rotateItemHandler}
           onToggleCameraBracket={toggleCameraBracket}
           onDuplicate={duplicateSelected}

@@ -157,6 +157,16 @@ describe('layoutReducer — item CRUD', () => {
     expect(activeItems(state)[0]!.mirrored).toBe(false);
   });
 
+  it('toggleSwingOut flips a door to open out and back, and refuses a locked door or anything else (#917)', () => {
+    let state = stateWith([makeItem({ id: 'd', type: 'door' }), makeItem({ id: 'c' }), makeItem({ id: 'l', type: 'door', locked: true })]);
+    state = layoutReducer(state, { type: 'toggleSwingOut', id: 'd' });
+    expect(activeItems(state)[0]!.swingOut).toBe(true);
+    state = layoutReducer(state, { type: 'toggleSwingOut', id: 'd' });
+    expect(activeItems(state)[0]!.swingOut).toBeUndefined();
+    expect(layoutReducer(state, { type: 'toggleSwingOut', id: 'c' })).toBe(state);
+    expect(layoutReducer(state, { type: 'toggleSwingOut', id: 'l' })).toBe(state);
+  });
+
   it('setRotation / setColor / setLocked / setSofaShape / setSignalRange patch fields', () => {
     let state = stateWith([makeItem({ id: 'a', type: 'sofa' })]);
     state = layoutReducer(state, { type: 'setRotation', id: 'a', rotation: 1.23 });

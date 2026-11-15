@@ -121,6 +121,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setColor: (id, color) => dispatch({ type: 'setColor', id, color }),
     setLocked: (id, locked) => dispatch({ type: 'setLocked', id, locked }),
     toggleMirror: (id) => dispatch({ type: 'toggleMirror', id }),
+    toggleSwingOut: (id) => dispatch({ type: 'toggleSwingOut', id }),
     setRotation: (id, rotation) => dispatch({ type: 'setRotation', id, rotation }),
     replaceItems: (items: FurnitureItem[]) => dispatch({ type: 'replaceItems', items }),
     addItems: (items: FurnitureItem[]) => dispatch({ type: 'addItems', items }),

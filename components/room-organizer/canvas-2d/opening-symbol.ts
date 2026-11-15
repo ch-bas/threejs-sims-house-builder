@@ -21,6 +21,12 @@ const MIN_GAP_PX = 7;
 /** A window frame's narrowest paint (px): two lines that stay apart. */
 const MIN_FRAME_PX = 5;
 
+/**
+ * A door whose swing something stands in (#917): the swing's quarter is
+ * washed amber under the usual ink. A warning, not the collision red.
+ */
+export const SWING_BLOCKED_FILL = 'rgba(245, 158, 11, 0.38)';
+
 const DARK_INK = '#222222';
 const LIGHT_INK = '#f5f5f5';
 
@@ -89,14 +95,16 @@ export function traceOpeningGaps(
 /**
  * Draw an opening's symbol in world→canvas space, in the ink that reads on
  * the floor. The wall gap is the renderer's (`traceOpeningGaps`); the caller
- * paints the footprint's state marks (selection, collision) over this.
+ * paints the footprint's state marks (selection, collision) over this. A
+ * `swingBlocked` door has its swing washed amber first (#917).
  */
 export function drawOpeningSymbol(
   ctx: CanvasRenderingContext2D,
   item: FurnitureItem,
   floorColor: string,
   layout: PlanSize,
-  view: View2DTransform
+  view: View2DTransform,
+  swingBlocked = false
 ): void {
   if (!item.position) return;
   const placed = item as PlacedItem;
@@ -111,19 +119,28 @@ export function drawOpeningSymbol(
     const [hx, hy] = toCanvas(hinge, layout, view);
     const [sx, sy] = toCanvas(strike, layout, view);
     const [lx, ly] = toCanvas(leafTip, layout, view);
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(hx, hy);
-    ctx.lineTo(lx, ly);
-    ctx.stroke();
     // The quarter turn from shut to open: the short way round, whichever
     // way the axes wind on this wall.
     const from = Math.atan2(sy - hy, sx - hx);
     const to = Math.atan2(ly - hy, lx - hx);
     const counterClockwise = (sx - hx) * (ly - hy) - (sy - hy) * (lx - hx) < 0;
+    const radius = Math.hypot(sx - hx, sy - hy);
+    if (swingBlocked) {
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.arc(hx, hy, radius, from, to, counterClockwise);
+      ctx.closePath();
+      ctx.fillStyle = SWING_BLOCKED_FILL;
+      ctx.fill();
+    }
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(lx, ly);
+    ctx.stroke();
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(hx, hy, Math.hypot(sx - hx, sy - hy), from, to, counterClockwise);
+    ctx.arc(hx, hy, radius, from, to, counterClockwise);
     ctx.stroke();
   } else {
     // The window: its frame in the wall and the glass down the middle.

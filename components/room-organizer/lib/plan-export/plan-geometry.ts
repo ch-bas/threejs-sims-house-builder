@@ -99,24 +99,33 @@ export interface DoorSwing {
   hinge: { x: number; z: number };
   /** The other jamb: where the leaf's tip rests when it is shut. */
   strike: { x: number; z: number };
-  /** The leaf's tip when it stands open, square to the wall, into the room. */
+  /** The leaf's tip when it stands open, square to the wall: into the room, or out of it on a `swingOut` door (#917). */
   leafTip: { x: number; z: number };
+}
+
+/** The side of the wall a door swings to: its local +Z, or −Z when it opens out (#917). */
+export function doorSwingDirection(item: Pick<FurnitureItem, 'rotation' | 'swingOut'>): { x: number; z: number } {
+  const theta = item.rotation ?? 0;
+  const sign = item.swingOut ? -1 : 1;
+  return { x: sign * Math.sin(theta), z: sign * Math.cos(theta) };
 }
 
 /**
  * The swing the SVG (`renderOpening`) and DXF (`emitOpening`) draw and the 2D
  * plan shares: a leaf as wide as the opening, hinged at one jamb, opened into
- * the room, with the arc its tip sweeps from `strike` to `leafTip`.
+ * the room (out of it on a `swingOut` door), with the arc its tip sweeps from
+ * `strike` to `leafTip`.
  */
 export function doorSwing(item: PlacedItem): DoorSwing {
-  const { along, into } = openingAxes(item);
+  const { along } = openingAxes(item);
+  const opens = doorSwingDirection(item);
   const side = item.mirrored ? 1 : -1;
   const half = item.width / 2;
   const hinge = { x: item.position.x + side * along.x * half, z: item.position.z + side * along.z * half };
   return {
     hinge,
     strike: { x: item.position.x - side * along.x * half, z: item.position.z - side * along.z * half },
-    leafTip: { x: hinge.x + into.x * item.width, z: hinge.z + into.z * item.width },
+    leafTip: { x: hinge.x + opens.x * item.width, z: hinge.z + opens.z * item.width },
   };
 }
 
@@ -356,6 +365,16 @@ export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanB
       if (corner.z > bounds.maxZ) bounds.maxZ = corner.z;
     }
   }
+  // A door that opens out of the room can swing past the walls (#917):
+  // its arc is part of the sheet. A door opening in stays inside them.
+  for (const door of splitPlanItems(floor.items).openings) {
+    if (door.type !== 'door' || !door.swingOut) continue;
+    const swing = doorSwingBounds(door);
+    bounds.minX = Math.min(bounds.minX, swing.minX);
+    bounds.maxX = Math.max(bounds.maxX, swing.maxX);
+    bounds.minZ = Math.min(bounds.minZ, swing.minZ);
+    bounds.maxZ = Math.max(bounds.maxZ, swing.maxZ);
+  }
   return bounds;
 }
 
@@ -515,9 +534,10 @@ const WALL_LABEL_HALF_WIDTH_M = 0.35;
 /** How far a crowded label moves along its wall per try, metres. */
 const WALL_LABEL_SHIFT_STEP_M = 0.25;
 
-/** The bounding box of a door's swing: the `width × width` square on its `into` side (#592). */
+/** The bounding box of a door's swing: the `width × width` square on the side it opens to (#592, #917). */
 function doorSwingBounds(door: PlacedItem): PlanBounds {
-  const { along, into } = openingAxes(door);
+  const { along } = openingAxes(door);
+  const into = doorSwingDirection(door);
   const half = door.width / 2;
   const jambs = [-half, half].map((t) => ({ x: door.position.x + along.x * t, z: door.position.z + along.z * t }));
   const corners = [...jambs, ...jambs.map((j) => ({ x: j.x + into.x * door.width, z: j.z + into.z * door.width }))];

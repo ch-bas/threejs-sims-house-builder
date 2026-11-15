@@ -630,6 +630,18 @@ function emitStairs(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: numb
   }
 }
 
+/**
+ * The CCW CAD arc of a door's quarter swing. In CAD coords `along` sits at
+ * angle θ and `into` at θ − 90°: from the −X jamb the shut leaf points along
+ * θ, from the +X jamb of a mirrored door back along θ + 180, and it opens to
+ * θ − 90, or θ + 90 on a door set to open out (#917). The arc runs CCW
+ * between the two, the short way round.
+ */
+function swingArcDegrees(thetaDeg: number, hingeOnPlusX: boolean, swingOut: boolean): [number, number] {
+  if (!swingOut) return hingeOnPlusX ? [thetaDeg + 180, thetaDeg + 270] : [thetaDeg - 90, thetaDeg];
+  return hingeOnPlusX ? [thetaDeg + 90, thetaDeg + 180] : [thetaDeg, thetaDeg + 90];
+}
+
 function emitOpening(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: number) => CadPoint): void {
   const { along, into } = openingAxes(item);
   const half = item.width / 2;
@@ -645,14 +657,12 @@ function emitOpening(doc: DxfDocument, item: PlacedItem, cad: (x: number, z: num
 
   if (item.type === 'door') {
     // Swing: `doorSwing`'s leaf, plus the quarter arc from the closed to the
-    // open position. In CAD coords `along` sits at angle θ and `into` at
-    // θ − 90°: from the −X jamb the closed leaf points along θ and the CCW
-    // arc runs θ−90 → θ; from the +X jamb of a mirrored door it points back
-    // along θ+180 and the arc runs θ+180 → θ+270.
+    // open position, the CCW way round in CAD angles whichever jamb hinges
+    // it (#386) and whichever side it opens to (#917).
     const { hinge, leafTip } = doorSwing(item);
     doc.line('OPENINGS', cad(hinge.x, hinge.z), cad(leafTip.x, leafTip.z));
     const thetaDeg = ((item.rotation ?? 0) * 180) / Math.PI;
-    const [start, end] = item.mirrored ? [thetaDeg + 180, thetaDeg + 270] : [thetaDeg - 90, thetaDeg];
+    const [start, end] = swingArcDegrees(thetaDeg, item.mirrored === true, item.swingOut === true);
     doc.arc('OPENINGS', cad(hinge.x, hinge.z), item.width, start, end);
   } else {
     // Window: the double-line symbol's centre line along the wall.
