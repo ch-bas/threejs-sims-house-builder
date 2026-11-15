@@ -127,6 +127,14 @@ describe('wallContact (#687)', () => {
     expect(wallContact({ x: -3.5 + WALL_RELEASE + 0.01, z: 0 }, box, house)).toEqual({ touching: [], near: [] });
   });
 
+  it('meets an axis-aligned partition face too (#914), never for an outdoor item', () => {
+    const wall = { id: 'p', x1: 1, z1: -4, x2: 1, z2: 4 };
+    expect(wallContact({ x: 1 - 0.08 - 0.5, z: 0 }, box, house, [wall])).toEqual({ touching: ['p:west'], near: ['p:west'] });
+    expect(wallContact({ x: 1 + 0.08 + 0.5, z: 0 }, box, house, [wall]).touching).toEqual(['p:east']);
+    expect(wallContact({ x: 0, z: 0 }, box, house, [wall])).toEqual({ touching: [], near: ['p:west'] });
+    expect(wallContact({ x: 1 - 0.08 - 0.5, z: 0 }, { ...box, category: 'outdoor' }, house, [wall])).toEqual({ touching: [], near: [] });
+  });
+
   it('an outdoor item meets the outside face', () => {
     expect(wallContact({ x: 4.5, z: 0 }, { ...box, category: 'outdoor' }, house).touching).toEqual(['east']);
     expect(wallContact({ x: 3.5, z: 0 }, { ...box, category: 'outdoor' }, house).touching).toEqual([]);

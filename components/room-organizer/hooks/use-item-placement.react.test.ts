@@ -275,6 +275,24 @@ describe('useItemPlacement — snapPosition', () => {
     expect(result.current.lastSnapWall().touching).toHaveLength(1);
   });
 
+  it('snaps a dragged item flush to a partition on its storey (#914)', () => {
+    const box = makeItem({ id: 'box', width: 1, depth: 1, rotation: 0, category: 'seating', position: { x: 0, z: 0 } });
+    const { result } = renderHook(() =>
+      useItemPlacement({
+        activeFloor: makeFloor({ items: [box], interiorWalls: [{ id: 'p', x1: 1, z1: -4, x2: 1, z2: 4 }] }),
+        activeFloorY: 0,
+        roomWidth: 8,
+        roomDepth: 8,
+        buildingCost: 0,
+        actions: layoutStore.getState().actions,
+        view: { snapToGrid: false, snapToWall: true, snapToItems: false },
+      })
+    );
+    const snapped = result.current.snapPosition('box', 0.3, 0);
+    expect(snapped.x).toBeCloseTo(1 - 0.08 - 0.5, 12);
+    expect(result.current.lastSnapWall().touching).toEqual(['p:west']);
+  });
+
   it('keeps a dragged window out of the porch recess span (#394)', () => {
     const { result } = mount({ frontGap: { x0: -0.7, x1: 0.7 } });
     expect(result.current.snapPosition('w', 0.2, -4)).toEqual({ x: 1.2, z: -4 });
