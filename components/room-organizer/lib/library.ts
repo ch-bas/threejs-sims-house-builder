@@ -1,4 +1,5 @@
 import { safeGetItem, safeRemoveItem } from './safe-storage';
+import { BUILD_VERSION } from './saved-by';
 import { localStorageOrNull } from './saved-house';
 import { MAX_NAME_LENGTH, capText, parseStoredLayout } from './schema';
 import { classifyStorageError, type StorageErrorKind } from './storage-errors';
@@ -51,7 +52,14 @@ export function parseSavedLayoutEntry(value: unknown): SavedLayoutEntry | null {
   if (!isFiniteNumber(v.savedAt) || !isFiniteNumber(v.itemCount) || !isFiniteNumber(v.floorCount)) {
     return null;
   }
-  return { id: v.id, name: v.name, savedAt: v.savedAt, itemCount: v.itemCount, floorCount: v.floorCount };
+  return {
+    id: v.id,
+    name: v.name,
+    savedAt: v.savedAt,
+    itemCount: v.itemCount,
+    floorCount: v.floorCount,
+    ...(typeof v.savedBy === 'string' ? { savedBy: v.savedBy } : {}),
+  };
 }
 
 /** Pure half of `readIndex`, exported for tests. */
@@ -481,6 +489,8 @@ function writeNamedLayout(layout: RoomLayout, name: string, opts: { savedAt?: nu
     savedAt: opts.savedAt ?? Date.now(),
     itemCount: totalItemCount(layout),
     floorCount: layout.floors.length,
+    // Which version wrote it: an older one warns when it loads it (#933).
+    ...(BUILD_VERSION ? { savedBy: BUILD_VERSION } : {}),
   };
 
   // The house keeps its own id: the slug names the library slot, and two

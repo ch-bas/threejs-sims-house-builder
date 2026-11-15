@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { addPolicy, scriptSource, siteOrigin } from '../scripts/add-csp.mjs';
+import { addPolicy, scriptSource, siteOrigin, workerSource } from '../scripts/add-csp.mjs';
 
 // The post-build step that writes the Content-Security-Policy meta (#445).
 
@@ -106,6 +106,14 @@ describe('script sources on a basePath build', () => {
     expect(out.source).toBe(`${ORIGIN}${BASE}/_next/`);
     expect(directive(out.html, 'script-src')).toBe(`script-src ${ORIGIN}${BASE}/_next/ ${sha(INLINE)}`);
     expect(directive(out.html, 'script-src')).not.toContain("'self'");
+  });
+
+  // #933: the offline worker sits beside _next/, not in it.
+  it('allows only the site\'s own service worker file', () => {
+    const out = addPolicy(page(chunk(BASE)), 'index.html', ORIGIN);
+    expect(directive(out.html, 'worker-src')).toBe(`worker-src ${ORIGIN}${BASE}/sw.js`);
+    expect(directive(addPolicy(page(chunk('')), 'index.html', ORIGIN).html, 'worker-src')).toBe("worker-src 'self'");
+    expect(workerSource("'self'")).toBe("'self'");
   });
 
   it("keeps 'self' without a basePath or without a known origin", () => {

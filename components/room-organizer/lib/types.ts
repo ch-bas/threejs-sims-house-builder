@@ -508,4 +508,6 @@ export interface SavedLayoutEntry {
   savedAt: number;
   itemCount: number;
   floorCount: number;
+  /** The app version that saved it (#933); absent before stamping or outside a stamped build. */
+  savedBy?: string;
 }

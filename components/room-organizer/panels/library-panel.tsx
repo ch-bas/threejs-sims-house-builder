@@ -29,6 +29,7 @@ import {
   shareHashFromText,
 } from '../lib/pasteboard';
 import { confirmReplace, subscribeHouseReplaced } from '../lib/restore-point';
+import { newerLibraryNote } from '../lib/saved-by';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { isShareHashWithinBudget, readShareHash, shareFailureMessage } from '../lib/share';
 import {
@@ -312,7 +313,9 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
       return;
     }
     onLoad(fresh);
-    setLoaded({ section: 'saved', text: `Loaded “${entry.name}”. Undo brings back the house it replaced.` });
+    // Written by a newer version (#933): say what may be missing.
+    const newer = newerLibraryNote(entry.savedBy);
+    setLoaded({ section: 'saved', text: `Loaded “${entry.name}”.${newer ? ` ${newer}` : ''} Undo brings back the house it replaced.` });
   };
 
   const handleRestore = async (summary: VersionSummary, read: (id: string) => RoomLayout | null = getSnapshot) => {

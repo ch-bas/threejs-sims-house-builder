@@ -17,7 +17,9 @@
 // 2. /404.html and an unknown path (served as Pages does, status 404) must
 //    show the branded page with its link back to the builder;
 // 3. with the editor chunk answering 404, the page must reload exactly once
-//    and then show the error screen (the one-reload contract of #499).
+//    and then show the error screen (the one-reload contract of #499);
+// 4. after the desktop load, once the service worker is active, a reload
+//    with the network gone must open the editor from its precache (#933).
 //
 // Browser: `playwright` if installed (its own Chromium), else `playwright-core`
 // with an installed Chrome. SMOKE_BROWSER_CHANNEL picks a channel ("chrome"),
@@ -30,6 +32,7 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { siteOrigin as cspSiteOrigin } from './add-csp.mjs';
 import { pageChunks } from './add-preloads.mjs';
+import { pageMarker } from './build-sw.mjs';
 
 const outDir = path.resolve(process.argv[2] ?? 'out');
 const READY_TIMEOUT_MS = 60_000;
@@ -86,8 +89,11 @@ async function fileFor(urlPath) {
  * status 404, as on Pages, and a malformed one a plain 400. A request it
  * can't answer ends that response, never the run.
  */
+let served = 0;
+
 function serve(basePath) {
   const server = createServer(async (req, res) => {
+    served += 1;
     const plain = (status) => {
       if (!res.headersSent) res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
       res.end(String(status));
@@ -205,7 +211,7 @@ async function screenshot(page, name) {
  * the shared GPU process, which stalls every other page of that browser,
  * and a page busy compiling can't be closed politely, only killed.
  */
-async function checkEditor(launch, origin, basePath, name, contextOptions) {
+async function checkEditor(launch, origin, basePath, name, contextOptions, { offline = false } = {}) {
   const started = Date.now();
   const browser = await launch();
   const context = await newContext(browser, contextOptions);
@@ -231,6 +237,7 @@ async function checkEditor(launch, origin, basePath, name, contextOptions) {
     for (const violation of violations) fail(name, `CSP violation: ${violation}`);
     if (loads !== 1) fail(name, `expected no reload (1 document), saw ${loads}`);
     if (name === 'desktop') await checkForcedColours(page, name);
+    if (offline) await checkOffline(context, page, name);
   } catch (err) {
     fail(name, `${err instanceof Error ? err.message.split('\n')[0] : String(err)} (after ${loads} document(s))`);
   } finally {
@@ -276,6 +283,38 @@ async function checkForcedColours(page, name) {
   if (looks === null) return fail(name, 'forced colours: no radio group with a selected and an unselected option');
   trace(name, 'forced colours', JSON.stringify(looks));
   if (looks.on === looks.off) fail(name, `forced colours: the selected option of "${looks.group}" looks like the others (${looks.on})`);
+}
+
+/**
+ * 4. Offline (#933): once the service worker has installed, a reload with the
+ * network gone must still open the editor. Every request to the site then
+ * fails, routed or not, so only the worker's precache can answer.
+ */
+async function checkOffline(context, page, check) {
+  const name = `${check} offline`;
+  // Registered after the first frame, then the whole precache downloads.
+  const scope = await within(
+    page.evaluate(() => navigator.serviceWorker.ready.then((registration) => registration.scope)),
+    READY_TIMEOUT_MS,
+    null,
+  );
+  if (!scope) return fail(name, 'no service worker became active');
+  trace(name, 'worker active at', scope);
+  await context.unrouteAll({ behavior: 'ignoreErrors' });
+  await context.route(() => true, (route) => route.abort('internetdisconnected'));
+  await context.setOffline(true);
+  const before = served;
+  await page.reload({ waitUntil: 'load' });
+  const controlled = await page.evaluate(() => navigator.serviceWorker.controller !== null);
+  if (!controlled) fail(name, 'the reloaded page is not controlled by the worker');
+  await page.waitForFunction(() => window.__pcReady === true, null, { timeout: READY_TIMEOUT_MS });
+  trace(name, 'ready');
+  // This build's page, not one from anywhere else, and nothing from the server.
+  const marker = pageMarker(await readFile(path.join(outDir, 'index.html'), 'utf8'));
+  const scripts = await page.evaluate(() => [...document.scripts].map((script) => script.src));
+  if (!scripts.some((src) => src.endsWith(`/${marker}`))) fail(name, `the page offline is not this build's (no ${marker})`);
+  if (served !== before) fail(name, `${served - before} request(s) reached the server while offline`);
+  await screenshot(page, name.replace(' ', '-'));
 }
 
 async function checkNotFound(browser, origin, basePath) {
@@ -382,7 +421,7 @@ async function main() {
     await checkNotFound(browser, origin, basePath);
     await checkChunkReload(browser, origin, basePath);
     await browser.close();
-    const desktop = await checkEditor(launch, origin, basePath, 'desktop', { viewport: { width: 1280, height: 800 } });
+    const desktop = await checkEditor(launch, origin, basePath, 'desktop', { viewport: { width: 1280, height: 800 } }, { offline: true });
     const phone = process.env.SMOKE_PHONE
       ? await checkEditor(launch, origin, basePath, 'phone', {
           viewport: { width: 390, height: 664 },

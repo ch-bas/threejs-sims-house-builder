@@ -1,7 +1,9 @@
 import { notify } from './editor-notices';
 import { isUntouched } from './restore-point';
+import { askToSaveHere, BUILD_VERSION, newerSaver, savingHereChosen, stampSavedBy } from './saved-by';
 import { localStorageOrNull, STORAGE_KEY } from './saved-house';
 import { parseStoredLayout, storedEntryLoss, type StoredEntryLoss } from './schema';
+import { updateWaiting } from './service-worker';
 import { classifyStorageError, type StorageErrorKind } from './storage-errors';
 import { setItemEvictingSnapshots } from './version-history';
 import type { RoomLayout } from './types';
@@ -284,8 +286,12 @@ export function keepStoredLayout(
   }
 }
 
-/** Why a save didn't reach storage (#472). */
-export type SaveFailureReason = StorageErrorKind;
+/**
+ * Why a save didn't reach storage (#472). `newer`: a newer build saved the
+ * house, and this older one leaves it alone (#933).
+ */
+export type SaveFailureReason = StorageErrorKind | 'newer';
+
 
 export { classifyStorageError };
 
@@ -300,11 +306,19 @@ export type SaveResult = { ok: true; json: string } | { ok: false; reason: SaveF
  * oldest kept first, each named in a notice (#935). `storage` is injectable
  * for tests and defaults to `window.localStorage`.
  */
-export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): SaveResult {
+export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore, version: string | null = BUILD_VERSION): SaveResult {
   if (!storage && typeof window === 'undefined') return { ok: false, reason: 'unknown' };
   try {
     const target = storage ?? localStorageOrNull();
     if (!target) return { ok: false, reason: 'blocked' };
+    // An older build (an offline tab) doesn't save over a newer one's house
+    // unasked: its schema would drop what it doesn't know (#933). The first
+    // refusal of a session asks; "Save here anyway" lets saves through.
+    const newer = newerSaver(target, version);
+    if (newer !== null && version !== null && !savingHereChosen()) {
+      void askToSaveHere(newer, version, updateWaiting);
+      return { ok: false, reason: 'newer' };
+    }
     const json = JSON.stringify(layout);
     // The house outranks everything else stored, kept versions too (#935).
     const evicted = setItemEvictingSnapshots(target, STORAGE_KEY, json, { evictKept: true });
@@ -316,6 +330,7 @@ export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore): S
         'info'
       );
     }
+    stampSavedBy(target, version);
     return { ok: true, json };
   } catch (error) {
     // Reported to the caller so the HUD never shows "Saved" for a layout that

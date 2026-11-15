@@ -31,6 +31,7 @@ import { useRecentColors } from './hooks/use-recent-colors';
 import { useSceneEffects, measurementDistance, type UseSceneEffectsParams } from './hooks/use-scene-effects';
 import { useSceneLife } from './hooks/use-scene-life';
 import { useSelectionActions } from './hooks/use-selection-actions';
+import { useServiceWorker } from './hooks/use-service-worker';
 import { useAskToKeepStorage } from './hooks/use-storage-persist';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
@@ -654,6 +655,8 @@ export function RoomOrganizer(): JSX.Element {
       snapPosition,
       getDragPlaneY,
     });
+  // Offline (#933): the service worker registers after the first frame.
+  useServiceWorker(isReady && !shadersWarming);
 
   wallGhostsRef.current = (preview) => {
     const THREE = threeModuleRef.current;

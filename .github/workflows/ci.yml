@@ -57,6 +57,10 @@ jobs:
       - run: npm run build
         env:
           GITHUB_PAGES: 'true'
+          # The offline service worker's kill switch (#933): the repository
+          # variable SERVICE_WORKER=off builds a worker that removes itself
+          # and the app's caches (scripts/build-sw.mjs). Unset: offline on.
+          NEXT_PUBLIC_SERVICE_WORKER: ${{ vars.SERVICE_WORKER }}
 
       # The Content-Security-Policy meta, hashed from this build's inline
       # scripts (#445). Idempotent, so it is safe if the build ran it too.

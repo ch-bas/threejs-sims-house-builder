@@ -40,6 +40,11 @@ export function policy(scriptHashes, scriptSource = "'self'") {
   return [
     "default-src 'self'",
     `script-src ${scriptSource} ${scriptHashes.join(' ')}`.trimEnd(),
+    // The offline service worker (#933, scripts/build-sw.mjs). Without this
+    // directive workers fall back to script-src, which a basePath build
+    // narrows to _next/, where the worker can't live: its scope is its own
+    // folder. So the same narrowing names the one file beside _next/.
+    `worker-src ${workerSource(scriptSource)}`,
     // React and the prerendered markup set style attributes, and Next
     // inlines font-face CSS; hashing those is not practical.
     "style-src 'self' 'unsafe-inline'",
@@ -54,6 +59,11 @@ export function policy(scriptHashes, scriptSource = "'self'") {
     "base-uri 'self'",
     "form-action 'none'",
   ].join('; ');
+}
+
+/** The worker source for a page whose script files come from `scriptSource`. */
+export function workerSource(scriptSource) {
+  return scriptSource.endsWith('/_next/') ? `${scriptSource.slice(0, -'_next/'.length)}sw.js` : "'self'";
 }
 
 const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;

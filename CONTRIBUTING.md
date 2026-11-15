@@ -31,6 +31,8 @@ Steps 1 to 5 catch most problems. Run the build as well when you touch `app/`, `
 
 `npm run build` makes the static export in `out/`; serve it with `npm start` (`next start` doesn't work on a static export).
 
+The build also writes `out/sw.js`, the offline service worker (`scripts/build-sw.mjs`). If a deployed worker ever misbehaves, set the repository variable `SERVICE_WORKER` to `off` (or `false`, or `0`) (Settings → Secrets and variables → Actions → Variables) and re-run the workflow on `main`: CI passes it to the build as `NEXT_PUBLIC_SERVICE_WORKER`, and that build ships a worker that deletes the app's offline caches, unregisters itself and reloads its pages, even where the page itself can no longer start. Delete the variable to turn offline support back on. Locally: `NEXT_PUBLIC_SERVICE_WORKER=off npm run build`.
+
 The build needs no network access: the fonts are committed under `app/fonts/`, so it works offline once `npm ci` has run.
 
 Before you change a module, read its line in [docs/architecture.md](docs/architecture.md) and the relevant [design notes](docs/design-notes.md). A new module gets a line in `docs/architecture.md` in the same pull request (a unit test checks), and a change that sets a new rule gets a design note. The [wiki](https://github.com/ch-bas/threejs-sims-house-builder/wiki) covers the [architecture](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Architecture), [rendering](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Rendering), [data safety](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Data-safety) and [testing](https://github.com/ch-bas/threejs-sims-house-builder/wiki/Development-and-testing).
