@@ -1,6 +1,7 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { gardenGroundY, lowestGround } from '../lib/site';
+import { stairwellRailSegments } from '../lib/stairwell-rail';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
 import { ENTRANCE_WALL_ID, entranceGeometry, entranceWallCut } from '../lib/street';
 import { zoneFloorPatches } from '../lib/zones';
@@ -13,6 +14,7 @@ import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
 import { revealSetbacks } from './reveals';
 import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
+import { buildStairwellRail } from './stairwell-rail';
 import { stripRelief } from './surface-maps';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings } from './wall-openings';
 import type { RoomLayout } from '../lib/types';
@@ -132,6 +134,10 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
         storeyHeight: storeyH,
       });
     }
+
+    // The stairwell rail, as its effect builds it (#923).
+    const rail = buildStairwellRail(THREE, stairwellRailSegments(layout, index), floorY);
+    if (rail) scratch.add(rail);
 
     // Furniture, placed as the furniture effect places it: doors and windows
     // in an outer wall set back into its reveal, curtains in front of it (#758).

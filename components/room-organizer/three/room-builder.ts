@@ -9,6 +9,7 @@ import { buildFloorMaterial } from './floor-patterns';
 import { shutOutIndoorLamps, shutOutIndoorLampsOutside } from './outdoor-lamps';
 import { buildRevealGeometry, skirtingOpenings } from './reveals';
 import { ROOF_OFF_STOREY_KEY } from './roof';
+import { STAIRWELL_RAIL_TAG } from './stairwell-rail';
 import { revealsEnabled, withMaxAnisotropy } from './texture-settings';
 import { openingsForWall, type FloorOpening, type WallOpening } from './wall-openings';
 import { DEFAULT_WALL_COLOR, buildWallMaterial } from './wall-patterns';
@@ -138,6 +139,11 @@ export function applyWallDisplay(
       setVisible(obj, false);
       const id = (obj.userData[SHELL_WALL_KEY] ?? obj.userData.wallId) as string | undefined;
       if (id) wallVisibility.set(wallDisplayKey(tag, obj.userData[STOREY_KEY], id), false);
+      continue;
+    }
+    // The stairwell rail (#923) stands and falls with the partitions.
+    if (tag === STAIRWELL_RAIL_TAG) {
+      setVisible(obj, obj.userData[OFF_STOREY_KEY] !== true && mode !== 'down');
       continue;
     }
     if (tag === 'roof') {

@@ -1,4 +1,5 @@
 import { STAIR_HATCH_SPACING_M, stairArrow, stairCutHatch, stairTreadSegments, stairwellOutlines, type PlacedItem, type PlanPoint } from '../lib/plan-export/plan-geometry';
+import { planRailInset, stairwellRailSegments } from '../lib/stairwell-rail';
 import type { View2DTransform } from './render';
 import type { FloorLayout, FurnitureItem, RoomLayout } from '../lib/types';
 
@@ -108,8 +109,8 @@ export function drawStairCutHatch(
 /**
  * Draw the stairwell holes the stairs on the floor below cut through this
  * floor's slab: a dashed void outline over the floor, under the furniture,
- * so what is placed over the drop is seen to hang over it. Nothing on the
- * ground floor.
+ * so what is placed over the drop is seen to hang over it, and the guard
+ * rail round it. Nothing on the ground floor.
  */
 export function drawStairwellHoles(
   ctx: CanvasRenderingContext2D,
@@ -151,6 +152,16 @@ export function drawStairwellHoles(
     ctx.textBaseline = 'middle';
     ctx.fillText('open below', lx, ly);
   }
+  // The guard rail round the hole (#923): a solid line a few pixels inside its dashed edge.
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'butt';
+  ctx.beginPath();
+  for (const s of stairwellRailSegments(layout, floorIndex, planRailInset(view.scale))) {
+    ctx.moveTo(...toCanvas({ x: s.x1, z: s.z1 }, layout, view));
+    ctx.lineTo(...toCanvas({ x: s.x2, z: s.z2 }, layout, view));
+  }
+  ctx.stroke();
   ctx.restore();
 }
 
