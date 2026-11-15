@@ -24,6 +24,7 @@ import { useKeyboardPlacement } from './hooks/use-keyboard-placement';
 import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useSaveStatus, type SaveStatus, type SaveStatusStore } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
+import { layoutStore } from './hooks/use-layout-store';
 import { usePhotoMode, usePhotoModeActive } from './hooks/use-photo-mode';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
@@ -34,6 +35,16 @@ import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
+import {
+  announce,
+  announceSettled,
+  cancelSettledAnnouncement,
+  describeGroupTurn,
+  describeHistoryStep,
+  describeLock,
+  describePlacement,
+  withdrawAnnouncement,
+} from './lib/announce';
 import { noteVersionOpened } from './lib/app-version';
 import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
@@ -59,6 +70,7 @@ import { sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt } from './lib/wall-sides';
 import { roomsToName } from './lib/zones';
 import { AchievementToast } from './panels/achievement-toast';
+import { Announcer } from './panels/announcer';
 import { BottomHud } from './panels/bottom-hud';
 import { CameraPad } from './panels/camera-pad';
 import { ChallengeChip } from './panels/challenge-chip';
@@ -318,7 +330,12 @@ export function RoomOrganizer(): JSX.Element {
       markLayoutLoaded();
     },
     [actions]
-  ), { describe: describeLayoutChange });
+  ), {
+    describe: describeLayoutChange,
+    // Screen readers hear what the step took back or brought back (#929).
+    // Always: two undos in a row took back two steps, even with one label.
+    onStep: (kind, label) => announce(describeHistoryStep(kind, label), { tag: 'history', always: true }),
+  });
   // The stable callbacks, so the wrappers below don't change identity every
   // time canUndo/canRedo flips.
   const { commitNow: commitHistoryNow, clear: clearHistory } = history;
@@ -865,6 +882,80 @@ export function RoomOrganizer(): JSX.Element {
     if (next < 0 || next >= layout.floors.length) return;
     actions.setActiveFloorIndex(next);
   });
+  // Keyboard edits say what they did in the status line (#929); a pointer
+  // drag stays silent. Read when the keys settle, from the house as it is.
+  const announcePlacement = useEvent((id: string) => {
+    announceSettled(() => {
+      const { layout: house, activeFloorIndex: index } = layoutStore.getState();
+      const floor = house.floors[index];
+      const item = floor?.items.find((entry) => entry.id === id);
+      if (!floor || !item) return '';
+      const collision = collisionMessage(item, floor.items, house.width, house.height, {
+        keepOut,
+        interiorWalls: floor.interiorWalls,
+        storeyHeight: storeyHeight(floor),
+      });
+      const where = { width: house.width, height: house.height, cutout: house.cutout, porch: entrancePlanOutline(house, index), floorIndex: index };
+      return describePlacement(item, where, collision);
+    }, { tag: 'placement' });
+  });
+  // A turn of a multi-selection says how many turned (and how many locked
+  // ones stayed), as Lock does; a held R adds its steps up.
+  const groupTurnRef = useRef(0);
+  const announceGroupTurn = useEvent((ids: ReadonlySet<string>, radians: number) => {
+    groupTurnRef.current += radians;
+    announceSettled(() => {
+      const degrees = (groupTurnRef.current * 180) / Math.PI;
+      groupTurnRef.current = 0;
+      const { layout: house, activeFloorIndex: index } = layoutStore.getState();
+      const members = (house.floors[index]?.items ?? []).filter((entry) => ids.has(entry.id));
+      const locked = members.filter((entry) => entry.locked).length;
+      return describeGroupTurn(members.length - locked, degrees, locked);
+    }, { tag: 'placement' });
+  });
+  // What a placement or lock line describes goes with the selection: a line
+  // still waiting, or still in the region, would talk about what isn't.
+  const announcedSelection = selectedItem?.id ?? null;
+  useEffect(() => {
+    cancelSettledAnnouncement();
+    groupTurnRef.current = 0;
+    withdrawAnnouncement((tag) => tag === 'placement' || tag === 'lock');
+  }, [announcedSelection]);
+  const announcedKeys = useMemo(
+    () => ({
+      moveItem: (id: string, x: number, z: number) => {
+        nudgeItem(id, x, z);
+        announcePlacement(id);
+      },
+      rotateItem: (id: string) => {
+        const group = allSelectedIds.size > 1 && allSelectedIds.has(id) ? new Set(allSelectedIds) : null;
+        if (!rotateItemHandler(id)) return;
+        if (group) announceGroupTurn(group, Math.PI / 2);
+        else announcePlacement(id);
+      },
+      rotateItemBy: (id: string, radians: number) => {
+        const group = allSelectedIds.size > 1 && allSelectedIds.has(id) ? new Set(allSelectedIds) : null;
+        const before = layoutStore.getState();
+        rotateItemByHandler(id, radians);
+        // A refusal (a lock) changes nothing and has its own notice.
+        if (layoutStore.getState().layout === before.layout) return;
+        if (group) announceGroupTurn(group, radians);
+        else announcePlacement(id);
+      },
+      toggleLock: (id: string) => {
+        const before = layoutStore.getState().layout;
+        toggleLock(id);
+        const { layout: house, activeFloorIndex: index } = layoutStore.getState();
+        if (house === before) return;
+        const items = house.floors[index]?.items ?? [];
+        const item = items.find((entry) => entry.id === id);
+        if (!item) return;
+        const count = allSelectedIds.size > 1 && allSelectedIds.has(id) ? allSelectedIds.size : 1;
+        announce(describeLock(item.name, count, item.locked === true), { tag: 'lock' });
+      },
+    }),
+    [nudgeItem, rotateItemHandler, rotateItemByHandler, toggleLock, allSelectedIds, announcePlacement, announceGroupTurn]
+  );
   const shortcutHandlers = useMemo(
     () => ({
       removeItem: removeItemOrSelection,
@@ -872,10 +963,7 @@ export function RoomOrganizer(): JSX.Element {
       duplicateItem: duplicateSelected,
       copySelection: copySelectionToClipboard,
       pasteClipboard: pasteFromClipboard,
-      rotateItem: rotateItemHandler,
-      rotateItemBy: rotateItemByHandler,
-      moveItem: nudgeItem,
-      toggleLock,
+      ...announcedKeys,
       refuseLocked: refuseLockedItem,
       toggle2D: () => toggle('view2D'),
       toggleMeasurements: () => toggle('showMeasurements'),
@@ -949,10 +1037,7 @@ export function RoomOrganizer(): JSX.Element {
       duplicateSelected,
       copySelectionToClipboard,
       pasteFromClipboard,
-      rotateItemHandler,
-      rotateItemByHandler,
-      nudgeItem,
-      toggleLock,
+      announcedKeys,
       refuseLockedItem,
       removeInteriorWall,
       toggleExteriorWall,
@@ -1054,6 +1139,7 @@ export function RoomOrganizer(): JSX.Element {
         overflow: 'hidden',
       }}
     >
+      <Announcer />
       <Viewport
         isReady={isReady}
         shadersWarming={shadersWarming}

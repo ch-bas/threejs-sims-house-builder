@@ -453,3 +453,49 @@ describe('useHistory — labels (#625)', () => {
     expect(result.current.undoLabel).toBe('a to b');
   });
 });
+
+describe('useHistory — onStep (#929)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const describeStep = (before: Doc, after: Doc): string => `${before.name} to ${after.name}`;
+  const setup = (onStep: (kind: 'undo' | 'redo', label: string | null) => void) =>
+    renderHook(({ value }) => useHistory<Doc>(value, vi.fn(), { debounceMs: 10, describe: describeStep, onStep }), {
+      initialProps: { value: { name: 'a' } as Doc },
+    });
+  const settle = () => act(() => void vi.advanceTimersByTime(20));
+
+  it('reports each undo and redo with the label of the step it took', () => {
+    const onStep = vi.fn();
+    const { result, rerender } = setup(onStep);
+    rerender({ value: { name: 'b' } });
+    settle();
+    act(() => result.current.undo());
+    expect(onStep).toHaveBeenLastCalledWith('undo', 'a to b');
+    rerender({ value: { name: 'a' } });
+    act(() => result.current.redo());
+    expect(onStep).toHaveBeenLastCalledWith('redo', 'a to b');
+    expect(onStep).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports the undo of an edit still in the debounce window', () => {
+    const onStep = vi.fn();
+    const { result, rerender } = setup(onStep);
+    rerender({ value: { name: 'b' } });
+    act(() => result.current.undo());
+    expect(onStep).toHaveBeenCalledWith('undo', 'a to b');
+  });
+
+  it('reports nothing when there was nothing to take back', () => {
+    const onStep = vi.fn();
+    const { result } = setup(onStep);
+    act(() => result.current.undo());
+    act(() => result.current.redo());
+    expect(onStep).not.toHaveBeenCalled();
+  });
+});
