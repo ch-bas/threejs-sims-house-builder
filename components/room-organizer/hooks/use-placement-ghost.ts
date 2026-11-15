@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, type MutableRefObject, type RefObject } from 'react';
 import { onPlanZoom } from '../canvas-2d/plan-zoom';
 import { confirmOpen } from '../lib/confirm-dialog';
+import { formatMetres } from '../lib/format';
+import { randomSuffix } from '../lib/ids';
+import {
+  cornerInset,
+  isRunItem,
+  layRun,
+  RUN_DRAG_PX,
+  snapRunPoint,
+  type RunFit,
+  type RunLot,
+  type RunSnap,
+} from '../lib/item-run';
 import {
   footprintCorners,
   GHOST_ROTATION_STEP,
@@ -40,6 +52,8 @@ export interface UsePlacementGhostParams {
   revealSetback(item: FurnitureItem): number;
   /** Place the entry for real; false when declined. `keep` = the ghost stays in hand. */
   place(catalogItem: CatalogItem, position: Vec2, rotation: number, keep: boolean): boolean;
+  /** Runs of a fence, hedge or stepping stone in hand (#915). Without it a drag places one. */
+  run?: GhostRunParams;
   threeModuleRef: MutableRefObject<ThreeModule | null>;
   sceneRef: MutableRefObject<ThreeNS.Scene | null>;
   invalidate(): void;
@@ -48,6 +62,17 @@ export interface UsePlacementGhostParams {
   storeyHeight: number;
   /** The ground under a garden item on a sloped site, where it will stand (#665); null for the floor. */
   groundY?(item: FurnitureItem): number | null;
+}
+
+export interface GhostRunParams {
+  /** The garden a run stays in (`runLot`). */
+  lot: RunLot;
+  /** What of a drawn run can be laid (`fitRun` against the ground floor). */
+  fit(sections: readonly FurnitureItem[]): RunFit;
+  /** Lay the sections, all in one step; false when refused or asked about. `keep` = the ghost stays in hand. */
+  place(catalogItem: CatalogItem, items: FurnitureItem[], keep: boolean): boolean;
+  /** Say why a run standing in `blocker` wasn't laid. */
+  refuse(blocker: FurnitureItem): void;
 }
 
 export interface UsePlacementGhostResult {
@@ -66,7 +91,15 @@ interface GhostSession {
   /** Where it would land, after snapping. */
   position: Vec2;
   rotation: number;
+  /** A run item pressed down (#915): where the run starts. */
+  anchor: RunSnap | null;
+  /** Where the run would end, under the pointer. */
+  tip: RunSnap | null;
+  /** What the run would lay: empty until the drag is long enough. */
+  run: RunFit;
 }
+
+const NO_RUN: RunFit = { sections: [], dropped: 0, blocker: null };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -87,7 +120,11 @@ function isFocusedControl(target: EventTarget | null): boolean {
  * Presses on the view are taken in the document's capture phase while the
  * ghost is up, so neither the camera controls nor selection see them, while
  * other document listeners (an open popover's outside click) still do; right
- * and middle drags still orbit and pan. A second finger cancels the press. The 3D preview is moved directly and
+ * and middle drags still orbit and pan. With a fence, hedge or stepping stone
+ * in hand, a drag lays a run of them from the press to the release (#915).
+ * A second finger cancels the press; so does a press whose release never
+ * came (the window lost focus, or the mouse moves with no button down). The
+ * 3D preview is moved directly and
  * the plan's outline is an SVG over the plan canvas: no state dispatch per
  * move (the drag fast-path rule).
  */
@@ -153,10 +190,15 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     if (!session || session.ghost !== ghost) {
       const rect = canvas.getBoundingClientRect();
       const raw = toWorld(rect.left + rect.width / 2, rect.top + rect.height / 2) ?? { x: 0, z: 0 };
-      session = { ghost, raw, turn: 0, position: raw, rotation: 0 };
+      session = { ghost, raw, turn: 0, position: raw, rotation: 0, anchor: null, tip: null, run: NO_RUN };
       sessionRef.current = session;
     }
     const live = session;
+
+    live.anchor = null;
+    live.tip = null;
+    live.run = NO_RUN;
+    const runs = isRunItem(ghost.type) && p.run !== undefined;
 
     // 3D: the item's own mesh, faded.
     let mesh: PlacementGhostMesh | null = null;
@@ -166,6 +208,19 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       mesh = buildPlacementGhost(THREE, ghostItem(ghost, live.position, 0), storeyHeight);
       scene.add(mesh.group);
     }
+    // A run's other sections: built as the run first needs them, then kept
+    // and moved, so a drag builds each mesh once (the drag fast-path rule).
+    const runMeshes: PlacementGhostMesh[] = [];
+    const sectionMesh = (index: number): PlacementGhostMesh | null => {
+      if (index === 0) return mesh;
+      if (!THREE || !scene || !mesh) return null;
+      while (runMeshes.length < index) {
+        const extra = buildPlacementGhost(THREE, ghostItem(ghost, live.position, 0), storeyHeight);
+        scene.add(extra.group);
+        runMeshes.push(extra);
+      }
+      return runMeshes[index - 1] ?? null;
+    };
 
     // 2D: the footprint outline over the plan.
     let svg: SVGSVGElement | null = null;
@@ -181,8 +236,96 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       svg.appendChild(outline);
       host.appendChild(svg);
     }
+    // A run's other outlines, and its length at the tip.
+    const runOutlines: SVGPolygonElement[] = [];
+    let runLabel: SVGTextElement | null = null;
+    const sectionOutline = (index: number): SVGPolygonElement | null => {
+      if (index === 0) return outline;
+      if (!svg) return null;
+      while (runOutlines.length < index) {
+        const extra = document.createElementNS(SVG_NS, 'polygon');
+        extra.setAttribute('stroke-width', '2');
+        extra.setAttribute('stroke-dasharray', '6 4');
+        svg.appendChild(extra);
+        runOutlines.push(extra);
+      }
+      return runOutlines[index - 1] ?? null;
+    };
+
+    const renderRun = (): void => {
+      const current = paramsRef.current;
+      // Sections in the house or on the porch are left out: the gaps show.
+      const sections = live.run.sections;
+      // The run is placed or refused as a whole: one tint for all of it.
+      const colliding = live.run.blocker !== null || sections.some((section) => current.collides(section));
+      sections.forEach((section, index) => {
+        const sectionGhost = sectionMesh(index);
+        if (!sectionGhost || !section.position) return;
+        sectionGhost.group.position.set(section.position.x, current.groundY?.(section) ?? current.floorY, section.position.z);
+        sectionGhost.group.rotation.y = section.rotation ?? 0;
+        // The last section, cut to fit: the preview squeezes the whole one.
+        sectionGhost.group.scale.x = section.width / ghost.width;
+        sectionGhost.setColliding(colliding);
+        sectionGhost.group.visible = true;
+      });
+      for (let index = Math.max(0, sections.length - 1); index < runMeshes.length; index += 1) runMeshes[index]!.group.visible = false;
+      // Nothing left to lay (all of it in the house): no first section either.
+      if (mesh && sections.length === 0) mesh.group.visible = false;
+      if (outline) outline.style.display = sections.length === 0 ? 'none' : '';
+      if (mesh) current.invalidate();
+      if (svg && host) {
+        const origin = host.getBoundingClientRect();
+        const toClient = invertClientToWorld(current.clientToWorld2D, { x: origin.left, y: origin.top });
+        if (!toClient) return;
+        const local = (world: Vec2) => {
+          const client = toClient(world);
+          return { x: client.x - origin.left, y: client.y - origin.top };
+        };
+        sections.forEach((section, index) => {
+          const shape = sectionOutline(index);
+          if (!shape || !section.position) return;
+          shape.setAttribute('points', ghostOutlinePoints(footprintCorners(section, section.position, section.rotation ?? 0), local));
+          shape.setAttribute('fill', colliding ? 'rgba(228,82,72,0.30)' : 'rgba(127,243,255,0.28)');
+          shape.setAttribute('stroke', colliding ? '#e45248' : '#0e7490');
+          shape.style.display = '';
+        });
+        for (let index = Math.max(0, sections.length - 1); index < runOutlines.length; index += 1) runOutlines[index]!.style.display = 'none';
+        const tip = live.tip;
+        if (tip && live.anchor) {
+          runLabel ??= svg.appendChild(document.createElementNS(SVG_NS, 'text'));
+          const at = local(tip.point);
+          runLabel.setAttribute('x', String(at.x + 10));
+          runLabel.setAttribute('y', String(at.y - 10));
+          runLabel.setAttribute('fill', colliding ? '#e45248' : '#0e7490');
+          runLabel.setAttribute('font-size', '12');
+          runLabel.setAttribute('font-weight', '700');
+          runLabel.setAttribute('paint-order', 'stroke');
+          runLabel.setAttribute('stroke', '#ffffff');
+          runLabel.setAttribute('stroke-width', '3');
+          const anchor = live.anchor.point;
+          const blocker = live.run.blocker;
+          runLabel.textContent =
+            `${formatMetres(Math.hypot(tip.point.x - anchor.x, tip.point.z - anchor.z))} · ${sections.length} × ${ghost.name}` +
+            (blocker ? ` · ${blocker.name} in the way` : '');
+          runLabel.style.display = '';
+        }
+      }
+    };
+
+    const hideRun = (): void => {
+      for (const extra of runMeshes) extra.group.visible = false;
+      if (mesh) mesh.group.scale.x = 1;
+      for (const extra of runOutlines) extra.style.display = 'none';
+      if (runLabel) runLabel.style.display = 'none';
+    };
 
     const render = (): void => {
+      if (live.anchor && live.tip) {
+        renderRun();
+        return;
+      }
+      hideRun();
+      if (outline) outline.style.display = '';
       const current = paramsRef.current;
       const item = ghostItem(ghost, live.position, live.rotation);
       const colliding = current.collides(item);
@@ -220,10 +363,80 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     const stopZoom = view2D ? onPlanZoom(canvas, render) : null;
 
     let pressId: number | null = null;
+    /** Where the press went down on screen: a run starts once the pointer is RUN_DRAG_PX from it. */
+    let pressAt: { x: number; y: number } | null = null;
     const onCanvas = (event: PointerEvent): boolean => pointerOnCanvas(canvas, event.clientX, event.clientY);
     const follow = (event: PointerEvent): void => {
       const world = toWorld(event.clientX, event.clientY);
-      if (world) moveTo(world);
+      if (!world) return;
+      if (live.anchor && !live.tip && pressAt && Math.hypot(event.clientX - pressAt.x, event.clientY - pressAt.y) >= RUN_DRAG_PX) {
+        // Far enough on screen, at any zoom: a run, not a jittery click.
+        live.tip = live.anchor;
+      }
+      if (live.tip) aimRun(world);
+      moveTo(world);
+    };
+
+    // A run (#915): its sections from the anchor to the snapped tip, clear of
+    // a section it joins at either end.
+    const aimRun = (world: Vec2): void => {
+      const anchor = live.anchor;
+      if (!anchor) return;
+      const current = paramsRef.current;
+      if (!current.run) return;
+      const tip = snapRunPoint(world, anchor.point, ghost.type, current.floorItems, current.run.lot);
+      live.tip = tip;
+      const sections = layRun(anchor.point, tip.point, ghost, {
+        insetStart: cornerInset(anchor.point, tip.point, anchor.joined),
+        insetEnd: cornerInset(tip.point, anchor.point, tip.joined),
+      });
+      live.run = current.run.fit(sections);
+    };
+    const dropRun = (): void => {
+      live.anchor = null;
+      live.tip = null;
+      live.run = NO_RUN;
+    };
+    /** A press whose release never came: put it down, placing nothing. */
+    const losePress = (): void => {
+      if (pressId === null) return;
+      pressId = null;
+      pressAt = null;
+      dropRun();
+      renderRef.current();
+    };
+    /**
+     * Lays the run drawn so far, or refuses it as a whole when a section
+     * stands in an item already there; false when the press drew no run.
+     */
+    const placeRun = (keep: boolean): boolean => {
+      const drawn = live.tip !== null;
+      const { sections, blocker } = live.run;
+      dropRun();
+      if (!drawn) return false;
+      const current = paramsRef.current;
+      if (blocker) {
+        // Refused like an unaffordable run: put down, unless Shift keeps it in hand.
+        current.run?.refuse(blocker);
+        if (keep) renderRef.current();
+        else current.endGhost();
+        return true;
+      }
+      if (sections.length === 0) {
+        renderRef.current();
+        return true;
+      }
+      const prefix = `${ghost.type}-${Date.now()}-${randomSuffix()}`;
+      const placed = current.run?.place(ghost, sections.map((section, index) => ({ ...section, id: `${prefix}-${index}` })), keep) ?? false;
+      // As a single placement: over the soft budget it asks first (#649), and
+      // only Shift keeps the ghost in hand meanwhile; a refusal puts it down.
+      if (!placed && keep && confirmOpen()) return true;
+      if (placed && keep) {
+        renderRef.current();
+        return true;
+      }
+      current.endGhost();
+      return true;
     };
 
     const onPointerDown = (event: PointerEvent): void => {
@@ -234,14 +447,24 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       // A second finger is a pinch, not a placement: drop the press so its
       // release places nothing. It is swallowed too, so the camera never
       // sees a lone finger and orbits under the ghost.
+      // The same pointer pressing again lost its release: a fresh press.
+      if (pressId !== null && event.pointerId === pressId) losePress();
       if (!event.isPrimary || pressId !== null) {
-        pressId = null;
+        losePress();
         return;
       }
       pressId = event.pointerId;
+      pressAt = { x: event.clientX, y: event.clientY };
+      if (runs) {
+        const world = toWorld(event.clientX, event.clientY);
+        const current = paramsRef.current;
+        if (world) live.anchor = snapRunPoint(world, null, ghost.type, current.floorItems, current.run?.lot ?? null);
+      }
       follow(event);
     };
     const onPointerMove = (event: PointerEvent): void => {
+      // A mouse moving with no button down has released somewhere we never heard.
+      if (event.pointerId === pressId && event.pointerType === 'mouse' && event.buttons === 0) losePress();
       if (event.pointerId === pressId) event.stopPropagation();
       // A finger aims only during its own press: a pinch leaves it put.
       else if (event.pointerType === 'touch') return;
@@ -251,14 +474,24 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     const onPointerUp = (event: PointerEvent): void => {
       if (event.pointerId !== pressId) return;
       pressId = null;
+      pressAt = null;
       event.stopPropagation();
-      // Released over the HUD: still in hand.
-      if (!onCanvas(event)) return;
+      // Released over the HUD: still in hand, and a run drawn so far is dropped.
+      if (!onCanvas(event)) {
+        dropRun();
+        renderRef.current();
+        return;
+      }
       follow(event);
+      if (placeRun(event.shiftKey)) return;
       confirm(event.shiftKey);
     };
     const onPointerCancel = (event: PointerEvent): void => {
-      if (event.pointerId === pressId) pressId = null;
+      if (event.pointerId !== pressId) return;
+      // Its press never reached the camera controls, nor may its cancel:
+      // they would release a pointer capture they never set.
+      event.stopPropagation();
+      losePress();
     };
     // The ghost owns R, Enter, Space and Escape while it is held, ahead of
     // a focused catalog tile's roving keys and the window shortcuts.
@@ -278,7 +511,8 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       } else if (key === 'r') {
         live.turn = (live.turn + (event.shiftKey ? -1 : 1) * GHOST_ROTATION_STEP) % (2 * Math.PI);
         moveTo(live.raw);
-      } else if (!event.repeat) {
+      } else if (!event.repeat && pressId === null) {
+        // Mid-press, Enter and Space wait for the release: it places, or lays the run.
         confirm(event.shiftKey);
       }
     };
@@ -288,6 +522,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     document.addEventListener('pointerup', onPointerUp, true);
     document.addEventListener('pointercancel', onPointerCancel, true);
     window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('blur', losePress);
     canvas.style.cursor = 'copy';
 
     return () => {
@@ -296,6 +531,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       document.removeEventListener('pointerup', onPointerUp, true);
       document.removeEventListener('pointercancel', onPointerCancel, true);
       window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('blur', losePress);
       stopZoom?.();
       canvas.style.cursor = '';
       renderRef.current = () => {};
@@ -304,6 +540,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
         mesh.dispose();
         paramsRef.current.invalidate();
       }
+      for (const extra of runMeshes) extra.dispose();
       svg?.remove();
     };
     // floorY and storeyHeight rebuild the preview on a floor change.

@@ -117,6 +117,7 @@ components/
     │   ├── history-label.ts             What an undo or redo step did, from the two snapshots, for the toolbar's tooltips
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
+    │   ├── item-run.ts                  Fence, hedge and stepping-stone runs: sections along a line, end snap, corner insets (#915)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused); owns the page's one AudioContext
     │   ├── ambience.ts                  EXPLORE ambience (#911): rain gain by weather and indoors, footsteps by distance walked, and the Web Audio graph on the shared context
     │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
@@ -272,7 +273,7 @@ components/
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
     │   ├── use-keyboard-placement.ts    Enter-on-tile placement session, tile click → ghost pick-up, roving tile focus
-    │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d)
+    │   ├── use-placement-ghost.ts       The ghost in hand: follows the pointer in 3D and 2D, click/tap places (#463 d), a drag lays a run (#915)
     │   ├── use-dialog-focus.ts          Overlay focus: move in, trap (with companions), Escape, restore
     │   ├── use-shift-held.ts            Whether Shift is down, for tools that read it between pointer events (#723)
     │   ├── use-wall-edit.ts             The gesture of moving a selected wall, in both views: preview per move, one dispatch on release (#718)
