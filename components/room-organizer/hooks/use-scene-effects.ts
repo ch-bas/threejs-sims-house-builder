@@ -53,9 +53,9 @@ import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { applyNightGlow } from '../three/night-glow';
 import { setOutdoorVisible } from '../three/outdoor';
-import { revealSetbacks } from '../three/reveals';
+import { openingOnHiddenWall, revealSetbacks } from '../three/reveals';
 import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
-import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
+import { HIDDEN_OWNER_KEY, OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { STAIRWELL_RAIL_TAG, buildStairwellRail, clearStairwellRails } from '../three/stairwell-rail';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
@@ -130,6 +130,8 @@ interface PlannedFurniture {
   owner?: OpeningOwner;
   /** How far a door or window stands back in its reveal (#758). */
   revealSetback: number;
+  /** In an outer wall the storey hides through Wall visibility (#965). */
+  ownerHidden: boolean;
 }
 
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
@@ -683,8 +685,10 @@ export function useSceneEffects({
         const key = furnitureMeshKey(index, item.id);
         const owner = owners.get(item.id);
         const revealSetback = setbacks.get(item.id) ?? 0;
+        // #965: a door or window in a wall hidden through Wall visibility goes with it.
+        const ownerHidden = openingOnHiddenWall(owner, revealContext);
         const standY = (item.position ? gardenGroundY(item, index, item.position, site) : null) ?? floorY;
-        planned.set(key, { item, fitted, collision, floorIndex: index, standY, storeyH, isActive, revealSetback, ...(owner ? { owner } : {}) });
+        planned.set(key, { item, fitted, collision, floorIndex: index, standY, storeyH, isActive, revealSetback, ownerHidden, ...(owner ? { owner } : {}) });
         nextBuildKeys.set(
           key,
           furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady, revealSetback })
@@ -738,6 +742,9 @@ export function useSceneEffects({
         delete group.userData.ownerTag;
         delete group.userData.wallId;
       }
+      // #965: hidden with its wall (applyWallDisplay reads it).
+      if (spec.ownerHidden) group.userData[HIDDEN_OWNER_KEY] = true;
+      else delete group.userData[HIDDEN_OWNER_KEY];
       group.userData.locked = spec.item.locked === true || !spec.isActive;
       // Inactive-floor groups are excluded from pointer raycasts entirely
       // (see drag-handlers' furnitureList, #122).

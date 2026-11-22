@@ -12,7 +12,7 @@ import { createFurnitureModel } from './furniture-builders';
 import { stripDetailMaps } from './furniture-materials';
 import { renderInteriorWalls } from './interior-walls';
 import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
-import { revealSetbacks } from './reveals';
+import { openingOnHiddenWall, revealSetbacks } from './reveals';
 import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
 import { buildStairwellRail } from './stairwell-rail';
@@ -155,6 +155,8 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     for (const item of floor.items) {
       const position = item.position;
       if (!position) continue;
+      // A door or window in a wall the storey hides goes with it, as in the scene (#965).
+      if (openingOnHiddenWall(owners.get(item.id), revealContext)) continue;
       const setback = setbacks.get(item.id) ?? 0;
       const group = createFurnitureModel(THREE, itemForStorey(item, floor, underRoof(layout, index)), false, storeyH, setback);
       stripDetailMaps(group);

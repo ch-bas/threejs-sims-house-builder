@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyWallDisplay } from './room-builder';
+import { HIDDEN_OWNER_KEY, applyWallDisplay } from './room-builder';
 import type * as ThreeNS from 'three';
 
 /**
@@ -110,6 +110,23 @@ describe('applyWallDisplay: doors and windows follow their wall (#659)', () => {
     expect(children.map((c) => c.visible)).toEqual([false, false, false, false, true]);
     applyWallDisplay(scene, 0, 10, 'up', 8, 8);
     expect(children.every((c) => c.visible)).toBe(true);
+  });
+
+  it('keeps an opening in a wall hidden through Wall visibility hidden in every mode (#965)', () => {
+    // The hidden south wall is not built; its window goes with it, the north one stays.
+    const hidden = opening('wall', 'south', { [HIDDEN_OWNER_KEY]: true });
+    const children = [wall('north'), hidden, opening('wall', 'north')];
+    const scene = makeScene(children);
+    for (const mode of ['up', 'cutaway', 'down'] as const) {
+      applyWallDisplay(scene, 0, -10, mode, 8, 8);
+      expect(hidden.visible).toBe(false);
+    }
+    applyWallDisplay(scene, 0, -10, 'up', 8, 8);
+    expect(children[2]!.visible).toBe(true);
+    // Shown again once the flag goes (the wall shown again): it follows the mode.
+    delete hidden.userData[HIDDEN_OWNER_KEY];
+    applyWallDisplay(scene, 0, -10, 'up', 8, 8);
+    expect(hidden.visible).toBe(true);
   });
 
   it('never shows an opening of a storey the walkthrough hides', () => {

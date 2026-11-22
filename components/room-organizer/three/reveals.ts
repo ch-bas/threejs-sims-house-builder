@@ -57,6 +57,21 @@ export interface RevealContext {
 }
 
 /**
+ * Whether a door or window is cut into an outer wall its storey hides through
+ * Wall visibility (#965): the side's wall is not built (an L's notch wall
+ * goes with its side), so the opening goes with it, in the scene and the
+ * GLB, as the walls pill hides one with a cut-away wall. Pure.
+ */
+export function openingOnHiddenWall(
+  owner: OpeningOwner | undefined,
+  context: Pick<RevealContext, 'width' | 'depth' | 'cutout' | 'hiddenWalls'>
+): boolean {
+  if (owner?.kind !== 'exterior' || !context.hiddenWalls?.length) return false;
+  const wall = shellWalls({ width: context.width, height: context.depth, cutout: context.cutout }).find((w) => w.id === owner.wall);
+  return wall !== undefined && context.hiddenWalls.includes(wall.side);
+}
+
+/**
  * How far to set a door or window back along its own +z, where it stands in
  * an outer wall that is built: ±REVEAL_SETBACK, the sign taking the item's
  * facing (an opening turned round faces out), else 0. Pure.
@@ -64,7 +79,7 @@ export interface RevealContext {
 export function openingSetback(item: FurnitureItem, owner: OpeningOwner | undefined, context: RevealContext): number {
   if ((item.type !== 'door' && item.type !== 'window') || owner?.kind !== 'exterior' || context.noWalls || !revealsEnabled()) return 0;
   const wall = shellWalls({ width: context.width, height: context.depth, cutout: context.cutout }).find((w) => w.id === owner.wall);
-  if (!wall || context.hiddenWalls?.includes(wall.side)) return 0;
+  if (!wall || openingOnHiddenWall(owner, context)) return 0;
   const inward = INWARD_YAW[wall.side];
   const rotation = item.rotation ?? 0;
   const facing = Math.sin(rotation) * Math.sin(inward) + Math.cos(rotation) * Math.cos(inward);
