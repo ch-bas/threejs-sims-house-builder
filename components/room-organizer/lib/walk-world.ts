@@ -456,6 +456,16 @@ export function walkSurfaceAt(
   return pick.found;
 }
 
+/**
+ * The ground a walker stands on at (x, z) outside the walls: the porch, its
+ * steps, or the lot's slope (#913, the walkers' garden nav). Doesn't check
+ * the lot's edge.
+ */
+export function outsideGroundY(world: WalkWorld, x: number, z: number): number {
+  const porchY = world.porch ? porchHeightAt(world.porch, x, z) : Number.NaN;
+  return Number.isNaN(porchY) ? groundHeightAt(world.terrain, z, world.halfDepth) : porchY;
+}
+
 function rectDistance(minX: number, maxX: number, minZ: number, maxZ: number, x: number, z: number): number {
   const dx = Math.max(minX - x, 0, x - maxX);
   const dz = Math.max(minZ - z, 0, z - maxZ);
