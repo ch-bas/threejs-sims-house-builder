@@ -26,12 +26,15 @@ export interface EditorViewActions {
   setLengthUnit(unit: LengthUnit): void;
   /** Switch a lamp off, or back on (#910). Not an edit: no undo, no save. */
   switchLamp(id: string): void;
+  /** Switch a TV on, or back off (#910). Not an edit either. */
+  switchTv(id: string): void;
   /**
-   * Forget the switched lamps (#910): when EXPLORE ends, and on a whole-house
-   * load, since templates and copies reuse item ids. With `keep`, only the
-   * ids not in it are forgotten (items deleted or gone with the house).
+   * Forget the switched lamps and TVs (#910): when EXPLORE ends, and on a
+   * whole-house load, since templates and copies reuse item ids. With `keep`,
+   * only the ids not in it are forgotten (items deleted or gone with the
+   * house).
    */
-  resetLamps(keep?: ReadonlySet<string>): void;
+  resetSwitches(keep?: ReadonlySet<string>): void;
 }
 
 export interface EditorViewState {
@@ -49,6 +52,8 @@ export interface EditorViewState {
    * change.
    */
   readonly lampsOff: ReadonlySet<string>;
+  /** TVs the walker switched on in EXPLORE (#910), by item id: as `lampsOff`, a TV is off unless here. */
+  readonly tvsOn: ReadonlySet<string>;
   /** Created once per store, so selecting it never re-renders. */
   readonly actions: EditorViewActions;
 }
@@ -57,6 +62,20 @@ export type EditorViewStore = StoreApi<EditorViewState>;
 
 function resolve<T>(next: SetStateAction<T>, current: T): T {
   return typeof next === 'function' ? (next as (previous: T) => T)(current) : next;
+}
+
+/** A new set with `id` in it, or out of it if it was in. */
+function toggled(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  const next = new Set(set);
+  if (!next.delete(id)) next.add(id);
+  return next;
+}
+
+/** The ids of `set` that are in `keep` (none without it); `set` itself when nothing goes. */
+function kept(set: ReadonlySet<string>, keep: ReadonlySet<string> | undefined): ReadonlySet<string> {
+  if (set.size === 0) return set;
+  const next = keep ? new Set([...set].filter((id) => keep.has(id))) : new Set<string>();
+  return next.size === set.size ? set : next;
 }
 
 const LENGTH_UNIT_KEY = 'length-unit';
@@ -114,17 +133,16 @@ export function createEditorViewStore(initialView: ViewSettings, options: Editor
         });
       },
       switchLamp: (id) => {
-        set((state) => {
-          const lampsOff = new Set(state.lampsOff);
-          if (!lampsOff.delete(id)) lampsOff.add(id);
-          return { ...state, lampsOff };
-        });
+        set((state) => ({ ...state, lampsOff: toggled(state.lampsOff, id) }));
       },
-      resetLamps: (keep) => {
+      switchTv: (id) => {
+        set((state) => ({ ...state, tvsOn: toggled(state.tvsOn, id) }));
+      },
+      resetSwitches: (keep) => {
         set((state) => {
-          if (state.lampsOff.size === 0) return state;
-          const lampsOff = keep ? new Set([...state.lampsOff].filter((id) => keep.has(id))) : new Set<string>();
-          return lampsOff.size === state.lampsOff.size ? state : { ...state, lampsOff };
+          const lampsOff = kept(state.lampsOff, keep);
+          const tvsOn = kept(state.tvsOn, keep);
+          return lampsOff === state.lampsOff && tvsOn === state.tvsOn ? state : { ...state, lampsOff, tvsOn };
         });
       },
     };
@@ -135,6 +153,7 @@ export function createEditorViewStore(initialView: ViewSettings, options: Editor
       autoCycleLighting: false,
       lengthUnit: initialUnit,
       lampsOff: new Set<string>(),
+      tvsOn: new Set<string>(),
       actions,
     };
   });

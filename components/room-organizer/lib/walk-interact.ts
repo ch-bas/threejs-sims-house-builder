@@ -1,8 +1,8 @@
 /**
  * Sitting down in EXPLORE (#463b): `E` near a chair, sofa or bed lowers the
  * walker to seat height and turns it to face the TV, or the way the seat
- * faces. `E` near a lamp switches it (#910). Pure: what the walker is
- * looking at, and the pose it takes to sit.
+ * faces. `E` near a lamp or a TV switches it (#910). Pure: what the walker
+ * is looking at, and the pose it takes to sit.
  */
 
 import { isInsideBuilding } from './footprint';
@@ -103,8 +103,8 @@ function seatOutdoors(seat: FurnitureItem, at: Point, sight: SeatSight): boolean
   return !isInsideBuilding({ width: footprint.width, height: footprint.depth, cutout: footprint.cutout }, at.x, at.z);
 }
 
-/** What `E` acts on (#910): a seat to sit on, or a lamp to switch. */
-export type Interactable = { kind: 'seat'; item: FurnitureItem } | { kind: 'lamp'; item: FurnitureItem };
+/** What `E` acts on (#910): a seat to sit on, or a lamp or a TV to switch. */
+export type Interactable = { kind: 'seat' | 'lamp' | 'tv'; item: FurnitureItem };
 
 export interface InteractOptions {
   /**
@@ -112,19 +112,30 @@ export interface InteractOptions {
    * would change nothing the walker can see.
    */
   lamps?: boolean;
+  /** TVs are offered too, at any hour: a screen shows by day as well. */
+  tvs?: boolean;
 }
 
-/** The point the walker's line of sight goes to: where it would sit, or a lamp's centre. */
+/** What `E` would do with `item`, given what is offered; null for nothing. */
+function interactKind(item: FurnitureItem, options: InteractOptions): Interactable['kind'] | null {
+  if (isSeat(item)) return 'seat';
+  if (options.lamps && isNightLit(item.type)) return 'lamp';
+  if (options.tvs && item.type === 'tv') return 'tv';
+  return null;
+}
+
+/** The point the walker's line of sight goes to: where it would sit, or a lamp's or a TV's centre. */
 function targetPoint(kind: Interactable['kind'], item: FurnitureItem, at: Point): Point {
   return kind === 'seat' ? sitPoint(item, at) : at;
 }
 
 /**
  * What the walker at (x, z), facing (dirX, dirZ), would act on with `E`: a
- * seat (or, with `options.lamps`, a lamp) in reach that is in view, or right
- * beside it. Null when none. What the walker faces (a 35° cone, to the
- * item's nearest edge or its centre) comes first, a seat before a lamp, then
- * the nearer: a lamp beside the sofa never takes `E` from sitting (#910).
+ * seat (or, with `options.lamps`, a lamp; with `options.tvs`, a TV) in reach
+ * that is in view, or right beside it. Null when none. What the walker faces
+ * (a 35° cone, to the item's nearest edge or its centre) comes first, a seat
+ * before a switch, then the nearer: a lamp beside the sofa never takes `E`
+ * from sitting (#910).
  * With `sight`, nothing behind a wall or a partition is in reach, and neither
  * is anything on the other side of the shell (#566).
  */
@@ -144,7 +155,7 @@ export function findInteractable(
   for (const item of items) {
     const at = item.position;
     if (!at) continue;
-    const kind = isSeat(item) ? 'seat' : options.lamps && isNightLit(item.type) ? 'lamp' : null;
+    const kind = interactKind(item, options);
     if (kind === null) continue;
     const near = nearestOnFootprint(item, at, x, z);
     const distance = near.distance;
@@ -152,7 +163,7 @@ export function findInteractable(
     // Toward the centre, or the nearest edge of a long sofa straight ahead.
     const facing = Math.max(facingCos(at.x - x, at.z - z, dirX, dirZ, dirLength), facingCos(near.toX, near.toZ, dirX, dirZ, dirLength));
     if (distance > SEAT_TOUCHING && facing < SEAT_VIEW_COS) continue;
-    // Faced before merely in reach; a seat before a lamp; then the nearer.
+    // Faced before merely in reach; a seat before a switch; then the nearer.
     const rank = (facing >= FACING_CONE_COS ? 0 : 2) + (kind === 'seat' ? 0 : 1);
     if (rank > bestRank || (rank === bestRank && distance >= bestDistance)) continue;
     if (sight) {

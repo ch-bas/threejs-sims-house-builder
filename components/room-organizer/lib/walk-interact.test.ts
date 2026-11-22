@@ -234,3 +234,45 @@ describe('findInteractable: lamps (#910)', () => {
     expect(findSeat([LAMP], 0, 0, 0, -1)).toBeNull();
   });
 });
+
+describe('findInteractable: the TV (#910)', () => {
+  const SCREEN = item({ id: 'tv', type: 'tv', name: 'TV Stand', width: 1.5, depth: 0.4, height: 0.5, position: { x: 0, z: -1 } });
+  const LAMP = item({ id: 'lamp', type: 'floor-lamp', name: 'Floor Lamp', width: 0.4, depth: 0.4, height: 1.6, position: { x: 0, z: -1 } });
+
+  it('offers a TV in reach only when TVs are offered, at any hour', () => {
+    expect(findInteractable([SCREEN], 0, 0, 0, -1)).toBeNull();
+    expect(findInteractable([SCREEN], 0, 0, 0, -1, undefined, { tvs: true })).toEqual({ kind: 'tv', item: SCREEN });
+    // Not a lamp: the clock's lamps don't offer it.
+    expect(findInteractable([SCREEN], 0, 0, 0, -1, undefined, { lamps: true })).toBeNull();
+  });
+
+  it('keeps the reach and view rules', () => {
+    expect(findInteractable([SCREEN], 0, 2, 0, -1, undefined, { tvs: true })).toBeNull();
+    expect(findInteractable([SCREEN], 0, 0, 0, 1, undefined, { tvs: true })).toBeNull();
+    // The near edge of a wide stand counts, not just its centre.
+    expect(findInteractable([SCREEN], 0.6, -0.4, 0, -1, undefined, { tvs: true })?.kind).toBe('tv');
+  });
+
+  it('leaves E to the sofa the walker faces, with the TV beside it', () => {
+    const sofa = { ...SOFA, position: { x: 0, z: 0 } };
+    const tv = { ...SCREEN, position: { x: 1.9, z: 0 }, rotation: Math.PI / 2 };
+    expect(findInteractable([tv, sofa], 0.9, 0.9, 0, -1, undefined, { tvs: true })?.kind).toBe('seat');
+    expect(findInteractable([sofa, tv], 0.9, 0.9, 0.8, -0.6, undefined, { tvs: true })?.kind).toBe('tv');
+  });
+
+  it('takes the nearer of a lamp and a TV, both faced', () => {
+    const lamp = { ...LAMP, position: { x: 0.3, z: -0.8 } };
+    const tv = { ...SCREEN, position: { x: -0.3, z: -1.3 } };
+    expect(findInteractable([tv, lamp], 0, 0, 0, -1, undefined, { lamps: true, tvs: true })?.kind).toBe('lamp');
+    expect(findInteractable([tv, lamp], 0, 0, 0, -1, undefined, { tvs: true })?.kind).toBe('tv');
+  });
+
+  it('never reaches a TV through a partition', () => {
+    const PARTITION = { id: 'p', x1: -2, z1: -0.6, x2: 2, z2: -0.6 };
+    const far = { ...SCREEN, position: { x: 0, z: -1.2 } };
+    const colliders = buildWalkerColliders({ width: 6, depth: 5, floors: [{ items: [far], interiorWalls: [PARTITION] }] })[0]!;
+    expect(findInteractable([far], 0, 0, 0, -1, { colliders, feetY: 0 }, { tvs: true })).toBeNull();
+    const open = buildWalkerColliders({ width: 6, depth: 5, floors: [{ items: [far], interiorWalls: [] }] })[0]!;
+    expect(findInteractable([far], 0, 0, 0, -1, { colliders: open, feetY: 0 }, { tvs: true })?.kind).toBe('tv');
+  });
+});
