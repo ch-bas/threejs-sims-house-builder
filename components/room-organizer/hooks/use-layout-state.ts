@@ -13,6 +13,7 @@ import {
   useLayoutActions,
 } from './use-layout-store';
 import type { DormerInput, DormerPatch } from '../lib/dormers';
+import type { RoomTransfer } from '../lib/room-transfer';
 import type {
   CatalogItem,
   EntranceSpec,
@@ -128,6 +129,8 @@ export interface LayoutActions {
   clearInteriorWalls(): void;
   toggleExteriorWall(wallId: WallId): void;
   rotateSelection(ids: ReadonlySet<string>, radians: number): void;
+  /** Move, mirror, copy or paste a room with its walls (#925), in one undo step. */
+  transferRoom(transfer: RoomTransfer): void;
   /** Persistent groups (#154). `setGroup` returns the new group's id. */
   setGroup(ids: ReadonlySet<string>): string;
   clearGroup(ids: ReadonlySet<string>): void;
