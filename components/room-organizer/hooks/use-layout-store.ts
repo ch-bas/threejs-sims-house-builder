@@ -197,6 +197,14 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
       return id;
     },
     removeDimension: (id) => dispatch({ type: 'removeDimension', id }),
+    // Garden surfaces (#924).
+    addGround: (ground) => {
+      const id = nextId('ground');
+      dispatch({ type: 'addGround', ground: { ...ground, id } });
+      return id;
+    },
+    updateGround: (id, patch) => dispatch({ type: 'updateGround', id, patch }),
+    removeGround: (id) => dispatch({ type: 'removeGround', id }),
   };
 
   return {

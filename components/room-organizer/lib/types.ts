@@ -436,6 +436,25 @@ export interface FootprintCutout {
   depth: number;
 }
 
+// --- Garden surfaces (#924) ---
+/** What a garden surface is laid in. */
+export type GroundKind = 'paving' | 'gravel' | 'deck' | 'lawn';
+
+/**
+ * A garden surface (#924): a rectangle on the lot outside the footprint,
+ * `x`/`z` its north-west corner and `w`/`d` its size in metres, room-centred
+ * like a zone. See lib/grounds.ts.
+ */
+export interface GroundPatch {
+  id: string;
+  kind: GroundKind;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+// --- end garden surfaces ---
+
 export interface RoomLayout {
   id?: string;
   name: string;
@@ -463,6 +482,8 @@ export interface RoomLayout {
   budget?: HardBudget;
   /** The challenge brief this house is played under (#909); see lib/challenges.ts. */
   challenge?: LayoutChallenge;
+  /** Garden surfaces drawn on the lot (#924); absent is none. */
+  grounds?: GroundPatch[];
 }
 
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */

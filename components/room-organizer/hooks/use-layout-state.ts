@@ -13,6 +13,7 @@ import {
   useLayoutActions,
 } from './use-layout-store';
 import type { DormerInput, DormerPatch } from '../lib/dormers';
+import type { GroundPatchEdit } from '../lib/grounds';
 import type { RoomTransfer } from '../lib/room-transfer';
 import type {
   CatalogItem,
@@ -24,6 +25,7 @@ import type {
   FloorPlanTransform,
   Frontage,
   FurnitureItem,
+  GroundPatch,
   InteriorWall,
   NeighbourFlag,
   OpeningStyle,
@@ -156,6 +158,10 @@ export interface LayoutActions {
   /** A dimension pinned on the active floor (#921); returns its id. */
   addDimension(dimension: Omit<PinnedDimension, 'id'>): string;
   removeDimension(id: string): void;
+  /** Garden surfaces on the lot (#924). `addGround` returns the new surface's id. */
+  addGround(ground: Omit<GroundPatch, 'id'>): string;
+  updateGround(id: string, patch: GroundPatchEdit): void;
+  removeGround(id: string): void;
 }
 
 export interface UseLayoutStateResult {
