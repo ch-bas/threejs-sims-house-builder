@@ -80,10 +80,15 @@ describe('stairwellRailSegments (#923)', () => {
     const layout = twoStoreys([stair({ id: 'a' }), stair({ id: 'b', position: { x: 0.5, z: 0.5 } })]);
     expect(stairwellOutlines(layout, 1)).toHaveLength(1);
     const segments = stairwellRailSegments(layout, 1);
-    // b's head is the box's edge at z = 1.75 (x −0.1…1.1); a's, at z = 1.25, is inside the
-    // merged box, so the way off it runs on to that edge (x −0.6…0.6): the edge is open.
+    // b's head is the hole's edge at z = 1.75 (x −0.15…1.15); a's, at z = 1.25, is open
+    // where it is the hole's edge (x −0.65…−0.15), and so is the side of b's hole in
+    // front of it, up to b's head: the way off a.
     expect(segments.some((s) => alongZ(s, 1.75 - STAIRWELL_RAIL_INSET, 1e-6))).toBe(false);
-    expect(segments).toHaveLength(3);
+    expect(segments.some((s) => alongZ(s, 1.25 - STAIRWELL_RAIL_INSET, 1e-6))).toBe(false);
+    expect(segments.some((s) => alongX(s, -0.15 + STAIRWELL_RAIL_INSET, 1e-6))).toBe(false);
+    // Both outer sides, and the foot of the hole with its step where b's starts later (#963).
+    expect(segments).toHaveLength(5);
+    expect(segments.filter((s) => alongZ(s, -0.0643 + STAIRWELL_RAIL_INSET, 1e-3))).toHaveLength(1);
   });
 
   it('never runs across the way off a flight whose head is inside a merged hole', () => {
