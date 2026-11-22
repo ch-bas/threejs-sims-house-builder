@@ -1390,7 +1390,7 @@ export function RoomOrganizer(): JSX.Element {
       />
 
       {/* Inline zone naming and export/share status (#374) */}
-      <ZoneNameChip selectedZoneId={planZoneId} />
+      <ZoneNameChip selectedZoneId={planZoneId} onZoneSelect={setSelectedZoneId} />
       {/* The challenge checklist (#909): none in a shared-link tour; a kept copy is the player's own */}
       {!touring && <ChallengeChip />}
       <PlanCalibrationChip />

@@ -331,6 +331,16 @@
     top: calc(var(--pc-top-pills-bottom, 56px) + 8px) !important;
     max-width: calc(100vw - 16px);
   }
+  /* Centred on the whole width, not from the middle: a chip that starts at
+     50% has only the right half to wrap in. */
+  .pc-top-chip {
+    left: 0 !important;
+    right: 0 !important;
+    margin-inline: auto;
+    width: max-content;
+    max-width: calc(100% - 32px) !important;
+    transform: none !important;
+  }
 
   /* Left column: no scroller here. The wall tool's panels (folded to
      their headers until tapped, one at a time, #395) share rows above the
@@ -1778,7 +1788,8 @@ html[data-plan-gesture] * {
 
 /* B1 wall tools (core building) */
 /* The status toast keeps clear of the wall tool chip, field open or not. */
-body:has(.pc-wall-hint) .pc-status-toasts {
+body:has(.pc-wall-hint) .pc-status-toasts,
+body:has(.pc-top-chip--rows) .pc-status-toasts {
   top: 216px !important;
 }
 

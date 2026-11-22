@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useEditorViewActions, useLengthUnit, useRoomEditor, useViewSettings } from '../contexts';
 import { useMediaQuery } from '../hooks/use-media-query';
+import { roomOnClipboard, subscribeClipboard } from '../lib/clipboard';
 import { subscribeZoneNameRequests } from '../lib/editor-notices';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
 import { activeStoreyRoomScores, moreStarsHint, roomScoreLine } from '../lib/room-score';
 import { Icon } from '../plotcraft/icon';
 import { ChipButton, ChipNameField } from './chip-controls';
+import { RoomTransferRow } from './room-transfer-row';
 
 /**
  * The zone tool's top-centre chip. While the draw mode is on it says so and
@@ -19,7 +21,14 @@ import { ChipButton, ChipNameField } from './chip-controls';
  * zone does (undo, floor switch). With a zone selected, it says what room
  * the furniture makes of it and what it lacks for more stars (#905).
  */
-export function ZoneNameChip({ selectedZoneId }: { selectedZoneId: string | null }): JSX.Element | null {
+export function ZoneNameChip({
+  selectedZoneId,
+  onZoneSelect,
+}: {
+  selectedZoneId: string | null;
+  /** The room row (#925) selects the zone a copy brings. */
+  onZoneSelect(id: string | null): void;
+}): JSX.Element | null {
   const { layout, activeFloor, activeFloorIndex, actions, collidingIds } = useRoomEditor();
   const view = useViewSettings('drawZoneMode', 'view2D');
   const { setView } = useEditorViewActions();
@@ -37,13 +46,16 @@ export function ZoneNameChip({ selectedZoneId }: { selectedZoneId: string | null
   );
   const scoreLine = score ? roomScoreLine(score) : null;
   const hint = score && scoreLine ? moreStarsHint(score.missing, unit, score.space) : null;
+  // The room row (#925) is a line of its own, like the score's.
+  const copiedRoom = useSyncExternalStore(subscribeClipboard, roomOnClipboard, noRoom);
+  const roomRow = selectedZoneId !== null || copiedRoom !== null;
 
   const zone = zoneId ? activeFloor.zones?.find((entry) => entry.id === zoneId) : undefined;
   if (!zoneId || !zone) {
     if (!view.drawZoneMode || !view.view2D) return null;
     return (
-      <div className="pc-top-chip" style={CHIP_SLOT} role="status">
-        <div className="pc-glass pc-glass--dark" style={{ ...CHIP_BODY, color: 'var(--pc-sky)', ...(scoreLine ? { borderRadius: 16, justifyContent: 'center' } : {}) }}>
+      <div className={scoreLine || roomRow ? 'pc-top-chip pc-top-chip--rows' : 'pc-top-chip'} style={CHIP_SLOT} role="status">
+        <div className="pc-glass pc-glass--dark" style={{ ...CHIP_BODY, color: 'var(--pc-sky)', ...(scoreLine || roomRow ? { borderRadius: 16, justifyContent: 'center' } : {}) }}>
           <Icon name="tag" size={14} />
           {touch ? 'Drag to add, tap to adjust' : 'Drag to add a zone · click one to adjust · Esc to stop'}
           <ChipButton title="Stop drawing zones" onClick={() => setView((v) => ({ ...v, drawZoneMode: false }))}>
@@ -55,6 +67,8 @@ export function ZoneNameChip({ selectedZoneId }: { selectedZoneId: string | null
               {hint ? ` · ${hint}` : ''}
             </span>
           )}
+          {/* Room transfer (#925) */}
+          <RoomTransferRow selectedZoneId={selectedZoneId} onZoneSelect={onZoneSelect} />
         </div>
       </div>
     );
@@ -80,6 +94,8 @@ export function ZoneNameChip({ selectedZoneId }: { selectedZoneId: string | null
     </div>
   );
 }
+
+const noRoom = (): null => null;
 
 const CHIP_SLOT: React.CSSProperties = {
   position: 'absolute',
