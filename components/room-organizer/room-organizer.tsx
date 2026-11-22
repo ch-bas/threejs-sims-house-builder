@@ -893,6 +893,19 @@ export function RoomOrganizer(): JSX.Element {
       deselectAll();
       setHover(null);
     },
+    // W4 shot presets (#912): an hour, a weather and a camera preset, all view settings.
+    shot: {
+      read: () => {
+        const { view: { timeOfDay, weather }, autoCycleLighting: autoCycle } = viewStore.getState();
+        return { hour: timeOfDay, weather, autoCycle };
+      },
+      write: ({ hour, weather, autoCycle }) => {
+        const { setView: setViewSettings, setAutoCycleLighting } = viewStore.getState().actions;
+        setAutoCycleLighting(autoCycle);
+        setViewSettings((v) => ({ ...v, timeOfDay: hour, weather }));
+      },
+      frame: (camera) => applyPreset(camera),
+    },
   });
 
   // Advance the time-of-day at roughly 1 in-game hour per second when on.
@@ -1390,7 +1403,15 @@ export function RoomOrganizer(): JSX.Element {
       {/* L2 photo (#626): the shutter, the one HUD photo mode keeps. */}
       {photo.active && (
         <Suspense fallback={null}>
-          <PhotoBar onTake={photo.take} onKeep={photo.keep} houseId={layout.id} houseName={layout.name} onDone={photo.leave} />
+          <PhotoBar
+            onTake={photo.take}
+            onKeep={photo.keep}
+            houseId={layout.id}
+            houseName={layout.name}
+            onDone={photo.leave}
+            {...(photo.shoot ? { onShoot: photo.shoot } : {})}
+            walking={walkthroughActive}
+          />
         </Suspense>
       )}
 

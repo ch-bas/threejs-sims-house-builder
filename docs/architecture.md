@@ -176,6 +176,7 @@ components/
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
     │   ├── photo-mode.ts                Photo mode switch (enter/leave/subscribe) and the photo's size and file name (#626)
     │   ├── photo-album.ts               The photo album (#912, loaded with import()): per-house JPEG copies in IndexedDB (memory fallback), the 30-photo cap with oldest-out after asking, cross-tab notices, a photo as a file for the share sheet where it takes an image
+    │   ├── photo-presets.ts             Photo mode's shot presets (#912): a camera preset with an hour and a weather, and the scene's "17:00 · Clear" label
     │   ├── confirm-dialog.ts            askConfirm(): the in-app question queue that replaces window.confirm (#649)
     │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
@@ -274,7 +275,7 @@ components/
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
     │   ├── use-file-drop.ts             The page-wide drop target for house and backup files, and the installed app's launch queue (#934)
-    │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob, downloaded or kept in the album (#626, #912)
+    │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob, downloaded or kept in the album (#626, #912); shot presets, with the scene's hour, weather and clock put back as it ends
     │   ├── use-photo-album.ts           One house's album photos, newest first, kept current across saves and deletes (#912)
     │   ├── use-walkthrough.ts           Walkthrough: PointerLock + WASD, touch look + stick, stairs, doors, sitting, floor changes
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
@@ -381,7 +382,7 @@ components/
         ├── announcer.tsx                The polite `role="status"` node `lib/announce` speaks through, rendered once by the orchestrator (#929)
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement or a ghost is pending (Cancel for touch)
-        ├── photo-bar.tsx                Photo mode's shutter: Take photo, Save to album, Album and Done, the one HUD left on screen (#626, #912)
+        ├── photo-bar.tsx                Photo mode's shutter: Presets, Take photo, Save to album, Album and Done, the one HUD left on screen (#626, #912)
         ├── photo-album.tsx              The album above the shutter: each photo's age, hour and weather, Share (where the sheet takes an image), Download and Delete (#912)
         ├── tour-banner.tsx              The shared-link tour's HUD: the house's name, Walk through, Keep a copy, Build your own (#722)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
