@@ -16,7 +16,8 @@ import {
 import { downloadBlob } from '../lib/plan-export/download';
 import { drawsForPhone } from '../three/texture-settings';
 import type { AlbumSaveResult } from '../lib/photo-album';
-import type { Weather } from '../lib/types';
+import type { ShotConditions } from '../lib/photo-presets';
+import type { CameraPreset, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 /** The HUD hides under this attribute on `<html>` (app/globals.css). */
@@ -62,6 +63,20 @@ export interface UsePhotoModeOptions {
   walking: boolean;
   /** Runs as photo mode starts: a selection outline has no place in a photo. */
   onEnter(): void;
+  /**
+   * W4 shot presets (#912): the scene's hour, weather and clock, read and
+   * set (view settings, never the house), and the camera presets. Absent,
+   * the shutter offers no presets.
+   */
+  shot?: ShotControls;
+}
+
+/** What a shot preset reaches in the editor. */
+export interface ShotControls {
+  read(): ShotConditions;
+  write(conditions: ShotConditions): void;
+  /** Glide to a camera preset (the orbit camera; skipped while walking). */
+  frame(camera: CameraPreset): void;
 }
 
 /** Whether photo mode is on, for the scene's `orbitOnly` (read before the scene exists). */
@@ -75,6 +90,12 @@ export interface PhotoMode {
   take(): Promise<void>;
   /** Take one and keep it in the house's album (#912); null when nothing was captured. */
   keep(): Promise<AlbumSaveResult | null>;
+  /**
+   * Set a shot (#912): its hour and weather, and its camera unless walking.
+   * Photo mode puts the scene's own hour, weather and clock back as it
+   * ends. Null when the editor gave no `shot` controls.
+   */
+  shoot: ((conditions: ShotConditions, camera: CameraPreset) => void) | null;
   leave(): void;
 }
 
@@ -98,6 +119,7 @@ export function usePhotoMode({
   invalidate,
   walking,
   onEnter,
+  shot,
 }: UsePhotoModeOptions): PhotoMode {
   const active = usePhotoModeActive();
   const onEnterRef = useRef(onEnter);
@@ -109,6 +131,11 @@ export function usePhotoMode({
   const readConditionsRef = useRef(readConditions);
   readConditionsRef.current = readConditions;
   const sessionRef = useRef<PhotoSession>({ ended: true, withdraw: null });
+  // W4 shot presets (#912): the controls, and the scene before this stay's first preset.
+  const shotRef = useRef(shot);
+  shotRef.current = shot;
+  const beforeShotRef = useRef<ShotConditions | null>(null);
+  const hasShot = shot !== undefined;
 
   useEffect(() => {
     if (active && !available) leavePhotoMode();
@@ -159,6 +186,10 @@ export function usePhotoMode({
       // A save still running stops, and its question goes with the mode.
       session.ended = true;
       session.withdraw?.();
+      // The scene's own hour, weather and clock come back after a preset.
+      const before = beforeShotRef.current;
+      beforeShotRef.current = null;
+      if (before) shotRef.current?.write(before);
       window.removeEventListener('keydown', onKeyDown, true);
       root.removeAttribute(PHOTO_ATTRIBUTE);
       showGrids();
@@ -239,5 +270,16 @@ export function usePhotoMode({
     });
   }, [capture, houseId]);
 
-  return { active, take, keep, leave: leavePhotoMode };
+  const shoot = useCallback((conditions: ShotConditions, camera: CameraPreset) => {
+    const controls = shotRef.current;
+    if (!controls || sessionRef.current.ended) return;
+    // Only the first preset notes the scene: leaving goes back past all of them.
+    beforeShotRef.current ??= controls.read();
+    controls.write(conditions);
+    // Walking, the camera is the walker's eyes: a preset sets the light only.
+    if (!walkingRef.current) controls.frame(camera);
+    invalidateRef.current();
+  }, []);
+
+  return { active, take, keep, shoot: hasShot ? shoot : null, leave: leavePhotoMode };
 }

@@ -12,17 +12,9 @@ import {
   type AlbumPhoto,
   type AlbumState,
 } from '../lib/photo-album';
+import { sceneLabel } from '../lib/photo-presets';
 import { downloadBlob } from '../lib/plan-export/download';
 import type { FileChannels, FileOutcome } from '../lib/share-delivery';
-import type { Weather } from '../lib/types';
-
-const WEATHER_LABELS: Record<Weather, string> = { clear: 'Clear', rain: 'Rain', snow: 'Snow' };
-
-/** "07:30": the scene's hour as the photo was taken. */
-export function sceneHourLabel(hour: number): string {
-  const minutes = Math.floor((((hour % 24) + 24) % 24) * 60);
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-}
 
 const STATE_NOTES: Record<Exclude<AlbumState, 'persistent'>, string> = {
   session: 'This browser won’t store the album: these photos go when the tab closes.',
@@ -69,7 +61,7 @@ function AlbumRow({ photo, houseName, now, onDeleting, onShare }: AlbumRowProps)
       <span className="pc-photo-album-meta">
         <span className="pc-photo-album-age">{age}</span>
         <span className="pc-photo-album-scene">
-          {sceneHourLabel(photo.hour)} · {Object.hasOwn(WEATHER_LABELS, photo.weather) ? WEATHER_LABELS[photo.weather] : 'Clear'}
+          {sceneLabel(photo.hour, photo.weather)}
         </span>
       </span>
       {onShare && (

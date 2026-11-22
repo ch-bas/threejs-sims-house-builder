@@ -1971,6 +1971,75 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
     gap: 8px;
   }
 }
+/* W4 shot presets (#912): a camera, an hour and a weather in one tap, above the shutter. */
+.pc-photo-presets {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 14px;
+}
+.pc-photo-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.pc-tile.pc-photo-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-family: var(--pc-font-display);
+  font-size: 11px;
+  text-align: left;
+}
+.pc-photo-preset-name {
+  font-weight: 700;
+}
+/* The album's soft label colour; the active tile keeps its own cyan, full strength. */
+.pc-photo-preset-scene {
+  color: var(--pc-paper-soft);
+}
+.pc-tile--active .pc-photo-preset-scene {
+  color: inherit;
+}
+@media (max-width: 768px), (max-height: 500px) {
+  .pc-photo-presets-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* A phone: the hint beside Done, then Take and Save, then Presets and Album. */
+  .pc-photo-bar-row:has(.pc-photo-bar-presets):has(.pc-photo-bar-album) {
+    grid-template-areas: 'hint done' 'take keep' 'presets album';
+  }
+  .pc-photo-bar-row:has(.pc-photo-bar-presets):has(.pc-photo-bar-album) .pc-photo-bar-hint {
+    grid-area: hint;
+    align-self: center;
+    padding: 0 0 0 10px;
+    text-align: left;
+  }
+  .pc-photo-bar-row:has(.pc-photo-bar-album) .pc-photo-bar-presets {
+    grid-area: presets;
+  }
+  .pc-photo-bar-row:has(.pc-photo-bar-presets) .pc-photo-bar-take {
+    grid-area: take;
+  }
+  .pc-photo-bar-row:has(.pc-photo-bar-presets) .pc-photo-bar-keep {
+    grid-area: keep;
+  }
+  .pc-photo-bar-row:has(.pc-photo-bar-presets) .pc-photo-bar-album {
+    grid-area: album;
+  }
+  .pc-photo-bar-row:has(.pc-photo-bar-presets) .pc-photo-bar-done {
+    grid-area: done;
+  }
+}
 /* W4 album share (#912): a row with Share has three buttons. */
 .pc-photo-album:has(.pc-photo-album-share) {
   width: min(480px, calc(100vw - 32px));
