@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.38.0] - 2026-11-22
+
+Two milestones in one release. **Building tools II** finishes the building tools: measure on the plan and pin the dimensions that matter, lay patios, gravel, decks and lawns, move, mirror or copy a whole room with its walls, fence the whole lot in one step, and trace walls over a floor plan. **Living house II** brings the house to life: walkers eat at the table, step out into the garden and say what they lack, the TV switches in EXPLORE, birds, crickets and doors join the ambience, photo mode gains presets and sharing, and challenge briefs earn a badge.
+
+### Added
+- Measure on the 2D plan: points snap to corners, wall faces and furniture edges and centres (Shift for a free point), and a measurement can be pinned to its storey; pins show on the plan, blueprint, print, SVG and DXF and follow a resize or corner cut ([#921](https://github.com/ch-bas/threejs-sims-house-builder/issues/921))
+- Garden surfaces: draw paving, gravel, a timber deck or lawn on the lot with a drag on the plan (Build → Garden surfaces); they follow the slope in 3D, keep clear of the house, porch and neighbours, and appear on the plan, minimap, blueprint, SVG, DXF and GLB ([#924](https://github.com/ch-bas/threejs-sims-house-builder/issues/924))
+- Select a room in the zone tool to move it, mirror it either way, or copy it and paste it on any storey, with its walls, doors, furniture and zone, as one undoable step ([#925](https://github.com/ch-bas/threejs-sims-house-builder/issues/925))
+- With a fence or hedge in hand, "Fence the lot" lays a run round the whole lot, leaving a gate at the front path ([#915](https://github.com/ch-bas/threejs-sims-house-builder/issues/915))
+- A traced floor plan can be used as a guide: the ground floor keeps its walls, foundation and room floors, and the plan shows under them on the 2D plan ([#920](https://github.com/ch-bas/threejs-sims-house-builder/issues/920))
+- Walkers step out into the garden through any outside door, sliding doors included: they rest on the bench, stand at the barbecue or the pool's edge and sit at the picnic table, keep off fences and hedges, and come in at dusk and when it rains or snows; walkers in the garden stay in view while you work on an upper storey ([#913](https://github.com/ch-bas/threejs-sims-house-builder/issues/913))
+- Walkers take what they fetch from the fridge or the stove to a free chair at the dining table and eat there ([#904](https://github.com/ch-bas/threejs-sims-house-builder/issues/904))
+- A walker who can't meet a pressing need shows a thought bubble, and a tap on a walker opens a card with its name, what it is doing and a bar per need ([#906](https://github.com/ch-bas/threejs-sims-house-builder/issues/906))
+- In EXPLORE, `E` switches a TV on and off at any hour; switching is for the walk only and changes nothing in the house ([#910](https://github.com/ch-bas/threejs-sims-house-builder/issues/910))
+- The EXPLORE ambience adds birds by day, crickets at night and a creak or knock as doors swing ([#911](https://github.com/ch-bas/threejs-sims-house-builder/issues/911))
+- Photo mode presets set the camera, the hour and the weather in one tap (Morning, Midday, Golden hour, Night, Rainy day, Snowy day), and album photos can be shared through the device's share sheet ([#912](https://github.com/ch-bas/threejs-sims-house-builder/issues/912))
+- Completing a challenge brief earns its own badge, shown in a Challenges section of Achievements, with a "Challenge complete" toast; a brief only counts while its funds, hard budget and lot are kept. A sixth brief, Lived-in, asks for every need met on two storeys ([#909](https://github.com/ch-bas/threejs-sims-house-builder/issues/909))
+
+### Changed
+- A room's space star also needs its furniture clear of door swings, and the hint says which part is missing; existing houses with furniture in a door's swing may lose a star ([#917](https://github.com/ch-bas/threejs-sims-house-builder/issues/917))
+- A fenced lot reads cleanly on the plan: lot-edge runs are drawn whole, without a size label per section
+- The EXPLORE prompt names what it switches: "Switch on the lamp", "Switch on the TV"
+
+### Fixed
+- Overlapping stairwells are cut as the stairs' own holes joined together, so the floor between two flights is solid in 3D as it is to walk on ([#963](https://github.com/ch-bas/threejs-sims-house-builder/issues/963))
+- Hiding a wall under Wall visibility hides its doors and windows too, in 3D and in the GLB ([#965](https://github.com/ch-bas/threejs-sims-house-builder/issues/965))
+- The snap grid no longer comes back on screen when you orbit in photo mode
+
+### Security
+- Next.js 15.5.29, which fixes two moderate advisories; neither reached this static site
+
 ## [1.37.0] - 2026-11-15
 
 The **Experience & reach** milestone, first wave: the app behaves well on every device. It opens offline, opens house files you drop on it, keeps your houses safer, glides the camera, says what a keyboard edit did, honours the Android back gesture and high-contrast mode, and finally has one table of shortcuts.
@@ -1042,7 +1073,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.37.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.38.0...HEAD
+[1.38.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.35.0...v1.36.0
 [1.35.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.34.0...v1.35.0
