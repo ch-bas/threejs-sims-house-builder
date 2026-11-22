@@ -6,6 +6,7 @@ import { findNeedSpots } from '../lib/npc-needs';
 import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath, isFreeAt } from '../lib/npc-path';
 import { needBias } from '../lib/npc-schedule';
 import { type NpcSeat, findNpcSeats } from '../lib/npc-seats';
+import { type NeedBubbleAtlas, buildNeedBubble } from '../three/need-bubbles';
 import {
   NPC_REPAINT,
   NPC_SHADOW,
@@ -997,5 +998,71 @@ describe('walker shadow pacing (#668)', () => {
     expect(due(100, false)).toBe(true);
     // Nothing owed any more: no further passes.
     expect(due(500, false)).toBe(false);
+  });
+});
+
+describe('need bubbles in the step (#906)', () => {
+  // The atlas's views without a canvas (node has no document).
+  const atlasOf = (): NeedBubbleAtlas => ({
+    textures: { hunger: new THREE.Texture(), energy: new THREE.Texture(), fun: new THREE.Texture(), hygiene: new THREE.Texture() },
+    hidden: false,
+    dispose: () => {},
+  });
+  const bubbled = (overrides: Partial<NpcState>, to?: { x: number; z: number }) => {
+    const atlas = atlasOf();
+    const bubble = buildNeedBubble(THREE as unknown as typeof import('../three/three-runtime'), atlas);
+    const npc = walker({ ...overrides, bubble }, to);
+    npc.group.add(bubble.sprite);
+    return { npc, bubble, atlas };
+  };
+  const ALL_STRANDED = 0b1111;
+
+  it('a walker standing still repaints once when its bubble shows, and once when it goes', () => {
+    const { npc, bubble, atlas } = bubbled({ pause: 30, needs: { hunger: 0.21, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    expect(stepNpcs([npc], FRAME, OPEN, 0)).toBe(NPC_STILL);
+    // A couple of seconds later hunger is under a fifth, and nothing it can reach meets it.
+    let changes = 0;
+    for (let t = 0; t < 3; t += FRAME) if (stepNpcs([npc], FRAME, OPEN, 0) !== NPC_STILL) changes += 1;
+    expect(bubble.sprite.visible).toBe(true);
+    expect(bubble.sprite.material.map).toBe(atlas.textures.hunger);
+    expect(changes).toBe(1);
+    // Fed: the bubble goes, with one more repaint.
+    npc.needs.hunger = 1;
+    expect(stepNpcs([npc], FRAME, OPEN, 0)).toBe(NPC_REPAINT);
+    expect(bubble.sprite.visible).toBe(false);
+    expect(stepNpcs([npc], FRAME, OPEN, 0)).toBe(NPC_STILL);
+  });
+
+  it('at a stop it works out what it can reach: a fridge across the room means no bubble', () => {
+    const fridge = { ...furniture('fridge', 'fridge', 3, -3, 0.7, 0.7), height: 1.8 };
+    const items = [fridge];
+    const nav = makeNav(items);
+    const spots = findNeedSpots(items, findNpcSeats(items));
+    const hungry = { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 };
+    // Arriving at the end of its route, with the fridge on the floor.
+    const fed = bubbled({ needs: { ...hungry } }, { x: 0.05, z: 0 });
+    stepNpcs([fed.npc], FRAME, nav, 0, seeded(1), new Map(), null, spots);
+    expect(fed.npc.stranded! & 0b0001).toBe(0);
+    expect(fed.bubble.sprite.visible).toBe(false);
+    // The same walker on a floor with nothing to eat says so.
+    const empty = bubbled({ needs: { ...hungry } }, { x: 0.05, z: 0 });
+    stepNpcs([empty.npc], FRAME, nav, 0, seeded(1), new Map(), null, []);
+    expect(empty.npc.stranded! & 0b0001).toBe(1);
+    expect(empty.bubble.sprite.visible).toBe(true);
+  });
+
+  it('no bubble while asleep or using something; lower over a sitter; none in photo mode', () => {
+    const asleep = bubbled({ pause: 30, mode: 'seated', asleep: true, using: 'energy', needs: { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    stepNpcs([asleep.npc], FRAME, OPEN, 0);
+    expect(asleep.bubble.sprite.visible).toBe(false);
+    const sitter = bubbled({ pause: 30, mode: 'seated', needs: { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    stepNpcs([sitter.npc], FRAME, OPEN, 0);
+    expect(sitter.bubble.sprite.visible).toBe(true);
+    const standing = bubbled({ pause: 30, needs: { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    stepNpcs([standing.npc], FRAME, OPEN, 0);
+    expect(sitter.bubble.sprite.position.y).toBeLessThan(standing.bubble.sprite.position.y - 0.3);
+    standing.atlas.hidden = true;
+    expect(stepNpcs([standing.npc], FRAME, OPEN, 0)).toBe(NPC_REPAINT);
+    expect(standing.bubble.sprite.visible).toBe(false);
   });
 });

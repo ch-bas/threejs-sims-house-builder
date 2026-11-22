@@ -30,9 +30,9 @@ export const SHEET_SELECTOR = '.pc-item-popover';
  * Rects of the HUD panels covering the scene, plus the item sheet while
  * open when `withSheet`. A container tagged `data-scene-occluder="children"`
  * contributes its visible children instead of its own, mostly transparent,
- * box.
+ * box. Also where the walker card (#906) keeps clear of.
  */
-function sceneOccluderRects(withSheet = true): Rect[] {
+export function sceneOccluderRects(withSheet = true): Rect[] {
   const selector = withSheet && document.documentElement.hasAttribute('data-sheet-open')
     ? `${OCCLUDER_SELECTOR}, ${SHEET_SELECTOR}`
     : OCCLUDER_SELECTOR;

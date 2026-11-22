@@ -32,8 +32,10 @@ import { type NeedBias, NO_BIAS, isSleepHour, needBias } from '../lib/npc-schedu
 import { type NpcSeat, findNpcSeats } from '../lib/npc-seats';
 import { floorElevation } from '../lib/storeys';
 import { type WalkerPosition, resolveWalkerStep } from '../lib/walk-collision';
+import { WALKER_CARD_INTERVAL, type WalkerCards, type WalkerDoing, bubbleNeed, strandedNeeds } from '../lib/walker-card';
 import { disposeObject } from '../three/builder-utils';
 import { type HumanFigureRig, buildHumanFigure, poseWalk } from '../three/builders/human-figure';
+import { type NeedBubble, type NeedBubbleAtlas, buildNeedBubble, createNeedBubbleAtlas, showNeedBubble } from '../three/need-bubbles';
 import {
   PEOPLE_CLIPS,
   SIT_HIP_BACK,
@@ -124,6 +126,12 @@ export interface NpcState {
   using: NeedKind | null;
   /** Sleeping in a bed or on a sofa at night (#907): up after `SLEEP_SECONDS`, at morning, or for the player. */
   asleep: boolean;
+  /** #906: the walker's card id (its group's `userData.walkerId`), its name's seed, and its thought bubble. */
+  id?: number;
+  nameSeed?: number;
+  bubble?: NeedBubble;
+  /** #906: the needs nothing it can reach meets (`strandedNeeds`), refreshed at each stop and floor edit. */
+  stranded?: number;
 }
 
 export interface NpcAnimation {
@@ -266,6 +274,10 @@ export interface UseNpcsOptions {
    * spawn effect. NaN or absent: no clock.
    */
   clock?: { readonly current: number };
+  /** The walker card (#906): a tap selects a walker, and the walk publishes its needs at 2 Hz. */
+  cards?: WalkerCards;
+  /** Photo mode (#906): the thought bubbles stay hidden, so photos stay clean. */
+  hideBubbles?: boolean;
 }
 
 /**
@@ -294,6 +306,10 @@ interface NpcStage {
   THREE: ThreeModule;
   scene: ThreeNS.Scene;
   people: PeopleModel | null;
+  /** The thought bubbles' atlas (#906), freed with the walkers. */
+  bubbles: NeedBubbleAtlas | null;
+  /** The next walker's look and name seed (#906): in order across the house, so no two share a name. */
+  nextSeed: number;
 }
 
 /**
@@ -307,14 +323,17 @@ interface NpcStage {
 export function useNpcs(options: UseNpcsOptions): void {
   const {
     enabled, count = 3, threeModuleRef, sceneRef, building, shownFrom, shownTo,
-    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep, handOff, clock,
+    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep, handOff, clock, cards, hideBubbles = false,
   } = options;
   const reducedMotion = useReducedMotion();
   const storeysRef = useRef(new Map<string, StoreyWalkers>());
   const stageRef = useRef<NpcStage | null>(null);
+  // Photo mode (#906): read as the bubbles' atlas is made.
+  const hideBubblesRef = useRef(hideBubbles);
+  hideBubblesRef.current = hideBubbles;
   // Read by `sync`, which runs from both effects below.
-  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock });
-  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock };
+  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock, cards });
+  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock, cards };
 
   // Brings the storeys' walkers in line with the building and the storeys
   // drawn: spawn, re-route, re-seat, lift or lower, show or park, remove.
@@ -329,6 +348,8 @@ export function useNpcs(options: UseNpcsOptions): void {
       inputs.invalidate?.();
     }
     if (inputs.handOff) publishBodies(inputs.handOff, storeysRef.current);
+    // A walker parked or gone closes its card, with or without a step (reduced motion).
+    if (inputs.cards && inputs.cards.selected() !== null) publishCard(inputs.cards, storeysRef.current);
   };
 
   useEffect(() => {
@@ -337,13 +358,24 @@ export function useNpcs(options: UseNpcsOptions): void {
     const scene = sceneRef.current;
     if (!THREE || !scene) return undefined;
     const storeys = storeysRef.current;
-    stageRef.current = { THREE, scene, people: riggedModelReady ? getPeopleModel() : null };
+    const bubbles = createNeedBubbleAtlas(THREE);
+    bubbles.hidden = hideBubblesRef.current;
+    stageRef.current = { THREE, scene, people: riggedModelReady ? getPeopleModel() : null, bubbles, nextSeed: 0 };
     // Spawns, and poses, the walkers of the storeys drawn now, outside the
     // budget: a paused one (a hidden tab adopting another tab's house) would
     // leave them unposed and shadowless until it runs.
     syncRef.current();
 
     const shadowDue = npcShadowPacer();
+    // The open walker card (#906): filled at once on a tap, then twice a second.
+    let cardClock = 0;
+    const fillCard = () => {
+      const shownCards = inputsRef.current.cards;
+      if (shownCards && shownCards.selected() !== null) publishCard(shownCards, storeys);
+    };
+    const stopCards = inputsRef.current.cards?.subscribe(() => {
+      if (inputsRef.current.cards?.snapshot() === null) fillCard();
+    });
     // One step of the walk, on the scene's frame budget (#671); true asks for
     // a repaint. Parked storeys don't step.
     const step = (delta: number): boolean => {
@@ -366,6 +398,11 @@ export function useNpcs(options: UseNpcsOptions): void {
         change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats, player, storey.spots, hour)) as NpcChange;
       }
       if (shadowDue(performance.now(), change === NPC_SHADOW)) inputsRef.current.requestShadowUpdate?.();
+      cardClock += delta;
+      if (cardClock >= WALKER_CARD_INTERVAL) {
+        cardClock = 0;
+        fillCard();
+      }
       return change !== NPC_STILL;
     };
     // Reduced motion (#436): the spawn pose is all; they stand where they
@@ -374,8 +411,11 @@ export function useNpcs(options: UseNpcsOptions): void {
 
     return () => {
       removeStep();
+      stopCards?.();
+      inputsRef.current.cards?.close();
       for (const storey of storeys.values()) removeNpcs(scene, storey.npcs);
       storeys.clear();
+      bubbles.dispose();
       const shared = inputsRef.current.handOff;
       if (shared) shared.bodies = [];
       stageRef.current = null;
@@ -392,6 +432,59 @@ export function useNpcs(options: UseNpcsOptions): void {
   useEffect(() => {
     syncRef.current();
   }, [building, shownFrom, shownTo, count]);
+
+  // Photo mode hides the bubbles (#906) at once, step or no step.
+  useEffect(() => {
+    const atlas = stageRef.current?.bubbles;
+    if (!atlas || atlas.hidden === hideBubbles) return;
+    atlas.hidden = hideBubbles;
+    let changed = false;
+    for (const storey of storeysRef.current.values()) for (const npc of storey.npcs) if (refreshBubble(npc)) changed = true;
+    if (changed) inputsRef.current.invalidate?.();
+  }, [hideBubbles, enabled, riggedModelReady]);
+}
+
+/** Show or hide a walker's bubble for what it needs now (#906); true when what is drawn changed. */
+function refreshBubble(npc: NpcState): boolean {
+  if (!npc.bubble) return false;
+  // Every step: one scratch, no allocation.
+  doingScratch.asleep = npc.asleep;
+  doingScratch.seated = inSeat(npc);
+  doingScratch.seeking = npc.seeking;
+  doingScratch.using = npc.using;
+  return showNeedBubble(npc.bubble, bubbleNeed(npc.needs, npc.stranded ?? 0, doingScratch), doingScratch.seated);
+}
+const doingScratch: WalkerDoing = { asleep: false, seated: false, seeking: null, using: null };
+
+/**
+ * Which needs nothing the walker can reach meets (#906): a spot it can
+ * stand at or (a rigged figure) sit in, in its own region of the floor.
+ * Occupancy is left out: a fridge in use is still there.
+ */
+function refreshStranded(npc: NpcState, nav: NpcNav, spots: readonly NeedSpot[]): void {
+  const from = standingCell(npc, nav);
+  if (from < 0) return;
+  const region = nav.region[from];
+  const sits = Boolean(npc.anim?.sit);
+  npc.stranded = strandedNeeds(
+    spots,
+    (spot) => (spot.seatKey === null || sits) && isFreeAt(nav, spot.x, spot.z) && nav.region[cellAt(nav, spot.x, spot.z)] === region
+  );
+}
+
+/** The selected walker's card (#906), from the shown walkers; a walker gone or parked closes it. */
+function publishCard(cards: WalkerCards, storeys: ReadonlyMap<string, StoreyWalkers>): void {
+  const id = cards.selected();
+  for (const storey of storeys.values()) {
+    if (!storey.shown) continue;
+    for (const npc of storey.npcs) {
+      if (npc.id !== id || !npc.group.visible) continue;
+      const doing = { asleep: npc.asleep, seated: inSeat(npc), seeking: npc.seeking, using: npc.using };
+      cards.publish({ id, seed: npc.nameSeed ?? 0, doing, needs: { ...npc.needs }, wants: bubbleNeed(npc.needs, npc.stranded ?? 0, doing) });
+      return;
+    }
+  }
+  cards.close();
 }
 
 /** Hand the shown storeys' walkers to the player's resolve; a new array only when the set changed. */
@@ -471,6 +564,8 @@ function syncNpcStoreys(
       const seats = findNpcSeats(floor.items, nav ? { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders } : undefined);
       storey.seats = new Map(seats.map((seat) => [seat.key, seat]));
       storey.spots = findNeedSpots(floor.items, seats);
+      // #906: what each walker can reach changed with the floor.
+      if (nav) for (const npc of storey.npcs) refreshStranded(npc, nav, storey.spots);
     }
 
     const nav = storey.nav;
@@ -484,8 +579,9 @@ function syncNpcStoreys(
       }
     } else if (shown && storey.npcs.length === 0) {
       const npcs: NpcState[] = [];
-      // Seeded per storey too, so two storeys don't hold the same people.
-      for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, index, i + index * count, stage.people, npcs, here));
+      // Seeded in order across the house, so no two walkers look or are named alike (#906).
+      for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, index, stage.nextSeed++, stage.people, npcs, here, stage.bubbles));
+      for (const npc of npcs) refreshStranded(npc, nav, storey.spots);
       storey.npcs = npcs;
       stepNpcs(npcs, 0, nav, floorY, Math.random, storey.seats, null, storey.spots);
       changed = true;
@@ -509,6 +605,9 @@ function syncNpcStoreys(
   return changed;
 }
 
+/** Walker card ids (#906): unique per page, never reused. */
+let nextWalkerId = 1;
+
 function removeNpcs(scene: ThreeNS.Scene, npcs: readonly NpcState[]): void {
   for (const npc of npcs) {
     npc.anim?.mixer.stopAllAction();
@@ -526,7 +625,8 @@ function createNpc(
   index: number,
   people: PeopleModel | null,
   others: readonly NpcState[],
-  avoid: PlayerBody | null = null
+  avoid: PlayerBody | null = null,
+  bubbles: NeedBubbleAtlas | null = null
 ): NpcState {
   const palette = [0xc62828, 0x2e7d32, 0x1565c0, 0xf9a825, 0x6a1b9a];
   const hairPalette = [0x2b1d14, 0x5a3825, 0x1a1a1a, 0x8d6e4a, 0x3b2a20];
@@ -585,6 +685,11 @@ function createNpc(
     group.scale.setScalar(heightScale);
   }
   group.userData.type = NPC_TAG;
+  // #906: what a tap finds, and the thought bubble over the head.
+  const id = nextWalkerId++;
+  group.userData.walkerId = id;
+  const bubble = bubbles ? buildNeedBubble(THREE, bubbles) : null;
+  if (bubble) group.add(bubble.sprite);
 
   // Spawn in free space (never inside the sofa or the stair flight), and
   // not on the player (#585) when there is room elsewhere.
@@ -627,6 +732,9 @@ function createNpc(
     seeking: null,
     using: null,
     asleep: false,
+    id,
+    nameSeed: index,
+    ...(bubble ? { bubble } : {}),
   };
   planRoute(npc, nav, Math.random, others);
   return npc;
@@ -1163,6 +1271,8 @@ export function stepNpcs(
     npc.body.seatX = sitting ? sitting.x : Number.NaN;
     npc.body.seatZ = sitting ? sitting.z : Number.NaN;
     npc.body.bedId = sitting ? bedOf(sitting) : null;
+    // #906: a bubble over a walker whose most pressing need nothing it can reach meets.
+    if (refreshBubble(npc) && change === NPC_STILL) change = NPC_REPAINT;
   }
   return change;
 }
@@ -1188,6 +1298,7 @@ function arriveAtStop(
   hour: number
 ): void {
   npc.standHeading = npc.arrivalHeading;
+  refreshStranded(npc, nav, spots);
   // Arrived where it set out for (not dropped short of a seat it lost).
   npc.using = npc.destination >= 0 ? npc.seeking : null;
   npc.seeking = null;

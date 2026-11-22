@@ -2440,3 +2440,32 @@ html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line {
     outline-width: 3px;
   }
 }
+
+/* The walker card's close button (#906): 44 px to a finger. */
+.pc-walker-card-close {
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 28px;
+  cursor: pointer;
+}
+.pc-walker-card-close:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.pc-walker-card-close:focus-visible {
+  outline: 2px solid var(--pc-sky);
+  outline-offset: 1px;
+}
+@media (pointer: coarse) {
+  .pc-walker-card-close {
+    width: 44px;
+    height: 44px;
+    line-height: 44px;
+    margin: -10px -10px -10px 0;
+  }
+}

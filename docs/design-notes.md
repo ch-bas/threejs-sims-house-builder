@@ -553,8 +553,46 @@ to respect.
   for them, "First floor: nothing yet"), from
   the held editor layout like the room scores, so it costs nothing while
   the drawer is closed and nothing at runtime. Reachability is not checked:
-  a fridge boxed in by furniture still counts. The thought bubbles and the
-  walker card are the next step.
+  a fridge boxed in by furniture still counts.
+  Second step: bubbles and the walker card. A walker shows a thought
+  bubble with a need's mark when that need is its most pressing, past 0.6
+  urgency (under a fifth full), and nothing it can reach meets it
+  (`strandedNeeds`, lib/walker-card: no spot for that need in its region
+  of the floor, a seat only for a walker that sits; a fridge in use still
+  counts as there, a chair at a table never counts as food). The mask is
+  worked out at each stop, at spawn and on a floor edit, never per frame.
+  No bubble while it sleeps, while it uses something or on its way to
+  meet that need, so a sleeper beside a fridge never claims it can't find
+  food. The bubbles are one sprite per walker over one canvas atlas
+  (`three/need-bubbles`, four views of one image, marked shared, freed
+  with the walkers), lower over a sitter; the step swaps the sprite's map,
+  height and `visible` and asks for a repaint only when that changed,
+  never a shadow pass (sprites cast none). No bob, so reduced motion needs
+  nothing more. Photo mode hides every bubble at once (the atlas's
+  `hidden`): photos stay clean.
+  A tap on a walker (`onWalkerTap` in drag-handlers: a walker drawn under
+  the pointer, nearer than any item and not behind a drawn wall, porch
+  box, roof or dormer, ceiling or floor, released within the drag
+  threshold) opens a card beside the tap, on the page and clear of the
+  HUD (`placeWalkerCard` against the scene occluders and an open item
+  sheet: above or below, right or left, or flush with a panel's edge,
+  nearest the first choice; on a phone it slides under the walls pill
+  rather than over it). The press is still the item's or
+  the camera's: a walker crossing in front of a sofa never turns a sofa
+  press or drag into an orbit; a tap there selects the sofa and opens the
+  card. A tap on empty floor closes the card. The card shows a first name
+  (seeds handed out in order across the house, and a step through the 32
+  names coprime with 32, so no two walkers share one), a line for what it
+  is doing, a bar per need and, with a bubble, what it can't find. The
+  walk publishes a copy to a per-editor store (`createWalkerCards`) on the
+  tap, twice a second while stepping, and on every sync (so a parked or
+  gone walker closes it under reduced motion too); a publish the card
+  would show the same (whole percents) re-renders nothing. Escape closes
+  the card in the capture phase and stops there (one step per press, not
+  a deselect too), unless a modal is open over it; back closes it on a
+  layer above the item sheet and below the drawer, so both close the card
+  before the popover. It stays out of a walk and a photo. The panel and
+  its words (`lib/walker-card-text`) load on the first tap.
 - **Walkers keep the clock (#907).** `lib/npc-schedule` reads the view's
   hour: from 23:00 to 07:00 rest counts as pressing even when met (a bias
   that raises `NEED_URGENT` for that need), and a rest at night, in a bed
