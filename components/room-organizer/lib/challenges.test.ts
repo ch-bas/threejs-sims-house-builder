@@ -94,6 +94,32 @@ describe('challenge briefs (#909)', () => {
     expect(goalLabel({ kind: 'spend-under', amount: 3_000 })).toBe('Spend under $3,000');
     expect(goalLabel({ kind: 'floors', count: 2 })).toBe('2 storeys');
     expect(goalLabel({ kind: 'five-star' })).toBe('A room with all 5 stars');
+    expect(goalLabel({ kind: 'needs-met' })).toBe('Every need met on every storey');
+  });
+
+  it('meets every need only when each storey has something to eat, rest, do and wash at', () => {
+    const needs = (prefix: string, x: number) => [
+      at(`${prefix}-stove`, 'stove', x, -2),
+      at(`${prefix}-sofa`, 'sofa', x, 0, { width: 2, depth: 0.9 }),
+      at(`${prefix}-shelf`, 'bookshelf', x, 2, { width: 1, depth: 0.3 }),
+      at(`${prefix}-sink`, 'bathroom-sink', x + 2, 2),
+    ];
+    const goal = { kind: 'needs-met' } as const;
+    const ground = makeFloor({ id: 'g', items: needs('g', -2) });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground] }))).toBe(true);
+    // An empty storey upstairs feeds nobody up there.
+    const bare = makeFloor({ id: 'u', items: [] });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground, bare] }))).toBe(false);
+    // A toilet alone is no wash: the walkers' own rule.
+    const upstairs = makeFloor({ id: 'u', items: [...needs('u', -2).filter((item) => item.type !== 'bathroom-sink'), at('u-wc', 'toilet', 2, 2)] });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground, upstairs] }))).toBe(false);
+    const washed = { ...upstairs, items: [...upstairs.items, at('u-sink', 'bathroom-sink', 0, 2)] };
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground, washed] }))).toBe(true);
+    // Only what stands in the house counts: a fridge in the garden doesn't.
+    const garden = makeFloor({ id: 'g', items: [...needs('g', -2).filter((item) => item.type !== 'stove'), at('out', 'fridge', 6, 0)] });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [garden] }))).toBe(false);
+    // Not a room goal: no zones needed.
+    expect(isRoomGoal(goal)).toBe(false);
   });
 
   it('a lot nothing was done on is untouched, whatever its id or key order', () => {
@@ -144,6 +170,45 @@ describe('repairChallenge (#909)', () => {
     const both = parseStoredLayout({ ...makeLayout(), budget: 'x', challenge: { id: 'starter-home', startedAt: Number.NaN } });
     expect(both).not.toHaveProperty('budget');
     expect(both?.challenge).toEqual({ id: 'starter-home', startedAt: 0 });
+  });
+});
+
+describe('Lived-in (#909)', () => {
+  /** The cheapest catalogue entry of `type`, bought and placed at (x, z). */
+  const buy = (floor: string, type: string, x: number, z: number): FurnitureItem => {
+    const entry = FURNITURE_CATALOG.filter((candidate) => candidate.type === type).sort((a, b) => a.price - b.price)[0]!;
+    return { ...entry, id: `${floor}-${type}`, position: { x, z }, rotation: 0 } as FurnitureItem;
+  };
+  /** One storey at the least it takes: a bedroom with a bed and a lamp, then something to eat, do and wash at. */
+  const storey = (id: string) =>
+    makeFloor({
+      id,
+      name: id,
+      items: [buy(id, 'bed', -2, -1.5), buy(id, 'lamp', -0.6, -0.5), buy(id, 'stove', 1.2, 0), buy(id, 'bookshelf', 2.8, 0), buy(id, 'bathroom-sink', 1.2, 2.2)],
+      zones: [{ id: `${id}-bedroom`, name: 'Bedroom', color: '#ffffff', x: -4, z: -3.5, w: 4, d: 3.5 }],
+    });
+
+  it('can be met within its funds, with stairs bought, but not with much to spare', () => {
+    const challenge = challengeById('lived-in')!;
+    const lot = challengeLayout(challenge, 0);
+    const house: RoomLayout = { ...lot, floors: [storey(lot.floors[0]!.id), storey('upstairs')] };
+    const progress = challengeProgress(house)!;
+    expect(progress.goals.map((goal) => goal.met)).toEqual([true, true, true]);
+    expect(progress.termsBroken).toBeNull();
+    const stairs = Math.min(...FURNITURE_CATALOG.filter((entry) => entry.type === 'stairs').map((entry) => entry.price));
+    const least = budgetSpent(house) + stairs;
+    expect(least).toBeLessThanOrEqual(challenge.funds);
+    // A brief, not a free hand: the least it takes is most of the funds.
+    expect(least).toBeGreaterThan(challenge.funds * 0.75);
+  });
+
+  it('asks more than a bed for each bedroom: two stars is not enough', () => {
+    const lot = challengeLayout(challengeById('lived-in')!, 0);
+    const dark = (id: string) => {
+      const floor = storey(id);
+      return { ...floor, items: floor.items.filter((item) => item.type !== 'lamp') };
+    };
+    expect(challengeProgress({ ...lot, floors: [dark(lot.floors[0]!.id), dark('upstairs')] })!.goals.map((goal) => goal.met)).toEqual([true, true, false]);
   });
 });
 

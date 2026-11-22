@@ -2,6 +2,7 @@ import { budgetOf, budgetRemaining, budgetSpent, isHardBudgetOn } from './budget
 import { DEFAULT_ROOF } from './constants';
 import { formatMoney } from './format';
 import { INITIAL_GROUND_FLOOR } from './initial-layout';
+import { householdLacks } from './npc-needs';
 import { furnishedRooms, ROOM_CHECKS, ROOM_TYPE_LABELS, type KnownCollisions, type RoomType } from './room-score';
 import type { FloorLayout, LayoutChallenge, RoomLayout } from './types';
 
@@ -12,7 +13,8 @@ import type { FloorLayout, LayoutChallenge, RoomLayout } from './types';
  * undo, saves, the library and share links with the house. Each goal is
  * read from the house as it stands, from the scorers the editor already
  * has: room types and stars (`houseRoomScores`), the money spent
- * (`budgetSpent`) and the storey count. Rooms are scored by zone, so a
+ * (`budgetSpent`), the storey count and the walkers' needs on each storey
+ * (`householdLacks`). Rooms are scored by zone, so a
  * room counts once a zone is drawn round it (`ZONE_HINT`).
  */
 
@@ -30,7 +32,9 @@ export type ChallengeGoal =
   /** At least `count` storeys. */
   | { readonly kind: 'floors'; readonly count: number }
   /** A lamp in every furnished room, and at least `rooms` of them. */
-  | { readonly kind: 'lit-rooms'; readonly rooms: number };
+  | { readonly kind: 'lit-rooms'; readonly rooms: number }
+  /** Every walker need met on every storey: something to eat, rest, do and wash at on each. */
+  | { readonly kind: 'needs-met' };
 
 export interface Challenge {
   readonly id: string;
@@ -124,6 +128,21 @@ export const CHALLENGES: readonly Challenge[] = [
       { kind: 'room', type: 'study', count: 1, minStars: 3 },
     ],
   },
+  {
+    id: 'lived-in',
+    name: 'Lived-in',
+    brief: 'Two storeys where nobody goes without, upstairs or down.',
+    width: 8,
+    depth: 7,
+    floors: 1,
+    funds: 7_000,
+    badge: '🍲',
+    goals: [
+      { kind: 'floors', count: 2 },
+      { kind: 'needs-met' },
+      { kind: 'room', type: 'bedroom', count: 2, minStars: 3 },
+    ],
+  },
 ];
 
 /** The brief with this id, or undefined (an id from a newer version, a typo in a file). */
@@ -152,6 +171,8 @@ export function goalLabel(goal: ChallengeGoal): string {
       return `${goal.count} storeys`;
     case 'lit-rooms':
       return `${goal.rooms} rooms, every one with a lamp`;
+    case 'needs-met':
+      return 'Every need met on every storey';
     default:
       return assertNever(goal);
   }
@@ -177,6 +198,8 @@ export function goalMet(goal: ChallengeGoal, layout: RoomLayout, known?: KnownCo
       const rooms = furnishedRooms(layout, known);
       return rooms.length >= goal.rooms && rooms.every((room) => !room.missing.includes('lamp'));
     }
+    case 'needs-met':
+      return householdLacks(layout).every((storey) => storey.lacks.length === 0);
     default:
       return assertNever(goal);
   }
