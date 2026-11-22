@@ -17,7 +17,7 @@ import { useWalkthrough, type UseWalkthroughResult, type WalkSwitches, type Walk
 import { useWeather } from './use-weather';
 import type { EditorViewStore } from './editor-view-store';
 import type { UseThreeSceneResult } from './use-three-scene';
-import type { KeepOutBuilding } from '../lib/floor-keep-out';
+import type { NpcBuilding } from '../lib/npc-garden';
 import type { GameMode, RoomLayout, ViewSettings } from '../lib/types';
 import type { WalkerCards } from '../lib/walker-card';
 
@@ -185,10 +185,21 @@ export function useSceneLife({
   );
   const peopleModelReady = usePeopleModel(threeModuleRef, isReady, layoutHasPeople || view.showNpcs);
 
-  // What the walkers walk around on each storey: its items, partitions and keep-out.
-  const npcBuilding = useMemo<KeepOutBuilding>(
-    () => ({ width: layout.width, height: layout.height, terrain: layout.terrain, entrance: layout.entrance, floors: layout.floors, cutout: layout.cutout }),
-    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors, layout.cutout]
+  // What the walkers walk around on each storey: its items, partitions and
+  // keep-out; on the ground storey the lot, the street and the surfaces (#913).
+  const npcBuilding = useMemo<NpcBuilding>(
+    () => ({
+      width: layout.width,
+      height: layout.height,
+      terrain: layout.terrain,
+      entrance: layout.entrance,
+      floors: layout.floors,
+      cutout: layout.cutout,
+      frontage: layout.frontage,
+      neighbours: layout.neighbours,
+      grounds: layout.grounds,
+    }),
+    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors, layout.cutout, layout.frontage, layout.neighbours, layout.grounds]
   );
   // The storeys whose walkers are shown (#580): the active one, and while
   // walking indoors its neighbours near the stairs, as the scene draws
@@ -223,6 +234,8 @@ export function useSceneLife({
     ...(walkerCards ? { cards: walkerCards } : {}),
     // Photos stay clean (#906).
     hideBubbles: photoActive,
+    // Garden walkers (#913): they keep in out of the rain.
+    weather: view.weather,
   });
 
   // Rebuilt with the street, not on every edit: it re-seeds the whole field.

@@ -9,10 +9,11 @@
  * injected, so it is tested here and the walk only asks where to go.
  */
 
-import { type FootprintBuilding, isInsideBuilding } from './footprint';
+import { isInsideBuilding } from './footprint';
+import { type GardenBuilding, reachableGardenSpots } from './npc-garden';
 import { type NeedBias, isMealHour } from './npc-schedule';
 import { type NpcSeat, MEAL_SEAT_TYPES, findNpcSeats, tableInFront } from './npc-seats';
-import type { FloorLayout, FurnitureItem } from './types';
+import type { FurnitureItem } from './types';
 
 export type NeedKind = 'hunger' | 'energy' | 'fun' | 'hygiene';
 
@@ -301,13 +302,22 @@ export interface StoreyLacks {
 
 /**
  * For each storey, the needs nothing on it meets (#906): walkers keep to
- * their storey (#580), so a fridge upstairs feeds nobody downstairs. Only
- * what stands on the building counts: the walkers stay indoors. Pure; for
- * a panel, not per frame.
+ * their storey (#580), so a fridge upstairs feeds nobody downstairs. What
+ * stands on the building counts, and on the ground storey the garden spots
+ * a walker reaches through a door (#913): rest on the bench, fun at the
+ * pool, the barbecue or the picnic table. Pure; for a panel or an edit,
+ * not per frame (the garden's reach builds the storey's nav, and only
+ * when it could fill a gap).
  */
-export function householdLacks(building: FootprintBuilding & { floors: readonly Pick<FloorLayout, 'items'>[] }): StoreyLacks[] {
+export function householdLacks(building: GardenBuilding): StoreyLacks[] {
   return building.floors.map((floor, floorIndex) => {
     const items = floor.items.filter((item) => item.position && isInsideBuilding(building, item.position.x, item.position.z));
-    return { floorIndex, lacks: unmetNeeds(findNeedSpots(items, findNpcSeats(items))) };
+    const spots = findNeedSpots(items, findNpcSeats(items));
+    let lacks = unmetNeeds(spots);
+    // Garden walkers (#913): the garden meets rest and fun.
+    if (floorIndex === 0 && lacks.some((need) => need === 'energy' || need === 'fun')) {
+      lacks = unmetNeeds([...spots, ...reachableGardenSpots(building)]);
+    }
+    return { floorIndex, lacks };
   });
 }

@@ -480,7 +480,7 @@ to respect.
   draw calls). Walkers are seeded per storey, so storeys don't hold
   clones. A storey that
   stops being drawn parks its walkers (hidden, not stepped, ignored by the
-  camera cones); a floor switch, a climb in EXPLORE or a storey-height edit
+  camera cones; the ground storey's walkers out in the garden excepted, #913); a floor switch, a climb in EXPLORE or a storey-height edit
   (which lifts them with their floor) never respawns anyone. Only deleting
   the storey, leaving it no free floor, or turning walkers off removes them.
 - **The player is one more person (#585).** `lib/npc-bodies` is a small
@@ -515,7 +515,7 @@ to respect.
   away, so the player on a bed keeps walkers off it and the other way
   round (`bedId` in `lib/npc-bodies`). The spots are built
   with the seats when the floor's items change, never per frame. Still to
-  come: the garden (the nav grid is indoors only) and a mood marker.
+  come: a mood marker (the garden came with #913).
   Hygiene (#904) runs out in 200 s and is met standing at the toilet, the
   shower, the bath or the basin, with the reach clip. A computer is fun
   used like a TV, from a seat facing it within 1.3 m (the desk chair), or
@@ -545,7 +545,8 @@ to respect.
   on, as before. No new mode: the seat modes do the rest.
 - **The house says what its walkers lack (#906).** `householdLacks` runs
   `findNpcSeats` and `findNeedSpots` per storey over the items standing on
-  the building (walkers stay indoors and keep to their storey), and
+  the building (walkers keep to their storey; the garden counts since
+  #913), and
   `unmetNeeds` names the needs no spot meets (a toilet alone is not
   somewhere to wash: that takes a basin, a shower or a bath). Statistics
   shows them as a Household block, led by "Walkers would go without:"
@@ -611,6 +612,53 @@ to respect.
   set by hand (`[` / `]`); with the day cycling a night lasts 8 s
   (game-time decay is the next step). The rig has no lying clip: a sleeper sits on
   the bed's end.
+- **Walkers step out into the garden (#913).** On the ground storey the
+  nav gets a second grid of 0.3 m cells over the lot (`lib/npc-garden`
+  reads it off the site): `groundLot`, trimmed to the house and the garden
+  things with 2 m round them, so a big lot costs a phone nothing it
+  doesn't use. Its cells are numbered on from the indoor grid's in one
+  index space, so every nav query, the region labels and A* (costs now in
+  metres) cross both, and a door with indoors on one side and the lot on
+  the other (an outside door, the porch's door, a door onto the L's notch)
+  joins the free cell 0.55 m either side when the straight walk through the
+  middle of its walkable span (a sliding door's open side) keeps clear of
+  everything and the lot there is within the walk world's step of the
+  floor; the route passes that point. Doors are checked before the lot is
+  rasterised, so a house with none usable never builds it. The house and 0.4 m round it
+  is no lot, the porch on the ground storey is; the shell's runs, the porch
+  cheeks and the neighbours' houses join the colliders (the porch and cut
+  corner keep-out boxes leave them), fences and hedges block as items do,
+  and a cell steps to a neighbour only within the walk world's step, so the
+  side of the porch steps is a wall. Feet follow `outsideGroundY` (the
+  slope, the porch and its steps), eased in from the floor's height over
+  the 0.5 m by the walls, so nobody pops up a ledge in a doorway. Walkers
+  are held to the lot's own rectangle. Walkers spawn indoors; outdoors they
+  wander only to garden things (not fences or hedges) and garden surfaces,
+  the rest of the lawn is crossed. The garden bench is somewhere to rest.
+  With no usable door, or nothing in the garden, the nav is the indoor one
+  exactly as before. In rain or snow, and after dark, the garden is closed
+  (`gardenOpen`: open from sunrise, 06:00, to the end of the scene's
+  twilight, 19:30, `GARDEN_OPENS`/`GARDEN_CLOSES` after three/lighting's
+  sun, so nobody is out in the dark before bedtime): `nav.outdoorOpen` turns its cells down as destinations
+  and the walk hands the step the indoor seats and spots, so a sitter on
+  the bench stands up and everyone comes in at the next stop. The sync
+  knows the weather and the hour too, so a spawn or an edit in the rain
+  never sends anyone out, and the thought bubbles (#906) always read the
+  set a walker can use now. A walker cut off outside (a fence run put
+  between it and the door: its region holds no indoor cell; or outside the
+  walls on a nav with no lot left) is put on the nearest free floor
+  indoors, on its feet, never walked through a wall. `householdLacks`
+  counts the garden spots a walker reaches through a door (rest on the
+  bench, fun outside), building the ground storey's nav only when that
+  could fill a gap, so Statistics and the challenges agree with the
+  walkers. Garden walkers are the ground storey's, but the outside is
+  drawn whichever storey is: with an upper storey active, those out on the
+  lot keep walking and showing (they cast, block the player and take a
+  card), while its walkers indoors stay parked, so a phone pays only for
+  the ones it can see (`outdoorsOnly`). One that comes in off the lot then
+  parks where it stands, just inside the door, and walks on when the
+  ground storey is drawn again; nobody walks through a wall or shows
+  indoors meanwhile; the held reveal (#585) leaves the parked alone.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
