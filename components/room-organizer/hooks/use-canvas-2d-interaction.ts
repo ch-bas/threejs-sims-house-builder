@@ -7,6 +7,7 @@ import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { movedFloorPlan } from '../lib/floor-plan-fit';
 import { hasCollisions } from '../lib/geometry';
+import { GROUND_REFUSAL_MESSAGES, drawnGround, groundFromCorners } from '../lib/grounds';
 import { snapMeasurePoint, type MeasureSnap } from '../lib/measure-snap';
 import { isWallMounted } from '../lib/opening-snap';
 import { isOnDoorLeaf, type PlacedItem } from '../lib/plan-export/plan-geometry';
@@ -17,6 +18,7 @@ import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { wallSideAt, type WallSide } from '../lib/wall-sides';
 import { defaultZoneName, nextZoneColor, roomAt, zoneFromCorners, zoneFromRoom, zoneInPorch, type ZoneRect } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
+import { getGroundDrawKind } from './ground-draw';
 import { addCalibrationPoint, getPlanCalibration } from './plan-calibration';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
@@ -25,7 +27,7 @@ import type { WallGrabInfo, WallMovePreview } from './use-wall-edit';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { EntrancePlanOutline } from '../lib/street';
-import type { FloorLayout, FloorPlanTransform, FurnitureItem, RoomLayout, Vec2, ViewSettings } from '../lib/types';
+import type { FloorLayout, FloorPlanTransform, FurnitureItem, GroundKind, RoomLayout, Vec2, ViewSettings } from '../lib/types';
 import type { HeldGesture } from '../three/drag-handlers';
 
 /**
@@ -161,6 +163,8 @@ export interface UseCanvas2DInteractionParams {
   onItemDragCancel(id: string, options?: DragCancelOptions): void;
   /** A drag began on a locked item: say why it stays put (#635). */
   onLockedDrag?(id: string): void;
+  /** A garden surface was laid (#924): the shared placement cue, given its id. */
+  onGroundAdded?(id: string): void;
   /** A zone drawn wholly on the porch: say why nothing was added (#582). */
   onZoneRefused?(message: string): void;
   /** The wall tool placed a point on the plan (#564). Snapping is the handler's. */
@@ -343,6 +347,8 @@ export function useCanvas2DInteraction(
       latest: { x: number; z: number };
       /** The zone a tap here selects, or null to clear the selection (#628). */
       tapZoneId: string | null;
+      /** The garden-surface tool's drag (#924): the kind it lays, instead of a zone. */
+      ground?: GroundKind;
     }
     let zoneGesture: ZoneGesture | null = null;
     /** The selected zone being moved or resized (#628). */
@@ -480,9 +486,11 @@ export function useCanvas2DInteraction(
       const wallMove = wallHold?.started ? paramsRef.current.wallMovePreview?.() : null;
       const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : (wallMove?.items ?? activeFloor.items);
       const keepOut = floorKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
-      const draft = zoneGesture?.started
+      const draft = zoneGesture?.started && !zoneGesture.ground
         ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height, layout.cutout)
         : null;
+      const groundKind = zoneGesture?.started ? zoneGesture.ground : undefined;
+      const groundRect = groundKind && zoneGesture ? groundFromCorners(zoneGesture.start, zoneGesture.latest, layout) : null;
       const edit = zoneEdit?.started ? zoneEdit : null;
       const zones = edit
         ? { zones: (activeFloor.zones ?? []).map((zone) => (zone.id === edit.zoneId ? { ...zone, ...edit.latest } : zone)) }
@@ -499,6 +507,7 @@ export function useCanvas2DInteraction(
         showHeatmap: view.showHeatmap,
         showFloorBelow: view.showFloorBelow,
         zoneDraft: draft,
+        groundDraft: groundKind && groundRect ? { rect: groundRect, kind: groundKind } : null,
         roomsToName,
         selectedZoneId,
         selectedWallId,
@@ -545,6 +554,21 @@ export function useCanvas2DInteraction(
     const finishZone = (session: ZoneGesture, commit: boolean): void => {
       zoneGesture = null;
       const p = paramsRef.current;
+      // A garden surface (#924): laid where the rule lets it lie, or the reason said.
+      if (session.ground) {
+        if (!session.started) return;
+        releaseCapture(session.pointerId);
+        // The tool may have ended mid-drag (Esc, EXPLORE): then nothing is laid.
+        const live = getGroundDrawKind() !== null && !p.exploring;
+        const drawn = commit && live ? drawnGround(session.start, session.latest, p.layout) : null;
+        if (drawn && 'rect' in drawn) {
+          p.onGroundAdded?.(layoutActions.addGround({ kind: session.ground, ...drawn.rect }));
+          return;
+        }
+        if (drawn) p.onZoneRefused?.(GROUND_REFUSAL_MESSAGES[drawn.refusal]);
+        schedulePaint();
+        return;
+      }
       if (!session.started) {
         const room = commit && !session.tapZoneId ? roomAt(p.roomsToName ?? [], session.start.x, session.start.z) : null;
         if (room) {
@@ -729,6 +753,23 @@ export function useCanvas2DInteraction(
         p.onWallPress?.(world.x, world.z);
         return;
       }
+      // The garden-surface tool (#924) claims the press as zone drawing does.
+      const groundKind = getGroundDrawKind();
+      if (groundKind && !p.exploring) {
+        p.onInteriorWallSelect?.(null);
+        zoneGesture = {
+          pointerId: event.pointerId,
+          downClientX: event.clientX,
+          downClientY: event.clientY,
+          threshold: dragThresholdPx(event.pointerType),
+          started: false,
+          start: world,
+          latest: world,
+          tapZoneId: null,
+          ground: groundKind,
+        };
+        return;
+      }
       // Zone-draw mode (#155) claims the press: the rectangle starts here
       // and no item is selected or moved underneath it.
       if (p.view.drawZoneMode && !p.exploring) {
@@ -860,6 +901,11 @@ export function useCanvas2DInteraction(
     /** A mouse over the selected zone shows what a press there would do. */
     const showZoneCursor = (event: PointerEvent): void => {
       const p = paramsRef.current;
+      // The garden-surface tool (#924) draws from wherever it is pressed.
+      if (getGroundDrawKind() && !p.exploring) {
+        setZoneCursor('crosshair');
+        return;
+      }
       const selected = p.view.drawZoneMode ? p.activeFloor.zones?.find((zone) => zone.id === p.selectedZoneId) : undefined;
       const hoverFit = selected ? measureFit(canvas) : null;
       const world = hoverFit && toWorld(event.clientX, event.clientY, hoverFit);
@@ -1152,8 +1198,9 @@ export function useCanvas2DInteraction(
           rafId = null;
         }
         // pointercancel (the browser took the pointer for a scroll or a
-        // touch gesture) discards the rectangle rather than naming it.
-        finishZone(zone, event.type === 'pointerup');
+        // touch gesture) discards the rectangle rather than naming it. A
+        // garden surface let go over the HUD isn't laid either.
+        finishZone(zone, event.type === 'pointerup' && (!zone.ground || pointerOnCanvas(canvas, event.clientX, event.clientY)));
         return;
       }
       const session = gesture;

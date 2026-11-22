@@ -30,6 +30,7 @@ import { AlignPanel } from './align-panel';
 import { CameraPresetsPanel } from './camera-presets-panel';
 import { FloorSwitcher } from './floor-switcher';
 import { FurnitureCatalogPanel } from './furniture-catalog-panel';
+import { GroundsPanel } from './grounds-panel';
 import { ItemResizePanel } from './item-resize-panel';
 import { LibraryPanel } from './library-panel';
 import { PlacedItemsPanel } from './placed-items-panel';
@@ -305,6 +306,9 @@ const DrawerBody = memo(function DrawerBody({
           <RoofPanel />
 
           <SitePanel />
+
+          {/* Garden surfaces (#924): drawn on the plan, so it folds away too. */}
+          <GroundsPanel onDrawStart={onCollapse} />
         </>
       )}
 

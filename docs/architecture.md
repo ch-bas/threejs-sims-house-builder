@@ -281,6 +281,7 @@ components/
     │   ├── use-ambience.ts              Rain on the roof and footsteps in EXPLORE, the sound tile's third setting (#911): steps on the frame budget, muted while hidden
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom
     │   ├── plan-calibration.ts          The traced plan's calibration session (#726): points picked, length step, move step
+    │   ├── ground-draw.ts               The garden-surface tool (#924): which kind a drag on the plan lays, or off
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
     │   ├── use-camera-vision.ts         Vision-cone sweep on the frame budget
     │   ├── use-scene-life.ts            What moves on its own: the walk and its exit back to the mode before EXPLORE, walkers and the people model, weather, camera cones; the clock ref the walkers read (#907); the door swinger, for the player and the walkers (#908)
@@ -338,6 +339,7 @@ components/
         ├── zones-panel.tsx              Room zones: list, rename, recolour, delete, draw toggle, name a detected room
         ├── roof-panel.tsx
         ├── site-panel.tsx               Slope, neighbours + street, frontage, entrance
+        ├── grounds-panel.tsx            Garden surfaces (#924): pick a kind to lay on the plan; list with kind, size, remove
         ├── room-settings-panel.tsx
         ├── furniture-catalog-panel.tsx
         ├── placed-items-panel.tsx
@@ -385,6 +387,7 @@ components/
         ├── room-transfer-row.tsx        The zone chip's room row: Select room, then move by arrows, mirror, copy and paste it with its walls (#925)
         ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), the selected room's stars and what it lacks (#905), then the inline name field
         ├── plan-calibration-chip.tsx    Floor plan calibration chip (#726): pick two points, type the length, drag into place
+        ├── ground-draw-chip.tsx         The garden-surface tool's chip (#924): what a drag lays, Done; ends the tool off the ground floor's plan
         ├── dev-diagnostics.tsx          `?debug` overlay: draw calls, triangles, geometries, textures, programs, frames
         ├── chip-controls.tsx            Chip buttons + inline name field (no native prompts)
         └── viewport.tsx
