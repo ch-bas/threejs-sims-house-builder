@@ -10,11 +10,11 @@ import { COARSE_POINTER_QUERY } from './hud-layout';
 import { onLotRun } from './item-run';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
 import { abandonPrintPopup, openPrintPopup, printWhenLoaded } from './plan-export/print-popup';
-import { distanceOutsideWalls } from './plan-export/print-scale';
+import { distanceOutsideWalls, pinOutsideWalls } from './plan-export/print-scale';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
-import type { FloorLayout, FurnitureItem, RoomLayout } from './types';
+import type { FloorLayout, FurnitureItem, PinnedDimension, RoomLayout } from './types';
 
 /** The box the blueprint image is fitted into, in canvas px. */
 const PAGE_WIDTH = 1200;
@@ -78,6 +78,12 @@ function fitScale(bounds: PlanBounds): number {
   );
 }
 
+/** The floor without its pinned dimensions (#921): what a run's own extent is measured on. */
+function withoutPins(floor: FloorLayout): FloorLayout {
+  const { dimensions: _pins, ...rest } = floor;
+  return rest;
+}
+
 export interface BlueprintPlan {
   /** The floor as drawn: without `omitted`. */
   floor: FloorLayout;
@@ -97,20 +103,28 @@ export function blueprintPlan(layout: RoomLayout, floor: FloorLayout): Blueprint
   // Runs out on the lot (#915) are drawn whole, as on the on-screen plan:
   // a fenced lot may take the house below the share, never off the sheet.
   const lotRuns = floor.items.filter((item) => onLotRun(layout, item));
-  const runs = lotRuns.length > 0 ? fitScale(planContentBounds(layout, { ...floor, items: lotRuns })) : Infinity;
+  const runs = lotRuns.length > 0 ? fitScale(planContentBounds(layout, { ...withoutPins(floor), items: lotRuns })) : Infinity;
   const minScale = Math.min(fitScale(room) * MIN_ROOM_SHARE, runs);
-  const outside = floor.items
-    .filter((item) => !onLotRun(layout, item))
-    .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
+  // Pins out to the garden (#921) are dropped by the same rule, furthest first, but not listed.
+  type Outside = { item: FurnitureItem; pin?: undefined; distance: number } | { item?: undefined; pin: PinnedDimension; distance: number };
+  const outside: Outside[] = [
+    ...floor.items.filter((item) => !onLotRun(layout, item)).map((item) => ({ item, distance: distanceOutsideWalls(layout, item) })),
+    ...(floor.dimensions ?? []).map((pin) => ({ pin, distance: pinOutsideWalls(layout, pin) })),
+  ]
     .filter(({ distance }) => distance > 0)
     .sort((a, b) => b.distance - a.distance);
   let drawn = floor;
   let dropped = 0;
   while (dropped < outside.length && fitScale(planContentBounds(layout, drawn)) < minScale) {
-    const gone = new Set(outside.slice(0, ++dropped).map(({ item }) => item));
-    drawn = { ...floor, items: floor.items.filter((item) => !gone.has(item)) };
+    const gone = outside.slice(0, ++dropped);
+    const items = new Set(gone.flatMap(({ item }) => (item ? [item] : [])));
+    const pins = new Set(gone.flatMap(({ pin }) => (pin ? [pin] : [])));
+    const { dimensions: _all, ...rest } = floor;
+    const dimensions = floor.dimensions?.filter((pin) => !pins.has(pin)) ?? [];
+    drawn = { ...rest, items: floor.items.filter((item) => !items.has(item)), ...(dimensions.length > 0 ? { dimensions } : {}) };
   }
-  return { floor: drawn, omitted: outside.slice(0, dropped) };
+  const omitted = outside.slice(0, dropped).flatMap(({ item, distance }) => (item ? [{ item, distance }] : []));
+  return { floor: drawn, omitted };
 }
 
 /**

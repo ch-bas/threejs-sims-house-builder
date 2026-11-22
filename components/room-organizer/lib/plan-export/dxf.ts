@@ -48,11 +48,13 @@ import {
   coverageRings,
   interiorWallDimensions,
   itemWorldCorners,
+  layoutWithoutPinnedDimensions,
   doorSwings,
   openingAxes,
   openingPlanMarks,
   planContentBounds,
   planFrameBounds,
+  pinnedDimensionLines,
   polarPoint,
   splitPlanItems,
   stairArrow,
@@ -61,6 +63,7 @@ import {
   stairwellOutlines,
   visionWedges,
   wallOpeningDimensions,
+  withoutPinnedDimensions,
   type CoverageMode,
   type OpeningChain,
   type PlacedItem,
@@ -505,7 +508,9 @@ function pair(out: string[], code: number, value: string | number): void {
 }
 
 /** Render one floor of a building as a DXF R2000 document (metres, 1:1). */
-export function layoutToDxf(layout: RoomLayout, floor: FloorLayout, options: DxfExportOptions = {}): string {
+export function layoutToDxf(layout: RoomLayout, shown: FloorLayout, options: DxfExportOptions = {}): string {
+  // Dimensions off, the pins (#921) neither draw nor frame the drawing.
+  const floor = options.dimensions === false ? withoutPinnedDimensions(shown) : shown;
   const doc = new DxfDocument();
   emitFloor(doc, layout, floor, 0, options);
   return doc.finish();
@@ -516,7 +521,8 @@ export function layoutToDxf(layout: RoomLayout, floor: FloorLayout, options: Dxf
  * 1:1, ground floor first, laid out left to right at the building frame's
  * width plus a 3 m gap, each under its own title.
  */
-export function buildingToDxf(layout: RoomLayout, options: DxfExportOptions = {}): string {
+export function buildingToDxf(building: RoomLayout, options: DxfExportOptions = {}): string {
+  const layout = options.dimensions === false ? layoutWithoutPinnedDimensions(building) : building;
   const doc = new DxfDocument();
   // Every floor shares the building's frame (as `buildingToSvg` does), laid
   // out at a fixed pitch, so the rooms line up and no floor's coverage
@@ -776,6 +782,15 @@ function emitDimensions(
     const nx = outward[0] * WALL_DIMENSION_OFFSET_M;
     const ny = outward[1] * WALL_DIMENSION_OFFSET_M;
     dimension(doc, [from[0] + nx, from[1] + ny], [to[0] + nx, to[1] + ny], dim.lengthM, outward, dim.labelShiftM);
+  }
+
+  // Pinned dimensions (#921), as the SVG draws them: world (x, z) → CAD (x, −z).
+  for (const dim of pinnedDimensionLines(floor, 'metric')) {
+    if (dim.from.x !== dim.a.x || dim.from.z !== dim.a.z) {
+      doc.line('DIMENSIONS', cad(dim.a.x, dim.a.z), cad(dim.from.x, dim.from.z));
+      doc.line('DIMENSIONS', cad(dim.b.x, dim.b.z), cad(dim.to.x, dim.to.z));
+    }
+    dimension(doc, cad(dim.from.x, dim.from.z), cad(dim.to.x, dim.to.z), dim.lengthM, [dim.normal.x, -dim.normal.z]);
   }
 }
 

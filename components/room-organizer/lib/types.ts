@@ -329,12 +329,26 @@ export interface FloorLayout {
   interiorWalls?: InteriorWall[];
   /** Room zones drawn on this floor (#155). */
   zones?: RoomZone[];
+  /** Dimensions pinned on the plan (#921), drawn in the plan and every export. */
+  dimensions?: PinnedDimension[];
   /**
    * Floor-to-floor height in metres (#202) — a 2.5 m basement, a 1.1 m loft
    * knee wall. Absent means the classic `FLOOR_HEIGHT_METERS` storey; each
    * floor's elevation is the sum of the storeys below it (lib/storeys.ts).
    */
   height?: number;
+}
+
+/**
+ * A measurement pinned on the plan (#921): `a` to `b` in world metres on its
+ * storey. `offset` (metres) moves the drawn line off the two points along
+ * a→b's left-hand normal (x right, z down); absent, it runs through them.
+ */
+export interface PinnedDimension {
+  id: string;
+  a: Vec2;
+  b: Vec2;
+  offset?: number;
 }
 
 /** Ground heights in metres relative to the ground floor (#202); see lib/site.ts. */

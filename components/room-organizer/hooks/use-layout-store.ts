@@ -189,6 +189,14 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     },
     updateZone: (id, patch) => dispatch({ type: 'updateZone', id, patch }),
     removeZone: (id) => dispatch({ type: 'removeZone', id }),
+
+    // Pinned dimensions (#921).
+    addDimension: (dimension) => {
+      const id = nextId('dim');
+      dispatch({ type: 'addDimension', dimension: { ...dimension, id } });
+      return id;
+    },
+    removeDimension: (id) => dispatch({ type: 'removeDimension', id }),
   };
 
   return {
