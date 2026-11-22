@@ -33,17 +33,65 @@ interface PhotoSession {
   withdraw: (() => void) | null;
 }
 
-/** Hide the snap grid, an editing aid, not part of the house; returns the undo. */
+/**
+ * Hide the snap grid, an editing aid, not part of the house; returns the
+ * undo. Through its layers, not `visible`: the cutaway pass
+ * (`applyWallDisplay`) shows the grid again on every camera move, so an
+ * orbit or a preset in photo mode brought it back on screen.
+ */
 function hideGrids(scene: ThreeNS.Object3D | null): () => void {
-  const hidden: ThreeNS.Object3D[] = [];
-  for (const child of scene?.children ?? []) {
-    if (child.type === 'GridHelper' && child.visible) {
-      child.visible = false;
-      hidden.push(child);
+  const grids = gridHider(scene);
+  return grids.show;
+}
+
+/**
+ * The snap grids hidden so far: `hide` hides any not yet hidden (a room
+ * rebuild makes a new one), `show` gives every one back its layers.
+ */
+function gridHider(scene: ThreeNS.Object3D | null): { hide(): void; show(): void } {
+  const hidden = new Map<ThreeNS.Object3D, number>();
+  const hide = () => {
+    for (const child of scene?.children ?? []) {
+      if (child.type === 'GridHelper' && child.layers.mask !== 0) {
+        hidden.set(child, child.layers.mask);
+        child.layers.mask = 0;
+      }
     }
-  }
+  };
+  hide();
+  return {
+    hide,
+    show() {
+      for (const [child, mask] of hidden) child.layers.mask = mask;
+      hidden.clear();
+    },
+  };
+}
+
+type BeforeRender = ThreeNS.Object3D['onBeforeRender'];
+
+/**
+ * Keep the snap grid hidden for as long as photo mode lasts, a grid a room
+ * rebuild adds meanwhile too: checked as each frame starts, before three
+ * sorts what to draw. Returns the undo, which shows every grid it hid.
+ */
+function keepGridsHidden(scene: ThreeNS.Object3D | null): () => void {
+  const grids = gridHider(scene);
+  if (!scene) return grids.show;
+  const own = Object.hasOwn(scene, 'onBeforeRender');
+  const previous: BeforeRender | undefined = scene.onBeforeRender;
+  const onBeforeRender: BeforeRender = function (this: ThreeNS.Object3D, ...args) {
+    grids.hide();
+    previous?.apply(this, args);
+  };
+  scene.onBeforeRender = onBeforeRender;
   return () => {
-    for (const child of hidden) child.visible = true;
+    if (scene.onBeforeRender === onBeforeRender) {
+      // Back to the prototype's no-op, or to whatever was set before.
+      if (own && previous) scene.onBeforeRender = previous;
+      else Reflect.deleteProperty(scene, 'onBeforeRender');
+    }
+    grids.show();
   };
 }
 
@@ -153,7 +201,7 @@ export function usePhotoMode({
     const camera = cameraRef.current;
     const view = camera?.view?.enabled ? { ...camera.view } : null;
     if (camera && view) camera.clearViewOffset();
-    const showGrids = hideGrids(sceneRef.current);
+    const showGrids = keepGridsHidden(sceneRef.current);
     invalidateRef.current();
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof Element ? event.target : null;
