@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ALBUM_CAP,
   albumFileExtension,
+  albumPhotoFile,
+  browserImageChannels,
   createMemoryAlbumStore,
   deleteFromAlbum,
   evictionFor,
@@ -13,13 +15,17 @@ import {
   newPhotoId,
   oldestFirst,
   openAlbum,
+  photoShareData,
   resetAlbumForTests,
   saveToAlbum,
+  sharePhoto,
+  sheetTakesFile,
   subscribeAlbum,
   transactionDone,
   type AlbumPhoto,
   type AlbumStore,
 } from './photo-album';
+import { deliverHouseFile, type FileChannels } from './share-delivery';
 
 afterEach(() => resetAlbumForTests());
 
@@ -170,6 +176,85 @@ describe('photo album (#912)', () => {
     expect(isAlbumPhoto(null)).toBe(false);
     expect(albumFileExtension('image/jpeg')).toBe('jpg');
     expect(albumFileExtension('image/png')).toBe('png');
+  });
+
+  it('makes a photo into a file named by the download rule, of its own type', async () => {
+    const jpeg = albumPhotoFile(photo('a', 1), 'Garden Flat');
+    expect(jpeg.name).toBe('garden-flat-photo.jpg');
+    expect(jpeg.type).toBe('image/jpeg');
+    expect(jpeg.size).toBe(8);
+    expect(albumPhotoFile({ image: new ArrayBuffer(1), imageType: 'image/png' }, 'Garden Flat').name).toBe('garden-flat-photo.png');
+  });
+
+  it('asks the share sheet whether it takes the image, and hears no for a missing member or a throw', () => {
+    const file = albumPhotoFile(photo('a', 1), 'Garden Flat');
+    const share = () => Promise.resolve();
+    expect(sheetTakesFile({ share, canShare: () => true }, file)).toBe(true);
+    expect(sheetTakesFile({ share, canShare: () => false }, file)).toBe(false);
+    expect(sheetTakesFile({ share }, file)).toBe(false);
+    expect(sheetTakesFile({ canShare: () => true }, file)).toBe(false);
+    expect(sheetTakesFile(undefined, file)).toBe(false);
+    const throwing = () => {
+      throw new TypeError('no files');
+    };
+    expect(sheetTakesFile({ share, canShare: throwing }, file)).toBe(false);
+  });
+
+  it('hands a file over by the same rule as the house file (a copy kept out of the editor’s bundle)', async () => {
+    const file = albumPhotoFile(photo('a', 1), 'Garden Flat');
+    const sheets: Array<FileChannels['shareFile']> = [
+      undefined,
+      () => Promise.resolve(),
+      () => Promise.reject(new DOMException('Dismissed', 'AbortError')),
+      () => Promise.reject(new DOMException('No gesture', 'NotAllowedError')),
+      () => Promise.reject(new DOMException('Busy', 'InvalidStateError')),
+      () => Promise.reject(new TypeError('Not a file the sheet takes')),
+    ];
+    for (const shareFile of sheets) {
+      const run = async (deliver: (file: File, channels: FileChannels) => Promise<string>) => {
+        const calls: string[] = [];
+        const channels: FileChannels = {
+          ...(shareFile ? { shareFile: (sent: File) => (calls.push(`share ${sent.name}`), shareFile(sent)) } : {}),
+          download: (sent: File) => {
+            calls.push(`download ${sent.name}`);
+          },
+        };
+        const outcome = await deliver(file, channels);
+        return { outcome, calls };
+      };
+      expect(await run(sharePhoto)).toEqual(await run(deliverHouseFile));
+    }
+  });
+
+  it('hands the sheet the photo alone, with no title to show its file name or hide Save Image', async () => {
+    const file = albumPhotoFile(photo('a', 1), 'Garden Flat');
+    expect(photoShareData(file)).toEqual({ files: [file] });
+    const share = vi.fn((_data: ShareData) => Promise.resolve());
+    vi.stubGlobal('navigator', { share, canShare: () => true });
+    try {
+      expect(await sharePhoto(file, browserImageChannels())).toBe('shared');
+      expect(share).toHaveBeenCalledWith({ files: [file] });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('shares through the sheet in the same task, downloads when it fails, and does nothing when dismissed', async () => {
+    const file = albumPhotoFile(photo('a', 1), 'Garden Flat');
+    const shareFile = vi.fn(() => Promise.resolve());
+    const download = vi.fn();
+    const sent = sharePhoto(file, { shareFile, download });
+    // Before anything is awaited: inside the tap.
+    expect(shareFile).toHaveBeenCalledWith(file);
+    expect(await sent).toBe('shared');
+    const dismissed = () => Promise.reject(new DOMException('Dismissed', 'AbortError'));
+    expect(await sharePhoto(file, { shareFile: dismissed, download })).toBe('cancelled');
+    expect(download).not.toHaveBeenCalled();
+    const refused = () => Promise.reject(new DOMException('No gesture', 'NotAllowedError'));
+    expect(await sharePhoto(file, { shareFile: refused, download })).toBe('downloaded');
+    expect(await sharePhoto(file, { download })).toBe('downloaded');
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(download).toHaveBeenCalledWith(file);
   });
 
   it('falls back to memory where IndexedDB won’t open', async () => {
