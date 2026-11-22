@@ -1,6 +1,6 @@
 import { catalogFields } from './catalog-variants';
 import { collisionReason, itemEntersRect, type KeepOutRect } from './geometry';
-import { LOT_MARGIN, roadEdges } from './site';
+import { hasNeighbourOn, LOT_MARGIN, roadEdges } from './site';
 import { WALL_ANGLE_STEP_DEG, WALL_GRID } from './wall-snap';
 import type { CatalogItem, Frontage, FurnitureItem, NeighbourSpec, Vec2 } from './types';
 
@@ -150,15 +150,17 @@ export interface RunSite {
 
 /**
  * The lot a run is drawn in: LOT_MARGIN past the house on each side, none on
- * a side with a party-wall neighbour, and to the north (the street side) no
+ * a side with a neighbour (a party wall, or the street row whose next house
+ * stands 1.2–3 m off our wall, `lib/street-row.ts`), so a run stays on our
+ * side of the line of our wall there; and to the north (the street side) no
  * further than the pavement's near edge, so a run never reaches the road.
  */
 export function runLot(site: RunSite): RunLot {
   const halfW = site.width / 2;
   const halfD = site.height / 2;
   return {
-    x0: site.neighbours?.west === true ? -halfW : -halfW - LOT_MARGIN,
-    x1: site.neighbours?.east === true ? halfW : halfW + LOT_MARGIN,
+    x0: hasNeighbourOn(site.neighbours, 'west') ? -halfW : -halfW - LOT_MARGIN,
+    x1: hasNeighbourOn(site.neighbours, 'east') ? halfW : halfW + LOT_MARGIN,
     z0: -Math.min(halfD + LOT_MARGIN, roadEdges(halfD, site.frontage).near),
     z1: halfD + LOT_MARGIN,
   };
@@ -230,6 +232,91 @@ function onGrid(value: number): number {
 
 /** Clearance (m) added to a corner inset, so float error never reads as an overlap. */
 const INSET_SLACK = 1e-3;
+
+/** The gap (m) a run round the lot leaves where the front path meets it: a gate's width. */
+export const LOT_GATE = 1.2;
+
+/** Whether the type can be run round the whole lot (#915): fence and hedge sections, not stepping stones. */
+export function runsRoundLot(type: string): boolean {
+  return Object.hasOwn(RUN_TYPES, type) && RUN_TYPES[type]?.kind === 'sections';
+}
+
+/** How far past the lot's edge (m) a section's centre may sit and still count as on it: float noise and old saves. */
+const LOT_RUN_SLACK = 0.25;
+
+/**
+ * Whether a placed item is a run section out on the lot (#915): a fence,
+ * hedge or stepping stone outside the walls and no further out than the
+ * lot's edge. The plan draws such runs as plain lines (no size label per
+ * section), and the plan's fit and the blueprint take them in whole rather
+ * than as far items: a fenced lot frames the house instead of ringing it
+ * with markers.
+ */
+export function onLotRun(site: { width: number; height: number }, item: Pick<FurnitureItem, 'type' | 'position'>): boolean {
+  if (!item.position || !isRunItem(item.type)) return false;
+  const beyond = Math.max(Math.abs(item.position.x) - site.width / 2, Math.abs(item.position.z) - site.height / 2);
+  return beyond > 0 && beyond <= LOT_MARGIN + LOT_RUN_SLACK;
+}
+
+
+/**
+ * Where the front path crosses the lot's street edge (x, m), or null with
+ * no front garden. The scenery lays its stepping stones from the front wall
+ * to the street on x = 0 when the house doesn't stand on the pavement
+ * (`three/outdoor.ts`); a run round the lot leaves a gate there.
+ */
+export function frontPathGate(site: Pick<RunSite, 'frontage'>): number | null {
+  return site.frontage === 'pavement' ? null : 0;
+}
+
+/**
+ * The lines a run round the lot follows (#915), half a section's depth in
+ * from the lot's edge so the run stands wholly inside it. The sides meet as
+ * a pinwheel: each starts at its own corner and stops a depth short of the
+ * next one, whose side then fills that corner, so no two overlap. Clockwise
+ * seen from above, from the north-west corner; the street side is split
+ * round a gate at `gate`, when there is one.
+ */
+export function lotRunLines(lot: RunLot, depth: number, gate: number | null): Array<[Vec2, Vec2]> {
+  const d = Math.max(0, depth);
+  const h = d / 2;
+  const north = lot.z0 + h;
+  const east = lot.x1 - h;
+  const south = lot.z1 - h;
+  const west = lot.x0 + h;
+  const lines: Array<[Vec2, Vec2]> = [];
+  if (gate !== null && gate - LOT_GATE / 2 > lot.x0 && gate + LOT_GATE / 2 < lot.x1 - d) {
+    lines.push([{ x: lot.x0, z: north }, { x: gate - LOT_GATE / 2, z: north }]);
+    lines.push([{ x: gate + LOT_GATE / 2, z: north }, { x: lot.x1 - d, z: north }]);
+  } else {
+    lines.push([{ x: lot.x0, z: north }, { x: lot.x1 - d, z: north }]);
+  }
+  lines.push([{ x: east, z: lot.z0 }, { x: east, z: lot.z1 - d }]);
+  lines.push([{ x: lot.x1, z: south }, { x: lot.x0 + d, z: south }]);
+  lines.push([{ x: west, z: lot.z1 }, { x: west, z: lot.z0 + d }]);
+  return lines;
+}
+
+/**
+ * Every section of a run of `entry` round the lot (#915, "Fence the lot"):
+ * runs along `lotRunLines`, each stopping a hair short of the next side so
+ * float error never reads as an overlap. Empty for a type laid at a pitch.
+ * Not fitted yet: `fitRun` leaves out what stands in the house or porch.
+ */
+export function layLotRun(
+  lot: RunLot,
+  entry: CatalogItem,
+  gate: number | null,
+  makeId: (index: number) => string = (index) => `run-${index}`
+): FurnitureItem[] {
+  if (!runsRoundLot(entry.type)) return [];
+  const sections: FurnitureItem[] = [];
+  for (const [from, to] of lotRunLines(lot, entry.depth, gate)) {
+    const start = sections.length;
+    sections.push(...layRun(from, to, entry, { insetEnd: INSET_SLACK, makeId: (index) => makeId(start + index) }));
+  }
+  return sections;
+}
 
 /**
  * How far a run starting at `end`, the free end of the section `joined`, and

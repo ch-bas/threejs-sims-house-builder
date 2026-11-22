@@ -61,7 +61,7 @@ import { isInsideBuilding } from './lib/footprint';
 import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
-import { fitRun, runLot } from './lib/item-run';
+import { fitRun, frontPathGate, runLot, runsRoundLot } from './lib/item-run';
 import { loadQualityChoice } from './lib/render-quality';
 import { ROOF_EAVE_OVERHANG, roofPeakHeight } from './lib/roof-shape';
 import { activeStoreyRoomScores } from './lib/room-score';
@@ -719,6 +719,7 @@ export function RoomOrganizer(): JSX.Element {
     },
     run: {
       lot: runLot(layout),
+      gate: frontPathGate(layout),
       fit: (sections) =>
         fitRun(sections, { items: activeFloor.items, roomWidth: layout.width, roomDepth: layout.height, keepOut }),
       place: (_catalogItem, items, keep) => {
@@ -728,7 +729,15 @@ export function RoomOrganizer(): JSX.Element {
         else selectRun(items.map((item) => item.id));
         return true;
       },
-      refuse: (blocker) => notifyRefused(`The run would stand in the ${blocker.name}. Draw it clear of it.`, playCue),
+      refuse: (blocker, roundLot) =>
+        notifyRefused(
+          roundLot && blocker.type === ghost?.type
+            ? `A ${blocker.name} already stands on the lot's edge. Remove it to run a new one round the lot.`
+            : roundLot
+            ? `The ${blocker.name} stands on the lot's edge, where the run round the lot would go. Move or remove it first.`
+            : `The run would stand in the ${blocker.name}. Draw it clear of it.`,
+          playCue
+        ),
     },
     threeModuleRef,
     sceneRef,
@@ -1372,7 +1381,13 @@ export function RoomOrganizer(): JSX.Element {
       )}
 
       {/* Keyboard-placement key hint (#168) */}
-      <PlacementHint active={placingId !== null} ghost={ghost} onCancel={placementGhost.cancel} />
+      <PlacementHint
+        active={placingId !== null}
+        ghost={ghost}
+        onCancel={placementGhost.cancel}
+        // #915: runs are laid on the ground floor only (use-item-placement).
+        {...(ghost && runsRoundLot(ghost.type) && activeFloorY === 0 ? { onRunRoundLot: placementGhost.runRoundLot } : {})}
+      />
 
       {/* Inline zone naming and export/share status (#374) */}
       <ZoneNameChip selectedZoneId={planZoneId} />

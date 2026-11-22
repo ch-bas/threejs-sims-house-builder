@@ -2,8 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { BLUEPRINT_PIXEL_RATIO, blueprintCanvasSize, blueprintPixelRatio, blueprintPlan, floorArea, openBlueprintPrintWindow } from './blueprint';
-import { CURRENCY_SYMBOL } from './constants';
+import { CURRENCY_SYMBOL, FURNITURE_CATALOG } from './constants';
 import { subscribeNotices, type Notice } from './editor-notices';
+import { layLotRun, runLot } from './item-run';
 import { planContentBounds } from './plan-export/plan-geometry';
 import { ENTRANCE_DOOR_ID } from './street';
 
@@ -286,6 +287,15 @@ describe('blueprintPlan (#377)', () => {
       expect(plan.floor.items.map((item) => item.id)).toEqual(['item-1', 'oak']);
       expect(plan.omitted.map(({ item, distance }) => [item.id, distance])).toEqual([['pine', x - 4]]);
     }
+  });
+
+  it('draws a fence round the lot whole, listing none of it, and still leaves a far tree off (#915)', () => {
+    const layout = makeLayout();
+    const sections = layLotRun(runLot(layout), FURNITURE_CATALOG.find((entry) => entry.type === 'fence')!, 0);
+    const floor = makeFloor({ items: [makeItem(), oak, ...sections, pine(40)] });
+    const plan = blueprintPlan(makeLayout({ floors: [floor] }), floor);
+    expect(plan.omitted.map(({ item }) => item.id)).toEqual(['pine']);
+    expect(plan.floor.items).toHaveLength(2 + sections.length);
   });
 
   it('lists the left-off items on the sheet', async () => {

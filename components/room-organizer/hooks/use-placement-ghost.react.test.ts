@@ -113,6 +113,7 @@ describe('usePlacementGhost (#463 d)', () => {
       const refuse = vi.fn();
       const run: GhostRunParams = {
         lot: { x0: -100, x1: 100, z0: -100, z1: 100 },
+        gate: null,
         fit: (sections) => ({ sections: [...sections], dropped: 0, blocker: null }),
         place,
         refuse,
@@ -222,11 +223,39 @@ describe('usePlacementGhost (#463 d)', () => {
         plan.dispatchEvent(pointer('pointerup', W / 2 + 150, H / 2 + 260));
       });
       expect(placeRun).not.toHaveBeenCalled();
-      expect(refuse).toHaveBeenCalledWith(blocker);
+      expect(refuse).toHaveBeenCalledWith(blocker, false);
       expect(endGhost).toHaveBeenCalledTimes(1);
       drawRun(plan, { shiftKey: true });
       expect(refuse).toHaveBeenCalledTimes(2);
       expect(endGhost).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs a fence round the lot in one call, gated, and puts it down; refuses whole on an item; never for a chair', () => {
+      const { run, place: placeRun, refuse } = runParams({ lot: { x0: -11, x1: 11, z0: -10, z1: 10 }, gate: 0 });
+      const { result, endGhost } = setup({ ghost: fence(), run });
+      act(() => result.current.runRoundLot());
+      expect(placeRun).toHaveBeenCalledTimes(1);
+      const [, items, keep] = vi.mocked(placeRun).mock.calls[0] as unknown as [CatalogItem, Sections, boolean];
+      expect(keep).toBe(false);
+      expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+      // Round all four sides, the street side in two parts round the gate.
+      expect(items.some((item) => item.position.z < -9.9)).toBe(true);
+      expect(items.some((item) => item.position.z > 9.9)).toBe(true);
+      expect(items.some((item) => Math.abs(item.position.z + 9.925) < 1e-6 && Math.abs(item.position.x) < 0.6 + item.width / 2)).toBe(false);
+      expect(endGhost).toHaveBeenCalledTimes(1);
+
+      const blocker = makeItem({ id: 'tree', name: 'Oak Tree' });
+      const blocked = runParams({ fit: (sections) => ({ sections: [...sections], dropped: 0, blocker }) });
+      const second = setup({ ghost: fence(), run: blocked.run });
+      act(() => second.result.current.runRoundLot());
+      expect(blocked.place).not.toHaveBeenCalled();
+      expect(blocked.refuse).toHaveBeenCalledWith(blocker, true);
+      expect(second.endGhost).toHaveBeenCalledTimes(1);
+
+      const chair = setup({ run });
+      act(() => chair.result.current.runRoundLot());
+      expect(placeRun).toHaveBeenCalledTimes(1);
+      expect(refuse).not.toHaveBeenCalled();
     });
 
     it('keeps the cancel of its own press from the camera controls', () => {

@@ -13,6 +13,7 @@
  * hooks share these, so the painted plan and the pointer maths agree.
  */
 
+import { onLotRun } from './item-run';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
 import { distanceOutsideWalls } from './plan-export/print-scale';
 import { insetsFromRegion, isSliver, type Insets, type Rect } from './scene-insets';
@@ -86,15 +87,21 @@ function snappedContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBound
  * are left out until the fit is within 1 / `PLAN_MIN_ROOM_SHARE` of the room
  * on each axis: on an axis that overflows, the item sticking out furthest
  * along it goes first. They come back as `offPlan` (furthest first), which
- * the plan draws as edge markers.
+ * the plan draws as edge markers. Run sections on the lot stay in the fit.
  */
 export function planViewFit(layout: RoomLayout, floor: FloorLayout): PlanViewFit {
-  const maxWidth = layout.width / PLAN_MIN_ROOM_SHARE;
-  const maxHeight = layout.height / PLAN_MIN_ROOM_SHARE;
+  // Runs out on the lot (#915), a fence round it say, are taken in whole:
+  // the cap widens to them, so they frame the house instead of ringing it
+  // with markers, and the items inside them still fit.
+  const lotRuns = floor.items.filter((item) => onLotRun(layout, item));
+  const runs = lotRuns.length > 0 ? boundsSize(snappedContentBounds(layout, { ...floor, items: lotRuns })) : { width: 0, height: 0 };
+  const maxWidth = Math.max(layout.width / PLAN_MIN_ROOM_SHARE, runs.width);
+  const maxHeight = Math.max(layout.height / PLAN_MIN_ROOM_SHARE, runs.height);
   const fits = (b: PlanBounds) => b.maxX - b.minX <= maxWidth + 1e-9 && b.maxZ - b.minZ <= maxHeight + 1e-9;
   let bounds = snappedContentBounds(layout, floor);
   if (fits(bounds)) return { bounds, offPlan: [] };
   const remaining = floor.items
+    .filter((item) => !onLotRun(layout, item))
     .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
     .filter((entry): entry is OffPlanItem => entry.distance > 0);
   const offPlan: OffPlanItem[] = [];
