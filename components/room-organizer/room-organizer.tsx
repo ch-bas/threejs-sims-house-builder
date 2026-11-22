@@ -27,6 +27,7 @@ import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useSaveStatus, type SaveStatus, type SaveStatusStore } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
 import { layoutStore } from './hooks/use-layout-store';
+import { useMeasureTool } from './hooks/use-measure-tool';
 import { usePhotoMode, usePhotoModeActive } from './hooks/use-photo-mode';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
@@ -204,7 +205,6 @@ export function RoomOrganizer(): JSX.Element {
   } = useSelectionActions({ activeFloor, activeFloorIndex, actions, playCue });
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [measurementPoints, setMeasurementPoints] = useState<ReadonlyArray<{ x: number; z: number }>>([]);
   // Set once the history exists, below.
   const commitWallStepRef = useRef<() => void>(() => {});
   const {
@@ -254,17 +254,16 @@ export function RoomOrganizer(): JSX.Element {
   // Ask the browser to keep the houses after the first real edit (#928).
   useAskToKeepStorage(layout);
 
+  // The distance tool, on the 3D floor and on the plan (#921).
+  const measure = useMeasureTool({ layout, activeFloor, activeFloorIndex, measurementMode: view.measurementMode });
+  const measurementPoints = measure.points;
+  const { placeFloorPoint, clear: clearMeasurement } = measure;
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
       if (handleWallClick(x, z)) return;
-      if (view.measurementMode) {
-        setMeasurementPoints((current) => {
-          if (current.length >= 2) return [{ x, z }];
-          return [...current, { x, z }];
-        });
-      }
+      if (view.measurementMode) placeFloorPoint(x, z);
     },
-    [view.measurementMode, handleWallClick]
+    [view.measurementMode, handleWallClick, placeFloorPoint]
   );
 
   // A quality picked on this device (#760). In an effect: the prerender has no storage.
@@ -286,20 +285,14 @@ export function RoomOrganizer(): JSX.Element {
     if (!view.drawZoneMode) setSelectedZoneId(null);
   }, [view.drawZoneMode]);
 
-  // Points are floor-plane coordinates; kept on a floor switch, they'd float
-  // on the new floor showing a distance measured on the old one (#224).
-  useEffect(() => {
-    setMeasurementPoints([]);
-  }, [activeFloorIndex, activeFloor.id]);
-
   // A whole-layout replacement (import, share/local hydration, adopting
   // another tab's save) invalidates every piece of transient selection state,
   // not just the item ids (#224).
   const clearTransientSelection = useCallback(() => {
     selectOnly(null);
     setSelectedWall(null);
-    setMeasurementPoints([]);
-  }, [selectOnly, setSelectedWall]);
+    clearMeasurement();
+  }, [selectOnly, setSelectedWall, clearMeasurement]);
 
   // The recess's span of the front wall on this storey; openings settle on
   // its piers (#394). Memoised on what the recess is fitted to.
@@ -611,6 +604,9 @@ export function RoomOrganizer(): JSX.Element {
     onZoneSelect: setSelectedZoneId,
     roomsToName: planRoomsToName,
     roomScores: planRoomScores,
+    onMeasurePoint: measure.placePoint,
+    onMeasureTapUndo: measure.takeBackPoint,
+    onMeasureHover: measure.setTip,
   });
 
   const orbitGroundAt = useCallback(
@@ -801,6 +797,7 @@ export function RoomOrganizer(): JSX.Element {
     stampArmed: roomStamp.armed,
     wallSnapResult,
     measurementPoints,
+    measureTip: view.view2D ? measure.tip : null,
     walkIndoors: walkthroughActive && !walk.outside,
     walkNearStairs: walk.nearStairs,
     walkLampStorey: walk.lampStorey,
@@ -886,11 +883,6 @@ export function RoomOrganizer(): JSX.Element {
   useEffect(() => {
     if (pendingAchievements.length > 0) playCue('success');
   }, [pendingAchievements, playCue]);
-
-  // Reset measurements whenever the user exits the mode.
-  useEffect(() => {
-    if (!view.measurementMode) setMeasurementPoints([]);
-  }, [view.measurementMode]);
 
   // `[` / `]` and PgUp / PgDn, and the touch walk HUD's clock and floor buttons (#688).
   const advanceTime = useEvent((deltaHours: number) => {

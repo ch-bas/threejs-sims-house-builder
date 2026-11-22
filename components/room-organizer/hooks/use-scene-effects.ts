@@ -173,6 +173,8 @@ export interface UseSceneEffectsParams {
   stampArmed: boolean;
   wallSnapResult: { point: { x: number; z: number }; kind: string } | null;
   measurementPoints: ReadonlyArray<{ x: number; z: number }>;
+  /** Where the measure tool's next point would land on the plan (#921), snapped. */
+  measureTip?: { point: { x: number; z: number }; kind: string } | null;
   /**
    * The walker is indoors (#446): of the storeys every one of which the
    * walkthrough builds, show only its own and the ones directly above and
@@ -220,6 +222,7 @@ export function useSceneEffects({
   stampArmed,
   wallSnapResult,
   measurementPoints,
+  measureTip = null,
   walkIndoors = false,
   walkNearStairs = false,
   walkLampStorey,
@@ -1490,8 +1493,12 @@ export function useSceneEffects({
   const calibrating = calibration !== null;
   // The plan's lengths and areas follow the unit picked in View options (#725).
   const lengthUnit = useLengthUnit();
-  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedWallSide' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost' | 'calibrationPoints' | 'floorPlanUnclipped'>>({});
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedWallSide' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost' | 'calibrationPoints' | 'floorPlanUnclipped' | 'measurePreview'>>({});
   planEditRef.current = {
+    // The measure tool's points and the pointer's snapped tip (#921).
+    measurePreview: view.measurementMode
+      ? { points: measurementPoints, tip: measureTip?.point ?? null, snapped: measureTip !== null && measureTip.kind !== 'none' }
+      : null,
     calibrationPoints,
     floorPlanUnclipped: calibrating,
     selectedWallId,
@@ -1507,7 +1514,7 @@ export function useSceneEffects({
     // Once a frame, however many moves arrive in it.
     const frame = requestAnimationFrame(() => paint2DRef.current?.());
     return () => cancelAnimationFrame(frame);
-  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedWallSide, selectedZoneId, roomsToName, stampGhost, stampArmed, calibrationPoints, calibrating]);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedWallSide, selectedZoneId, roomsToName, stampGhost, stampArmed, calibrationPoints, calibrating, view.measurementMode, measurementPoints, measureTip]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;

@@ -20,6 +20,7 @@ import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawSelectedWall, drawStampGhost, drawWallPreview, drawWallSideMark, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
+import { drawMeasurePreview, type MeasurePreview } from './plan-measure';
 import { zoomedTransform, type PlanZoom } from './plan-zoom';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { DetectedRoom } from '../lib/room-detect';
@@ -59,6 +60,8 @@ export interface Render2DOptions {
   wallPreview?: WallPreview | null | undefined;
   /** The room stamp in hand (#724). */
   stampGhost?: StampGhost | null | undefined;
+  /** The measure tool's points (#921), drawn over everything. */
+  measurePreview?: MeasurePreview | null | undefined;
   /** The points picked to calibrate the traced plan (#726), world metres. */
   calibrationPoints?: readonly Vec2[] | undefined;
   /**
@@ -320,6 +323,8 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale, unit);
   if (options.stampGhost) drawStampGhost(ctx, layout, options.stampGhost, offsetX, offsetY, scale, unit);
   if (options.calibrationPoints?.length) drawCalibrationPoints(ctx, layout, options.calibrationPoints, offsetX, offsetY, scale);
+  // The measure tool (#921).
+  if (options.measurePreview) drawMeasurePreview(ctx, layout, options.measurePreview, offsetX, offsetY, scale, unit);
 }
 
 /**

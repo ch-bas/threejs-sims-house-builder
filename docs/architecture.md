@@ -134,6 +134,7 @@ components/
     │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
     │   ├── wall-edit.ts                 Moving drawn walls: slide, end moves, corners that follow, what rides along (#718)
     │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
+    │   ├── measure-snap.ts              The measure tool's snap (#921): corners, item centres and side middles, then item sides and wall faces; no clamp to the house
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-bodies.ts                The player and the walkers as each other's obstacles: walker bodies for the player's resolve, the player's spot and seat for the walkers (#585)
@@ -167,7 +168,7 @@ components/
     │   ├── stairs.ts                    Tread layout (straight / winder), headroom stairwells, plan symbol
     │   ├── stairwell-rail.ts            The guard rail round a stairwell on the floor above: runs along the hole, open at the arrival and along walls; scene, walker, plan and exports (#923)
     │   ├── zones.ts                     Room zones: rect and polygon validation, clamping, re-fit to detected rooms (#719), per-zone stats (porch left out, #582)
-    │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439)
+    │   ├── view-options.ts              View-menu switches and the view each one needs (#341); view invariants (zone drawing is 2D only, #439; wall or zone drawing parks the distance tool, #921)
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
     │   ├── photo-mode.ts                Photo mode switch (enter/leave/subscribe) and the photo's size and file name (#626)
@@ -218,7 +219,7 @@ components/
     │   ├── reveals.ts                   Window and door reveals in the outer walls: linings, and the set-back of the frame (#758)
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
     │   ├── stairwell-rail.ts            The stairwell guard rail mesh: posts, handrail, bottom rail and balusters merged per storey; hides with the partitions (#923)
-    │   ├── measurement.ts               Distance-tool spheres + line
+    │   ├── measurement.ts               Distance-tool spheres + line (3D; the plan draws its own, canvas-2d/plan-measure.ts)
     │   ├── item-labels.ts               Floating sprite labels above items
     │   ├── roof.ts                      Flat / gable / hipped roof at its pitch and ridge (lib/roof-shape.ts); walkthrough attic ceiling (#487)
     │   ├── ceiling.ts                   Walkthrough ceiling + stairwell shafts up and down (#359)
@@ -247,6 +248,7 @@ components/
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
     ├── canvas-2d/opening-symbol.ts      Door swings and window double lines on the plan, minimap and blueprint
     ├── canvas-2d/plan-edit.ts           What only the on-screen plan draws while editing: wall draft, selected wall, zone handles, and their hit tests and drag maths
+    ├── canvas-2d/plan-measure.ts        The measure tool on the plan (#921): the points and the snapped tip, drawn in the edit layer
     ├── canvas-2d/plan-zoom.ts           The on-screen plan's view zoom and pan (pinch, wheel, double tap back to the fit): view state over the fit, kept per canvas
     ├── canvas-2d/stairs-symbol.ts       Stair treads + climb arrow, stairwell voids on the floor above
     ├── plotcraft/icon.tsx               PlotCraft SVG icon set for UI panels (no icon library)
@@ -297,6 +299,7 @@ components/
     │   ├── use-room-transfer.ts         The room transfer commands (#925): plan, hard budget, history step and the one cue per move, mirror, copy or paste
     │   ├── use-selection-actions.ts     The selection: primary, extras, selected wall; the ghost-selection guards, group expansion, custom sets (#117, #154, #224)
     │   ├── use-wall-draft.ts            The wall tool: draft anchor and snapped tip, typed length, room stamp in hand, resets on a tool or floor change (#723, #724)
+    │   ├── use-measure-tool.ts          The distance tool's points and snapped tip, in both views; reset on a tool or floor change (#341, #921)
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
     │   ├── use-tour-phase.ts            The shared-link tour's phase as React state (#722)
