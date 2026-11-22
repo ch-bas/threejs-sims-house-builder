@@ -1,9 +1,9 @@
 /**
- * Ambient sound in EXPLORE (#911): rain on the roof and footsteps, with no
- * audio assets. Web Audio only, on the AudioContext the UI cues use
- * (`sharedAudioContext`, lib/sounds.ts). The mappings are pure and tested;
- * the engine is a thin graph over them: a looped noise buffer through a
- * low-pass filter for the rain, and a short filtered noise burst per step.
+ * Ambient sound in EXPLORE (#911): rain on the roof, footsteps, birds by
+ * day, crickets at night and the doors as they swing, with no audio assets.
+ * The mappings, pure and tested: what each sound's gain is, and when it
+ * plays. The Web Audio engine that plays them is `lib/ambience-engine.ts`,
+ * loaded only once a walk wants the ambience.
  */
 
 import type { Weather } from './types';
@@ -16,7 +16,7 @@ export interface RainSound {
 }
 
 /** Rain heard out on the lot. */
-const RAIN_OUTDOORS: RainSound = { gain: 0.16, cutoffHz: 5200 };
+export const RAIN_OUTDOORS: RainSound = { gain: 0.16, cutoffHz: 5200 };
 /** Rain heard through the roof: quieter and duller. */
 const RAIN_INDOORS: RainSound = { gain: 0.07, cutoffHz: 900 };
 
@@ -45,123 +45,99 @@ export interface StrideState {
  * walking into a wall makes no sound, and a sprint steps twice as often. At
  * most one step per call, so a long frame never plays a burst of them.
  */
-export function advanceStride(carry: number, walked: number, stride: number = STRIDE_METRES): StrideState {
+export function advanceStride(carry: number, walked: number, stride: number = STRIDE_METRES, out: StrideState = { carry: 0, steps: 0 }): StrideState {
   const total = carry + Math.max(0, walked);
-  if (total < stride) return { carry: total, steps: 0 };
-  return { carry: total % stride, steps: 1 };
+  out.carry = total < stride ? total : total % stride;
+  out.steps = total < stride ? 0 : 1;
+  return out;
 }
 
-/** Rain fades in and out over this long (s), never clicks. */
-const RAIN_FADE_SECONDS = 0.8;
-/** Switched off or left: the whole ambience fades out over this long (s). */
-const OUT_FADE_SECONDS = 0.2;
-const FOOTSTEP_SECONDS = 0.09;
-const FOOTSTEP_GAIN = 0.22;
-/** Indoors a step lands on a floor; outdoors on grass, softer and duller. */
-const FOOTSTEP_INDOORS = { hz: 420, q: 1.2, gain: 1 };
-const FOOTSTEP_OUTDOORS = { hz: 260, q: 0.8, gain: 0.6 };
-
-export interface Ambience {
-  setRain(sound: RainSound): void;
-  footstep(indoors: boolean): void;
-  /**
-   * Silence it all (a hidden page), or bring it back. The shared context is
-   * left running: the UI cues are on it too.
-   */
-  setMuted(muted: boolean): void;
-  /** Fades out, then stops and frees the graph. */
-  dispose(): void;
+export interface WildlifeSound {
+  /** Gain of a bird's call, 0 for none. */
+  birds: number;
+  /** Gain of a cricket's trill, 0 for none. */
+  crickets: number;
 }
 
-/** Made once per context: every walk reuses it. */
-const noiseBuffers = new WeakMap<BaseAudioContext, AudioBuffer>();
+/** A bird's call at full voice, and a cricket's trill. */
+const BIRD_GAIN = 0.09;
+const CRICKET_GAIN = 0.035;
+/** Indoors the walls and the glass keep most of it out. */
+const WILDLIFE_INDOORS = 0.3;
+/** Under a light snow fewer birds call; in the rain none do. */
+const BIRDS_IN_SNOW = 0.4;
 
-/** Two seconds of white noise, looped: long enough that the repeat isn't heard. */
-function noiseBuffer(ctx: BaseAudioContext, seconds: number): AudioBuffer {
-  const cached = noiseBuffers.get(ctx);
-  if (cached) return cached;
-  const length = Math.max(1, Math.floor(ctx.sampleRate * seconds));
-  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
-  noiseBuffers.set(ctx, buffer);
-  return buffer;
-}
-
-/** Ramp `param` from where it is now to `value` over `seconds`. */
-function rampTo(ctx: BaseAudioContext, param: AudioParam, value: number, seconds: number): void {
-  const now = ctx.currentTime;
-  param.cancelScheduledValues(now);
-  param.setValueAtTime(param.value, now);
-  param.linearRampToValueAtTime(value, now + seconds);
+/** 0 at `from`, 1 at `to`, linear between (either way round). */
+function ramp(hour: number, from: number, to: number): number {
+  const t = (hour - from) / (to - from);
+  return Math.max(0, Math.min(1, t));
 }
 
 /**
- * The ambience graph on `ctx`. The rain loop starts silent and runs until
- * `dispose`; footsteps are one-shot sources that free themselves.
+ * Who is calling at `hour` (in [0, 24)): birds by day, loudest in the dawn
+ * chorus and quieting through dusk, crickets after 21:00 until the small
+ * hours (#911). Rain silences both; snow leaves a few birds and no crickets.
+ * Indoors it is all much quieter. Pure: the gain mapping the engine plays.
+ * Written into `out` when given (the per-frame caller reuses one).
  */
-export function createAmbience(ctx: AudioContext): Ambience {
-  const out = ctx.createGain();
-  out.gain.value = 1;
-  out.connect(ctx.destination);
+export function wildlifeSound(hour: number, weather: Weather, indoors: boolean, out: WildlifeSound = { birds: 0, crickets: 0 }): WildlifeSound {
+  const h = ((hour % 24) + 24) % 24;
+  // The chorus swells from 5:00, peaks 6–8, settles to half by 10, fades 19–20:30.
+  const chorus = ramp(h, 5, 6) * (1 - 0.5 * ramp(h, 8, 10));
+  const birdsByHour = h < 19 ? chorus : chorus * (1 - ramp(h, 19, 20.5));
+  // Crickets come in over 20:30–21:30 and go before dawn, 4–5.
+  const cricketsByHour = h >= 12 ? ramp(h, 20.5, 21.5) : 1 - ramp(h, 4, 5);
+  const room = indoors ? WILDLIFE_INDOORS : 1;
+  const birdsWeather = weather === 'rain' ? 0 : weather === 'snow' ? BIRDS_IN_SNOW : 1;
+  const cricketsWeather = weather === 'clear' ? 1 : 0;
+  out.birds = BIRD_GAIN * birdsByHour * birdsWeather * room;
+  out.crickets = CRICKET_GAIN * cricketsByHour * cricketsWeather * room;
+  return out;
+}
 
-  const noise = noiseBuffer(ctx, 2);
-  const rain = ctx.createBufferSource();
-  rain.buffer = noise;
-  rain.loop = true;
-  const rainFilter = ctx.createBiquadFilter();
-  rainFilter.type = 'lowpass';
-  rainFilter.frequency.value = RAIN_OUTDOORS.cutoffHz;
-  const rainGain = ctx.createGain();
-  rainGain.gain.value = 0;
-  rain.connect(rainFilter).connect(rainGain).connect(out);
-  rain.start();
+/** The kinds that call, for a loop that allocates nothing. */
+export const WILDLIFE_KINDS: readonly (keyof WildlifeSound)[] = ['birds', 'crickets'];
 
-  let disposed = false;
-  return {
-    setRain(sound) {
-      if (disposed) return;
-      rampTo(ctx, rainGain.gain, sound.gain, RAIN_FADE_SECONDS);
-      rampTo(ctx, rainFilter.frequency, sound.cutoffHz, RAIN_FADE_SECONDS);
-    },
-    setMuted(muted) {
-      if (disposed) return;
-      rampTo(ctx, out.gain, muted ? 0 : 1, OUT_FADE_SECONDS);
-    },
-    footstep(indoors) {
-      if (disposed) return;
-      const spec = indoors ? FOOTSTEP_INDOORS : FOOTSTEP_OUTDOORS;
-      const now = ctx.currentTime;
-      const source = ctx.createBufferSource();
-      source.buffer = noise;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      // A little variety, so a walk isn't a metronome.
-      filter.frequency.value = spec.hz * (0.85 + Math.random() * 0.3);
-      filter.Q.value = spec.q;
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(FOOTSTEP_GAIN * spec.gain, now + 0.008);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + FOOTSTEP_SECONDS);
-      source.connect(filter).connect(gain).connect(out);
-      // A random point in the loop: each step sounds a little different.
-      source.start(now, Math.random() * (noise.duration - FOOTSTEP_SECONDS), FOOTSTEP_SECONDS + 0.02);
-      source.onended = () => gain.disconnect();
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      rampTo(ctx, out.gain, 0, OUT_FADE_SECONDS);
-      rain.onended = () => {
-        rain.disconnect();
-        out.disconnect();
-      };
-      try {
-        rain.stop(ctx.currentTime + OUT_FADE_SECONDS + 0.02);
-      } catch {
-        rain.disconnect();
-        out.disconnect();
-      }
-    },
-  };
+/** Seconds from one call to the next: a bird now and then, crickets all but steady. */
+const CALL_SPACING = { birds: [1.4, 5.5], crickets: [0.55, 1.3] } as const;
+
+/**
+ * The wait (s) before the next call of `kind`, from a random draw in [0, 1).
+ * A louder chorus calls more often (up to twice as often for the birds);
+ * nothing calls at gain 0.
+ */
+export function nextCallDelay(kind: keyof WildlifeSound, gain: number, random: number): number {
+  if (!(gain > 0)) return Infinity;
+  const [min, max] = CALL_SPACING[kind];
+  const wait = min + (max - min) * Math.max(0, Math.min(1, random));
+  if (kind === 'crickets') return wait;
+  return wait / (1 + Math.min(1, gain / BIRD_GAIN));
+}
+
+/** A door is heard this far (m), through the house, before it is silent. */
+const DOOR_HEARD_METRES = 12;
+const DOOR_GAIN = 0.16;
+/** Another storey's door comes through the floor faintly. */
+const DOOR_OTHER_STOREY = 0.25;
+
+/**
+ * How loud a door that starts to swing, or shuts, is for a listener
+ * `distance` metres away (#911): full voice within a metre, then falling
+ * with distance to nothing at 12 m. A door on another storey is faint.
+ */
+export function doorSoundGain(distance: number, sameStorey: boolean): number {
+  if (!(distance < DOOR_HEARD_METRES)) return 0;
+  const near = Math.max(1, distance);
+  const fade = 1 - (near - 1) / (DOOR_HEARD_METRES - 1);
+  return DOOR_GAIN * (fade / near) * (sameStorey ? 1 : DOOR_OTHER_STOREY);
+}
+
+/** What a door's leaf did over a frame, for its sound: started to open, came shut, or neither. */
+export type DoorSound = 'open' | 'shut';
+
+/** From how open a leaf was (0 shut … 1) to how open it is now. */
+export function doorSoundOf(wasOpen: number, isOpen: number): DoorSound | null {
+  if (wasOpen <= 0 && isOpen > 0) return 'open';
+  if (wasOpen > 0 && isOpen <= 0) return 'shut';
+  return null;
 }

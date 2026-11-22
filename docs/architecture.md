@@ -131,7 +131,8 @@ components/
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
     │   ├── item-run.ts                  Fence, hedge and stepping-stone runs: sections along a line, end snap, corner insets, round the lot (#915)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused); owns the page's one AudioContext
-    │   ├── ambience.ts                  EXPLORE ambience (#911): rain gain by weather and indoors, footsteps by distance walked, and the Web Audio graph on the shared context
+    │   ├── ambience.ts                  EXPLORE ambience (#911): rain gain by weather and indoors, footsteps by distance walked, birds and crickets by the hour, door creaks and knocks by distance: the pure mappings
+    │   ├── ambience-engine.ts           The ambience's Web Audio graph on the shared context: rain loop, footsteps, calls, door creak and knock; loaded on demand (#911)
     │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
     │   ├── wall-edit.ts                 Moving drawn walls: slide, end moves, corners that follow, what rides along (#718)
     │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
@@ -197,7 +198,7 @@ components/
     │   ├── collision-tint.ts            See-through tint over every part of a colliding item (#167)
     │   ├── placement-ghost.ts           The placement ghost's faded mesh + footprint pad (#463 d)
     │   ├── drag-handlers.ts             Canvas mouse events: select/drag/hover/wall-pick
-    │   ├── door-leaves.ts               Finds the door leaves in the scene and swings each for the nearest person on its storey, the player or a walker (#605, #908); shuts them all
+    │   ├── door-leaves.ts               Finds the door leaves in the scene and swings each for the nearest person on its storey, the player or a walker (#605, #908), telling the ambience when one starts to open or shuts (#911); shuts them all
     │   ├── builders/                    Per-category builder functions
     │   │   ├── builders-seating.ts      Chair, armchair, bench, sofa
     │   │   ├── builders-bedroom.ts      Bed, nightstand, dresser
@@ -279,7 +280,7 @@ components/
     │   ├── use-people-model.ts          Loads people.glb the first time a person or a walker needs it
     │   ├── use-npcs.ts                  Animated walkers per storey (keyed by floor id, parked while not drawn): spawn, route-following step, re-route on floor edits; giving way, sitting, activities
     │   ├── use-weather.ts               Rain / snow clock on the frame budget
-    │   ├── use-ambience.ts              Rain on the roof and footsteps in EXPLORE, the sound tile's third setting (#911): steps on the frame budget, muted while hidden
+    │   ├── use-ambience.ts              Rain on the roof, footsteps, birds, crickets and doors in EXPLORE, the sound tile's third setting (#911): steps and calls on the frame budget, muted while hidden
     │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom
     │   ├── plan-calibration.ts          The traced plan's calibration session (#726): points picked, length step, move step
     │   ├── ground-draw.ts               The garden-surface tool (#924): which kind a drag on the plan lays, or off
