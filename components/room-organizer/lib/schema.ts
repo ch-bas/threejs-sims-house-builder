@@ -3,9 +3,11 @@ import { repairChallenge } from './challenges';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
-import { repairFloorPlanTransform } from './floor-plan-fit';
+import { isFloorPlanMode, repairFloorPlanTransform } from './floor-plan-fit';
 import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
+import { repairGrounds } from './grounds';
 import { isOpeningStyle } from './opening-style';
+import { MAX_DIMENSIONS_PER_FLOOR, MIN_DIMENSION_LENGTH, clampDimension, dimensionLength, isPinnedDimension } from './plan-dimensions';
 import { clampRoofPitch } from './roof-shape';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
@@ -25,6 +27,7 @@ import type {
   FurnitureItem,
   InteriorWall,
   NeighbourFlag,
+  PinnedDimension,
   RoofSpec,
   RoofStyle,
   RoomLayout,
@@ -395,6 +398,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   floorPlanOpacity: true,
   floorPlanFitMode: true,
   floorPlanTransform: true,
+  floorPlanMode: true,
   terrain: true,
   neighbours: true,
   entrance: true,
@@ -402,6 +406,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   frontage: true,
   budget: true,
   challenge: true,
+  grounds: true,
 });
 const FLOOR_KEYS = keysOf<FloorLayout>({
   id: true,
@@ -415,6 +420,7 @@ const FLOOR_KEYS = keysOf<FloorLayout>({
   hiddenWalls: true,
   interiorWalls: true,
   zones: true,
+  dimensions: true,
   height: true,
 });
 const ITEM_KEYS = keysOf<FurnitureItem>({
@@ -452,6 +458,7 @@ const ITEM_KEYS = keysOf<FurnitureItem>({
 const VEC2_KEYS = ['x', 'z'] as const;
 const FACADE_KEYS = keysOf<FacadeFinish>({ pattern: true, colors: true });
 const WALL_KEYS = keysOf<InteriorWall>({ id: true, x1: true, z1: true, x2: true, z2: true, color: true, colorB: true, pattern: true, patternB: true });
+const DIMENSION_KEYS = keysOf<PinnedDimension>({ id: true, a: true, b: true, offset: true });
 const ZONE_KEYS = keysOf<RoomZone>({ id: true, name: true, color: true, x: true, z: true, w: true, d: true, outline: true, holes: true, floorPattern: true, floorColor: true });
 const ROOF_KEYS = keysOf<RoofSpec>({ style: true, color: true, pitch: true, ridge: true, dormers: true });
 const DORMER_KEYS = keysOf<DormerSpec>({
@@ -678,10 +685,49 @@ function repairFloor(floor: FloorLayout): FloorLayout {
       })
     );
   }
-  const repaired = rebuild(floor, FLOOR_KEYS, patch);
-  if (facade !== null) return repaired;
-  const { facade: _empty, ...rest } = repaired;
-  return rest;
+  // Pinned dimensions (#921) are notes on the plan: a bad one is dropped, never the house.
+  const dimensions = floor.dimensions === undefined ? undefined : repairDimensions(floor.dimensions as unknown);
+  if (dimensions) patch.dimensions = dimensions;
+  let repaired = rebuild(floor, FLOOR_KEYS, patch);
+  if (facade === null) {
+    const { facade: _empty, ...rest } = repaired;
+    repaired = rest;
+  }
+  if (dimensions === null) {
+    const { dimensions: _none, ...rest } = repaired;
+    repaired = rest;
+  }
+  return repaired;
+}
+
+/**
+ * A storey's pinned dimensions as stored (#921): only well-formed pins with
+ * an id of their own, at most `MAX_DIMENSIONS_PER_FLOOR`, their numbers in
+ * range and no other keys. Null when none is left: the key goes.
+ */
+function repairDimensions(value: unknown): PinnedDimension[] | null {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set<string>();
+  const kept: PinnedDimension[] = [];
+  let changed = value.length > MAX_DIMENSIONS_PER_FLOOR;
+  for (const entry of value.slice(0, MAX_DIMENSIONS_PER_FLOOR) as unknown[]) {
+    const id = isPinnedDimension(entry) ? capText(entry.id, MAX_ID_LENGTH) : null;
+    if (!isPinnedDimension(entry) || id === null || seen.has(id)) {
+      changed = true;
+      continue;
+    }
+    const picked = rebuild(entry, DIMENSION_KEYS, { id, a: pick(entry.a, VEC2_KEYS), b: pick(entry.b, VEC2_KEYS) });
+    const clamped = clampDimension(picked, clampCoordinate);
+    if (dimensionLength(clamped) < MIN_DIMENSION_LENGTH) {
+      changed = true;
+      continue;
+    }
+    if (clamped !== entry) changed = true;
+    seen.add(id);
+    kept.push(clamped);
+  }
+  if (kept.length === 0) return null;
+  return changed ? kept : (value as PinnedDimension[]);
 }
 
 function repairRoof(roof: RoofSpec): RoofSpec {
@@ -747,6 +793,11 @@ function repairFields(layout: RoomLayout): RoomLayout {
     const { cutout: _dropped, ...rest } = layout;
     return repairFields(rest);
   }
+  // An unknown tracing mode (#920) is dropped: the image is the drawing again, as before the mode.
+  if (layout.floorPlanMode !== undefined && !isFloorPlanMode(layout.floorPlanMode)) {
+    const { floorPlanMode: _dropped, ...rest } = layout;
+    return repairFields(rest);
+  }
   const patch: Partial<RoomLayout> = {
     name: capText(layout.name, MAX_NAME_LENGTH),
     floors: mapSame(mapSame(layout.floors, repairFloor), (floor) => repairZoneShapes(floor, layout)),
@@ -802,6 +853,16 @@ function repairFields(layout: RoomLayout): RoomLayout {
       source = rest;
     } else {
       patch.challenge = challenge;
+    }
+  }
+  // Garden surfaces (#924) are repaired, never refused: malformed ones go.
+  if (layout.grounds !== undefined) {
+    const grounds = repairGrounds(layout.grounds);
+    if (grounds === undefined) {
+      const { grounds: _dropped, ...rest } = source;
+      source = rest;
+    } else {
+      patch.grounds = grounds;
     }
   }
   return rebuild(source, LAYOUT_KEYS, patch);

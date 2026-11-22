@@ -84,16 +84,28 @@ describe('the touch walk HUD extras (#688)', () => {
 describe('switching a lamp from the walk HUD (#910)', () => {
   it('offers the lamp in reach on touch, and says which way it switches', () => {
     const props = setup({ lamp: { name: 'Floor Lamp', on: true } });
-    fireEvent.click(screen.getByRole('button', { name: 'Switch off Floor Lamp' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Switch off the lamp' }));
     expect(props.onToggleSit).toHaveBeenCalledTimes(1);
     cleanup();
     setup({ lamp: { name: 'Floor Lamp', on: false } });
-    expect(screen.getByRole('button', { name: 'Switch on Floor Lamp' }).textContent).toContain('Switch on');
+    expect(screen.getByRole('button', { name: 'Switch on the lamp' }).textContent).toContain('Switch on');
+    // Any lamp, whatever its catalogue name.
+    cleanup();
+    setup({ lamp: { name: 'Desk Lamp', on: false, kind: 'lamp' } });
+    expect(screen.getByRole('button', { name: 'Switch on the lamp' })).toBeTruthy();
   });
 
   it('prompts `E` on a desktop under the lock', () => {
     window.matchMedia = ((query: string) => ({ media: query, matches: false, addEventListener: () => undefined, removeEventListener: () => undefined })) as unknown as typeof window.matchMedia;
-    setup({ locked: true, lamp: { name: 'Lamp', on: true } });
-    expect(screen.getByText('Switch off Lamp')).toBeTruthy();
+    setup({ locked: true, lamp: { name: 'Floor Lamp', on: true } });
+    expect(screen.getByText('Switch off the lamp')).toBeTruthy();
+  });
+
+  it('calls a TV the TV, whatever its catalogue name', () => {
+    setup({ lamp: { name: 'TV Stand', on: false, kind: 'tv' } });
+    expect(screen.getByRole('button', { name: 'Switch on the TV' })).toBeTruthy();
+    cleanup();
+    setup({ lamp: { name: 'TV Stand', on: true, kind: 'tv' } });
+    expect(screen.getByRole('button', { name: 'Switch off the TV' })).toBeTruthy();
   });
 });

@@ -13,18 +13,23 @@ import {
   useLayoutActions,
 } from './use-layout-store';
 import type { DormerInput, DormerPatch } from '../lib/dormers';
+import type { GroundPatchEdit } from '../lib/grounds';
+import type { RoomTransfer } from '../lib/room-transfer';
 import type {
   CatalogItem,
   EntranceSpec,
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanMode,
   FloorPlanTransform,
   Frontage,
   FurnitureItem,
+  GroundPatch,
   InteriorWall,
   NeighbourFlag,
   OpeningStyle,
+  PinnedDimension,
   RoofRidge,
   RoofStyle,
   RoomLayout,
@@ -67,6 +72,8 @@ export interface LayoutActions {
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
+  /** The tracing image as the finished floor or an underlay under built walls (#920). */
+  setFloorPlanMode(mode: FloorPlanMode): void;
   /** Calibrate the traced plan (#726); `null` hands it back to the fit mode. */
   setFloorPlanTransform(transform: FloorPlanTransform | null): void;
   setRoofStyle(style: RoofStyle): void;
@@ -125,6 +132,8 @@ export interface LayoutActions {
   clearInteriorWalls(): void;
   toggleExteriorWall(wallId: WallId): void;
   rotateSelection(ids: ReadonlySet<string>, radians: number): void;
+  /** Move, mirror, copy or paste a room with its walls (#925), in one undo step. */
+  transferRoom(transfer: RoomTransfer): void;
   /** Persistent groups (#154). `setGroup` returns the new group's id. */
   setGroup(ids: ReadonlySet<string>): string;
   clearGroup(ids: ReadonlySet<string>): void;
@@ -146,6 +155,13 @@ export interface LayoutActions {
   addZone(zone: Omit<RoomZone, 'id'>): string;
   updateZone(id: string, patch: ZonePatch): void;
   removeZone(id: string): void;
+  /** A dimension pinned on the active floor (#921); returns its id. */
+  addDimension(dimension: Omit<PinnedDimension, 'id'>): string;
+  removeDimension(id: string): void;
+  /** Garden surfaces on the lot (#924). `addGround` returns the new surface's id. */
+  addGround(ground: Omit<GroundPatch, 'id'>): string;
+  updateGround(id: string, patch: GroundPatchEdit): void;
+  removeGround(id: string): void;
 }
 
 export interface UseLayoutStateResult {

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { draggedZoneRect, hitInteriorWall, wallEndAt, ZONE_GRIP_CURSORS, zoneAt, zoneGripAt, type ZoneGrip } from '../canvas-2d/plan-edit';
+import { hitPinnedDimension } from '../canvas-2d/plan-measure';
 import { NO_PLAN_ZOOM, panPlan, pinchPlan, planZoomOf, setPlanZoom, zoomPlanAbout, type PlanZoom } from '../canvas-2d/plan-zoom';
 import { canvasToWorld, get2DViewTransform, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { movedFloorPlan } from '../lib/floor-plan-fit';
 import { hasCollisions } from '../lib/geometry';
+import { GROUND_REFUSAL_MESSAGES, drawnGround, groundFromCorners } from '../lib/grounds';
+import { snapMeasurePoint, type MeasureSnap } from '../lib/measure-snap';
 import { isWallMounted } from '../lib/opening-snap';
 import { isOnDoorLeaf, type PlacedItem } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
@@ -15,6 +18,7 @@ import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { wallSideAt, type WallSide } from '../lib/wall-sides';
 import { defaultZoneName, nextZoneColor, roomAt, zoneFromCorners, zoneFromRoom, zoneInPorch, type ZoneRect } from '../lib/zones';
 import { dragThresholdPx, keepsSelectionOnPress, pointerOnCanvas } from '../three/drag-handlers';
+import { getGroundDrawKind } from './ground-draw';
 import { addCalibrationPoint, getPlanCalibration } from './plan-calibration';
 import { PLAN_GESTURE_ATTR, planFit } from './scene-occluders';
 import { useLayoutActions } from './use-layout-store';
@@ -23,7 +27,7 @@ import type { WallGrabInfo, WallMovePreview } from './use-wall-edit';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
 import type { EntrancePlanOutline } from '../lib/street';
-import type { FloorLayout, FloorPlanTransform, FurnitureItem, RoomLayout, Vec2, ViewSettings } from '../lib/types';
+import type { FloorLayout, FloorPlanTransform, FurnitureItem, GroundKind, RoomLayout, Vec2, ViewSettings } from '../lib/types';
 import type { HeldGesture } from '../three/drag-handlers';
 
 /**
@@ -52,6 +56,9 @@ const DOUBLE_TAP_SLOP_PX = 30;
 const TAP_SLOP_PX = 10;
 /** Wheel zoom per pixel of scroll: a notch (100 px) is about 22 %. */
 const WHEEL_ZOOM_PER_PX = 0.002;
+/** How far a measure point reaches to catch on a corner, an item or a wall (CSS px, #921). */
+const MEASURE_SNAP_PX = 10;
+const MEASURE_SNAP_TOUCH_PX = 18;
 
 /**
  * Topmost item under a world-space point, by exact rotated-rect containment.
@@ -138,6 +145,8 @@ export interface UseCanvas2DInteractionParams {
   activeFloor: FloorLayout;
   view: Pick<ViewSettings, 'showMeasurements' | 'showWiFiSignals' | 'showHeatmap' | 'showFloorBelow' | 'drawZoneMode'> & {
     drawWallMode?: boolean;
+    /** The measure tool (#921): a tap places a snapped point, a drag pans. */
+    measurementMode?: boolean;
   };
   selectedItemId: string | null;
   extraSelectedIds: ReadonlySet<string>;
@@ -154,6 +163,8 @@ export interface UseCanvas2DInteractionParams {
   onItemDragCancel(id: string, options?: DragCancelOptions): void;
   /** A drag began on a locked item: say why it stays put (#635). */
   onLockedDrag?(id: string): void;
+  /** A garden surface was laid (#924): the shared placement cue, given its id. */
+  onGroundAdded?(id: string): void;
   /** A zone drawn wholly on the porch: say why nothing was added (#582). */
   onZoneRefused?(message: string): void;
   /** The wall tool placed a point on the plan (#564). Snapping is the handler's. */
@@ -178,6 +189,16 @@ export interface UseCanvas2DInteractionParams {
   onZoneSelect?(id: string | null): void;
   /** Detected rooms with no zone, in zone mode: a tap on one names it (#719). */
   roomsToName?: readonly DetectedRoom[];
+  /** The measure tool placed a point on the plan, snapped (#921). */
+  onMeasurePoint?(snap: MeasureSnap): void;
+  /** Take back the point a finger's double tap placed with its first tap: the double tap resets the zoom. */
+  onMeasureTapUndo?(): void;
+  /** Where the measure tool's next point would land under a mouse; null off the plan. */
+  onMeasureHover?(snap: MeasureSnap | null): void;
+  /** A measure tap on a pinned dimension's line picks it, to unpin; null picks none. */
+  onPinSelect?(id: string | null): void;
+  /** The measure tool has its first point: a tap now ends the measurement, never picks a pin. */
+  measureInProgress?: boolean;
   /** The committed room scores (#905), kept on the ghost repaint. */
   roomScores?: Render2DOptions['roomScores'];
 }
@@ -326,6 +347,8 @@ export function useCanvas2DInteraction(
       latest: { x: number; z: number };
       /** The zone a tap here selects, or null to clear the selection (#628). */
       tapZoneId: string | null;
+      /** The garden-surface tool's drag (#924): the kind it lays, instead of a zone. */
+      ground?: GroundKind;
     }
     let zoneGesture: ZoneGesture | null = null;
     /** The selected zone being moved or resized (#628). */
@@ -381,6 +404,12 @@ export function useCanvas2DInteraction(
     // committed drop refits it (#381).
     let fit: PlanFit = { bounds: undefined, offPlan: [], insets: undefined, padding: PLAN_PADDING_PX, hudRects: [] };
     const worldAt = (event: PointerEvent) => toWorld(event.clientX, event.clientY, fit);
+    /** The measure point for a world point under this pointer (#921); Shift places it free. */
+    const measureSnap = (world: Vec2, event: PointerEvent, at: PlanFit = fit): MeasureSnap => {
+      const { layout, activeFloor } = paramsRef.current;
+      const reach = event.shiftKey ? 0 : hitSlopWorld(at, event.pointerType === 'touch' ? MEASURE_SNAP_TOUCH_PX : MEASURE_SNAP_PX);
+      return snapMeasurePoint(world, { floor: activeFloor, building: layout, reach });
+    };
 
     // View zoom and pan (#678): two fingers pinch and pan, one finger on
     // empty floor pans once zoomed in, a double tap on empty floor goes back
@@ -412,6 +441,8 @@ export function useCanvas2DInteraction(
       touch: boolean;
       /** Pressed while calibrating the traced plan (#726): a tap picks a point, not the selection. */
       calibrating?: boolean;
+      /** Pressed with the measure tool (#921): a tap places a point, not the selection. */
+      measuring?: boolean;
     } | null = null;
     /** The last tap on empty floor by a finger; any other press forgets it. */
     let lastTap: (Point & { time: number }) | null = null;
@@ -455,9 +486,11 @@ export function useCanvas2DInteraction(
       const wallMove = wallHold?.started ? paramsRef.current.wallMovePreview?.() : null;
       const items = session ? overlayGhostPlacements(activeFloor.items, session.latest) : (wallMove?.items ?? activeFloor.items);
       const keepOut = floorKeepOut(layout, planFloorIndex(layout.floors, activeFloor));
-      const draft = zoneGesture?.started
+      const draft = zoneGesture?.started && !zoneGesture.ground
         ? zoneFromCorners(zoneGesture.start, zoneGesture.latest, layout.width, layout.height, layout.cutout)
         : null;
+      const groundKind = zoneGesture?.started ? zoneGesture.ground : undefined;
+      const groundRect = groundKind && zoneGesture ? groundFromCorners(zoneGesture.start, zoneGesture.latest, layout) : null;
       const edit = zoneEdit?.started ? zoneEdit : null;
       const zones = edit
         ? { zones: (activeFloor.zones ?? []).map((zone) => (zone.id === edit.zoneId ? { ...zone, ...edit.latest } : zone)) }
@@ -474,6 +507,7 @@ export function useCanvas2DInteraction(
         showHeatmap: view.showHeatmap,
         showFloorBelow: view.showFloorBelow,
         zoneDraft: draft,
+        groundDraft: groundKind && groundRect ? { rect: groundRect, kind: groundKind } : null,
         roomsToName,
         selectedZoneId,
         selectedWallId,
@@ -520,6 +554,21 @@ export function useCanvas2DInteraction(
     const finishZone = (session: ZoneGesture, commit: boolean): void => {
       zoneGesture = null;
       const p = paramsRef.current;
+      // A garden surface (#924): laid where the rule lets it lie, or the reason said.
+      if (session.ground) {
+        if (!session.started) return;
+        releaseCapture(session.pointerId);
+        // The tool may have ended mid-drag (Esc, EXPLORE): then nothing is laid.
+        const live = getGroundDrawKind() !== null && !p.exploring;
+        const drawn = commit && live ? drawnGround(session.start, session.latest, p.layout) : null;
+        if (drawn && 'rect' in drawn) {
+          p.onGroundAdded?.(layoutActions.addGround({ kind: session.ground, ...drawn.rect }));
+          return;
+        }
+        if (drawn) p.onZoneRefused?.(GROUND_REFUSAL_MESSAGES[drawn.refusal]);
+        schedulePaint();
+        return;
+      }
       if (!session.started) {
         const room = commit && !session.tapZoneId ? roomAt(p.roomsToName ?? [], session.start.x, session.start.z) : null;
         if (room) {
@@ -704,6 +753,23 @@ export function useCanvas2DInteraction(
         p.onWallPress?.(world.x, world.z);
         return;
       }
+      // The garden-surface tool (#924) claims the press as zone drawing does.
+      const groundKind = getGroundDrawKind();
+      if (groundKind && !p.exploring) {
+        p.onInteriorWallSelect?.(null);
+        zoneGesture = {
+          pointerId: event.pointerId,
+          downClientX: event.clientX,
+          downClientY: event.clientY,
+          threshold: dragThresholdPx(event.pointerType),
+          started: false,
+          start: world,
+          latest: world,
+          tapZoneId: null,
+          ground: groundKind,
+        };
+        return;
+      }
       // Zone-draw mode (#155) claims the press: the rectangle starts here
       // and no item is selected or moved underneath it.
       if (p.view.drawZoneMode && !p.exploring) {
@@ -729,6 +795,13 @@ export function useCanvas2DInteraction(
         // A tap on a selected polygon zone steps down, as one on a rectangle's body does.
         const below = selected?.outline ? selected.id : undefined;
         zoneGesture = { ...press, start: world, latest: world, tapZoneId: zoneAt(zones, world.x, world.z, below)?.id ?? null };
+        return;
+      }
+      // The measure tool (#921): a tap places a point where it lifts, a drag
+      // on a zoomed plan pans. Nothing is selected or moved underneath.
+      if (p.view.measurementMode) {
+        const at = local(event);
+        pan = { pointerId: event.pointerId, last: at, down: at, threshold: dragThresholdPx(event.pointerType), started: false, tapBefore, touch: event.pointerType === 'touch', measuring: true };
         return;
       }
       // The selected wall's ends sit on top of whatever is under them (#718).
@@ -828,6 +901,11 @@ export function useCanvas2DInteraction(
     /** A mouse over the selected zone shows what a press there would do. */
     const showZoneCursor = (event: PointerEvent): void => {
       const p = paramsRef.current;
+      // The garden-surface tool (#924) draws from wherever it is pressed.
+      if (getGroundDrawKind() && !p.exploring) {
+        setZoneCursor('crosshair');
+        return;
+      }
       const selected = p.view.drawZoneMode ? p.activeFloor.zones?.find((zone) => zone.id === p.selectedZoneId) : undefined;
       const hoverFit = selected ? measureFit(canvas) : null;
       const world = hoverFit && toWorld(event.clientX, event.clientY, hoverFit);
@@ -906,6 +984,15 @@ export function useCanvas2DInteraction(
         // Between presses nothing measured the fit: read it now.
         const world = wallPress ? worldAt(event) : toWorld(event.clientX, event.clientY, measureFit(canvas));
         if (world) paramsRef.current.onWallPointerMove?.(world.x, world.z);
+        return;
+      }
+      // The measure tool's tip follows a mouse (#921); a finger has no hover.
+      if (paramsRef.current.view.measurementMode && event.pointerType !== 'touch' && !houseGestureHeld()) {
+        if (!pointerOnCanvas(canvas, event.clientX, event.clientY)) return;
+        // Between presses nothing measured the fit: read it now.
+        const hoverFit = measureFit(canvas);
+        const world = toWorld(event.clientX, event.clientY, hoverFit);
+        paramsRef.current.onMeasureHover?.(world ? measureSnap(world, event, hoverFit) : null);
         return;
       }
       const edit = zoneEdit;
@@ -1016,6 +1103,36 @@ export function useCanvas2DInteraction(
         releaseCapture(press.pointerId);
         // A cancelled press changes nothing.
         if (press.started || event.type !== 'pointerup') return true;
+        if (press.measuring) {
+          // A measure point is a tap (#921), like a calibration point.
+          const at = local(event);
+          const world = Math.hypot(at.x - press.down.x, at.y - press.down.y) <= TAP_SLOP_PX ? worldAt(event) : null;
+          const p = paramsRef.current;
+          if (!world || !p.view.measurementMode) return true;
+          const snap = measureSnap(world, event);
+          // A pin is picked only between measurements, and only where nothing snaps.
+          const pinned = !p.measureInProgress && snap.kind === 'none' ? hitPinnedDimension(p.activeFloor, world, hitSlopWorld(fit, 1)) : null;
+          if (pinned) {
+            p.onPinSelect?.(pinned.id);
+            return true;
+          }
+          // A finger's double tap on empty floor still goes back to the fit (#678).
+          if (snap.kind === 'none' && press.touch) {
+            const now = event.timeStamp || performance.now();
+            const before = press.tapBefore;
+            const double = before !== null && now - before.time < DOUBLE_TAP_MS && Math.hypot(at.x - before.x, at.y - before.y) < DOUBLE_TAP_SLOP_PX;
+            lastTap = double ? null : { ...at, time: now };
+            if (double) {
+              // The first tap placed a point; the pair meant the zoom.
+              p.onMeasureTapUndo?.();
+              setPlanZoom(canvas, NO_PLAN_ZOOM);
+              return true;
+            }
+          }
+          p.onPinSelect?.(null);
+          p.onMeasurePoint?.(snap);
+          return true;
+        }
         if (!press.calibrating) {
           tapEmptyFloor(press, event);
           return true;
@@ -1081,8 +1198,9 @@ export function useCanvas2DInteraction(
           rafId = null;
         }
         // pointercancel (the browser took the pointer for a scroll or a
-        // touch gesture) discards the rectangle rather than naming it.
-        finishZone(zone, event.type === 'pointerup');
+        // touch gesture) discards the rectangle rather than naming it. A
+        // garden surface let go over the HUD isn't laid either.
+        finishZone(zone, event.type === 'pointerup' && (!zone.ground || pointerOnCanvas(canvas, event.clientX, event.clientY)));
         return;
       }
       const session = gesture;
@@ -1143,11 +1261,12 @@ export function useCanvas2DInteraction(
       if (own(zoneGesture) && !zoneGesture!.started) zoneGesture = null;
       if (own(zoneEdit) && !zoneEdit!.started) zoneEdit = null;
       if (own(pan) && !pan!.started) {
-        // The press still landed on empty floor.
+        // The press still landed on empty floor; a measure press places nothing.
         const press = pan!;
         pan = null;
-        tapEmptyFloor(press, event);
+        if (!press.measuring) tapEmptyFloor(press, event);
       }
+      if (paramsRef.current.view.measurementMode) paramsRef.current.onMeasureHover?.(null);
       if (own(wallHold) && !wallHold!.started) {
         const { select } = wallHold!;
         wallHold!.gesture.end(false);

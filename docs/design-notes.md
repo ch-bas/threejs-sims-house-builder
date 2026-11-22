@@ -480,7 +480,7 @@ to respect.
   draw calls). Walkers are seeded per storey, so storeys don't hold
   clones. A storey that
   stops being drawn parks its walkers (hidden, not stepped, ignored by the
-  camera cones); a floor switch, a climb in EXPLORE or a storey-height edit
+  camera cones; the ground storey's walkers out in the garden excepted, #913); a floor switch, a climb in EXPLORE or a storey-height edit
   (which lifts them with their floor) never respawns anyone. Only deleting
   the storey, leaving it no free floor, or turning walkers off removes them.
 - **The player is one more person (#585).** `lib/npc-bodies` is a small
@@ -515,7 +515,7 @@ to respect.
   away, so the player on a bed keeps walkers off it and the other way
   round (`bedId` in `lib/npc-bodies`). The spots are built
   with the seats when the floor's items change, never per frame. Still to
-  come: the garden (the nav grid is indoors only) and a mood marker.
+  come: a mood marker (the garden came with #913).
   Hygiene (#904) runs out in 200 s and is met standing at the toilet, the
   shower, the bath or the basin, with the reach clip. A computer is fun
   used like a TV, from a seat facing it within 1.3 m (the desk chair), or
@@ -525,10 +525,28 @@ to respect.
   the straight walk from there to where the feet go (0.24 m in front of the
   hips) keeps 0.1 m from every other item and partition. A chair tucked
   under a table, or three along one side, would put the feet under the
-  table: it keeps its blocked front and the walkers pass it over.
+  table: tested again with the one table it faces left out (every other
+  item and partition still counts), it gets its side or rear way in and
+  `mealOnly`: the walker pulls it out to eat, and only to eat (`planSeat`,
+  the screens and every need but the meal pass it over), so the Dining set
+  and the Kitchen template feed their walkers. Any other blocked chair (under
+  a counter, backed into a table) keeps its blocked front and is passed
+  over. The hips stay on the chair as placed, so a chair pushed right in
+  (the Kitchen template's) seats its eater close in at the table.
+  The dining-table chain (#904, second step): a chair or dining chair
+  whose sitter faces a dining table or a table (the point 0.6 m in front
+  of the hips over its top) is a meal spot, `meal: true`. It is never a
+  stop of its own (`pickNeedSpot` and `unmetNeeds` skip it: a table alone
+  feeds nobody). A walker that fetched food at the fridge or the stove
+  asks `planMeal` before anything else: at a mealtime always, between
+  meals four times in ten (`sitsToEat`), it heads for a free chair there
+  (`pickMealSpot`, nearer likelier, the usual one-sitter-per-seat claim)
+  and sits for the hunger use. No chair free: it eats standing and goes
+  on, as before. No new mode: the seat modes do the rest.
 - **The house says what its walkers lack (#906).** `householdLacks` runs
   `findNpcSeats` and `findNeedSpots` per storey over the items standing on
-  the building (walkers stay indoors and keep to their storey), and
+  the building (walkers keep to their storey; the garden counts since
+  #913), and
   `unmetNeeds` names the needs no spot meets (a toilet alone is not
   somewhere to wash: that takes a basin, a shower or a bath). Statistics
   shows them as a Household block, led by "Walkers would go without:"
@@ -536,8 +554,46 @@ to respect.
   for them, "First floor: nothing yet"), from
   the held editor layout like the room scores, so it costs nothing while
   the drawer is closed and nothing at runtime. Reachability is not checked:
-  a fridge boxed in by furniture still counts. The thought bubbles and the
-  walker card are the next step.
+  a fridge boxed in by furniture still counts.
+  Second step: bubbles and the walker card. A walker shows a thought
+  bubble with a need's mark when that need is its most pressing, past 0.6
+  urgency (under a fifth full), and nothing it can reach meets it
+  (`strandedNeeds`, lib/walker-card: no spot for that need in its region
+  of the floor, a seat only for a walker that sits; a fridge in use still
+  counts as there, a chair at a table never counts as food). The mask is
+  worked out at each stop, at spawn and on a floor edit, never per frame.
+  No bubble while it sleeps, while it uses something or on its way to
+  meet that need, so a sleeper beside a fridge never claims it can't find
+  food. The bubbles are one sprite per walker over one canvas atlas
+  (`three/need-bubbles`, four views of one image, marked shared, freed
+  with the walkers), lower over a sitter; the step swaps the sprite's map,
+  height and `visible` and asks for a repaint only when that changed,
+  never a shadow pass (sprites cast none). No bob, so reduced motion needs
+  nothing more. Photo mode hides every bubble at once (the atlas's
+  `hidden`): photos stay clean.
+  A tap on a walker (`onWalkerTap` in drag-handlers: a walker drawn under
+  the pointer, nearer than any item and not behind a drawn wall, porch
+  box, roof or dormer, ceiling or floor, released within the drag
+  threshold) opens a card beside the tap, on the page and clear of the
+  HUD (`placeWalkerCard` against the scene occluders and an open item
+  sheet: above or below, right or left, or flush with a panel's edge,
+  nearest the first choice; on a phone it slides under the walls pill
+  rather than over it). The press is still the item's or
+  the camera's: a walker crossing in front of a sofa never turns a sofa
+  press or drag into an orbit; a tap there selects the sofa and opens the
+  card. A tap on empty floor closes the card. The card shows a first name
+  (seeds handed out in order across the house, and a step through the 32
+  names coprime with 32, so no two walkers share one), a line for what it
+  is doing, a bar per need and, with a bubble, what it can't find. The
+  walk publishes a copy to a per-editor store (`createWalkerCards`) on the
+  tap, twice a second while stepping, and on every sync (so a parked or
+  gone walker closes it under reduced motion too); a publish the card
+  would show the same (whole percents) re-renders nothing. Escape closes
+  the card in the capture phase and stops there (one step per press, not
+  a deselect too), unless a modal is open over it; back closes it on a
+  layer above the item sheet and below the drawer, so both close the card
+  before the popover. It stays out of a walk and a photo. The panel and
+  its words (`lib/walker-card-text`) load on the first tap.
 - **Walkers keep the clock (#907).** `lib/npc-schedule` reads the view's
   hour: from 23:00 to 07:00 rest counts as pressing even when met (a bias
   that raises `NEED_URGENT` for that need), and a rest at night, in a bed
@@ -556,6 +612,55 @@ to respect.
   set by hand (`[` / `]`); with the day cycling a night lasts 8 s
   (game-time decay is the next step). The rig has no lying clip: a sleeper sits on
   the bed's end.
+- **Walkers step out into the garden (#913).** On the ground storey the
+  nav gets a second grid of 0.3 m cells over the lot (`lib/npc-garden`
+  reads it off the site): `groundLot`, trimmed to the house and the garden
+  things with 2 m round them, so a big lot costs a phone nothing it
+  doesn't use. Its cells are numbered on from the indoor grid's in one
+  index space, so every nav query, the region labels and A* (costs now in
+  metres) cross both, and a door with indoors on one side and the lot on
+  the other (an outside door, the porch's door, a door onto the L's notch)
+  joins the free cell 0.55 m either side when the straight walk through the
+  middle of its walkable span (a sliding door's open side) keeps clear of
+  everything and the lot there is within the walk world's step of the
+  floor; the route passes that point. Doors are checked before the lot is
+  rasterised, so a house with none usable never builds it. The house and 0.4 m round it
+  is no lot, the porch on the ground storey is; the shell's runs, the porch
+  cheeks and the neighbours' houses join the colliders (the porch and cut
+  corner keep-out boxes leave them), fences and hedges block as items do,
+  and a cell steps to a neighbour only within the walk world's step, so the
+  side of the porch steps is a wall. Feet follow `outsideGroundY` (the
+  slope, the porch and its steps), eased in from the floor's height over
+  the 0.5 m by the walls, so nobody pops up a ledge in a doorway. Walkers
+  are held to the lot's own rectangle. Walkers spawn indoors; outdoors they
+  wander only to garden things (not fences or hedges) and garden surfaces,
+  the rest of the lawn is crossed. The garden bench is somewhere to rest;
+  the barbecue (at its front), the pool (at the middle of a long side) and
+  the picnic table (two places a bench, facing it, `findGardenSeats`) are fun.
+  With no usable door, or nothing in the garden, the nav is the indoor one
+  exactly as before. In rain or snow, and after dark, the garden is closed
+  (`gardenOpen`: open from sunrise, 06:00, to the end of the scene's
+  twilight, 19:30, `GARDEN_OPENS`/`GARDEN_CLOSES` after three/lighting's
+  sun, so nobody is out in the dark before bedtime): `nav.outdoorOpen` turns its cells down as destinations
+  and the walk hands the step the indoor seats and spots, so a sitter on
+  the bench stands up and everyone comes in at the next stop. The sync
+  knows the weather and the hour too, so a spawn or an edit in the rain
+  never sends anyone out, and the thought bubbles (#906) always read the
+  set a walker can use now. A walker cut off outside (a fence run put
+  between it and the door: its region holds no indoor cell; or outside the
+  walls on a nav with no lot left) is put on the nearest free floor
+  indoors, on its feet, never walked through a wall. `householdLacks`
+  counts the garden spots a walker reaches through a door (rest on the
+  bench, fun outside), building the ground storey's nav only when that
+  could fill a gap, so Statistics and the challenges agree with the
+  walkers. Garden walkers are the ground storey's, but the outside is
+  drawn whichever storey is: with an upper storey active, those out on the
+  lot keep walking and showing (they cast, block the player and take a
+  card), while its walkers indoors stay parked, so a phone pays only for
+  the ones it can see (`outdoorsOnly`). One that comes in off the lot then
+  parks where it stands, just inside the door, and walks on when the
+  ground storey is drawn again; nobody walks through a wall or shows
+  indoors meanwhile; the held reveal (#585) leaves the parked alone.
 - **The GLB is the building, not the view.** The live scene holds only what
   the view shows: the active storey, the walls the cutaway left up, the
   roof in "Up" mode, ghosts in "All floors". `buildExportBuilding`
@@ -581,6 +686,19 @@ to respect.
   immutable 1×1 storage, and a larger image can't be written into it.
   A decode that lands after the floor was built therefore swaps in a new
   texture on its own `TextureSource` and disposes the placeholder one (#521).
+- **A traced plan is the drawing or an underlay.** `layout.floorPlanMode`
+  absent (or `'drawing'`) keeps the old picture: the image is the ground
+  floor in 3D, and that storey builds no outer walls, foundation, porch,
+  reveals or room floors. `'underlay'` makes it a guide on the 2D plan
+  only (plan and minimap, over the room floors, under the grid and walls,
+  at the plan opacity); the house builds as usual, and the blueprint and
+  GLB leave it out. Every "traced ground floor" branch asks `planIsDrawing`
+  (`lib/floor-plan-fit.ts`), and the 3D floor takes its image from
+  `drawnFloorPlanImage`. The mode belongs to the image like the
+  calibration: it goes when the image is removed, in share links and on a
+  whole-house load without the image (restore points keep it for the
+  re-attach), but stays when the image is replaced. An unknown value is
+  dropped on load (#920).
 - **The hard budget derives "spent".** With `layout.budget` absent the
   budget only advises, as before. Switched on, it holds one number,
   `writeOff`: what selling back at 80 % has lost. Spent is the price of

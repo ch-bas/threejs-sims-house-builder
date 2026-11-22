@@ -21,6 +21,11 @@ function itemExists(id: string): boolean {
   return layoutStore.getState().layout.floors.some((floor) => floor.items.some((item) => item.id === id));
 }
 
+/** A garden surface (#924) chimes like an item: placed, or refused by the reducer. */
+function groundExists(id: string): boolean {
+  return layoutStore.getState().layout.grounds?.some((ground) => ground.id === id) ?? false;
+}
+
 export interface UseItemCommandsOptions {
   layout: RoomLayout;
   activeFloor: FloorLayout;
@@ -319,7 +324,7 @@ export function useItemCommands({
   const chimePlacement = useCallback(
     (id: string): string => {
       if (!id) return id;
-      if (!itemExists(id)) {
+      if (!itemExists(id) && !groundExists(id)) {
         playCue('refused');
         return '';
       }

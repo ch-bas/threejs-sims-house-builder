@@ -86,6 +86,8 @@ async function encodeShareable(layout: RoomLayout, origin: string): Promise<stri
   delete shareable.floorPlanImage;
   // Its calibration goes with it (#726).
   delete shareable.floorPlanTransform;
+  // And its mode (#920): a kept copy's next upload starts as the drawing.
+  delete shareable.floorPlanMode;
   const json = JSON.stringify(shareable);
   const compressed = await deflateRaw(new TextEncoder().encode(json));
   return `${origin}${HASH_PREFIX}${V2_PREFIX}${bytesToBase64Url(compressed)}`;

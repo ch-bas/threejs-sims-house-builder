@@ -39,6 +39,7 @@ import type {
   FurnitureItem,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanMode,
   InteriorWall,
   RoofRidge,
   RoofStyle,
@@ -81,6 +82,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     setFloorPlan: (image) => dispatch({ type: 'setFloorPlan', image }),
     setFloorPlanOpacity: (opacity) => dispatch({ type: 'setFloorPlanOpacity', opacity }),
     setFloorPlanFitMode: (mode: FloorPlanFitMode) => dispatch({ type: 'setFloorPlanFitMode', mode }),
+    setFloorPlanMode: (mode: FloorPlanMode) => dispatch({ type: 'setFloorPlanMode', mode }),
     setFloorPlanTransform: (transform) => dispatch({ type: 'setFloorPlanTransform', transform }),
     setRoofStyle: (style: RoofStyle) => dispatch({ type: 'setRoofStyle', style }),
     setCutout: (cutout) => dispatch({ type: 'setCutout', cutout }),
@@ -138,6 +140,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     clearInteriorWalls: () => dispatch({ type: 'clearInteriorWalls' }),
     toggleExteriorWall: (wallId: WallId) => dispatch({ type: 'toggleExteriorWall', wallId }),
     rotateSelection: (ids, radians) => dispatch({ type: 'rotateSelection', ids, radians }),
+    transferRoom: (transfer) => dispatch({ type: 'transferRoom', transfer }),
     // The group id is rolled here so the reducer stays pure (#154).
     setGroup: (ids) => {
       const groupId = nextId('group');
@@ -186,6 +189,22 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     },
     updateZone: (id, patch) => dispatch({ type: 'updateZone', id, patch }),
     removeZone: (id) => dispatch({ type: 'removeZone', id }),
+
+    // Pinned dimensions (#921).
+    addDimension: (dimension) => {
+      const id = nextId('dim');
+      dispatch({ type: 'addDimension', dimension: { ...dimension, id } });
+      return id;
+    },
+    removeDimension: (id) => dispatch({ type: 'removeDimension', id }),
+    // Garden surfaces (#924).
+    addGround: (ground) => {
+      const id = nextId('ground');
+      dispatch({ type: 'addGround', ground: { ...ground, id } });
+      return id;
+    },
+    updateGround: (id, patch) => dispatch({ type: 'updateGround', id, patch }),
+    removeGround: (id) => dispatch({ type: 'removeGround', id }),
   };
 
   return {

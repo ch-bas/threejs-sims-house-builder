@@ -6,6 +6,7 @@ import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { planContactShadow } from '../lib/contact-shadow';
 import { facadeColorOf, withPorchFacade } from '../lib/facade';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
+import { drawnFloorPlanImage, planIsDrawing } from '../lib/floor-plan-fit';
 import { cutoutRect } from '../lib/footprint';
 import {
   diffFurniture,
@@ -16,6 +17,7 @@ import {
   planFurniture,
 } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
+import { groundsFromSceneKey, groundsSceneKey } from '../lib/grounds';
 import { mountBand } from '../lib/mount-band';
 import { LAMP_POOL_SIZE, collectLampLights, nightGlowPlan, planLampPool, roomLampReach, type LampLight, type NightGlowPlan } from '../lib/night-lights';
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
@@ -53,11 +55,12 @@ import { clearMeasurement, renderMeasurement } from '../three/measurement';
 import { buildNeighbours, removeNeighbours } from '../three/neighbours';
 import { applyNightGlow } from '../three/night-glow';
 import { setOutdoorVisible } from '../three/outdoor';
-import { revealSetbacks } from '../three/reveals';
+import { openingOnHiddenWall, revealSetbacks } from '../three/reveals';
 import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeRoof, setRoofOnStorey, setRoofShellHidden } from '../three/roof';
-import { OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
+import { HIDDEN_OWNER_KEY, OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { STAIRWELL_RAIL_TAG, buildStairwellRail, clearStairwellRails } from '../three/stairwell-rail';
+import { applyTvScreens } from '../three/tv-screens';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
 import { usePlanCalibration } from './plan-calibration';
 import { observeSceneOccluders, planFit } from './scene-occluders';
@@ -130,6 +133,8 @@ interface PlannedFurniture {
   owner?: OpeningOwner;
   /** How far a door or window stands back in its reveal (#758). */
   revealSetback: number;
+  /** In an outer wall the storey hides through Wall visibility (#965). */
+  ownerHidden: boolean;
 }
 
 /** How far the viewer moves before the lamp pool goes to the lamps nearest them (#393). */
@@ -170,6 +175,10 @@ export interface UseSceneEffectsParams {
   stampArmed: boolean;
   wallSnapResult: { point: { x: number; z: number }; kind: string } | null;
   measurementPoints: ReadonlyArray<{ x: number; z: number }>;
+  /** Where the measure tool's next point would land on the plan (#921), snapped. */
+  measureTip?: { point: { x: number; z: number }; kind: string } | null;
+  /** The pinned dimension picked to unpin (#921). */
+  selectedDimensionId?: string | null;
   /**
    * The walker is indoors (#446): of the storeys every one of which the
    * walkthrough builds, show only its own and the ones directly above and
@@ -186,9 +195,12 @@ export interface UseSceneEffectsParams {
   walkLampStorey?: number;
   /** Lamps the walker switched off in EXPLORE (#910), by item id: session state, never the house's. */
   lampsOff?: ReadonlySet<string>;
+  /** TVs the walker switched on in EXPLORE (#910), by item id: session state too. */
+  tvsOn?: ReadonlySet<string>;
 }
 
 const NO_LAMPS_OFF: ReadonlySet<string> = new Set();
+const NO_TVS_ON: ReadonlySet<string> = new Set();
 
 export function useSceneEffects({
   isReady,
@@ -217,15 +229,21 @@ export function useSceneEffects({
   stampArmed,
   wallSnapResult,
   measurementPoints,
+  measureTip = null,
+  selectedDimensionId = null,
   walkIndoors = false,
   walkNearStairs = false,
   walkLampStorey,
   lampsOff = NO_LAMPS_OFF,
+  tvsOn = NO_TVS_ON,
 }: UseSceneEffectsParams): void {
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   // The furniture groups in the scene by furnitureMeshKey, with the build
   // key each was built from (#404).
   const furnitureMeshesRef = useRef(new Map<string, { group: ThreeNS.Group; buildKey: string }>());
+  // TVs switched on (#910), for the furniture effect, which isn't keyed on them.
+  const tvsOnRef = useRef(tvsOn);
+  tvsOnRef.current = tvsOn;
 
   // Storey heights stack every floor's Y, the wall heights, and the roof
   // base (#202). The structural effects are keyed on narrow signatures, not
@@ -317,9 +335,12 @@ export function useSceneEffects({
 
   // Which outer walls each storey builds: a door or window in one stands back
   // in its reveal (#758).
+  // #920: only a plan that is the drawing reaches the 3D shell; an underlay is 2D only.
+  const planDrawn = planIsDrawing(layout);
+  const drawnPlan = planDrawn ? layout : undefined;
   const revealWallsKey = useMemo(
-    () => JSON.stringify([!!layout.floorPlanImage, layout.floors.map((floor) => floor.hiddenWalls ?? [])]),
-    [layout.floorPlanImage, layout.floors]
+    () => JSON.stringify([planDrawn, layout.floors.map((floor) => floor.hiddenWalls ?? [])]),
+    [planDrawn, layout.floors]
   );
 
   const interiorWallsKey = useMemo(
@@ -429,7 +450,7 @@ export function useSceneEffects({
     // The building no longer has a floor plan: release the decoded multi-MB
     // image. (Only here — see clearFloorPlanImageCache for why buildRoom must
     // not drop it per image-less call.)
-    if (!layout.floorPlanImage) clearFloorPlanImageCache();
+    if (!planDrawn) clearFloorPlanImageCache();
 
     const floorsToRender = allFloors
       ? layout.floors.map((floor, index) => ({ floor, index }))
@@ -479,7 +500,7 @@ export function useSceneEffects({
         ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
         floorOpenings,
         zonePatches: zoneFloorPatches(floor, floorKeepOut(entranceBuilding, index)),
-        floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
+        floorPlanImage: drawnFloorPlanImage(layout, index),
         floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
         floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
         floorPlanTransform: layout.floorPlanTransform,
@@ -494,7 +515,7 @@ export function useSceneEffects({
       // exactly when that wall is: not on the traced ground floor (buildRoom
       // builds no walls there) and not when the north wall is hidden — the
       // plan dashes the recess then, like the rest of the wall (#392).
-      const tracedGround = index === 0 && !!layout.floorPlanImage;
+      const tracedGround = index === 0 && planDrawn;
       if (entrance && index === entrance.floorIndex && !tracedGround) {
         const northHidden = floor.hiddenWalls?.includes('north') ?? false;
         for (const group of buildEntrance(THREE, {
@@ -533,7 +554,7 @@ export function useSceneEffects({
     // when interior walls do — without this dep a door claimed by a new
     // interior wall stays double-cut into the exterior wall (#119).
     layout.width, layout.height, cutoutKey, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
-    layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode, layout.floorPlanTransform,
+    drawnPlan?.floorPlanImage, drawnPlan?.floorPlanOpacity, drawnPlan?.floorPlanFitMode, drawnPlan?.floorPlanTransform,
     view.floorPlan3DEffect, allFloors, ghostOtherFloors,
     shellActiveKey,
   ]);
@@ -671,7 +692,7 @@ export function useSceneEffects({
         depth: layout.height,
         cutout: layout.cutout,
         hiddenWalls: floor?.hiddenWalls,
-        noWalls: index === 0 && !!layout.floorPlanImage,
+        noWalls: index === 0 && planDrawn,
       };
       const setbacks = revealSetbacks(items, owners, revealContext, storeyH);
       items.forEach((item, i) => {
@@ -683,8 +704,10 @@ export function useSceneEffects({
         const key = furnitureMeshKey(index, item.id);
         const owner = owners.get(item.id);
         const revealSetback = setbacks.get(item.id) ?? 0;
+        // #965: a door or window in a wall hidden through Wall visibility goes with it.
+        const ownerHidden = openingOnHiddenWall(owner, revealContext);
         const standY = (item.position ? gardenGroundY(item, index, item.position, site) : null) ?? floorY;
-        planned.set(key, { item, fitted, collision, floorIndex: index, standY, storeyH, isActive, revealSetback, ...(owner ? { owner } : {}) });
+        planned.set(key, { item, fitted, collision, floorIndex: index, standY, storeyH, isActive, revealSetback, ownerHidden, ...(owner ? { owner } : {}) });
         nextBuildKeys.set(
           key,
           furnitureBuildKey({ item: fitted, collision, storeyHeight: storeyH, ghosted: ghostOtherFloors && !isActive, peopleModelReady, revealSetback })
@@ -738,6 +761,9 @@ export function useSceneEffects({
         delete group.userData.ownerTag;
         delete group.userData.wallId;
       }
+      // #965: hidden with its wall (applyWallDisplay reads it).
+      if (spec.ownerHidden) group.userData[HIDDEN_OWNER_KEY] = true;
+      else delete group.userData[HIDDEN_OWNER_KEY];
       group.userData.locked = spec.item.locked === true || !spec.isActive;
       // Inactive-floor groups are excluded from pointer raycasts entirely
       // (see drag-handlers' furnitureList, #122).
@@ -755,6 +781,8 @@ export function useSceneEffects({
     if (camera) applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
     scene.userData[FURNITURE_REVISION_KEY] =
       ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
+    // A TV rebuilt while switched on comes back lit (#910).
+    applyTvScreens(scene, tvsOnRef.current);
     if (changed) requestShadowUpdate();
     // Keyed on the plan's signatures, not `layout.floors` identity: wall
     // paint, floor patterns and interior walls give the floors a new
@@ -1013,6 +1041,8 @@ export function useSceneEffects({
   // Read once per choice: it asks matchMedia.
   const quality = useMemo(() => currentQuality(view.renderQuality), [view.renderQuality]);
   const { groundTile, richScenery } = quality;
+  // Garden surfaces (#924): what the lot draws of them, as a value.
+  const groundsKey = useMemo(() => groundsSceneKey(layout), [layout]);
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -1026,11 +1056,12 @@ export function useSceneEffects({
       ...(layout.terrain ? { terrain: layout.terrain } : {}),
       ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
       ...(layout.frontage ? { frontage: layout.frontage } : {}),
+      ...(groundsKey ? { grounds: groundsFromSceneKey(groundsKey) } : {}),
     });
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage, groundTile, richScenery]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage, groundTile, richScenery, groundsKey]);
 
   // The street of neighbours (#202, #310). Never touched by applyWallDisplay,
   // so they stay put in every wall-display mode (#201). Keyed on exactly what
@@ -1278,7 +1309,7 @@ export function useSceneEffects({
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.width, layout.height, cutoutKey, allFloors, ghostOtherFloors,
     // The rest of the shell rebuild's keys: any rebuild makes new wall meshes.
-    layout.terrain, layout.entrance, layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode, layout.floorPlanTransform,
+    layout.terrain, layout.entrance, drawnPlan?.floorPlanImage, drawnPlan?.floorPlanOpacity, drawnPlan?.floorPlanFitMode, drawnPlan?.floorPlanTransform,
     view.floorPlan3DEffect, shellActiveKey,
   ]);
 
@@ -1308,6 +1339,14 @@ export function useSceneEffects({
     view.timeOfDay, itemsKey, collisionKey, ghostOtherFloors, allFloors, activeFloorIndex, layout.roof,
     neighboursKey, peopleModelReady,
   ]);
+
+  // TV screens switched on in EXPLORE (#910): material values only. The
+  // furniture effect lights a rebuilt TV from the ref; a switch lands here.
+  useEffect(() => {
+    if (!isReady) return;
+    const scene = sceneRef.current;
+    if (scene && applyTvScreens(scene, tvsOn)) invalidate();
+  }, [isReady, invalidate, sceneRef, tvsOn]);
 
   // The bounce of a lit room around a walker inside it (#759): a lamp on the
   // walker's storey within reach and with no partition between, never a
@@ -1479,8 +1518,13 @@ export function useSceneEffects({
   const calibrating = calibration !== null;
   // The plan's lengths and areas follow the unit picked in View options (#725).
   const lengthUnit = useLengthUnit();
-  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedWallSide' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost' | 'calibrationPoints' | 'floorPlanUnclipped'>>({});
+  const planEditRef = useRef<Pick<Render2DOptions, 'selectedWallId' | 'selectedWallSide' | 'selectedZoneId' | 'roomsToName' | 'wallPreview' | 'stampGhost' | 'calibrationPoints' | 'floorPlanUnclipped' | 'measurePreview' | 'selectedDimensionId'>>({});
   planEditRef.current = {
+    // The measure tool's points and the pointer's snapped tip (#921).
+    measurePreview: view.measurementMode
+      ? { points: measurementPoints, tip: measureTip?.point ?? null, snapped: measureTip !== null && measureTip.kind !== 'none' }
+      : null,
+    selectedDimensionId,
     calibrationPoints,
     floorPlanUnclipped: calibrating,
     selectedWallId,
@@ -1496,7 +1540,7 @@ export function useSceneEffects({
     // Once a frame, however many moves arrive in it.
     const frame = requestAnimationFrame(() => paint2DRef.current?.());
     return () => cancelAnimationFrame(frame);
-  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedWallSide, selectedZoneId, roomsToName, stampGhost, stampArmed, calibrationPoints, calibrating]);
+  }, [view.drawWallMode, wallAnchor, wallTip, selectedWallId, selectedWallSide, selectedZoneId, roomsToName, stampGhost, stampArmed, calibrationPoints, calibrating, view.measurementMode, measurementPoints, measureTip, selectedDimensionId]);
   useEffect(() => {
     invalidate();
     if (!view.view2D) return undefined;

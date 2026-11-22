@@ -7,9 +7,10 @@ import {
 } from '../lib/constants';
 import { blockedDoorIds } from '../lib/door-clearance';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { floorPlanFitOf, floorPlanPlacement } from '../lib/floor-plan-fit';
+import { floorPlanFitOf, floorPlanPlacement, planIsDrawing } from '../lib/floor-plan-fit';
 import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
 import { areaInUnit, areaUnitSymbol, formatArea, formatMetres, formatSize, getDisplayUnit, type LengthUnit } from '../lib/format';
+import { onLotRun } from '../lib/item-run';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
 import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
@@ -17,13 +18,16 @@ import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitS
 import { roomScoreLine, type RoomScore } from '../lib/room-score';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
+import { drawGroundDraft, drawGrounds } from './ground-plan';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawSelectedWall, drawStampGhost, drawWallPreview, drawWallSideMark, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
+import { drawMeasurePreview, drawPinnedDimensions, type MeasurePreview } from './plan-measure';
 import { zoomedTransform, type PlanZoom } from './plan-zoom';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import type { GroundRect } from '../lib/grounds';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
-import type { FloorLayout, FurnitureItem, RoomLayout, Vec2, WallId } from '../lib/types';
+import type { FloorLayout, FurnitureItem, GroundKind, RoomLayout, Vec2, WallId } from '../lib/types';
 import type { WallSide } from '../lib/wall-sides';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
@@ -44,6 +48,8 @@ export interface Render2DOptions {
   showFloorBelow?: boolean;
   /** The zone rectangle being dragged out, drawn over everything as a dashed outline (#155). */
   zoneDraft?: ZoneRect | null;
+  /** The garden surface being dragged out (#924), drawn over everything like the zone draft. */
+  groundDraft?: { rect: GroundRect; kind: GroundKind } | null | undefined;
   /** Detected rooms with no zone, marked in zone mode for "Name this room" (#719). */
   roomsToName?: readonly DetectedRoom[] | undefined;
   /** The face of the selected wall that paint goes to, marked on the plan (#720). */
@@ -58,6 +64,10 @@ export interface Render2DOptions {
   wallPreview?: WallPreview | null | undefined;
   /** The room stamp in hand (#724). */
   stampGhost?: StampGhost | null | undefined;
+  /** The measure tool's points (#921), drawn over everything. */
+  measurePreview?: MeasurePreview | null | undefined;
+  /** The pinned dimension picked to unpin (#921). */
+  selectedDimensionId?: string | null | undefined;
   /** The points picked to calibrate the traced plan (#726), world metres. */
   calibrationPoints?: readonly Vec2[] | undefined;
   /**
@@ -257,6 +267,8 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale, options.floorPlanUnclipped === true);
   drawZoneFloors(ctx, layout, floor, offsetX, offsetY, scale);
+  // #920: a traced plan kept as an underlay lies over the room floors, under the grid and walls.
+  if (layout.floorPlanMode === 'underlay') drawFloorPlanImage(ctx, layout, floor, offsetX, offsetY, scale, options.floorPlanUnclipped === true);
   if (options.showFloorBelow) drawFloorBelow(ctx, layout, planFloorIndex(layout.floors, floor), offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
   // The stairwell the floor below cuts through this slab (#290), under everything placed over it.
@@ -265,6 +277,8 @@ export function render2DTopDown(options: Render2DOptions): void {
   // walls but under the furniture, like a plan's room names (#155).
   drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
+  // Garden surfaces (#924): behind what is painted so far, so outside only.
+  drawGrounds(ctx, layout, floor, { scale, offsetX, offsetY });
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
   drawOpeningGaps(ctx, layout, floor, offsetX, offsetY, scale, viewWidth, viewHeight);
   const scoreLines = drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true, unit, options.thumbnail ? undefined : options.roomScores);
@@ -285,6 +299,8 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.showMeasurements) {
     drawRoomDimensions(ctx, layout, offsetX, offsetY, scale, unit);
   }
+  // Pinned dimensions (#921): the plan and the blueprint; too small to read on a thumbnail.
+  if (!options.thumbnail) drawPinnedDimensions(ctx, layout, floor, offsetX, offsetY, scale, unit, options.selectedDimensionId ?? null);
 
   if (heatmapPeak > 0) {
     const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
@@ -308,6 +324,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.zoneDraft) {
     drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale, unit);
   }
+  if (options.groundDraft) drawGroundDraft(ctx, layout, options.groundDraft, { scale, offsetX, offsetY }, unit);
 
   const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
   if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale, options.selectedWallRefused);
@@ -317,6 +334,8 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.wallPreview) drawWallPreview(ctx, layout, options.wallPreview, offsetX, offsetY, scale, unit);
   if (options.stampGhost) drawStampGhost(ctx, layout, options.stampGhost, offsetX, offsetY, scale, unit);
   if (options.calibrationPoints?.length) drawCalibrationPoints(ctx, layout, options.calibrationPoints, offsetX, offsetY, scale);
+  // The measure tool (#921).
+  if (options.measurePreview) drawMeasurePreview(ctx, layout, options.measurePreview, offsetX, offsetY, scale, unit);
 }
 
 /**
@@ -484,11 +503,11 @@ function traceZoneRings(ctx: CanvasRenderingContext2D, layout: RoomLayout, zone:
  * Rooms with a floor of their own (#720), over the storey's: the patches 3D
  * lays, so a finish stops at the stairwell and the porch here too. The plan
  * shows no floor pattern, for a room or a storey. A traced floor is the
- * drawing, so it stays clear.
+ * drawing, so it stays clear; an underlay (#920) doesn't.
  */
 function drawZoneFloors(ctx: CanvasRenderingContext2D, layout: RoomLayout, floor: FloorLayout, offsetX: number, offsetY: number, scale: number): void {
   if (!floor.zones?.some(hasFloorFinish)) return;
-  if (layout.floorPlanImage && layout.floors[0]?.id === floor.id) return;
+  if (planIsDrawing(layout) && layout.floors[0]?.id === floor.id) return;
   for (const patch of zoneFloorPatches(floor, floorKeepOut(layout, planFloorIndex(layout.floors, floor)))) {
     ctx.fillStyle = patch.color;
     for (const region of patch.regions) {
@@ -689,6 +708,24 @@ function drawFloor(
   scale: number,
   unclipped = false
 ): void {
+  // Fill the floor colour first so there's a base while (or if) a tracing
+  // image is still decoding — avoids a flash of the raw canvas background.
+  ctx.fillStyle = floor.floorColor;
+  ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
+  // The drawing is the floor; an underlay (#920) is painted over the room floors instead.
+  if (planIsDrawing(layout)) drawFloorPlanImage(ctx, layout, floor, offsetX, offsetY, scale, unclipped);
+}
+
+/** The ground floor's tracing image at its opacity, clipped to the building (dimmed past it while calibrating). */
+function drawFloorPlanImage(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  unclipped: boolean
+): void {
   // The tracing image belongs to the ground floor only, like in 3D
   // (use-scene-effects keys it on floor index 0) — painting it under every
   // storey put the ground-floor scan in upstairs blueprints (#218). Derived
@@ -696,11 +733,6 @@ function drawFloor(
   const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
   const url = isGroundFloor ? layout.floorPlanImage : undefined;
   if (url) {
-    // Fill the floor colour first so there's a base while (or if) the image is
-    // still decoding — avoids a flash of the raw canvas background.
-    ctx.fillStyle = floor.floorColor;
-    ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
-
     // naturalWidth guard: a broken image also reports `complete`, and
     // drawImage on it throws InvalidStateError — which would abort the whole
     // paint (grid and furniture never drawn) on every repaint (#118).
@@ -743,9 +775,6 @@ function drawFloor(
       };
       img.src = url;
     }
-  } else {
-    ctx.fillStyle = floor.floorColor;
-    ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
   }
 }
 
@@ -1042,6 +1071,8 @@ function drawFurniture(
   // wall-mounted — so a rug listed after its sofa still paints beneath it.
   // Doors with something standing in their swing (#917): a warning wash, not a collision.
   const swingBlocked = options.swingWarnings ? blockedDoorIds(options.floor.items) : NO_IDS;
+  // A run on the lot (#915) reads as a line: no size under each section.
+  const runLabelled = options.showMeasurements ? lotRunTypes(options.layout, options.floor.items) : NO_IDS;
   for (const item of planDrawOrder(options.floor.items)) {
     if (!item.position) continue;
     const collision = options.hasCollision(item);
@@ -1092,7 +1123,7 @@ function drawFurniture(
     ctx.restore();
     if (item.type === 'stairs') drawStairsSymbol(ctx, item, options.layout, { scale, offsetX, offsetY });
 
-    if (options.showMeasurements) {
+    if (options.showMeasurements && !(runLabelled.has(item.type) && onLotRun(options.layout, item))) {
       // The label is drawn in screen space (outside the rotated transform), so
       // offset it by the rotation-aware AABB half-depth to clear the footprint.
       const { halfD } = rotatedHalfExtents(item);
@@ -1106,6 +1137,18 @@ function drawFurniture(
   }
   drawStairCutHatch(ctx, options.layout, options.floor, { scale, offsetX, offsetY });
   drawSelectionOutlines(ctx, options, offsetX, offsetY, scale);
+}
+
+/** The run types with two or more sections out on the lot (#915): a lone section keeps its label. */
+function lotRunTypes(layout: RoomLayout, items: readonly FurnitureItem[]): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const runs = new Set<string>();
+  for (const item of items) {
+    if (!onLotRun(layout, item)) continue;
+    if (seen.has(item.type)) runs.add(item.type);
+    seen.add(item.type);
+  }
+  return runs;
 }
 
 /**

@@ -245,6 +245,9 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
   const effectId = useId();
   const fitModeId = useId();
   const fileInputId = useId();
+  const planModeId = useId();
+  const exploring = useExploring();
+  const underlay = layout.floorPlanMode === 'underlay';
 
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -352,6 +355,37 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
                     className="w-full"
                   />
                 </div>
+                {/* #920: the image as the finished floor, or a guide to draw walls over. */}
+                <fieldset className="space-y-1 pt-2" disabled={exploring} title={exploring ? NOT_WHILE_EXPLORING : undefined}>
+                  <legend className="text-xs font-medium">Use the plan as</legend>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input
+                      type="radio"
+                      name={planModeId}
+                      checked={!underlay}
+                      onChange={() => actions.setFloorPlanMode('drawing')}
+                      className="w-4 h-4"
+                    />
+                    The ground floor
+                  </label>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input
+                      type="radio"
+                      name={planModeId}
+                      checked={underlay}
+                      onChange={() => actions.setFloorPlanMode('underlay')}
+                      className="w-4 h-4"
+                    />
+                    A guide to trace walls over
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    {underlay
+                      ? 'Shown on the 2D plan only, under the walls. The house is built as usual and the printout leaves it out.'
+                      : 'The image is the floor in 3D, and the ground floor builds no outer walls or foundation.'}
+                  </p>
+                </fieldset>
+                {!underlay && (
+                <>
                 <div className="flex items-center space-x-2 pt-2">
                   <input
                     id={effectId}
@@ -367,6 +401,8 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
                 <p className="text-xs text-muted-foreground">
                   Creates height variations based on the floor plan image brightness
                 </p>
+                </>
+                )}
 
                 <TracingScale {...(onCalibrateStart ? { onStart: onCalibrateStart } : {})} />
 

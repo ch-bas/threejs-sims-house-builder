@@ -1,7 +1,8 @@
-import { budgetSpent } from './budget';
+import { budgetOf, budgetRemaining, budgetSpent, isHardBudgetOn } from './budget';
 import { DEFAULT_ROOF } from './constants';
 import { formatMoney } from './format';
 import { INITIAL_GROUND_FLOOR } from './initial-layout';
+import { householdLacks } from './npc-needs';
 import { furnishedRooms, ROOM_CHECKS, ROOM_TYPE_LABELS, type KnownCollisions, type RoomType } from './room-score';
 import type { FloorLayout, LayoutChallenge, RoomLayout } from './types';
 
@@ -12,7 +13,8 @@ import type { FloorLayout, LayoutChallenge, RoomLayout } from './types';
  * undo, saves, the library and share links with the house. Each goal is
  * read from the house as it stands, from the scorers the editor already
  * has: room types and stars (`houseRoomScores`), the money spent
- * (`budgetSpent`) and the storey count. Rooms are scored by zone, so a
+ * (`budgetSpent`), the storey count and the walkers' needs on each storey
+ * (`householdLacks`). Rooms are scored by zone, so a
  * room counts once a zone is drawn round it (`ZONE_HINT`).
  */
 
@@ -30,7 +32,9 @@ export type ChallengeGoal =
   /** At least `count` storeys. */
   | { readonly kind: 'floors'; readonly count: number }
   /** A lamp in every furnished room, and at least `rooms` of them. */
-  | { readonly kind: 'lit-rooms'; readonly rooms: number };
+  | { readonly kind: 'lit-rooms'; readonly rooms: number }
+  /** Every walker need met on every storey: something to eat, rest, do and wash at on each. */
+  | { readonly kind: 'needs-met' };
 
 export interface Challenge {
   readonly id: string;
@@ -45,6 +49,8 @@ export interface Challenge {
   /** Funds, with the hard budget on. */
   readonly funds: number;
   readonly goals: readonly ChallengeGoal[];
+  /** The badge its completion earns in the achievements (#909): an icon no other achievement uses. */
+  readonly badge: string;
 }
 
 export const CHALLENGES: readonly Challenge[] = [
@@ -56,6 +62,7 @@ export const CHALLENGES: readonly Challenge[] = [
     depth: 7,
     floors: 1,
     funds: 8_000,
+    badge: '🔑',
     goals: [
       { kind: 'room', type: 'bedroom', count: 1, minStars: 3 },
       { kind: 'room', type: 'kitchen', count: 1, minStars: 3 },
@@ -70,6 +77,7 @@ export const CHALLENGES: readonly Challenge[] = [
     depth: 5,
     floors: 1,
     funds: 4_000,
+    badge: '🪙',
     goals: [
       { kind: 'room', type: 'bedroom', count: 1, minStars: 1 },
       { kind: 'room', type: 'kitchen', count: 1, minStars: 1 },
@@ -84,6 +92,7 @@ export const CHALLENGES: readonly Challenge[] = [
     depth: 8,
     floors: 1,
     funds: 20_000,
+    badge: '🧸',
     goals: [
       { kind: 'room', type: 'bedroom', count: 2, minStars: 3 },
       { kind: 'room', type: 'kitchen', count: 1, minStars: 3 },
@@ -99,6 +108,7 @@ export const CHALLENGES: readonly Challenge[] = [
     depth: 8,
     floors: 1,
     funds: 12_000,
+    badge: '🥇',
     goals: [
       { kind: 'five-star' },
       { kind: 'room', type: 'living', count: 1, minStars: 4 },
@@ -112,9 +122,25 @@ export const CHALLENGES: readonly Challenge[] = [
     depth: 8,
     floors: 1,
     funds: 10_000,
+    badge: '🌃',
     goals: [
       { kind: 'lit-rooms', rooms: 3 },
       { kind: 'room', type: 'study', count: 1, minStars: 3 },
+    ],
+  },
+  {
+    id: 'lived-in',
+    name: 'Lived-in',
+    brief: 'Two storeys where nobody goes without, upstairs or down.',
+    width: 8,
+    depth: 7,
+    floors: 1,
+    funds: 7_000,
+    badge: '🍲',
+    goals: [
+      { kind: 'floors', count: 2 },
+      { kind: 'needs-met' },
+      { kind: 'room', type: 'bedroom', count: 2, minStars: 3 },
     ],
   },
 ];
@@ -122,6 +148,11 @@ export const CHALLENGES: readonly Challenge[] = [
 /** The brief with this id, or undefined (an id from a newer version, a typo in a file). */
 export function challengeById(id: string): Challenge | undefined {
   return CHALLENGES.find((challenge) => challenge.id === id);
+}
+
+/** The achievement a brief's completion records (#909): one per brief, earned once. */
+export function challengeAchievementId(id: string): string {
+  return `challenge-${id}`;
 }
 
 /** What the checklist says a goal asks for. */
@@ -140,6 +171,8 @@ export function goalLabel(goal: ChallengeGoal): string {
       return `${goal.count} storeys`;
     case 'lit-rooms':
       return `${goal.rooms} rooms, every one with a lamp`;
+    case 'needs-met':
+      return 'Every need met on every storey';
     default:
       return assertNever(goal);
   }
@@ -165,16 +198,38 @@ export function goalMet(goal: ChallengeGoal, layout: RoomLayout, known?: KnownCo
       const rooms = furnishedRooms(layout, known);
       return rooms.length >= goal.rooms && rooms.every((room) => !room.missing.includes('lamp'));
     }
+    case 'needs-met':
+      return householdLacks(layout).every((storey) => storey.lacks.length === 0);
     default:
       return assertNever(goal);
   }
+}
+
+/**
+ * Why the house no longer keeps to its brief's terms, or null when it does
+ * (#909): the hard budget on, funds no higher than the brief's, spent
+ * within those funds, the brief's lot. A brief finished outside its terms
+ * earns no badge. Spending is checked too: with the funds raised or the
+ * budget off, a house can overspend, and lowering the funds or switching
+ * the budget back on afterwards must not make it count.
+ */
+export function briefTermsBroken(layout: RoomLayout, challenge: Challenge): string | null {
+  if (!isHardBudgetOn(layout)) return 'the hard budget is off';
+  if (budgetOf(layout) > challenge.funds) return `funds raised over ${formatMoney(challenge.funds)}`;
+  const remaining = budgetRemaining(layout) ?? 0;
+  if (remaining < 0) return `spent ${formatMoney(-remaining)} over the funds`;
+  if (layout.width !== challenge.width || layout.height !== challenge.depth) return 'the lot was resized';
+  return null;
 }
 
 export interface ChallengeProgress {
   challenge: Challenge;
   goals: ReadonlyArray<{ label: string; met: boolean }>;
   met: number;
+  /** Every goal met. */
   done: boolean;
+  /** Why the house is outside the brief's terms, or null (`briefTermsBroken`). */
+  termsBroken: string | null;
 }
 
 /** The house's brief and how far along it is, or null for a house with no brief (or one this version doesn't know). */
@@ -183,7 +238,7 @@ export function challengeProgress(layout: RoomLayout, known?: KnownCollisions): 
   if (!challenge) return null;
   const goals = challenge.goals.map((goal) => ({ label: goalLabel(goal), met: goalMet(goal, layout, known) }));
   const met = goals.filter((goal) => goal.met).length;
-  return { challenge, goals, met, done: met === goals.length };
+  return { challenge, goals, met, done: met === goals.length, termsBroken: briefTermsBroken(layout, challenge) };
 }
 
 /**

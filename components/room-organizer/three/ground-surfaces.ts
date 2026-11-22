@@ -5,10 +5,10 @@ import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
 
-export type GroundSurface = 'grass' | 'paving' | 'asphalt';
+export type GroundSurface = 'grass' | 'paving' | 'asphalt' | 'gravel' | 'deck';
 
 /** Metres one tile of each map covers; the macro layer repeats grass far less often. */
-const TILE_METRES: Record<GroundSurface, number> = { grass: 6, paving: 3.2, asphalt: 4 };
+const TILE_METRES: Record<GroundSurface, number> = { grass: 6, paving: 3.2, asphalt: 4, gravel: 2, deck: 2.4 };
 /** Grass only: the same map read this much larger, so the lawn doesn't show its tile. */
 const MACRO_SCALE = 0.137;
 const TILE_PIXELS = 512;
@@ -17,6 +17,8 @@ const painters: Record<GroundSurface, (ctx: CanvasRenderingContext2D, size: numb
   grass: paintGrass,
   paving: paintPaving,
   asphalt: paintAsphalt,
+  gravel: paintGravel,
+  deck: paintDeck,
 };
 
 /**
@@ -133,6 +135,53 @@ function paintAsphalt(ctx: CanvasRenderingContext2D, size: number, random: () =>
       ctx.stroke();
     });
   }
+}
+
+/** Garden gravel (#924): small pebbles in light and dark greys over a sandy bed. */
+function paintGravel(ctx: CanvasRenderingContext2D, size: number, random: () => number): void {
+  ctx.fillStyle = '#c9c4ba';
+  ctx.fillRect(0, 0, size, size);
+  const stones = Math.round((size * size) / 90);
+  for (let i = 0; i < stones; i += 1) {
+    const r = size * (0.004 + random() * 0.006);
+    const v = Math.round(150 + random() * 100);
+    const angle = random() * Math.PI;
+    const squash = 0.6 + random() * 0.4;
+    wrapped(size, random() * size, random() * size, (x, y) => {
+      ctx.fillStyle = `rgb(${v}, ${v - 4}, ${v - 10})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * squash, angle, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  speckle(ctx, size, random, Math.round(size * size * 0.04), 60, 0.25);
+}
+
+/** Deck boards (#924) running along x, with grain, staggered butt joints and dark gaps. */
+function paintDeck(ctx: CanvasRenderingContext2D, size: number, random: () => number): void {
+  const boards = 16;
+  const board = size / boards;
+  for (let row = 0; row < boards; row += 1) {
+    const v = Math.round(205 + random() * 40);
+    ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+    ctx.fillRect(0, row * board, size, board);
+    // Grain: long faint strokes along the board.
+    for (let g = 0; g < 5; g += 1) {
+      const y = row * board + board * (0.15 + random() * 0.7);
+      ctx.strokeStyle = `rgba(90, 90, 90, ${(0.08 + random() * 0.1).toFixed(2)})`;
+      ctx.lineWidth = Math.max(1, size / 512);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(size, y + (random() - 0.5) * board * 0.3);
+      ctx.stroke();
+    }
+    // One butt joint per board, staggered row to row.
+    const joint = (random() * 0.6 + (row % 2) * 0.4) * size;
+    ctx.fillStyle = 'rgba(60, 60, 60, 0.55)';
+    ctx.fillRect(joint % size, row * board, Math.max(1, size / 340), board);
+  }
+  ctx.fillStyle = 'rgba(40, 40, 40, 0.7)';
+  for (let row = 0; row < boards; row += 1) ctx.fillRect(0, row * board, size, Math.max(1.5, size / 220));
 }
 
 function speckle(ctx: CanvasRenderingContext2D, size: number, random: () => number, count: number, value: number, alpha: number): void {

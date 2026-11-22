@@ -2,6 +2,7 @@ import { type CctvModel, getCctvModel } from '../../lib/cctv-models';
 import { CAMERA_BRACKET_ARM } from '../../lib/constants';
 import { type BuilderContext, material, mesh } from '../builder-utils';
 import { cameraMountHeight } from '../camera-vision';
+import { markTvScreen } from '../tv-screens';
 import type * as ThreeNS from 'three';
 
 export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: BuilderContext): ThreeNS.Group {
@@ -18,7 +19,8 @@ export function buildTV({ THREE, item, hasCollision, baseColor, opacity }: Build
   const screen = mesh(
     THREE,
     new THREE.BoxGeometry(item.width * 0.7, item.height * 0.8, item.depth * 0.1),
-    material(THREE, hasCollision ? 0xff0000 : 0x1a1a1a, hasCollision, opacity, { roughness: 0.1, metalness: 0 })
+    // Lit in place when switched on in EXPLORE (#910).
+    markTvScreen(material(THREE, hasCollision ? 0xff0000 : 0x1a1a1a, hasCollision, opacity, { roughness: 0.1, metalness: 0 }))
   );
   // 1 cm forward of the bezel, so the two back faces aren't coplanar (#388).
   screen.position.set(0, item.height * 0.9, -item.depth * 0.35 + 0.01);

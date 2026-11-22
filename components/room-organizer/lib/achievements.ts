@@ -1,3 +1,4 @@
+import { CHALLENGES, challengeAchievementId, challengeProgress, type Challenge } from './challenges';
 import { CURRENCY_SYMBOL, DEFAULT_ROOF, ROOF_STYLE_DEFAULT_COLORS } from './constants';
 import { totalCost } from './geometry';
 import { furnishedRooms, ROOM_CHECKS, type HouseRoomScore, type KnownCollisions, type RoomType } from './room-score';
@@ -37,6 +38,8 @@ export interface Achievement {
    * Goals that aren't counts ("under §3,000") leave it out.
    */
   progress?(layout: RoomLayout): number;
+  /** Set on a brief's completion (#909): the brief's id, so the toast can say so. */
+  challengeId?: string;
 }
 
 export const ACHIEVEMENTS: readonly Achievement[] = [
@@ -215,7 +218,28 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     },
     progress: (layout) => furnishedRooms(layout).filter(hasLamp).length,
   },
+  // Completing a challenge brief (#909): one each, earned by the edit that
+  // meets its last goal. Not a count: a house loaded with every goal met
+  // earns nothing until it falls short and is completed again.
+  ...CHALLENGES.map(challengeAchievement),
 ];
+
+function challengeAchievement(challenge: Challenge): Achievement {
+  return {
+    id: challengeAchievementId(challenge.id),
+    name: challenge.name,
+    description: `Met every goal of the ${challenge.name} challenge.`,
+    icon: challenge.badge,
+    challengeId: challenge.id,
+    // Only within the brief's terms: raising the funds, switching the hard
+    // budget off or resizing the lot forfeits the badge.
+    isMet: (layout) => {
+      if (layout.challenge?.id !== challenge.id) return false;
+      const progress = challengeProgress(layout);
+      return progress !== null && progress.done && progress.termsBroken === null;
+    },
+  };
+}
 
 /**
  * How the layout on screen came to be, as far as achievements care (#450).
@@ -245,7 +269,7 @@ export function achievementsEarned(
   if (change === 'loaded' || before === null) return [];
   // The room goals score the active storey with the editor's own collisions
   // (`collidingIds`, as each layout was on screen): no collision pass per edit.
-  if (ROOM_GOAL_IDS.some((id) => !unlocked.has(id))) {
+  if (ROOM_GOAL_IDS.some((id) => !unlocked.has(id)) || playsUnearnedBrief(now, unlocked) || playsUnearnedBrief(before, unlocked)) {
     primeRooms(now, known.now);
     primeRooms(before, known.before);
   }
@@ -274,6 +298,11 @@ function primeRooms(layout: RoomLayout, known: KnownCollisions | undefined): voi
 }
 
 const ROOM_GOAL_IDS: readonly string[] = ['real-kitchen', 'five-stars', 'home-sweet-home', 'night-owl'];
+
+/** Whether the house is played under a brief whose badge isn't earned yet: its goals may read room scores (#909). */
+function playsUnearnedBrief(layout: RoomLayout, unlocked: ReadonlySet<string>): boolean {
+  return layout.challenge !== undefined && !unlocked.has(challengeAchievementId(layout.challenge.id));
+}
 
 function roomsOfType(layout: RoomLayout, type: RoomType): number {
   return furnishedRooms(layout).filter((room) => room.type === type).length;

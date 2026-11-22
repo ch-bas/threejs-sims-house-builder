@@ -1,6 +1,8 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { facadeColorOf, withPorchFacade } from '../lib/facade';
 import { floorKeepOut } from '../lib/floor-keep-out';
+import { drawnFloorPlanImage, planIsDrawing } from '../lib/floor-plan-fit';
+import { shownGrounds } from '../lib/grounds';
 import { gardenGroundY, lowestGround } from '../lib/site';
 import { stairwellRailSegments } from '../lib/stairwell-rail';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
@@ -10,9 +12,10 @@ import { disposeObject } from './builder-utils';
 import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
 import { stripDetailMaps } from './furniture-materials';
+import { buildGroundPatches } from './ground-patches';
 import { renderInteriorWalls } from './interior-walls';
 import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
-import { revealSetbacks } from './reveals';
+import { openingOnHiddenWall, revealSetbacks } from './reveals';
 import { buildRoof, gableWallsOf } from './roof';
 import { ROOM_OBJECT_TAGS, buildRoom, loadFloorPlanImage } from './room-builder';
 import { buildStairwellRail } from './stairwell-rail';
@@ -29,7 +32,9 @@ type ThreeModule = typeof import('./three-runtime');
  * otherwise paint in after the export has been written and disposed.
  */
 export async function prepareExportBuilding(THREE: ThreeModule, layout: RoomLayout): Promise<void> {
-  if (layout.floorPlanImage) await loadFloorPlanImage(THREE, layout.floorPlanImage);
+  // An underlay (#920) never reaches the 3D floor, so the file never carries it.
+  const image = drawnFloorPlanImage(layout, 0);
+  if (image) await loadFloorPlanImage(THREE, image);
 }
 
 /**
@@ -43,7 +48,8 @@ export async function prepareExportBuilding(THREE: ThreeModule, layout: RoomLayo
  * Built with the same builders and inputs as the scene effects, but solid
  * (no ghosting), uncut, untinted (no collision red) and never added to the
  * live scene. Editor aids — the snap grid — are left out; so are the
- * site and scenery (ground, terrain, neighbours), lights and overlays.
+ * site and scenery (ground, terrain, neighbours), lights and overlays, all
+ * but the garden surfaces drawn on the lot (#924).
  *
  * Nodes are named: the root after the house, one group per storey after the
  * floor, furniture after the item, and the shell parts by their builders.
@@ -94,7 +100,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
       floorOpenings: computeFloorOpenings(index > 0 ? layout.floors[index - 1] : undefined),
       zonePatches: zoneFloorPatches(floor, floorKeepOut(layout, index)),
-      floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
+      floorPlanImage: drawnFloorPlanImage(layout, index),
       floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
       floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
       floorPlanTransform: layout.floorPlanTransform,
@@ -104,7 +110,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       wallHeight: storeyH,
       groundY: lowestGround(layout.terrain),
     });
-    const tracedGround = index === 0 && !!layout.floorPlanImage;
+    const tracedGround = index === 0 && planIsDrawing(layout);
     if (entrance && index === entrance.floorIndex && !tracedGround) {
       const northHidden = floor.hiddenWalls?.includes('north') ?? false;
       for (const group of buildEntrance(THREE, {
@@ -155,6 +161,8 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     for (const item of floor.items) {
       const position = item.position;
       if (!position) continue;
+      // A door or window in a wall the storey hides goes with it, as in the scene (#965).
+      if (openingOnHiddenWall(owners.get(item.id), revealContext)) continue;
       const setback = setbacks.get(item.id) ?? 0;
       const group = createFurnitureModel(THREE, itemForStorey(item, floor, underRoof(layout, index)), false, storeyH, setback);
       stripDetailMaps(group);
@@ -196,6 +204,11 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     for (const child of [...scratch.children]) roof.add(child);
     if (roof.children.length > 0) root.add(roof);
   }
+
+  // Garden surfaces (#924): the one part of the lot that is drawn as part of
+  // the house, in plain colours (the view's tiles follow world position).
+  const grounds = shownGrounds(layout);
+  if (grounds.length > 0) root.add(buildGroundPatches(THREE, grounds, { terrain: layout.terrain, halfDepth: depth / 2, textured: false }));
 
   // The patterns' relief maps stay in the view: in the file they would be two
   // more images per pattern for a lighting detail (#757).

@@ -1,6 +1,6 @@
 {
   "name": "threejs-sims-house-builder",
-  "version": "1.37.0",
+  "version": "1.38.0",
   "description": "A lightweight, open-source 3D house builder that runs entirely in the browser using Three.js.",
   "author": "Bassem Chagra",
   "license": "MIT",
@@ -33,7 +33,7 @@
     "@radix-ui/react-slot": "^1.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "next": "^15.5.28",
+    "next": "^15.5.29",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.4",

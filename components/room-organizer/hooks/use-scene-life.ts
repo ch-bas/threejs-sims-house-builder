@@ -11,13 +11,15 @@ import { useAmbience } from './use-ambience';
 import { useCameraVision } from './use-camera-vision';
 import { useNpcs } from './use-npcs';
 import { usePeopleModel } from './use-people-model';
+import { usePhotoModeActive } from './use-photo-mode';
 import { useReducedMotion } from './use-reduced-motion';
-import { useWalkthrough, type UseWalkthroughResult, type WalkLampSwitch, type WalkthroughBuilding } from './use-walkthrough';
+import { useWalkthrough, type UseWalkthroughResult, type WalkSwitches, type WalkthroughBuilding } from './use-walkthrough';
 import { useWeather } from './use-weather';
 import type { EditorViewStore } from './editor-view-store';
 import type { UseThreeSceneResult } from './use-three-scene';
-import type { KeepOutBuilding } from '../lib/floor-keep-out';
+import type { NpcBuilding } from '../lib/npc-garden';
 import type { GameMode, RoomLayout, ViewSettings } from '../lib/types';
+import type { WalkerCards } from '../lib/walker-card';
 
 export interface UseSceneLifeOptions {
   viewStore: EditorViewStore;
@@ -31,6 +33,8 @@ export interface UseSceneLifeOptions {
     UseThreeSceneResult,
     'isReady' | 'invalidate' | 'requestShadowUpdate' | 'addDecorativeStep' | 'threeModuleRef' | 'sceneRef' | 'cameraRef' | 'controlsRef'
   >;
+  /** The walker card (#906): the walkers publish the tapped one's needs to it. */
+  walkerCards?: WalkerCards;
 }
 
 export interface SceneLife {
@@ -53,9 +57,11 @@ export function useSceneLife({
   onFloorChange,
   canvasRef,
   scene,
+  walkerCards,
 }: UseSceneLifeOptions): SceneLife {
   const { isReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, cameraRef, controlsRef } = scene;
   const { setView, setGameMode } = viewStore.getState().actions;
+  const photoActive = usePhotoModeActive();
 
   // The mode EXPLORE was entered from, so leaving it goes back there (#454).
   // Read from the store, not rendered: a mode switch needn't re-render this.
@@ -94,29 +100,31 @@ export function useSceneLife({
   // The player and the walkers, to each other (#585).
   const [npcHandOff] = useState(createNpcHandOff);
 
-  // Lamps switched with `E` (#910) are for this walk only: back on when
-  // EXPLORE ends, and for a whole-house load (marked by `markLayoutLoaded`),
+  // Lamps and TVs switched with `E` (#910) are for this walk only: back as
+  // they were when EXPLORE ends, and for a whole-house load (marked by `markLayoutLoaded`),
   // since template and copied houses reuse item ids. An item deleted or gone
   // with the house is dropped from the set.
   useEffect(() => {
-    if (!walkthroughActive) viewStore.getState().actions.resetLamps();
+    if (!walkthroughActive) viewStore.getState().actions.resetSwitches();
   }, [walkthroughActive, viewStore]);
   useEffect(() => {
-    const { lampsOff, actions } = viewStore.getState();
-    if (lampsOff.size === 0) return;
+    const { lampsOff, tvsOn, actions } = viewStore.getState();
+    if (lampsOff.size === 0 && tvsOn.size === 0) return;
     if (isLoadedLayout(layout)) {
-      actions.resetLamps();
+      actions.resetSwitches();
       return;
     }
-    actions.resetLamps(new Set(layout.floors.flatMap((floor) => floor.items.map((item) => item.id))));
+    actions.resetSwitches(new Set(layout.floors.flatMap((floor) => floor.items.map((item) => item.id))));
   }, [layout, viewStore]);
 
-  // Lamps switched with `E` (#910): the store's session set, read live.
-  const lampSwitch = useMemo<WalkLampSwitch>(
+  // Lamps and TVs switched with `E` (#910): the store's session sets, read live.
+  const switches = useMemo<WalkSwitches>(
     () => ({
       lit: () => computeSkyProfile(viewStore.getState().view.timeOfDay).lamps > 0,
       isOff: (id) => viewStore.getState().lampsOff.has(id),
       toggle: (id) => viewStore.getState().actions.switchLamp(id),
+      tvOn: (id) => viewStore.getState().tvsOn.has(id),
+      toggleTv: (id) => viewStore.getState().actions.switchTv(id),
     }),
     [viewStore]
   );
@@ -133,15 +141,20 @@ export function useSceneLife({
     onFloorChange,
     onExit: exitWalkthrough,
     npcs: npcHandOff,
-    lampSwitch,
+    switches,
   });
 
-  // Rain on the roof and footsteps, in EXPLORE only (#911).
-  useAmbience({
+  // Rain on the roof, footsteps, birds and crickets, and the doors, in EXPLORE only (#911).
+  const ambienceHour = useCallback(() => viewStore.getState().view.timeOfDay, [viewStore]);
+  const ambienceListener = useCallback(() => (npcHandOff.player.present ? npcHandOff.player : null), [npcHandOff]);
+  const doorSound = useAmbience({
     enabled: isReady && walkthroughActive && view.soundsEnabled && view.ambienceEnabled && !view.view2D,
+    preload: isReady && view.soundsEnabled && view.ambienceEnabled,
     weather: view.weather,
     indoors: !walk.outside,
     walkedDistance: walk.walkedDistance,
+    hour: ambienceHour,
+    listener: ambienceListener,
     addDecorativeStep,
   });
 
@@ -156,14 +169,14 @@ export function useSceneLife({
   useEffect(() => {
     const doorScene = sceneRef.current;
     if (!doorsWanted || !doorScene) return undefined;
-    const doors = createDoorSwinger(doorScene, requestShadowUpdate);
+    const doors = createDoorSwinger(doorScene, requestShadowUpdate, doorSound);
     const people: DoorWalker[] = [];
     const removeStep = addDecorativeStep((delta) => doors.step(doorWalkersOf(npcHandOff, people, !doorsReducedMotion), delta, doorsReducedMotion));
     return () => {
       removeStep();
       if (doors.shutAll()) invalidate();
     };
-  }, [doorsWanted, doorsReducedMotion, sceneRef, npcHandOff, addDecorativeStep, requestShadowUpdate, invalidate]);
+  }, [doorsWanted, doorsReducedMotion, sceneRef, npcHandOff, addDecorativeStep, requestShadowUpdate, invalidate, doorSound]);
 
   // people.glb is fetched only once a person is placed or the walkers are on.
   const layoutHasPeople = useMemo(
@@ -172,10 +185,21 @@ export function useSceneLife({
   );
   const peopleModelReady = usePeopleModel(threeModuleRef, isReady, layoutHasPeople || view.showNpcs);
 
-  // What the walkers walk around on each storey: its items, partitions and keep-out.
-  const npcBuilding = useMemo<KeepOutBuilding>(
-    () => ({ width: layout.width, height: layout.height, terrain: layout.terrain, entrance: layout.entrance, floors: layout.floors, cutout: layout.cutout }),
-    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors, layout.cutout]
+  // What the walkers walk around on each storey: its items, partitions and
+  // keep-out; on the ground storey the lot, the street and the surfaces (#913).
+  const npcBuilding = useMemo<NpcBuilding>(
+    () => ({
+      width: layout.width,
+      height: layout.height,
+      terrain: layout.terrain,
+      entrance: layout.entrance,
+      floors: layout.floors,
+      cutout: layout.cutout,
+      frontage: layout.frontage,
+      neighbours: layout.neighbours,
+      grounds: layout.grounds,
+    }),
+    [layout.width, layout.height, layout.terrain, layout.entrance, layout.floors, layout.cutout, layout.frontage, layout.neighbours, layout.grounds]
   );
   // The storeys whose walkers are shown (#580): the active one, and while
   // walking indoors its neighbours near the stairs, as the scene draws
@@ -207,6 +231,11 @@ export function useSceneLife({
     riggedModelReady: peopleModelReady,
     handOff: npcHandOff,
     clock: clockRef,
+    ...(walkerCards ? { cards: walkerCards } : {}),
+    // Photos stay clean (#906).
+    hideBubbles: photoActive,
+    // Garden walkers (#913): they keep in out of the rain.
+    weather: view.weather,
   });
 
   // Rebuilt with the street, not on every edit: it re-seeds the whole field.

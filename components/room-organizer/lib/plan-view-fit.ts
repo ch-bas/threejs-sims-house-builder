@@ -13,10 +13,11 @@
  * hooks share these, so the painted plan and the pointer maths agree.
  */
 
+import { onLotRun } from './item-run';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
-import { distanceOutsideWalls } from './plan-export/print-scale';
+import { distanceOutsideWalls, pinOutsideWalls } from './plan-export/print-scale';
 import { insetsFromRegion, isSliver, type Insets, type Rect } from './scene-insets';
-import type { FloorLayout, FurnitureItem, RoomLayout } from './types';
+import type { FloorLayout, FurnitureItem, PinnedDimension, RoomLayout } from './types';
 
 export type { PlanBounds } from './plan-export/plan-geometry';
 
@@ -66,7 +67,10 @@ export interface PlanViewFit {
 }
 
 function snappedContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
-  const content = planContentBounds(layout, floor);
+  // Garden surfaces (#924) widen the fit up to the cap and no further: they
+  // can't be left out as an item is, so the part past it is just off the fit.
+  const groundsWithin = { minX: -layout.width, minZ: -layout.height, maxX: layout.width, maxZ: layout.height };
+  const content = planContentBounds(layout, floor, groundsWithin);
   const halfW = layout.width / 2;
   const halfD = layout.height / 2;
   const snap = (edge: number, wall: number) => (Math.abs(edge - wall) < PLAN_FIT_TOLERANCE_M ? wall : edge);
@@ -86,29 +90,44 @@ function snappedContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBound
  * are left out until the fit is within 1 / `PLAN_MIN_ROOM_SHARE` of the room
  * on each axis: on an axis that overflows, the item sticking out furthest
  * along it goes first. They come back as `offPlan` (furthest first), which
- * the plan draws as edge markers.
+ * the plan draws as edge markers. Pinned dimensions out in the garden leave
+ * the fit by the same rule, unmarked; run sections on the lot stay in it.
  */
 export function planViewFit(layout: RoomLayout, floor: FloorLayout): PlanViewFit {
-  const maxWidth = layout.width / PLAN_MIN_ROOM_SHARE;
-  const maxHeight = layout.height / PLAN_MIN_ROOM_SHARE;
+  // Runs out on the lot (#915), a fence round it say, are taken in whole:
+  // the cap widens to them, so they frame the house instead of ringing it
+  // with markers, and the items inside them still fit.
+  const lotRuns = floor.items.filter((item) => onLotRun(layout, item));
+  const runs = lotRuns.length > 0 ? boundsSize(snappedContentBounds(layout, { ...withoutPins(floor), items: lotRuns })) : { width: 0, height: 0 };
+  const maxWidth = Math.max(layout.width / PLAN_MIN_ROOM_SHARE, runs.width);
+  const maxHeight = Math.max(layout.height / PLAN_MIN_ROOM_SHARE, runs.height);
   const fits = (b: PlanBounds) => b.maxX - b.minX <= maxWidth + 1e-9 && b.maxZ - b.minZ <= maxHeight + 1e-9;
   let bounds = snappedContentBounds(layout, floor);
   if (fits(bounds)) return { bounds, offPlan: [] };
-  const remaining = floor.items
-    .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
-    .filter((entry): entry is OffPlanItem => entry.distance > 0);
+  // Pins out to the garden (#921) leave the fit by the same rule, as the
+  // blueprint drops them; they get no marker, a pin can be picked where it is.
+  type Outside = (OffPlanItem & { pin?: undefined }) | { item?: undefined; pin: PinnedDimension; distance: number };
+  const remaining: Outside[] = [
+    ...floor.items
+      .filter((item) => !onLotRun(layout, item))
+      .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
+      .filter((entry): entry is OffPlanItem => entry.distance > 0),
+    ...(floor.dimensions ?? []).map((pin) => ({ pin, distance: pinOutsideWalls(layout, pin) })).filter((entry) => entry.distance > 0),
+  ];
   const offPlan: OffPlanItem[] = [];
   const gone = new Set<FurnitureItem>();
+  const gonePins = new Set<PinnedDimension>();
   while (remaining.length > 0 && !fits(bounds)) {
     // Only an axis that overflows sheds items, and only those sticking out
     // along it: a long room's far end must not go because a tree past its
     // short side overflowed the other axis.
     const overX = bounds.maxX - bounds.minX > maxWidth + 1e-9;
     const overZ = bounds.maxZ - bounds.minZ > maxHeight + 1e-9;
-    const overhang = ({ item }: OffPlanItem): number =>
+    const overhang = (entry: Outside): number =>
       Math.max(
-        overX ? Math.abs(item.position.x) - layout.width / 2 : 0,
-        overZ ? Math.abs(item.position.z) - layout.height / 2 : 0
+        ...(entry.item ? [entry.item.position] : [entry.pin.a, entry.pin.b]).map((at) =>
+          Math.max(overX ? Math.abs(at.x) - layout.width / 2 : 0, overZ ? Math.abs(at.z) - layout.height / 2 : 0)
+        )
       );
     let furthest = -1;
     for (let i = 0; i < remaining.length; i++) {
@@ -116,11 +135,24 @@ export function planViewFit(layout: RoomLayout, floor: FloorLayout): PlanViewFit
     }
     if (furthest < 0) break;
     const [entry] = remaining.splice(furthest, 1);
-    offPlan.push(entry!);
-    gone.add(entry!.item);
-    bounds = snappedContentBounds(layout, { ...floor, items: floor.items.filter((item) => !gone.has(item)) });
+    if (entry!.item) {
+      offPlan.push(entry!);
+      gone.add(entry!.item);
+    } else gonePins.add(entry!.pin);
+    const dimensions = floor.dimensions?.filter((pin) => !gonePins.has(pin)) ?? [];
+    bounds = snappedContentBounds(layout, {
+      ...withoutPins(floor),
+      items: floor.items.filter((item) => !gone.has(item)),
+      ...(dimensions.length > 0 ? { dimensions } : {}),
+    });
   }
   return { bounds, offPlan: offPlan.sort((a, b) => b.distance - a.distance) };
+}
+
+/** The floor without its pinned dimensions (#921). */
+function withoutPins(floor: FloorLayout): FloorLayout {
+  const { dimensions: _pins, ...rest } = floor;
+  return rest;
 }
 
 /** `planViewFit`'s bounds. */

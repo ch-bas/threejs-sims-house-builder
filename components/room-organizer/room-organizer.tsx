@@ -1,12 +1,13 @@
 'use client';
 
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { EditorViewProvider, useEditorView } from './contexts/editor-view-context';
 import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
 import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
+import { getGroundDrawKind, setGroundDrawKind, useGroundDrawKind } from './hooks/ground-draw';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
 import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
@@ -27,6 +28,7 @@ import { useKeyboardShortcuts } from './hooks/use-keyboard-shortcuts';
 import { useSaveStatus, type SaveStatus, type SaveStatusStore } from './hooks/use-layout-persistence';
 import { useLayoutState } from './hooks/use-layout-state';
 import { layoutStore } from './hooks/use-layout-store';
+import { useMeasureTool } from './hooks/use-measure-tool';
 import { usePhotoMode, usePhotoModeActive } from './hooks/use-photo-mode';
 import { usePlacementGhost } from './hooks/use-placement-ghost';
 import { useRecentColors } from './hooks/use-recent-colors';
@@ -56,11 +58,14 @@ import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
 import { swingClearanceNote } from './lib/door-clearance';
 import { notifyRefused } from './lib/editor-notices';
+import { planIsDrawing } from './lib/floor-plan-fit';
 import { isInsideBuilding } from './lib/footprint';
 import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
-import { fitRun, runLot } from './lib/item-run';
+import { fitRun, frontPathGate, runLot, runsRoundLot } from './lib/item-run';
+import { dimensionLength } from './lib/plan-dimensions';
+import { formatDimension } from './lib/plan-export/plan-geometry';
 import { loadQualityChoice } from './lib/render-quality';
 import { ROOF_EAVE_OVERHANG, roofPeakHeight } from './lib/roof-shape';
 import { activeStoreyRoomScores } from './lib/room-score';
@@ -70,6 +75,7 @@ import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { entrancePlanOutline } from './lib/street';
 import { isTourSession } from './lib/tour-session';
+import { createWalkerCards } from './lib/walker-card';
 import { sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt } from './lib/wall-sides';
 import { roomsToName } from './lib/zones';
@@ -83,6 +89,7 @@ import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FileDropOverlay } from './panels/file-drop-overlay';
 import { FirstStepsCard } from './panels/first-steps-card';
 import { FloorPill } from './panels/floor-pill';
+import { GroundDrawChip } from './panels/ground-draw-chip';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
@@ -105,6 +112,8 @@ import type { CatalogItem, FurnitureItem, RoomLayout, ViewSettings } from './lib
 
 // G4 album (#912): the shutter and its album load as photo mode opens.
 const PhotoBar = lazy(() => import('./panels/photo-bar').then((module) => ({ default: module.PhotoBar })));
+// #906: loaded on the first tap on a walker.
+const WalkerCard = lazy(() => import('./panels/walker-card').then((module) => ({ default: module.WalkerCard })));
 
 /** A stable "none" for the plan's memoised rooms to name. */
 const NO_ROOMS: readonly DetectedRoom[] = [];
@@ -160,6 +169,8 @@ export function RoomOrganizer(): JSX.Element {
   });
   const { setView, toggle } = viewStore.getState().actions;
   const view = useStore(viewStore, useShallow(viewExceptTime));
+  // The garden-surface tool (#924) owns the plan's presses while it is on.
+  const groundDrawing = useGroundDrawKind() !== null;
   const autoCycleLighting = useStore(viewStore, (state) => state.autoCycleLighting);
 
   // First-person walkthrough only runs in the 3D view; the 2D top-down renderer
@@ -203,7 +214,6 @@ export function RoomOrganizer(): JSX.Element {
   } = useSelectionActions({ activeFloor, activeFloorIndex, actions, playCue });
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const [measurementPoints, setMeasurementPoints] = useState<ReadonlyArray<{ x: number; z: number }>>([]);
   // Set once the history exists, below.
   const commitWallStepRef = useRef<() => void>(() => {});
   const {
@@ -253,17 +263,25 @@ export function RoomOrganizer(): JSX.Element {
   // Ask the browser to keep the houses after the first real edit (#928).
   useAskToKeepStorage(layout);
 
+  // The distance tool, on the 3D floor and on the plan (#921).
+  // Undo for an unpin's notice; set once the history exists, below.
+  const undoRef = useRef<() => void>(() => {});
+  const undoLatest = useCallback(() => undoRef.current(), []);
+  const measure = useMeasureTool({ layout, activeFloor, activeFloorIndex, measurementMode: view.measurementMode, actions, undo: undoLatest, planShown: view.view2D, playCue });
+  const measurementPoints = measure.points;
+  const { placeFloorPoint, clear: clearMeasurement, selectedPinId: measuredPinId, selectPin: selectMeasuredPin } = measure;
+  // The pin picked on the plan, as the chip shows it (#921).
+  const pickedPin = measure.selectedPinId === null ? null : activeFloor.dimensions?.find((entry) => entry.id === measure.selectedPinId);
+  const lengthUnit = useStore(viewStore, (state) => state.lengthUnit);
+  const measurePick = pickedPin
+    ? { label: formatDimension(dimensionLength(pickedPin), lengthUnit), ...(exploring ? {} : { onUnpin: measure.unpin }) }
+    : null;
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
       if (handleWallClick(x, z)) return;
-      if (view.measurementMode) {
-        setMeasurementPoints((current) => {
-          if (current.length >= 2) return [{ x, z }];
-          return [...current, { x, z }];
-        });
-      }
+      if (view.measurementMode) placeFloorPoint(x, z);
     },
-    [view.measurementMode, handleWallClick]
+    [view.measurementMode, handleWallClick, placeFloorPoint]
   );
 
   // A quality picked on this device (#760). In an effect: the prerender has no storage.
@@ -285,20 +303,14 @@ export function RoomOrganizer(): JSX.Element {
     if (!view.drawZoneMode) setSelectedZoneId(null);
   }, [view.drawZoneMode]);
 
-  // Points are floor-plane coordinates; kept on a floor switch, they'd float
-  // on the new floor showing a distance measured on the old one (#224).
-  useEffect(() => {
-    setMeasurementPoints([]);
-  }, [activeFloorIndex, activeFloor.id]);
-
   // A whole-layout replacement (import, share/local hydration, adopting
   // another tab's save) invalidates every piece of transient selection state,
   // not just the item ids (#224).
   const clearTransientSelection = useCallback(() => {
     selectOnly(null);
     setSelectedWall(null);
-    setMeasurementPoints([]);
-  }, [selectOnly, setSelectedWall]);
+    clearMeasurement();
+  }, [selectOnly, setSelectedWall, clearMeasurement]);
 
   // The recess's span of the front wall on this storey; openings settle on
   // its piers (#394). Memoised on what the recess is fitted to.
@@ -348,6 +360,7 @@ export function RoomOrganizer(): JSX.Element {
   const { commitNow: commitHistoryNow, clear: clearHistory } = history;
 
   commitWallStepRef.current = commitHistoryNow;
+  undoRef.current = history.undo;
 
   const {
     rotateItemHandler,
@@ -446,6 +459,9 @@ export function RoomOrganizer(): JSX.Element {
   // every move's snap goes through here, and every drag starts through
   // startItemDrag, which forgets the last drag's wall.
   const [snapTicker] = useState(createSnapTicker);
+  // The walker card (#906): a tap on a walker opens it, the walkers fill it in.
+  const [walkerCards] = useState(createWalkerCards);
+  const walkerCardOpen = useSyncExternalStore(walkerCards.subscribe, () => walkerCards.selected() !== null, () => false);
   const snapPosition = useCallback(
     (id: string, x: number, z: number) => {
       const snapped = snapPlacement(id, x, z);
@@ -519,7 +535,12 @@ export function RoomOrganizer(): JSX.Element {
     selectOnly,
     placeCatalogItem: placeDiscrete,
     // The drawer's backdrop would take the click meant to place it.
-    onGhostPickUp: useCallback(() => setSidebarCollapsed(true), []),
+    // Picking an item up ends the garden-surface tool (#924), as starting the
+    // tool puts the ghost down.
+    onGhostPickUp: useCallback(() => {
+      setGroundDrawKind(null);
+      setSidebarCollapsed(true);
+    }, []),
   });
 
   // The soft-budget yes, placed after the place call returned: the same
@@ -559,7 +580,7 @@ export function RoomOrganizer(): JSX.Element {
   const interiorSelectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
   const wallGhostsRef = useRef<((preview: WallMovePreview | null) => void) | null>(null);
   const { grabWall, wallMovePreview, isHoldingWall, cancelWallHold } = useWallEdit({
-    enabled: !exploring && !walkthroughActive && !ghost && !view.drawWallMode && !view.drawZoneMode && !view.measurementMode,
+    enabled: !exploring && !walkthroughActive && !ghost && !groundDrawing && !view.drawWallMode && !view.drawZoneMode && !view.measurementMode,
     pressDrags: designing,
     layout,
     activeFloor,
@@ -597,6 +618,7 @@ export function RoomOrganizer(): JSX.Element {
     onItemDragCancel: handleDragCancel,
     onLockedDrag: handleLockedDrag,
     onZoneRefused: refuseZone,
+    onGroundAdded: chimePlacement,
     onWallPoint: handleEmptyClick,
     onWallPointerMove: handleFloorPointerMove,
     onWallPointerLeave: handleFloorPointerLeave,
@@ -610,6 +632,11 @@ export function RoomOrganizer(): JSX.Element {
     onZoneSelect: setSelectedZoneId,
     roomsToName: planRoomsToName,
     roomScores: planRoomScores,
+    onMeasurePoint: measure.placePoint,
+    onMeasureTapUndo: measure.takeBackPoint,
+    onMeasureHover: measure.setTip,
+    onPinSelect: measure.selectPin,
+    measureInProgress: measurementPoints.length === 1,
   });
 
   const orbitGroundAt = useCallback(
@@ -642,6 +669,8 @@ export function RoomOrganizer(): JSX.Element {
       onItemTwistEnd: (_id: string, turned: boolean) => history.releaseGesture(turned),
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
+      // A tap on a walker opens its card; on empty floor (null) closes it (#906).
+      onWalkerTap: (walkerId: number | null, at: { x: number; y: number }) => (walkerId === null ? walkerCards.close() : walkerCards.select(walkerId, at)),
       onWallSelect: ({ wallId, kind, from }) => {
         // EXPLORE edits nothing, and this opens the paint target.
         if (exploring) return;
@@ -680,7 +709,7 @@ export function RoomOrganizer(): JSX.Element {
   const placementGhost = usePlacementGhost({
     ghost,
     endGhost,
-    enabled: !walkthroughActive && !view.drawWallMode && !view.measurementMode && !view.drawZoneMode,
+    enabled: !walkthroughActive && !groundDrawing && !view.drawWallMode && !view.measurementMode && !view.drawZoneMode,
     sceneReady: isReady,
     view2D: view.view2D,
     canvasRef,
@@ -704,7 +733,7 @@ export function RoomOrganizer(): JSX.Element {
         depth: layout.height,
         cutout: layout.cutout,
         hiddenWalls: activeFloor.hiddenWalls,
-        noWalls: activeFloorIndex === 0 && !!layout.floorPlanImage,
+        noWalls: activeFloorIndex === 0 && planIsDrawing(layout),
       };
       return revealSetbacks(items, owners, context, activeStoreyHeight).get(item.id) ?? 0;
     },
@@ -718,6 +747,7 @@ export function RoomOrganizer(): JSX.Element {
     },
     run: {
       lot: runLot(layout),
+      gate: frontPathGate(layout),
       fit: (sections) =>
         fitRun(sections, { items: activeFloor.items, roomWidth: layout.width, roomDepth: layout.height, keepOut }),
       place: (_catalogItem, items, keep) => {
@@ -727,7 +757,15 @@ export function RoomOrganizer(): JSX.Element {
         else selectRun(items.map((item) => item.id));
         return true;
       },
-      refuse: (blocker) => notifyRefused(`The run would stand in the ${blocker.name}. Draw it clear of it.`, playCue),
+      refuse: (blocker, roundLot) =>
+        notifyRefused(
+          roundLot && blocker.type === ghost?.type
+            ? `A ${blocker.name} already stands on the lot's edge. Remove it to run a new one round the lot.`
+            : roundLot
+            ? `The ${blocker.name} stands on the lot's edge, where the run round the lot would go. Move or remove it first.`
+            : `The run would stand in the ${blocker.name}. Draw it clear of it.`,
+          playCue
+        ),
     },
     threeModuleRef,
     sceneRef,
@@ -750,6 +788,7 @@ export function RoomOrganizer(): JSX.Element {
     onFloorChange: actions.setActiveFloorIndex,
     canvasRef,
     scene: { isReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, cameraRef, controlsRef },
+    walkerCards,
   });
 
   const tourTogglePlan = useEvent(() => toggle('view2D'));
@@ -791,6 +830,8 @@ export function RoomOrganizer(): JSX.Element {
     stampArmed: roomStamp.armed,
     wallSnapResult,
     measurementPoints,
+    measureTip: view.view2D ? measure.tip : null,
+    selectedDimensionId: measure.selectedPinId,
     walkIndoors: walkthroughActive && !walk.outside,
     walkNearStairs: walk.nearStairs,
     walkLampStorey: walk.lampStorey,
@@ -806,8 +847,8 @@ export function RoomOrganizer(): JSX.Element {
     (view.showAllFloors || walkthroughActive || activeFloorIndex === layout.floors.length - 1);
   // Open to the sky, walls fully up can still hide a focused item (#783).
   const sceneWalls = sceneWallDisplay(view.wallDisplay, walkthroughActive);
-  // A traced ground floor builds no shell walls.
-  const tracedGround = !!layout.floorPlanImage;
+  // A traced ground floor builds no shell walls; an underlay keeps them (#920).
+  const tracedGround = planIsDrawing(layout);
   const roofPeak = roofShows && layout.roof ? roofPeakHeight(layout.roof, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),
@@ -861,6 +902,19 @@ export function RoomOrganizer(): JSX.Element {
       deselectAll();
       setHover(null);
     },
+    // W4 shot presets (#912): an hour, a weather and a camera preset, all view settings.
+    shot: {
+      read: () => {
+        const { view: { timeOfDay, weather }, autoCycleLighting: autoCycle } = viewStore.getState();
+        return { hour: timeOfDay, weather, autoCycle };
+      },
+      write: ({ hour, weather, autoCycle }) => {
+        const { setView: setViewSettings, setAutoCycleLighting } = viewStore.getState().actions;
+        setAutoCycleLighting(autoCycle);
+        setViewSettings((v) => ({ ...v, timeOfDay: hour, weather }));
+      },
+      frame: (camera) => applyPreset(camera),
+    },
   });
 
   // Advance the time-of-day at roughly 1 in-game hour per second when on.
@@ -876,11 +930,6 @@ export function RoomOrganizer(): JSX.Element {
   useEffect(() => {
     if (pendingAchievements.length > 0) playCue('success');
   }, [pendingAchievements, playCue]);
-
-  // Reset measurements whenever the user exits the mode.
-  useEffect(() => {
-    if (!view.measurementMode) setMeasurementPoints([]);
-  }, [view.measurementMode]);
 
   // `[` / `]` and PgUp / PgDn, and the touch walk HUD's clock and floor buttons (#688).
   const advanceTime = useEvent((deltaHours: number) => {
@@ -991,9 +1040,18 @@ export function RoomOrganizer(): JSX.Element {
           toggle('drawWallMode');
           return;
         }
-        // Likewise for the distance tool (#341).
+        // Likewise for the distance tool (#341), once a picked pin is let go (#921).
+        if (view.measurementMode && measuredPinId !== null) {
+          selectMeasuredPin(null);
+          return;
+        }
         if (view.measurementMode) {
           toggle('measurementMode');
+          return;
+        }
+        // And for the garden-surface tool (#924), likewise folded away.
+        if (getGroundDrawKind()) {
+          setGroundDrawKind(null);
           return;
         }
         // And for zone drawing, whose drawer button is folded away (#439).
@@ -1076,6 +1134,8 @@ export function RoomOrganizer(): JSX.Element {
       repaintPlan,
       view.drawWallMode,
       view.measurementMode,
+      measuredPinId,
+      selectMeasuredPin,
       view.drawZoneMode,
       clearItemSelection,
       setSelectedWall,
@@ -1200,6 +1260,9 @@ export function RoomOrganizer(): JSX.Element {
         }
         measurementDistance={measurementDistance(measurementPoints)}
         {...(view.measurementMode ? { measurementPointsPlaced: measurementPoints.length } : {})}
+        // Pinning edits the house: not while exploring; and only on the plan, where pins show (#921).
+        {...(view.measurementMode && !exploring && view.view2D ? { onPinMeasurement: measure.pin } : {})}
+        measurePin={measurePick}
         wallDrawStatus={wallDrawStatus}
         onWallLength={handleWallLength}
         onWallLengthField={setWallLengthOpen}
@@ -1349,7 +1412,22 @@ export function RoomOrganizer(): JSX.Element {
       {/* L2 photo (#626): the shutter, the one HUD photo mode keeps. */}
       {photo.active && (
         <Suspense fallback={null}>
-          <PhotoBar onTake={photo.take} onKeep={photo.keep} houseId={layout.id} houseName={layout.name} onDone={photo.leave} />
+          <PhotoBar
+            onTake={photo.take}
+            onKeep={photo.keep}
+            houseId={layout.id}
+            houseName={layout.name}
+            onDone={photo.leave}
+            {...(photo.shoot ? { onShoot: photo.shoot } : {})}
+            walking={walkthroughActive}
+          />
+        </Suspense>
+      )}
+
+      {/* The walker card (#906), beside the walker tapped */}
+      {walkerCardOpen && (
+        <Suspense fallback={null}>
+          <WalkerCard cards={walkerCards} />
         </Suspense>
       )}
 
@@ -1371,10 +1449,18 @@ export function RoomOrganizer(): JSX.Element {
       )}
 
       {/* Keyboard-placement key hint (#168) */}
-      <PlacementHint active={placingId !== null} ghost={ghost} onCancel={placementGhost.cancel} />
+      <PlacementHint
+        active={placingId !== null}
+        ghost={ghost}
+        onCancel={placementGhost.cancel}
+        // #915: runs are laid on the ground floor only (use-item-placement).
+        {...(ghost && runsRoundLot(ghost.type) && activeFloorY === 0 ? { onRunRoundLot: placementGhost.runRoundLot } : {})}
+      />
 
       {/* Inline zone naming and export/share status (#374) */}
-      <ZoneNameChip selectedZoneId={planZoneId} />
+      <ZoneNameChip selectedZoneId={planZoneId} onZoneSelect={setSelectedZoneId} />
+      {/* The garden-surface tool's chip (#924) */}
+      <GroundDrawChip />
       {/* The challenge checklist (#909): none in a shared-link tour; a kept copy is the player's own */}
       {!touring && <ChallengeChip />}
       <PlanCalibrationChip />
@@ -1423,7 +1509,7 @@ function SaveStatusHeaderStats({
   return <HeaderStats {...props} {...useSaveStatus(saveStatus)} />;
 }
 
-type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds' | 'lampsOff'>;
+type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds' | 'lampsOff' | 'tvsOn'>;
 
 // Renders nothing: it owns the scene effects, subscribed to the whole view
 // (time of day included) and to the catalog search's highlighted items.
@@ -1435,8 +1521,10 @@ function SceneEffects(props: SceneEffectsProps): null {
   const highlightedIds = useMemo(() => highlightIdsFromKey(highlightKey), [highlightKey]);
   // Lamps switched off in EXPLORE (#910).
   const lampsOff = useEditorView((state) => state.lampsOff);
+  // TVs switched on in EXPLORE (#910).
+  const tvsOn = useEditorView((state) => state.tvsOn);
   useCameraTargetOnStorey(props, view.walkthroughMode && !view.view2D);
-  useSceneEffects({ ...props, view, highlightedIds, lampsOff });
+  useSceneEffects({ ...props, view, highlightedIds, lampsOff, tvsOn });
   return null;
 }
 

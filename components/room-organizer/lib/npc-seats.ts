@@ -32,6 +32,12 @@ export interface NpcSeat {
    * a bed sleeps one, a double bed (`DOUBLE_BED_WIDTH` or wider) two.
    */
   places: number;
+  /**
+   * A chair tucked in at a table it faces (#904): its only way in crosses
+   * the table, so it is a place to eat and nothing else. The walker pulls
+   * it out, coming in from the side or behind; it is no seat to rest in.
+   */
+  mealOnly?: true;
 }
 
 /** What the walkers sit on; how high comes from lib/seat-surface (#623). */
@@ -57,6 +63,12 @@ const PULLED_IN_TYPES: ReadonlySet<string> = new Set(['chair', 'dining-chair']);
  * SIT_HIP_BACK (0.23 m) at the tallest walker. The walk into a seat ends there.
  */
 const SIT_FEET_FORWARD = 0.24;
+/** Chairs a meal is eaten in, pulled up to one of `MEAL_TABLE_TYPES` (#904). */
+export const MEAL_SEAT_TYPES: ReadonlySet<string> = new Set(['chair', 'dining-chair']);
+/** Tables a meal is eaten at (#904). */
+const MEAL_TABLE_TYPES: ReadonlySet<string> = new Set(['dining-table', 'table']);
+/** A chair is at a table when the point this far in front of its hips (m) is over the table top. */
+const MEAL_REACH = 0.6;
 /** The walk from a side or rear approach to the feet keeps this clear of everything else (m). */
 const PULL_OUT_CLEARANCE = 0.1;
 /** Points tested along that walk, this far apart (m): under half the thinnest partition. */
@@ -82,7 +94,10 @@ export function isNpcSeat(item: Pick<FurnitureItem, 'type' | 'sofaShape'>): bool
  * approached from whichever side is free, or else from behind (#904), but
  * only when the straight walk from there to where the feet go crosses
  * nothing but the chair itself, partitions included. A chair tucked under
- * a table (its feet would stand inside it) keeps its blocked front, and the
+ * a table it faces (its feet would stand inside it), as the Dining set and
+ * the Kitchen template lay them out, is still a place to eat: tested again
+ * with that one table left out, it gets its side or rear way in and
+ * `mealOnly`. Any other blocked chair keeps its blocked front, and the
  * walkers pass it over.
  */
 export function findNpcSeats(items: readonly FurnitureItem[], ground?: SeatGround): NpcSeat[] {
@@ -106,19 +121,28 @@ export function findNpcSeats(items: readonly FurnitureItem[], ground?: SeatGroun
       const approach = item.depth / 2 + APPROACH_GAP;
       let approachX = cx + fx * approach;
       let approachZ = cz + fz * approach;
+      let mealOnly = false;
       if (ground && slots === 1 && PULLED_IN_TYPES.has(item.type) && !ground.isFree(approachX, approachZ)) {
         const side = item.width / 2 + APPROACH_GAP;
         const feetX = cx + fx * (forward + SIT_FEET_FORWARD);
         const feetZ = cz + fz * (forward + SIT_FEET_FORWARD);
         // Right, left, then behind: the first a walker can stand on and walk in from.
         const candidates = [cx + wx * side, cz + wz * side, cx - wx * side, cz - wz * side, cx - fx * approach, cz - fz * approach];
-        for (let i = 0; i < candidates.length; i += 2) {
-          const x = candidates[i]!;
-          const z = candidates[i + 1]!;
-          if (!ground.isFree(x, z) || !wayInClear(ground.blockers, item, x, z, feetX, feetZ)) continue;
-          approachX = x;
-          approachZ = z;
-          break;
+        const wayIn = (table: FurnitureItem | null): boolean => {
+          for (let i = 0; i < candidates.length; i += 2) {
+            const x = candidates[i]!;
+            const z = candidates[i + 1]!;
+            if (!ground.isFree(x, z) || !wayInClear(ground.blockers, item, x, z, feetX, feetZ, table)) continue;
+            approachX = x;
+            approachZ = z;
+            return true;
+          }
+          return false;
+        };
+        if (!wayIn(null) && MEAL_SEAT_TYPES.has(item.type)) {
+          // Tucked in at the table it faces: pulled out to eat, the table left out of the test.
+          const table = tableInFront(items, { x: cx + fx * forward, z: cz + fz * forward, rotation });
+          mealOnly = table !== null && wayIn(table);
         }
       }
       seats.push({
@@ -132,6 +156,7 @@ export function findNpcSeats(items: readonly FurnitureItem[], ground?: SeatGroun
         approachX,
         approachZ,
         places,
+        ...(mealOnly ? { mealOnly: true as const } : {}),
       });
     }
   }
@@ -142,13 +167,22 @@ export function findNpcSeats(items: readonly FurnitureItem[], ground?: SeatGroun
  * Whether the straight walk from (x0, z0) to the feet at (x1, z1) keeps
  * `PULL_OUT_CLEARANCE` from every blocker but the chair's own box: the
  * feet must not end under a table, nor the walk cut a corner of it or pass
- * through a partition.
+ * through a partition. `table`, when given, is left out too: the one the
+ * chair is tucked under, for a meal.
  */
-function wayInClear(blockers: readonly WalkCollider[], chair: FurnitureItem, x0: number, z0: number, x1: number, z1: number): boolean {
+function wayInClear(
+  blockers: readonly WalkCollider[],
+  chair: FurnitureItem,
+  x0: number,
+  z0: number,
+  x1: number,
+  z1: number,
+  table: FurnitureItem | null = null
+): boolean {
   const length = Math.hypot(x1 - x0, z1 - z0);
   const steps = Math.max(1, Math.ceil(length / PULL_OUT_STEP));
   for (const box of blockers) {
-    if (isOwnBox(box, chair)) continue;
+    if (isOwnBox(box, chair) || (table !== null && isOwnBox(box, table))) continue;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const dx = x0 + (x1 - x0) * t - box.cx;
@@ -161,14 +195,34 @@ function wayInClear(blockers: readonly WalkCollider[], chair: FurnitureItem, x0:
   return true;
 }
 
-/** The chair's own collider: the box at its centre, its size. */
-function isOwnBox(box: WalkCollider, chair: FurnitureItem): boolean {
-  const at = chair.position!;
+/** An item's own collider: the box at its centre, its size. */
+function isOwnBox(box: WalkCollider, item: FurnitureItem): boolean {
+  const at = item.position!;
   return (
     !box.wall &&
     Math.abs(box.cx - at.x) < 1e-6 &&
     Math.abs(box.cz - at.z) < 1e-6 &&
-    Math.abs(box.hw - chair.width / 2) < 1e-6 &&
-    Math.abs(box.hd - chair.depth / 2) < 1e-6
+    Math.abs(box.hw - item.width / 2) < 1e-6 &&
+    Math.abs(box.hd - item.depth / 2) < 1e-6
   );
+}
+
+/**
+ * The table a sitter at (x, z) facing `rotation` eats at, its top within
+ * `MEAL_REACH` of the hips (#904); null for none.
+ */
+export function tableInFront(items: readonly FurnitureItem[], sitter: { x: number; z: number; rotation: number }): FurnitureItem | null {
+  const px = sitter.x + Math.sin(sitter.rotation) * MEAL_REACH;
+  const pz = sitter.z + Math.cos(sitter.rotation) * MEAL_REACH;
+  for (const item of items) {
+    if (!item.position || !MEAL_TABLE_TYPES.has(item.type)) continue;
+    // The reach point in the table's own frame.
+    const rotation = item.rotation ?? 0;
+    const dx = px - item.position.x;
+    const dz = pz - item.position.z;
+    const along = dx * Math.cos(rotation) - dz * Math.sin(rotation);
+    const across = dx * Math.sin(rotation) + dz * Math.cos(rotation);
+    if (Math.abs(along) <= item.width / 2 && Math.abs(across) <= item.depth / 2) return item;
+  }
+  return null;
 }

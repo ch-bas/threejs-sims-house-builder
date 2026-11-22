@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
-import { isHardBudgetOn, budgetOf } from './budget';
-import { CHALLENGES, challengeById, challengeLayout, challengeProgress, goalLabel, goalMet, isRoomGoal, isUntouchedChallengeLot, repairChallenge } from './challenges';
+import { ACHIEVEMENTS, achievementsEarned } from './achievements';
+import { isHardBudgetOn, budgetOf, budgetSpent } from './budget';
+import { briefTermsBroken, CHALLENGES, challengeAchievementId, challengeById, challengeLayout, challengeProgress, goalLabel, goalMet, isRoomGoal, isUntouchedChallengeLot, repairChallenge } from './challenges';
+import { FURNITURE_CATALOG } from './constants';
 import { parseStoredLayout } from './schema';
 import type { FurnitureItem, RoomLayout, RoomZone } from './types';
 
@@ -92,6 +94,32 @@ describe('challenge briefs (#909)', () => {
     expect(goalLabel({ kind: 'spend-under', amount: 3_000 })).toBe('Spend under $3,000');
     expect(goalLabel({ kind: 'floors', count: 2 })).toBe('2 storeys');
     expect(goalLabel({ kind: 'five-star' })).toBe('A room with all 5 stars');
+    expect(goalLabel({ kind: 'needs-met' })).toBe('Every need met on every storey');
+  });
+
+  it('meets every need only when each storey has something to eat, rest, do and wash at', () => {
+    const needs = (prefix: string, x: number) => [
+      at(`${prefix}-stove`, 'stove', x, -2),
+      at(`${prefix}-sofa`, 'sofa', x, 0, { width: 2, depth: 0.9 }),
+      at(`${prefix}-shelf`, 'bookshelf', x, 2, { width: 1, depth: 0.3 }),
+      at(`${prefix}-sink`, 'bathroom-sink', x + 2, 2),
+    ];
+    const goal = { kind: 'needs-met' } as const;
+    const ground = makeFloor({ id: 'g', items: needs('g', -2) });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground] }))).toBe(true);
+    // An empty storey upstairs feeds nobody up there.
+    const bare = makeFloor({ id: 'u', items: [] });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground, bare] }))).toBe(false);
+    // A toilet alone is no wash: the walkers' own rule.
+    const upstairs = makeFloor({ id: 'u', items: [...needs('u', -2).filter((item) => item.type !== 'bathroom-sink'), at('u-wc', 'toilet', 2, 2)] });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground, upstairs] }))).toBe(false);
+    const washed = { ...upstairs, items: [...upstairs.items, at('u-sink', 'bathroom-sink', 0, 2)] };
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [ground, washed] }))).toBe(true);
+    // Only what stands in the house counts: a fridge in the garden doesn't.
+    const garden = makeFloor({ id: 'g', items: [...needs('g', -2).filter((item) => item.type !== 'stove'), at('out', 'fridge', 6, 0)] });
+    expect(goalMet(goal, makeLayout({ width: 8, height: 8, floors: [garden] }))).toBe(false);
+    // Not a room goal: no zones needed.
+    expect(isRoomGoal(goal)).toBe(false);
   });
 
   it('a lot nothing was done on is untouched, whatever its id or key order', () => {
@@ -142,5 +170,167 @@ describe('repairChallenge (#909)', () => {
     const both = parseStoredLayout({ ...makeLayout(), budget: 'x', challenge: { id: 'starter-home', startedAt: Number.NaN } });
     expect(both).not.toHaveProperty('budget');
     expect(both?.challenge).toEqual({ id: 'starter-home', startedAt: 0 });
+  });
+});
+
+describe('Lived-in (#909)', () => {
+  /** The cheapest catalogue entry of `type`, bought and placed at (x, z). */
+  const buy = (floor: string, type: string, x: number, z: number): FurnitureItem => {
+    const entry = FURNITURE_CATALOG.filter((candidate) => candidate.type === type).sort((a, b) => a.price - b.price)[0]!;
+    return { ...entry, id: `${floor}-${type}`, position: { x, z }, rotation: 0 } as FurnitureItem;
+  };
+  /** One storey at the least it takes: a bedroom with a bed and a lamp, then something to eat, do and wash at. */
+  const storey = (id: string) =>
+    makeFloor({
+      id,
+      name: id,
+      items: [buy(id, 'bed', -2, -1.5), buy(id, 'lamp', -0.6, -0.5), buy(id, 'stove', 1.2, 0), buy(id, 'bookshelf', 2.8, 0), buy(id, 'bathroom-sink', 1.2, 2.2)],
+      zones: [{ id: `${id}-bedroom`, name: 'Bedroom', color: '#ffffff', x: -4, z: -3.5, w: 4, d: 3.5 }],
+    });
+
+  it('can be met within its funds, with stairs bought, but not with much to spare', () => {
+    const challenge = challengeById('lived-in')!;
+    const lot = challengeLayout(challenge, 0);
+    const house: RoomLayout = { ...lot, floors: [storey(lot.floors[0]!.id), storey('upstairs')] };
+    const progress = challengeProgress(house)!;
+    expect(progress.goals.map((goal) => goal.met)).toEqual([true, true, true]);
+    expect(progress.termsBroken).toBeNull();
+    const stairs = Math.min(...FURNITURE_CATALOG.filter((entry) => entry.type === 'stairs').map((entry) => entry.price));
+    const least = budgetSpent(house) + stairs;
+    expect(least).toBeLessThanOrEqual(challenge.funds);
+    // A brief, not a free hand: the least it takes is most of the funds.
+    expect(least).toBeGreaterThan(challenge.funds * 0.75);
+  });
+
+  it('asks more than a bed for each bedroom: two stars is not enough', () => {
+    const lot = challengeLayout(challengeById('lived-in')!, 0);
+    const dark = (id: string) => {
+      const floor = storey(id);
+      return { ...floor, items: floor.items.filter((item) => item.type !== 'lamp') };
+    };
+    expect(challengeProgress({ ...lot, floors: [dark(lot.floors[0]!.id), dark('upstairs')] })!.goals.map((goal) => goal.met)).toEqual([true, true, false]);
+  });
+});
+
+describe('completing a brief (#909)', () => {
+  // The Starter home's own terms: its 9 x 7 m lot, its funds, the hard budget on.
+  const starter = challengeById('starter-home')!;
+  const terms = { width: 9, height: 7, budget: { writeOff: 0, amount: 8_000 }, challenge: { id: 'starter-home', startedAt: 0 } };
+  /** A 3 x 3.5 m room along the north wall from `x`, with a lamp and (unless `window` is false) a window. */
+  const cell = (id: string, x: number, types: string[], window = true): ReturnType<typeof room> => ({
+    zone: { id, name: id, color: '#ffffff', x, z: -3.5, w: 3, d: 3.5 },
+    items: [
+      ...types.map((type, i) => at(`${id}-${type}`, type, x + 0.4 + i * 0.8, -1.5)),
+      at(`${id}-lamp`, 'lamp', x + 2.6, -0.6, { category: 'electronics', width: 0.3, depth: 0.3 }),
+      ...(window ? [at(`${id}-win`, 'window', x + 1.5, -3.45, { category: 'structure', width: 1.2, depth: 0.1 })] : []),
+    ],
+  });
+  const bed = cell('bed', -4.5, ['bed']);
+  const kitchen = cell('kit', -1.5, ['fridge', 'stove', 'counter']);
+  const bath = cell('bath', 1.5, ['toilet', 'bathroom-sink']);
+  const lot = (rooms: ReturnType<typeof room>[], extra: Partial<RoomLayout> = {}): RoomLayout =>
+    makeLayout({ ...terms, floors: [makeFloor({ items: rooms.flatMap((r) => r.items), zones: rooms.map((r) => r.zone) })], ...extra });
+  const none = new Set<string>();
+  const earned = (change: 'loaded' | 'edit', before: RoomLayout | null, now: RoomLayout, unlocked: ReadonlySet<string> = none) =>
+    achievementsEarned(change, before, now, unlocked).map((a) => a.id);
+  const id = challengeAchievementId('starter-home');
+
+  it('every brief records its completion as an achievement with its own badge', () => {
+    for (const challenge of CHALLENGES) {
+      const achievement = ACHIEVEMENTS.find((a) => a.id === challengeAchievementId(challenge.id));
+      expect(achievement).toMatchObject({ name: challenge.name, icon: challenge.badge, challengeId: challenge.id });
+      // A count it is not: only meeting the last goal earns it.
+      expect(achievement?.progress).toBeUndefined();
+    }
+  });
+
+  it('no badge is an icon the app already shows: a catalogue item, another achievement, a panel header', () => {
+    const badges = CHALLENGES.map((challenge) => challenge.badge);
+    expect(new Set(badges).size).toBe(badges.length);
+    const taken = new Set<string>([
+      ...FURNITURE_CATALOG.map((entry) => entry.icon),
+      ...ACHIEVEMENTS.filter((a) => a.challengeId === undefined).map((a) => a.icon),
+      '🏆', // the Achievements panel's header
+      '🌙', // the time-of-day panel's Night
+    ]);
+    expect(badges.filter((badge) => taken.has(badge))).toEqual([]);
+  });
+
+  it('the edit that meets the last goal earns it, once', () => {
+    const almost = lot([bed, kitchen]);
+    const done = lot([bed, kitchen, bath]);
+    expect(challengeProgress(done)).toMatchObject({ done: true, termsBroken: null });
+    expect(earned('edit', almost, done)).toContain(id);
+    expect(earned('edit', almost, done, new Set([id]))).not.toContain(id);
+  });
+
+  it('a load earns nothing, nor does an edit that keeps a loaded brief done', () => {
+    const almost = lot([bed, kitchen]);
+    const done = lot([bed, kitchen, bath]);
+    expect(earned('loaded', almost, done)).not.toContain(id);
+    expect(earned('edit', null, done)).not.toContain(id);
+    const nudged = lot([bed, kitchen, { ...bath, items: bath.items.map((item) => (item.type === 'lamp' ? { ...item, position: { x: 4.1, z: -0.8 } } : item)) }]);
+    expect(challengeProgress(nudged)!.done).toBe(true);
+    expect(earned('edit', done, nudged)).not.toContain(id);
+  });
+
+  it('only within the brief: its terms kept, its own id, every goal met', () => {
+    const almost = lot([bed, kitchen]);
+    // Funds raised, the hard budget off, the lot resized: goals met, no badge.
+    for (const [extra, reason] of [
+      [{ budget: { writeOff: 0, amount: 9_000 } }, /funds raised/],
+      [{ budget: { writeOff: 0, amount: 8_000, enabled: false } }, /hard budget is off/],
+      [{ width: 10 }, /lot was resized/],
+    ] as const) {
+      const broken = lot([bed, kitchen, bath], extra);
+      expect(challengeProgress(broken)).toMatchObject({ done: true, termsBroken: expect.stringMatching(reason) as string });
+      expect(earned('edit', almost, broken)).not.toContain(id);
+    }
+    // Overspent while the funds were raised or the budget was off, then put
+    // back within the terms: the spending still breaks them, either route.
+    const pricey = (r: ReturnType<typeof room>): ReturnType<typeof room> => ({ ...r, items: r.items.map((item) => ({ ...item, price: 1_000 })) });
+    const over = [pricey(bed), pricey(kitchen), pricey(bath)];
+    expect(budgetSpent(lot(over))).toBeGreaterThan(8_000);
+    for (const before of [
+      lot([pricey(bed), pricey(kitchen)], { budget: { writeOff: 0, amount: 20_000 } }),
+      lot([pricey(bed), pricey(kitchen)], { budget: { writeOff: 0, amount: 8_000, enabled: false } }),
+    ]) {
+      const completed = lot(over, { budget: before.budget! });
+      expect(challengeProgress(completed)).toMatchObject({ done: true, termsBroken: expect.any(String) as string });
+      expect(earned('edit', before, completed)).not.toContain(id);
+      // Funds lowered / the budget switched back on.
+      const back = lot(over);
+      expect(challengeProgress(back)).toMatchObject({ done: true, termsBroken: expect.stringMatching(/spent .* over the funds/) as string });
+      expect(earned('edit', completed, back)).not.toContain(id);
+    }
+    // Spending exactly the funds keeps to them.
+    const exact = lot([bed, kitchen, bath], { budget: { writeOff: 8_000 - budgetSpent(lot([bed, kitchen, bath])), amount: 8_000 } });
+    expect(budgetSpent(exact)).toBe(8_000);
+    expect(briefTermsBroken(exact, starter)).toBeNull();
+    // Fewer funds than the brief gave is harder, not easier: still within its terms.
+    expect(earned('edit', lot([bed, kitchen], { budget: { writeOff: 0, amount: 6_000 } }), lot([bed, kitchen, bath], { budget: { writeOff: 0, amount: 6_000 } }))).toContain(id);
+    // Another brief, or none, earns nothing for this one.
+    const other = { challenge: { id: 'family-of-four', startedAt: 0 } };
+    expect(earned('edit', lot([bed, kitchen], other), lot([bed, kitchen, bath], other)).filter((a) => a.startsWith('challenge-'))).toEqual([]);
+    const { challenge: _c, ...plain } = terms;
+    expect(earned('edit', makeLayout({ ...plain, floors: almost.floors }), makeLayout({ ...plain, floors: lot([bed, kitchen, bath]).floors })).filter((a) => a.startsWith('challenge-'))).toEqual([]);
+    for (const challenge of CHALLENGES) {
+      expect(earned('edit', makeLayout(), challengeLayout(challenge, 0))).not.toContain(challengeAchievementId(challenge.id));
+    }
+    expect(briefTermsBroken(challengeLayout(starter, 0), starter)).toBeNull();
+  });
+
+  it('scores the rooms with the editor collisions, as the room goals do', () => {
+    // A bath with no window stands at three stars exactly.
+    const plain = cell('bath', 1.5, ['toilet', 'bathroom-sink'], false);
+    expect(challengeProgress(lot([bed, kitchen, plain]))!.done).toBe(true);
+    // Fresh layouts (the scores are kept per layout): the editor has the
+    // toilet colliding, a star short, and the brief isn't done.
+    const before = lot([bed, kitchen]);
+    const now = lot([bed, kitchen, plain]);
+    const known = { floorIndex: 0, ids: new Set(['bath-toilet']) };
+    const got = achievementsEarned('edit', before, now, none, { before: known, now: known }).map((a) => a.id);
+    expect(got).not.toContain(id);
+    expect(challengeProgress(now)!.done).toBe(false);
   });
 });

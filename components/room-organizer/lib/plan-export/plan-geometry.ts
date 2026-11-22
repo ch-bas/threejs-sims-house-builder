@@ -13,6 +13,7 @@ import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from
 import { floorHoleOutlines } from '../floor-holes';
 import { shellWalls, shellWallSpan, type ShellWallId } from '../footprint';
 import { formatMetres, getDisplayUnit, type LengthUnit } from '../format';
+import { shownGrounds } from '../grounds';
 import { isOpening, isWallMounted } from '../opening-snap';
 import { DOOR_FRAME, SLIDING_PANE_SHARE, doorLeafSpans, doorStyle } from '../opening-style';
 import { computeFloorOpenings, floorOpeningOutline, floorStairHeadroom, stairPlanSymbol, stairTreadLines } from '../stairs';
@@ -415,7 +416,7 @@ export interface PlanBounds {
  * camera mounted on the outside of a wall (its centre beyond the walls)
  * does count, or it would sit on the dimension strings.
  */
-export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
+export function planContentBounds(layout: RoomLayout, floor: FloorLayout, groundsWithin?: PlanBounds): PlanBounds {
   const hw = layout.width / 2;
   const hd = layout.height / 2;
   const bounds: PlanBounds = { minX: -hw, minZ: -hd, maxX: hw, maxZ: hd };
@@ -429,6 +430,15 @@ export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanB
       if (corner.z > bounds.maxZ) bounds.maxZ = corner.z;
     }
   }
+  // Pinned dimensions (#921) are drawn content: the sheet keeps their lines and labels.
+  for (const line of pinnedDimensionLines(floor)) {
+    for (const point of [line.a, line.b, line.from, line.to, ...pinLabelExtent(line)]) {
+      bounds.minX = Math.min(bounds.minX, point.x);
+      bounds.maxX = Math.max(bounds.maxX, point.x);
+      bounds.minZ = Math.min(bounds.minZ, point.z);
+      bounds.maxZ = Math.max(bounds.maxZ, point.z);
+    }
+  }
   // A door that opens out of the room can swing past the walls (#917):
   // its arc is part of the sheet. A door opening in stays inside them.
   for (const door of splitPlanItems(floor.items).openings) {
@@ -439,6 +449,16 @@ export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanB
     bounds.maxX = Math.max(bounds.maxX, swing.maxX);
     bounds.minZ = Math.min(bounds.minZ, swing.minZ);
     bounds.maxZ = Math.max(bounds.maxZ, swing.maxZ);
+  }
+  // Garden surfaces (#924) are on the ground floor's sheet; the on-screen fit
+  // takes them only as far as `groundsWithin`, its cap.
+  const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
+  for (const ground of isGroundFloor ? shownGrounds(layout) : []) {
+    const clip = groundsWithin ?? { minX: -Infinity, minZ: -Infinity, maxX: Infinity, maxZ: Infinity };
+    bounds.minX = Math.min(bounds.minX, Math.max(clip.minX, ground.x));
+    bounds.maxX = Math.max(bounds.maxX, Math.min(clip.maxX, ground.x + ground.w));
+    bounds.minZ = Math.min(bounds.minZ, Math.max(clip.minZ, ground.z));
+    bounds.maxZ = Math.max(bounds.maxZ, Math.min(clip.maxZ, ground.z + ground.d));
   }
   return bounds;
 }
@@ -683,6 +703,72 @@ export function interiorWallDimensions(floor: Pick<FloorLayout, 'interiorWalls' 
     });
   }
   return dims;
+}
+
+// -- Pinned dimensions (#921) -------------------------------------------------
+
+/** A dimension pinned with the measure tool, as every plan and export draws it. */
+export interface PinnedDimensionLine extends PlanDimension {
+  id: string;
+  /** The measured points; `from`/`to` are the drawn line, `offset` off them, with extension lines back. */
+  a: PlanPoint;
+  b: PlanPoint;
+  /** Unit world-space normal (x right, z down) to the side the label sits on. */
+  normal: PlanPoint;
+}
+
+/** How far off its line a pinned dimension's label reaches, metres: for the sheet's bounds. */
+const PIN_LABEL_REACH_M = 0.3;
+
+/** The ends of a pin's label, roughly, in world metres (#921). */
+function pinLabelExtent(line: PinnedDimensionLine): PlanPoint[] {
+  const mid = { x: (line.from.x + line.to.x) / 2 + line.normal.x * PIN_LABEL_REACH_M, z: (line.from.z + line.to.z) / 2 + line.normal.z * PIN_LABEL_REACH_M };
+  const along = { x: -line.normal.z, z: line.normal.x };
+  return [-1, 1].map((side) => ({ x: mid.x + along.x * WALL_LABEL_HALF_WIDTH_M * side, z: mid.z + along.z * WALL_LABEL_HALF_WIDTH_M * side }));
+}
+
+/**
+ * The floor without its pinned dimensions: an export with its dimensions
+ * switched off neither draws them nor frames the sheet for them (#921).
+ */
+export function withoutPinnedDimensions(floor: FloorLayout): FloorLayout {
+  if (!floor.dimensions) return floor;
+  const { dimensions: _off, ...rest } = floor;
+  return rest;
+}
+
+/** `layout` with no storey's pinned dimensions (`withoutPinnedDimensions`). */
+export function layoutWithoutPinnedDimensions(layout: RoomLayout): RoomLayout {
+  return layout.floors.some((floor) => floor.dimensions) ? { ...layout, floors: layout.floors.map(withoutPinnedDimensions) } : layout;
+}
+
+/**
+ * The storey's pinned dimensions (#921), one helper for the plan, the
+ * blueprint, the SVG (and so the print) and the DXF. The line runs `offset`
+ * off the points along a→b's left-hand normal; the label sits on the side
+ * the line moved to, or, with no offset, above a level line and left of an
+ * upright one, so it reads from the bottom or the right of the sheet.
+ */
+export function pinnedDimensionLines(floor: Pick<FloorLayout, 'dimensions'>, unit: LengthUnit = getDisplayUnit()): PinnedDimensionLine[] {
+  const lines: PinnedDimensionLine[] = [];
+  for (const { id, a, b, offset = 0 } of floor.dimensions ?? []) {
+    const lengthM = Math.hypot(b.x - a.x, b.z - a.z);
+    if (!(lengthM > 0)) continue;
+    const left = { x: -(b.z - a.z) / lengthM, z: (b.x - a.x) / lengthM };
+    const up = left.z < -1e-9 || (Math.abs(left.z) <= 1e-9 && left.x < 0) ? 1 : -1;
+    const side = offset > 0 ? 1 : offset < 0 ? -1 : up;
+    lines.push({
+      id,
+      a: { x: a.x, z: a.z },
+      b: { x: b.x, z: b.z },
+      from: { x: a.x + left.x * offset, z: a.z + left.z * offset },
+      to: { x: b.x + left.x * offset, z: b.z + left.z * offset },
+      lengthM,
+      label: formatDimension(lengthM, unit),
+      normal: { x: left.x * side + 0, z: left.z * side + 0 },
+    });
+  }
+  return lines;
 }
 
 /** One run of an opening chain: wall-to-opening, opening width or opening-to-opening. */

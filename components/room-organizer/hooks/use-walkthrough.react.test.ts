@@ -271,26 +271,32 @@ describe('useWalkthrough — switching a lamp (#910)', () => {
   const LAMP = item({ id: 'lamp', type: 'floor-lamp', name: 'Floor Lamp', width: 0.4, depth: 0.4, height: 1.6, position: { x: 0, z: -2 } });
   const lampSwitch = (lit: boolean) => {
     const off = new Set<string>();
+    const on = new Set<string>();
     return {
       off,
+      on,
       lit: () => lit,
       isOff: (id: string) => off.has(id),
       toggle: vi.fn((id: string) => {
         if (!off.delete(id)) off.add(id);
+      }),
+      tvOn: (id: string) => on.has(id),
+      toggleTv: vi.fn((id: string) => {
+        if (!on.delete(id)) on.add(id);
       }),
     };
   };
 
   it('offers the lamp at night, and E switches it off and on again', async () => {
     const lamps = lampSwitch(true);
-    const { lock, result } = await setup(building([FRONT_DOOR, LAMP]), { lampSwitch: lamps });
+    const { lock, result } = await setup(building([FRONT_DOOR, LAMP]), { switches: lamps });
     lock();
     frames(10, 20);
-    expect(result.current.lamp).toEqual({ name: 'Floor Lamp', on: true });
+    expect(result.current.lamp).toEqual({ name: 'Floor Lamp', on: true, kind: 'lamp' });
     expect(result.current.seatName).toBeNull();
     key('keydown', 'KeyE', 'e');
     expect(lamps.toggle).toHaveBeenCalledWith('lamp');
-    expect(result.current.lamp).toEqual({ name: 'Floor Lamp', on: false });
+    expect(result.current.lamp).toEqual({ name: 'Floor Lamp', on: false, kind: 'lamp' });
     expect(result.current.seated).toBe(false);
     key('keydown', 'KeyE', 'e');
     expect(lamps.off.size).toBe(0);
@@ -299,12 +305,28 @@ describe('useWalkthrough — switching a lamp (#910)', () => {
 
   it('offers no lamp by day', async () => {
     const lamps = lampSwitch(false);
-    const { lock, result } = await setup(building([FRONT_DOOR, LAMP]), { lampSwitch: lamps });
+    const { lock, result } = await setup(building([FRONT_DOOR, LAMP]), { switches: lamps });
     lock();
     frames(10, 20);
     expect(result.current.lamp).toBeNull();
     key('keydown', 'KeyE', 'e');
     expect(lamps.toggle).not.toHaveBeenCalled();
+  });
+
+  it('offers the TV at any hour, off until E switches it on', async () => {
+    const SET = item({ id: 'tv', type: 'tv', name: 'TV Stand', width: 1.5, depth: 0.4, height: 0.5, position: { x: 0, z: -2 } });
+    const tvs = lampSwitch(false);
+    const { lock, result } = await setup(building([FRONT_DOOR, SET]), { switches: tvs });
+    lock();
+    frames(10, 20);
+    expect(result.current.lamp).toEqual({ name: 'TV Stand', on: false, kind: 'tv' });
+    key('keydown', 'KeyE', 'e');
+    expect(tvs.toggleTv).toHaveBeenCalledWith('tv');
+    expect(tvs.toggle).not.toHaveBeenCalled();
+    expect(result.current.lamp).toEqual({ name: 'TV Stand', on: true, kind: 'tv' });
+    key('keydown', 'KeyE', 'e');
+    expect(tvs.on.size).toBe(0);
+    expect(result.current.lamp?.on).toBe(false);
   });
 });
 

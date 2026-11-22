@@ -7,13 +7,14 @@ import { formatArea, formatMetres, formatSize, getDisplayUnit } from './format';
 import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
 import { COARSE_POINTER_QUERY } from './hud-layout';
+import { onLotRun } from './item-run';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
 import { abandonPrintPopup, openPrintPopup, printWhenLoaded } from './plan-export/print-popup';
-import { distanceOutsideWalls } from './plan-export/print-scale';
+import { distanceOutsideWalls, pinOutsideWalls } from './plan-export/print-scale';
 import { storeyHeight } from './storeys';
 import { entrancePlanOutline, planFloorIndex, type EntranceBuilding } from './street';
 import { zoneStats } from './zones';
-import type { FloorLayout, FurnitureItem, RoomLayout } from './types';
+import type { FloorLayout, FurnitureItem, PinnedDimension, RoomLayout } from './types';
 
 /** The box the blueprint image is fitted into, in canvas px. */
 const PAGE_WIDTH = 1200;
@@ -70,11 +71,26 @@ export function blueprintCanvasSize(bounds: PlanBounds): { width: number; height
  */
 const MIN_ROOM_SHARE = 0.5;
 
+/**
+ * Garden surfaces (#924) widen the sheet only this far, the house's own size
+ * past each wall, as on the on-screen plan: they can't be left off like an
+ * item, so a big patio would otherwise cost every outdoor item its place.
+ */
+function groundsCap(layout: Pick<RoomLayout, 'width' | 'height'>): PlanBounds {
+  return { minX: -layout.width, minZ: -layout.height, maxX: layout.width, maxZ: layout.height };
+}
+
 function fitScale(bounds: PlanBounds): number {
   return Math.min(
     (PAGE_WIDTH - BLUEPRINT_PADDING * 2) / (bounds.maxX - bounds.minX),
     (PAGE_HEIGHT - BLUEPRINT_PADDING * 2) / (bounds.maxZ - bounds.minZ)
   );
+}
+
+/** The floor without its pinned dimensions (#921): what a run's own extent is measured on. */
+function withoutPins(floor: FloorLayout): FloorLayout {
+  const { dimensions: _pins, ...rest } = floor;
+  return rest;
 }
 
 export interface BlueprintPlan {
@@ -93,18 +109,31 @@ export interface BlueprintPlan {
  */
 export function blueprintPlan(layout: RoomLayout, floor: FloorLayout): BlueprintPlan {
   const room: PlanBounds = { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
-  const minScale = fitScale(room) * MIN_ROOM_SHARE;
-  const outside = floor.items
-    .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
+  // Runs out on the lot (#915) are drawn whole, as on the on-screen plan:
+  // a fenced lot may take the house below the share, never off the sheet.
+  const lotRuns = floor.items.filter((item) => onLotRun(layout, item));
+  const runs = lotRuns.length > 0 ? fitScale(planContentBounds(layout, { ...withoutPins(floor), items: lotRuns }, groundsCap(layout))) : Infinity;
+  const minScale = Math.min(fitScale(room) * MIN_ROOM_SHARE, runs);
+  // Pins out to the garden (#921) are dropped by the same rule, furthest first, but not listed.
+  type Outside = { item: FurnitureItem; pin?: undefined; distance: number } | { item?: undefined; pin: PinnedDimension; distance: number };
+  const outside: Outside[] = [
+    ...floor.items.filter((item) => !onLotRun(layout, item)).map((item) => ({ item, distance: distanceOutsideWalls(layout, item) })),
+    ...(floor.dimensions ?? []).map((pin) => ({ pin, distance: pinOutsideWalls(layout, pin) })),
+  ]
     .filter(({ distance }) => distance > 0)
     .sort((a, b) => b.distance - a.distance);
   let drawn = floor;
   let dropped = 0;
-  while (dropped < outside.length && fitScale(planContentBounds(layout, drawn)) < minScale) {
-    const gone = new Set(outside.slice(0, ++dropped).map(({ item }) => item));
-    drawn = { ...floor, items: floor.items.filter((item) => !gone.has(item)) };
+  while (dropped < outside.length && fitScale(planContentBounds(layout, drawn, groundsCap(layout))) < minScale) {
+    const gone = outside.slice(0, ++dropped);
+    const items = new Set(gone.flatMap(({ item }) => (item ? [item] : [])));
+    const pins = new Set(gone.flatMap(({ pin }) => (pin ? [pin] : [])));
+    const { dimensions: _all, ...rest } = floor;
+    const dimensions = floor.dimensions?.filter((pin) => !pins.has(pin)) ?? [];
+    drawn = { ...rest, items: floor.items.filter((item) => !items.has(item)), ...(dimensions.length > 0 ? { dimensions } : {}) };
   }
-  return { floor: drawn, omitted: outside.slice(0, dropped) };
+  const omitted = outside.slice(0, dropped).flatMap(({ item, distance }) => (item ? [{ item, distance }] : []));
+  return { floor: drawn, omitted };
 }
 
 /**
@@ -169,8 +198,16 @@ function planImage(draw: (canvas: HTMLCanvasElement, pixelRatio: number) => void
   }
 }
 
+function withoutFloorPlanImage(layout: RoomLayout): RoomLayout {
+  const { floorPlanImage: _guide, ...rest } = layout;
+  return rest;
+}
+
 /** The print sheet of one floor. Throws when the plan can't be drawn even at 1×. */
-async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<string> {
+async function blueprintHtml(building: RoomLayout, floor: FloorLayout): Promise<string> {
+  // An underlay (#920) is a tracing guide, not part of the sheet: the walls
+  // drawn over it are. A plan that is the drawing still prints.
+  const layout = building.floorPlanMode === 'underlay' ? withoutFloorPlanImage(building) : building;
   // The tracing image is painted from a lazily-warmed decoded-image cache;
   // in 3D view with the minimap off nothing has rendered the plan yet, so
   // the first printout captured only the floor colour (#288). Same
@@ -181,7 +218,7 @@ async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<st
   // Fit the plan content, outdoor items included (#377), as the SVG and
   // print-to-scale routes already do (#287).
   const plan = blueprintPlan(layout, floor);
-  const bounds = planContentBounds(layout, plan.floor);
+  const bounds = planContentBounds(layout, plan.floor, groundsCap(layout));
   const size = blueprintCanvasSize(bounds);
   const floorIndex = planFloorIndex(layout.floors, floor);
   const keepOut = floorKeepOut(layout, floorIndex);

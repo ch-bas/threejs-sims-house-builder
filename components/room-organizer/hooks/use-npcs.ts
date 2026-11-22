@@ -1,15 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
+import { floorKeepOut } from '../lib/floor-keep-out';
 import { type NpcBody, type NpcHandOff, type PlayerBody, createNpcBody, moveNpcBody, seatTakenByPlayer } from '../lib/npc-bodies';
+// Garden walkers (#913).
+import { type NpcBuilding, findGardenSeats, findGardenSpots, gardenNavInput, gardenOpen, gardenSignature, indoorOnly, onTheLot } from '../lib/npc-garden';
 import {
   type NeedKind,
   type NeedSpot,
   type NpcNeeds,
   decayNeeds,
   findNeedSpots,
+  pickMealSpot,
   pickNeedSpot,
   randomNeeds,
   refillNeed,
+  sitsToEat,
 } from '../lib/npc-needs';
 import {
   MAX_PATH_POINTS,
@@ -19,9 +23,12 @@ import {
   cellAt,
   cellX,
   cellZ,
+  cutOffOutside,
   findNpcPath,
   isFreeAt,
   nearestFreeCell,
+  nearestIndoorCell,
+  npcGroundY,
   npcNavSignature,
   pickDestination,
   randomFreeCell,
@@ -30,8 +37,10 @@ import { type NeedBias, NO_BIAS, isSleepHour, needBias } from '../lib/npc-schedu
 import { type NpcSeat, findNpcSeats } from '../lib/npc-seats';
 import { floorElevation } from '../lib/storeys';
 import { type WalkerPosition, resolveWalkerStep } from '../lib/walk-collision';
+import { WALKER_CARD_INTERVAL, type WalkerCards, type WalkerDoing, bubbleNeed, strandedNeeds } from '../lib/walker-card';
 import { disposeObject } from '../three/builder-utils';
 import { type HumanFigureRig, buildHumanFigure, poseWalk } from '../three/builders/human-figure';
+import { type NeedBubble, type NeedBubbleAtlas, buildNeedBubble, createNeedBubbleAtlas, showNeedBubble } from '../three/need-bubbles';
 import {
   PEOPLE_CLIPS,
   SIT_HIP_BACK,
@@ -44,11 +53,12 @@ import {
 } from '../three/people-model';
 import { lookForSeed } from '../three/people-outfits';
 import { useReducedMotion } from './use-reduced-motion';
-import type { FurnitureItem, InteriorWall } from '../lib/types';
+import type { FurnitureItem, InteriorWall, Weather } from '../lib/types';
 import type { FrameBudget } from '../three/frame-budget';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('../three/three-runtime');
+
 
 const NPC_TAG = 'npc';
 
@@ -122,6 +132,12 @@ export interface NpcState {
   using: NeedKind | null;
   /** Sleeping in a bed or on a sofa at night (#907): up after `SLEEP_SECONDS`, at morning, or for the player. */
   asleep: boolean;
+  /** #906: the walker's card id (its group's `userData.walkerId`), its name's seed, and its thought bubble. */
+  id?: number;
+  nameSeed?: number;
+  bubble?: NeedBubble;
+  /** #906: the needs nothing it can reach meets (`strandedNeeds`), refreshed at each stop and floor edit. */
+  stranded?: number;
 }
 
 export interface NpcAnimation {
@@ -229,9 +245,10 @@ export interface UseNpcsOptions {
   sceneRef: React.MutableRefObject<ThreeNS.Scene | null>;
   /**
    * The building: its storeys' items, partitions and keep-out (porch,
-   * stairwells, the corner cut) are what the walkers walk around.
+   * stairwells, the corner cut) are what the walkers walk around; on the
+   * ground storey the lot, its surfaces and the street too (#913).
    */
-  building: KeepOutBuilding;
+  building: NpcBuilding;
   /**
    * The storeys drawn now, as an inclusive range of indices (#580). Their
    * walkers are shown and walk; a storey drawn for the first time gets its
@@ -264,6 +281,12 @@ export interface UseNpcsOptions {
    * spawn effect. NaN or absent: no clock.
    */
   clock?: { readonly current: number };
+  /** The walker card (#906): a tap selects a walker, and the walk publishes its needs at 2 Hz. */
+  cards?: WalkerCards;
+  /** Photo mode (#906): the thought bubbles stay hidden, so photos stay clean. */
+  hideBubbles?: boolean;
+  /** The weather (#913): in rain or snow the walkers keep out of the garden. */
+  weather?: Weather;
 }
 
 /**
@@ -281,10 +304,20 @@ interface StoreyWalkers {
   spots: readonly NeedSpot[];
   /** The items the seats were found in, so a new array rebuilds them. */
   seatItems: readonly FurnitureItem[] | null;
+  /** The seats and spots indoors, for while the garden is closed (#913); the same as `seats`/`spots` without a lot. */
+  indoor: { seats: NpcSeats; spots: readonly NeedSpot[] };
   floorY: number;
   /** The storey's index now: a floor added below moves it up. */
   index: number;
   shown: boolean;
+  /**
+   * Garden walkers (#913): the ground storey while another is drawn. Its
+   * walkers out on the lot (seen with the outside) keep walking and showing;
+   * those indoors stay parked, and one that comes in parks at the door.
+   */
+  outdoorsOnly: boolean;
+  /** The walkers stepped while `outdoorsOnly`, refilled each step (no allocation). */
+  outside: NpcState[];
 }
 
 /** What the walkers need from the scene while they exist. */
@@ -292,6 +325,10 @@ interface NpcStage {
   THREE: ThreeModule;
   scene: ThreeNS.Scene;
   people: PeopleModel | null;
+  /** The thought bubbles' atlas (#906), freed with the walkers. */
+  bubbles: NeedBubbleAtlas | null;
+  /** The next walker's look and name seed (#906): in order across the house, so no two share a name. */
+  nextSeed: number;
 }
 
 /**
@@ -305,14 +342,17 @@ interface NpcStage {
 export function useNpcs(options: UseNpcsOptions): void {
   const {
     enabled, count = 3, threeModuleRef, sceneRef, building, shownFrom, shownTo,
-    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep, handOff, clock,
+    riggedModelReady = false, invalidate, requestShadowUpdate, addDecorativeStep, handOff, clock, cards, hideBubbles = false, weather,
   } = options;
   const reducedMotion = useReducedMotion();
   const storeysRef = useRef(new Map<string, StoreyWalkers>());
   const stageRef = useRef<NpcStage | null>(null);
+  // Photo mode (#906): read as the bubbles' atlas is made.
+  const hideBubblesRef = useRef(hideBubbles);
+  hideBubblesRef.current = hideBubbles;
   // Read by `sync`, which runs from both effects below.
-  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock });
-  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock };
+  const inputsRef = useRef({ building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock, cards, weather });
+  inputsRef.current = { building, shownFrom, shownTo, count, invalidate, requestShadowUpdate, handOff, clock, cards, weather };
 
   // Brings the storeys' walkers in line with the building and the storeys
   // drawn: spawn, re-route, re-seat, lift or lower, show or park, remove.
@@ -322,11 +362,15 @@ export function useNpcs(options: UseNpcsOptions): void {
     if (!stage) return;
     const inputs = inputsRef.current;
     const player = inputs.handOff?.player.present ? inputs.handOff.player : null;
-    if (syncNpcStoreys(storeysRef.current, stage, inputs.building, inputs.shownFrom, inputs.shownTo, inputs.count, player)) {
+    // Garden walkers (#913): spawned and re-routed with the garden as it is now.
+    const open = gardenOpen(inputs.weather, inputs.clock?.current ?? Number.NaN);
+    if (syncNpcStoreys(storeysRef.current, stage, inputs.building, inputs.shownFrom, inputs.shownTo, inputs.count, player, open)) {
       inputs.requestShadowUpdate?.();
       inputs.invalidate?.();
     }
     if (inputs.handOff) publishBodies(inputs.handOff, storeysRef.current);
+    // A walker parked or gone closes its card, with or without a step (reduced motion).
+    if (inputs.cards && inputs.cards.selected() !== null) publishCard(inputs.cards, storeysRef.current);
   };
 
   useEffect(() => {
@@ -335,24 +379,44 @@ export function useNpcs(options: UseNpcsOptions): void {
     const scene = sceneRef.current;
     if (!THREE || !scene) return undefined;
     const storeys = storeysRef.current;
-    stageRef.current = { THREE, scene, people: riggedModelReady ? getPeopleModel() : null };
+    const bubbles = createNeedBubbleAtlas(THREE);
+    bubbles.hidden = hideBubblesRef.current;
+    stageRef.current = { THREE, scene, people: riggedModelReady ? getPeopleModel() : null, bubbles, nextSeed: 0 };
     // Spawns, and poses, the walkers of the storeys drawn now, outside the
     // budget: a paused one (a hidden tab adopting another tab's house) would
     // leave them unposed and shadowless until it runs.
     syncRef.current();
 
     const shadowDue = npcShadowPacer();
+    // The open walker card (#906): filled at once on a tap, then twice a second.
+    let cardClock = 0;
+    const fillCard = () => {
+      const shownCards = inputsRef.current.cards;
+      if (shownCards && shownCards.selected() !== null) publishCard(shownCards, storeys);
+    };
+    const stopCards = inputsRef.current.cards?.subscribe(() => {
+      if (inputsRef.current.cards?.snapshot() === null) fillCard();
+    });
     // One step of the walk, on the scene's frame budget (#671); true asks for
     // a repaint. Parked storeys don't step.
     const step = (delta: number): boolean => {
       let change: NpcChange = NPC_STILL;
       const seen = inputsRef.current.handOff?.player;
       const hour = inputsRef.current.clock?.current ?? Number.NaN;
+      const open = gardenOpen(inputsRef.current.weather, hour);
       for (const storey of storeys.values()) {
-        if (!storey.shown || !storey.nav || storey.npcs.length === 0) continue;
+        if ((!storey.shown && !storey.outdoorsOnly) || !storey.nav || storey.npcs.length === 0) continue;
+        // Garden walkers (#913): a closed garden leaves its seats and spots out.
+        const using = open ? storey : storey.indoor;
+        if (storey.nav.outdoorOpen !== open) {
+          storey.nav.outdoorOpen = open;
+          // What each walker can't find changes with it (#906).
+          if (storey.nav.outdoor) for (const npc of storey.npcs) refreshStranded(npc, storey.nav, using.spots);
+        }
         // The player is one more person on its own storey (#585).
         const player = seen?.present && seen.floorIndex === storey.index ? seen : null;
-        if (revealHeld(storey.npcs, player)) {
+        // (Not the parked walkers of a storey not drawn, #913.)
+        if (storey.shown && revealHeld(storey.npcs, player)) {
           change = NPC_SHADOW;
           const shared = inputsRef.current.handOff;
           if (shared) publishBodies(shared, storeys);
@@ -361,9 +425,28 @@ export function useNpcs(options: UseNpcsOptions): void {
         // only when a walker moved: a rigged figure idles (breathes) every
         // frame, and re-rendering every caster for that pinned the GPU (#400).
         // A moving walker's shadow follows at NPC_SHADOW_INTERVAL_MS (#668).
-        change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, storey.seats, player, storey.spots, hour)) as NpcChange;
+        if (storey.shown) {
+          change = Math.max(change, stepNpcs(storey.npcs, delta, storey.nav, storey.floorY, Math.random, using.seats, player, using.spots, hour)) as NpcChange;
+          continue;
+        }
+        // Garden walkers (#913), their storey not drawn: only those out on the lot walk.
+        const outside = storey.outside;
+        outside.length = 0;
+        for (const npc of storey.npcs) if (npc.group.visible) outside.push(npc);
+        if (outside.length === 0) continue;
+        change = Math.max(change, stepNpcs(outside, delta, storey.nav, storey.floorY, Math.random, using.seats, player, using.spots, hour)) as NpcChange;
+        if (parkComingIn(outside, storey.nav)) {
+          change = NPC_SHADOW;
+          const shared = inputsRef.current.handOff;
+          if (shared) publishBodies(shared, storeys);
+        }
       }
       if (shadowDue(performance.now(), change === NPC_SHADOW)) inputsRef.current.requestShadowUpdate?.();
+      cardClock += delta;
+      if (cardClock >= WALKER_CARD_INTERVAL) {
+        cardClock = 0;
+        fillCard();
+      }
       return change !== NPC_STILL;
     };
     // Reduced motion (#436): the spawn pose is all; they stand where they
@@ -372,8 +455,11 @@ export function useNpcs(options: UseNpcsOptions): void {
 
     return () => {
       removeStep();
+      stopCards?.();
+      inputsRef.current.cards?.close();
       for (const storey of storeys.values()) removeNpcs(scene, storey.npcs);
       storeys.clear();
+      bubbles.dispose();
       const shared = inputsRef.current.handOff;
       if (shared) shared.bodies = [];
       stageRef.current = null;
@@ -390,6 +476,74 @@ export function useNpcs(options: UseNpcsOptions): void {
   useEffect(() => {
     syncRef.current();
   }, [building, shownFrom, shownTo, count]);
+
+  // Photo mode hides the bubbles (#906) at once, step or no step.
+  useEffect(() => {
+    const atlas = stageRef.current?.bubbles;
+    if (!atlas || atlas.hidden === hideBubbles) return;
+    atlas.hidden = hideBubbles;
+    let changed = false;
+    for (const storey of storeysRef.current.values()) for (const npc of storey.npcs) if (refreshBubble(npc)) changed = true;
+    if (changed) inputsRef.current.invalidate?.();
+  }, [hideBubbles, enabled, riggedModelReady]);
+}
+
+/** Show or hide a walker's bubble for what it needs now (#906); true when what is drawn changed. */
+function refreshBubble(npc: NpcState): boolean {
+  if (!npc.bubble) return false;
+  // Every step: one scratch, no allocation.
+  doingScratch.asleep = npc.asleep;
+  doingScratch.seated = inSeat(npc);
+  doingScratch.seeking = npc.seeking;
+  doingScratch.using = npc.using;
+  return showNeedBubble(npc.bubble, bubbleNeed(npc.needs, npc.stranded ?? 0, doingScratch), doingScratch.seated);
+}
+const doingScratch: WalkerDoing = { asleep: false, seated: false, seeking: null, using: null };
+
+/**
+ * Which needs nothing the walker can reach meets (#906): a spot it can
+ * stand at or (a rigged figure) sit in, in its own region of the floor.
+ * Occupancy is left out: a fridge in use is still there.
+ */
+function refreshStranded(npc: NpcState, nav: NpcNav, spots: readonly NeedSpot[]): void {
+  const from = standingCell(npc, nav);
+  if (from < 0) return;
+  const region = nav.region[from];
+  const sits = Boolean(npc.anim?.sit);
+  npc.stranded = strandedNeeds(
+    spots,
+    (spot) => (spot.seatKey === null || sits) && isFreeAt(nav, spot.x, spot.z) && nav.region[cellAt(nav, spot.x, spot.z)] === region
+  );
+}
+
+/** The selected walker's card (#906), from the shown walkers; a walker gone or parked closes it. */
+function publishCard(cards: WalkerCards, storeys: ReadonlyMap<string, StoreyWalkers>): void {
+  const id = cards.selected();
+  for (const storey of storeys.values()) {
+    if (!storey.shown && !storey.outdoorsOnly) continue;
+    for (const npc of storey.npcs) {
+      if (npc.id !== id || !npc.group.visible) continue;
+      const doing = { asleep: npc.asleep, seated: inSeat(npc), seeking: npc.seeking, using: npc.using };
+      cards.publish({ id, seed: npc.nameSeed ?? 0, doing, needs: { ...npc.needs }, wants: bubbleNeed(npc.needs, npc.stranded ?? 0, doing) });
+      return;
+    }
+  }
+  cards.close();
+}
+
+/**
+ * Garden walkers (#913) stepped with their storey not drawn: one that came
+ * in off the lot parks where it is, just inside the door, hidden and still,
+ * until its storey is drawn again. True when any did.
+ */
+function parkComingIn(outside: readonly NpcState[], nav: NpcNav): boolean {
+  let parked = false;
+  for (const npc of outside) {
+    if (onTheLot(nav, npc.position.x, npc.position.z)) continue;
+    npc.group.visible = false;
+    parked = true;
+  }
+  return parked;
 }
 
 /** Hand the shown storeys' walkers to the player's resolve; a new array only when the set changed. */
@@ -397,7 +551,8 @@ function publishBodies(handOff: NpcHandOff, storeys: ReadonlyMap<string, StoreyW
   const bodies: NpcBody[] = [];
   for (const storey of storeys.values()) {
     // A walker held back from appearing on the player (#585) isn't there yet.
-    if (storey.shown) for (const npc of storey.npcs) if (npc.group.visible) bodies.push(npc.body);
+    // Garden walkers (#913): with their storey not drawn, those still out on the lot.
+    if (storey.shown || storey.outdoorsOnly) for (const npc of storey.npcs) if (npc.group.visible) bodies.push(npc.body);
   }
   const current = handOff.bodies;
   if (current.length === bodies.length && bodies.every((body, index) => current[index] === body)) return;
@@ -414,11 +569,12 @@ function publishBodies(handOff: NpcHandOff, storeys: ReadonlyMap<string, StoreyW
 function syncNpcStoreys(
   storeys: Map<string, StoreyWalkers>,
   stage: NpcStage,
-  building: KeepOutBuilding,
+  building: NpcBuilding,
   shownFrom: number,
   shownTo: number,
   count: number,
-  player: PlayerBody | null = null
+  player: PlayerBody | null = null,
+  open = true
 ): boolean {
   let changed = false;
   const { floors } = building;
@@ -429,7 +585,10 @@ function syncNpcStoreys(
     let storey = storeys.get(floor.id);
     if (!storey) {
       if (!shown) return;
-      storey = { npcs: [], nav: null, signature: null, seats: EMPTY_SEATS, spots: NO_SPOTS, seatItems: null, floorY: 0, index, shown: false };
+      storey = {
+        npcs: [], nav: null, signature: null, seats: EMPTY_SEATS, spots: NO_SPOTS, seatItems: null,
+        indoor: { seats: EMPTY_SEATS, spots: NO_SPOTS }, floorY: 0, index, shown: false, outdoorsOnly: false, outside: [],
+      };
       storeys.set(floor.id, storey);
     }
     const floorY = floorElevation(floors, index);
@@ -450,11 +609,16 @@ function syncNpcStoreys(
     const interiorWalls = floor.interiorWalls ?? EMPTY_WALLS;
     // Rebuilt only when what it reads changes (not on a recolour or a lock,
     // which still hand over new arrays).
-    const signature = `${building.width}:${building.height}|${npcNavSignature({ items: floor.items, interiorWalls, keepOut })}`;
+    // The ground storey's lot (#913) rebuilds with the site too.
+    const garden = index === 0 ? `|${gardenSignature(building)}` : '';
+    const signature = `${building.width}:${building.height}|${npcNavSignature({ items: floor.items, interiorWalls, keepOut })}${garden}`;
     const navChanged = signature !== storey.signature;
     if (navChanged) {
       storey.signature = signature;
-      storey.nav = buildNpcNav({ items: floor.items, interiorWalls, keepOut, roomWidth: building.width, roomDepth: building.height });
+      const outdoor = gardenNavInput(building, index);
+      storey.nav = buildNpcNav({ items: floor.items, interiorWalls, keepOut, roomWidth: building.width, roomDepth: building.height, outdoor });
+      // Garden walkers (#913): open or closed before anyone picks where to go.
+      if (storey.nav) storey.nav.outdoorOpen = open;
       if (storey.nav && storey.nav.freeCount > 0 && storey.npcs.length > 0) {
         rehomeNpcs(storey.npcs, storey.nav, floorY);
         changed = true;
@@ -467,11 +631,22 @@ function syncNpcStoreys(
       storey.seatItems = floor.items;
       const nav = storey.nav;
       const seats = findNpcSeats(floor.items, nav ? { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders } : undefined);
+      // Garden walkers (#913): the picnic table's benches.
+      if (nav?.outdoor) seats.push(...findGardenSeats(floor.items));
       storey.seats = new Map(seats.map((seat) => [seat.key, seat]));
       storey.spots = findNeedSpots(floor.items, seats);
+      // Garden walkers (#913): the bench to rest on, and what is left indoors for a closed garden.
+      if (nav?.outdoor) storey.spots = [...storey.spots, ...findGardenSpots(floor.items, seats)];
+      storey.indoor = nav ? indoorOnly(nav, storey.seats, storey.spots) : { seats: storey.seats, spots: storey.spots };
+      // #906: what each walker can reach changed with the floor.
+      // Garden walkers (#913): what they can use now, the garden open or closed.
+      if (nav) for (const npc of storey.npcs) refreshStranded(npc, nav, open ? storey.spots : storey.indoor.spots);
     }
 
     const nav = storey.nav;
+    if (nav) nav.outdoorOpen = open;
+    // Garden walkers (#913): the seats and spots they can use now.
+    const usable = open ? storey : storey.indoor;
     const here = player && player.floorIndex === index ? player : null;
     if (!nav || nav.freeCount === 0) {
       // A floor with no free cell holds nobody; clearing it lets them in.
@@ -482,17 +657,26 @@ function syncNpcStoreys(
       }
     } else if (shown && storey.npcs.length === 0) {
       const npcs: NpcState[] = [];
-      // Seeded per storey too, so two storeys don't hold the same people.
-      for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, index, i + index * count, stage.people, npcs, here));
+      // Seeded in order across the house, so no two walkers look or are named alike (#906).
+      for (let i = 0; i < count; i++) npcs.push(createNpc(stage.THREE, stage.scene, nav, floorY, index, stage.nextSeed++, stage.people, npcs, here, stage.bubbles));
+      for (const npc of npcs) refreshStranded(npc, nav, usable.spots);
       storey.npcs = npcs;
-      stepNpcs(npcs, 0, nav, floorY, Math.random, storey.seats, null, storey.spots);
+      stepNpcs(npcs, 0, nav, floorY, Math.random, usable.seats, null, usable.spots);
       changed = true;
     }
     storey.shown = shown;
+    // Garden walkers (#913): the outside is drawn whichever storey is, so
+    // the ground storey's walkers out on the lot stay; the rest park.
+    const outdoorsOnly = !shown && index === 0 && Boolean(nav?.outdoor);
+    const wasOutdoorsOnly = storey.outdoorsOnly;
+    storey.outdoorsOnly = outdoorsOnly;
     for (const npc of storey.npcs) {
       // A parked walker standing where the player is stays parked until it
       // moves off (`revealHeld`), rather than appearing around the camera.
-      const visible = shown && (npc.group.visible || !here || !onPlayer(npc, here));
+      // Out on the lot with the storey not drawn: kept as it was (one parked
+      // at the door stays parked), and on the switch away, shown if outside.
+      const outdoors = outdoorsOnly && nav !== null && onTheLot(nav, npc.position.x, npc.position.z) && (npc.group.visible || !wasOutdoorsOnly);
+      const visible = outdoors || (shown && (npc.group.visible || !here || !onPlayer(npc, here)));
       if (npc.group.visible === visible) continue;
       npc.group.visible = visible;
       changed = true;
@@ -506,6 +690,9 @@ function syncNpcStoreys(
   }
   return changed;
 }
+
+/** Walker card ids (#906): unique per page, never reused. */
+let nextWalkerId = 1;
 
 function removeNpcs(scene: ThreeNS.Scene, npcs: readonly NpcState[]): void {
   for (const npc of npcs) {
@@ -524,7 +711,8 @@ function createNpc(
   index: number,
   people: PeopleModel | null,
   others: readonly NpcState[],
-  avoid: PlayerBody | null = null
+  avoid: PlayerBody | null = null,
+  bubbles: NeedBubbleAtlas | null = null
 ): NpcState {
   const palette = [0xc62828, 0x2e7d32, 0x1565c0, 0xf9a825, 0x6a1b9a];
   const hairPalette = [0x2b1d14, 0x5a3825, 0x1a1a1a, 0x8d6e4a, 0x3b2a20];
@@ -583,6 +771,11 @@ function createNpc(
     group.scale.setScalar(heightScale);
   }
   group.userData.type = NPC_TAG;
+  // #906: what a tap finds, and the thought bubble over the head.
+  const id = nextWalkerId++;
+  group.userData.walkerId = id;
+  const bubble = bubbles ? buildNeedBubble(THREE, bubbles) : null;
+  if (bubble) group.add(bubble.sprite);
 
   // Spawn in free space (never inside the sofa or the stair flight), and
   // not on the player (#585) when there is room elsewhere.
@@ -625,6 +818,9 @@ function createNpc(
     seeking: null,
     using: null,
     asleep: false,
+    id,
+    nameSeed: index,
+    ...(bubble ? { bubble } : {}),
   };
   planRoute(npc, nav, Math.random, others);
   return npc;
@@ -714,6 +910,12 @@ function claims(npc: NpcState, x: number, z: number): boolean {
  */
 export function rehomeNpcs(npcs: readonly NpcState[], nav: NpcNav, floorY: number, random: () => number = Math.random): void {
   for (const npc of npcs) {
+    // Garden walkers (#913): one cut off outside (a fence across the way
+    // in, the lot gone), sitting or not, is brought in, not walked through a wall.
+    if (cutOffOutside(nav, npc.position.x, npc.position.z) && bringIndoors(npc, nav, floorY)) {
+      planRoute(npc, nav, random, npcs);
+      continue;
+    }
     // Stepping into, sitting in or stepping out of a seat: it stands inside
     // the seat's footprint on purpose. A seat that moved stands its sitter
     // up (stepNpcs), and the walker carries on from wherever that leaves it.
@@ -726,13 +928,38 @@ export function rehomeNpcs(npcs: readonly NpcState[], nav: NpcNav, floorY: numbe
       if (cell >= 0) {
         npc.position.x = cellX(nav, cell);
         npc.position.z = cellZ(nav, cell);
-        npc.group.position.set(npc.position.x, floorY, npc.position.z);
+        // Garden walkers (#913): onto the ground under the new spot.
+        npc.group.position.set(npc.position.x, floorY + npcGroundY(nav, npc.position.x, npc.position.z), npc.position.z);
         // Where the player bumps into it, even with no step to come (reduced motion).
         moveNpcBody(npc.body, npc.position.x, npc.position.z, floorY, npc.body.floorIndex);
       }
     }
     planRoute(npc, nav, random, npcs);
   }
+}
+
+/**
+ * Garden walkers (#913): put a walker cut off outside on the nearest free
+ * floor indoors, on its feet, with nothing in hand. False when the floor
+ * has none.
+ */
+function bringIndoors(npc: NpcState, nav: NpcNav, floorY: number): boolean {
+  const cell = nearestIndoorCell(nav, npc.position.x, npc.position.z);
+  if (cell < 0) return false;
+  npc.seat = null;
+  npc.seeking = null;
+  npc.using = null;
+  npc.asleep = false;
+  npc.lift = 0;
+  npc.mode = 'pause';
+  npc.pause = 0;
+  npc.stuck = 0;
+  npc.position.x = cellX(nav, cell);
+  npc.position.z = cellZ(nav, cell);
+  npc.group.position.set(npc.position.x, floorY, npc.position.z);
+  moveNpcBody(npc.body, npc.position.x, npc.position.z, floorY, npc.body.floorIndex);
+  standStill(npc, floorY, npc.anim?.stand[0]);
+  return true;
 }
 
 /** True from stepping into a seat until stepping back out of it. */
@@ -775,7 +1002,8 @@ export function planSeat(
   let chosen: NpcSeat | null = null;
   let eligible = 0;
   for (const seat of seats.values()) {
-    if (!isFreeAt(nav, seat.approachX, seat.approachZ)) continue;
+    // A chair tucked in at a table is only pulled out for a meal (#904).
+    if (seat.mealOnly || !isFreeAt(nav, seat.approachX, seat.approachZ)) continue;
     const cell = cellAt(nav, seat.approachX, seat.approachZ);
     if (nav.region[cell] !== region) continue;
     if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) continue;
@@ -838,11 +1066,7 @@ export function planNeed(
       if (others.some((other) => other !== npc && claims(other, spot.x, spot.z))) return false;
       return player === null || Math.hypot(player.x - spot.x, player.z - spot.z) >= PERSONAL_SPACE;
     }
-    // Only the rigged figure sits; one sitter per seat (#585).
-    const seat = seats.get(spot.seatKey);
-    if (!seat || !npc.anim?.sit) return false;
-    if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) return false;
-    return !(player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat)));
+    return seatFree(npc, seats.get(spot.seatKey), others, player);
   };
   const spot = pickNeedSpot(npc.needs, spots, npc.position.x, npc.position.z, usable, random, skip, bias);
   if (!spot) return false;
@@ -860,6 +1084,41 @@ export function planNeed(
     npc.arrivalHeading = spot.heading;
   }
   npc.seeking = spot.need;
+  return true;
+}
+
+/** Whether a walker can take `seat`: only the rigged figure sits, one sitter per seat (#585). */
+function seatFree(npc: NpcState, seat: NpcSeat | undefined, others: readonly NpcState[], player: PlayerBody | null): seat is NpcSeat {
+  if (!seat || !npc.anim?.sit) return false;
+  if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) return false;
+  return !(player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat)));
+}
+
+/**
+ * The dining-table chain (#904): a walker that fetched something from the
+ * fridge or the stove takes it to a free chair at a table it can reach and
+ * eats there, always at mealtimes and now and then between them
+ * (`sitsToEat`). True when it set off for the chair.
+ */
+export function planMeal(
+  npc: NpcState,
+  nav: NpcNav,
+  seats: NpcSeats,
+  spots: readonly NeedSpot[],
+  random: () => number,
+  others: readonly NpcState[] = [],
+  player: PlayerBody | null = null,
+  hour = Number.NaN
+): boolean {
+  if (!npc.anim?.sit || !spots.some((spot) => spot.meal) || !sitsToEat(hour, random)) return false;
+  const from = standingCell(npc, nav);
+  if (from < 0) return false;
+  const region = nav.region[from];
+  const usable = (spot: NeedSpot): boolean =>
+    isFreeAt(nav, spot.x, spot.z) && nav.region[cellAt(nav, spot.x, spot.z)] === region && seatFree(npc, seats.get(spot.seatKey ?? ''), others, player);
+  const spot = pickMealSpot(spots, npc.position.x, npc.position.z, usable, random);
+  if (!spot || !headForSeat(npc, nav, from, seats.get(spot.seatKey!)!)) return false;
+  npc.seeking = 'hunger';
   return true;
 }
 
@@ -893,7 +1152,7 @@ export function stepNpcs(
   npcs: readonly NpcState[],
   delta: number,
   nav: NpcNav,
-  floorY: number,
+  storeyY: number,
   random: () => number = Math.random,
   seats: NpcSeats = EMPTY_SEATS,
   player: PlayerBody | null = null,
@@ -902,6 +1161,8 @@ export function stepNpcs(
 ): NpcChange {
   let change: NpcChange = NPC_STILL;
   for (const npc of npcs) {
+    // Garden walkers (#913): out on the lot the feet are on its ground (the slope, the porch steps).
+    const floorY = storeyY + npcGroundY(nav, npc.position.x, npc.position.z);
     // Needs run down all the time and are met while using something (#617).
     decayNeeds(npc.needs, delta);
     if (npc.using && (npc.mode === 'pause' || npc.mode === 'seated')) refillNeed(npc.needs, npc.using, delta);
@@ -1036,6 +1297,8 @@ export function stepNpcs(
         turnToward(npc.group, Math.atan2(dx, dz), delta);
         npc.group.position.x = npc.position.x;
         npc.group.position.z = npc.position.z;
+        // Garden walkers (#913): onto the ground under the new spot.
+        if (nav.outdoor) npc.group.position.y = storeyY + npcGroundY(nav, npc.position.x, npc.position.z);
         break;
       }
       case 'walk': {
@@ -1088,8 +1351,9 @@ export function stepNpcs(
         // The route keeps clear of everything; the resolver is the guarantee
         // (a corner brushed between grid cells slides instead of clipping).
         resolveWalkerStep(nav.colliders, npc.position, targetScratch, NPC_RADIUS, stepScratch, nav.collisionOptions);
-        let nx = Math.max(-nav.halfW, Math.min(nav.halfW, stepScratch.x));
-        let nz = Math.max(-nav.halfD, Math.min(nav.halfD, stepScratch.z));
+        // Garden walkers (#913): the walker box, the lot's rectangle on a garden nav.
+        let nx = Math.max(nav.minX, Math.min(nav.maxX, stepScratch.x));
+        let nz = Math.max(nav.minZ, Math.min(nav.maxZ, stepScratch.z));
         // Never into the player, who stepped in from the side or behind (#585):
         // it stays put, and a player who stays gets walked round (STUCK_SECONDS).
         if (player && bumpsPlayer(npc, player, nx, nz)) {
@@ -1108,6 +1372,8 @@ export function stepNpcs(
         turnToward(npc.group, Math.atan2(dx, dz), delta);
         npc.group.position.x = npc.position.x;
         npc.group.position.z = npc.position.z;
+        // Garden walkers (#913): onto the ground under the new spot.
+        if (nav.outdoor && !npc.rig) npc.group.position.y = storeyY + npcGroundY(nav, nx, nz);
 
         if (npc.rig) {
           // Swing limbs about hips/shoulders; a small bob at each footfall.
@@ -1129,6 +1395,8 @@ export function stepNpcs(
     npc.body.seatX = sitting ? sitting.x : Number.NaN;
     npc.body.seatZ = sitting ? sitting.z : Number.NaN;
     npc.body.bedId = sitting ? bedOf(sitting) : null;
+    // #906: a bubble over a walker whose most pressing need nothing it can reach meets.
+    if (refreshBubble(npc) && change === NPC_STILL) change = NPC_REPAINT;
   }
   return change;
 }
@@ -1154,19 +1422,23 @@ function arriveAtStop(
   hour: number
 ): void {
   npc.standHeading = npc.arrivalHeading;
+  refreshStranded(npc, nav, spots);
   // Arrived where it set out for (not dropped short of a seat it lost).
   npc.using = npc.destination >= 0 ? npc.seeking : null;
   npc.seeking = null;
   const using = npc.using;
-  const toNeed = planNeed(npc, nav, seats ?? EMPTY_SEATS, spots, random, npcs, player, using, needBias(hour));
+  // Food from the fridge is eaten at the table when a chair there is free (#904).
+  const toMeal = using === 'hunger' && seats !== null && planMeal(npc, nav, seats, spots, random, npcs, player, hour);
+  const toNeed = !toMeal && planNeed(npc, nav, seats ?? EMPTY_SEATS, spots, random, npcs, player, using, needBias(hour));
   const toSeat =
+    !toMeal &&
     !toNeed &&
     Boolean(npc.anim?.sit) &&
     seats !== null &&
     seats.size > 0 &&
     random() < SEAT_CHANCE &&
     planSeat(npc, nav, seats, random, npcs, player);
-  if (!toNeed && !toSeat) planRoute(npc, nav, random, npcs, player);
+  if (!toMeal && !toNeed && !toSeat) planRoute(npc, nav, random, npcs, player);
   // planNeed and planRoute leave what this stop is for alone.
   npc.using = using;
   npc.mode = 'pause';

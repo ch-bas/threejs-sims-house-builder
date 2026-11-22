@@ -68,6 +68,13 @@ export const OFF_STOREY_KEY = 'offStorey';
 export const STOREY_KEY = 'storey';
 
 /**
+ * userData flag on a door or window group cut into an outer wall its storey
+ * hides through Wall visibility (#965, `openingOnHiddenWall`): applyWallDisplay
+ * keeps it hidden whatever the mode, with its wall.
+ */
+export const HIDDEN_OWNER_KEY = 'ownerHidden';
+
+/**
  * userData key on a notch wall and its baseboards: the shell id (`notch-x`,
  * `notch-z`). `wallId` is the side it shares a colour with, and an opening is
  * owned by the shell wall it is cut into (#659).
@@ -207,12 +214,14 @@ export function applyWallDisplay(
     }
     // A door or window (a furniture group stamped with its owner wall, #659)
     // follows that wall on its own storey: cutaway and walls-down used to
-    // leave every frame standing where the wall was. With no such wall built
-    // (a hidden wall, a traced ground floor) it follows the mode; a storey
+    // leave every frame standing where the wall was. One in a wall hidden
+    // through Wall visibility goes with it (#965); with no wall built for
+    // another reason (a traced ground floor) it follows the mode; a storey
     // the walkthrough hides stays hidden either way.
     if (tag !== ROOM_OBJECT_TAGS.Furniture || obj.userData.ownerTag === undefined) continue;
     const owner = wallVisibility.get(wallDisplayKey(obj.userData.ownerTag, obj.userData.floorIndex, obj.userData.wallId));
-    setVisible(obj, (owner ?? mode !== 'down') && obj.userData[OFF_STOREY_KEY] !== true);
+    const shown = obj.userData[HIDDEN_OWNER_KEY] !== true && (owner ?? mode !== 'down');
+    setVisible(obj, shown && obj.userData[OFF_STOREY_KEY] !== true);
   }
 
   return changed;
@@ -244,6 +253,7 @@ export interface RoomBuilderOptions {
   floorOpenings?: readonly FloorOpening[];
   /** Rooms with a floor of their own (#720), laid over the slab in order. */
   zonePatches?: readonly ZoneFloorPatch[];
+  /** The traced plan as the finished floor (`drawnFloorPlanImage`); never an underlay (#920). */
   floorPlanImage: string | null;
   floorPlanOpacity: number;
   floorPlanFitMode: FloorPlanFitMode;

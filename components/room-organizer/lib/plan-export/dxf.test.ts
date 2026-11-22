@@ -225,7 +225,7 @@ describe('layoutToDxf', () => {
   });
 
   it('keeps the plan layers and adds COVERAGE and DIMENSIONS', () => {
-    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS', 'ZONES', 'STAIR-CUT']);
+    expect(DXF_LAYERS).toEqual(['WALLS', 'INTERIOR', 'OPENINGS', 'FURNITURE', 'LABELS', 'STAIRWELL', 'COVERAGE', 'DIMENSIONS', 'ZONES', 'STAIR-CUT', 'GROUNDS']);
     const { layout, floor } = makeFixture();
     const dxf = layoutToDxf(layout, floor);
     for (const layer of ['0', ...DXF_LAYERS]) {

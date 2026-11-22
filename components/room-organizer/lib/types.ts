@@ -88,6 +88,13 @@ export type StairsShape = 'straight' | 'winder';
 export type FloorPlanFitMode = 'stretch' | 'cover' | 'contain';
 
 /**
+ * What the ground floor's tracing image is (#920). 'drawing' (absent): the
+ * finished floor, with no shell walls, foundation or room floors over it.
+ * 'underlay': a guide on the 2D plan only, under walls the house builds.
+ */
+export type FloorPlanMode = 'drawing' | 'underlay';
+
+/**
  * A traced plan calibrated from a known length (#726): the image keeps its
  * proportions at `scale` metres per image pixel, its centre at
  * (`offsetX`, `offsetZ`) in world metres (room-centred). Absent, the image
@@ -322,12 +329,26 @@ export interface FloorLayout {
   interiorWalls?: InteriorWall[];
   /** Room zones drawn on this floor (#155). */
   zones?: RoomZone[];
+  /** Dimensions pinned on the plan (#921), drawn in the plan and every export. */
+  dimensions?: PinnedDimension[];
   /**
    * Floor-to-floor height in metres (#202) — a 2.5 m basement, a 1.1 m loft
    * knee wall. Absent means the classic `FLOOR_HEIGHT_METERS` storey; each
    * floor's elevation is the sum of the storeys below it (lib/storeys.ts).
    */
   height?: number;
+}
+
+/**
+ * A measurement pinned on the plan (#921): `a` to `b` in world metres on its
+ * storey. `offset` (metres) moves the drawn line off the two points along
+ * a→b's left-hand normal (x right, z down); absent, it runs through them.
+ */
+export interface PinnedDimension {
+  id: string;
+  a: Vec2;
+  b: Vec2;
+  offset?: number;
 }
 
 /** Ground heights in metres relative to the ground floor (#202); see lib/site.ts. */
@@ -415,6 +436,25 @@ export interface FootprintCutout {
   depth: number;
 }
 
+// --- Garden surfaces (#924) ---
+/** What a garden surface is laid in. */
+export type GroundKind = 'paving' | 'gravel' | 'deck' | 'lawn';
+
+/**
+ * A garden surface (#924): a rectangle on the lot outside the footprint,
+ * `x`/`z` its north-west corner and `w`/`d` its size in metres, room-centred
+ * like a zone. See lib/grounds.ts.
+ */
+export interface GroundPatch {
+  id: string;
+  kind: GroundKind;
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+// --- end garden surfaces ---
+
 export interface RoomLayout {
   id?: string;
   name: string;
@@ -427,6 +467,8 @@ export interface RoomLayout {
   floorPlanFitMode?: FloorPlanFitMode;
   /** The traced plan's calibration (#726); wins over the fit mode. */
   floorPlanTransform?: FloorPlanTransform;
+  /** The tracing image as a finished floor or an underlay (#920); absent is 'drawing'. */
+  floorPlanMode?: FloorPlanMode;
   /** Sloped site; absent is flat ground at the ground-floor level. */
   terrain?: TerrainSpec;
   neighbours?: NeighbourSpec;
@@ -440,6 +482,8 @@ export interface RoomLayout {
   budget?: HardBudget;
   /** The challenge brief this house is played under (#909); see lib/challenges.ts. */
   challenge?: LayoutChallenge;
+  /** Garden surfaces drawn on the lot (#924); absent is none. */
+  grounds?: GroundPatch[];
 }
 
 /** Default floor-to-floor height of a storey in metres; see `FloorLayout.height`. */

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select } from '@/components/ui/select';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { useStartChallenge } from '../hooks/use-start-challenge';
-import { CHALLENGES, goalLabel, ZONE_HINT } from '../lib/challenges';
+import { CHALLENGES, challengeAchievementId, goalLabel, ZONE_HINT } from '../lib/challenges';
 import { ROOM_TEMPLATES, type RoomTemplateKey } from '../lib/constants';
 import { formatMoney } from '../lib/format';
 import { subscribeHouseReplaced } from '../lib/restore-point';
@@ -40,9 +40,11 @@ export interface TemplatesPanelProps {
   /** Resolves false when the user declined replacing the current house. */
   /** Resolves true once the template replaced the house (after the in-app confirm, #649). */
   onLoadTemplate(template: (typeof ROOM_TEMPLATES)[RoomTemplateKey]): Promise<boolean>;
+  /** The achievements unlocked: a brief completed once is marked done (#909). */
+  unlocked?: ReadonlySet<string>;
 }
 
-export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Element {
+export function TemplatesPanel({ onLoadTemplate, unlocked }: TemplatesPanelProps): JSX.Element {
   const [status, setStatus] = useState<string | null>(null);
   // A template replaces the house: not while exploring (#643).
   const exploring = useExploring();
@@ -100,6 +102,15 @@ export function TemplatesPanel({ onLoadTemplate }: TemplatesPanelProps): JSX.Ele
               >
                 <span className="text-xs font-semibold">
                   {challenge.name} · {formatMoney(challenge.funds)}
+                  {unlocked?.has(challengeAchievementId(challenge.id)) && (
+                    <>
+                      {' · '}
+                      <span aria-hidden="true" className="mr-1">
+                        {challenge.badge}
+                      </span>{' '}
+                      Done
+                    </>
+                  )}
                 </span>
                 <span className="text-xs font-normal text-muted-foreground">{challenge.brief}</span>
               </Button>

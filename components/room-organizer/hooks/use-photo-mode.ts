@@ -16,7 +16,8 @@ import {
 import { downloadBlob } from '../lib/plan-export/download';
 import { drawsForPhone } from '../three/texture-settings';
 import type { AlbumSaveResult } from '../lib/photo-album';
-import type { Weather } from '../lib/types';
+import type { ShotConditions } from '../lib/photo-presets';
+import type { CameraPreset, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 /** The HUD hides under this attribute on `<html>` (app/globals.css). */
@@ -32,17 +33,65 @@ interface PhotoSession {
   withdraw: (() => void) | null;
 }
 
-/** Hide the snap grid, an editing aid, not part of the house; returns the undo. */
+/**
+ * Hide the snap grid, an editing aid, not part of the house; returns the
+ * undo. Through its layers, not `visible`: the cutaway pass
+ * (`applyWallDisplay`) shows the grid again on every camera move, so an
+ * orbit or a preset in photo mode brought it back on screen.
+ */
 function hideGrids(scene: ThreeNS.Object3D | null): () => void {
-  const hidden: ThreeNS.Object3D[] = [];
-  for (const child of scene?.children ?? []) {
-    if (child.type === 'GridHelper' && child.visible) {
-      child.visible = false;
-      hidden.push(child);
+  const grids = gridHider(scene);
+  return grids.show;
+}
+
+/**
+ * The snap grids hidden so far: `hide` hides any not yet hidden (a room
+ * rebuild makes a new one), `show` gives every one back its layers.
+ */
+function gridHider(scene: ThreeNS.Object3D | null): { hide(): void; show(): void } {
+  const hidden = new Map<ThreeNS.Object3D, number>();
+  const hide = () => {
+    for (const child of scene?.children ?? []) {
+      if (child.type === 'GridHelper' && child.layers.mask !== 0) {
+        hidden.set(child, child.layers.mask);
+        child.layers.mask = 0;
+      }
     }
-  }
+  };
+  hide();
+  return {
+    hide,
+    show() {
+      for (const [child, mask] of hidden) child.layers.mask = mask;
+      hidden.clear();
+    },
+  };
+}
+
+type BeforeRender = ThreeNS.Object3D['onBeforeRender'];
+
+/**
+ * Keep the snap grid hidden for as long as photo mode lasts, a grid a room
+ * rebuild adds meanwhile too: checked as each frame starts, before three
+ * sorts what to draw. Returns the undo, which shows every grid it hid.
+ */
+function keepGridsHidden(scene: ThreeNS.Object3D | null): () => void {
+  const grids = gridHider(scene);
+  if (!scene) return grids.show;
+  const own = Object.hasOwn(scene, 'onBeforeRender');
+  const previous: BeforeRender | undefined = scene.onBeforeRender;
+  const onBeforeRender: BeforeRender = function (this: ThreeNS.Object3D, ...args) {
+    grids.hide();
+    previous?.apply(this, args);
+  };
+  scene.onBeforeRender = onBeforeRender;
   return () => {
-    for (const child of hidden) child.visible = true;
+    if (scene.onBeforeRender === onBeforeRender) {
+      // Back to the prototype's no-op, or to whatever was set before.
+      if (own && previous) scene.onBeforeRender = previous;
+      else Reflect.deleteProperty(scene, 'onBeforeRender');
+    }
+    grids.show();
   };
 }
 
@@ -62,6 +111,20 @@ export interface UsePhotoModeOptions {
   walking: boolean;
   /** Runs as photo mode starts: a selection outline has no place in a photo. */
   onEnter(): void;
+  /**
+   * W4 shot presets (#912): the scene's hour, weather and clock, read and
+   * set (view settings, never the house), and the camera presets. Absent,
+   * the shutter offers no presets.
+   */
+  shot?: ShotControls;
+}
+
+/** What a shot preset reaches in the editor. */
+export interface ShotControls {
+  read(): ShotConditions;
+  write(conditions: ShotConditions): void;
+  /** Glide to a camera preset (the orbit camera; skipped while walking). */
+  frame(camera: CameraPreset): void;
 }
 
 /** Whether photo mode is on, for the scene's `orbitOnly` (read before the scene exists). */
@@ -75,6 +138,12 @@ export interface PhotoMode {
   take(): Promise<void>;
   /** Take one and keep it in the house's album (#912); null when nothing was captured. */
   keep(): Promise<AlbumSaveResult | null>;
+  /**
+   * Set a shot (#912): its hour and weather, and its camera unless walking.
+   * Photo mode puts the scene's own hour, weather and clock back as it
+   * ends. Null when the editor gave no `shot` controls.
+   */
+  shoot: ((conditions: ShotConditions, camera: CameraPreset) => void) | null;
   leave(): void;
 }
 
@@ -98,6 +167,7 @@ export function usePhotoMode({
   invalidate,
   walking,
   onEnter,
+  shot,
 }: UsePhotoModeOptions): PhotoMode {
   const active = usePhotoModeActive();
   const onEnterRef = useRef(onEnter);
@@ -109,6 +179,11 @@ export function usePhotoMode({
   const readConditionsRef = useRef(readConditions);
   readConditionsRef.current = readConditions;
   const sessionRef = useRef<PhotoSession>({ ended: true, withdraw: null });
+  // W4 shot presets (#912): the controls, and the scene before this stay's first preset.
+  const shotRef = useRef(shot);
+  shotRef.current = shot;
+  const beforeShotRef = useRef<ShotConditions | null>(null);
+  const hasShot = shot !== undefined;
 
   useEffect(() => {
     if (active && !available) leavePhotoMode();
@@ -126,7 +201,7 @@ export function usePhotoMode({
     const camera = cameraRef.current;
     const view = camera?.view?.enabled ? { ...camera.view } : null;
     if (camera && view) camera.clearViewOffset();
-    const showGrids = hideGrids(sceneRef.current);
+    const showGrids = keepGridsHidden(sceneRef.current);
     invalidateRef.current();
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof Element ? event.target : null;
@@ -159,6 +234,10 @@ export function usePhotoMode({
       // A save still running stops, and its question goes with the mode.
       session.ended = true;
       session.withdraw?.();
+      // The scene's own hour, weather and clock come back after a preset.
+      const before = beforeShotRef.current;
+      beforeShotRef.current = null;
+      if (before) shotRef.current?.write(before);
       window.removeEventListener('keydown', onKeyDown, true);
       root.removeAttribute(PHOTO_ATTRIBUTE);
       showGrids();
@@ -239,5 +318,16 @@ export function usePhotoMode({
     });
   }, [capture, houseId]);
 
-  return { active, take, keep, leave: leavePhotoMode };
+  const shoot = useCallback((conditions: ShotConditions, camera: CameraPreset) => {
+    const controls = shotRef.current;
+    if (!controls || sessionRef.current.ended) return;
+    // Only the first preset notes the scene: leaving goes back past all of them.
+    beforeShotRef.current ??= controls.read();
+    controls.write(conditions);
+    // Walking, the camera is the walker's eyes: a preset sets the light only.
+    if (!walkingRef.current) controls.frame(camera);
+    invalidateRef.current();
+  }, []);
+
+  return { active, take, keep, shoot: hasShot ? shoot : null, leave: leavePhotoMode };
 }

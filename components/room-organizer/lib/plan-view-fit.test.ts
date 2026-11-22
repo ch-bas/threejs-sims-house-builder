@@ -249,3 +249,48 @@ describe('planLegendSpot (#567)', () => {
     expect(spot.y + size.height).toBeLessThanOrEqual(200);
   });
 });
+
+describe('planViewFit: a fenced lot and far pins (#915, #921)', () => {
+  // An 8 × 6 house: the lot reaches 6 m past each wall.
+  const fenceRound = () => {
+    const sections = [];
+    for (let x = -9; x <= 9; x += 2) {
+      sections.push(makeItem({ id: `n${x}`, type: 'fence', width: 2, depth: 0.15, position: { x, z: -8.9 } }));
+      sections.push(makeItem({ id: `s${x}`, type: 'fence', width: 2, depth: 0.15, position: { x, z: 8.9 } }));
+    }
+    for (let z = -8; z <= 8; z += 2) {
+      sections.push(makeItem({ id: `w${z}`, type: 'fence', width: 2, depth: 0.15, rotation: Math.PI / 2, position: { x: -9.9, z } }));
+      sections.push(makeItem({ id: `e${z}`, type: 'fence', width: 2, depth: 0.15, rotation: Math.PI / 2, position: { x: 9.9, z } }));
+    }
+    return sections;
+  };
+
+  it('takes a fence round the lot in whole, with no markers, and keeps the items inside it', () => {
+    const tree = makeItem({ id: 'tree', width: 1.4, depth: 1.4, position: { x: 8, z: 0 } });
+    const { layout, floor } = room([...fenceRound(), tree]);
+    const fit = planViewFit(layout, floor);
+    expect(fit.offPlan).toEqual([]);
+    expect(fit.bounds.maxX).toBeGreaterThan(9.9);
+    expect(fit.bounds.minZ).toBeLessThan(-8.9);
+  });
+
+  it('still drops an item past the fenced lot as a marker', () => {
+    const far = makeItem({ id: 'far', position: { x: 40, z: 0 } });
+    const { layout, floor } = room([...fenceRound(), far]);
+    const fit = planViewFit(layout, floor);
+    expect(fit.offPlan.map(({ item }) => item.id)).toEqual(['far']);
+    expect(fit.bounds.maxX).toBeLessThan(11);
+  });
+
+  it('leaves a pin far out in the garden out of the fit, unmarked, and keeps a near one', () => {
+    const { layout, floor } = room();
+    const near = { id: 'near', a: { x: 4, z: 0 }, b: { x: 6, z: 0 } };
+    const far = { id: 'far', a: { x: 4, z: 0 }, b: { x: 40, z: 0 } };
+    const fit = planViewFit(layout, { ...floor, dimensions: [near, far] });
+    expect(fit.offPlan).toEqual([]);
+    expect(fit.bounds.maxX - fit.bounds.minX).toBeLessThanOrEqual(8 / 0.5);
+    expect(fit.bounds.maxX).toBeGreaterThanOrEqual(6);
+    // With the near one alone, nothing is dropped.
+    expect(planViewFit(layout, { ...floor, dimensions: [near] }).bounds.maxX).toBeGreaterThanOrEqual(6);
+  });
+});

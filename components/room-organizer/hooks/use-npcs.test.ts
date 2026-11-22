@@ -6,6 +6,7 @@ import { findNeedSpots } from '../lib/npc-needs';
 import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, cellAt, cellX, cellZ, findNpcPath, isFreeAt } from '../lib/npc-path';
 import { needBias } from '../lib/npc-schedule';
 import { type NpcSeat, findNpcSeats } from '../lib/npc-seats';
+import { type NeedBubbleAtlas, buildNeedBubble } from '../three/need-bubbles';
 import {
   NPC_REPAINT,
   NPC_SHADOW,
@@ -782,6 +783,90 @@ describe('walkers with needs (#617)', () => {
     expect(inside).toBe(0);
   }, 30_000);
 
+  it('takes what it fetched from the fridge to a chair at the table and eats there, at a mealtime (#904)', () => {
+    const kitchenFridge = { ...furniture('fridge', 'fridge', 2.5, -3.4, 0.7, 0.7), height: 1.8 };
+    const table = { ...furniture('table', 'dining-table', -1, 1, 1.8, 1), height: 0.75 };
+    // Pulled up to the long sides, entered from the side; one more across the room facing nothing.
+    const chairs = [
+      furniture('north', 'dining-chair', -1.4, 0.05, 0.45, 0.45, 0),
+      furniture('south', 'dining-chair', -0.6, 1.95, 0.45, 0.45, Math.PI),
+      furniture('lone', 'dining-chair', 3, 2.5, 0.45, 0.45, 0),
+    ];
+    const mealItems = [kitchenFridge, table, ...chairs];
+    const mealNav = makeNav(mealItems);
+    const seatList = findNpcSeats(mealItems, { isFree: (x, z) => isFreeAt(mealNav, x, z), blockers: mealNav.colliders });
+    const mealSeats = new Map(seatList.map((seat) => [seat.key, seat]));
+    const mealSpots = findNeedSpots(mealItems, seatList);
+    expect(mealSpots.filter((spot) => spot.meal).map((spot) => spot.itemId)).toEqual(['north', 'south']);
+    const run = (hour: number, seed: number) => {
+      const npc = needy({ hunger: 0.05, energy: 1, fun: 1, hygiene: 1 });
+      npc.position = { x: 0, z: -2 };
+      const random = seeded(seed);
+      let fetched = false;
+      for (let t = 0; t < 60 && npc.mode !== 'seated'; t += FRAME) {
+        stepNpcs([npc], FRAME, mealNav, 0, random, mealSeats, null, mealSpots, hour);
+        if (npc.using === 'hunger' && npc.mode === 'pause') fetched = true;
+      }
+      return { npc, fetched };
+    };
+    for (const seed of [1, 2, 3]) {
+      const { npc, fetched } = run(13, seed);
+      expect(fetched).toBe(true);
+      expect(npc.mode).toBe('seated');
+      expect(npc.using).toBe('hunger');
+      expect(['north', 'south']).toContain(npc.seat?.itemId);
+    }
+    // With nowhere to sit, it eats standing and goes on its way.
+    const crowded = needy({ hunger: 0.05, energy: 1, fun: 1, hygiene: 1 });
+    crowded.position = { x: 0, z: -2 };
+    const others = ['north:0', 'south:0'].map((key) => seatedRig({ seat: mealSeats.get(key)!, mode: 'seated', pause: 100, position: { x: 3.5, z: 3.5 } }));
+    const random = seeded(4);
+    let sat = false;
+    for (let t = 0; t < 40; t += FRAME) {
+      stepNpcs([crowded, ...others], FRAME, mealNav, 0, random, mealSeats, null, mealSpots, 13);
+      if (crowded.seat?.itemId === 'north' || crowded.seat?.itemId === 'south') sat = true;
+    }
+    expect(sat).toBe(false);
+    expect(crowded.needs.hunger).toBeGreaterThan(0.5);
+  });
+
+  it("eats at tables the app lays out itself: the Dining set and the kitchen template, chairs tucked in (#904)", () => {
+    // lib/furniture-sets.ts's Dining set, its table at (-1, 1), and a fridge across the room.
+    const fridge = { ...furniture('fridge', 'fridge', 2.5, -3.4, 0.7, 0.7), height: 1.8 };
+    const table = { ...furniture('table', 'dining-table', -1, 1, 1.8, 1), height: 0.75 };
+    const set = [
+      { ...furniture('w', 'dining-chair', -2.2, 1, 0.45, 0.45, Math.PI / 2), height: 0.9 },
+      { ...furniture('e', 'dining-chair', 0.2, 1, 0.45, 0.45, -Math.PI / 2), height: 0.9 },
+      { ...furniture('n', 'dining-chair', -1, 0.15, 0.45, 0.45, 0), height: 0.9 },
+      { ...furniture('s', 'dining-chair', -1, 1.85, 0.45, 0.45, Math.PI), height: 0.9 },
+    ];
+    const kitchen = ROOM_TEMPLATES.kitchen;
+    for (const [items, width, depth, chairs] of [
+      [[fridge, table, ...set], 8, 8, ['w', 'e', 'n', 's']],
+      [kitchen.floors[0]!.items, kitchen.width, kitchen.height, ['dining-chair-1', 'dining-chair-2']],
+    ] as const) {
+      const nav = buildNpcNav({ items: [...items], interiorWalls: [], keepOut: [], roomWidth: width, roomDepth: depth })!;
+      const seatList = findNpcSeats(items, { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders });
+      const seats = new Map(seatList.map((seat) => [seat.key, seat]));
+      const spots = findNeedSpots(items, seatList);
+      expect(spots.filter((spot) => spot.meal).map((spot) => spot.itemId).sort()).toEqual([...chairs].sort());
+      // Tucked in, they are meal seats and nothing else: never a seat to rest in or to watch from.
+      expect(spots.filter((spot) => !spot.meal && chairs.some((id) => id === spot.itemId))).toEqual([]);
+      const resting = seatedRig({ position: { x: cellX(nav, nav.free[0]!), z: cellZ(nav, nav.free[0]!) }, pathLength: 0 });
+      for (let trial = 1; trial <= 10; trial++) expect(planSeat(resting, nav, seats, seeded(trial))).toBe(false);
+      for (const seed of [1, 2, 3]) {
+        const npc = needy({ hunger: 0.05, energy: 1, fun: 1, hygiene: 1 });
+        const start = nav.free[Math.floor(nav.freeCount / 2)]!;
+        npc.position = { x: cellX(nav, start), z: cellZ(nav, start) };
+        const random = seeded(seed);
+        for (let t = 0; t < 60 && npc.mode !== 'seated'; t += FRAME) stepNpcs([npc], FRAME, nav, 0, random, seats, null, spots, 13);
+        expect(npc.mode).toBe('seated');
+        expect(npc.using).toBe('hunger');
+        expect(chairs).toContain(npc.seat?.itemId);
+      }
+    }
+  });
+
   describe('sleeping (#907)', () => {
     const bed = { ...furniture('bed', 'bed', 0, -1, 2, 1.6), height: 0.6 };
     const single = { ...furniture('single', 'bed', -2.5, 2, 1, 2, Math.PI / 2), height: 0.6 };
@@ -913,5 +998,71 @@ describe('walker shadow pacing (#668)', () => {
     expect(due(100, false)).toBe(true);
     // Nothing owed any more: no further passes.
     expect(due(500, false)).toBe(false);
+  });
+});
+
+describe('need bubbles in the step (#906)', () => {
+  // The atlas's views without a canvas (node has no document).
+  const atlasOf = (): NeedBubbleAtlas => ({
+    textures: { hunger: new THREE.Texture(), energy: new THREE.Texture(), fun: new THREE.Texture(), hygiene: new THREE.Texture() },
+    hidden: false,
+    dispose: () => {},
+  });
+  const bubbled = (overrides: Partial<NpcState>, to?: { x: number; z: number }) => {
+    const atlas = atlasOf();
+    const bubble = buildNeedBubble(THREE as unknown as typeof import('../three/three-runtime'), atlas);
+    const npc = walker({ ...overrides, bubble }, to);
+    npc.group.add(bubble.sprite);
+    return { npc, bubble, atlas };
+  };
+  const ALL_STRANDED = 0b1111;
+
+  it('a walker standing still repaints once when its bubble shows, and once when it goes', () => {
+    const { npc, bubble, atlas } = bubbled({ pause: 30, needs: { hunger: 0.21, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    expect(stepNpcs([npc], FRAME, OPEN, 0)).toBe(NPC_STILL);
+    // A couple of seconds later hunger is under a fifth, and nothing it can reach meets it.
+    let changes = 0;
+    for (let t = 0; t < 3; t += FRAME) if (stepNpcs([npc], FRAME, OPEN, 0) !== NPC_STILL) changes += 1;
+    expect(bubble.sprite.visible).toBe(true);
+    expect(bubble.sprite.material.map).toBe(atlas.textures.hunger);
+    expect(changes).toBe(1);
+    // Fed: the bubble goes, with one more repaint.
+    npc.needs.hunger = 1;
+    expect(stepNpcs([npc], FRAME, OPEN, 0)).toBe(NPC_REPAINT);
+    expect(bubble.sprite.visible).toBe(false);
+    expect(stepNpcs([npc], FRAME, OPEN, 0)).toBe(NPC_STILL);
+  });
+
+  it('at a stop it works out what it can reach: a fridge across the room means no bubble', () => {
+    const fridge = { ...furniture('fridge', 'fridge', 3, -3, 0.7, 0.7), height: 1.8 };
+    const items = [fridge];
+    const nav = makeNav(items);
+    const spots = findNeedSpots(items, findNpcSeats(items));
+    const hungry = { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 };
+    // Arriving at the end of its route, with the fridge on the floor.
+    const fed = bubbled({ needs: { ...hungry } }, { x: 0.05, z: 0 });
+    stepNpcs([fed.npc], FRAME, nav, 0, seeded(1), new Map(), null, spots);
+    expect(fed.npc.stranded! & 0b0001).toBe(0);
+    expect(fed.bubble.sprite.visible).toBe(false);
+    // The same walker on a floor with nothing to eat says so.
+    const empty = bubbled({ needs: { ...hungry } }, { x: 0.05, z: 0 });
+    stepNpcs([empty.npc], FRAME, nav, 0, seeded(1), new Map(), null, []);
+    expect(empty.npc.stranded! & 0b0001).toBe(1);
+    expect(empty.bubble.sprite.visible).toBe(true);
+  });
+
+  it('no bubble while asleep or using something; lower over a sitter; none in photo mode', () => {
+    const asleep = bubbled({ pause: 30, mode: 'seated', asleep: true, using: 'energy', needs: { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    stepNpcs([asleep.npc], FRAME, OPEN, 0);
+    expect(asleep.bubble.sprite.visible).toBe(false);
+    const sitter = bubbled({ pause: 30, mode: 'seated', needs: { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    stepNpcs([sitter.npc], FRAME, OPEN, 0);
+    expect(sitter.bubble.sprite.visible).toBe(true);
+    const standing = bubbled({ pause: 30, needs: { hunger: 0.05, energy: 1, fun: 1, hygiene: 1 }, stranded: ALL_STRANDED });
+    stepNpcs([standing.npc], FRAME, OPEN, 0);
+    expect(sitter.bubble.sprite.position.y).toBeLessThan(standing.bubble.sprite.position.y - 0.3);
+    standing.atlas.hidden = true;
+    expect(stepNpcs([standing.npc], FRAME, OPEN, 0)).toBe(NPC_REPAINT);
+    expect(standing.bubble.sprite.visible).toBe(false);
   });
 });

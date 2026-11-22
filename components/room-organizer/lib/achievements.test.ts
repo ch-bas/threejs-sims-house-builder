@@ -379,6 +379,29 @@ describe('room goals (#903)', () => {
     expect(cpuMs).toBeLessThan(50);
   }, 30_000);
 
+  it('with every room goal earned, scores rooms only for a house played under an unearned brief (#909)', () => {
+    const storey = (id: string): FloorLayout =>
+      makeFloor({ id, name: id, items: fiveStarKitchen.map((item) => ({ ...item, id: `${id}-${item.id}` })), zones: [kitchenZone] });
+    const roomGoals = ['real-kitchen', 'five-stars', 'home-sweet-home', 'night-owl'];
+    const unlocked = new Set(ACHIEVEMENTS.map((a) => a.id).filter((id) => !id.startsWith('challenge-')).concat(roomGoals));
+    const known = { floorIndex: 0, ids: new Set<string>() };
+    const watched = vi.mocked(hasCollisions);
+    const passes = (extra: Partial<RoomLayout>, earned: ReadonlySet<string> = unlocked): number => {
+      // Fresh layouts each time: the scores are kept per layout.
+      const before = makeLayout({ floors: [storey('g'), storey('u')], ...extra });
+      const after = makeLayout({ floors: [before.floors[0]!, { ...before.floors[1]!, items: [...before.floors[1]!.items, at('x', 'chair', 2, 2)] }], ...extra });
+      watched.mockClear();
+      achievementsEarned('edit', before, after, earned, { before: known, now: known });
+      return watched.mock.calls.length;
+    };
+    // No brief: nothing reads the upstairs rooms, no collision pass.
+    expect(passes({})).toBe(0);
+    // An unearned brief may read them; an earned one doesn't.
+    const brief = { challenge: { id: 'starter-home', startedAt: 0 } };
+    expect(passes(brief)).toBeGreaterThan(0);
+    expect(passes(brief, new Set([...unlocked, 'challenge-starter-home']))).toBe(0);
+  });
+
   it('an edit on a four-storey house re-scores only the storey it changed', () => {
     const storey = (id: string): FloorLayout =>
       makeFloor({ id, name: id, items: fiveStarKitchen.map((item) => ({ ...item, id: `${id}-${item.id}` })), zones: [kitchenZone] });

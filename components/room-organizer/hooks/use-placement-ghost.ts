@@ -6,8 +6,10 @@ import { randomSuffix } from '../lib/ids';
 import {
   cornerInset,
   isRunItem,
+  layLotRun,
   layRun,
   RUN_DRAG_PX,
+  runsRoundLot,
   snapRunPoint,
   type RunFit,
   type RunLot,
@@ -68,12 +70,14 @@ export interface UsePlacementGhostParams {
 export interface GhostRunParams {
   /** The garden a run stays in (`runLot`). */
   lot: RunLot;
+  /** Where a run round the lot leaves a gate for the front path (`frontPathGate`), or null. */
+  gate: number | null;
   /** What of a drawn run can be laid (`fitRun` against the ground floor). */
   fit(sections: readonly FurnitureItem[]): RunFit;
   /** Lay the sections, all in one step; false when refused or asked about. `keep` = the ghost stays in hand. */
   place(catalogItem: CatalogItem, items: FurnitureItem[], keep: boolean): boolean;
-  /** Say why a run standing in `blocker` wasn't laid. */
-  refuse(blocker: FurnitureItem): void;
+  /** Say why a run standing in `blocker` wasn't laid; `roundLot` for the run round the lot (#915), which nobody drew. */
+  refuse(blocker: FurnitureItem, roundLot: boolean): void;
 }
 
 export interface UsePlacementGhostResult {
@@ -81,6 +85,8 @@ export interface UsePlacementGhostResult {
   confirm(keep?: boolean): void;
   /** Put it down without placing (Escape, the hint's Cancel). */
   cancel(): void;
+  /** Run the fence or hedge in hand round the whole lot in one step (#915), then put it down. */
+  runRoundLot(): void;
 }
 
 interface GhostSession {
@@ -161,6 +167,20 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
   }, []);
 
   const cancel = useCallback(() => paramsRef.current.endGhost(), []);
+
+  // "Fence the lot" (#915): the hint's button lays the run round the lot as
+  // a drawn run is laid: fitted, refused whole on an item in the way, bought
+  // or asked about once, one edit. Put down after, whatever the answer.
+  const runRoundLot = useCallback(() => {
+    const p = paramsRef.current;
+    const ghost = p.ghost;
+    if (!ghost || !p.run || !runsRoundLot(ghost.type)) return;
+    const prefix = `${ghost.type}-${Date.now()}-${randomSuffix()}`;
+    const { sections, blocker } = p.run.fit(layLotRun(p.run.lot, ghost, p.run.gate, (index) => `${prefix}-${index}`));
+    if (blocker) p.run.refuse(blocker, true);
+    else if (sections.length > 0) p.run.place(ghost, sections, false);
+    p.endGhost();
+  }, []);
 
   useEffect(() => {
     if (!ghost) {
@@ -418,7 +438,7 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
       const current = paramsRef.current;
       if (blocker) {
         // Refused like an unaffordable run: put down, unless Shift keeps it in hand.
-        current.run?.refuse(blocker);
+        current.run?.refuse(blocker, false);
         if (keep) renderRef.current();
         else current.endGhost();
         return true;
@@ -547,5 +567,5 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     // floorY and storeyHeight rebuild the preview on a floor change.
   }, [ghost, enabled, sceneReady, view2D, floorY, storeyHeight, confirm]);
 
-  return useMemo(() => ({ confirm, cancel }), [confirm, cancel]);
+  return useMemo(() => ({ confirm, cancel, runRoundLot }), [confirm, cancel, runRoundLot]);
 }

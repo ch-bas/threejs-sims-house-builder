@@ -1,6 +1,8 @@
+import { doorSoundOf } from '../lib/ambience';
 import { DOOR_LEAF_NAME, DOOR_LEAF_PARTS, DOOR_SHUT, doorLeafAngle, doorLeafOpenness, stepDoorSwing, type DoorSwingState } from '../lib/door-swing';
 import { FURNITURE_REVISION_KEY } from './drag-handlers';
 import { ROOM_OBJECT_TAGS } from './room-builder';
+import type { DoorSound } from '../lib/ambience';
 import type { NpcHandOff } from '../lib/npc-bodies';
 import type * as ThreeNS from 'three';
 
@@ -76,11 +78,19 @@ export interface DoorSwinger {
  * its revision, so a door rebuilt mid-walk is picked up, shut.
  * `onSettled` runs once the leaves stop, not per frame: the static shadow
  * map is redrawn then (a moving leaf keeps its old shadow meanwhile).
+ * `onSound` hears a door start to open or come shut (#911), once per door
+ * however many leaves it has, with its plan position and storey.
  */
-export function createDoorSwinger(scene: ThreeNS.Object3D, onSettled?: () => void): DoorSwinger {
+export function createDoorSwinger(
+  scene: ThreeNS.Object3D,
+  onSettled?: () => void,
+  onSound?: (sound: DoorSound, x: number, z: number, floorIndex: number) => void
+): DoorSwinger {
   let revision: unknown = Symbol('unread');
   let leaves: DoorLeaf[] = [];
   let swinging = false;
+  // The doors heard this frame: a double door's two leaves are one sound.
+  const heard = new Set<ThreeNS.Object3D>();
 
   const collect = (): DoorLeaf[] => {
     const current = scene.userData[FURNITURE_REVISION_KEY];
@@ -108,6 +118,7 @@ export function createDoorSwinger(scene: ThreeNS.Object3D, onSettled?: () => voi
   return {
     step(walkers, seconds, reducedMotion) {
       let moved = false;
+      heard.clear();
       for (const leaf of collect()) {
         const { group } = leaf;
         // The nearest person on the door's storey decides how open it is
@@ -131,6 +142,12 @@ export function createDoorSwinger(scene: ThreeNS.Object3D, onSettled?: () => voi
         const localZ = dx * Math.sin(group.rotation.y) + dz * Math.cos(group.rotation.y);
         const next = stepDoorSwing(leaf.state, distance, localZ, seconds, reducedMotion, leaf.side);
         if (next === leaf.state) continue;
+        // #911: a creak as a hinged leaf starts to open, a knock as any shuts.
+        const sound = onSound && !heard.has(group) ? doorSoundOf(leaf.state.open, next.open) : null;
+        if (sound && !(sound === 'open' && leaf.slide)) {
+          heard.add(group);
+          onSound?.(sound, group.position.x, group.position.z, group.userData.floorIndex as number);
+        }
         leaf.state = next;
         poseLeaf(leaf);
         moved = true;

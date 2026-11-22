@@ -54,6 +54,7 @@ function describeFloorFields(before: FloorLayout, after: FloorLayout): string {
   if (before.interiorWalls !== after.interiorWalls) return 'change the walls';
   if (before.hiddenWalls !== after.hiddenWalls) return 'show or hide a wall';
   if (before.zones !== after.zones) return 'change the zones';
+  if (before.dimensions !== after.dimensions) return 'pin or unpin a dimension';
   if (before.height !== after.height) return 'change the storey height';
   const finishes = before.floorColor !== after.floorColor || before.floorPattern !== after.floorPattern;
   const walls = before.wallPattern !== after.wallPattern || before.wallColors !== after.wallColors || before.facade !== after.facade;
@@ -105,5 +106,6 @@ export function describeLayoutChange(before: RoomLayout, after: RoomLayout): str
   if (before.name !== after.name) return 'rename the house';
   if (before.width !== after.width || before.height !== after.height) return 'resize the house';
   if (before.roof !== after.roof) return 'change the roof';
+  if (before.grounds !== after.grounds) return 'change the garden surfaces';
   return 'change the house';
 }

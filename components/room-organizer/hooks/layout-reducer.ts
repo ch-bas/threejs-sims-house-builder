@@ -14,12 +14,15 @@ import { floorKeepOut } from '../lib/floor-keep-out';
 import { repairFloorPlanTransform } from '../lib/floor-plan-fit';
 import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
 import { formatMetres } from '../lib/format';
+import { withGroundAdded, withGroundRemoved, withGroundUpdated, type GroundPatchEdit } from '../lib/grounds';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
 import { openingStylePatch } from '../lib/opening-style';
+import { MAX_DIMENSIONS_PER_FLOOR, MIN_DIMENSION_LENGTH, PIN_INDOOR_TOLERANCE, clampDimension, dimensionLength, dimensionOutsideWalls, dimensionsAfterFootprint, withDimensions } from '../lib/plan-dimensions';
 import { DEFAULT_ROOF_PITCH, clampRoofPitch, partyWallsHoldRidge } from '../lib/roof-shape';
 import { floorRooms } from '../lib/room-detect';
+import { planRoomTransfer, type RoomTransfer } from '../lib/room-transfer';
 import {
   MAX_INTERIOR_WALLS_PER_FLOOR,
   MAX_ITEMS_PER_FLOOR,
@@ -54,12 +57,15 @@ import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanMode,
   FloorPlanTransform,
   Frontage,
   FurnitureItem,
+  GroundPatch,
   InteriorWall,
   NeighbourFlag,
   OpeningStyle,
+  PinnedDimension,
   RoofRidge,
   RoofStyle,
   RoomLayout,
@@ -122,6 +128,8 @@ export type LayoutAction =
   | { type: 'toggleExteriorWall'; wallId: WallId }
   | { type: 'clearInteriorWalls' }
   | { type: 'rotateSelection'; ids: ReadonlySet<string>; radians: number }
+  // Room transfer (#925): a room's walls, items and zones in one step
+  | { type: 'transferRoom'; transfer: RoomTransfer }
   | { type: 'setLockAll'; locked: boolean }
   | { type: 'clearItems' }
   // floor / building operations
@@ -135,6 +143,7 @@ export type LayoutAction =
   | { type: 'setFloorPlanOpacity'; opacity: number }
   | { type: 'setFloorPlanFitMode'; mode: FloorPlanFitMode }
   | { type: 'setFloorPlanTransform'; transform: FloorPlanTransform | null }
+  | { type: 'setFloorPlanMode'; mode: FloorPlanMode }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
   /** Roof pitch (#916): a multiplier on the rise, clamped; 1 clears it. */
@@ -158,7 +167,14 @@ export type LayoutAction =
   // room zones (#155) — target the active floor
   | { type: 'addZone'; zone: RoomZone }
   | { type: 'updateZone'; id: string; patch: ZonePatch }
-  | { type: 'removeZone'; id: string };
+  | { type: 'removeZone'; id: string }
+  // pinned dimensions (#921) — target the active floor
+  | { type: 'addDimension'; dimension: PinnedDimension }
+  | { type: 'removeDimension'; id: string }
+  // garden surfaces (#924) — on the building, not a floor
+  | { type: 'addGround'; ground: GroundPatch }
+  | { type: 'updateGround'; id: string; patch: GroundPatchEdit }
+  | { type: 'removeGround'; id: string };
 
 // ---------------------------------------------------------------------------
 // State shape + defaults
@@ -266,12 +282,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     case 'setWidth':
       return withLayout(state, (layout) => {
         const width = clampRoomDimension(action.width);
-        return width === layout.width ? layout : refitFootprint(layout, width, layout.height);
+        return width === layout.width ? layout : pinsFollowFootprint(layout, refitFootprint(layout, width, layout.height));
       });
     case 'setHeight':
       return withLayout(state, (layout) => {
         const height = clampRoomDimension(action.height);
-        return height === layout.height ? layout : refitFootprint(layout, layout.width, height);
+        return height === layout.height ? layout : pinsFollowFootprint(layout, refitFootprint(layout, layout.width, height));
       });
 
     // -- site (#202) -------------------------------------------------------
@@ -294,7 +310,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // recess as it's resized or moved, onto whichever storey meets the street.
     // A corner out of the building (#727), on every storey; see lib/cutout.ts.
     case 'setCutout':
-      return withLayout(state, (layout) => withCutout(layout, action.cutout));
+      return withLayout(state, (layout) => pinsFollowFootprint(layout, withCutout(layout, action.cutout)));
     case 'setEntrance':
       return withLayout(state, (layout) => syncEntrance(layout, action.entrance));
     case 'setFrontage':
@@ -404,10 +420,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // A calibration belongs to its image (#726): another image, or none, drops it.
       if (image === null) {
         return withLayout(state, (layout) => {
-          if (layout.floorPlanImage === undefined && layout.floorPlanTransform === undefined) return layout;
+          if (layout.floorPlanImage === undefined && layout.floorPlanTransform === undefined && layout.floorPlanMode === undefined) return layout;
           const next = { ...layout };
           delete next.floorPlanImage;
           delete next.floorPlanTransform;
+          // The next upload starts as the drawing again (#920).
+          delete next.floorPlanMode;
           return next;
         });
       }
@@ -444,6 +462,14 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withLayout(state, (layout) =>
         layout.floorPlanFitMode === action.mode ? layout : { ...layout, floorPlanFitMode: action.mode }
       );
+    // The drawing or an underlay (#920): 'drawing' is stored as no key, as old saves have it.
+    case 'setFloorPlanMode':
+      return withLayout(state, (layout) => {
+        if (!layout.floorPlanImage) return layout;
+        if (action.mode === 'underlay') return layout.floorPlanMode === 'underlay' ? layout : { ...layout, floorPlanMode: 'underlay' };
+        // An explicit 'drawing' (a file can carry one) is the same picture: no change, no undo entry.
+        return layout.floorPlanMode === undefined || layout.floorPlanMode === 'drawing' ? layout : withoutKey(layout, 'floorPlanMode');
+      });
 
     // -- roof ---------------------------------------------------------------
     // A roof-less house (a migrated legacy save) renders as style 'none', so
@@ -869,6 +895,18 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         return changed ? { ...floor, items } : floor;
       });
 
+    // Room transfer (#925): move, mirror, copy or paste a room with its walls,
+    // all through one plan (lib/room-transfer.ts), which refuses overlaps,
+    // locked items and shapes the footprint or the zones can't take. Polygon
+    // zones re-fit in followRooms, in this same step.
+    case 'transferRoom':
+      return withActiveFloor(state, (floor) => {
+        const plan = planRoomTransfer(state.layout, state.activeFloorIndex, action.transfer);
+        if (!plan || 'refusal' in plan) return floor;
+        const kept = new Set(floor.items);
+        return { ...plan.floor, items: plan.floor.items.map((item) => (kept.has(item) ? item : boundItem(item))) };
+      });
+
     case 'setLockAll':
       return withActiveFloor(state, (floor) => {
         if (floor.items.every((item) => (item.locked === true) === action.locked)) return floor;
@@ -1026,13 +1064,19 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         ...zone,
         id: `zone-${action.idSuffix}-${idx}`,
       }));
+      // Pins (#921) get fresh ids; one out to the garden stays with the garden.
+      const clonedDimensions = (source.dimensions ?? [])
+        .filter((dimension) => dimensionOutsideWalls(state.layout, dimension, PIN_INDOOR_TOLERANCE) === 0)
+        .map((dimension, idx) => ({ ...dimension, id: `dim-${action.idSuffix}-${idx}` }));
+      const { dimensions: _sourcePins, ...sourceRest } = source;
       const floor: FloorLayout = {
-        ...source,
+        ...sourceRest,
         id: action.newId,
         name: capName(`${source.name} copy`),
         items: clonedItems,
         ...(clonedWalls ? { interiorWalls: clonedWalls } : {}),
         ...(clonedZones ? { zones: clonedZones } : {}),
+        ...(clonedDimensions.length > 0 ? { dimensions: clonedDimensions } : {}),
       };
       const floors = [...state.layout.floors, floor];
       return { layout: { ...state.layout, floors }, activeFloorIndex: floors.length - 1 };
@@ -1169,6 +1213,14 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         return { ...floor, zones: floor.zones.map((zone) => (zone.id === action.id ? next : zone)) };
       });
 
+    // -- garden surfaces (#924): fitted to the lot in lib/grounds.ts --------
+    case 'addGround':
+      return withLayout(state, (layout) => withGroundAdded(layout, action.ground));
+    case 'updateGround':
+      return withLayout(state, (layout) => withGroundUpdated(layout, action.id, action.patch));
+    case 'removeGround':
+      return withLayout(state, (layout) => withGroundRemoved(layout, action.id));
+
     case 'removeZone':
       return withActiveFloor(state, (floor) => {
         if (!floor.zones?.some((zone) => zone.id === action.id)) return floor;
@@ -1178,9 +1230,48 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         return rest;
       });
 
+    // Pinned dimensions (#921): in range when added, at most a storey's cap;
+    // a pin too short or already there changes nothing.
+    case 'addDimension':
+      return withActiveFloor(state, (floor) => {
+        const dimensions = floor.dimensions ?? [];
+        if (dimensions.length >= MAX_DIMENSIONS_PER_FLOOR || dimensions.some((entry) => entry.id === action.dimension.id)) return floor;
+        const { id, a, b, offset } = action.dimension;
+        const dimension = clampDimension({ id, a: { x: a.x, z: a.z }, b: { x: b.x, z: b.z }, ...(offset !== undefined ? { offset } : {}) }, clampCoordinate);
+        const finite = [dimension.a.x, dimension.a.z, dimension.b.x, dimension.b.z, dimension.offset ?? 0].every(Number.isFinite);
+        if (!finite || dimensionLength(dimension) < MIN_DIMENSION_LENGTH) return floor;
+        return withDimensions(floor, [...dimensions, dimension]);
+      });
+    case 'removeDimension':
+      return withActiveFloor(state, (floor) => {
+        const dimensions = floor.dimensions ?? [];
+        if (!dimensions.some((entry) => entry.id === action.id)) return floor;
+        return withDimensions(floor, dimensions.filter((entry) => entry.id !== action.id));
+      });
+
     default:
       return assertNever(action);
   }
+}
+
+/**
+ * `after` (a resize or a corner cut of `before`) with every storey's pinned
+ * dimensions following the walls (#921), in the same step: a pin end on an
+ * outer wall moves with it and one inside stays inside.
+ */
+function pinsFollowFootprint(before: RoomLayout, after: RoomLayout): RoomLayout {
+  if (after === before) return after;
+  const from = { width: before.width, height: before.height, cutout: before.cutout };
+  const to = { width: after.width, height: after.height, cutout: after.cutout };
+  let changed = false;
+  const floors = after.floors.map((floor) => {
+    if (!floor.dimensions) return floor;
+    const dimensions = dimensionsAfterFootprint(floor.dimensions, from, to);
+    if (dimensions === floor.dimensions) return floor;
+    changed = true;
+    return withDimensions(floor, dimensions);
+  });
+  return changed ? { ...after, floors } : after;
 }
 
 // ---------------------------------------------------------------------------
@@ -1572,7 +1663,9 @@ function normaliseLayout(input: RoomLayout): RoomLayout {
   // A calibration belongs to its image (#726). Restore points keep it without
   // the image, for the History panel to re-attach both; a house that arrives
   // without its image leaves it behind here, on every whole-house load.
-  const layout = input.floorPlanTransform && !input.floorPlanImage ? withoutKey(input, 'floorPlanTransform') : input;
+  const calibrated = input.floorPlanTransform && !input.floorPlanImage ? withoutKey(input, 'floorPlanTransform') : input;
+  // Its mode too (#920): restore points keep it for the re-attach, done before this load.
+  const layout = calibrated.floorPlanMode !== undefined && !calibrated.floorPlanImage ? withoutKey(calibrated, 'floorPlanMode') : calibrated;
   const width = clampRoomDimension(layout.width);
   const height = clampRoomDimension(layout.height);
   return {

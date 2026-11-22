@@ -12,9 +12,10 @@ describe('toggleViewOption (#341)', () => {
     }
   });
 
-  it('switching the distance tool on leaves 2D and parks the other floor-click modes', () => {
+  it('switching the distance tool on keeps the view and parks the other floor-click modes (#921)', () => {
     const next = toggleViewOption(makeView({ view2D: true, drawWallMode: true, drawZoneMode: true }), 'measurementMode');
-    expect(next).toMatchObject({ measurementMode: true, view2D: false, drawWallMode: false, drawZoneMode: false });
+    expect(next).toMatchObject({ measurementMode: true, view2D: true, drawWallMode: false, drawZoneMode: false });
+    expect(toggleViewOption(makeView({ view2D: false }), 'measurementMode')).toMatchObject({ measurementMode: true, view2D: false });
   });
 
   it('switching the distance tool off changes nothing else', () => {
@@ -47,6 +48,13 @@ describe('withViewInvariants (#439)', () => {
     expect(withViewInvariants(makeView({ view2D: false, drawZoneMode: true })).drawZoneMode).toBe(false);
   });
 
+  it('wall or zone drawing picked after the distance tool parks it (#921)', () => {
+    expect(withViewInvariants(makeView({ measurementMode: true, drawWallMode: true })).measurementMode).toBe(false);
+    expect(withViewInvariants(makeView({ view2D: true, measurementMode: true, drawZoneMode: true })).measurementMode).toBe(false);
+    const measuring = makeView({ view2D: true, measurementMode: true });
+    expect(withViewInvariants(measuring)).toBe(measuring);
+  });
+
   it('returns the same object when nothing changes', () => {
     const drawing = makeView({ view2D: true, drawZoneMode: true });
     expect(withViewInvariants(drawing)).toBe(drawing);
@@ -64,6 +72,6 @@ describe('the sound tile (#911)', () => {
     expect([ambience.soundsEnabled, ambience.ambienceEnabled]).toEqual([true, true]);
     const muted = nextSoundSetting(ambience);
     expect([muted.soundsEnabled, muted.ambienceEnabled]).toEqual([false, false]);
-    expect([off, cues, ambience].map(soundTileLabel)).toEqual(['Enable sounds', 'Add ambience: rain and footsteps in EXPLORE', 'Mute sounds and ambience']);
+    expect([off, cues, ambience].map(soundTileLabel)).toEqual(['Enable sounds', 'Add ambience: rain, footsteps, birds and doors in EXPLORE', 'Mute sounds and ambience']);
   });
 });

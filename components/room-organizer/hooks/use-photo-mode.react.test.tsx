@@ -7,7 +7,8 @@ import { openAlbum, resetAlbumForTests } from '../lib/photo-album';
 import { enterPhotoMode, isPhotoMode, leavePhotoMode } from '../lib/photo-mode';
 import { ConfirmDialogHost } from '../panels/confirm-dialog';
 import { PhotoBar } from '../panels/photo-bar';
-import { usePhotoMode, type UsePhotoModeOptions } from './use-photo-mode';
+import { usePhotoMode, type ShotControls, type UsePhotoModeOptions } from './use-photo-mode';
+import type { ShotConditions } from '../lib/photo-presets';
 import type * as ThreeNS from 'three';
 
 afterEach(() => {
@@ -55,11 +56,22 @@ function Harness(props: Partial<UsePhotoModeOptions> & { renderer: ThreeNS.WebGL
     walking: props.walking ?? false,
     onEnter: props.onEnter ?? (() => {}),
     ...(props.available !== undefined ? { available: props.available } : {}),
+    ...(props.shot ? { shot: props.shot } : {}),
   });
   return (
     <div className="pc-world">
       <span>{photo.active ? 'on' : 'off'}</span>
-      {photo.active && <PhotoBar onTake={photo.take} onKeep={photo.keep} houseId="house-1" houseName="My Home" onDone={photo.leave} />}
+      {photo.active && (
+        <PhotoBar
+          onTake={photo.take}
+          onKeep={photo.keep}
+          houseId="house-1"
+          houseName="My Home"
+          onDone={photo.leave}
+          {...(photo.shoot ? { onShoot: photo.shoot } : {})}
+          walking={props.walking ?? false}
+        />
+      )}
     </div>
   );
 }
@@ -138,7 +150,7 @@ describe('photo mode (#626)', () => {
         this.view = { enabled: true, fullWidth, fullHeight, offsetX, offsetY, width, height };
       },
     };
-    const grid = { type: 'GridHelper', visible: true };
+    const grid = { type: 'GridHelper', visible: true, layers: { mask: 1 } };
     const scene = { children: [grid] };
     function Shift() {
       usePhotoMode({
@@ -152,10 +164,25 @@ describe('photo mode (#626)', () => {
     render(<Shift />);
     act(() => enterPhotoMode());
     expect(camera.view?.enabled).toBe(false);
-    expect(grid.visible).toBe(false);
+    expect(grid.layers.mask).toBe(0);
+    // The cutaway pass shows the grid on every camera move (an orbit, a
+    // preset): hidden through its layers, it stays out of view anyway.
+    grid.visible = true;
+    expect(grid.layers.mask).toBe(0);
+    // A room rebuild meanwhile adds a new grid: hidden as the next frame starts.
+    const rebuilt = { type: 'GridHelper', visible: true, layers: { mask: 1 } };
+    scene.children.push(rebuilt);
+    (scene as unknown as ThreeNS.Object3D).onBeforeRender(
+      ...([] as unknown as Parameters<ThreeNS.Object3D['onBeforeRender']>),
+    );
+    expect(rebuilt.layers.mask).toBe(0);
     act(() => leavePhotoMode());
     expect(camera.view).toEqual(view);
+    expect(grid.layers.mask).toBe(1);
+    expect(rebuilt.layers.mask).toBe(1);
     expect(grid.visible).toBe(true);
+    // The frame hook goes with photo mode.
+    expect(Object.hasOwn(scene, 'onBeforeRender')).toBe(false);
   });
 
   it('lets the walk’s keys through while walking', () => {
@@ -228,6 +255,161 @@ describe('photo mode (#626)', () => {
     expect(screen.getByRole('region', { name: 'Album' }).textContent).toContain('No photos of this house yet');
     // The row is gone: focus goes to the album, not to <body>.
     expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Album' }));
+  });
+
+  it('shares an album photo through the sheet where it takes an image, and says so (#912)', async () => {
+    const store = await openAlbum();
+    await store.put({ id: 'p1', houseId: 'house-1', takenAt: Date.now(), hour: 18, weather: 'clear', image: new ArrayBuffer(4), imageType: 'image/jpeg', thumb: null });
+    const shared: ShareData[] = [];
+    const share = vi.fn((data: ShareData) => {
+      shared.push(data);
+      return Promise.resolve();
+    });
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    Object.defineProperty(navigator, 'canShare', { value: (data: ShareData) => (data.files ?? []).every((file) => file.type.startsWith('image/')), configurable: true });
+    try {
+      render(<Harness renderer={fakeRenderer(null).renderer} />);
+      act(() => enterPhotoMode());
+      act(() => screen.getByRole('button', { name: /^Album/ }).click());
+      const button = await screen.findByRole('button', { name: 'Share photo taken just now' });
+      act(() => {
+        button.click();
+        // A second tap while the sheet is open asks nothing more.
+        button.click();
+      });
+      // Opened inside the tap, before anything awaited.
+      expect(share).toHaveBeenCalledTimes(1);
+      expect(shared[0]?.files?.[0]?.name).toBe('my-home-photo.jpg');
+      expect(shared[0]?.files?.[0]?.type).toBe('image/jpeg');
+      await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Photo shared'));
+      // Photo mode stays on: sharing edits nothing and leaves nothing.
+      expect(isPhotoMode()).toBe(true);
+    } finally {
+      Reflect.deleteProperty(navigator, 'share');
+      Reflect.deleteProperty(navigator, 'canShare');
+    }
+  });
+
+  it('offers no Share where the sheet won’t take an image: Download covers it (#912)', async () => {
+    const store = await openAlbum();
+    await store.put({ id: 'p1', houseId: 'house-1', takenAt: Date.now(), hour: 18, weather: 'clear', image: new ArrayBuffer(4), imageType: 'image/jpeg', thumb: null });
+    render(<Harness renderer={fakeRenderer(null).renderer} />);
+    act(() => enterPhotoMode());
+    act(() => screen.getByRole('button', { name: /^Album/ }).click());
+    expect(await screen.findByRole('button', { name: /^Download the album copy/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Share photo/ })).toBeNull();
+  });
+
+  /** A scene's hour, weather and clock, and the camera presets asked for. */
+  function fakeShot(start: ShotConditions = { hour: 10, weather: 'rain', autoCycle: true }) {
+    const scene = { ...start };
+    const framed: string[] = [];
+    const writes: ShotConditions[] = [];
+    const shot: ShotControls = {
+      read: () => ({ ...scene }),
+      write: (next) => {
+        writes.push(next);
+        Object.assign(scene, next);
+      },
+      frame: (camera) => framed.push(camera),
+    };
+    return { shot, scene, framed, writes };
+  }
+
+  it('sets a preset’s camera, hour and weather, and puts the scene back as photo mode ends (#912)', () => {
+    const { shot, scene, framed } = fakeShot();
+    render(<Harness renderer={fakeRenderer(null).renderer} shot={shot} />);
+    act(() => enterPhotoMode());
+    const presets = screen.getByRole('button', { name: 'Presets' });
+    act(() => presets.click());
+    expect(presets.getAttribute('aria-expanded')).toBe('true');
+    const golden = screen.getByRole('button', { name: 'Golden hour, 17:00 · Clear' });
+    act(() => golden.click());
+    expect(scene).toEqual({ hour: 17, weather: 'clear', autoCycle: false });
+    expect(framed).toEqual(['front']);
+    expect(golden.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('status').textContent).toBe('Golden hour');
+    act(() => screen.getByRole('button', { name: 'Snowy day, 11:00 · Snow' }).click());
+    expect(scene).toEqual({ hour: 11, weather: 'snow', autoCycle: false });
+    expect(framed).toEqual(['front', 'iso']);
+    expect(golden.getAttribute('aria-pressed')).toBe('false');
+    // Done: back past every preset to the scene as it was, the clock running again.
+    act(() => screen.getByRole('button', { name: 'Done' }).click());
+    expect(isPhotoMode()).toBe(false);
+    expect(scene).toEqual({ hour: 10, weather: 'rain', autoCycle: true });
+  });
+
+  it('shows no preset pressed once the camera is moved off it (#912)', () => {
+    const { shot } = fakeShot();
+    render(<Harness renderer={fakeRenderer(null).renderer} shot={shot} />);
+    const canvas = document.createElement('canvas');
+    document.body.appendChild(canvas);
+    act(() => enterPhotoMode());
+    act(() => screen.getByRole('button', { name: 'Presets' }).click());
+    const golden = screen.getByRole('button', { name: 'Golden hour, 17:00 · Clear' });
+    act(() => golden.click());
+    expect(golden.getAttribute('aria-pressed')).toBe('true');
+    // A tap on the scene that doesn't drag keeps it.
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, buttons: 1 }));
+      canvas.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, buttons: 0 }));
+    });
+    expect(golden.getAttribute('aria-pressed')).toBe('true');
+    // An orbit drag on the scene clears it.
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, buttons: 1 }));
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, buttons: 1 }));
+    });
+    expect(golden.getAttribute('aria-pressed')).toBe('false');
+    // So does a wheel zoom.
+    act(() => golden.click());
+    expect(golden.getAttribute('aria-pressed')).toBe('true');
+    act(() => {
+      canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 100 }));
+    });
+    expect(golden.getAttribute('aria-pressed')).toBe('false');
+    canvas.remove();
+  });
+
+  it('leaves the scene alone when no preset was used (#912)', () => {
+    const { shot, writes } = fakeShot();
+    render(<Harness renderer={fakeRenderer(null).renderer} shot={shot} />);
+    act(() => enterPhotoMode());
+    press('Escape');
+    expect(isPhotoMode()).toBe(false);
+    expect(writes).toEqual([]);
+  });
+
+  it('keeps the walker’s view while walking: a preset sets the light only (#912)', () => {
+    const { shot, scene, framed } = fakeShot();
+    render(<Harness renderer={fakeRenderer(null).renderer} shot={shot} walking />);
+    act(() => enterPhotoMode());
+    act(() => screen.getByRole('button', { name: 'Presets' }).click());
+    expect(screen.getByRole('region', { name: 'Presets' }).textContent).toContain('the view stays yours');
+    act(() => screen.getByRole('button', { name: 'Night, 21:30 · Clear' }).click());
+    expect(scene.hour).toBe(21.5);
+    expect(framed).toEqual([]);
+  });
+
+  it('shows one panel at a time, and Escape closes it before leaving (#912)', async () => {
+    const { shot } = fakeShot();
+    render(<Harness renderer={fakeRenderer(null).renderer} shot={shot} />);
+    act(() => enterPhotoMode());
+    const presets = screen.getByRole('button', { name: 'Presets' });
+    act(() => presets.click());
+    act(() => screen.getByRole('button', { name: /^Album/ }).click());
+    expect(await screen.findByRole('region', { name: 'Album' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Presets' })).toBeNull();
+    act(() => presets.click());
+    expect(screen.queryByRole('region', { name: 'Album' })).toBeNull();
+    // Enter on a preset is the shutter's own key: it passes the guard.
+    const enter = press('Enter', screen.getByRole('button', { name: 'Morning, 08:00 · Clear' }));
+    expect(enter.defaultPrevented).toBe(false);
+    press('Escape');
+    expect(screen.queryByRole('region', { name: 'Presets' })).toBeNull();
+    expect(document.activeElement).toBe(presets);
+    expect(isPhotoMode()).toBe(true);
   });
 
   it('closes the album on Escape before leaving photo mode (#912)', async () => {

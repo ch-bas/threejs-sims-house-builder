@@ -88,6 +88,13 @@ export interface SceneEventHandlers {
   onItemTwistEnd?: (id: string, turned: boolean) => void;
   onItemHover?: (info: HoverInfo | null) => void;
   onEmptyClick?: (x: number, z: number) => void;
+  /**
+   * A tap on a walker (#906), by its `userData.walkerId`: a press on one
+   * drawn nearer than any item and not behind a wall, roof or floor,
+   * released without travel; null for a tap on empty floor. The press stays
+   * the item's or the camera's: a drag from it moves the item or orbits.
+   */
+  onWalkerTap?: (walkerId: number | null, at: { x: number; y: number }) => void;
   /** `from` is where the wall was seen from: the viewer's side is the face clicked (#720). */
   onWallSelect?: (info: { wallId: string; kind: 'exterior' | 'interior'; from: Vec2 }) => void;
   /**
@@ -313,6 +320,31 @@ export function attachDragHandlers({
     stepped: boolean;
   } | null = null;
 
+  // #906: a press on a walker (or, id null, on empty floor), a tap if
+  // released within the threshold. The press is still the item's or the
+  // camera's: a drag from it moves the item or orbits, and opens nothing.
+  let walkerPress: { id: number | null; pointerId: number; x: number; y: number; threshold: number } | null = null;
+  const armTap = (id: number | null, event: PointerEvent): void => {
+    walkerPress = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, threshold: dragThresholdPx(event.pointerType) };
+  };
+  /** A walker drawn under the pointer, nearer than `nearest` and not behind a wall, roof or floor: armed. */
+  const pressWalker = (event: PointerEvent, nearest: number): boolean => {
+    walkerPress = null;
+    if (!handlersRef.current.onWalkerTap || event.button !== 0) return false;
+    const walkers = scene.children.filter((obj) => obj.userData.type === 'npc' && obj.visible);
+    if (walkers.length === 0) return false;
+    const hit = raycaster.intersectObjects(walkers, true).find((entry) => drawn(entry.object));
+    if (!hit || hit.distance >= nearest) return false;
+    const occluders = scene.children.filter((obj) => WALKER_OCCLUDERS.has(obj.userData.type as string));
+    if (raycaster.intersectObjects(occluders, true).some((entry) => entry.distance < hit.distance && drawn(entry.object))) return false;
+    let root: ThreeNS.Object3D = hit.object;
+    while (root.parent && root.userData.type !== 'npc') root = root.parent;
+    const id = root.userData.walkerId as number | undefined;
+    if (id === undefined) return false;
+    armTap(id, event);
+    return true;
+  };
+
   const setPointerFromEvent = (event: { clientX: number; clientY: number }): void => {
     const rect = canvas.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -371,6 +403,7 @@ export function attachDragHandlers({
   const beginDragSession = (event: PointerEvent): void => {
     if (!dragTarget) return;
     dragStarted = true;
+    walkerPress = null;
     // Take pointer capture so moves/up keep flowing to us even if the pointer
     // slides off the canvas mid-drag (important for touch), and stop
     // OrbitControls from panning/rotating the camera under the drag.
@@ -402,14 +435,22 @@ export function attachDragHandlers({
     // A later finger of a multi-touch gesture the camera already owns (a
     // pinch that started on the floor) never selects or arms a drag: that
     // would switch the controls off under the pinch.
-    if (event.isPrimary === false) return;
+    if (event.isPrimary === false) {
+      walkerPress = null;
+      return;
+    }
 
+    walkerPress = null;
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
     const floorPickOnly = handlersRef.current.floorPickOnly === true;
     if (!floorPickOnly && pressWallHandle(event)) return;
     const furniture = furnitureList();
     const hits = floorPickOnly ? [] : raycaster.intersectObjects(furniture, true);
+    // A walker in front of everything is a tap on it; in front of an item,
+    // the press still selects and drags the item, and a tap opens the card too.
+    const onWalker = !floorPickOnly && pressWalker(event, hits[0]?.distance ?? Number.POSITIVE_INFINITY);
+    if (onWalker && hits.length === 0) return;
     if (hits.length === 0) {
       // Walls get a chance to claim the click before we fall through to the
       // floor's onEmptyClick handler. Required for "pick a wall to
@@ -447,6 +488,8 @@ export function attachDragHandlers({
           return;
         }
       }
+      // A tap on empty floor closes the walker card (#906).
+      if (!floorPickOnly && event.button === 0 && handlersRef.current.onWalkerTap) armTap(null, event);
       if (handlersRef.current.onEmptyClick) {
         dragPlane.constant = -(handlersRef.current.getDragPlaneY?.() ?? 0);
         if (raycaster.ray.intersectPlane(dragPlane, intersection)) {
@@ -525,6 +568,9 @@ export function attachDragHandlers({
   };
 
   const onPointerMove = (event: PointerEvent): void => {
+    if (walkerPress && event.pointerId === walkerPress.pointerId && Math.hypot(event.clientX - walkerPress.x, event.clientY - walkerPress.y) > walkerPress.threshold) {
+      walkerPress = null;
+    }
     if (twist) {
       moveTwist(event);
       return;
@@ -873,12 +919,16 @@ export function attachDragHandlers({
   };
 
   const onPointerUp = (event: PointerEvent): void => {
+    const tap = walkerPress && event.pointerId === walkerPress.pointerId ? walkerPress : null;
+    walkerPress = null;
+    if (tap) handlersRef.current.onWalkerTap?.(tap.id, { x: event.clientX, y: event.clientY });
     endGesture(event);
   };
 
   // The browser took the pointer (OS gesture, palm rejection, a system
   // dialog): undo the drag rather than commit and lock it (#292).
   const onPointerCancel = (event: PointerEvent): void => {
+    walkerPress = null;
     if (twist) {
       if (twist.ids.includes(event.pointerId)) endTwist();
       return;
@@ -888,6 +938,7 @@ export function attachDragHandlers({
   };
 
   const onPointerLeave = (event: PointerEvent): void => {
+    walkerPress = null;
     // Hover teardown is a mouse affordance; touch never sets hover state.
     if (event.pointerType !== 'touch') {
       handlersRef.current.onItemHover?.(null);
@@ -941,6 +992,15 @@ export function attachDragHandlers({
  * with its wall stays selectable, but only when nothing drawn lies along the
  * ray, so it can't block what is behind it (#659).
  */
+/** What hides a walker from a tap: walls, porch boxes, the roof and dormers, ceilings, floors. */
+const WALKER_OCCLUDERS: ReadonlySet<string> = new Set(['wall', 'interior-wall', 'roof', 'attic-ceiling', 'walkthrough-ceiling', 'floor']);
+
+/** Drawn: it and every parent visible (a hidden roof group hides its meshes). */
+function drawn(node: ThreeNS.Object3D | null): boolean {
+  for (let current = node; current; current = current.parent) if (!current.visible) return false;
+  return true;
+}
+
 export function pickFurniture(hits: ReadonlyArray<{ object: ThreeNS.Object3D }>): ThreeNS.Object3D | null {
   let hidden: ThreeNS.Object3D | null = null;
   for (const hit of hits) {

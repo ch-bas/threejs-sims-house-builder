@@ -1,3 +1,4 @@
+import { swingBlockerIds } from './door-clearance';
 import { floorKeepOut } from './floor-keep-out';
 import { formatArea, getDisplayUnit, type LengthUnit } from './format';
 import { footprintArea, hasCollisions } from './geometry';
@@ -54,14 +55,31 @@ export const ROOM_CHECKS: ReadonlyArray<{ key: RoomCheckKey; label: string }> = 
   { key: 'window', label: 'a window on its walls' },
   { key: 'lamp', label: 'a lamp for the night' },
   { key: 'clear', label: 'no collisions' },
-  { key: 'space', label: 'furniture under 70% of the floor' },
+  { key: 'space', label: 'furniture under 70% of the floor, clear of door swings' },
 ];
 
 /** Floor per piece of decor the decor check asks for. */
 export const DECOR_AREA_PER_PIECE = 10;
 
-/** A check's label in the unit shown (#725): the decor rule's area is in m² or sq ft. */
-export function roomCheckLabel(check: { key: RoomCheckKey; label: string }, unit: LengthUnit = getDisplayUnit()): string {
+/** Which part of the space check a room fails (#917): too much floor covered, furniture in a door's swing, or both. */
+export type SpaceShortfall = 'crowded' | 'swing' | 'both';
+
+const SPACE_LABELS: Readonly<Record<SpaceShortfall, string>> = {
+  crowded: 'furniture under 70% of the floor',
+  swing: 'furniture clear of door swings',
+  both: 'furniture under 70% of the floor, clear of door swings',
+};
+
+/**
+ * A check's label in the unit shown (#725): the decor rule's area is in m²
+ * or sq ft. The space check names the part a room fails, when told (#917).
+ */
+export function roomCheckLabel(
+  check: { key: RoomCheckKey; label: string },
+  unit: LengthUnit = getDisplayUnit(),
+  space?: SpaceShortfall
+): string {
+  if (check.key === 'space' && space) return SPACE_LABELS[space];
   return check.key === 'decor' && unit === 'imperial' ? `more decor (a piece per ${formatArea(DECOR_AREA_PER_PIECE, unit)})` : check.label;
 }
 /** Most of a room's floor its furniture may cover and still score. */
@@ -75,6 +93,8 @@ export interface RoomScore {
   stars: number;
   /** The checks not met, in ROOM_CHECKS order; empty for a room with no type. */
   missing: readonly RoomCheckKey[];
+  /** Set only when `space` is missing: which part of it the room fails (#917). */
+  space?: SpaceShortfall;
 }
 
 export interface ScoreZoneInput {
@@ -85,6 +105,8 @@ export interface ScoreZoneInput {
   area: number;
   /** Whether an item collides where it stands (`hasCollisions` with the storey's context). */
   collides(item: FurnitureItem): boolean;
+  /** Ids of the storey's items standing in a door's swing (`swingBlockerIds`); worked out from `floorItems` when absent. */
+  swingBlockers?: ReadonlySet<string>;
 }
 
 /**
@@ -108,11 +130,15 @@ export function onZoneEdge(zone: ZoneShape, p: Vec2, reach: number): boolean {
 }
 
 /** The type and score of one zone. A zone the furniture doesn't make a room of isn't scored. */
-export function scoreZone({ zone, floorItems, area, collides }: ScoreZoneInput): RoomScore {
+export function scoreZone({ zone, floorItems, area, collides, swingBlockers }: ScoreZoneInput): RoomScore {
   const inside = itemsInZone(zone, floorItems);
   const type = classifyRoom(inside);
   if (type === null) return { type, stars: 0, missing: [] };
   const decor = inside.filter((item) => item.category === 'decor').length;
+  // A rug lies under the furniture: it takes no room to move. Nor is there
+  // room to move where a door can't open for the furniture in its swing (#917).
+  const crowded = !(area > 0 && footprintArea(inside.filter((item) => item.type !== 'rug')) < area * MAX_ROOM_COVERAGE);
+  const swing = inSwing(inside, swingBlockers ?? swingBlockerIds(floorItems));
   const met: Record<RoomCheckKey, boolean> = {
     decor: decor >= Math.max(1, Math.ceil(area / DECOR_AREA_PER_PIECE)),
     window: floorItems.some(
@@ -120,11 +146,15 @@ export function scoreZone({ zone, floorItems, area, collides }: ScoreZoneInput):
     ),
     lamp: inside.some((item) => item.category !== 'outdoor' && isNightLit(item.type)),
     clear: !inside.some(collides),
-    // A rug lies under the furniture: it takes no room to move.
-    space: area > 0 && footprintArea(inside.filter((item) => item.type !== 'rug')) < area * MAX_ROOM_COVERAGE,
+    space: !crowded && !swing,
   };
   const missing = ROOM_CHECKS.filter((check) => !met[check.key]).map((check) => check.key);
-  return { type, stars: ROOM_CHECKS.length - missing.length, missing };
+  const space: SpaceShortfall | null = crowded && swing ? 'both' : crowded ? 'crowded' : swing ? 'swing' : null;
+  return { type, stars: ROOM_CHECKS.length - missing.length, missing, ...(space ? { space } : {}) };
+}
+
+function inSwing(items: readonly FurnitureItem[], blockers: ReadonlySet<string>): boolean {
+  return blockers.size > 0 && items.some((item) => blockers.has(item.id));
 }
 
 export interface HouseRoomScore extends RoomScore {
@@ -191,9 +221,21 @@ export function roomScoreLine(score: Pick<RoomScore, 'type' | 'stars'>): string 
 }
 
 /** "For more stars: a lamp for the night, no collisions": what a room lacks, or null when it lacks nothing (#905). */
-export function moreStarsHint(missing: readonly RoomCheckKey[], unit: LengthUnit = getDisplayUnit()): string | null {
-  const labels = ROOM_CHECKS.filter((check) => missing.includes(check.key)).map((check) => roomCheckLabel(check, unit));
+export function moreStarsHint(missing: readonly RoomCheckKey[], unit: LengthUnit = getDisplayUnit(), space?: SpaceShortfall): string | null {
+  const labels = ROOM_CHECKS.filter((check) => missing.includes(check.key)).map((check) => roomCheckLabel(check, unit, space));
   return labels.length === 0 ? null : `For more stars: ${labels.join(', ')}`;
+}
+
+/** A storey's swing blockers (#917), kept while its items are unchanged: the plan asks on every repaint. */
+const swingCache = new WeakMap<readonly FurnitureItem[], ReadonlySet<string>>();
+
+function storeySwingBlockers(items: readonly FurnitureItem[]): ReadonlySet<string> {
+  let blockers = swingCache.get(items);
+  if (!blockers) {
+    blockers = swingBlockerIds(items);
+    swingCache.set(items, blockers);
+  }
+  return blockers;
 }
 
 function storeyScores(layout: RoomLayout, floorIndex: number, known: KnownCollisions | undefined): HouseRoomScore[] {
@@ -201,12 +243,14 @@ function storeyScores(layout: RoomLayout, floorIndex: number, known: KnownCollis
   const zones = floor?.zones ?? [];
   if (!floor || zones.length === 0) return [];
   const recess = entrancePlanOutline(layout, floorIndex);
-  const score = (collides: (item: FurnitureItem) => boolean): HouseRoomScore[] =>
-    zones.map((zone) => ({
+  const score = (collides: (item: FurnitureItem) => boolean): HouseRoomScore[] => {
+    const swingBlockers = storeySwingBlockers(floor.items);
+    return zones.map((zone) => ({
       floorIndex,
       zone,
-      ...scoreZone({ zone, floorItems: floor.items, area: zoneArea(zone, recess), collides }),
+      ...scoreZone({ zone, floorItems: floor.items, area: zoneArea(zone, recess), collides, swingBlockers }),
     }));
+  };
   if (known?.floorIndex === floorIndex) return score((item) => known.ids.has(item.id));
   const keepOut = floorKeepOut(layout, floorIndex);
   const key = JSON.stringify([floorIndex, layout.width, layout.height, keepOut, recess]);

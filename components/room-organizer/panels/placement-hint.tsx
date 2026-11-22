@@ -14,7 +14,23 @@ export interface PlacementHintProps {
   ghost?: CatalogItem | null;
   /** Puts the ghost down: touch has no Escape key. */
   onCancel?(): void;
+  /** With a fence or hedge in hand on the ground floor: run it round the whole lot (#915). */
+  onRunRoundLot?(): void;
 }
+
+/** A portrait phone: the hint chip sits between the left camera buttons and the right edge. */
+const NARROW_HINT_QUERY = '(max-width: 480px)';
+
+const HINT_BUTTON_STYLE = {
+  pointerEvents: 'auto',
+  padding: '4px 10px',
+  borderRadius: 999,
+  fontFamily: 'inherit',
+  fontWeight: 700,
+  fontSize: 10,
+  letterSpacing: 'var(--pc-tr-caps)',
+  textTransform: 'uppercase',
+} as const;
 
 /** How to place the ghost: a fence, hedge or stepping stone also lays in runs (#915). */
 function ghostHint(ghost: CatalogItem, touch: boolean): string {
@@ -30,10 +46,13 @@ function ghostHint(ghost: CatalogItem, touch: boolean): string {
  * how to place the ghost in hand. Sits under the header stats, clear of the
  * catalog strip whose tile started it.
  */
-export function PlacementHint({ active, ghost = null, onCancel }: PlacementHintProps): JSX.Element | null {
+export function PlacementHint({ active, ghost = null, onCancel, onRunRoundLot }: PlacementHintProps): JSX.Element | null {
   const touch = useMediaQuery(COARSE_POINTER_QUERY);
   // A phone stacks the floor and wall pills on the right down to ~120 px.
   const compact = useMediaQuery(COMPACT_OVERLAY_QUERY);
+  const narrow = useMediaQuery(NARROW_HINT_QUERY);
+  // Narrow with the extra button: a tighter chip clears the camera buttons on the left.
+  const tight = narrow && onRunRoundLot !== undefined;
   if (!active && !ghost) return null;
   return (
     <div
@@ -53,10 +72,10 @@ export function PlacementHint({ active, ghost = null, onCancel }: PlacementHintP
       <div
         className="pc-glass pc-glass--dark"
         style={{
-          padding: ghost ? '4px 4px 4px 12px' : '6px 12px',
+          padding: ghost ? (tight ? '4px 4px 4px 8px' : '4px 4px 4px 12px') : '6px 12px',
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 8,
+          gap: tight ? 6 : 8,
           borderRadius: 999,
           fontFamily: 'var(--pc-font-display)',
           fontWeight: 600,
@@ -68,25 +87,15 @@ export function PlacementHint({ active, ghost = null, onCancel }: PlacementHintP
       >
         {ghost ? (
           <>
-            <Icon name="target" size={14} />
-            <span>
-              {ghostHint(ghost, touch)}
-            </span>
-            <button
-              type="button"
-              className="pc-tile"
-              onClick={onCancel}
-              style={{
-                pointerEvents: 'auto',
-                padding: '4px 10px',
-                borderRadius: 999,
-                fontFamily: 'inherit',
-                fontWeight: 700,
-                fontSize: 10,
-                letterSpacing: 'var(--pc-tr-caps)',
-                textTransform: 'uppercase',
-              }}
-            >
+            {/* A portrait phone has room for only a short line beside "Fence the lot" (#915), and none for the icon. */}
+            {!tight && <Icon name="target" size={14} />}
+            <span>{tight ? 'Drag for a run' : ghostHint(ghost, touch)}</span>
+            {onRunRoundLot && (
+              <button type="button" className="pc-tile" onClick={onRunRoundLot} style={HINT_BUTTON_STYLE}>
+                {ghost.type === 'hedge' ? 'Hedge' : 'Fence'} the lot
+              </button>
+            )}
+            <button type="button" className="pc-tile" onClick={onCancel} style={HINT_BUTTON_STYLE}>
               Cancel
             </button>
           </>

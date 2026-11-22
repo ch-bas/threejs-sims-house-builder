@@ -126,6 +126,23 @@ describe('buildExportBuilding (#373)', () => {
     disposeObject(root);
   });
 
+  it('leaves out a door or window in a wall the storey hides, as the scene does (#965)', () => {
+    const layout = twoStoreys();
+    const hiding = (side: 'north' | 'south'): RoomLayout => ({ ...layout, floors: [{ ...layout.floors[0]!, hiddenWalls: [side] }, layout.floors[1]!] });
+    const names = (root: THREE.Object3D) => {
+      const found: string[] = [];
+      root.traverse((node) => {
+        if (node.userData.type === 'furniture') found.push(node.name);
+      });
+      disposeObject(root);
+      return found;
+    };
+    expect(names(buildExportBuilding(THREE, layout))).toContain('Door');
+    // The door is in the north wall.
+    expect(names(buildExportBuilding(THREE, hiding('north')))).toEqual(['Sofa', 'Oak Tree', 'Bed']);
+    expect(names(buildExportBuilding(THREE, hiding('south')))).toContain('Door');
+  });
+
   it('stands a garden item on a sloped site on the ground, as the scene does (#665)', () => {
     const layout = { ...twoStoreys(), terrain: { frontY: -3, backY: 1 } };
     const root = buildExportBuilding(THREE, layout);
