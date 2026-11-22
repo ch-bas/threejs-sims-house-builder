@@ -1,11 +1,13 @@
 import { cutoutRect } from '../lib/footprint';
+import { discOnGround } from '../lib/grounds';
 import { GRASS_DROP, LOT_MARGIN, PAVEMENT_DEPTH, ROAD_DEPTH, groundHeightAt, hasNeighbourOn, outdoorGroundSize, roadEdges } from '../lib/site';
 import { removeAndDispose } from './builder-utils';
+import { buildGroundPatches, tintGroundPatches } from './ground-patches';
 import { fadeWithDistance, layGroundSurface } from './ground-surfaces';
 import { shutOutIndoorLampsUnder } from './outdoor-lamps';
 import { buildExcavationGeometry, buildTerrainGeometry, earthMaterial } from './terrain';
 import { DisposableLruCache } from './texture-lru';
-import type { FootprintCutout, Frontage, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
+import type { FootprintCutout, Frontage, GroundPatch, NeighbourSpec, TerrainSpec, Weather } from '../lib/types';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('./three-runtime');
@@ -15,6 +17,8 @@ const OUTDOOR_TAG = 'outdoor';
 const GROUND_ROLE = 'ground';
 /** Where the last-applied weather is remembered, so a rebuilt lot starts tinted. */
 const WEATHER_KEY = 'outdoorWeather';
+/** Marks the group of garden surfaces (#924). */
+const GROUNDS_ROLE = 'grounds';
 
 const GRASS_COLOR = 0x6a9445;
 
@@ -40,7 +44,10 @@ export function applyOutdoorWeather(scene: ThreeNS.Scene, weather: Weather): voi
   scene.userData[WEATHER_KEY] = weather;
   const color = outdoorGroundColor(weather);
   for (const obj of scene.children) {
-    if (obj.userData.type !== OUTDOOR_TAG || obj.userData.role !== GROUND_ROLE) continue;
+    if (obj.userData.type !== OUTDOOR_TAG) continue;
+    // Garden surfaces (#924) wear the weather in their own colours.
+    if (obj.userData.role === GROUNDS_ROLE) tintGroundPatches(obj, weather);
+    if (obj.userData.role !== GROUND_ROLE) continue;
     ((obj as ThreeNS.Mesh).material as ThreeNS.MeshStandardMaterial).color.setHex(color);
   }
 }
@@ -74,6 +81,12 @@ export interface OutdoorSite {
    * (#761). The low quality tier leaves them out (#760); absent is on.
    */
   richScenery?: boolean;
+  /**
+   * The garden surfaces drawn on the lot (#924), as `shownGrounds` gives
+   * them: laid on the ground, and the stepping-stone path and the shrubs
+   * leave them clear.
+   */
+  grounds?: readonly GroundPatch[];
 }
 
 export function setOutdoorVisible(
@@ -242,7 +255,10 @@ export function setOutdoorVisible(
   // A cut across the middle of the front moves the wall the path leads to.
   const notch = cutoutRect({ width: roomWidth, height: roomDepth, cutout });
   const pathStart = notch && notch.z0 === -halfD && notch.x0 < 0 && notch.x1 > 0 ? notch.z1 : -halfD;
+  const grounds = site.grounds ?? [];
   for (let z = pathStart - 0.5; !pavement && z >= -roadOffset; z -= 0.7) {
+    // The path stops where it meets a garden surface, and goes on past it (#924).
+    if (discOnGround(grounds, 0, z, STONE_RADIUS)) continue;
     dummy.position.set(0, groundAt(z) - 0.005, z);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.set(1, 1, 1);
@@ -251,7 +267,7 @@ export function setOutdoorVisible(
   }
   if (stoneTransforms.length > 0) {
     const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb0b3b0, roughness: 0.9 });
-    const stoneGeom = new THREE.CylinderGeometry(0.32, 0.30, 0.06, 12);
+    const stoneGeom = new THREE.CylinderGeometry(STONE_RADIUS, 0.30, 0.06, 12);
     const stones = new THREE.InstancedMesh(stoneGeom, stoneMat, stoneTransforms.length);
     stoneTransforms.forEach((m, i) => stones.setMatrixAt(i, m));
     stones.instanceMatrix.needsUpdate = true;
@@ -264,7 +280,15 @@ export function setOutdoorVisible(
   }
 
   // ---- 3. Perimeter trees + bushes ----
-  scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD, groundAt, site.neighbours, pavement ? halfD : null);
+  scatterPerimeter(THREE, scene, rng, lotHalfW, lotHalfD, groundAt, site.neighbours, pavement ? halfD : null, grounds);
+
+  // ---- 4. Garden surfaces drawn on the lot (#924) ----
+  if (grounds.length > 0) {
+    const patches = buildGroundPatches(THREE, grounds, { terrain, halfDepth: halfD, weather, ...(site.groundTile !== undefined ? { groundTile: site.groundTile } : {}) });
+    patches.userData.type = OUTDOOR_TAG;
+    patches.userData.role = GROUNDS_ROLE;
+    scene.add(patches);
+  }
 
   // Everything out here is on the far side of a wall from the lamps indoors.
   for (const obj of scene.children) if (obj.userData.type === OUTDOOR_TAG) shutOutIndoorLampsUnder(THREE, obj);
@@ -328,6 +352,10 @@ function buildGroundSkirt(
   return skirt;
 }
 
+/** The stepping stones' top radius. */
+const STONE_RADIUS = 0.32;
+/** The shrubs' leaf blob, before its per-shrub scale. */
+const SHRUB_RADIUS = 0.45;
 const PAVING_COLOR = 0xe2e3df;
 const ASPHALT_COLOR = 0x53565a;
 /** The textured road's average, for the plain tail that carries on from it. */
@@ -573,12 +601,14 @@ function scatterPerimeter(
   groundAt: (z: number) => number,
   neighbours: NeighbourSpec | undefined,
   /** With a pavement frontage: the front wall's |z|; nothing is planted beyond it. */
-  pavementFrom: number | null
+  pavementFrom: number | null,
+  /** Garden surfaces (#924): no shrub grows on one. */
+  grounds: readonly GroundPatch[] = []
 ): void {
   const onStreet = (z: number) => pavementFrom !== null && z < -pavementFrom;
   // Lumpy and faceted like the tree crowns beside them, not smooth balls.
   const bushMat = new THREE.MeshStandardMaterial({ color: 0x3e7a35, roughness: 0.9, flatShading: true });
-  const bushGeom = buildLeafBlobGeometry(THREE, 0.45, 11);
+  const bushGeom = buildLeafBlobGeometry(THREE, SHRUB_RADIUS, 11);
 
   // Trees: ring around three sides of the lot (skip the road side).
   const forest: Forest = { parts: new Map(), bases: [] };
@@ -621,6 +651,7 @@ function scatterPerimeter(
     const s = 0.7 + rng() * 0.4;
     // Keep the road frontage clean.
     if (z < -lotHalfD || onStreet(z)) continue;
+    if (discOnGround(grounds, x, z, SHRUB_RADIUS * s)) continue;
     shrubDummy.position.set(x, groundAt(z) + 0.32, z);
     shrubDummy.rotation.set(0, 0, 0);
     shrubDummy.scale.setScalar(s);
