@@ -54,6 +54,7 @@ import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanMode,
   FloorPlanTransform,
   Frontage,
   FurnitureItem,
@@ -135,6 +136,7 @@ export type LayoutAction =
   | { type: 'setFloorPlanOpacity'; opacity: number }
   | { type: 'setFloorPlanFitMode'; mode: FloorPlanFitMode }
   | { type: 'setFloorPlanTransform'; transform: FloorPlanTransform | null }
+  | { type: 'setFloorPlanMode'; mode: FloorPlanMode }
   | { type: 'setRoofStyle'; style: RoofStyle }
   | { type: 'setRoofColor'; color: string }
   /** Roof pitch (#916): a multiplier on the rise, clamped; 1 clears it. */
@@ -404,10 +406,12 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // A calibration belongs to its image (#726): another image, or none, drops it.
       if (image === null) {
         return withLayout(state, (layout) => {
-          if (layout.floorPlanImage === undefined && layout.floorPlanTransform === undefined) return layout;
+          if (layout.floorPlanImage === undefined && layout.floorPlanTransform === undefined && layout.floorPlanMode === undefined) return layout;
           const next = { ...layout };
           delete next.floorPlanImage;
           delete next.floorPlanTransform;
+          // The next upload starts as the drawing again (#920).
+          delete next.floorPlanMode;
           return next;
         });
       }
@@ -444,6 +448,14 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       return withLayout(state, (layout) =>
         layout.floorPlanFitMode === action.mode ? layout : { ...layout, floorPlanFitMode: action.mode }
       );
+    // The drawing or an underlay (#920): 'drawing' is stored as no key, as old saves have it.
+    case 'setFloorPlanMode':
+      return withLayout(state, (layout) => {
+        if (!layout.floorPlanImage) return layout;
+        if (action.mode === 'underlay') return layout.floorPlanMode === 'underlay' ? layout : { ...layout, floorPlanMode: 'underlay' };
+        // An explicit 'drawing' (a file can carry one) is the same picture: no change, no undo entry.
+        return layout.floorPlanMode === undefined || layout.floorPlanMode === 'drawing' ? layout : withoutKey(layout, 'floorPlanMode');
+      });
 
     // -- roof ---------------------------------------------------------------
     // A roof-less house (a migrated legacy save) renders as style 'none', so
@@ -1572,7 +1584,9 @@ function normaliseLayout(input: RoomLayout): RoomLayout {
   // A calibration belongs to its image (#726). Restore points keep it without
   // the image, for the History panel to re-attach both; a house that arrives
   // without its image leaves it behind here, on every whole-house load.
-  const layout = input.floorPlanTransform && !input.floorPlanImage ? withoutKey(input, 'floorPlanTransform') : input;
+  const calibrated = input.floorPlanTransform && !input.floorPlanImage ? withoutKey(input, 'floorPlanTransform') : input;
+  // Its mode too (#920): restore points keep it for the re-attach, done before this load.
+  const layout = calibrated.floorPlanMode !== undefined && !calibrated.floorPlanImage ? withoutKey(calibrated, 'floorPlanMode') : calibrated;
   const width = clampRoomDimension(layout.width);
   const height = clampRoomDimension(layout.height);
   return {

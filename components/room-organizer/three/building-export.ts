@@ -1,6 +1,7 @@
 import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { facadeColorOf, withPorchFacade } from '../lib/facade';
 import { floorKeepOut } from '../lib/floor-keep-out';
+import { drawnFloorPlanImage, planIsDrawing } from '../lib/floor-plan-fit';
 import { gardenGroundY, lowestGround } from '../lib/site';
 import { stairwellRailSegments } from '../lib/stairwell-rail';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
@@ -29,7 +30,9 @@ type ThreeModule = typeof import('./three-runtime');
  * otherwise paint in after the export has been written and disposed.
  */
 export async function prepareExportBuilding(THREE: ThreeModule, layout: RoomLayout): Promise<void> {
-  if (layout.floorPlanImage) await loadFloorPlanImage(THREE, layout.floorPlanImage);
+  // An underlay (#920) never reaches the 3D floor, so the file never carries it.
+  const image = drawnFloorPlanImage(layout, 0);
+  if (image) await loadFloorPlanImage(THREE, image);
 }
 
 /**
@@ -94,7 +97,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
       floorOpenings: computeFloorOpenings(index > 0 ? layout.floors[index - 1] : undefined),
       zonePatches: zoneFloorPatches(floor, floorKeepOut(layout, index)),
-      floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
+      floorPlanImage: drawnFloorPlanImage(layout, index),
       floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
       floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
       floorPlanTransform: layout.floorPlanTransform,
@@ -104,7 +107,7 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
       wallHeight: storeyH,
       groundY: lowestGround(layout.terrain),
     });
-    const tracedGround = index === 0 && !!layout.floorPlanImage;
+    const tracedGround = index === 0 && planIsDrawing(layout);
     if (entrance && index === entrance.floorIndex && !tracedGround) {
       const northHidden = floor.hiddenWalls?.includes('north') ?? false;
       for (const group of buildEntrance(THREE, {

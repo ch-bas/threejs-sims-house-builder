@@ -3,7 +3,7 @@ import { repairChallenge } from './challenges';
 import { CATEGORIES, FURNITURE_CATALOG, MAX_FLOORS, MAX_ITEM_DIMENSION, MAX_ROOM_DIMENSION } from './constants';
 import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
-import { repairFloorPlanTransform } from './floor-plan-fit';
+import { isFloorPlanMode, repairFloorPlanTransform } from './floor-plan-fit';
 import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
 import { isOpeningStyle } from './opening-style';
 import { clampRoofPitch } from './roof-shape';
@@ -395,6 +395,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   floorPlanOpacity: true,
   floorPlanFitMode: true,
   floorPlanTransform: true,
+  floorPlanMode: true,
   terrain: true,
   neighbours: true,
   entrance: true,
@@ -745,6 +746,11 @@ function repairFields(layout: RoomLayout): RoomLayout {
   // refused: the house loads as its rectangle. First, as all below reads it.
   if (layout.cutout !== undefined && (!isFootprintCutout(layout.cutout) || !cutoutFits(layout.cutout, layout.width, layout.height))) {
     const { cutout: _dropped, ...rest } = layout;
+    return repairFields(rest);
+  }
+  // An unknown tracing mode (#920) is dropped: the image is the drawing again, as before the mode.
+  if (layout.floorPlanMode !== undefined && !isFloorPlanMode(layout.floorPlanMode)) {
+    const { floorPlanMode: _dropped, ...rest } = layout;
     return repairFields(rest);
   }
   const patch: Partial<RoomLayout> = {

@@ -1,5 +1,5 @@
 import { MAX_ROOM_DIMENSION } from './constants';
-import type { FloorPlanFitMode, FloorPlanTransform, RoomLayout, Vec2 } from './types';
+import type { FloorPlanFitMode, FloorPlanMode, FloorPlanTransform, RoomLayout, Vec2 } from './types';
 
 /**
  * Where to paint the tracing image inside the room rectangle for a fit mode.
@@ -55,6 +55,29 @@ export interface FloorPlanFit {
   depth: number;
   mode: FloorPlanFitMode;
   transform?: FloorPlanTransform | undefined;
+}
+
+/** Every tracing-image mode a layout may carry (#920). */
+export const FLOOR_PLAN_MODES: readonly FloorPlanMode[] = ['drawing', 'underlay'];
+
+export function isFloorPlanMode(value: unknown): value is FloorPlanMode {
+  return typeof value === 'string' && (FLOOR_PLAN_MODES as readonly string[]).includes(value);
+}
+
+/**
+ * The ground floor's tracing image IS the finished floor (#920): the 3D floor
+ * wears it, and the storey builds no shell walls, foundation, porch, reveals
+ * or room floors over it. False with no image, and for an underlay, which is
+ * only a guide on the 2D plan under a house built as usual. The one test for
+ * every "traced ground floor" branch.
+ */
+export function planIsDrawing(layout: Pick<RoomLayout, 'floorPlanImage' | 'floorPlanMode'>): boolean {
+  return !!layout.floorPlanImage && layout.floorPlanMode !== 'underlay';
+}
+
+/** The image the 3D floor of storey `index` wears: the ground floor's drawing only (#920). */
+export function drawnFloorPlanImage(layout: Pick<RoomLayout, 'floorPlanImage' | 'floorPlanMode'>, index: number): string | null {
+  return index === 0 && planIsDrawing(layout) ? layout.floorPlanImage ?? null : null;
 }
 
 /** The fit a layout paints its tracing image with. */

@@ -6,6 +6,7 @@ import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { planContactShadow } from '../lib/contact-shadow';
 import { facadeColorOf, withPorchFacade } from '../lib/facade';
 import { floorKeepOut, type KeepOutBuilding } from '../lib/floor-keep-out';
+import { drawnFloorPlanImage, planIsDrawing } from '../lib/floor-plan-fit';
 import { cutoutRect } from '../lib/footprint';
 import {
   diffFurniture,
@@ -319,9 +320,12 @@ export function useSceneEffects({
 
   // Which outer walls each storey builds: a door or window in one stands back
   // in its reveal (#758).
+  // #920: only a plan that is the drawing reaches the 3D shell; an underlay is 2D only.
+  const planDrawn = planIsDrawing(layout);
+  const drawnPlan = planDrawn ? layout : undefined;
   const revealWallsKey = useMemo(
-    () => JSON.stringify([!!layout.floorPlanImage, layout.floors.map((floor) => floor.hiddenWalls ?? [])]),
-    [layout.floorPlanImage, layout.floors]
+    () => JSON.stringify([planDrawn, layout.floors.map((floor) => floor.hiddenWalls ?? [])]),
+    [planDrawn, layout.floors]
   );
 
   const interiorWallsKey = useMemo(
@@ -431,7 +435,7 @@ export function useSceneEffects({
     // The building no longer has a floor plan: release the decoded multi-MB
     // image. (Only here — see clearFloorPlanImageCache for why buildRoom must
     // not drop it per image-less call.)
-    if (!layout.floorPlanImage) clearFloorPlanImageCache();
+    if (!planDrawn) clearFloorPlanImageCache();
 
     const floorsToRender = allFloors
       ? layout.floors.map((floor, index) => ({ floor, index }))
@@ -481,7 +485,7 @@ export function useSceneEffects({
         ...(floor.hiddenWalls ? { hiddenWalls: floor.hiddenWalls } : {}),
         floorOpenings,
         zonePatches: zoneFloorPatches(floor, floorKeepOut(entranceBuilding, index)),
-        floorPlanImage: index === 0 ? layout.floorPlanImage ?? null : null,
+        floorPlanImage: drawnFloorPlanImage(layout, index),
         floorPlanOpacity: layout.floorPlanOpacity ?? DEFAULT_FLOOR_PLAN_OPACITY,
         floorPlanFitMode: layout.floorPlanFitMode ?? 'stretch',
         floorPlanTransform: layout.floorPlanTransform,
@@ -496,7 +500,7 @@ export function useSceneEffects({
       // exactly when that wall is: not on the traced ground floor (buildRoom
       // builds no walls there) and not when the north wall is hidden — the
       // plan dashes the recess then, like the rest of the wall (#392).
-      const tracedGround = index === 0 && !!layout.floorPlanImage;
+      const tracedGround = index === 0 && planDrawn;
       if (entrance && index === entrance.floorIndex && !tracedGround) {
         const northHidden = floor.hiddenWalls?.includes('north') ?? false;
         for (const group of buildEntrance(THREE, {
@@ -535,7 +539,7 @@ export function useSceneEffects({
     // when interior walls do — without this dep a door claimed by a new
     // interior wall stays double-cut into the exterior wall (#119).
     layout.width, layout.height, cutoutKey, shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey, layout.terrain, layout.entrance,
-    layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode, layout.floorPlanTransform,
+    drawnPlan?.floorPlanImage, drawnPlan?.floorPlanOpacity, drawnPlan?.floorPlanFitMode, drawnPlan?.floorPlanTransform,
     view.floorPlan3DEffect, allFloors, ghostOtherFloors,
     shellActiveKey,
   ]);
@@ -673,7 +677,7 @@ export function useSceneEffects({
         depth: layout.height,
         cutout: layout.cutout,
         hiddenWalls: floor?.hiddenWalls,
-        noWalls: index === 0 && !!layout.floorPlanImage,
+        noWalls: index === 0 && planDrawn,
       };
       const setbacks = revealSetbacks(items, owners, revealContext, storeyH);
       items.forEach((item, i) => {
@@ -1285,7 +1289,7 @@ export function useSceneEffects({
     shellFinishesKey, wallOpeningsKey, interiorWallsKey, storeyHeightsKey,
     layout.width, layout.height, cutoutKey, allFloors, ghostOtherFloors,
     // The rest of the shell rebuild's keys: any rebuild makes new wall meshes.
-    layout.terrain, layout.entrance, layout.floorPlanImage, layout.floorPlanOpacity, layout.floorPlanFitMode, layout.floorPlanTransform,
+    layout.terrain, layout.entrance, drawnPlan?.floorPlanImage, drawnPlan?.floorPlanOpacity, drawnPlan?.floorPlanFitMode, drawnPlan?.floorPlanTransform,
     view.floorPlan3DEffect, shellActiveKey,
   ]);
 

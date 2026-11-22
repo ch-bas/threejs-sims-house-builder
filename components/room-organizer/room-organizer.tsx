@@ -56,6 +56,7 @@ import { collisionMessage } from './lib/collision-reason';
 import { FURNITURE_CATALOG } from './lib/constants';
 import { swingClearanceNote } from './lib/door-clearance';
 import { notifyRefused } from './lib/editor-notices';
+import { planIsDrawing } from './lib/floor-plan-fit';
 import { isInsideBuilding } from './lib/footprint';
 import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
@@ -704,7 +705,7 @@ export function RoomOrganizer(): JSX.Element {
         depth: layout.height,
         cutout: layout.cutout,
         hiddenWalls: activeFloor.hiddenWalls,
-        noWalls: activeFloorIndex === 0 && !!layout.floorPlanImage,
+        noWalls: activeFloorIndex === 0 && planIsDrawing(layout),
       };
       return revealSetbacks(items, owners, context, activeStoreyHeight).get(item.id) ?? 0;
     },
@@ -806,8 +807,8 @@ export function RoomOrganizer(): JSX.Element {
     (view.showAllFloors || walkthroughActive || activeFloorIndex === layout.floors.length - 1);
   // Open to the sky, walls fully up can still hide a focused item (#783).
   const sceneWalls = sceneWallDisplay(view.wallDisplay, walkthroughActive);
-  // A traced ground floor builds no shell walls.
-  const tracedGround = !!layout.floorPlanImage;
+  // A traced ground floor builds no shell walls; an underlay keeps them (#920).
+  const tracedGround = planIsDrawing(layout);
   const roofPeak = roofShows && layout.roof ? roofPeakHeight(layout.roof, layout.width, layout.height) : 0;
   const framedRoof = useMemo(
     () => (roofShows ? { peak: roofPeak, overhang: ROOF_EAVE_OVERHANG } : null),

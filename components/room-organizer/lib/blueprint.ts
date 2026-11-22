@@ -169,8 +169,16 @@ function planImage(draw: (canvas: HTMLCanvasElement, pixelRatio: number) => void
   }
 }
 
+function withoutFloorPlanImage(layout: RoomLayout): RoomLayout {
+  const { floorPlanImage: _guide, ...rest } = layout;
+  return rest;
+}
+
 /** The print sheet of one floor. Throws when the plan can't be drawn even at 1×. */
-async function blueprintHtml(layout: RoomLayout, floor: FloorLayout): Promise<string> {
+async function blueprintHtml(building: RoomLayout, floor: FloorLayout): Promise<string> {
+  // An underlay (#920) is a tracing guide, not part of the sheet: the walls
+  // drawn over it are. A plan that is the drawing still prints.
+  const layout = building.floorPlanMode === 'underlay' ? withoutFloorPlanImage(building) : building;
   // The tracing image is painted from a lazily-warmed decoded-image cache;
   // in 3D view with the minimap off nothing has rendered the plan yet, so
   // the first printout captured only the floor colour (#288). Same

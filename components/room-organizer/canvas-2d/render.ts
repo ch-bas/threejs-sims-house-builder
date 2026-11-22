@@ -7,7 +7,7 @@ import {
 } from '../lib/constants';
 import { blockedDoorIds } from '../lib/door-clearance';
 import { floorKeepOut } from '../lib/floor-keep-out';
-import { floorPlanFitOf, floorPlanPlacement } from '../lib/floor-plan-fit';
+import { floorPlanFitOf, floorPlanPlacement, planIsDrawing } from '../lib/floor-plan-fit';
 import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
 import { areaInUnit, areaUnitSymbol, formatArea, formatMetres, formatSize, getDisplayUnit, type LengthUnit } from '../lib/format';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
@@ -257,6 +257,8 @@ export function render2DTopDown(options: Render2DOptions): void {
 
   drawFloor(ctx, layout, floor, offsetX, offsetY, scale, options.floorPlanUnclipped === true);
   drawZoneFloors(ctx, layout, floor, offsetX, offsetY, scale);
+  // #920: a traced plan kept as an underlay lies over the room floors, under the grid and walls.
+  if (layout.floorPlanMode === 'underlay') drawFloorPlanImage(ctx, layout, floor, offsetX, offsetY, scale, options.floorPlanUnclipped === true);
   if (options.showFloorBelow) drawFloorBelow(ctx, layout, planFloorIndex(layout.floors, floor), offsetX, offsetY, scale);
   drawGrid(ctx, layout, offsetX, offsetY, scale);
   // The stairwell the floor below cuts through this slab (#290), under everything placed over it.
@@ -484,11 +486,11 @@ function traceZoneRings(ctx: CanvasRenderingContext2D, layout: RoomLayout, zone:
  * Rooms with a floor of their own (#720), over the storey's: the patches 3D
  * lays, so a finish stops at the stairwell and the porch here too. The plan
  * shows no floor pattern, for a room or a storey. A traced floor is the
- * drawing, so it stays clear.
+ * drawing, so it stays clear; an underlay (#920) doesn't.
  */
 function drawZoneFloors(ctx: CanvasRenderingContext2D, layout: RoomLayout, floor: FloorLayout, offsetX: number, offsetY: number, scale: number): void {
   if (!floor.zones?.some(hasFloorFinish)) return;
-  if (layout.floorPlanImage && layout.floors[0]?.id === floor.id) return;
+  if (planIsDrawing(layout) && layout.floors[0]?.id === floor.id) return;
   for (const patch of zoneFloorPatches(floor, floorKeepOut(layout, planFloorIndex(layout.floors, floor)))) {
     ctx.fillStyle = patch.color;
     for (const region of patch.regions) {
@@ -689,6 +691,24 @@ function drawFloor(
   scale: number,
   unclipped = false
 ): void {
+  // Fill the floor colour first so there's a base while (or if) a tracing
+  // image is still decoding — avoids a flash of the raw canvas background.
+  ctx.fillStyle = floor.floorColor;
+  ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
+  // The drawing is the floor; an underlay (#920) is painted over the room floors instead.
+  if (planIsDrawing(layout)) drawFloorPlanImage(ctx, layout, floor, offsetX, offsetY, scale, unclipped);
+}
+
+/** The ground floor's tracing image at its opacity, clipped to the building (dimmed past it while calibrating). */
+function drawFloorPlanImage(
+  ctx: CanvasRenderingContext2D,
+  layout: RoomLayout,
+  floor: FloorLayout,
+  offsetX: number,
+  offsetY: number,
+  scale: number,
+  unclipped: boolean
+): void {
   // The tracing image belongs to the ground floor only, like in 3D
   // (use-scene-effects keys it on floor index 0) — painting it under every
   // storey put the ground-floor scan in upstairs blueprints (#218). Derived
@@ -696,11 +716,6 @@ function drawFloor(
   const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
   const url = isGroundFloor ? layout.floorPlanImage : undefined;
   if (url) {
-    // Fill the floor colour first so there's a base while (or if) the image is
-    // still decoding — avoids a flash of the raw canvas background.
-    ctx.fillStyle = floor.floorColor;
-    ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
-
     // naturalWidth guard: a broken image also reports `complete`, and
     // drawImage on it throws InvalidStateError — which would abort the whole
     // paint (grid and furniture never drawn) on every repaint (#118).
@@ -743,9 +758,6 @@ function drawFloor(
       };
       img.src = url;
     }
-  } else {
-    ctx.fillStyle = floor.floorColor;
-    ctx.fillRect(offsetX, offsetY, layout.width * scale, layout.height * scale);
   }
 }
 
