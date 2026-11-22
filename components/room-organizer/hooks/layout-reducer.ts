@@ -20,6 +20,7 @@ import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap }
 import { openingStylePatch } from '../lib/opening-style';
 import { DEFAULT_ROOF_PITCH, clampRoofPitch, partyWallsHoldRidge } from '../lib/roof-shape';
 import { floorRooms } from '../lib/room-detect';
+import { planRoomTransfer, type RoomTransfer } from '../lib/room-transfer';
 import {
   MAX_INTERIOR_WALLS_PER_FLOOR,
   MAX_ITEMS_PER_FLOOR,
@@ -123,6 +124,8 @@ export type LayoutAction =
   | { type: 'toggleExteriorWall'; wallId: WallId }
   | { type: 'clearInteriorWalls' }
   | { type: 'rotateSelection'; ids: ReadonlySet<string>; radians: number }
+  // Room transfer (#925): a room's walls, items and zones in one step
+  | { type: 'transferRoom'; transfer: RoomTransfer }
   | { type: 'setLockAll'; locked: boolean }
   | { type: 'clearItems' }
   // floor / building operations
@@ -879,6 +882,18 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
           return moved;
         });
         return changed ? { ...floor, items } : floor;
+      });
+
+    // Room transfer (#925): move, mirror, copy or paste a room with its walls,
+    // all through one plan (lib/room-transfer.ts), which refuses overlaps,
+    // locked items and shapes the footprint or the zones can't take. Polygon
+    // zones re-fit in followRooms, in this same step.
+    case 'transferRoom':
+      return withActiveFloor(state, (floor) => {
+        const plan = planRoomTransfer(state.layout, state.activeFloorIndex, action.transfer);
+        if (!plan || 'refusal' in plan) return floor;
+        const kept = new Set(floor.items);
+        return { ...plan.floor, items: plan.floor.items.map((item) => (kept.has(item) ? item : boundItem(item))) };
       });
 
     case 'setLockAll':

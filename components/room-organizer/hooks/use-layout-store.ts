@@ -140,6 +140,7 @@ export const layoutStore = createStore<LayoutStoreState>()((set) => {
     clearInteriorWalls: () => dispatch({ type: 'clearInteriorWalls' }),
     toggleExteriorWall: (wallId: WallId) => dispatch({ type: 'toggleExteriorWall', wallId }),
     rotateSelection: (ids, radians) => dispatch({ type: 'rotateSelection', ids, radians }),
+    transferRoom: (transfer) => dispatch({ type: 'transferRoom', transfer }),
     // The group id is rolled here so the reducer stays pure (#154).
     setGroup: (ids) => {
       const groupId = nextId('group');
