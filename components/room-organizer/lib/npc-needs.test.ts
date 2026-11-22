@@ -8,11 +8,14 @@ import {
   decayNeeds,
   findNeedSpots,
   householdLacks,
+  SNACK_AT_TABLE_CHANCE,
   needOfType,
+  pickMealSpot,
   pickNeedSpot,
   randomNeeds,
   refillNeed,
   scoreNeedSpot,
+  sitsToEat,
   unmetNeeds,
   urgency,
 } from './npc-needs';
@@ -276,5 +279,72 @@ describe('what the household lacks (#906)', () => {
   it('a corner cut is outside too', () => {
     const building = { width: 8, height: 6, cutout: { corner: 'ne' as const, width: 3, depth: 2 }, floors: [{ items: [at('f', 'fridge', 3.5, -2.5)] }] };
     expect(householdLacks(building)[0]!.lacks).toContain('hunger');
+  });
+});
+
+describe('eating at the table (#904)', () => {
+  const table = makeItem({ id: 'table', type: 'dining-table', width: 1.8, depth: 1, height: 0.75, position: { x: 0, z: 0 }, rotation: 0 });
+  const chairAt = (id: string, x: number, z: number, rotation: number, type = 'dining-chair'): FurnitureItem =>
+    makeItem({ id, type, width: 0.45, depth: 0.45, height: 0.9, position: { x, z }, rotation });
+  // One each side of the long table, facing it, and one at the end turned away.
+  const north = chairAt('north', 0.4, -0.95, 0);
+  const south = chairAt('south', -0.4, 0.95, Math.PI);
+  const away = chairAt('away', 1.3, 0, Math.PI / 2);
+  const spotsOf = (items: FurnitureItem[]) => findNeedSpots(items, findNpcSeats(items));
+
+  it('a chair facing a table is a place to eat; one turned away, or with no table, is not', () => {
+    const meals = spotsOf([table, north, south, away]).filter((spot) => spot.meal);
+    expect(meals.map((spot) => [spot.key, spot.itemId, spot.need, spot.seatKey])).toEqual([
+      ['table>north:0', 'north', 'hunger', 'north:0'],
+      ['table>south:0', 'south', 'hunger', 'south:0'],
+    ]);
+    expect(spotsOf([north, south])).toEqual([]);
+    // A table across the room is out of reach.
+    expect(spotsOf([{ ...table, rotation: Math.PI / 2, position: { x: 2.5, z: 0 } }, north])).toEqual([]);
+  });
+
+  it('a plain table and a plain chair count too, the template\'s chairs tucked in at the ends included', () => {
+    const plain = { ...table, id: 'plain', type: 'table' };
+    expect(spotsOf([plain, chairAt('c', 0, 0.95, Math.PI, 'chair')]).map((spot) => spot.key)).toEqual(['plain>c:0']);
+    const ends = [chairAt('w', -0.7, 0, Math.PI / 2), chairAt('e', 0.7, 0, -Math.PI / 2)];
+    expect(spotsOf([table, ...ends]).map((spot) => spot.key)).toEqual(['table>w:0', 'table>e:0']);
+    // A desk, a coffee table or an armchair is not where a meal is eaten.
+    expect(spotsOf([{ ...table, type: 'desk' }, north])).toEqual([]);
+    expect(spotsOf([table, { ...north, type: 'armchair' }]).some((spot) => spot.meal)).toBe(false);
+  });
+
+  it('is never a stop of its own, nor somewhere to eat to the household block', () => {
+    const spots = spotsOf([table, north, south]);
+    expect(pickNeedSpot(needs(0, 1, 1), spots, 0, 0, () => true, seeded(1))).toBeNull();
+    expect(unmetNeeds(spots)).toContain('hunger');
+    const fridge = makeItem({ id: 'fridge', type: 'fridge', width: 0.7, depth: 0.7, position: { x: 3, z: 3 }, rotation: 0 });
+    expect(pickNeedSpot(needs(0, 1, 1), spotsOf([table, north, fridge]), 0, 0, () => true, seeded(1))?.itemId).toBe('fridge');
+  });
+
+  it('picks a free chair, the nearer likelier, and none when every chair is taken', () => {
+    const far = chairAt('far', 0.4, -0.95, 0);
+    const farTable = { ...table, id: 'far-table', position: { x: 0, z: 8 } };
+    const spots = spotsOf([table, north, farTable, { ...far, position: { x: 0.4, z: 8.95 }, rotation: Math.PI }]);
+    const random = seeded(904);
+    const counts = new Map<string, number>();
+    for (let i = 0; i < 2000; i++) {
+      const key = pickMealSpot(spots, 0, -2, () => true, random)?.itemId ?? 'none';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    expect(counts.get('north')!).toBeGreaterThan(counts.get('far')! * 1.5);
+    expect(pickMealSpot(spots, 0, -2, (spot) => spot.itemId !== 'north', seeded(1))?.itemId).toBe('far');
+    expect(pickMealSpot(spots, 0, -2, () => false, seeded(1))).toBeNull();
+    expect(pickMealSpot(spotsOf([north]), 0, 0, () => true, seeded(1))).toBeNull();
+  });
+
+  it('always sits to eat at a mealtime, now and then between meals', () => {
+    const never = () => 0.999;
+    expect([8, 13, 19, 12.5].map((hour) => sitsToEat(hour, never))).toEqual([true, true, true, true]);
+    expect(sitsToEat(16, never)).toBe(false);
+    expect(sitsToEat(Number.NaN, () => SNACK_AT_TABLE_CHANCE / 2)).toBe(true);
+    const random = seeded(3);
+    let sat = 0;
+    for (let i = 0; i < 4000; i++) if (sitsToEat(16, random)) sat += 1;
+    expect(sat / 4000).toBeCloseTo(SNACK_AT_TABLE_CHANCE, 1);
   });
 });

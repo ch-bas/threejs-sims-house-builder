@@ -90,29 +90,65 @@ describe('findNpcSeats', () => {
       expect(chair.approachZ).toBeCloseTo(0.25 + 0.35);
     });
 
-    it('tucked in at both ends of a table, keeps its blocked front: its feet would be under the table', () => {
-      // The kitchen template's table and chairs.
+    /** Whether a walker can stand at the seat's approach point. */
+    const standable = (items: FurnitureItem[], found: { approachX: number; approachZ: number }) => ground(items).isFree(found.approachX, found.approachZ);
+
+    it('tucked in at both ends of a table (the kitchen template), is pulled out to eat, from behind: a meal seat only', () => {
       const items = [
         item('table', 'dining-table', 0, 0.6, 1.8, 1.0),
         item('c1', 'dining-chair', -0.7, 0.6, 0.45, 0.45, Math.PI / 2),
         item('c2', 'dining-chair', 0.7, 0.6, 0.45, 0.45, -Math.PI / 2),
       ];
       const seats = seatsAt(items);
-      for (const id of ['c1', 'c2']) {
+      for (const [id, sign] of [['c1', -1], ['c2', 1]] as const) {
         const found = seats.find((candidate) => candidate.itemId === id)!;
-        expect(found.approachX).toBeCloseTo(frontOf(items, id).approachX);
-        expect(found.approachZ).toBeCloseTo(frontOf(items, id).approachZ);
+        expect(found.mealOnly).toBe(true);
+        expect(standable(items, found)).toBe(true);
+        // Its sides are along the table: it comes in from behind.
+        expect(found.approachX).toBeCloseTo(sign * (0.7 + 0.225 + 0.35));
+        expect(found.approachZ).toBeCloseTo(0.6);
+        // The hips stay on the chair.
+        expect([found.x, found.z]).toEqual([frontOf(items, id).x, frontOf(items, id).z]);
       }
     });
 
-    it('three along one side of a table keep their blocked fronts', () => {
+    it("the Dining set's four chairs, as the set lays them out, are all meal seats with a way in", () => {
+      // lib/furniture-sets.ts: the table at the set's origin, the chairs at its offsets.
+      const at = { x: 0.5, z: -0.4 };
+      const items = [item('table', 'dining-table', at.x, at.z, 1.8, 1.0)];
+      for (const [id, x, z, rotation] of [['w', -1.2, 0, Math.PI / 2], ['e', 1.2, 0, -Math.PI / 2], ['n', 0, -0.85, 0], ['s', 0, 0.85, Math.PI]] as const) {
+        items.push(item(id, 'dining-chair', at.x + x, at.z + z, 0.45, 0.45, rotation));
+      }
+      const seats = seatsAt(items);
+      for (const id of ['w', 'e', 'n', 's']) {
+        const found = seats.find((candidate) => candidate.itemId === id)!;
+        expect(found.mealOnly).toBe(true);
+        expect(standable(items, found)).toBe(true);
+      }
+    });
+
+    it('three along one side of a table: the ends from their sides, the middle one from behind', () => {
       const items = [item('table', 'dining-table', 0, 0.3, 1.8, 1.0)];
       for (const [id, x] of [['a', -0.6], ['b', 0], ['c', 0.6]] as const) items.push(item(id, 'dining-chair', x, 0.85, 0.45, 0.45, Math.PI));
       const seats = seatsAt(items);
       for (const id of ['a', 'b', 'c']) {
         const found = seats.find((candidate) => candidate.itemId === id)!;
-        expect([found.approachX, found.approachZ]).toEqual([frontOf(items, id).approachX, frontOf(items, id).approachZ]);
+        expect(found.mealOnly).toBe(true);
+        expect(standable(items, found)).toBe(true);
       }
+      expect(seats.find((found) => found.itemId === 'b')!.approachX).toBeCloseTo(0);
+      expect(seats.find((found) => found.itemId === 'b')!.approachZ).toBeCloseTo(0.85 + 0.225 + 0.35);
+    });
+
+    it('a chair tucked under something that is not a table, or a table it does not face, keeps its blocked front', () => {
+      // Under a counter: no meal there, and no other seat either.
+      const counter = [item('counter', 'counter', 0, -0.3, 1.2, 0.6), item('chair', 'chair', 0, 0, 0.45, 0.45, Math.PI)];
+      const found = seatsAt(counter).find((candidate) => candidate.itemId === 'chair')!;
+      expect(found.mealOnly).toBeUndefined();
+      expect([found.approachX, found.approachZ]).toEqual([frontOf(counter, 'chair').approachX, frontOf(counter, 'chair').approachZ]);
+      // Backed into a table: a blocked front it faces away from.
+      const backed = [item('table', 'dining-table', 0, 0.6, 1.8, 1.0), item('chair', 'dining-chair', -0.7, 0.6, 0.45, 0.45, -Math.PI / 2)];
+      expect(seatsAt(backed).find((candidate) => candidate.itemId === 'chair')!.mealOnly).toBeUndefined();
     });
 
     it('never comes in through a partition', () => {

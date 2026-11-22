@@ -525,7 +525,24 @@ to respect.
   the straight walk from there to where the feet go (0.24 m in front of the
   hips) keeps 0.1 m from every other item and partition. A chair tucked
   under a table, or three along one side, would put the feet under the
-  table: it keeps its blocked front and the walkers pass it over.
+  table: tested again with the one table it faces left out (every other
+  item and partition still counts), it gets its side or rear way in and
+  `mealOnly`: the walker pulls it out to eat, and only to eat (`planSeat`,
+  the screens and every need but the meal pass it over), so the Dining set
+  and the Kitchen template feed their walkers. Any other blocked chair (under
+  a counter, backed into a table) keeps its blocked front and is passed
+  over. The hips stay on the chair as placed, so a chair pushed right in
+  (the Kitchen template's) seats its eater close in at the table.
+  The dining-table chain (#904, second step): a chair or dining chair
+  whose sitter faces a dining table or a table (the point 0.6 m in front
+  of the hips over its top) is a meal spot, `meal: true`. It is never a
+  stop of its own (`pickNeedSpot` and `unmetNeeds` skip it: a table alone
+  feeds nobody). A walker that fetched food at the fridge or the stove
+  asks `planMeal` before anything else: at a mealtime always, between
+  meals four times in ten (`sitsToEat`), it heads for a free chair there
+  (`pickMealSpot`, nearer likelier, the usual one-sitter-per-seat claim)
+  and sits for the hunger use. No chair free: it eats standing and goes
+  on, as before. No new mode: the seat modes do the rest.
 - **The house says what its walkers lack (#906).** `householdLacks` runs
   `findNpcSeats` and `findNeedSpots` per storey over the items standing on
   the building (walkers stay indoors and keep to their storey), and
