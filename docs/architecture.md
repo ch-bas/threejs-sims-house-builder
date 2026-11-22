@@ -108,7 +108,7 @@ components/
     │   ├── catalog-drag.ts              HTML5 drag MIME + catalogue keys, tile blocked reasons
     │   ├── catalog-variants.ts          Colour variants (#621): the entry in a picked colour, drag keys, a placed item's colours
     │   ├── budget.ts                    Hard budget (#463e): the house's funds (#609), spend, funds left, 80 % sell-back, purchase refusal, over-budget tile reason, schema repair
-    │   ├── challenges.ts                Challenge briefs (#909): five lots with funds and goals read from the room scores, spend and storeys; the starting house, live progress, `layout.challenge` repair
+    │   ├── challenges.ts                Challenge briefs (#909): five lots with funds and goals read from the room scores, spend and storeys; the starting house, live progress, `layout.challenge` repair, each brief's completion badge (an achievement, earned on edits only and only within the brief's terms: hard budget on, its funds, its lot)
     │   ├── safe-storage.ts              localStorage get/set/remove that never throw (#396)
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)

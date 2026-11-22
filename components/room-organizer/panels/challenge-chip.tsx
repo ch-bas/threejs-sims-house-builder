@@ -32,7 +32,9 @@ export function ChallengeChip(): JSX.Element | null {
   const covered = useCoveredByTopChip(boxRef, shown);
   if (!progress || !shown) return null;
   const expanded = open ?? !compact;
-  const { challenge, goals, met, done } = progress;
+  const { challenge, goals, met, termsBroken } = progress;
+  // Finished only within the brief's terms (#909).
+  const done = progress.done && termsBroken === null;
   const needsZones = !done && challenge.goals.some(isRoomGoal);
   return (
     <div
@@ -72,6 +74,7 @@ export function ChallengeChip(): JSX.Element | null {
             ))}
           </ul>
           {needsZones && <p style={HINT}>{ZONE_HINT}</p>}
+          {termsBroken !== null && <p style={HINT}>Outside the brief&apos;s terms: {termsBroken}. No badge until it keeps to them.</p>}
         </div>
       )}
     </div>
