@@ -88,6 +88,13 @@ export type StairsShape = 'straight' | 'winder';
 export type FloorPlanFitMode = 'stretch' | 'cover' | 'contain';
 
 /**
+ * What the ground floor's tracing image is (#920). 'drawing' (absent): the
+ * finished floor, with no shell walls, foundation or room floors over it.
+ * 'underlay': a guide on the 2D plan only, under walls the house builds.
+ */
+export type FloorPlanMode = 'drawing' | 'underlay';
+
+/**
  * A traced plan calibrated from a known length (#726): the image keeps its
  * proportions at `scale` metres per image pixel, its centre at
  * (`offsetX`, `offsetZ`) in world metres (room-centred). Absent, the image
@@ -427,6 +434,8 @@ export interface RoomLayout {
   floorPlanFitMode?: FloorPlanFitMode;
   /** The traced plan's calibration (#726); wins over the fit mode. */
   floorPlanTransform?: FloorPlanTransform;
+  /** The tracing image as a finished floor or an underlay (#920); absent is 'drawing'. */
+  floorPlanMode?: FloorPlanMode;
   /** Sloped site; absent is flat ground at the ground-floor level. */
   terrain?: TerrainSpec;
   neighbours?: NeighbourSpec;

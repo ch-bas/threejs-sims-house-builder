@@ -581,6 +581,19 @@ to respect.
   immutable 1×1 storage, and a larger image can't be written into it.
   A decode that lands after the floor was built therefore swaps in a new
   texture on its own `TextureSource` and disposes the placeholder one (#521).
+- **A traced plan is the drawing or an underlay.** `layout.floorPlanMode`
+  absent (or `'drawing'`) keeps the old picture: the image is the ground
+  floor in 3D, and that storey builds no outer walls, foundation, porch,
+  reveals or room floors. `'underlay'` makes it a guide on the 2D plan
+  only (plan and minimap, over the room floors, under the grid and walls,
+  at the plan opacity); the house builds as usual, and the blueprint and
+  GLB leave it out. Every "traced ground floor" branch asks `planIsDrawing`
+  (`lib/floor-plan-fit.ts`), and the 3D floor takes its image from
+  `drawnFloorPlanImage`. The mode belongs to the image like the
+  calibration: it goes when the image is removed, in share links and on a
+  whole-house load without the image (restore points keep it for the
+  re-attach), but stays when the image is replaced. An unknown value is
+  dropped on load (#920).
 - **The hard budget derives "spent".** With `layout.budget` absent the
   budget only advises, as before. Switched on, it holds one number,
   `writeOff`: what selling back at 80 % has lost. Spent is the price of

@@ -253,6 +253,7 @@ export interface RoomBuilderOptions {
   floorOpenings?: readonly FloorOpening[];
   /** Rooms with a floor of their own (#720), laid over the slab in order. */
   zonePatches?: readonly ZoneFloorPatch[];
+  /** The traced plan as the finished floor (`drawnFloorPlanImage`); never an underlay (#920). */
   floorPlanImage: string | null;
   floorPlanOpacity: number;
   floorPlanFitMode: FloorPlanFitMode;

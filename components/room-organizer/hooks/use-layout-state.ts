@@ -19,6 +19,7 @@ import type {
   FloorLayout,
   FloorPattern,
   FloorPlanFitMode,
+  FloorPlanMode,
   FloorPlanTransform,
   Frontage,
   FurnitureItem,
@@ -67,6 +68,8 @@ export interface LayoutActions {
   setFloorPlan(image: string | null): void;
   setFloorPlanOpacity(opacity: number): void;
   setFloorPlanFitMode(mode: FloorPlanFitMode): void;
+  /** The tracing image as the finished floor or an underlay under built walls (#920). */
+  setFloorPlanMode(mode: FloorPlanMode): void;
   /** Calibrate the traced plan (#726); `null` hands it back to the fit mode. */
   setFloorPlanTransform(transform: FloorPlanTransform | null): void;
   setRoofStyle(style: RoofStyle): void;
