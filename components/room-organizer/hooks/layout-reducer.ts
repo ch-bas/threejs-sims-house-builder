@@ -14,6 +14,7 @@ import { floorKeepOut } from '../lib/floor-keep-out';
 import { repairFloorPlanTransform } from '../lib/floor-plan-fit';
 import { MIN_WING_SIZE, clampToFootprint, cutoutFits, cutoutRect, footprintOutline, sameCutout } from '../lib/footprint';
 import { formatMetres } from '../lib/format';
+import { withGroundAdded, withGroundRemoved, withGroundUpdated, type GroundPatchEdit } from '../lib/grounds';
 import { remapGroupIds } from '../lib/groups';
 import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
@@ -60,6 +61,7 @@ import type {
   FloorPlanTransform,
   Frontage,
   FurnitureItem,
+  GroundPatch,
   InteriorWall,
   NeighbourFlag,
   OpeningStyle,
@@ -168,7 +170,11 @@ export type LayoutAction =
   | { type: 'removeZone'; id: string }
   // pinned dimensions (#921) — target the active floor
   | { type: 'addDimension'; dimension: PinnedDimension }
-  | { type: 'removeDimension'; id: string };
+  | { type: 'removeDimension'; id: string }
+  // garden surfaces (#924) — on the building, not a floor
+  | { type: 'addGround'; ground: GroundPatch }
+  | { type: 'updateGround'; id: string; patch: GroundPatchEdit }
+  | { type: 'removeGround'; id: string };
 
 // ---------------------------------------------------------------------------
 // State shape + defaults
@@ -1206,6 +1212,14 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         if (sameZone(current, next)) return floor;
         return { ...floor, zones: floor.zones.map((zone) => (zone.id === action.id ? next : zone)) };
       });
+
+    // -- garden surfaces (#924): fitted to the lot in lib/grounds.ts --------
+    case 'addGround':
+      return withLayout(state, (layout) => withGroundAdded(layout, action.ground));
+    case 'updateGround':
+      return withLayout(state, (layout) => withGroundUpdated(layout, action.id, action.patch));
+    case 'removeGround':
+      return withLayout(state, (layout) => withGroundRemoved(layout, action.id));
 
     case 'removeZone':
       return withActiveFloor(state, (floor) => {

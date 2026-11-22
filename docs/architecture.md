@@ -71,6 +71,7 @@ components/
     │   ├── facade.ts                    The outer walls' outside finish: the facade's own pattern and colours, the inside finish for the rest; setting and clearing it (#918)
     │   ├── floor-holes.ts               The stairwell holes a floor is cut with: clamped, overlapping ones cut as the union of each stair's rectangles (#963), kept off the L's cut; 3D slab, shafts, rail and plan share them (#559)
     │   ├── floor-keep-out.ts            Per-storey keep-out: porch + stairwells cut by the floor below (#372)
+    │   ├── grounds.ts                   Garden surfaces on the lot (#924): the fit rule (lot, house, porch steps, party-wall row), draw-gesture corners, the reducer's edits, schema repair, what is shown
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
     │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214); per-item build keys + diff (#404)
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)

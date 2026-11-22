@@ -5,6 +5,7 @@ import { fitFloorsToCutout } from './cutout';
 import { MAX_DORMERS, isDormerSpec } from './dormers';
 import { isFloorPlanMode, repairFloorPlanTransform } from './floor-plan-fit';
 import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
+import { repairGrounds } from './grounds';
 import { isOpeningStyle } from './opening-style';
 import { MAX_DIMENSIONS_PER_FLOOR, MIN_DIMENSION_LENGTH, clampDimension, dimensionLength, isPinnedDimension } from './plan-dimensions';
 import { clampRoofPitch } from './roof-shape';
@@ -405,6 +406,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   frontage: true,
   budget: true,
   challenge: true,
+  grounds: true,
 });
 const FLOOR_KEYS = keysOf<FloorLayout>({
   id: true,
@@ -851,6 +853,16 @@ function repairFields(layout: RoomLayout): RoomLayout {
       source = rest;
     } else {
       patch.challenge = challenge;
+    }
+  }
+  // Garden surfaces (#924) are repaired, never refused: malformed ones go.
+  if (layout.grounds !== undefined) {
+    const grounds = repairGrounds(layout.grounds);
+    if (grounds === undefined) {
+      const { grounds: _dropped, ...rest } = source;
+      source = rest;
+    } else {
+      patch.grounds = grounds;
     }
   }
   return rebuild(source, LAYOUT_KEYS, patch);

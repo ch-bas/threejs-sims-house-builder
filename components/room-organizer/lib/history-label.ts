@@ -106,5 +106,6 @@ export function describeLayoutChange(before: RoomLayout, after: RoomLayout): str
   if (before.name !== after.name) return 'rename the house';
   if (before.width !== after.width || before.height !== after.height) return 'resize the house';
   if (before.roof !== after.roof) return 'change the roof';
+  if (before.grounds !== after.grounds) return 'change the garden surfaces';
   return 'change the house';
 }
