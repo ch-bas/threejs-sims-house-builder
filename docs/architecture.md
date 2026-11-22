@@ -148,7 +148,7 @@ components/
     │   ├── walk-input.ts                Walkthrough frame-time cap, which keydowns walk (no Ctrl/Cmd/Alt chords), E to interact, keys typed into a field ignored
     │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
     │   ├── walk-spawn.ts                Walkthrough spawn (inside the entrance door) and arrival at the stairs on a floor change
-    │   ├── walk-interact.ts             Seats and (at night) lamps in reach for `E` (#910), and the seated pose (facing the TV), never through a wall or across the shell (#566)
+    │   ├── walk-interact.ts             Seats, (at night) lamps and TVs in reach for `E` (#910), and the seated pose (facing the TV), never through a wall or across the shell (#566)
     │   ├── wall-sides.ts                The two faces of a partition: which one faces a point, painting one (#720)
     │   ├── walkthrough-view.ts          Walkthrough display: walls + roof up, ceiling above, stairwell pit below (#359); the mode to return to on exit
     │   ├── room-stamp.ts                The room stamp as a held placement: snapped position, drag to size, the walls a drop adds (#724)
@@ -245,6 +245,7 @@ components/
     │   ├── ground-surfaces.ts           Generated grass, paving, asphalt, gravel and deck tiles, laid by world position with a macro layer on grass (#761, #924)
     │   ├── ground-patches.ts            Garden surfaces as low slabs on the ground line, one merged mesh per kind, weather tint; the lot and the GLB build them (#924)
     │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
+    │   ├── tv-screens.ts                TV screens switched on in EXPLORE: emissive values on the marked screen material, no light, no recompile (#910)
     │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664); the roof, and the outside face of shell walls and dormers (#814)
     │   ├── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
     │   └── sky.ts                       World-space sky dome, clouds and sun disc, painted from the sky profile (#761)
@@ -261,7 +262,7 @@ components/
     ├── hooks/
     │   ├── layout-reducer.ts            Action union + reducer (withActiveFloor)
     │   ├── use-layout-store.ts          Zustand store (reuses the reducer) + selectors
-    │   ├── editor-view-store.ts         Per-editor Zustand store: view settings, catalog search, game mode, time auto-cycle, the length unit (per browser, never in the house, #725)
+    │   ├── editor-view-store.ts         Per-editor Zustand store: view settings, catalog search, game mode, time auto-cycle, the length unit (per browser, never in the house, #725), lamps and TVs switched in EXPLORE (session only, #910)
     │   ├── use-layout-state.ts          Adapter over the store (activeFloor, actions)
     │   ├── use-three-scene.ts           Renderer / controls / RAF lifecycle
     │   ├── use-scene-effects.ts         Keyed scene-rebuild effects

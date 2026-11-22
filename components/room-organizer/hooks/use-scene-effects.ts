@@ -60,6 +60,7 @@ import { buildAtticCeiling, buildRoof, gableWallsOf, removeAtticCeiling, removeR
 import { HIDDEN_OWNER_KEY, OFF_STOREY_KEY, ROOM_OBJECT_TAGS, STOREY_KEY, applyWallDisplay, buildRoom, clearFloorPlanImageCache, removeTagged, shellWallFaces, wallDisplayId } from '../three/room-builder';
 import { addSignalOverlays } from '../three/signal-overlay';
 import { STAIRWELL_RAIL_TAG, buildStairwellRail, clearStairwellRails } from '../three/stairwell-rail';
+import { applyTvScreens } from '../three/tv-screens';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
 import { usePlanCalibration } from './plan-calibration';
 import { observeSceneOccluders, planFit } from './scene-occluders';
@@ -194,9 +195,12 @@ export interface UseSceneEffectsParams {
   walkLampStorey?: number;
   /** Lamps the walker switched off in EXPLORE (#910), by item id: session state, never the house's. */
   lampsOff?: ReadonlySet<string>;
+  /** TVs the walker switched on in EXPLORE (#910), by item id: session state too. */
+  tvsOn?: ReadonlySet<string>;
 }
 
 const NO_LAMPS_OFF: ReadonlySet<string> = new Set();
+const NO_TVS_ON: ReadonlySet<string> = new Set();
 
 export function useSceneEffects({
   isReady,
@@ -231,11 +235,15 @@ export function useSceneEffects({
   walkNearStairs = false,
   walkLampStorey,
   lampsOff = NO_LAMPS_OFF,
+  tvsOn = NO_TVS_ON,
 }: UseSceneEffectsParams): void {
   const activeFloorY = floorElevation(layout.floors, activeFloorIndex);
   // The furniture groups in the scene by furnitureMeshKey, with the build
   // key each was built from (#404).
   const furnitureMeshesRef = useRef(new Map<string, { group: ThreeNS.Group; buildKey: string }>());
+  // TVs switched on (#910), for the furniture effect, which isn't keyed on them.
+  const tvsOnRef = useRef(tvsOn);
+  tvsOnRef.current = tvsOn;
 
   // Storey heights stack every floor's Y, the wall heights, and the roof
   // base (#202). The structural effects are keyed on narrow signatures, not
@@ -773,6 +781,8 @@ export function useSceneEffects({
     if (camera) applyWallDisplay(scene, camera.position.x, camera.position.z, wallDisplay, layout.width, layout.height);
     scene.userData[FURNITURE_REVISION_KEY] =
       ((scene.userData[FURNITURE_REVISION_KEY] as number | undefined) ?? 0) + 1;
+    // A TV rebuilt while switched on comes back lit (#910).
+    applyTvScreens(scene, tvsOnRef.current);
     if (changed) requestShadowUpdate();
     // Keyed on the plan's signatures, not `layout.floors` identity: wall
     // paint, floor patterns and interior walls give the floors a new
@@ -1329,6 +1339,14 @@ export function useSceneEffects({
     view.timeOfDay, itemsKey, collisionKey, ghostOtherFloors, allFloors, activeFloorIndex, layout.roof,
     neighboursKey, peopleModelReady,
   ]);
+
+  // TV screens switched on in EXPLORE (#910): material values only. The
+  // furniture effect lights a rebuilt TV from the ref; a switch lands here.
+  useEffect(() => {
+    if (!isReady) return;
+    const scene = sceneRef.current;
+    if (scene && applyTvScreens(scene, tvsOn)) invalidate();
+  }, [isReady, invalidate, sceneRef, tvsOn]);
 
   // The bounce of a lit room around a walker inside it (#759): a lamp on the
   // walker's storey within reach and with no partition between, never a

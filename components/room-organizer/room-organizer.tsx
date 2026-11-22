@@ -1472,7 +1472,7 @@ function SaveStatusHeaderStats({
   return <HeaderStats {...props} {...useSaveStatus(saveStatus)} />;
 }
 
-type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds' | 'lampsOff'>;
+type SceneEffectsProps = Omit<UseSceneEffectsParams, 'view' | 'highlightedIds' | 'lampsOff' | 'tvsOn'>;
 
 // Renders nothing: it owns the scene effects, subscribed to the whole view
 // (time of day included) and to the catalog search's highlighted items.
@@ -1484,8 +1484,10 @@ function SceneEffects(props: SceneEffectsProps): null {
   const highlightedIds = useMemo(() => highlightIdsFromKey(highlightKey), [highlightKey]);
   // Lamps switched off in EXPLORE (#910).
   const lampsOff = useEditorView((state) => state.lampsOff);
+  // TVs switched on in EXPLORE (#910).
+  const tvsOn = useEditorView((state) => state.tvsOn);
   useCameraTargetOnStorey(props, view.walkthroughMode && !view.view2D);
-  useSceneEffects({ ...props, view, highlightedIds, lampsOff });
+  useSceneEffects({ ...props, view, highlightedIds, lampsOff, tvsOn });
   return null;
 }
 

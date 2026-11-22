@@ -71,18 +71,50 @@ describe('lamps switched in EXPLORE (#910)', () => {
 
   it('forgets the switched lamps, or only those no longer in the house', () => {
     const store = createEditorViewStore(makeViewSettings());
-    const { switchLamp, resetLamps } = store.getState().actions;
+    const { switchLamp, resetSwitches } = store.getState().actions;
     const empty = store.getState();
-    resetLamps();
+    resetSwitches();
     expect(store.getState()).toBe(empty);
     switchLamp('a');
     switchLamp('b');
     const both = store.getState();
-    resetLamps(new Set(['a', 'b', 'c']));
+    resetSwitches(new Set(['a', 'b', 'c']));
     expect(store.getState()).toBe(both);
-    resetLamps(new Set(['a']));
+    resetSwitches(new Set(['a']));
     expect([...store.getState().lampsOff]).toEqual(['a']);
-    resetLamps();
+    resetSwitches();
+    expect(store.getState().lampsOff.size).toBe(0);
+  });
+});
+
+describe('TVs switched in EXPLORE (#910)', () => {
+  it('switches a TV on and back off, beside the lamps', () => {
+    const store = createEditorViewStore(makeViewSettings());
+    const { switchTv, switchLamp } = store.getState().actions;
+    expect(store.getState().tvsOn.size).toBe(0);
+    switchTv('tv-1');
+    expect([...store.getState().tvsOn]).toEqual(['tv-1']);
+    expect(store.getState().lampsOff.size).toBe(0);
+    switchLamp('lamp-1');
+    const lampsOff = store.getState().lampsOff;
+    switchTv('tv-1');
+    expect(store.getState().tvsOn.size).toBe(0);
+    // A TV switch leaves the lamps' set alone: the lamp effects don't rerun.
+    expect(store.getState().lampsOff).toBe(lampsOff);
+  });
+
+  it('forgets switched TVs with the lamps, keeping what is still in the house', () => {
+    const store = createEditorViewStore(makeViewSettings());
+    const { switchTv, switchLamp, resetSwitches } = store.getState().actions;
+    switchTv('tv-1');
+    switchTv('tv-2');
+    switchLamp('lamp-1');
+    const lampsOff = store.getState().lampsOff;
+    resetSwitches(new Set(['tv-1', 'lamp-1']));
+    expect([...store.getState().tvsOn]).toEqual(['tv-1']);
+    expect(store.getState().lampsOff).toBe(lampsOff);
+    resetSwitches();
+    expect(store.getState().tvsOn.size).toBe(0);
     expect(store.getState().lampsOff.size).toBe(0);
   });
 });

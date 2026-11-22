@@ -14,8 +14,8 @@ export interface WalkHudProps {
   lockRefused: boolean;
   /** The seat in reach, while standing (#463b). */
   seatName: string | null;
-  /** The lamp in reach while standing, and whether it is on (#910). */
-  lamp?: { name: string; on: boolean } | null;
+  /** The lamp or TV in reach while standing, and whether it is on (#910). */
+  lamp?: { name: string; on: boolean; kind?: 'lamp' | 'tv' } | null;
   seated: boolean;
   floorName: string;
   /** PgUp / PgDn have somewhere to go (#446). */
@@ -45,10 +45,11 @@ export function WalkHud(props: WalkHudProps): JSX.Element {
   return touch ? <TouchWalkHud {...props} /> : <DesktopWalkHud {...props} />;
 }
 
-/** What `E` does now, in words: stand, switch the lamp in reach (#910), or sit. */
+/** What `E` does now, in words: stand, switch the lamp or TV in reach (#910), or sit. */
 function interactPrompt({ seatName, seated, lamp }: Pick<WalkHudProps, 'seatName' | 'seated' | 'lamp'>): string | null {
   if (seated) return 'Stand up';
-  if (lamp) return `${lamp.on ? 'Switch off' : 'Switch on'} ${lamp.name}`;
+  // By what it is, not its catalogue name ("TV Stand", "Floor Lamp"): the TV, the lamp.
+  if (lamp) return `${lamp.on ? 'Switch off' : 'Switch on'} the ${lamp.kind === 'tv' ? 'TV' : 'lamp'}`;
   return seatName ? `Sit on ${seatName}` : null;
 }
 
@@ -151,7 +152,7 @@ function TouchWalkHud({ seatName, lamp = null, seated, floorName, multiFloor, ca
             border: '1.5px solid var(--pc-cyan-glow)',
           }}
         >
-          <Icon name={seated ? 'arrowU' : switching ? 'lamp' : 'sofa'} size={16} />
+          <Icon name={seated ? 'arrowU' : switching ? (lamp.kind === 'tv' ? 'tv' : 'lamp') : 'sofa'} size={16} />
           {seated ? 'Stand' : switching ? (lamp.on ? 'Switch off' : 'Switch on') : 'Sit'}
         </button>
       )}
