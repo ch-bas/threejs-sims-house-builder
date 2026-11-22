@@ -230,6 +230,49 @@ describe('photo mode (#626)', () => {
     expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Album' }));
   });
 
+  it('shares an album photo through the sheet where it takes an image, and says so (#912)', async () => {
+    const store = await openAlbum();
+    await store.put({ id: 'p1', houseId: 'house-1', takenAt: Date.now(), hour: 18, weather: 'clear', image: new ArrayBuffer(4), imageType: 'image/jpeg', thumb: null });
+    const shared: ShareData[] = [];
+    const share = vi.fn((data: ShareData) => {
+      shared.push(data);
+      return Promise.resolve();
+    });
+    Object.defineProperty(navigator, 'share', { value: share, configurable: true });
+    Object.defineProperty(navigator, 'canShare', { value: (data: ShareData) => (data.files ?? []).every((file) => file.type.startsWith('image/')), configurable: true });
+    try {
+      render(<Harness renderer={fakeRenderer(null).renderer} />);
+      act(() => enterPhotoMode());
+      act(() => screen.getByRole('button', { name: /^Album/ }).click());
+      const button = await screen.findByRole('button', { name: 'Share photo taken just now' });
+      act(() => {
+        button.click();
+        // A second tap while the sheet is open asks nothing more.
+        button.click();
+      });
+      // Opened inside the tap, before anything awaited.
+      expect(share).toHaveBeenCalledTimes(1);
+      expect(shared[0]?.files?.[0]?.name).toBe('my-home-photo.jpg');
+      expect(shared[0]?.files?.[0]?.type).toBe('image/jpeg');
+      await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Photo shared'));
+      // Photo mode stays on: sharing edits nothing and leaves nothing.
+      expect(isPhotoMode()).toBe(true);
+    } finally {
+      Reflect.deleteProperty(navigator, 'share');
+      Reflect.deleteProperty(navigator, 'canShare');
+    }
+  });
+
+  it('offers no Share where the sheet won’t take an image: Download covers it (#912)', async () => {
+    const store = await openAlbum();
+    await store.put({ id: 'p1', houseId: 'house-1', takenAt: Date.now(), hour: 18, weather: 'clear', image: new ArrayBuffer(4), imageType: 'image/jpeg', thumb: null });
+    render(<Harness renderer={fakeRenderer(null).renderer} />);
+    act(() => enterPhotoMode());
+    act(() => screen.getByRole('button', { name: /^Album/ }).click());
+    expect(await screen.findByRole('button', { name: /^Download the album copy/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Share photo/ })).toBeNull();
+  });
+
   it('closes the album on Escape before leaving photo mode (#912)', async () => {
     render(<Harness renderer={fakeRenderer(null).renderer} />);
     act(() => enterPhotoMode());

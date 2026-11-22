@@ -11,6 +11,8 @@
  * the session's photos and says so through `state`.
  */
 
+import { downloadBlob, exportFileName } from './plan-export/download';
+import type { FileChannels, FileOutcome } from './share-delivery';
 import type { Weather } from './types';
 
 /** Photos kept per house; the oldest go first, after asking. */
@@ -461,4 +463,83 @@ export function albumFileExtension(imageType: string): string {
   if (imageType === 'image/jpeg') return 'jpg';
   if (imageType === 'image/webp') return 'webp';
   return 'png';
+}
+
+/**
+ * The album's copy as a file to download or share: `<house>-photo.jpg`,
+ * through the one naming rule for downloads. Built from the bytes already
+ * in hand, so a share sheet opens inside the tap that asked for it.
+ */
+export function albumPhotoFile(photo: Pick<AlbumPhoto, 'image' | 'imageType'>, houseName: string): File {
+  return new File([photo.image], exportFileName(houseName, albumFileExtension(photo.imageType), 'photo'), { type: photo.imageType });
+}
+
+// ── sharing a photo ────────────────────────────────────────────────────
+// The rule is lib/share-delivery's `deliverHouseFile`, kept here on its
+// own: importing that module from the album's lazy chunk splits it, and
+// lib/share, out of the editor's hoisted module (about 1 KB of first load).
+
+/**
+ * Hand a photo over: the sheet first, a download when the sheet fails,
+ * nothing when the player dismisses it. Call it in the tap: the sheet is
+ * asked before anything is awaited.
+ */
+export async function sharePhoto(file: File, channels: FileChannels): Promise<FileOutcome> {
+  if (channels.shareFile) {
+    try {
+      await channels.shareFile(file);
+      return 'shared';
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
+    }
+  }
+  channels.download(file);
+  return 'downloaded';
+}
+
+/** The parts of `navigator` a file share reads. */
+export interface FileShareNavigator {
+  share?: ((data: ShareData) => Promise<void>) | undefined;
+  canShare?: ((data: ShareData) => boolean) | undefined;
+}
+
+/**
+ * Whether `nav`'s share sheet takes `probe`: both members are there and
+ * `canShare` says yes. A browser that throws on the question says no.
+ */
+export function sheetTakesFile(nav: FileShareNavigator | undefined, probe: File): boolean {
+  try {
+    return typeof nav?.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files: [probe] });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Where an album photo goes (`sharePhoto`): the
+ * share sheet wherever it takes a JPEG, on a phone or a desktop (a photo
+ * has no link to copy instead, and Safari and Chrome on a desktop have a
+ * sheet too), else a download. The sheet gets the file alone (`photoShareData`).
+ */
+export function browserImageChannels(): FileChannels {
+  let canShareFile = false;
+  try {
+    const probe = new File([new Uint8Array(0)], 'photo.jpg', { type: 'image/jpeg' });
+    canShareFile = typeof navigator !== 'undefined' && sheetTakesFile(navigator, probe);
+  } catch {
+    canShareFile = false;
+  }
+  return {
+    ...(canShareFile ? { shareFile: (shared: File) => navigator.share(photoShareData(shared)) } : {}),
+    download: (downloaded: File) => downloadBlob(downloaded.name, downloaded),
+  };
+}
+
+/**
+ * What the sheet is handed for a photo: the file and nothing else. A title
+ * would show the file name as the share's text, and on iOS a share with
+ * text can lose Save Image.
+ */
+export function photoShareData(file: File): ShareData {
+  return { files: [file] };
 }

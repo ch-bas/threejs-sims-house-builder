@@ -1,10 +1,19 @@
 'use client';
 
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { askConfirm } from '../lib/confirm-dialog';
 import { formatAge } from '../lib/format';
-import { ALBUM_MAX_EDGE, albumFileExtension, deleteFromAlbum, type AlbumPhoto, type AlbumState } from '../lib/photo-album';
-import { downloadBlob, exportFileName } from '../lib/plan-export/download';
+import {
+  ALBUM_MAX_EDGE,
+  albumPhotoFile,
+  browserImageChannels,
+  deleteFromAlbum,
+  sharePhoto,
+  type AlbumPhoto,
+  type AlbumState,
+} from '../lib/photo-album';
+import { downloadBlob } from '../lib/plan-export/download';
+import type { FileChannels, FileOutcome } from '../lib/share-delivery';
 import type { Weather } from '../lib/types';
 
 const WEATHER_LABELS: Record<Weather, string> = { clear: 'Clear', rain: 'Rain', snow: 'Snow' };
@@ -26,9 +35,11 @@ interface AlbumRowProps {
   now: number;
   /** Called as a delete is confirmed, with whether it went through. */
   onDeleting(done: boolean | null): void;
+  /** Share the photo (#912): present where the share sheet takes an image. */
+  onShare?: (() => void) | undefined;
 }
 
-function AlbumRow({ photo, houseName, now, onDeleting }: AlbumRowProps): JSX.Element {
+function AlbumRow({ photo, houseName, now, onDeleting, onShare }: AlbumRowProps): JSX.Element {
   const age = formatAge(Math.max(0, now - photo.takenAt));
   const remove = async () => {
     const yes = await askConfirm({
@@ -43,8 +54,8 @@ function AlbumRow({ photo, houseName, now, onDeleting }: AlbumRowProps): JSX.Ele
     onDeleting(await deleteFromAlbum([photo.id]));
   };
   const download = () => {
-    const file = exportFileName(houseName, albumFileExtension(photo.imageType), 'photo');
-    downloadBlob(file, new Blob([photo.image], { type: photo.imageType }));
+    const file = albumPhotoFile(photo, houseName);
+    downloadBlob(file.name, file);
   };
   return (
     <li className="pc-photo-album-row">
@@ -61,7 +72,12 @@ function AlbumRow({ photo, houseName, now, onDeleting }: AlbumRowProps): JSX.Ele
           {sceneHourLabel(photo.hour)} · {Object.hasOwn(WEATHER_LABELS, photo.weather) ? WEATHER_LABELS[photo.weather] : 'Clear'}
         </span>
       </span>
-      <button type="button" className="pc-tile pc-photo-bar-button" aria-label={`Download the album copy of the photo taken ${age}`} onClick={download}>
+      {onShare && (
+        <button type="button" className="pc-tile pc-photo-bar-button pc-photo-album-share" aria-label={`Share photo taken ${age}`} onClick={onShare}>
+          Share
+        </button>
+      )}
+      <button type="button" className="pc-tile pc-photo-bar-button pc-photo-album-download" aria-label={`Download the album copy of the photo taken ${age}`} onClick={download}>
         Download
       </button>
       <button
@@ -81,16 +97,35 @@ export interface PhotoAlbumProps {
   photos: AlbumPhoto[] | null;
   state: AlbumState;
   houseName: string;
+  /** How a shared photo went: the shutter's hint says so (photo mode hides the notices). */
+  onShared?: (outcome: FileOutcome) => void;
+  /** Where a shared photo goes (tests); the browser's sheet or a download by default. */
+  channels?: FileChannels;
 }
 
 /**
  * The house's album (#912), newest first, above the shutter: each photo
- * with its age, the scene's hour and weather, Download (the album's JPEG
+ * with its age, the scene's hour and weather, Share (where the share sheet
+ * takes an image; a download if it fails), Download (the album's JPEG
  * copy) and Delete. After a delete, focus goes to the row that took its
  * place, or to the album itself.
  */
-export function PhotoAlbum({ id, photos, state, houseName }: PhotoAlbumProps): JSX.Element {
+export function PhotoAlbum({ id, photos, state, houseName, onShared, channels: given }: PhotoAlbumProps): JSX.Element {
   const now = Date.now();
+  // Asked once: whether the sheet takes an image doesn't change in a session.
+  const [channels] = useState<FileChannels>(() => given ?? browserImageChannels());
+  // One sheet at a time: a second tap while it is open would fail and download.
+  const sharingRef = useRef(false);
+  const share = (photo: AlbumPhoto) => {
+    if (sharingRef.current) return;
+    sharingRef.current = true;
+    // The file is built from bytes in hand: the sheet opens inside the tap.
+    void sharePhoto(albumPhotoFile(photo, houseName), channels)
+      .then((outcome) => onShared?.(outcome))
+      .finally(() => {
+        sharingRef.current = false;
+      });
+  };
   const regionRef = useRef<HTMLDivElement>(null);
   const focusRowRef = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -116,6 +151,7 @@ export function PhotoAlbum({ id, photos, state, houseName }: PhotoAlbumProps): J
               photo={photo}
               houseName={houseName}
               now={now}
+              onShare={channels.shareFile ? () => share(photo) : undefined}
               onDeleting={(done) => {
                 if (done === null) focusRowRef.current = index;
                 else if (!done) focusRowRef.current = null;

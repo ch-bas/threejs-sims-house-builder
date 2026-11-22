@@ -1971,6 +1971,29 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
     gap: 8px;
   }
 }
+/* W4 album share (#912): a row with Share has three buttons. */
+.pc-photo-album:has(.pc-photo-album-share) {
+  width: min(480px, calc(100vw - 32px));
+}
+@media (max-width: 768px), (max-height: 500px) {
+  /* A phone: Delete beside the age, Share and Download under it. */
+  .pc-photo-album-row:has(.pc-photo-album-share) {
+    grid-template-areas: 'thumb meta delete' 'thumb share download';
+  }
+  .pc-photo-album-row:has(.pc-photo-album-share) .pc-photo-album-meta {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .pc-photo-album-row:has(.pc-photo-album-share) .pc-photo-album-share {
+    grid-area: share;
+  }
+  .pc-photo-album-row:has(.pc-photo-album-share) .pc-photo-album-download {
+    grid-area: download;
+  }
+  .pc-photo-album-row:has(.pc-photo-album-share) .pc-photo-album-delete {
+    grid-area: delete;
+  }
+}
 @media (pointer: coarse) {
   .pc-photo-bar-button {
     min-height: 44px;

@@ -175,7 +175,7 @@ components/
     │   ├── plan-view-fit.ts             What the on-screen plan and minimap fit (room + outdoor items, far ones as edge markers) and where beside the desktop HUD (#381)
     │   ├── editor-notices.ts            notify() status messages, with an optional action button such as Undo (#651), notifyRefused(), zone-name requests (#374)
     │   ├── photo-mode.ts                Photo mode switch (enter/leave/subscribe) and the photo's size and file name (#626)
-    │   ├── photo-album.ts               The photo album (#912, loaded with import()): per-house JPEG copies in IndexedDB (memory fallback), the 30-photo cap with oldest-out after asking, cross-tab notices
+    │   ├── photo-album.ts               The photo album (#912, loaded with import()): per-house JPEG copies in IndexedDB (memory fallback), the 30-photo cap with oldest-out after asking, cross-tab notices, a photo as a file for the share sheet where it takes an image
     │   ├── confirm-dialog.ts            askConfirm(): the in-app question queue that replaces window.confirm (#649)
     │   ├── overlay-queue.ts             Small-screen overlay policy: compact queries, toast queue, stack placement
     │   ├── plan-order.ts                2D layer order: rugs → floor → tabletop → hung → wall (#286)
@@ -382,7 +382,7 @@ components/
         ├── overlay-stack.tsx            Shared small-screen column under the pills: save notices, then toasts
         ├── placement-hint.tsx           Key hint chip while a keyboard placement or a ghost is pending (Cancel for touch)
         ├── photo-bar.tsx                Photo mode's shutter: Take photo, Save to album, Album and Done, the one HUD left on screen (#626, #912)
-        ├── photo-album.tsx              The album above the shutter: each photo's age, hour and weather, Download and Delete (#912)
+        ├── photo-album.tsx              The album above the shutter: each photo's age, hour and weather, Share (where the sheet takes an image), Download and Delete (#912)
         ├── tour-banner.tsx              The shared-link tour's HUD: the house's name, Walk through, Keep a copy, Build your own (#722)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── confirm-dialog.tsx           The askConfirm() modal: focus trap, Enter confirms, Escape cancels (#649)

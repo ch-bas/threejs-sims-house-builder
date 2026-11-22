@@ -4,6 +4,7 @@ import { Suspense, lazy, useEffect, useId, useRef, useState, type KeyboardEvent 
 import { usePhotoAlbum } from '../hooks/use-photo-album';
 import { claimPhotoEscape } from '../lib/photo-mode';
 import type { AlbumSaveResult } from '../lib/photo-album';
+import type { FileOutcome } from '../lib/share-delivery';
 
 // The album and its store load as photo mode first shows it (#912).
 const PhotoAlbum = lazy(() => import('./photo-album').then((module) => ({ default: module.PhotoAlbum })));
@@ -32,6 +33,21 @@ export function albumSaveMessage(result: AlbumSaveResult | null): string {
       return 'No room left to keep it';
     case 'failed':
       return 'Couldn’t keep it';
+    default:
+      return '';
+  }
+}
+
+/** What the hint says after a photo left the album through Share (#912). */
+export function albumShareMessage(outcome: FileOutcome): string {
+  switch (outcome) {
+    case 'shared':
+      return 'Photo shared';
+    case 'downloaded':
+      // Share asked for the sheet; it failed, so the file came down instead.
+      return 'Couldn’t share · downloaded';
+    case 'cancelled':
+      return '';
     default:
       return '';
   }
@@ -116,7 +132,13 @@ export function PhotoBar({ onTake, onKeep, houseId, houseName = '', onDone }: Ph
     >
       {albumOpen && onKeep && (
         <Suspense fallback={null}>
-          <PhotoAlbum id={albumId} photos={album.photos} state={album.state} houseName={houseName} />
+          <PhotoAlbum
+            id={albumId}
+            photos={album.photos}
+            state={album.state}
+            houseName={houseName}
+            onShared={(outcome) => setMessage(albumShareMessage(outcome) || null)}
+          />
         </Suspense>
       )}
       <div
