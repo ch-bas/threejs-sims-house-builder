@@ -7,6 +7,7 @@ import { EditorViewProvider, useEditorView } from './contexts/editor-view-contex
 import { RoomEditorProvider, type RoomEditorContextValue } from './contexts/room-editor-context';
 import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
+import { getGroundDrawKind, setGroundDrawKind, useGroundDrawKind } from './hooks/ground-draw';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
 import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
@@ -87,6 +88,7 @@ import { DevDiagnostics } from './panels/dev-diagnostics';
 import { FileDropOverlay } from './panels/file-drop-overlay';
 import { FirstStepsCard } from './panels/first-steps-card';
 import { FloorPill } from './panels/floor-pill';
+import { GroundDrawChip } from './panels/ground-draw-chip';
 import { HeaderStats, type HeaderStatsProps } from './panels/header-stats';
 import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
@@ -164,6 +166,8 @@ export function RoomOrganizer(): JSX.Element {
   });
   const { setView, toggle } = viewStore.getState().actions;
   const view = useStore(viewStore, useShallow(viewExceptTime));
+  // The garden-surface tool (#924) owns the plan's presses while it is on.
+  const groundDrawing = useGroundDrawKind() !== null;
   const autoCycleLighting = useStore(viewStore, (state) => state.autoCycleLighting);
 
   // First-person walkthrough only runs in the 3D view; the 2D top-down renderer
@@ -525,7 +529,12 @@ export function RoomOrganizer(): JSX.Element {
     selectOnly,
     placeCatalogItem: placeDiscrete,
     // The drawer's backdrop would take the click meant to place it.
-    onGhostPickUp: useCallback(() => setSidebarCollapsed(true), []),
+    // Picking an item up ends the garden-surface tool (#924), as starting the
+    // tool puts the ghost down.
+    onGhostPickUp: useCallback(() => {
+      setGroundDrawKind(null);
+      setSidebarCollapsed(true);
+    }, []),
   });
 
   // The soft-budget yes, placed after the place call returned: the same
@@ -565,7 +574,7 @@ export function RoomOrganizer(): JSX.Element {
   const interiorSelectedWallId = selectedWall?.kind === 'interior' ? selectedWall.id : null;
   const wallGhostsRef = useRef<((preview: WallMovePreview | null) => void) | null>(null);
   const { grabWall, wallMovePreview, isHoldingWall, cancelWallHold } = useWallEdit({
-    enabled: !exploring && !walkthroughActive && !ghost && !view.drawWallMode && !view.drawZoneMode && !view.measurementMode,
+    enabled: !exploring && !walkthroughActive && !ghost && !groundDrawing && !view.drawWallMode && !view.drawZoneMode && !view.measurementMode,
     pressDrags: designing,
     layout,
     activeFloor,
@@ -603,6 +612,7 @@ export function RoomOrganizer(): JSX.Element {
     onItemDragCancel: handleDragCancel,
     onLockedDrag: handleLockedDrag,
     onZoneRefused: refuseZone,
+    onGroundAdded: chimePlacement,
     onWallPoint: handleEmptyClick,
     onWallPointerMove: handleFloorPointerMove,
     onWallPointerLeave: handleFloorPointerLeave,
@@ -691,7 +701,7 @@ export function RoomOrganizer(): JSX.Element {
   const placementGhost = usePlacementGhost({
     ghost,
     endGhost,
-    enabled: !walkthroughActive && !view.drawWallMode && !view.measurementMode && !view.drawZoneMode,
+    enabled: !walkthroughActive && !groundDrawing && !view.drawWallMode && !view.measurementMode && !view.drawZoneMode,
     sceneReady: isReady,
     view2D: view.view2D,
     canvasRef,
@@ -1015,6 +1025,11 @@ export function RoomOrganizer(): JSX.Element {
         }
         if (view.measurementMode) {
           toggle('measurementMode');
+          return;
+        }
+        // And for the garden-surface tool (#924), likewise folded away.
+        if (getGroundDrawKind()) {
+          setGroundDrawKind(null);
           return;
         }
         // And for zone drawing, whose drawer button is folded away (#439).
@@ -1407,6 +1422,8 @@ export function RoomOrganizer(): JSX.Element {
 
       {/* Inline zone naming and export/share status (#374) */}
       <ZoneNameChip selectedZoneId={planZoneId} onZoneSelect={setSelectedZoneId} />
+      {/* The garden-surface tool's chip (#924) */}
+      <GroundDrawChip />
       {/* The challenge checklist (#909): none in a shared-link tour; a kept copy is the player's own */}
       {!touring && <ChallengeChip />}
       <PlanCalibrationChip />
