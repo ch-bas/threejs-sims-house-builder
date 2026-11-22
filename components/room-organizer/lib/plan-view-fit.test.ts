@@ -250,7 +250,7 @@ describe('planLegendSpot (#567)', () => {
   });
 });
 
-describe('planViewFit: a fenced lot (#915)', () => {
+describe('planViewFit: a fenced lot and far pins (#915, #921)', () => {
   // An 8 × 6 house: the lot reaches 6 m past each wall.
   const fenceRound = () => {
     const sections = [];
@@ -282,4 +282,15 @@ describe('planViewFit: a fenced lot (#915)', () => {
     expect(fit.bounds.maxX).toBeLessThan(11);
   });
 
+  it('leaves a pin far out in the garden out of the fit, unmarked, and keeps a near one', () => {
+    const { layout, floor } = room();
+    const near = { id: 'near', a: { x: 4, z: 0 }, b: { x: 6, z: 0 } };
+    const far = { id: 'far', a: { x: 4, z: 0 }, b: { x: 40, z: 0 } };
+    const fit = planViewFit(layout, { ...floor, dimensions: [near, far] });
+    expect(fit.offPlan).toEqual([]);
+    expect(fit.bounds.maxX - fit.bounds.minX).toBeLessThanOrEqual(8 / 0.5);
+    expect(fit.bounds.maxX).toBeGreaterThanOrEqual(6);
+    // With the near one alone, nothing is dropped.
+    expect(planViewFit(layout, { ...floor, dimensions: [near] }).bounds.maxX).toBeGreaterThanOrEqual(6);
+  });
 });

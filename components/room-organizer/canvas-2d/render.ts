@@ -20,7 +20,7 @@ import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawSelectedWall, drawStampGhost, drawWallPreview, drawWallSideMark, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
-import { drawMeasurePreview, type MeasurePreview } from './plan-measure';
+import { drawMeasurePreview, drawPinnedDimensions, type MeasurePreview } from './plan-measure';
 import { zoomedTransform, type PlanZoom } from './plan-zoom';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
 import type { DetectedRoom } from '../lib/room-detect';
@@ -62,6 +62,8 @@ export interface Render2DOptions {
   stampGhost?: StampGhost | null | undefined;
   /** The measure tool's points (#921), drawn over everything. */
   measurePreview?: MeasurePreview | null | undefined;
+  /** The pinned dimension picked to unpin (#921). */
+  selectedDimensionId?: string | null | undefined;
   /** The points picked to calibrate the traced plan (#726), world metres. */
   calibrationPoints?: readonly Vec2[] | undefined;
   /**
@@ -291,6 +293,8 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.showMeasurements) {
     drawRoomDimensions(ctx, layout, offsetX, offsetY, scale, unit);
   }
+  // Pinned dimensions (#921): the plan and the blueprint; too small to read on a thumbnail.
+  if (!options.thumbnail) drawPinnedDimensions(ctx, layout, floor, offsetX, offsetY, scale, unit, options.selectedDimensionId ?? null);
 
   if (heatmapPeak > 0) {
     const fit = options.fitBounds ?? { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };

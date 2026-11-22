@@ -6,6 +6,7 @@
  */
 
 import { isWallMounted } from '../opening-snap';
+import { dimensionOutsideWalls } from '../plan-dimensions';
 import { DEFAULT_SVG_MARGIN, planFrameBounds, unionBounds } from './plan-geometry';
 import type { FloorLayout, RoomLayout } from '../types';
 
@@ -173,6 +174,11 @@ export function distanceOutsideWalls(layout: Pick<RoomLayout, 'width' | 'height'
   return beyond > INDOOR_TOLERANCE_M ? beyond : 0;
 }
 
+/** How far a pinned dimension's furthest end sits outside the walls (#921), as `distanceOutsideWalls` measures an item. */
+export function pinOutsideWalls(layout: Pick<RoomLayout, 'width' | 'height'>, dimension: NonNullable<FloorLayout['dimensions']>[number]): number {
+  return dimensionOutsideWalls(layout, dimension, INDOOR_TOLERANCE_M);
+}
+
 /**
  * The floor as printed: unchanged with outdoor items included, otherwise a
  * copy without the items outside the walls, so the sheet (sized from the
@@ -181,7 +187,11 @@ export function distanceOutsideWalls(layout: Pick<RoomLayout, 'width' | 'height'
 export function printedFloor(layout: RoomLayout, floor: FloorLayout, includeOutdoor: boolean): FloorLayout {
   if (includeOutdoor) return floor;
   const items = floor.items.filter((item) => distanceOutsideWalls(layout, item) === 0);
-  return items.length === floor.items.length ? floor : { ...floor, items };
+  // A pin out to the garden goes with the garden (#921).
+  const dimensions = floor.dimensions?.filter((dimension) => pinOutsideWalls(layout, dimension) === 0);
+  if (items.length === floor.items.length && dimensions?.length === floor.dimensions?.length) return floor;
+  const { dimensions: _all, ...rest } = floor;
+  return { ...rest, items, ...(dimensions && dimensions.length > 0 ? { dimensions } : {}) };
 }
 
 /** The floors a print draws, the frame they share and the scale chosen for it. */

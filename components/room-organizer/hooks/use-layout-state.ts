@@ -27,6 +27,7 @@ import type {
   InteriorWall,
   NeighbourFlag,
   OpeningStyle,
+  PinnedDimension,
   RoofRidge,
   RoofStyle,
   RoomLayout,
@@ -152,6 +153,9 @@ export interface LayoutActions {
   addZone(zone: Omit<RoomZone, 'id'>): string;
   updateZone(id: string, patch: ZonePatch): void;
   removeZone(id: string): void;
+  /** A dimension pinned on the active floor (#921); returns its id. */
+  addDimension(dimension: Omit<PinnedDimension, 'id'>): string;
+  removeDimension(id: string): void;
 }
 
 export interface UseLayoutStateResult {

@@ -57,6 +57,10 @@ export interface ViewportProps {
   measurementDistance?: number | null;
   /** Points placed with the distance tool; absent while the tool is off. */
   measurementPointsPlaced?: number;
+  /** Pin the measurement as a dimension on the plan (#921); absent where nothing may be pinned. */
+  onPinMeasurement?(): void;
+  /** The pinned dimension picked on the plan (#921), and its Unpin where the house may be edited. */
+  measurePin?: { label: string; onUnpin?: () => void } | null;
   /** When set, a HUD chip shows the current wall-drawing status. */
   wallDrawStatus?: WallDrawStatus | null;
   /** A typed wall length (#723): see `WallDrawChipProps.onLength`. */
@@ -531,7 +535,9 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
           <div className="pc-top-chip absolute left-1/2" style={{ top: 104, transform: 'translateX(-50%)', zIndex: 31 }}>
             <StatusChip intent="info">
               <Icon name="ruler" size={14} />
-              {props.measurementPointsPlaced === 0
+              {props.measurePin
+                ? `Pinned: ${props.measurePin.label}`
+                : props.measurementPointsPlaced === 0
                 ? touch
                   ? 'Tap a floor point to measure from'
                   : 'Click a floor point to measure from · Esc to stop'
@@ -540,6 +546,20 @@ function ViewportOverlays(props: ViewportProps): JSX.Element {
                   ? 'Tap a second point…'
                   : 'Click a second point…'
                 : `Distance: ${formatMetres(props.measurementDistance ?? 0, 2, unit)}`}
+              {/* Pin and unpin (#921): reducer edits, so undo takes them back. */}
+              {props.measurePin?.onUnpin ? (
+                <span className="pointer-events-auto">
+                  <ChipButton title="Take this dimension off the plan" onClick={props.measurePin.onUnpin}>
+                    Unpin
+                  </ChipButton>
+                </span>
+              ) : !props.measurePin && props.measurementPointsPlaced === 2 && props.onPinMeasurement ? (
+                <span className="pointer-events-auto">
+                  <ChipButton title="Keep this measurement on the plan, in prints and exports" onClick={props.onPinMeasurement}>
+                    Pin
+                  </ChipButton>
+                </span>
+              ) : null}
             </StatusChip>
           </div>
         )}

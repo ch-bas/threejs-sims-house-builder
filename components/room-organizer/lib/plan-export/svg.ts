@@ -31,12 +31,14 @@ import {
   growBounds,
   interiorWallDimensions,
   isWallHidden,
+  layoutWithoutPinnedDimensions,
   itemSchedule,
   openingAxes,
   openingGap,
   openingPlanMarks,
   planContentBounds,
   planFrameBounds,
+  pinnedDimensionLines,
   polarPoint,
   roomDimensions,
   scheduleSizeHeading,
@@ -48,6 +50,7 @@ import {
   stairwellOutlines,
   visionWedges,
   wallOpeningDimensions,
+  withoutPinnedDimensions,
   type CoverageMode,
   type OpeningChain,
   type PlacedItem,
@@ -209,7 +212,9 @@ const SCHEDULE_NAME_CHARS = 32;
  * when it is on. The print route sizes its page from this rather than
  * re-deriving room + margin, which clipped garden items (#287).
  */
-export function planSheetSize(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions = {}): SvgSheetSize {
+export function planSheetSize(layout: RoomLayout, shown: FloorLayout, options: SvgExportOptions = {}): SvgSheetSize {
+  // Dimensions off, the pins (#921) neither draw nor frame the sheet.
+  const floor = options.dimensions === false ? withoutPinnedDimensions(shown) : shown;
   const { scale, widthPx, heightPx } = sheetLayout(layout, floor, options);
   return { widthPx, heightPx, widthM: widthPx / scale, heightM: heightPx / scale };
 }
@@ -220,7 +225,8 @@ export function planSheetSize(layout: RoomLayout, floor: FloorLayout, options: S
  * rotated rects with name labels, dimensions, a north arrow, a scale bar,
  * the floor name and, opt-in, the item schedule.
  */
-export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: SvgExportOptions = {}): string {
+export function layoutToSvg(layout: RoomLayout, shown: FloorLayout, options: SvgExportOptions = {}): string {
+  const floor = options.dimensions === false ? withoutPinnedDimensions(shown) : shown;
   const sheet = renderSheet(layout, floor, options, options.idPrefix ?? '');
   return [
     svgOpen(sheet.widthPx, sheet.heightPx),
@@ -237,7 +243,8 @@ export function layoutToSvg(layout: RoomLayout, floor: FloorLayout, options: Svg
  * building's content bounds (unless `options.bounds` says otherwise), so the
  * storeys sit exactly above one another down the page.
  */
-export function buildingToSvg(layout: RoomLayout, options: SvgExportOptions = {}): string {
+export function buildingToSvg(building: RoomLayout, options: SvgExportOptions = {}): string {
+  const layout = options.dimensions === false ? layoutWithoutPinnedDimensions(building) : building;
   const theme: SvgPlanTheme = { ...DEFAULT_THEME, ...options.theme };
   const sheetOptions: SvgExportOptions = { ...options, bounds: options.bounds ?? buildingFrameBounds(layout, svgCoverageMode(options)) };
   const prefix = options.idPrefix ?? '';
@@ -838,6 +845,14 @@ function renderDimensions(
     parts.push(dimensionLine(x0 + nx, y0 + ny, x1 + nx, y1 + ny, dim, dim.normal, 'wall-dimension', labelShiftPx));
   }
   for (const chain of chains) parts.push(renderOpeningChain(chain, px, py, content, theme));
+  // Pinned dimensions (#921): extension lines back to the points when the line sits off them.
+  for (const dim of pinnedDimensionLines(floor, unit)) {
+    const [x0, y0, x1, y1] = [px(dim.from.x), py(dim.from.z), px(dim.to.x), py(dim.to.z)].map(Number) as [number, number, number, number];
+    if (dim.from.x !== dim.a.x || dim.from.z !== dim.a.z) {
+      parts.push(extensionLine(Number(px(dim.a.x)), Number(py(dim.a.z)), x0, y0, theme), extensionLine(Number(px(dim.b.x)), Number(py(dim.b.z)), x1, y1, theme));
+    }
+    parts.push(dimensionLine(x0, y0, x1, y1, dim, dim.normal, 'pinned-dimension'));
+  }
   parts.push(`</g>`);
   return parts.join('');
 }

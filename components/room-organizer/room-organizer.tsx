@@ -63,6 +63,8 @@ import { hasCollisions } from './lib/geometry';
 import { createSnapTicker, cueHaptic, haptic, loadHapticsChoice } from './lib/haptics';
 import { describeLayoutChange } from './lib/history-label';
 import { fitRun, frontPathGate, runLot, runsRoundLot } from './lib/item-run';
+import { dimensionLength } from './lib/plan-dimensions';
+import { formatDimension } from './lib/plan-export/plan-geometry';
 import { loadQualityChoice } from './lib/render-quality';
 import { ROOF_EAVE_OVERHANG, roofPeakHeight } from './lib/roof-shape';
 import { activeStoreyRoomScores } from './lib/room-score';
@@ -255,9 +257,18 @@ export function RoomOrganizer(): JSX.Element {
   useAskToKeepStorage(layout);
 
   // The distance tool, on the 3D floor and on the plan (#921).
-  const measure = useMeasureTool({ layout, activeFloor, activeFloorIndex, measurementMode: view.measurementMode });
+  // Undo for an unpin's notice; set once the history exists, below.
+  const undoRef = useRef<() => void>(() => {});
+  const undoLatest = useCallback(() => undoRef.current(), []);
+  const measure = useMeasureTool({ layout, activeFloor, activeFloorIndex, measurementMode: view.measurementMode, actions, undo: undoLatest, planShown: view.view2D, playCue });
   const measurementPoints = measure.points;
-  const { placeFloorPoint, clear: clearMeasurement } = measure;
+  const { placeFloorPoint, clear: clearMeasurement, selectedPinId: measuredPinId, selectPin: selectMeasuredPin } = measure;
+  // The pin picked on the plan, as the chip shows it (#921).
+  const pickedPin = measure.selectedPinId === null ? null : activeFloor.dimensions?.find((entry) => entry.id === measure.selectedPinId);
+  const lengthUnit = useStore(viewStore, (state) => state.lengthUnit);
+  const measurePick = pickedPin
+    ? { label: formatDimension(dimensionLength(pickedPin), lengthUnit), ...(exploring ? {} : { onUnpin: measure.unpin }) }
+    : null;
   const handleEmptyClick = useCallback(
     (x: number, z: number) => {
       if (handleWallClick(x, z)) return;
@@ -342,6 +353,7 @@ export function RoomOrganizer(): JSX.Element {
   const { commitNow: commitHistoryNow, clear: clearHistory } = history;
 
   commitWallStepRef.current = commitHistoryNow;
+  undoRef.current = history.undo;
 
   const {
     rotateItemHandler,
@@ -607,6 +619,8 @@ export function RoomOrganizer(): JSX.Element {
     onMeasurePoint: measure.placePoint,
     onMeasureTapUndo: measure.takeBackPoint,
     onMeasureHover: measure.setTip,
+    onPinSelect: measure.selectPin,
+    measureInProgress: measurementPoints.length === 1,
   });
 
   const orbitGroundAt = useCallback(
@@ -798,6 +812,7 @@ export function RoomOrganizer(): JSX.Element {
     wallSnapResult,
     measurementPoints,
     measureTip: view.view2D ? measure.tip : null,
+    selectedDimensionId: measure.selectedPinId,
     walkIndoors: walkthroughActive && !walk.outside,
     walkNearStairs: walk.nearStairs,
     walkLampStorey: walk.lampStorey,
@@ -993,7 +1008,11 @@ export function RoomOrganizer(): JSX.Element {
           toggle('drawWallMode');
           return;
         }
-        // Likewise for the distance tool (#341).
+        // Likewise for the distance tool (#341), once a picked pin is let go (#921).
+        if (view.measurementMode && measuredPinId !== null) {
+          selectMeasuredPin(null);
+          return;
+        }
         if (view.measurementMode) {
           toggle('measurementMode');
           return;
@@ -1078,6 +1097,8 @@ export function RoomOrganizer(): JSX.Element {
       repaintPlan,
       view.drawWallMode,
       view.measurementMode,
+      measuredPinId,
+      selectMeasuredPin,
       view.drawZoneMode,
       clearItemSelection,
       setSelectedWall,
@@ -1202,6 +1223,9 @@ export function RoomOrganizer(): JSX.Element {
         }
         measurementDistance={measurementDistance(measurementPoints)}
         {...(view.measurementMode ? { measurementPointsPlaced: measurementPoints.length } : {})}
+        // Pinning edits the house: not while exploring; and only on the plan, where pins show (#921).
+        {...(view.measurementMode && !exploring && view.view2D ? { onPinMeasurement: measure.pin } : {})}
+        measurePin={measurePick}
         wallDrawStatus={wallDrawStatus}
         onWallLength={handleWallLength}
         onWallLengthField={setWallLengthOpen}

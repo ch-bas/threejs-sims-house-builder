@@ -9,10 +9,11 @@ import { useCanvas2DInteraction, type UseCanvas2DInteractionParams } from './use
 const W = 800;
 const H = 600;
 
-/** The measure tool on the plan (#921): a chair to snap to. */
+/** The measure tool on the plan (#921): a pin on the x axis, a chair whose centre sits on it. */
 function setup(overrides: Partial<UseCanvas2DInteractionParams> = {}) {
   const floor = makeFloor({
     items: [makeItem({ id: 'chair', width: 0.4, depth: 0.4, position: { x: 2, z: 0 } })],
+    dimensions: [{ id: 'pin', a: { x: -3, z: 0 }, b: { x: 3, z: 0 } }],
   });
   const layout = makeLayout({ floors: [floor] });
   const canvas = document.createElement('canvas');
@@ -36,6 +37,7 @@ function setup(overrides: Partial<UseCanvas2DInteractionParams> = {}) {
     onItemDragEnd: vi.fn(),
     onItemDragCancel: vi.fn(),
     onMeasurePoint: vi.fn(),
+    onPinSelect: vi.fn(),
     ...overrides,
   };
   renderHook(() => useCanvas2DInteraction(params));
@@ -60,13 +62,25 @@ describe('measure taps on the plan (#921)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('a tap places a snapped point, and one with nothing near where it lands', () => {
+  it('between measurements, a tap along a pin picks it and places no point', () => {
     const { params, tap } = setup();
-    tap(2.05, 0.05);
+    tap(0, 0);
+    expect(params.onPinSelect).toHaveBeenCalledWith('pin');
+    expect(params.onMeasurePoint).not.toHaveBeenCalled();
+  });
+
+  it('with a first point down, the same tap ends the measurement instead', () => {
+    const { params, tap } = setup({ measureInProgress: true });
+    tap(0, 0);
+    expect(params.onPinSelect).not.toHaveBeenCalledWith('pin');
+    expect(params.onMeasurePoint).toHaveBeenCalledWith({ point: { x: 0, z: 0 }, kind: 'none' });
+  });
+
+  it('a tap that snaps measures, even along a pin', () => {
+    const { params, tap } = setup();
+    tap(2, 0);
     expect(params.onMeasurePoint).toHaveBeenCalledWith({ point: { x: 2, z: 0 }, kind: 'centre' });
-    tap(-1, 1.5);
-    expect(params.onMeasurePoint).toHaveBeenLastCalledWith({ point: { x: -1, z: 1.5 }, kind: 'none' });
-    expect(params.onDeselect).not.toHaveBeenCalled();
+    expect(params.onPinSelect).toHaveBeenCalledWith(null);
   });
 
   it('a finger’s double tap on empty floor goes back to the fit', () => {

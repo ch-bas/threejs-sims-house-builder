@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { draggedZoneRect, hitInteriorWall, wallEndAt, ZONE_GRIP_CURSORS, zoneAt, zoneGripAt, type ZoneGrip } from '../canvas-2d/plan-edit';
+import { hitPinnedDimension } from '../canvas-2d/plan-measure';
 import { NO_PLAN_ZOOM, panPlan, pinchPlan, planZoomOf, setPlanZoom, zoomPlanAbout, type PlanZoom } from '../canvas-2d/plan-zoom';
 import { canvasToWorld, get2DViewTransform, render2DTopDown, type Render2DOptions } from '../canvas-2d/render';
 import { requestZoneName } from '../lib/editor-notices';
@@ -190,6 +191,10 @@ export interface UseCanvas2DInteractionParams {
   onMeasureTapUndo?(): void;
   /** Where the measure tool's next point would land under a mouse; null off the plan. */
   onMeasureHover?(snap: MeasureSnap | null): void;
+  /** A measure tap on a pinned dimension's line picks it, to unpin; null picks none. */
+  onPinSelect?(id: string | null): void;
+  /** The measure tool has its first point: a tap now ends the measurement, never picks a pin. */
+  measureInProgress?: boolean;
   /** The committed room scores (#905), kept on the ghost repaint. */
   roomScores?: Render2DOptions['roomScores'];
 }
@@ -1059,6 +1064,12 @@ export function useCanvas2DInteraction(
           const p = paramsRef.current;
           if (!world || !p.view.measurementMode) return true;
           const snap = measureSnap(world, event);
+          // A pin is picked only between measurements, and only where nothing snaps.
+          const pinned = !p.measureInProgress && snap.kind === 'none' ? hitPinnedDimension(p.activeFloor, world, hitSlopWorld(fit, 1)) : null;
+          if (pinned) {
+            p.onPinSelect?.(pinned.id);
+            return true;
+          }
           // A finger's double tap on empty floor still goes back to the fit (#678).
           if (snap.kind === 'none' && press.touch) {
             const now = event.timeStamp || performance.now();
@@ -1072,6 +1083,7 @@ export function useCanvas2DInteraction(
               return true;
             }
           }
+          p.onPinSelect?.(null);
           p.onMeasurePoint?.(snap);
           return true;
         }
