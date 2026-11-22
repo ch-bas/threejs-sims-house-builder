@@ -28,7 +28,7 @@ let stopPlacing: (() => void) | null = null;
 
 /** Chrome in the top band that the stack must not cover. */
 const TOP_CHROME =
-  '[data-scene-occluder], .pc-top-right, .pc-lot-badge, .pc-touch-controls, .pc-minimap, .pc-top-chip';
+  '[data-scene-occluder], .pc-top-right, .pc-lot-badge, .pc-touch-controls, .pc-minimap, .pc-top-chip, .pc-placement-hint';
 /** `top` when nothing is in the way; `--pc-overlay-top` overrides it. */
 const DEFAULT_TOP = 148;
 

@@ -326,3 +326,33 @@ describe('off-plan markers (#381)', () => {
     expect(texts).toContain('36 m');
   });
 });
+
+describe('runs on the lot (#915)', () => {
+  function textsOf(items: ReturnType<typeof makeItem>[]): string[] {
+    const texts: string[] = [];
+    const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+      get(target, key) {
+        if (key === 'fillText') return (text: string) => texts.push(text);
+        if (key === 'measureText') return (text: string) => ({ width: text.length * 7 });
+        if (key in target) return target[key];
+        return () => undefined;
+      },
+      set(target, key, value) {
+        target[key] = value;
+        return true;
+      },
+    });
+    const canvas = { width: 800, height: 600, clientWidth: 800, getContext: () => ctx } as unknown as HTMLCanvasElement;
+    const floor = makeFloor({ items });
+    render2DTopDown({ canvas, layout: makeLayout({ floors: [floor] }), floor, selectedItemId: null, showMeasurements: true, showWiFiSignals: false, hasCollision: () => false });
+    return texts;
+  }
+  const section = (id: string, x: number) => makeItem({ id, type: 'fence', width: 2, depth: 0.15, icon: '', position: { x, z: 8 } });
+
+  it('draws a run of sections without a size under each, and keeps the size of a lone one', () => {
+    const run = textsOf([section('a', -2), section('b', 0), section('c', 2)]);
+    expect(run.filter((text) => text.startsWith('2 m ×'))).toEqual([]);
+    const lone = textsOf([section('a', 0)]);
+    expect(lone.filter((text) => text.startsWith('2 m ×'))).toHaveLength(1);
+  });
+});

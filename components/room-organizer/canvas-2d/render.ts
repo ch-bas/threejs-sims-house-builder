@@ -10,6 +10,7 @@ import { floorKeepOut } from '../lib/floor-keep-out';
 import { floorPlanFitOf, floorPlanPlacement, planIsDrawing } from '../lib/floor-plan-fit';
 import { cutoutRect, rotatedHalfExtents, shellWalls } from '../lib/footprint';
 import { areaInUnit, areaUnitSymbol, formatArea, formatMetres, formatSize, getDisplayUnit, type LengthUnit } from '../lib/format';
+import { onLotRun } from '../lib/item-run';
 import { INTERIOR_WALL_THICKNESS, isOpening } from '../lib/opening-snap';
 import { floorBelowUnderlay, type PlanSegment } from '../lib/plan-export/plan-geometry';
 import { planDrawOrder } from '../lib/plan-order';
@@ -1054,6 +1055,8 @@ function drawFurniture(
   // wall-mounted — so a rug listed after its sofa still paints beneath it.
   // Doors with something standing in their swing (#917): a warning wash, not a collision.
   const swingBlocked = options.swingWarnings ? blockedDoorIds(options.floor.items) : NO_IDS;
+  // A run on the lot (#915) reads as a line: no size under each section.
+  const runLabelled = options.showMeasurements ? lotRunTypes(options.layout, options.floor.items) : NO_IDS;
   for (const item of planDrawOrder(options.floor.items)) {
     if (!item.position) continue;
     const collision = options.hasCollision(item);
@@ -1104,7 +1107,7 @@ function drawFurniture(
     ctx.restore();
     if (item.type === 'stairs') drawStairsSymbol(ctx, item, options.layout, { scale, offsetX, offsetY });
 
-    if (options.showMeasurements) {
+    if (options.showMeasurements && !(runLabelled.has(item.type) && onLotRun(options.layout, item))) {
       // The label is drawn in screen space (outside the rotated transform), so
       // offset it by the rotation-aware AABB half-depth to clear the footprint.
       const { halfD } = rotatedHalfExtents(item);
@@ -1118,6 +1121,18 @@ function drawFurniture(
   }
   drawStairCutHatch(ctx, options.layout, options.floor, { scale, offsetX, offsetY });
   drawSelectionOutlines(ctx, options, offsetX, offsetY, scale);
+}
+
+/** The run types with two or more sections out on the lot (#915): a lone section keeps its label. */
+function lotRunTypes(layout: RoomLayout, items: readonly FurnitureItem[]): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const runs = new Set<string>();
+  for (const item of items) {
+    if (!onLotRun(layout, item)) continue;
+    if (seen.has(item.type)) runs.add(item.type);
+    seen.add(item.type);
+  }
+  return runs;
 }
 
 /**

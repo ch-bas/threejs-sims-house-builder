@@ -9,7 +9,7 @@ import { CATALOG_DRAG_MIME } from '../lib/catalog-drag';
 import { CURRENCY_SYMBOL } from '../lib/constants';
 import { MAX_CUSTOM_SET_NAME_LENGTH } from '../lib/custom-sets';
 import { formatMetres, formatSize } from '../lib/format';
-import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
+import { COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
 import { cycleItem, selectionAnnouncement } from '../lib/item-cycle';
 import { EDIT_KEYS, formatBinding, keyBinding, withShortcut } from '../lib/keymap';
 import { Icon, iconForItem } from '../plotcraft/icon';
@@ -569,6 +569,8 @@ function SelectionChip(props: ViewportProps & { selectionCount: number }): JSX.E
   const mac = useAppleKeys();
   const paste = keyBinding('paste');
   const copyTitle = `${withShortcut('Copy the selection', 'copy', mac)} — ${paste ? formatBinding(paste, mac) : 'Paste'} pastes, here or on another floor`;
+  // On a phone the count alone, on one line: a whole fenced lot is 40-odd items (#915).
+  const compact = useMediaQuery(COMPACT_DOCK_QUERY);
   return (
     <div
       className="pc-top-chip absolute left-1/2"
@@ -596,8 +598,16 @@ function SelectionChip(props: ViewportProps & { selectionCount: number }): JSX.E
           </>
         ) : (
           <>
-            {props.selectionCount} items
-            {props.selectionGrouped ? ' · grouped · click any to select all' : ' selected · drag to move together'}
+            {compact ? (
+              <span style={{ whiteSpace: 'nowrap' }}>
+                {props.selectionCount} {props.selectionGrouped ? 'grouped' : 'selected'}
+              </span>
+            ) : (
+              <>
+                {props.selectionCount} items
+                {props.selectionGrouped ? ' · grouped · click any to select all' : ' selected · drag to move together'}
+              </>
+            )}
             {props.onCopySelection && (
               <ChipButton
                 onClick={props.onCopySelection}

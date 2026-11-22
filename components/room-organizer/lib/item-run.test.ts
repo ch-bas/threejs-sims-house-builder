@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { FURNITURE_CATALOG } from './constants';
 import { floorKeepOut } from './floor-keep-out';
-import { hasCollisions } from './geometry';
+import { collisionReason, hasCollisions } from './geometry';
 import {
   cornerInset,
   fitRun,
+  frontPathGate,
   isRunItem,
+  layLotRun,
   layRun,
+  LOT_GATE,
+  lotRunLines,
+  onLotRun,
   MIN_RUN_LENGTH,
   runLot,
+  runsRoundLot,
   runPitch,
   runPrice,
   runRotation,
@@ -16,6 +22,7 @@ import {
   snapRunPoint,
 } from './item-run';
 import { roadEdges } from './site';
+import { generateStreet } from './street-row';
 import type { CatalogItem, FurnitureItem } from './types';
 
 const entry = (type: string): CatalogItem => FURNITURE_CATALOG.find((item) => item.type === type)!;
@@ -227,5 +234,138 @@ describe('fitRun (#915)', () => {
     expect(end.point.x).toBeCloseTo(1.8, 12);
     const next = layRun(end.point, { x: 3.6, z: 6 }, stone, { insetStart: cornerInset(end.point, { x: 3.6, z: 6 }, end.joined) });
     expect(next[0]!.position!.x - first.at(-1)!.position!.x).toBeCloseTo(0.9, 12);
+  });
+});
+
+describe('layLotRun: fence the lot (#915)', () => {
+  const house = (extra: Record<string, unknown> = {}) => ({ width: 10, height: 8, floors: [{ id: 'g', name: 'Ground', items: [] }], ...extra });
+  const fitted = (site: Record<string, unknown>, catalogItem: CatalogItem) => {
+    const lot = runLot(site as never);
+    const sections = layLotRun(lot, catalogItem, frontPathGate(site as never), (index) => `lot-${index}`);
+    const fit = fitRun(sections, { items: [], roomWidth: 10, roomDepth: 8, keepOut: floorKeepOut(house(site) as never, 0) });
+    return { lot, sections, fit };
+  };
+  const extent = (item: FurnitureItem) => {
+    const across = Math.abs(Math.sin(item.rotation ?? 0)) > 0.5;
+    const hx = (across ? item.depth : item.width) / 2;
+    const hz = (across ? item.width : item.depth) / 2;
+    return { x0: item.position!.x - hx, x1: item.position!.x + hx, z0: item.position!.z - hz, z1: item.position!.z + hz };
+  };
+
+  it('runs fences and hedges round the lot, not stepping stones', () => {
+    expect(runsRoundLot('fence')).toBe(true);
+    expect(runsRoundLot('hedge')).toBe(true);
+    expect(runsRoundLot('stepping-stone')).toBe(false);
+    expect(runsRoundLot('constructor')).toBe(false);
+    expect(layLotRun(runLot({ width: 10, height: 8 }), stone, 0)).toEqual([]);
+  });
+
+  it('leaves a gate for the front path, none on a pavement', () => {
+    expect(frontPathGate({})).toBe(0);
+    expect(frontPathGate({ frontage: 'garden' })).toBe(0);
+    expect(frontPathGate({ frontage: 'pavement' })).toBeNull();
+    const lines = lotRunLines({ x0: -11, x1: 11, z0: -10, z1: 10 }, 0.15, 0);
+    expect(lines).toHaveLength(5);
+    expect(lines[0]![1].x).toBeCloseTo(-LOT_GATE / 2, 12);
+    expect(lines[1]![0].x).toBeCloseTo(LOT_GATE / 2, 12);
+    expect(lotRunLines({ x0: -11, x1: 11, z0: -10, z1: 10 }, 0.15, null)).toHaveLength(4);
+  });
+
+  for (const catalogItem of [fence, hedge]) {
+    it(`closes the lot with ${catalogItem.name}s inside its edge, corners filled, nothing overlapping`, () => {
+      const { lot, sections, fit } = fitted({ width: 10, height: 8 }, catalogItem);
+      // The ring stands clear of the house: every section is laid.
+      expect(fit.blocker).toBeNull();
+      expect(fit.sections).toHaveLength(sections.length);
+      for (const section of sections) {
+        const box = extent(section);
+        expect(box.x0).toBeGreaterThanOrEqual(lot.x0 - 1e-9);
+        expect(box.x1).toBeLessThanOrEqual(lot.x1 + 1e-9);
+        expect(box.z0).toBeGreaterThanOrEqual(lot.z0 - 1e-9);
+        expect(box.z1).toBeLessThanOrEqual(lot.z1 + 1e-9);
+        expect(collisionReason(section, sections, 10, 8)).toBeNull();
+      }
+      // Each corner of the lot is covered by a section.
+      const corners = [
+        [lot.x0, lot.z0],
+        [lot.x1, lot.z0],
+        [lot.x1, lot.z1],
+        [lot.x0, lot.z1],
+      ] as const;
+      for (const [x, z] of corners) {
+        const covered = sections.some((section) => {
+          const box = extent(section);
+          return box.x0 <= x + 1e-6 && box.x1 >= x - 1e-6 && box.z0 <= z + 1e-6 && box.z1 >= z - 1e-6;
+        });
+        expect(covered).toBe(true);
+      }
+      // The gate: nothing on the street side across the path.
+      const street = sections.filter((section) => Math.abs(section.position!.z - (lot.z0 + catalogItem.depth / 2)) < 1e-6);
+      expect(street.some((section) => extent(section).x0 < LOT_GATE / 2 - 1e-6 && extent(section).x1 > -LOT_GATE / 2 + 1e-6)).toBe(false);
+      // Along each side the sections meet end to end: the run is as long as the ring.
+      const laid = sections.reduce((sum, section) => sum + section.width, 0);
+      const d = catalogItem.depth;
+      const ring = 2 * (lot.x1 - lot.x0 - d) + 2 * (lot.z1 - lot.z0 - d) - LOT_GATE;
+      expect(laid).toBeCloseTo(ring, 1);
+    });
+  }
+
+  it('in a street row stays between the lines of our walls, clear of every house in the row', () => {
+    const site = { width: 10, height: 8, neighbours: { street: true, seed: 7 } };
+    const lot = runLot(site);
+    expect([lot.x0, lot.x1]).toEqual([-5, 5]);
+    // Only one side in the row: the other keeps its garden.
+    expect(runLot({ width: 10, height: 8, neighbours: { east: true } }).x0).toBe(-11);
+    for (const seed of [1, 7, 42]) {
+      const row = generateStreet({ width: 10, depth: 8, floorYs: [0], eavesY: 3, neighbours: { street: true, seed } }).filter(
+        (house) => house.row === 'ours'
+      );
+      expect(row.length).toBeGreaterThan(0);
+      const { fit } = fitted({ ...site, neighbours: { street: true, seed } }, fence);
+      expect(fit.sections.length).toBeGreaterThan(0);
+      for (const section of fit.sections) {
+        const box = extent(section);
+        expect(box.x0).toBeGreaterThanOrEqual(-5 - 1e-9);
+        expect(box.x1).toBeLessThanOrEqual(5 + 1e-9);
+        for (const house of row) expect(box.x1 <= house.x - house.width / 2 || box.x0 >= house.x + house.width / 2).toBe(true);
+      }
+      // The gate for the front path is still left, inside our frontage.
+      const street = fit.sections.filter((section) => section.position!.z < -9.9);
+      expect(street.length).toBeGreaterThan(0);
+      expect(street.some((section) => extent(section).x0 < LOT_GATE / 2 && extent(section).x1 > -LOT_GATE / 2)).toBe(false);
+    }
+  });
+
+  it('leaves out the street side against the house on a pavement, and a party wall side beside it', () => {
+    const pavement = fitted({ width: 10, height: 8, frontage: 'pavement' }, fence);
+    expect(pavement.fit.blocker).toBeNull();
+    expect(pavement.fit.dropped).toBeGreaterThan(0);
+    for (const section of pavement.fit.sections) {
+      expect(collisionReason(section, [], 10, 8, { keepOut: floorKeepOut(house() as never, 0) })).toBeNull();
+    }
+    const party = fitted({ width: 10, height: 8, neighbours: { west: true } }, hedge);
+    expect(party.fit.dropped).toBeGreaterThan(0);
+    // What is laid on the west line stands behind or before the house, never beside it.
+    for (const section of party.fit.sections.filter((section) => section.position!.x < -4.5)) {
+      const box = extent(section);
+      expect(box.z1 <= -4 + 1e-9 || box.z0 >= 4 - 1e-9).toBe(true);
+    }
+  });
+});
+
+describe('onLotRun (#915)', () => {
+  const site = { width: 10, height: 8 };
+
+  it('is every section of a fence round the lot, and nothing indoors or past the lot', () => {
+    const sections = layLotRun(runLot(site), fence, 0);
+    expect(sections.length).toBeGreaterThan(20);
+    expect(sections.every((item) => onLotRun(site, item))).toBe(true);
+    const at = (x: number, z: number, type = 'fence') => ({ type, position: { x, z } });
+    expect(onLotRun(site, at(0, 0))).toBe(false);
+    expect(onLotRun(site, at(8, 0))).toBe(true);
+    expect(onLotRun(site, at(8, 0, 'stepping-stone'))).toBe(true);
+    expect(onLotRun(site, at(8, 0, 'tree'))).toBe(false);
+    expect(onLotRun(site, at(30, 0))).toBe(false);
+    expect(onLotRun(site, { type: 'fence' })).toBe(false);
   });
 });

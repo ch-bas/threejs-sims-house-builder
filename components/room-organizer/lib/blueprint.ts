@@ -7,6 +7,7 @@ import { formatArea, formatMetres, formatSize, getDisplayUnit } from './format';
 import { footprintArea, hasCollisions, itemCountByCategory } from './geometry';
 import { escapeHtml } from './html-escape';
 import { COARSE_POINTER_QUERY } from './hud-layout';
+import { onLotRun } from './item-run';
 import { planContentBounds, type PlanBounds } from './plan-export/plan-geometry';
 import { abandonPrintPopup, openPrintPopup, printWhenLoaded } from './plan-export/print-popup';
 import { distanceOutsideWalls } from './plan-export/print-scale';
@@ -93,8 +94,13 @@ export interface BlueprintPlan {
  */
 export function blueprintPlan(layout: RoomLayout, floor: FloorLayout): BlueprintPlan {
   const room: PlanBounds = { minX: -layout.width / 2, minZ: -layout.height / 2, maxX: layout.width / 2, maxZ: layout.height / 2 };
-  const minScale = fitScale(room) * MIN_ROOM_SHARE;
+  // Runs out on the lot (#915) are drawn whole, as on the on-screen plan:
+  // a fenced lot may take the house below the share, never off the sheet.
+  const lotRuns = floor.items.filter((item) => onLotRun(layout, item));
+  const runs = lotRuns.length > 0 ? fitScale(planContentBounds(layout, { ...floor, items: lotRuns })) : Infinity;
+  const minScale = Math.min(fitScale(room) * MIN_ROOM_SHARE, runs);
   const outside = floor.items
+    .filter((item) => !onLotRun(layout, item))
     .map((item) => ({ item, distance: distanceOutsideWalls(layout, item) }))
     .filter(({ distance }) => distance > 0)
     .sort((a, b) => b.distance - a.distance);

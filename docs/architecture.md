@@ -128,7 +128,7 @@ components/
     │   ├── history-label.ts             What an undo or redo step did, from the two snapshots, for the toolbar's tooltips
     │   ├── surprise.ts                  Random one-shot floor populate around the kept structure (#448)
     │   ├── placement-ghost.ts           Placement ghost maths: footprint corners, the plan's inverse mapping (#463 d)
-    │   ├── item-run.ts                  Fence, hedge and stepping-stone runs: sections along a line, end snap, corner insets (#915)
+    │   ├── item-run.ts                  Fence, hedge and stepping-stone runs: sections along a line, end snap, corner insets, round the lot (#915)
     │   ├── sounds.ts                    Web-Audio synth for UI cues (place, remove, rotate, success, refused); owns the page's one AudioContext
     │   ├── ambience.ts                  EXPLORE ambience (#911): rain gain by weather and indoors, footsteps by distance walked, and the Web Audio graph on the shared context
     │   ├── haptics.ts                   Touch buzz beside the cues (place, wall snap, refused): coarse pointer, reduced motion, per-device switch
