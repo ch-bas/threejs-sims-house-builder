@@ -9,6 +9,7 @@
 import { clampToFootprint } from './footprint';
 import { remapGroupIds } from './groups';
 import { settleWallMountedItem } from './opening-snap';
+import type { RoomArrangement } from './room-transfer';
 import type { FootprintCutout, FurnitureItem, InteriorWall, Vec2 } from './types';
 
 export interface CentroidArrangement {
@@ -38,13 +39,44 @@ export function arrangeAroundCentroid(items: readonly FurnitureItem[]): Centroid
 }
 
 let content: CentroidArrangement | null = null;
+/** A copied room (#925): its walls, items and zones. One clipboard: the last copy wins. */
+let room: RoomArrangement | null = null;
+const listeners = new Set<() => void>();
+
+/** Tell whoever shows a Paste button that the clipboard changed. */
+function changed(): void {
+  for (const listener of listeners) listener();
+}
+
+/** Called on every copy and clear (#925): a Paste room button follows the clipboard. Returns the unsubscribe. */
+export function subscribeClipboard(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
 
 /** Copy the given items. Returns how many were copied (0 leaves the clipboard untouched). */
 export function copyToClipboard(items: readonly FurnitureItem[]): number {
   const arranged = arrangeAroundCentroid(items);
   if (!arranged) return 0;
   content = arranged;
+  const hadRoom = room !== null;
+  room = null;
+  if (hadRoom) changed();
   return arranged.items.length;
+}
+
+/** Copy a room with its walls (#925); a paste of items then has nothing to paste. */
+export function copyRoomToClipboard(arrangement: RoomArrangement): void {
+  room = structuredClone(arrangement);
+  content = null;
+  changed();
+}
+
+/** The room on the clipboard, if the last copy was one. */
+export function roomOnClipboard(): RoomArrangement | null {
+  return room;
 }
 
 export function clipboardSize(): number {
@@ -54,6 +86,8 @@ export function clipboardSize(): number {
 /** Test hook: reset module state between cases. */
 export function clearClipboard(): void {
   content = null;
+  room = null;
+  changed();
 }
 
 export interface PasteOptions {

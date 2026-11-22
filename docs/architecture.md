@@ -120,7 +120,7 @@ components/
     │   ├── top-bar-slot.ts              The top bar's free strip between the lot badge and the pills, for the touch row
     │   ├── furniture-sets.ts            Pre-built combos + snapshot-backed set placement; free-spot search (#456)
     │   ├── custom-sets.ts               User-saved furniture sets: localStorage I/O + parser (#302)
-    │   ├── clipboard.ts                 In-memory copy/paste: the selection normalised around its centroid, pasted with fresh ids (#153)
+    │   ├── clipboard.ts                 In-memory copy/paste: the selection normalised around its centroid, pasted with fresh ids (#153); or a copied room (#925)
     │   ├── groups.ts                    Persistent group selection helpers (#154)
     │   ├── history-floor.ts             Which storey undo/redo lands on: same floor id, or the one other floor the swap changes (#578)
     │   ├── item-cycle.ts                Keyboard selection on the scene: the floor's items in plan order, Tab's next and previous, the status line (#650)
@@ -294,6 +294,7 @@ components/
     │   ├── use-shift-held.ts            Whether Shift is down, for tools that read it between pointer events (#723)
     │   ├── use-wall-edit.ts             The gesture of moving a selected wall, in both views: preview per move, one dispatch on release (#718)
     │   ├── use-room-stamp.ts            The room stamp in hand: ghost under the pointer, click to drop, drag to size (#724)
+    │   ├── use-room-transfer.ts         The room transfer commands (#925): plan, hard budget, history step and the one cue per move, mirror, copy or paste
     │   ├── use-selection-actions.ts     The selection: primary, extras, selected wall; the ghost-selection guards, group expansion, custom sets (#117, #154, #224)
     │   ├── use-wall-draft.ts            The wall tool: draft anchor and snapped tip, typed length, room stamp in hand, resets on a tool or floor change (#723, #724)
     │   ├── use-event.ts                 Stable-identity callback that runs the latest handler (memoised children)
@@ -374,6 +375,7 @@ components/
         ├── tour-banner.tsx              The shared-link tour's HUD: the house's name, Walk through, Keep a copy, Build your own (#722)
         ├── status-toast.tsx             Status chips for notify() — export / share outcomes
         ├── confirm-dialog.tsx           The askConfirm() modal: focus trap, Enter confirms, Escape cancels (#649)
+        ├── room-transfer-row.tsx        The zone chip's room row: Select room, then move by arrows, mirror, copy and paste it with its walls (#925)
         ├── zone-name-chip.tsx           Zone tool chip: the draw-mode status and Done (#439), the selected room's stars and what it lacks (#905), then the inline name field
         ├── plan-calibration-chip.tsx    Floor plan calibration chip (#726): pick two points, type the length, drag into place
         ├── dev-diagnostics.tsx          `?debug` overlay: draw calls, triangles, geometries, textures, programs, frames

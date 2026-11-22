@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeItem, makeUnplacedItem } from './__testfixtures__/fixtures';
-import { buildPasteItems, clearClipboard, clipboardSize, copyToClipboard } from './clipboard';
+import { buildPasteItems, clearClipboard, clipboardSize, copyRoomToClipboard, copyToClipboard, roomOnClipboard, subscribeClipboard } from './clipboard';
+import type { RoomArrangement } from './room-transfer';
 
 const W = 10;
 const D = 10;
@@ -100,5 +101,49 @@ describe('clipboard (#153)', () => {
     expect(first[1]!.groupId).toBe(first[0]!.groupId);
     expect(first[2]!.groupId).toBeUndefined();
     expect(second[0]!.groupId).not.toBe(first[0]!.groupId);
+  });
+});
+
+describe('a copied room on the clipboard (#925)', () => {
+  afterEach(clearClipboard);
+
+  const room: RoomArrangement = {
+    floorId: 'g',
+    outline: [{ x: 0, z: 0 }, { x: 2, z: 0 }, { x: 2, z: 2 }, { x: 0, z: 2 }],
+    anchor: { x: 1, z: 1 },
+    walls: [],
+    sides: [],
+    items: [makeItem({ id: 'bed' })],
+    zones: [],
+  };
+
+  it('the last copy wins: a room replaces the items, items replace the room', () => {
+    copyToClipboard([makeItem({ id: 'a' })]);
+    copyRoomToClipboard(room);
+    expect(clipboardSize()).toBe(0);
+    expect(roomOnClipboard()).toEqual(room);
+    copyToClipboard([makeItem({ id: 'a' })]);
+    expect(roomOnClipboard()).toBeNull();
+    expect(clipboardSize()).toBe(1);
+  });
+
+  it('tells subscribers when the room comes or goes, so a Paste room button follows', () => {
+    const heard = vi.fn();
+    const stop = subscribeClipboard(heard);
+    copyRoomToClipboard(room);
+    expect(heard).toHaveBeenCalledTimes(1);
+    copyToClipboard([makeItem({ id: 'a' })]);
+    expect(heard).toHaveBeenCalledTimes(2);
+    expect(roomOnClipboard()).toBeNull();
+    stop();
+    copyRoomToClipboard(room);
+    expect(heard).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps its own copy: a later edit of the source does not reach it', () => {
+    const source = structuredClone(room);
+    copyRoomToClipboard(source);
+    (source.items[0] as { name: string }).name = 'Changed';
+    expect(roomOnClipboard()!.items[0]!.name).toBe('Chair');
   });
 });
