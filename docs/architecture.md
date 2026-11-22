@@ -145,6 +145,8 @@ components/
     │   ├── npc-schedule.ts              The hour the walkers keep: the sleep window (23:00 to 07:00) and how the hour tilts the needs (rest at night, hunger at mealtimes) (#907)
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
     │   ├── npc-seats.ts                 Where walkers sit: seat slots (the end of a bed too), facing, approach points (from the side or behind for a chair pushed in, #904)
+    │   ├── walker-card.ts               What the walkers show (#906): the needs nothing a walker can reach meets (`strandedNeeds`), the thought bubble's need (`bubbleNeed`), and the card store the walk publishes to at 2 Hz
+    │   ├── walker-card-text.ts          The walker card's words (#906): seeded first names (unique across the house), the activity line, bar labels and what is missing; loaded with the card
     │   ├── seat-surface.ts              Sitting-surface height per seat type, from the builders: one table for the walkers and the seated player (#623)
     │   ├── walk-input.ts                Walkthrough frame-time cap, which keydowns walk (no Ctrl/Cmd/Alt chords), E to interact, keys typed into a field ignored
     │   ├── walk-world.ts                What the walker stands on: floor plates, stair treads as a ramp, porch and steps, sloped lot
@@ -225,6 +227,7 @@ components/
     │   ├── stairwell-rail.ts            The stairwell guard rail mesh: posts, handrail, bottom rail and balusters merged per storey; hides with the partitions (#923)
     │   ├── measurement.ts               Distance-tool spheres + line (3D; the plan draws its own, canvas-2d/plan-measure.ts)
     │   ├── item-labels.ts               Floating sprite labels above items
+    │   ├── need-bubbles.ts              Walkers' thought bubbles: one canvas atlas (a cell per need, views marked shared) and a sprite per walker, toggled in the step (#906)
     │   ├── roof.ts                      Flat / gable / hipped roof at its pitch and ridge (lib/roof-shape.ts); walkthrough attic ceiling (#487)
     │   ├── ceiling.ts                   Walkthrough ceiling + stairwell shafts up and down (#359)
     │   ├── dormers.ts                   Dormer boxes, joinery, Juliet rails; attic wells (#487)
@@ -368,6 +371,7 @@ components/
         ├── wall-draw-chip.tsx           The wall tool's status chip and its typed-length field (#723)
         ├── dock-fold.tsx                Fold toggle for the wall tool's panels in the phone dock
         ├── walk-hud.tsx                 Walkthrough HUD: lock-state hints, sit prompt, floor + clock; touch stick and buttons
+        ├── walker-card.tsx              The walker card a tap on a walker opens beside the tap: name, what it is doing, a bar per need, what it can't find (#906); lazy, Escape in the capture phase, back above the item sheet
         ├── wall-display-pill.tsx
         ├── wall-paint-panel.tsx
         ├── actions-panel.tsx

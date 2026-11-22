@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { EditorViewProvider, useEditorView } from './contexts/editor-view-context';
@@ -75,6 +75,7 @@ import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
 import { entrancePlanOutline } from './lib/street';
 import { isTourSession } from './lib/tour-session';
+import { createWalkerCards } from './lib/walker-card';
 import { sceneWallDisplay } from './lib/walkthrough-view';
 import { wallSideAt } from './lib/wall-sides';
 import { roomsToName } from './lib/zones';
@@ -111,6 +112,8 @@ import type { CatalogItem, FurnitureItem, RoomLayout, ViewSettings } from './lib
 
 // G4 album (#912): the shutter and its album load as photo mode opens.
 const PhotoBar = lazy(() => import('./panels/photo-bar').then((module) => ({ default: module.PhotoBar })));
+// #906: loaded on the first tap on a walker.
+const WalkerCard = lazy(() => import('./panels/walker-card').then((module) => ({ default: module.WalkerCard })));
 
 /** A stable "none" for the plan's memoised rooms to name. */
 const NO_ROOMS: readonly DetectedRoom[] = [];
@@ -456,6 +459,9 @@ export function RoomOrganizer(): JSX.Element {
   // every move's snap goes through here, and every drag starts through
   // startItemDrag, which forgets the last drag's wall.
   const [snapTicker] = useState(createSnapTicker);
+  // The walker card (#906): a tap on a walker opens it, the walkers fill it in.
+  const [walkerCards] = useState(createWalkerCards);
+  const walkerCardOpen = useSyncExternalStore(walkerCards.subscribe, () => walkerCards.selected() !== null, () => false);
   const snapPosition = useCallback(
     (id: string, x: number, z: number) => {
       const snapped = snapPlacement(id, x, z);
@@ -663,6 +669,8 @@ export function RoomOrganizer(): JSX.Element {
       onItemTwistEnd: (_id: string, turned: boolean) => history.releaseGesture(turned),
       onItemHover: setHover,
       onEmptyClick: handleEmptyClick,
+      // A tap on a walker opens its card; on empty floor (null) closes it (#906).
+      onWalkerTap: (walkerId: number | null, at: { x: number; y: number }) => (walkerId === null ? walkerCards.close() : walkerCards.select(walkerId, at)),
       onWallSelect: ({ wallId, kind, from }) => {
         // EXPLORE edits nothing, and this opens the paint target.
         if (exploring) return;
@@ -780,6 +788,7 @@ export function RoomOrganizer(): JSX.Element {
     onFloorChange: actions.setActiveFloorIndex,
     canvasRef,
     scene: { isReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, cameraRef, controlsRef },
+    walkerCards,
   });
 
   const tourTogglePlan = useEvent(() => toggle('view2D'));
@@ -1412,6 +1421,13 @@ export function RoomOrganizer(): JSX.Element {
             {...(photo.shoot ? { onShoot: photo.shoot } : {})}
             walking={walkthroughActive}
           />
+        </Suspense>
+      )}
+
+      {/* The walker card (#906), beside the walker tapped */}
+      {walkerCardOpen && (
+        <Suspense fallback={null}>
+          <WalkerCard cards={walkerCards} />
         </Suspense>
       )}
 

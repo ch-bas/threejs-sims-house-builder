@@ -11,6 +11,7 @@ import { useAmbience } from './use-ambience';
 import { useCameraVision } from './use-camera-vision';
 import { useNpcs } from './use-npcs';
 import { usePeopleModel } from './use-people-model';
+import { usePhotoModeActive } from './use-photo-mode';
 import { useReducedMotion } from './use-reduced-motion';
 import { useWalkthrough, type UseWalkthroughResult, type WalkSwitches, type WalkthroughBuilding } from './use-walkthrough';
 import { useWeather } from './use-weather';
@@ -18,6 +19,7 @@ import type { EditorViewStore } from './editor-view-store';
 import type { UseThreeSceneResult } from './use-three-scene';
 import type { KeepOutBuilding } from '../lib/floor-keep-out';
 import type { GameMode, RoomLayout, ViewSettings } from '../lib/types';
+import type { WalkerCards } from '../lib/walker-card';
 
 export interface UseSceneLifeOptions {
   viewStore: EditorViewStore;
@@ -31,6 +33,8 @@ export interface UseSceneLifeOptions {
     UseThreeSceneResult,
     'isReady' | 'invalidate' | 'requestShadowUpdate' | 'addDecorativeStep' | 'threeModuleRef' | 'sceneRef' | 'cameraRef' | 'controlsRef'
   >;
+  /** The walker card (#906): the walkers publish the tapped one's needs to it. */
+  walkerCards?: WalkerCards;
 }
 
 export interface SceneLife {
@@ -53,9 +57,11 @@ export function useSceneLife({
   onFloorChange,
   canvasRef,
   scene,
+  walkerCards,
 }: UseSceneLifeOptions): SceneLife {
   const { isReady, invalidate, requestShadowUpdate, addDecorativeStep, threeModuleRef, sceneRef, cameraRef, controlsRef } = scene;
   const { setView, setGameMode } = viewStore.getState().actions;
+  const photoActive = usePhotoModeActive();
 
   // The mode EXPLORE was entered from, so leaving it goes back there (#454).
   // Read from the store, not rendered: a mode switch needn't re-render this.
@@ -214,6 +220,9 @@ export function useSceneLife({
     riggedModelReady: peopleModelReady,
     handOff: npcHandOff,
     clock: clockRef,
+    ...(walkerCards ? { cards: walkerCards } : {}),
+    // Photos stay clean (#906).
+    hideBubbles: photoActive,
   });
 
   // Rebuilt with the street, not on every edit: it re-seeds the whole field.

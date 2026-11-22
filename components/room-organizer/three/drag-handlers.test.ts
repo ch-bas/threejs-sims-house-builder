@@ -899,3 +899,122 @@ describe('pickFurniture: a hidden opening never blocks what is behind it (#659)'
     expect(pickFurniture([])).toBeNull();
   });
 });
+
+describe('drag-handlers tap on a walker (#906)', () => {
+  let detach: (() => void) | null = null;
+  afterEach(() => detach?.());
+
+  /** A walker standing at (x, z): a 0.4 m box 1.75 m tall, tagged as the walk tags it. */
+  function addWalker(t: ReturnType<typeof setup>, x: number, z: number, id = 9): THREE.Group {
+    const walker = new THREE.Group();
+    walker.userData = { type: 'npc', walkerId: id };
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.75, 0.4));
+    body.position.y = 0.875;
+    walker.add(body);
+    walker.position.set(x, 0, z);
+    t.scene.add(walker);
+    t.scene.updateMatrixWorld(true);
+    t.handlers.onWalkerTap = vi.fn();
+    return walker;
+  }
+
+  /** A slab over (x, z) at `y`, tagged `type`, in a group: a roof, a ceiling, a wall seen from above. */
+  function addCover(t: ReturnType<typeof setup>, type: string, x: number, z: number, y = 3): THREE.Group {
+    const group = new THREE.Group();
+    group.userData = { type };
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1));
+    slab.position.set(x, y, z);
+    group.add(slab);
+    t.scene.add(group);
+    t.scene.updateMatrixWorld(true);
+    return group;
+  }
+
+  function screenOf(t: ReturnType<typeof setup>, x: number, z: number): [number, number] {
+    const p = new THREE.Vector3(x, 1, z).project(t.camera);
+    return [((p.x + 1) / 2) * SIZE, ((1 - p.y) / 2) * SIZE];
+  }
+
+  function tap(t: ReturnType<typeof setup>, x: number, y: number, travel = 0): void {
+    t.canvas.dispatchEvent(pointer('pointerdown', x, y));
+    if (travel) t.canvas.dispatchEvent(pointer('pointermove', x + travel, y));
+    t.canvas.dispatchEvent(pointer('pointerup', x + travel, y));
+  }
+
+  it('a tap opens its card, beside the tap, and selects nothing', () => {
+    const t = setup([]);
+    detach = t.detach;
+    addWalker(t, -2, 0);
+    const [x, y] = screenOf(t, -2, 0);
+    t.canvas.dispatchEvent(pointer('pointerdown', x, y));
+    expect(t.handlers.onWalkerTap).not.toHaveBeenCalled();
+    t.canvas.dispatchEvent(pointer('pointerup', x + 1, y));
+    expect(t.handlers.onWalkerTap).toHaveBeenCalledWith(9, { x: x + 1, y });
+    expect(t.handlers.onItemSelect).not.toHaveBeenCalled();
+    expect(t.controls.enabled).toBe(true);
+  });
+
+  it('a drag from a walker is the camera’s, and opens nothing', () => {
+    const t = setup([]);
+    detach = t.detach;
+    addWalker(t, -2, 0);
+    const [x, y] = screenOf(t, -2, 0);
+    tap(t, x, y, 30);
+    expect(t.handlers.onWalkerTap).not.toHaveBeenCalled();
+  });
+
+  it('a walker in front of an item: the press still selects and drags the item; only a tap opens the card', () => {
+    const t = setup([]);
+    detach = t.detach;
+    // Seen from above, the walker's head is nearer the camera than the box it stands by.
+    addWalker(t, 0, 0);
+    tap(t, 100, 100, 30);
+    expect(t.handlers.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+    expect(t.handlers.onItemDragStart).toHaveBeenCalledWith('a');
+    expect(t.handlers.onItemDragEnd).toHaveBeenCalledWith('a');
+    expect(t.handlers.onWalkerTap).not.toHaveBeenCalled();
+    tap(t, 100, 100);
+    expect(t.handlers.onWalkerTap).toHaveBeenCalledWith(9, { x: 100, y: 100 });
+  });
+
+  it('a hidden walker is no target: the item under it is', () => {
+    const t = setup([]);
+    detach = t.detach;
+    const walker = addWalker(t, 0, 0);
+    walker.visible = false;
+    tap(t, 100, 100);
+    expect(t.handlers.onWalkerTap).not.toHaveBeenCalled();
+    expect(t.handlers.onItemSelect).toHaveBeenCalledWith('a', 'replace');
+  });
+
+  it('a wall, the roof (or a dormer), a ceiling or a floor drawn in front hides the walker; a hidden roof does not', () => {
+    for (const type of ['wall', 'interior-wall', 'roof', 'attic-ceiling', 'walkthrough-ceiling', 'floor']) {
+      const t = setup([]);
+      addWalker(t, -2, 0);
+      const cover = addCover(t, type, -2, 0);
+      const [x, y] = screenOf(t, -2, 0);
+      tap(t, x, y);
+      // No walker tapped (a cover with no select handler is a tap on the scene behind it).
+      expect(t.handlers.onWalkerTap, type).not.toHaveBeenCalledWith(9, expect.anything());
+      // Hidden by the cutaway at the group, its meshes still flagged visible.
+      cover.visible = false;
+      tap(t, x, y);
+      expect(t.handlers.onWalkerTap, type).toHaveBeenCalledWith(9, { x, y });
+      t.detach();
+    }
+  });
+
+  it('a tap on empty floor is a null tap (it closes the card); a drag there is not; without a handler, nothing', () => {
+    const t = setup([]);
+    detach = t.detach;
+    t.handlers.onWalkerTap = vi.fn();
+    tap(t, 10, 10);
+    expect(t.handlers.onWalkerTap).toHaveBeenCalledWith(null, { x: 10, y: 10 });
+    tap(t, 10, 10, 30);
+    expect(t.handlers.onWalkerTap).toHaveBeenCalledTimes(1);
+    const handler = t.handlers.onWalkerTap;
+    delete t.handlers.onWalkerTap;
+    tap(t, 10, 10);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
