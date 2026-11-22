@@ -342,6 +342,12 @@ export function groundsSceneKey(layout: GroundSite & { grounds?: readonly Ground
   return shown.length === 0 ? '' : JSON.stringify(shown.map(({ kind, x, z, w, d }) => [kind, x, z, w, d]));
 }
 
+/** The surfaces a `groundsSceneKey` names, for an effect keyed on it (ids are not part of the picture). */
+export function groundsFromSceneKey(key: string): GroundPatch[] {
+  if (key === '') return [];
+  return (JSON.parse(key) as Array<[GroundKind, number, number, number, number]>).map(([kind, x, z, w, d], index) => ({ id: `shown-${index}`, kind, x, z, w, d }));
+}
+
 /** The world bounds of the shown surfaces, or null with none. */
 export function groundsBounds(grounds: readonly GroundRect[]): FootprintRect | null {
   if (grounds.length === 0) return null;

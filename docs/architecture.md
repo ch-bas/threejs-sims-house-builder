@@ -242,7 +242,8 @@ components/
     │   ├── lighting.ts                  Sun-arc continuous time of day (+ weather overcast)
     │   ├── weather.ts                   Rain / snow particle field (one InstancedMesh; the fall runs in the vertex shader, #669)
     │   ├── frame-budget.ts              One capped, focus-paused frame budget for the decorative loops (#671)
-    │   ├── ground-surfaces.ts           Generated grass, paving and asphalt tiles, laid by world position with a macro layer on grass (#761)
+    │   ├── ground-surfaces.ts           Generated grass, paving, asphalt, gravel and deck tiles, laid by world position with a macro layer on grass (#761, #924)
+    │   ├── ground-patches.ts            Garden surfaces as low slabs on the ground line, one merged mesh per kind, weather tint; the lot and the GLB build them (#924)
     │   ├── night-glow.ts                Night material values: lit window glass, lamp shades, the street's lit panes (#759)
     │   ├── outdoor-lamps.ts             Keeps indoor lamps off outdoor materials: shared per-slot mask, patched light chunk (#664); the roof, and the outside face of shell walls and dormers (#814)
     │   ├── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part

@@ -2,6 +2,7 @@ import { DEFAULT_FLOOR_PLAN_OPACITY } from '../lib/constants';
 import { facadeColorOf, withPorchFacade } from '../lib/facade';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { drawnFloorPlanImage, planIsDrawing } from '../lib/floor-plan-fit';
+import { shownGrounds } from '../lib/grounds';
 import { gardenGroundY, lowestGround } from '../lib/site';
 import { stairwellRailSegments } from '../lib/stairwell-rail';
 import { buildingHeight, floorElevation, interiorWallHeight, itemForStorey, storeyHeight, underRoof } from '../lib/storeys';
@@ -11,6 +12,7 @@ import { disposeObject } from './builder-utils';
 import { buildEntrance } from './entrance';
 import { createFurnitureModel } from './furniture-builders';
 import { stripDetailMaps } from './furniture-materials';
+import { buildGroundPatches } from './ground-patches';
 import { renderInteriorWalls } from './interior-walls';
 import { OUTSIDE_FACE_ATTRIBUTE } from './outdoor-lamps';
 import { openingOnHiddenWall, revealSetbacks } from './reveals';
@@ -46,7 +48,8 @@ export async function prepareExportBuilding(THREE: ThreeModule, layout: RoomLayo
  * Built with the same builders and inputs as the scene effects, but solid
  * (no ghosting), uncut, untinted (no collision red) and never added to the
  * live scene. Editor aids — the snap grid — are left out; so are the
- * site and scenery (ground, terrain, neighbours), lights and overlays.
+ * site and scenery (ground, terrain, neighbours), lights and overlays, all
+ * but the garden surfaces drawn on the lot (#924).
  *
  * Nodes are named: the root after the house, one group per storey after the
  * floor, furniture after the item, and the shell parts by their builders.
@@ -201,6 +204,11 @@ export function buildExportBuilding(THREE: ThreeModule, layout: RoomLayout): Thr
     for (const child of [...scratch.children]) roof.add(child);
     if (roof.children.length > 0) root.add(roof);
   }
+
+  // Garden surfaces (#924): the one part of the lot that is drawn as part of
+  // the house, in plain colours (the view's tiles follow world position).
+  const grounds = shownGrounds(layout);
+  if (grounds.length > 0) root.add(buildGroundPatches(THREE, grounds, { terrain: layout.terrain, halfDepth: depth / 2, textured: false }));
 
   // The patterns' relief maps stay in the view: in the file they would be two
   // more images per pattern for a lighting detail (#757).

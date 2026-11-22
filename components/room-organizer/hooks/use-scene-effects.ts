@@ -17,6 +17,7 @@ import {
   planFurniture,
 } from '../lib/furniture-scene';
 import { hasCollisions } from '../lib/geometry';
+import { groundsFromSceneKey, groundsSceneKey } from '../lib/grounds';
 import { mountBand } from '../lib/mount-band';
 import { LAMP_POOL_SIZE, collectLampLights, nightGlowPlan, planLampPool, roomLampReach, type LampLight, type NightGlowPlan } from '../lib/night-lights';
 import { itemLabelsKey, signalOverlaysKey } from '../lib/overlay-keys';
@@ -1030,6 +1031,8 @@ export function useSceneEffects({
   // Read once per choice: it asks matchMedia.
   const quality = useMemo(() => currentQuality(view.renderQuality), [view.renderQuality]);
   const { groundTile, richScenery } = quality;
+  // Garden surfaces (#924): what the lot draws of them, as a value.
+  const groundsKey = useMemo(() => groundsSceneKey(layout), [layout]);
   useEffect(() => {
     invalidate();
     if (!isReady) return;
@@ -1043,11 +1046,12 @@ export function useSceneEffects({
       ...(layout.terrain ? { terrain: layout.terrain } : {}),
       ...(layout.neighbours ? { neighbours: layout.neighbours } : {}),
       ...(layout.frontage ? { frontage: layout.frontage } : {}),
+      ...(groundsKey ? { grounds: groundsFromSceneKey(groundsKey) } : {}),
     });
     // Trees/shrubs are shadow casters; the shadow map is static (autoUpdate off)
     // so it must be told the caster set changed.
     requestShadowUpdate();
-  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage, groundTile, richScenery]);
+  }, [isReady, invalidate, requestShadowUpdate, threeModuleRef, sceneRef, view.showOutdoor, layout.width, layout.height, layout.cutout, layout.terrain, layout.neighbours, layout.frontage, groundTile, richScenery, groundsKey]);
 
   // The street of neighbours (#202, #310). Never touched by applyWallDisplay,
   // so they stay put in every wall-display mode (#201). Keyed on exactly what
