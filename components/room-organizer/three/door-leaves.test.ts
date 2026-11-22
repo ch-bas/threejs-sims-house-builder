@@ -277,6 +277,45 @@ describe('door types in EXPLORE (#922)', () => {
   });
 });
 
+describe('door sounds (#911)', () => {
+  it('hears a door start to open, once, and come shut, with its place and storey', () => {
+    const scene = sceneWith([{ item: door({ position: { x: 1, z: 2 } }), floorIndex: 1 }]);
+    const sound = vi.fn();
+    const swinger = createDoorSwinger(scene, undefined, sound);
+    settle(swinger, { x: 1, z: 3, floorIndex: 1 });
+    expect(sound).toHaveBeenCalledTimes(1);
+    expect(sound).toHaveBeenLastCalledWith('open', 1, 2, 1);
+    // Walked away: it swings shut, and knocks once as it meets the frame.
+    for (let i = 0; i < 240; i++) swinger.step([], 1 / 60, false);
+    expect(sound).toHaveBeenCalledTimes(2);
+    expect(sound).toHaveBeenLastCalledWith('shut', 1, 2, 1);
+  });
+
+  it('is one sound for a double door, and no creak for a sliding one', () => {
+    const double = sceneWith([{ item: door({ width: 1.6, openingStyle: 'double' }), floorIndex: 0 }]);
+    const sound = vi.fn();
+    settle(createDoorSwinger(double, undefined, sound), { x: 0, z: 0.5, floorIndex: 0 });
+    expect(sound.mock.calls.map((call) => call[0])).toEqual(['open']);
+    const sliding = sceneWith([{ item: door({ width: 2, openingStyle: 'sliding' }), floorIndex: 0 }]);
+    const slide = vi.fn();
+    const swinger = createDoorSwinger(sliding, undefined, slide);
+    settle(swinger, { x: 0, z: 0.5, floorIndex: 0 });
+    expect(slide).not.toHaveBeenCalled();
+    for (let i = 0; i < 240; i++) swinger.step([], 1 / 60, false);
+    expect(slide.mock.calls.map((call) => call[0])).toEqual(['shut']);
+  });
+
+  it('is silent when shut all at once, leaving EXPLORE', () => {
+    const scene = sceneWith([{ item: door(), floorIndex: 0 }]);
+    const sound = vi.fn();
+    const swinger = createDoorSwinger(scene, undefined, sound);
+    settle(swinger, { x: 0, z: 1, floorIndex: 0 });
+    sound.mockClear();
+    swinger.shutAll();
+    expect(sound).not.toHaveBeenCalled();
+  });
+});
+
 describe('a door set to open out (#917)', () => {
   it('opens to its own side whichever side the walker comes from; a default door opens away from them', () => {
     for (const walkerZ of [-0.5, 0.5]) {

@@ -72,6 +72,6 @@ describe('the sound tile (#911)', () => {
     expect([ambience.soundsEnabled, ambience.ambienceEnabled]).toEqual([true, true]);
     const muted = nextSoundSetting(ambience);
     expect([muted.soundsEnabled, muted.ambienceEnabled]).toEqual([false, false]);
-    expect([off, cues, ambience].map(soundTileLabel)).toEqual(['Enable sounds', 'Add ambience: rain and footsteps in EXPLORE', 'Mute sounds and ambience']);
+    expect([off, cues, ambience].map(soundTileLabel)).toEqual(['Enable sounds', 'Add ambience: rain, footsteps, birds and doors in EXPLORE', 'Mute sounds and ambience']);
   });
 });

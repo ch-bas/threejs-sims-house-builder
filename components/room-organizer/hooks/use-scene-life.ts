@@ -138,12 +138,17 @@ export function useSceneLife({
     switches,
   });
 
-  // Rain on the roof and footsteps, in EXPLORE only (#911).
-  useAmbience({
+  // Rain on the roof, footsteps, birds and crickets, and the doors, in EXPLORE only (#911).
+  const ambienceHour = useCallback(() => viewStore.getState().view.timeOfDay, [viewStore]);
+  const ambienceListener = useCallback(() => (npcHandOff.player.present ? npcHandOff.player : null), [npcHandOff]);
+  const doorSound = useAmbience({
     enabled: isReady && walkthroughActive && view.soundsEnabled && view.ambienceEnabled && !view.view2D,
+    preload: isReady && view.soundsEnabled && view.ambienceEnabled,
     weather: view.weather,
     indoors: !walk.outside,
     walkedDistance: walk.walkedDistance,
+    hour: ambienceHour,
+    listener: ambienceListener,
     addDecorativeStep,
   });
 
@@ -158,14 +163,14 @@ export function useSceneLife({
   useEffect(() => {
     const doorScene = sceneRef.current;
     if (!doorsWanted || !doorScene) return undefined;
-    const doors = createDoorSwinger(doorScene, requestShadowUpdate);
+    const doors = createDoorSwinger(doorScene, requestShadowUpdate, doorSound);
     const people: DoorWalker[] = [];
     const removeStep = addDecorativeStep((delta) => doors.step(doorWalkersOf(npcHandOff, people, !doorsReducedMotion), delta, doorsReducedMotion));
     return () => {
       removeStep();
       if (doors.shutAll()) invalidate();
     };
-  }, [doorsWanted, doorsReducedMotion, sceneRef, npcHandOff, addDecorativeStep, requestShadowUpdate, invalidate]);
+  }, [doorsWanted, doorsReducedMotion, sceneRef, npcHandOff, addDecorativeStep, requestShadowUpdate, invalidate, doorSound]);
 
   // people.glb is fetched only once a person is placed or the walkers are on.
   const layoutHasPeople = useMemo(
