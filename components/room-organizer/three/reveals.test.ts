@@ -5,7 +5,7 @@ import { BASEBOARD_WALL_GAP } from './baseboard';
 import { disposeObject } from './builder-utils';
 import { buildExportBuilding } from './building-export';
 import { createFurnitureModel } from './furniture-builders';
-import { EXTERIOR_SILL_KEY, REVEAL_BOARD, REVEAL_DECOR_GAP, REVEAL_DEPTH, REVEAL_SETBACK, REVEAL_WALL_GAP, openingSetback, revealBoxes, revealSetbacks, setBackOpening } from './reveals';
+import { EXTERIOR_SILL_KEY, REVEAL_BOARD, REVEAL_DECOR_GAP, REVEAL_DEPTH, REVEAL_SETBACK, REVEAL_WALL_GAP, openingOnHiddenWall, openingSetback, revealBoxes, revealSetbacks, setBackOpening } from './reveals';
 import { buildRoom } from './room-builder';
 import { classifyOpeningOwners, computeWallOpenings } from './wall-openings';
 import type { FurnitureItem } from '../lib/types';
@@ -19,6 +19,26 @@ const curtains = (overrides: Partial<FurnitureItem> = {}) =>
   makeItem({ id: 'c', type: 'curtains', name: 'Curtains', width: 1.4, depth: 0.2, height: 2.4, position: { x: 1, z: -2.9 }, ...overrides });
 const context = { width: 8, depth: 6 };
 const owner = (item: FurnitureItem) => classifyOpeningOwners([item], 8, 6).get(item.id);
+
+describe('openings on a hidden wall (#965)', () => {
+  it('finds a door or window in an outer wall the storey hides, and nothing else', () => {
+    expect(openingOnHiddenWall(owner(window()), { ...context, hiddenWalls: ['north'] })).toBe(true);
+    expect(openingOnHiddenWall(owner(window()), { ...context, hiddenWalls: ['south'] })).toBe(false);
+    expect(openingOnHiddenWall(owner(window()), context)).toBe(false);
+    expect(openingOnHiddenWall({ kind: 'interior', wallId: 'p' }, { ...context, hiddenWalls: ['north'] })).toBe(false);
+    expect(openingOnHiddenWall(undefined, { ...context, hiddenWalls: ['north'] })).toBe(false);
+  });
+
+  it('takes an L’s notch wall with the side it belongs to', () => {
+    // A north-east cut 3 × 2: the notch's x wall runs along z = −1 and faces north.
+    const cutout = { corner: 'ne' as const, width: 3, depth: 2 };
+    const inNotch = window({ position: { x: 2.5, z: -1 } });
+    const notchOwner = classifyOpeningOwners([inNotch], 8, 6, [], cutout).get(inNotch.id);
+    expect(notchOwner).toEqual({ kind: 'exterior', wall: 'notch-x' });
+    expect(openingOnHiddenWall(notchOwner, { ...context, cutout, hiddenWalls: ['north'] })).toBe(true);
+    expect(openingOnHiddenWall(notchOwner, { ...context, cutout, hiddenWalls: ['east'] })).toBe(false);
+  });
+});
 
 describe('opening set-back (#758)', () => {
   it('sets a door or window in an outer wall back into the house, along its own facing', () => {
