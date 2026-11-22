@@ -22,7 +22,8 @@ const FLUSH_M = 0.01;
 
 /** Whether `item` is something a door's leaf would hit: furniture standing on the floor. */
 function canBlockSwing(item: FurnitureItem): boolean {
-  if (!item.position) return false;
+  // People and pets step aside for a door.
+  if (!item.position || item.category === 'people') return false;
   // In the wall or on it (doors, windows, cameras, pictures, pendants), or
   // flat on the floor (rugs, mats): the leaf passes them.
   return !isWallMounted(item.type) && !isWallHung(item.type) && !isLowProfile(item);
@@ -85,6 +86,26 @@ export function blockedDoorIds(items: readonly FurnitureItem[]): Set<string> {
     if (door.type === 'door' && doorSwingBlockedBy(door, items).length > 0) blocked.add(door.id);
   }
   return blocked;
+}
+
+/**
+ * Ids of every item on the storey standing in some door's swing (#917): what
+ * the room score's "room to move" check reads. Each door's swings are worked
+ * out once, so a storey costs doors × items cheap box tests.
+ */
+export function swingBlockerIds(items: readonly FurnitureItem[]): Set<string> {
+  const blockers = new Set<string>();
+  for (const door of items) {
+    const swings = swingsOf(door);
+    if (swings.length === 0) continue;
+    const reach = swingReach(swings);
+    for (const item of items) {
+      if (item.id === door.id || blockers.has(item.id) || !canBlockSwing(item)) continue;
+      const placed = item as PlacedItem;
+      if (nearSwing(placed, reach) && swings.some((swing) => footprintInSwing(placed, swing))) blockers.add(item.id);
+    }
+  }
+  return blockers;
 }
 
 /** The warning for the item popover, or null when no swing is in the way. */

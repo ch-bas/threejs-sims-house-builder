@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { measureCpu } from './__testfixtures__/cpu-time';
 import { makeItem, makeLayout, makeFloor } from './__testfixtures__/fixtures';
-import { blockedDoorIds, doorSwingBlockedBy, doorsSwingingInto, swingClearanceNote } from './door-clearance';
+import { blockedDoorIds, doorSwingBlockedBy, doorsSwingingInto, swingBlockerIds, swingClearanceNote } from './door-clearance';
 import { doorSwing, planContentBounds, type PlacedItem } from './plan-export/plan-geometry';
 import { parseStoredLayout } from './schema';
 import type { FurnitureItem } from './types';
@@ -76,6 +77,36 @@ describe('doorSwingBlockedBy (#917)', () => {
     blockedDoorIds([...doors, ...pieces]);
     expect(performance.now() - started).toBeLessThan(200);
   });
+});
+
+describe('swingBlockerIds (#917)', () => {
+  it('collects what stands in any door\'s swing, once, and nothing a leaf passes', () => {
+    const second = { ...door, id: 'door2', position: { x: 3, z: -2 } };
+    const stool = at('stool', 0, -1.6);
+    const chair = at('chair', 3, -1.6);
+    const clear = at('table', 0, -0.5);
+    const rug = at('rug', 3, -1.6, { type: 'rug', height: 0.02 });
+    expect([...swingBlockerIds([door, second, stool, chair, clear, rug])].sort()).toEqual(['chair', 'stool']);
+    // People and pets step aside for a door.
+    const person = at('person', 0, -1.6, { type: 'person', category: 'people' });
+    const pet = at('pet', 3, -1.6, { type: 'pet', category: 'people' });
+    expect(swingBlockerIds([door, second, person, pet]).size).toBe(0);
+    expect(doorSwingBlockedBy(door, [person])).toEqual([]);
+    // A door's own leaf is no blocker, nor a door standing beside it.
+    expect(swingBlockerIds([door, second]).size).toBe(0);
+    expect(swingBlockerIds([stool, chair]).size).toBe(0);
+    // The same answer as asking door by door.
+    const items = [door, second, stool, chair, clear, rug];
+    const perDoor = new Set(items.flatMap((d) => doorSwingBlockedBy(d, items).map((i) => i.id)));
+    expect(swingBlockerIds(items)).toEqual(perDoor);
+  });
+
+  it('runs a crowded storey in well under a frame of CPU time', () => {
+    const doors = Array.from({ length: 40 }, (_, i) => ({ ...door, id: `d${i}`, position: { x: (i % 8) - 4, z: Math.floor(i / 8) - 2 } }));
+    const pieces = Array.from({ length: 400 }, (_, i) => at(`p${i}`, (i % 20) * 0.4 - 4, Math.floor(i / 20) * 0.4 - 4));
+    const { cpuMs } = measureCpu(() => swingBlockerIds([...doors, ...pieces]));
+    expect(cpuMs).toBeLessThan(100);
+  }, 30_000);
 });
 
 describe('the popover note (#917)', () => {

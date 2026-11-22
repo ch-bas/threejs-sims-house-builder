@@ -36,7 +36,7 @@ export function ZoneNameChip({ selectedZoneId }: { selectedZoneId: string | null
     [showScore, layout, activeFloorIndex, collidingIds, selectedZoneId]
   );
   const scoreLine = score ? roomScoreLine(score) : null;
-  const hint = score && scoreLine ? moreStarsHint(score.missing, unit) : null;
+  const hint = score && scoreLine ? moreStarsHint(score.missing, unit, score.space) : null;
 
   const zone = zoneId ? activeFloor.zones?.find((entry) => entry.id === zoneId) : undefined;
   if (!zoneId || !zone) {
