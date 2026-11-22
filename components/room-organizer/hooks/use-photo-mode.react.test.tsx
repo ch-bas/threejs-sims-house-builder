@@ -150,7 +150,7 @@ describe('photo mode (#626)', () => {
         this.view = { enabled: true, fullWidth, fullHeight, offsetX, offsetY, width, height };
       },
     };
-    const grid = { type: 'GridHelper', visible: true };
+    const grid = { type: 'GridHelper', visible: true, layers: { mask: 1 } };
     const scene = { children: [grid] };
     function Shift() {
       usePhotoMode({
@@ -164,10 +164,25 @@ describe('photo mode (#626)', () => {
     render(<Shift />);
     act(() => enterPhotoMode());
     expect(camera.view?.enabled).toBe(false);
-    expect(grid.visible).toBe(false);
+    expect(grid.layers.mask).toBe(0);
+    // The cutaway pass shows the grid on every camera move (an orbit, a
+    // preset): hidden through its layers, it stays out of view anyway.
+    grid.visible = true;
+    expect(grid.layers.mask).toBe(0);
+    // A room rebuild meanwhile adds a new grid: hidden as the next frame starts.
+    const rebuilt = { type: 'GridHelper', visible: true, layers: { mask: 1 } };
+    scene.children.push(rebuilt);
+    (scene as unknown as ThreeNS.Object3D).onBeforeRender(
+      ...([] as unknown as Parameters<ThreeNS.Object3D['onBeforeRender']>),
+    );
+    expect(rebuilt.layers.mask).toBe(0);
     act(() => leavePhotoMode());
     expect(camera.view).toEqual(view);
+    expect(grid.layers.mask).toBe(1);
+    expect(rebuilt.layers.mask).toBe(1);
     expect(grid.visible).toBe(true);
+    // The frame hook goes with photo mode.
+    expect(Object.hasOwn(scene, 'onBeforeRender')).toBe(false);
   });
 
   it('lets the walk’s keys through while walking', () => {
