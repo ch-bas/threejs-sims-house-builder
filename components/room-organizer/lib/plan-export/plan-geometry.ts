@@ -13,6 +13,7 @@ import { DEFAULT_VISION_FOV_DEG, DEFAULT_VISION_RANGE_M, GRID_SIZE_METERS } from
 import { floorHoleOutlines } from '../floor-holes';
 import { shellWalls, shellWallSpan, type ShellWallId } from '../footprint';
 import { formatMetres, getDisplayUnit, type LengthUnit } from '../format';
+import { shownGrounds } from '../grounds';
 import { isOpening, isWallMounted } from '../opening-snap';
 import { DOOR_FRAME, SLIDING_PANE_SHARE, doorLeafSpans, doorStyle } from '../opening-style';
 import { computeFloorOpenings, floorOpeningOutline, floorStairHeadroom, stairPlanSymbol, stairTreadLines } from '../stairs';
@@ -415,7 +416,7 @@ export interface PlanBounds {
  * camera mounted on the outside of a wall (its centre beyond the walls)
  * does count, or it would sit on the dimension strings.
  */
-export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
+export function planContentBounds(layout: RoomLayout, floor: FloorLayout, groundsWithin?: PlanBounds): PlanBounds {
   const hw = layout.width / 2;
   const hd = layout.height / 2;
   const bounds: PlanBounds = { minX: -hw, minZ: -hd, maxX: hw, maxZ: hd };
@@ -448,6 +449,16 @@ export function planContentBounds(layout: RoomLayout, floor: FloorLayout): PlanB
     bounds.maxX = Math.max(bounds.maxX, swing.maxX);
     bounds.minZ = Math.min(bounds.minZ, swing.minZ);
     bounds.maxZ = Math.max(bounds.maxZ, swing.maxZ);
+  }
+  // Garden surfaces (#924) are on the ground floor's sheet; the on-screen fit
+  // takes them only as far as `groundsWithin`, its cap.
+  const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
+  for (const ground of isGroundFloor ? shownGrounds(layout) : []) {
+    const clip = groundsWithin ?? { minX: -Infinity, minZ: -Infinity, maxX: Infinity, maxZ: Infinity };
+    bounds.minX = Math.min(bounds.minX, Math.max(clip.minX, ground.x));
+    bounds.maxX = Math.max(bounds.maxX, Math.min(clip.maxX, ground.x + ground.w));
+    bounds.minZ = Math.min(bounds.minZ, Math.max(clip.minZ, ground.z));
+    bounds.maxZ = Math.max(bounds.maxZ, Math.min(clip.maxZ, ground.z + ground.d));
   }
   return bounds;
 }

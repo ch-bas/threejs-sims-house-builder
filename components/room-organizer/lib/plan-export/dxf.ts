@@ -35,6 +35,7 @@
  */
 
 import { footprintOutline } from '../footprint';
+import { GROUND_LABELS, shownGrounds } from '../grounds';
 import { stripXmlIllegal } from '../html-escape';
 import { doorLeafSpans } from '../opening-style';
 import { planDrawOrder } from '../plan-order';
@@ -83,6 +84,7 @@ export const DXF_LAYERS = [
   'DIMENSIONS',
   'ZONES',
   'STAIR-CUT',
+  'GROUNDS',
 ] as const;
 
 export type DxfLayer = (typeof DXF_LAYERS)[number];
@@ -99,6 +101,7 @@ const LAYER_COLOURS: Record<DxfLayer, number> = {
   DIMENSIONS: 6,
   ZONES: 30,
   'STAIR-CUT': 8,
+  GROUNDS: 3,
 };
 
 export interface DxfExportOptions {
@@ -557,6 +560,7 @@ function emitFloor(
   const content = planContentBounds(layout, floor);
 
   emitZones(doc, floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), cad);
+  emitGrounds(doc, layout, floor, cad);
 
   // Room outline: one closed polyline around the footprint. Hidden walls stay
   // in the export — the footprint is real even when the 2D view fades a wall.
@@ -637,6 +641,16 @@ function emitZones(doc: DxfDocument, floor: FloorLayout, recess: EntrancePlanOut
     const centre = spot.x + spot.w / 2;
     doc.text('ZONES', cad(centre, top + ZONE_NAME_DROP_M), LABEL_TEXT_HEIGHT, zone.name, 'centre');
     doc.text('ZONES', cad(centre, top + ZONE_AREA_DROP_M), DIMENSION_TEXT_HEIGHT, `${zoneArea(zone, recess).toFixed(1)} m²`, 'centre');
+  }
+}
+
+/** Garden surfaces (#924), on the ground floor: a closed outline and the kind, on their own layer. */
+function emitGrounds(doc: DxfDocument, layout: RoomLayout, floor: FloorLayout, cad: (x: number, z: number) => CadPoint): void {
+  if (layout.floors[0] !== floor && layout.floors[0]?.id !== floor.id) return;
+  for (const ground of shownGrounds(layout)) {
+    const { x, z, w, d } = ground;
+    doc.polyline('GROUNDS', [cad(x, z), cad(x + w, z), cad(x + w, z + d), cad(x, z + d)], true);
+    doc.text('GROUNDS', cad(x + w / 2, z + d / 2), LABEL_TEXT_HEIGHT, GROUND_LABELS[ground.kind], 'centre');
   }
 }
 
