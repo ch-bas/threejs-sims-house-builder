@@ -67,7 +67,10 @@ export interface PlanViewFit {
 }
 
 function snappedContentBounds(layout: RoomLayout, floor: FloorLayout): PlanBounds {
-  const content = planContentBounds(layout, floor);
+  // Garden surfaces (#924) widen the fit up to the cap and no further: they
+  // can't be left out as an item is, so the part past it is just off the fit.
+  const groundsWithin = { minX: -layout.width, minZ: -layout.height, maxX: layout.width, maxZ: layout.height };
+  const content = planContentBounds(layout, floor, groundsWithin);
   const halfW = layout.width / 2;
   const halfD = layout.height / 2;
   const snap = (edge: number, wall: number) => (Math.abs(edge - wall) < PLAN_FIT_TOLERANCE_M ? wall : edge);

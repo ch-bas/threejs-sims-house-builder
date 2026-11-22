@@ -18,14 +18,16 @@ import { boundsSize, offPlanMarkers, PLAN_PADDING_PX, planLegendSpot, regionFitS
 import { roomScoreLine, type RoomScore } from '../lib/room-score';
 import { entrancePlanOutline, planFloorIndex } from '../lib/street';
 import { hasFloorFinish, regionShape, zoneArea, zoneFloorPatches, zoneLabelSpot, zoneRings, type ZoneRect, type ZoneShape } from '../lib/zones';
+import { drawGroundDraft, drawGrounds } from './ground-plan';
 import { drawOpeningSymbol, traceOpeningGaps } from './opening-symbol';
 import { drawSelectedWall, drawStampGhost, drawWallPreview, drawWallSideMark, drawZoneHandles, type StampGhost, type WallPreview } from './plan-edit';
 import { drawMeasurePreview, drawPinnedDimensions, type MeasurePreview } from './plan-measure';
 import { zoomedTransform, type PlanZoom } from './plan-zoom';
 import { drawStairCutHatch, drawStairsSymbol, drawStairwellHoles } from './stairs-symbol';
+import type { GroundRect } from '../lib/grounds';
 import type { DetectedRoom } from '../lib/room-detect';
 import type { Insets, Rect } from '../lib/scene-insets';
-import type { FloorLayout, FurnitureItem, RoomLayout, Vec2, WallId } from '../lib/types';
+import type { FloorLayout, FurnitureItem, GroundKind, RoomLayout, Vec2, WallId } from '../lib/types';
 import type { WallSide } from '../lib/wall-sides';
 
 export { computeFloorPlanPlacement } from '../lib/floor-plan-fit';
@@ -46,6 +48,8 @@ export interface Render2DOptions {
   showFloorBelow?: boolean;
   /** The zone rectangle being dragged out, drawn over everything as a dashed outline (#155). */
   zoneDraft?: ZoneRect | null;
+  /** The garden surface being dragged out (#924), drawn over everything like the zone draft. */
+  groundDraft?: { rect: GroundRect; kind: GroundKind } | null | undefined;
   /** Detected rooms with no zone, marked in zone mode for "Name this room" (#719). */
   roomsToName?: readonly DetectedRoom[] | undefined;
   /** The face of the selected wall that paint goes to, marked on the plan (#720). */
@@ -273,6 +277,8 @@ export function render2DTopDown(options: Render2DOptions): void {
   // walls but under the furniture, like a plan's room names (#155).
   drawZoneFills(ctx, layout, floor, offsetX, offsetY, scale);
   drawRoomOutline(ctx, layout, floor, offsetX, offsetY, scale);
+  // Garden surfaces (#924): behind what is painted so far, so outside only.
+  drawGrounds(ctx, layout, floor, { scale, offsetX, offsetY });
   drawInteriorWalls(ctx, layout, floor, offsetX, offsetY, scale);
   drawOpeningGaps(ctx, layout, floor, offsetX, offsetY, scale, viewWidth, viewHeight);
   const scoreLines = drawZoneLabels(ctx, layout, floor, offsetX, offsetY, scale, options.showMeasurements, options.thumbnail === true, unit, options.thumbnail ? undefined : options.roomScores);
@@ -318,6 +324,7 @@ export function render2DTopDown(options: Render2DOptions): void {
   if (options.zoneDraft) {
     drawZoneDraft(ctx, layout, options.zoneDraft, offsetX, offsetY, scale, unit);
   }
+  if (options.groundDraft) drawGroundDraft(ctx, layout, options.groundDraft, { scale, offsetX, offsetY }, unit);
 
   const selectedWall = options.selectedWallId ? floor.interiorWalls?.find((wall) => wall.id === options.selectedWallId) : null;
   if (selectedWall) drawSelectedWall(ctx, layout, selectedWall, offsetX, offsetY, scale, options.selectedWallRefused);

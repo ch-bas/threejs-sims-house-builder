@@ -14,8 +14,9 @@
 
 import { CURRENCY_SYMBOL } from '../constants';
 import { floorKeepOut } from '../floor-keep-out';
-import { cutoutRect, shellWalls } from '../footprint';
+import { cutoutRect, footprintOutline, shellWalls } from '../footprint';
 import { formatArea, formatSize, getDisplayUnit, type LengthUnit } from '../format';
+import { GROUND_LABELS, GROUND_PLAN_COLORS, shownGrounds } from '../grounds';
 import { escapeHtml } from '../html-escape';
 import { INTERIOR_WALL_THICKNESS } from '../opening-snap';
 import { planDrawOrder } from '../plan-order';
@@ -385,6 +386,7 @@ function renderSheet(layout: RoomLayout, floor: FloorLayout, options: SvgExportO
     renderGrid(layout, margin, scale, theme),
     renderZones(floor, entrancePlanOutline(layout, planFloorIndex(layout.floors, floor)), px, py, scale, theme, unit),
     renderRoomOutline(layout, floor, margin, scale, theme),
+    renderGrounds(layout, floor, px, py, scale, theme, `${idPrefix}grounds`),
     renderInteriorWalls(floor, px, py, scale, theme),
     renderStairwellHoles(layout, floor, px, py, scale, theme),
     options.coverage === false ? '' : renderCoverage(floor, px, py, scale, frame, theme, idPrefix),
@@ -532,6 +534,42 @@ function renderZones(
       ].join('');
     })
     .join('\n');
+}
+
+/**
+ * Garden surfaces (#924) on the ground floor's sheet, as on the plan: after
+ * the outline, so the page colour the L's notch is painted in doesn't hide
+ * them, and clipped to outside the walls' stroke so they never cover one.
+ */
+function renderGrounds(
+  layout: RoomLayout,
+  floor: FloorLayout,
+  px: (x: number) => string,
+  py: (z: number) => string,
+  scale: number,
+  theme: SvgPlanTheme,
+  clipId: string
+): string {
+  const isGroundFloor = layout.floors[0] === floor || layout.floors[0]?.id === floor.id;
+  const grounds = isGroundFloor ? shownGrounds(layout) : [];
+  if (grounds.length === 0) return '';
+  const far = 1e4;
+  const outside = `M ${px(-far)} ${py(-far)} H ${px(far)} V ${py(far)} H ${px(-far)} Z ${ringPath(footprintOutline(layout, 1.5 / scale), px, py)}`;
+  const rects = grounds.map((ground) => {
+    const colors = GROUND_PLAN_COLORS[ground.kind];
+    const cx = fmt(Number(px(ground.x)) + (ground.w * scale) / 2);
+    const cy = fmt(Number(py(ground.z)) + (ground.d * scale) / 2);
+    return [
+      `<rect class="ground" x="${px(ground.x)}" y="${py(ground.z)}" width="${fmt(ground.w * scale)}" height="${fmt(ground.d * scale)}" fill="${colors.fill}" stroke="${colors.edge}" stroke-width="1"/>`,
+      `<text x="${cx}" y="${cy}" font-size="10" text-anchor="middle" dominant-baseline="middle" fill="${theme.label}">${escapeHtml(GROUND_LABELS[ground.kind])}</text>`,
+    ].join('');
+  });
+  return [
+    `<clipPath id="${clipId}"><path d="${outside}" clip-rule="evenodd"/></clipPath>`,
+    `<g class="grounds" clip-path="url(#${clipId})">`,
+    ...rects,
+    `</g>`,
+  ].join('\n');
 }
 
 /** Rooms with a floor of their own (#720): the patches 3D lays, under the grid. */

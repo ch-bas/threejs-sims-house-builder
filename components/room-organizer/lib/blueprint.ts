@@ -71,6 +71,15 @@ export function blueprintCanvasSize(bounds: PlanBounds): { width: number; height
  */
 const MIN_ROOM_SHARE = 0.5;
 
+/**
+ * Garden surfaces (#924) widen the sheet only this far, the house's own size
+ * past each wall, as on the on-screen plan: they can't be left off like an
+ * item, so a big patio would otherwise cost every outdoor item its place.
+ */
+function groundsCap(layout: Pick<RoomLayout, 'width' | 'height'>): PlanBounds {
+  return { minX: -layout.width, minZ: -layout.height, maxX: layout.width, maxZ: layout.height };
+}
+
 function fitScale(bounds: PlanBounds): number {
   return Math.min(
     (PAGE_WIDTH - BLUEPRINT_PADDING * 2) / (bounds.maxX - bounds.minX),
@@ -103,7 +112,7 @@ export function blueprintPlan(layout: RoomLayout, floor: FloorLayout): Blueprint
   // Runs out on the lot (#915) are drawn whole, as on the on-screen plan:
   // a fenced lot may take the house below the share, never off the sheet.
   const lotRuns = floor.items.filter((item) => onLotRun(layout, item));
-  const runs = lotRuns.length > 0 ? fitScale(planContentBounds(layout, { ...withoutPins(floor), items: lotRuns })) : Infinity;
+  const runs = lotRuns.length > 0 ? fitScale(planContentBounds(layout, { ...withoutPins(floor), items: lotRuns }, groundsCap(layout))) : Infinity;
   const minScale = Math.min(fitScale(room) * MIN_ROOM_SHARE, runs);
   // Pins out to the garden (#921) are dropped by the same rule, furthest first, but not listed.
   type Outside = { item: FurnitureItem; pin?: undefined; distance: number } | { item?: undefined; pin: PinnedDimension; distance: number };
@@ -115,7 +124,7 @@ export function blueprintPlan(layout: RoomLayout, floor: FloorLayout): Blueprint
     .sort((a, b) => b.distance - a.distance);
   let drawn = floor;
   let dropped = 0;
-  while (dropped < outside.length && fitScale(planContentBounds(layout, drawn)) < minScale) {
+  while (dropped < outside.length && fitScale(planContentBounds(layout, drawn, groundsCap(layout))) < minScale) {
     const gone = outside.slice(0, ++dropped);
     const items = new Set(gone.flatMap(({ item }) => (item ? [item] : [])));
     const pins = new Set(gone.flatMap(({ pin }) => (pin ? [pin] : [])));
@@ -209,7 +218,7 @@ async function blueprintHtml(building: RoomLayout, floor: FloorLayout): Promise<
   // Fit the plan content, outdoor items included (#377), as the SVG and
   // print-to-scale routes already do (#287).
   const plan = blueprintPlan(layout, floor);
-  const bounds = planContentBounds(layout, plan.floor);
+  const bounds = planContentBounds(layout, plan.floor, groundsCap(layout));
   const size = blueprintCanvasSize(bounds);
   const floorIndex = planFloorIndex(layout.floors, floor);
   const keepOut = floorKeepOut(layout, floorIndex);

@@ -249,6 +249,7 @@ components/
     │   ├── outdoor.ts                   Garden / path / bush scenery; perimeter trees merged per part
     │   └── sky.ts                       World-space sky dome, clouds and sun disc, painted from the sky profile (#761)
     ├── canvas-2d/render.ts              Pure 2D top-down renderer
+    ├── canvas-2d/ground-plan.ts         Garden surfaces on the ground floor's plan, minimap and blueprint, behind the house; the draw gesture's draft (#924)
     ├── canvas-2d/opening-symbol.ts      Door swings and window double lines on the plan, minimap and blueprint
     ├── canvas-2d/plan-edit.ts           What only the on-screen plan draws while editing: wall draft, selected wall, zone handles, and their hit tests and drag maths
     ├── canvas-2d/plan-measure.ts        The measure tool on the plan (#921): the points and the snapped tip (edit layer), the pinned dimensions (plan and blueprint) and their hit test
