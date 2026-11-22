@@ -213,7 +213,8 @@ function AchievementCard({
           className="pc-hud-header"
           style={{ fontSize: 9, margin: 0, opacity: 0.85 }}
         >
-          Achievement Unlocked
+          {/* A brief's completion (#909) says so. */}
+          {achievement.challengeId === undefined ? 'Achievement Unlocked' : 'Challenge Complete'}
           {queued > 0 && ` · ${queued} more`}
         </p>
         <p

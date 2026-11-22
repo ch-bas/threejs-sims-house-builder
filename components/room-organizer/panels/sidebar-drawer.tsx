@@ -413,7 +413,7 @@ const DrawerBody = memo(function DrawerBody({
           />
 
           <EditLock locked={exploring}>
-          <TemplatesPanel onLoadTemplate={loadTemplate} />
+          <TemplatesPanel onLoadTemplate={loadTemplate} unlocked={unlockedAchievements} />
 
           <LibraryPanel
             key={libraryRevision}

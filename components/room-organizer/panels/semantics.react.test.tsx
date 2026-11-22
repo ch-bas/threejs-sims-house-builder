@@ -31,7 +31,24 @@ describe('AchievementsPanel semantics (#648, #640)', () => {
     const bar = screen.getByRole('progressbar', { name: 'Achievements unlocked' });
     expect(bar.getAttribute('aria-valuenow')).toBe('1');
     expect(bar.getAttribute('aria-valuemin')).toBe('0');
-    expect(bar.getAttribute('aria-valuemax')).toBe(String(ACHIEVEMENTS.length));
+    // The challenge badges (#909) count apart from the achievements proper.
+    expect(bar.getAttribute('aria-valuemax')).toBe(String(ACHIEVEMENTS.filter((a) => a.challengeId === undefined).length));
+  });
+
+  it('keeps the challenge badges in a Challenges section with a count of their own (#909)', () => {
+    const badges = ACHIEVEMENTS.filter((a) => a.challengeId !== undefined);
+    const main = ACHIEVEMENTS.filter((a) => a.challengeId === undefined);
+    expect(badges.length).toBeGreaterThan(0);
+    render(<AchievementsPanel unlocked={new Set([badges[0]!.id, main[0]!.id])} />);
+    const section = screen.getByRole('region', { name: 'Challenges' });
+    expect(within(section).getByText(`1/${badges.length}`)).toBeTruthy();
+    const bar = within(section).getByRole('progressbar', { name: 'Challenges completed' });
+    expect([bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuemax')]).toEqual(['1', String(badges.length)]);
+    expect(within(section).getAllByRole('listitem')).toHaveLength(badges.length);
+    for (const badge of badges) expect(within(section).getByText(badge.name)).toBeTruthy();
+    // And none of them in the main list or its count.
+    expect(screen.getByText(`1/${main.length}`)).toBeTruthy();
+    expect(screen.getAllByRole('listitem')).toHaveLength(ACHIEVEMENTS.length);
   });
 
   it('says locked or unlocked per row without naming the row after it', () => {
