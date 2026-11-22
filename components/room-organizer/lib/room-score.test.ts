@@ -95,6 +95,40 @@ describe('scoreZone (#613)', () => {
     expect(scoreZone({ zone, floorItems: [bed, rug], area: 16, collides: none }).missing).not.toContain('space');
   });
 
+  it('a piece standing in a door\'s swing loses the space star; the door\'s other side or a rug does not (#917)', () => {
+    // A door in the north edge at z = 0, opening into the room: its swing reaches z = 0.9.
+    const door = at('door', 'door', 1, 0, { category: 'structure', width: 0.9, depth: 0.12, height: 2.05 });
+    const stool = at('stool', 'stool', 1, 0.4, { width: 0.4, depth: 0.4 });
+    expect(scoreZone({ zone, floorItems: [bed, door, stool], area: 16, collides: none }).missing).toContain('space');
+    expect(scoreZone({ zone, floorItems: [bed, door], area: 16, collides: none }).missing).not.toContain('space');
+    const out = { ...door, swingOut: true as const };
+    expect(scoreZone({ zone, floorItems: [bed, out, stool], area: 16, collides: none }).missing).not.toContain('space');
+    const rug = at('rug', 'rug', 1, 0.4, { category: 'decor', height: 0.02 });
+    expect(scoreZone({ zone, floorItems: [bed, door, rug], area: 16, collides: none }).missing).not.toContain('space');
+    // A blocker standing in the next room is that room's concern.
+    expect(scoreZone({ zone, floorItems: [bed, door, stool], area: 16, collides: none, swingBlockers: new Set(['elsewhere']) }).missing).not.toContain('space');
+    // A person or a pet steps aside.
+    const person = at('person', 'person', 1, 0.4, { category: 'people', width: 0.5, depth: 0.3 });
+    expect(scoreZone({ zone, floorItems: [bed, door, person], area: 16, collides: none }).missing).not.toContain('space');
+  });
+
+  it('says which part of the space check a room fails (#917)', () => {
+    const door = at('door', 'door', 1, 0, { category: 'structure', width: 0.9, depth: 0.12, height: 2.05 });
+    const stool = at('stool', 'stool', 1, 0.4, { width: 0.4, depth: 0.4 });
+    const big = at('wardrobe', 'wardrobe', 2.5, 2.5, { width: 3, depth: 3 });
+    const swing = scoreZone({ zone, floorItems: [bed, door, stool], area: 16, collides: none });
+    expect(swing.space).toBe('swing');
+    expect(moreStarsHint(swing.missing, 'metric', swing.space)).toContain('furniture clear of door swings');
+    const crowded = scoreZone({ zone, floorItems: [bed, big], area: 16, collides: none });
+    expect(crowded.space).toBe('crowded');
+    expect(moreStarsHint(['space'], 'metric', crowded.space)).toBe('For more stars: furniture under 70% of the floor');
+    const both = scoreZone({ zone, floorItems: [bed, big, door, stool], area: 16, collides: none });
+    expect(both.space).toBe('both');
+    expect(moreStarsHint(['space'], 'metric', 'both')).toBe('For more stars: furniture under 70% of the floor, clear of door swings');
+    // Met: no reason at all, so a full score still equals the old shape.
+    expect(scoreZone({ zone, floorItems: [bed], area: 16, collides: none })).not.toHaveProperty('space');
+  });
+
   it('a zone the furniture makes no room of is not scored', () => {
     expect(scoreZone({ zone, floorItems: [plant, lamp, window], area: 16, collides: none })).toEqual({ type: null, stars: 0, missing: [] });
   });

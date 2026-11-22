@@ -205,7 +205,7 @@ export function StatisticsPanel(): JSX.Element {
                 </div>
                 {row.missing.length > 0 && (
                   <p className="text-muted-foreground">
-                    For more stars: {ROOM_CHECKS.filter((check) => row.missing.includes(check.key)).map((check) => roomCheckLabel(check, unit)).join(', ')}
+                    For more stars: {ROOM_CHECKS.filter((check) => row.missing.includes(check.key)).map((check) => roomCheckLabel(check, unit, row.space)).join(', ')}
                   </p>
                 )}
               </div>
