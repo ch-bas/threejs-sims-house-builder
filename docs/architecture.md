@@ -141,7 +141,7 @@ components/
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-bodies.ts                The player and the walkers as each other's obstacles: walker bodies for the player's resolve, the player's spot and seat for the walkers (#585)
-    │   ├── npc-needs.ts                 Walkers' hunger, energy, fun and hygiene: decay, refill, what meets each (fridge/stove, bed/sofa, TV/computer/bookshelf, toilet/shower/bath/basin) and the weighted destination pick (#617, #904); what each storey lacks for the Statistics Household block (`householdLacks`, #906)
+    │   ├── npc-needs.ts                 Walkers' hunger, energy, fun and hygiene: decay, refill, what meets each (fridge/stove, bed/sofa, TV/computer/bookshelf, toilet/shower/bath/basin), the weighted destination pick and the chairs at a table where a fetched meal is eaten (`pickMealSpot`, #617, #904); what each storey lacks for the Statistics Household block (`householdLacks`, #906)
     │   ├── npc-schedule.ts              The hour the walkers keep: the sleep window (23:00 to 07:00) and how the hour tilts the needs (rest at night, hunger at mealtimes) (#907)
     │   ├── npc-path.ts                  Walker (NPC) free-space grid, regions, A* + string-pulled routes, destinations (#452)
     │   ├── npc-seats.ts                 Where walkers sit: seat slots (the end of a bed too), facing, approach points (from the side or behind for a chair pushed in, #904)

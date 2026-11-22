@@ -4,13 +4,14 @@
  * one up. Hunger sends a walker to the fridge or the stove, a lack of
  * energy to the bed or the sofa, boredom to the TV or the computer (a seat
  * facing it) or the bookshelf, and hygiene to the toilet, the shower, the
- * bath or the basin (#904). The scoring is pure and allocation-free, with randomness
+ * bath or the basin (#904). A meal fetched from the fridge is eaten at the
+ * table when a chair there is free. The scoring is pure and allocation-free, with randomness
  * injected, so it is tested here and the walk only asks where to go.
  */
 
 import { type FootprintBuilding, isInsideBuilding } from './footprint';
-import { type NpcSeat, findNpcSeats } from './npc-seats';
-import type { NeedBias } from './npc-schedule';
+import { type NeedBias, isMealHour } from './npc-schedule';
+import { type NpcSeat, MEAL_SEAT_TYPES, findNpcSeats, tableInFront } from './npc-seats';
 import type { FloorLayout, FurnitureItem } from './types';
 
 export type NeedKind = 'hunger' | 'energy' | 'fun' | 'hygiene';
@@ -59,6 +60,9 @@ const NEED_OF_TYPE: Readonly<Record<string, NeedKind>> = {
   bathtub: 'hygiene',
   'bathroom-sink': 'hygiene',
 };
+
+/** Between mealtimes, the chance that a walker takes what it got from the fridge to the table. */
+export const SNACK_AT_TABLE_CHANCE = 0.4;
 
 /** Screens: used from a seat facing them within range, or else standing in front (#904). */
 const SCREEN_RANGE: Readonly<Record<string, number>> = { tv: TV_RANGE, computer: COMPUTER_RANGE };
@@ -115,6 +119,11 @@ export interface NeedSpot {
   heading: number;
   /** The seat to sit in (`NpcSeat.key`), or null to stand. */
   seatKey: string | null;
+  /**
+   * A chair at a table (#904): where a meal fetched from the fridge or the
+   * stove is eaten. Never a stop of its own: only `pickMealSpot` offers it.
+   */
+  meal?: true;
 }
 
 /**
@@ -128,7 +137,7 @@ export function findNeedSpots(items: readonly FurnitureItem[], seats: readonly N
   const spots: NeedSpot[] = [];
   for (const seat of seats) {
     const need = needOfType(seat.itemType);
-    if (need === null) continue;
+    if (need === null || seat.mealOnly) continue;
     spots.push(seatSpot(seat, need));
   }
   for (const item of items) {
@@ -136,7 +145,7 @@ export function findNeedSpots(items: readonly FurnitureItem[], seats: readonly N
     if (!item.position || need === null || item.type === 'bed' || item.type === 'sofa') continue;
     const range = Object.hasOwn(SCREEN_RANGE, item.type) ? SCREEN_RANGE[item.type]! : 0;
     if (range > 0) {
-      const watching = seats.filter((seat) => seat.itemType !== 'bed' && facesScreen(seat, item.position!, range));
+      const watching = seats.filter((seat) => seat.itemType !== 'bed' && !seat.mealOnly && facesScreen(seat, item.position!, range));
       for (const seat of watching) spots.push({ ...seatSpot(seat, need), key: `${item.id}>${seat.key}` });
       if (watching.length > 0) continue;
     }
@@ -153,6 +162,12 @@ export function findNeedSpots(items: readonly FurnitureItem[], seats: readonly N
       heading: rotation + Math.PI,
       seatKey: null,
     });
+  }
+  // Chairs pulled up to a table: where a meal is eaten (#904).
+  for (const seat of seats) {
+    if (!MEAL_SEAT_TYPES.has(seat.itemType)) continue;
+    const table = tableInFront(items, seat);
+    if (table) spots.push({ ...seatSpot(seat, 'hunger'), key: `${table.id}>${seat.key}`, meal: true });
   }
   return spots;
 }
@@ -217,9 +232,42 @@ export function pickNeedSpot(
   let chosen: NeedSpot | null = null;
   let total = 0;
   for (const spot of spots) {
-    if (spot.need === skip) continue;
+    if (spot.need === skip || spot.meal) continue;
     const weight = scoreNeedSpot(needs, spot, fromX, fromZ, bias);
     if (weight <= 0 || !usable(spot)) continue;
+    total += weight;
+    if (random() * total < weight) chosen = spot;
+  }
+  return chosen;
+}
+
+/**
+ * Whether a walker that just fetched something to eat sits down at the
+ * table with it (#904): always at a mealtime (lib/npc-schedule.ts), now and
+ * then between meals. One random draw, only between meals.
+ */
+export function sitsToEat(hour: number, random: () => number): boolean {
+  return isMealHour(hour) || random() < SNACK_AT_TABLE_CHANCE;
+}
+
+/**
+ * The chair at a table where a walker eats what it fetched (#904): one of
+ * the meal spots `usable` allows, picked at random with the nearer ones
+ * likelier, as `scoreNeedSpot` weighs distance. Null when there is none.
+ * One random draw per candidate; no allocation.
+ */
+export function pickMealSpot(
+  spots: readonly NeedSpot[],
+  fromX: number,
+  fromZ: number,
+  usable: (spot: NeedSpot) => boolean,
+  random: () => number
+): NeedSpot | null {
+  let chosen: NeedSpot | null = null;
+  let total = 0;
+  for (const spot of spots) {
+    if (!spot.meal || !usable(spot)) continue;
+    const weight = 1 / (1 + Math.hypot(spot.x - fromX, spot.z - fromZ) / NEAR_SCALE);
     total += weight;
     if (random() * total < weight) chosen = spot;
   }
@@ -233,7 +281,8 @@ export function pickNeedSpot(
  * a bath, though a walker in need uses the toilet too.
  */
 export function unmetNeeds(spots: readonly NeedSpot[]): NeedKind[] {
-  return NEED_KINDS.filter((need) => !spots.some((spot) => spot.need === need && !(need === 'hygiene' && spot.itemType === 'toilet')));
+  // A table is where a meal is eaten, not where one comes from (#904).
+  return NEED_KINDS.filter((need) => !spots.some((spot) => spot.need === need && !spot.meal && !(need === 'hygiene' && spot.itemType === 'toilet')));
 }
 
 /** What a storey lacks, as the Household block in Statistics says it (#906). */

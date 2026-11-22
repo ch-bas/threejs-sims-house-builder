@@ -7,9 +7,11 @@ import {
   type NpcNeeds,
   decayNeeds,
   findNeedSpots,
+  pickMealSpot,
   pickNeedSpot,
   randomNeeds,
   refillNeed,
+  sitsToEat,
 } from '../lib/npc-needs';
 import {
   MAX_PATH_POINTS,
@@ -775,7 +777,8 @@ export function planSeat(
   let chosen: NpcSeat | null = null;
   let eligible = 0;
   for (const seat of seats.values()) {
-    if (!isFreeAt(nav, seat.approachX, seat.approachZ)) continue;
+    // A chair tucked in at a table is only pulled out for a meal (#904).
+    if (seat.mealOnly || !isFreeAt(nav, seat.approachX, seat.approachZ)) continue;
     const cell = cellAt(nav, seat.approachX, seat.approachZ);
     if (nav.region[cell] !== region) continue;
     if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) continue;
@@ -838,11 +841,7 @@ export function planNeed(
       if (others.some((other) => other !== npc && claims(other, spot.x, spot.z))) return false;
       return player === null || Math.hypot(player.x - spot.x, player.z - spot.z) >= PERSONAL_SPACE;
     }
-    // Only the rigged figure sits; one sitter per seat (#585).
-    const seat = seats.get(spot.seatKey);
-    if (!seat || !npc.anim?.sit) return false;
-    if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) return false;
-    return !(player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat)));
+    return seatFree(npc, seats.get(spot.seatKey), others, player);
   };
   const spot = pickNeedSpot(npc.needs, spots, npc.position.x, npc.position.z, usable, random, skip, bias);
   if (!spot) return false;
@@ -860,6 +859,41 @@ export function planNeed(
     npc.arrivalHeading = spot.heading;
   }
   npc.seeking = spot.need;
+  return true;
+}
+
+/** Whether a walker can take `seat`: only the rigged figure sits, one sitter per seat (#585). */
+function seatFree(npc: NpcState, seat: NpcSeat | undefined, others: readonly NpcState[], player: PlayerBody | null): seat is NpcSeat {
+  if (!seat || !npc.anim?.sit) return false;
+  if (others.some((other) => other !== npc && other.seat?.key === seat.key) || seatFull(npc, seat, others)) return false;
+  return !(player && seatTakenByPlayer(player, player.floorIndex, seat.x, seat.z, bedOf(seat)));
+}
+
+/**
+ * The dining-table chain (#904): a walker that fetched something from the
+ * fridge or the stove takes it to a free chair at a table it can reach and
+ * eats there, always at mealtimes and now and then between them
+ * (`sitsToEat`). True when it set off for the chair.
+ */
+export function planMeal(
+  npc: NpcState,
+  nav: NpcNav,
+  seats: NpcSeats,
+  spots: readonly NeedSpot[],
+  random: () => number,
+  others: readonly NpcState[] = [],
+  player: PlayerBody | null = null,
+  hour = Number.NaN
+): boolean {
+  if (!npc.anim?.sit || !spots.some((spot) => spot.meal) || !sitsToEat(hour, random)) return false;
+  const from = standingCell(npc, nav);
+  if (from < 0) return false;
+  const region = nav.region[from];
+  const usable = (spot: NeedSpot): boolean =>
+    isFreeAt(nav, spot.x, spot.z) && nav.region[cellAt(nav, spot.x, spot.z)] === region && seatFree(npc, seats.get(spot.seatKey ?? ''), others, player);
+  const spot = pickMealSpot(spots, npc.position.x, npc.position.z, usable, random);
+  if (!spot || !headForSeat(npc, nav, from, seats.get(spot.seatKey!)!)) return false;
+  npc.seeking = 'hunger';
   return true;
 }
 
@@ -1158,15 +1192,18 @@ function arriveAtStop(
   npc.using = npc.destination >= 0 ? npc.seeking : null;
   npc.seeking = null;
   const using = npc.using;
-  const toNeed = planNeed(npc, nav, seats ?? EMPTY_SEATS, spots, random, npcs, player, using, needBias(hour));
+  // Food from the fridge is eaten at the table when a chair there is free (#904).
+  const toMeal = using === 'hunger' && seats !== null && planMeal(npc, nav, seats, spots, random, npcs, player, hour);
+  const toNeed = !toMeal && planNeed(npc, nav, seats ?? EMPTY_SEATS, spots, random, npcs, player, using, needBias(hour));
   const toSeat =
+    !toMeal &&
     !toNeed &&
     Boolean(npc.anim?.sit) &&
     seats !== null &&
     seats.size > 0 &&
     random() < SEAT_CHANCE &&
     planSeat(npc, nav, seats, random, npcs, player);
-  if (!toNeed && !toSeat) planRoute(npc, nav, random, npcs, player);
+  if (!toMeal && !toNeed && !toSeat) planRoute(npc, nav, random, npcs, player);
   // planNeed and planRoute leave what this stop is for alone.
   npc.using = using;
   npc.mode = 'pause';
