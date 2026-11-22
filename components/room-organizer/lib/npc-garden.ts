@@ -11,7 +11,9 @@
  * and the porch steps (`lib/walk-world`), and a door more than a step above
  * or below the lot is no way out.
  *
- * Out there the walkers sit on the garden bench to rest. While it rains or
+ * Out there the walkers sit on the garden bench to rest, and for fun they
+ * stand at the barbecue, at the edge of the pool, or sit at the picnic
+ * table, on either bench. While it rains or
  * snows, and at night, the lot is closed: nobody heads out, and anyone out
  * there comes in at the next stop. Pure; built with the nav, not per frame.
  */
@@ -210,25 +212,103 @@ export function gardenOpen(weather: Weather | undefined, hour: number): boolean 
   return h >= GARDEN_OPENS && h < GARDEN_CLOSES;
 }
 
+/** Where a walker stands to use the barbecue or watch the pool: this far off its edge (m). */
+const STAND_GAP = 0.35;
+/** The picnic table's benches: builders-outdoor.ts, a 0.2 d board centred 0.4 d out, its top at 0.55 h + 3 cm. */
+const PICNIC_BENCH_OUT = 0.4;
+const PICNIC_SEAT_FRACTION = 0.55;
+const PICNIC_SEAT_BOARD = 0.03;
+/** Places along each picnic bench: one per this many metres, as on a sofa. */
+const PICNIC_SLOT_WIDTH = 0.65;
+/** How far in front of a picnic bench's outer edge the walker turns round to sit (m). */
+const PICNIC_APPROACH_GAP = 0.35;
+
 /**
- * The garden's own spots (#913): a garden bench is somewhere to rest. Each
- * comes from a seat `findNpcSeats` found; the rest of what meets a need is
- * `findNeedSpots`'.
+ * The picnic tables' seats (#913): each table has a bench either side of
+ * its long axis, with a place per 0.65 m, the sitter facing the table and
+ * coming in from outside the bench. The table takes as many as it has
+ * places. Item ids keep the keys stable while it stays put.
  */
-export function findGardenSpots(seats: readonly NpcSeat[]): NeedSpot[] {
+export function findGardenSeats(items: readonly FurnitureItem[]): NpcSeat[] {
+  const seats: NpcSeat[] = [];
+  for (const item of items) {
+    if (item.type !== 'picnic-table' || !item.position) continue;
+    const rotation = item.rotation ?? 0;
+    // Local +z and +x in world space.
+    const fx = Math.sin(rotation);
+    const fz = Math.cos(rotation);
+    const wx = Math.cos(rotation);
+    const wz = -Math.sin(rotation);
+    const slots = Math.max(1, Math.floor(item.width / PICNIC_SLOT_WIDTH));
+    const seatHeight = Math.min(item.height, item.height * PICNIC_SEAT_FRACTION + PICNIC_SEAT_BOARD);
+    for (const [side, sign] of [[0, 1], [1, -1]] as const) {
+      const out = sign * PICNIC_BENCH_OUT * item.depth;
+      const approach = sign * (item.depth / 2 + PICNIC_APPROACH_GAP);
+      for (let slot = 0; slot < slots; slot++) {
+        const along = (slot + 0.5) * (item.width / slots) - item.width / 2;
+        const cx = item.position.x + wx * along;
+        const cz = item.position.z + wz * along;
+        seats.push({
+          key: `${item.id}:p${side}-${slot}`,
+          itemId: item.id,
+          itemType: item.type,
+          x: cx + fx * out,
+          z: cz + fz * out,
+          // Facing the table: in from the +z bench faces -z.
+          rotation: sign > 0 ? rotation + Math.PI : rotation,
+          seatHeight,
+          approachX: cx + fx * approach,
+          approachZ: cz + fz * approach,
+          places: slots * 2,
+        });
+      }
+    }
+  }
+  return seats;
+}
+
+/**
+ * The garden's own spots (#913): a garden bench is somewhere to rest; the
+ * barbecue (standing at its front), the pool (standing at the middle of
+ * either long side, looking in) and the picnic table (sitting on either
+ * bench) are fun. The seats come from `findNpcSeats` and `findGardenSeats`;
+ * the rest of what meets a need is `findNeedSpots`'.
+ */
+export function findGardenSpots(items: readonly FurnitureItem[], seats: readonly NpcSeat[]): NeedSpot[] {
   const spots: NeedSpot[] = [];
   for (const seat of seats) {
-    if (!GARDEN_REST_TYPES.has(seat.itemType)) continue;
+    const rest = GARDEN_REST_TYPES.has(seat.itemType);
+    if (!rest && seat.itemType !== 'picnic-table') continue;
     spots.push({
       key: seat.key,
       itemId: seat.itemId,
       itemType: seat.itemType,
-      need: 'energy',
+      need: rest ? 'energy' : 'fun',
       x: seat.approachX,
       z: seat.approachZ,
       heading: seat.rotation,
       seatKey: seat.key,
     });
+  }
+  for (const item of items) {
+    if (!item.position || (item.type !== 'bbq' && item.type !== 'pool')) continue;
+    const rotation = item.rotation ?? 0;
+    // The barbecue's front, or both long sides of the pool.
+    const sides = item.type === 'bbq' ? [1] : [1, -1];
+    for (const sign of sides) {
+      const gap = sign * (item.depth / 2 + STAND_GAP);
+      spots.push({
+        key: `${item.id}:${sign > 0 ? 'front' : 'back'}`,
+        itemId: item.id,
+        itemType: item.type,
+        need: 'fun',
+        x: item.position.x + Math.sin(rotation) * gap,
+        z: item.position.z + Math.cos(rotation) * gap,
+        // Facing back at the item.
+        heading: sign > 0 ? rotation + Math.PI : rotation,
+        seatKey: null,
+      });
+    }
   }
   return spots;
 }
@@ -266,8 +346,8 @@ export function reachableGardenSpots(building: GardenBuilding): NeedSpot[] {
   const keepOut = [...entranceKeepOut(building, 0), ...cutoutKeepOut(building)];
   const nav = buildNpcNav({ items: floor.items, interiorWalls: floor.interiorWalls ?? [], keepOut, roomWidth: building.width, roomDepth: building.height, outdoor });
   if (!nav?.outdoor) return [];
-  const seats = findNpcSeats(floor.items, { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders });
-  return findGardenSpots(seats).filter(
+  const seats = [...findNpcSeats(floor.items, { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders }), ...findGardenSeats(floor.items)];
+  return findGardenSpots(floor.items, seats).filter(
     (spot) => onTheLot(nav, spot.x, spot.z) && isFreeAt(nav, spot.x, spot.z) && nav.regionIndoors[nav.region[cellAt(nav, spot.x, spot.z)]!] === 1
   );
 }

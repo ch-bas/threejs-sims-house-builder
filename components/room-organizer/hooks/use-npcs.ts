@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { type NpcBody, type NpcHandOff, type PlayerBody, createNpcBody, moveNpcBody, seatTakenByPlayer } from '../lib/npc-bodies';
 // Garden walkers (#913).
-import { type NpcBuilding, findGardenSpots, gardenNavInput, gardenOpen, gardenSignature, indoorOnly, onTheLot } from '../lib/npc-garden';
+import { type NpcBuilding, findGardenSeats, findGardenSpots, gardenNavInput, gardenOpen, gardenSignature, indoorOnly, onTheLot } from '../lib/npc-garden';
 import {
   type NeedKind,
   type NeedSpot,
@@ -58,6 +58,7 @@ import type { FrameBudget } from '../three/frame-budget';
 import type * as ThreeNS from 'three';
 
 type ThreeModule = typeof import('../three/three-runtime');
+
 
 const NPC_TAG = 'npc';
 
@@ -630,10 +631,12 @@ function syncNpcStoreys(
       storey.seatItems = floor.items;
       const nav = storey.nav;
       const seats = findNpcSeats(floor.items, nav ? { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders } : undefined);
+      // Garden walkers (#913): the picnic table's benches.
+      if (nav?.outdoor) seats.push(...findGardenSeats(floor.items));
       storey.seats = new Map(seats.map((seat) => [seat.key, seat]));
       storey.spots = findNeedSpots(floor.items, seats);
       // Garden walkers (#913): the bench to rest on, and what is left indoors for a closed garden.
-      if (nav?.outdoor) storey.spots = [...storey.spots, ...findGardenSpots(seats)];
+      if (nav?.outdoor) storey.spots = [...storey.spots, ...findGardenSpots(floor.items, seats)];
       storey.indoor = nav ? indoorOnly(nav, storey.seats, storey.spots) : { seats: storey.seats, spots: storey.spots };
       // #906: what each walker can reach changed with the floor.
       // Garden walkers (#913): what they can use now, the garden open or closed.

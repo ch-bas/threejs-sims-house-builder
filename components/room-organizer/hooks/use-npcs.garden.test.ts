@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { makeFloor, makeItem, makeLayout } from '../lib/__testfixtures__/fixtures';
 import { floorKeepOut } from '../lib/floor-keep-out';
 import { createNpcBody } from '../lib/npc-bodies';
-import { findGardenSpots, gardenNavInput, indoorOnly } from '../lib/npc-garden';
+import { findGardenSeats, findGardenSpots, gardenNavInput, indoorOnly } from '../lib/npc-garden';
 import { findNeedSpots } from '../lib/npc-needs';
 import { MAX_PATH_POINTS, NPC_RADIUS, type NpcNav, buildNpcNav, isFreeAt } from '../lib/npc-path';
 import { findNpcSeats } from '../lib/npc-seats';
@@ -82,9 +82,9 @@ function garden(layout: RoomLayout) {
     roomDepth: layout.height,
     outdoor: gardenNavInput(layout, 0),
   }) as NpcNav;
-  const seatList = findNpcSeats(floor.items, { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders });
+  const seatList = [...findNpcSeats(floor.items, { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders }), ...findGardenSeats(floor.items)];
   const seats = new Map(seatList.map((seat) => [seat.key, seat]));
-  const spots = [...findNeedSpots(floor.items, seatList), ...findGardenSpots(seatList)];
+  const spots = [...findNeedSpots(floor.items, seatList), ...findGardenSpots(floor.items, seatList)];
   return { nav, seats, spots, indoor: indoorOnly(nav, seats, spots) };
 }
 
@@ -181,5 +181,29 @@ describe('walkers cut off outside (#913 review)', () => {
       stepNpcs([npc], FRAME, after.nav, 0, random, after.seats, null, after.spots, 12);
       expect(Math.abs(npc.position.z)).toBeLessThan(4);
     }
+  });
+});
+
+describe('fun in the garden (#913)', () => {
+  const items: FurnitureItem[] = [
+    makeItem({ id: 'back', type: 'door', name: 'Door', width: 0.9, depth: 0.12, height: 2.05, position: { x: 0, z: 4 } }),
+    makeItem({ id: 'picnic', type: 'picnic-table', name: 'Picnic Table', category: 'outdoor', width: 1.8, depth: 1.4, height: 0.75, position: { x: -2, z: 8 } }),
+  ];
+  const { nav, seats, spots } = garden(makeLayout({ width: 8, height: 8, floors: [makeFloor({ items })] }));
+
+  it('a bored walker goes out to the picnic table, sits facing it, and has fun', () => {
+    const npc = sitter(1, -2, { hunger: 1, energy: 1, fun: 0.05, hygiene: 1 });
+    const random = seeded(4);
+    let sat = false;
+    for (let t = 0; t < 40 && !(sat && npc.mode === 'leaveSeat'); t += FRAME) {
+      stepNpcs([npc], FRAME, nav, 0, random, seats, null, spots, 12);
+      if (npc.mode === 'seated' && npc.seat?.itemId === 'picnic') {
+        sat = true;
+        // Facing the table's long axis.
+        expect(Math.cos(npc.group.rotation.y) * (8 - npc.seat.z)).toBeGreaterThan(0);
+      }
+    }
+    expect(sat).toBe(true);
+    expect(npc.needs.fun).toBeGreaterThan(0.5);
   });
 });

@@ -634,7 +634,9 @@ to respect.
   the 0.5 m by the walls, so nobody pops up a ledge in a doorway. Walkers
   are held to the lot's own rectangle. Walkers spawn indoors; outdoors they
   wander only to garden things (not fences or hedges) and garden surfaces,
-  the rest of the lawn is crossed. The garden bench is somewhere to rest.
+  the rest of the lawn is crossed. The garden bench is somewhere to rest;
+  the barbecue (at its front), the pool (at the middle of a long side) and
+  the picnic table (two places a bench, facing it, `findGardenSeats`) are fun.
   With no usable door, or nothing in the garden, the nav is the indoor one
   exactly as before. In rain or snow, and after dark, the garden is closed
   (`gardenOpen`: open from sunrise, 06:00, to the end of the scene's

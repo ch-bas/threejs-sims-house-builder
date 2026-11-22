@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { measureCpu } from './__testfixtures__/cpu-time';
 import { makeFloor, makeItem, makeLayout } from './__testfixtures__/fixtures';
 import { floorKeepOut } from './floor-keep-out';
-import { GARDEN_CLOSES, GARDEN_OPENS, findGardenSpots, gardenNavInput, reachableGardenSpots, gardenOpen, gardenSignature, indoorOnly, onTheLot } from './npc-garden';
+import { GARDEN_CLOSES, GARDEN_OPENS, findGardenSeats, findGardenSpots, gardenNavInput, gardenOpen, gardenSignature, indoorOnly, onTheLot, reachableGardenSpots } from './npc-garden';
 import { findNeedSpots, householdLacks } from './npc-needs';
 import {
   MAX_PATH_POINTS,
@@ -260,7 +260,7 @@ describe('the garden nav (#913)', () => {
     const items = [BACK_DOOR, BENCH, makeItem({ id: 'sofa', type: 'sofa', width: 2, depth: 0.9, height: 0.8, position: { x: 0, z: -2 } })];
     const nav = gardenNav(house(items));
     const seats = findNpcSeats(items, { isFree: (x, z) => isFreeAt(nav, x, z), blockers: nav.colliders });
-    const spots = [...findNeedSpots(items, seats), ...findGardenSpots(seats)];
+    const spots = [...findNeedSpots(items, seats), ...findGardenSpots(items, seats)];
     const benchSpot = spots.find((spot) => spot.itemId === 'bench');
     expect(benchSpot?.need).toBe('energy');
     expect(benchSpot?.seatKey).not.toBeNull();
@@ -375,5 +375,65 @@ describe('cell numbering across the two grids (#913)', () => {
       const cell = cellAt(nav, x, z);
       expect(cellAt(nav, cellX(nav, cell), cellZ(nav, cell))).toBe(cell);
     }
+  });
+});
+
+describe('things to do in the garden (#913)', () => {
+  const picnic = makeItem({ id: 'picnic', type: 'picnic-table', name: 'Picnic Table', category: 'outdoor', width: 1.8, depth: 1.4, height: 0.75, position: { x: -3, z: 8 } });
+  const bbq = makeItem({ id: 'bbq', type: 'bbq', name: 'BBQ Grill', category: 'outdoor', width: 0.8, depth: 0.6, height: 1.1, position: { x: 3, z: 7 }, rotation: Math.PI });
+  const pool = makeItem({ id: 'pool', type: 'pool', name: 'Swimming Pool', category: 'outdoor', width: 4, depth: 2.5, height: 0.1, position: { x: 2, z: -8 } });
+
+  it('a picnic table seats two along each bench, facing the table, come at from outside the bench', () => {
+    const seats = findGardenSeats([picnic]);
+    expect(seats).toHaveLength(4);
+    expect(new Set(seats.map((seat) => seat.key)).size).toBe(4);
+    for (const seat of seats) {
+      expect(seat.places).toBe(4);
+      expect(seat.seatHeight).toBeCloseTo(0.75 * 0.55 + 0.03, 6);
+      // On a bench, 0.56 m off the table's long axis.
+      expect(Math.abs(seat.z - 8)).toBeCloseTo(0.56, 6);
+      // Facing the table: toward its axis.
+      expect(Math.cos(seat.rotation) * (8 - seat.z)).toBeGreaterThan(0);
+      // Coming in from outside the table's footprint.
+      expect(Math.abs(seat.approachZ - 8)).toBeGreaterThan(0.7);
+    }
+    expect(findGardenSeats([{ ...picnic, rotation: Math.PI / 2 }]).every((seat) => Math.abs(seat.x + 3) > 0.5)).toBe(true);
+  });
+
+  it('the barbecue, the pool and the picnic table are fun; spots stand clear and face the thing', () => {
+    const items = [BACK_DOOR, picnic, bbq, pool];
+    const nav = gardenNav(house(items));
+    const seats = [...findNpcSeats(items), ...findGardenSeats(items)];
+    const spots = findGardenSpots(items, seats);
+    const byItem = (id: string) => spots.filter((spot) => spot.itemId === id);
+    expect(byItem('bbq')).toHaveLength(1);
+    expect(byItem('pool')).toHaveLength(2);
+    expect(byItem('picnic')).toHaveLength(4);
+    expect(spots.every((spot) => spot.need === 'fun')).toBe(true);
+    const [grill] = byItem('bbq');
+    // The barbecue faces −z (rotation π): its front is toward the house.
+    expect(grill!.z).toBeLessThan(7);
+    expect(Math.cos(grill!.heading) * (7 - grill!.z)).toBeGreaterThan(0);
+    for (const spot of [...byItem('bbq'), ...byItem('pool'), ...byItem('picnic')]) {
+      expect(isFreeAt(nav, spot.x, spot.z)).toBe(true);
+      expect(nav.region[cellAt(nav, spot.x, spot.z)]).toBe(nav.region[cellAt(nav, 0, 0)]);
+    }
+  });
+
+  it('the household has something to do when the barbecue, the pool or the picnic table is through a door', () => {
+    for (const thing of [picnic, bbq, pool]) {
+      expect(householdLacks(house([BACK_DOOR, thing]))[0]!.lacks).not.toContain('fun');
+      expect(householdLacks(house([thing]))[0]!.lacks).toContain('fun');
+    }
+  });
+
+  it('none of it while the garden is closed', () => {
+    const items = [BACK_DOOR, picnic, bbq];
+    const nav = gardenNav(house(items));
+    const seats = findGardenSeats(items);
+    const spots = findGardenSpots(items, seats);
+    const closed = indoorOnly(nav, new Map(seats.map((seat) => [seat.key, seat])), spots);
+    expect(closed.spots).toHaveLength(0);
+    expect(closed.seats.size).toBe(0);
   });
 });
