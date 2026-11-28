@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { cameraTweenDuration, createCameraTween, samePose } from '../lib/camera-tween';
+import { cameraTweenDuration, createCameraTween, samePose, storeySlidePose } from '../lib/camera-tween';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from '../lib/camera-zoom';
 import { ORBIT_LENS_SCALE, ORBIT_MAX_POLAR, ORBIT_START, focusOffset, frameInRegion, houseFrameBox, isCompactViewport, regionViewOffset } from '../lib/scene-insets';
 import { OCCLUDER_SELECTOR, SHEET_SELECTOR, measureRegion } from './scene-occluders';
@@ -98,16 +98,39 @@ interface Glide {
 }
 
 /** Each camera's move in flight, for the other code that moves it. */
-const settlers = new WeakMap<object, () => void>();
+const glides = new WeakMap<object, Glide>();
+/** Each mounted camera hook's way to move its camera, for the floor switch. */
+const movers = new WeakMap<object, (end: CameraPose, eased: boolean) => void>();
 
 /**
  * Land an eased camera move (#930) at its end pose now. Anything else that
- * moves the orbit camera (the pad, the touch zoom, a floor switch, the
- * walkthrough taking it) calls this first, so the glide's next frame
- * doesn't write over it.
+ * moves the orbit camera (the pad, the touch zoom, the walkthrough taking
+ * it) calls this first, so the glide's next frame doesn't write over it.
  */
 export function settleCameraMove(controls: object | null): void {
-  if (controls) settlers.get(controls)?.();
+  if (controls) glides.get(controls)?.finish();
+}
+
+/**
+ * Where the camera is headed: the end of the move in flight, or null when
+ * it sits still. The lamp pool picks its lamps around the end target, so a
+ * floor switch lights the new storey as it arrives, not the old one.
+ */
+export function cameraMoveEnd(controls: object | null): CameraPose | null {
+  return controls ? (glides.get(controls)?.end ?? null) : null;
+}
+
+/**
+ * Take the orbit camera to `end` through its camera hook: eased when asked
+ * and motion is welcome (3D on screen, no walkthrough, no reduced motion),
+ * else at once. Input on the scene lands it rather than stopping it half
+ * way. False when no hook drives these controls: the caller cuts.
+ */
+export function glideCameraTo(controls: object | null, end: CameraPose, eased: boolean): boolean {
+  const move = controls ? movers.get(controls) : undefined;
+  if (!move) return false;
+  move(end, eased);
+  return true;
 }
 
 export function useCameraPresets({
@@ -155,10 +178,12 @@ export function useCameraPresets({
    * is: the player has the camera. Any other press or key lands it at once,
    * before the button or key acts (the pad, a floor switch, 2D, EXPLORE),
    * and so do `settleCameraMove` callers. A new move starts where the old
-   * one stopped.
+   * one stopped. `mustLand`: a floor switch, which the player's input lands
+   * instead of stopping, or the orbit target would stay between storeys.
+   * A held key's repeats leave the move alone.
    */
   const moveCamera = useCallback(
-    (end: CameraPose, eased: boolean, arrive?: () => void, frameMode: FrameMode | null = null) => {
+    (end: CameraPose, eased: boolean, arrive?: () => void, frameMode: FrameMode | null = null, mustLand = false) => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       if (!camera) return;
@@ -186,18 +211,24 @@ export function useCameraPresets({
       const tween = createCameraTween(from, end, performance.now(), duration);
       const canvas = canvasRef?.current ?? null;
       const onScene = (event: Event) => canvas !== null && event.target instanceof Node && canvas.contains(event.target);
+      const interrupt = () => {
+        if (mustLand) glide.finish();
+        else glide.stop();
+      };
       const onInput = (event: Event) => {
-        if (onScene(event)) glide.stop();
+        // A held key (PageUp) would otherwise cut the move short.
+        if (event instanceof KeyboardEvent && event.repeat) return;
+        if (onScene(event)) interrupt();
         else glide.finish();
       };
-      const onWheel = () => glide.stop();
+      const onWheel = () => interrupt();
       let removeJob: (() => void) | null = null;
       const end_ = () => {
         removeJob?.();
         window.removeEventListener('pointerdown', onInput, true);
         window.removeEventListener('keydown', onInput, true);
         canvas?.removeEventListener('wheel', onWheel, true);
-        settlers.delete(controls);
+        if (glides.get(controls) === glide) glides.delete(controls);
         if (glideRef.current === glide) glideRef.current = null;
       };
       const glide: Glide = {
@@ -225,11 +256,27 @@ export function useCameraPresets({
       window.addEventListener('pointerdown', onInput, true);
       window.addEventListener('keydown', onInput, true);
       canvas?.addEventListener('wheel', onWheel, { capture: true, passive: true });
-      settlers.set(controls, glide.finish);
+      glides.set(controls, glide);
       glideRef.current = glide;
     },
     [cameraRef, controlsRef, canvasRef, addFrameJob, walkthroughActive, reducedMotion, invalidate]
   );
+
+  // The floor switch moves the camera through this hook (glideCameraTo):
+  // eased only while the orbit camera is on screen.
+  const moveRef = useRef(moveCamera);
+  moveRef.current = moveCamera;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return undefined;
+    const move = (end: CameraPose, eased: boolean) => moveRef.current(end, eased && activeRef.current, undefined, null, true);
+    movers.set(controls, move);
+    return () => {
+      if (movers.get(controls) === move) movers.delete(controls);
+    };
+  }, [active, controlsRef]);
 
   // The 2D plan hides the camera and the walkthrough takes it: a move in
   // flight lands at once rather than freezing half-way. Unmounting stops it.
@@ -504,6 +551,67 @@ export function useCameraPresets({
   }, [walkthroughActive, cameraRef, invalidate]);
 
   return { applyPreset, focusOn, fitToRoom };
+}
+
+export interface UseCameraTargetOnStoreyOptions {
+  cameraRef: React.MutableRefObject<ThreeNS.PerspectiveCamera | null>;
+  controlsRef: React.MutableRefObject<OrbitControlsType | null>;
+  /** Mid-height of the active storey, world Y. */
+  targetY: number;
+  /** Which storey is active: a change is a floor switch, which glides. */
+  floorIndex: number;
+  walkthroughActive: boolean;
+  invalidate: () => void;
+}
+
+/**
+ * Slide the camera target to mid-height of the active storey: on a floor
+ * switch, and when a storey height below or on it changes (#202). The
+ * scene effects run this ahead of their own, so the lamp pool is assigned
+ * around the new storey's target, not the old one (#393): mid-glide it
+ * reads the glide's end (cameraMoveEnd).
+ *
+ * A floor switch glides there (#930); a height edit, reduced motion and the
+ * 2D plan cut, as before. The ghosting of the other storeys changes at
+ * once with the switch: the glide only moves the camera, and its frames
+ * draw after the scene effects rebuilt the new floor (#216).
+ */
+export function useCameraTargetOnStorey({ cameraRef, controlsRef, targetY, floorIndex, walkthroughActive, invalidate }: UseCameraTargetOnStoreyOptions): void {
+  const floorRef = useRef(floorIndex);
+  useEffect(() => {
+    const switched = floorRef.current !== floorIndex;
+    floorRef.current = floorIndex;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    // An eased move lands first: the slide starts from its end pose.
+    settleCameraMove(controls);
+    const dy = targetY - controls.target.y;
+    if (Math.abs(dy) < 0.01) return;
+    // Keep the orbit target on the new storey even mid-walkthrough, so the
+    // orbit camera aims right after an exit — but never touch the camera or
+    // run controls.update() while walkthrough owns it: update() has no
+    // `enabled` guard, so it re-aims the first-person camera at the orbit
+    // target and clamps it back into the polar cone (#114/#216). Walkthrough
+    // owns its own eye height.
+    if (walkthroughActive) {
+      controls.target.y = targetY;
+    } else {
+      const from: CameraPose = {
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+      };
+      if (!glideCameraTo(controls, storeySlidePose(from, targetY), switched)) {
+        controls.target.y = targetY;
+        camera.position.y += dy;
+        controls.update();
+      }
+    }
+    // Defer painting to the next frame via invalidate(): a synchronous
+    // renderer.render here ran BEFORE the scene effects rebuilt the new
+    // floor, flashing the old floor's contents from the new camera (#216).
+    invalidate();
+  }, [targetY, floorIndex, walkthroughActive, cameraRef, controlsRef, invalidate]);
 }
 
 /** Put a pose on the camera at once: every move's end, and the whole move before #930. */

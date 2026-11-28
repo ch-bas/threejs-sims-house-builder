@@ -81,7 +81,7 @@ components/
     │   ├── achievements.ts              19 predicate-based achievements with count progress, four of them room goals read from `houseRoomScores` (#903); `achievementsEarned` (loaded / edit)
     │   ├── first-steps.ts               The Getting started card's five steps: progress from edits like achievements (loads do none), per-step tips, the stored record (card state, a boolean per step) (#721)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
-    │   ├── camera-tween.ts              Eased camera moves for presets, Fit and Focus: arc round the target, reduced motion cuts (#930)
+    │   ├── camera-tween.ts              Eased camera moves for presets, Fit, Focus and floor switches: arc round the target, reduced motion cuts (#930)
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
     │   ├── contact-shadow.ts            What a storey's baked floor contact map shows: item patches, wall bands, doors and holes wiped (#754)
@@ -286,7 +286,7 @@ components/
     │   ├── use-npcs.ts                  Animated walkers per storey (keyed by floor id, parked while not drawn): spawn, route-following step, re-route on floor edits; giving way, sitting, activities
     │   ├── use-weather.ts               Rain / snow clock on the frame budget
     │   ├── use-ambience.ts              Rain on the roof, footsteps, birds, crickets and doors in EXPLORE, the sound tile's third setting (#911): steps and calls on the frame budget, muted while hidden
-    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom
+    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom; the floor switch's eased slide to the new storey (#930)
     │   ├── plan-calibration.ts          The traced plan's calibration session (#726): points picked, length step, move step
     │   ├── ground-draw.ts               The garden-surface tool (#924): which kind a drag on the plan lays, or off
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERA_TWEEN_MS, cameraTweenDuration, createCameraTween, easeOutCubic, interpolatePose } from './camera-tween';
+import { CAMERA_TWEEN_MS, cameraTweenDuration, createCameraTween, easeOutCubic, interpolatePose, storeySlidePose } from './camera-tween';
 import type { CameraPose } from './camera-tween';
 
 const front: CameraPose = { position: [0, 4, 10], target: [0, 1, 0] };
@@ -103,5 +103,24 @@ describe('cameraTweenDuration', () => {
     expect(cameraTweenDuration(front, east, true)).toBe(0);
     expect(cameraTweenDuration(front, { position: [0, 4, 10.0001], target: [0, 1, 0] }, false)).toBe(0);
     expect(cameraTweenDuration(front, east, false)).toBe(CAMERA_TWEEN_MS);
+  });
+});
+
+describe('storeySlidePose (floor switches)', () => {
+  it('moves the target to the new storey and the camera by the same rise, as the cut did', () => {
+    const end = storeySlidePose(east, 4.5);
+    expect(end.target).toEqual([0, 4.5, 0]);
+    expect(end.position).toEqual([10, 7.5, 0]);
+    expect(storeySlidePose(end, 1)).toEqual(east);
+  });
+
+  it('glides straight up: the heading, the tilt and the distance hold all the way', () => {
+    const end = storeySlidePose(front, 7);
+    for (let i = 1; i < 10; i++) {
+      const pose = interpolatePose(front, end, easeOutCubic(i / 10));
+      expect(pose.position[0]).toBeCloseTo(0, 9);
+      expect(pose.position[2]).toBeCloseTo(10, 9);
+      expect(pose.position[1] - pose.target[1]).toBeCloseTo(3, 9);
+    }
   });
 });
