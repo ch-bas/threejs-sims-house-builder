@@ -139,6 +139,8 @@ components/
     │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
     │   ├── measure-snap.ts              The measure tool's snap (#921): corners, item centres and side middles, then item sides and wall faces; no clamp to the house
     │   ├── plan-dimensions.ts           Pinned dimensions (#921): validity, caps and clamps for the schema and reducer; ends on an outer wall follow a resize or a cut
+    │   ├── plan-image-ref.ts            The light half of the plan image store (#936): ref checks, the images this tab confirmed stored, a save's compact form; loads the store on first use
+    │   ├── plan-image-store.ts          Floor-plan images in IndexedDB keyed by SHA-256 (#936, loaded with import()): stored and read back before a save names one by ref, loads swap it back, files inline it; without IndexedDB it stays inline
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-bodies.ts                The player and the walkers as each other's obstacles: walker bodies for the player's resolve, the player's spot and seat for the walkers (#585)

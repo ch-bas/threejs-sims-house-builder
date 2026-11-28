@@ -71,7 +71,7 @@ export async function encodeShareUrl(
   layout: RoomLayout,
   origin: string
 ): Promise<EncodeShareUrlResult> {
-  const stripped = layout.floorPlanImage !== undefined;
+  const stripped = layout.floorPlanImage !== undefined || layout.floorPlanImageRef !== undefined;
   // Every item rounded, with none given back its exact place: the shortest
   // JSON the real link can have.
   const estimate = await encodeShareable(roundLayoutBlindly(layout), origin);
@@ -84,6 +84,7 @@ export async function encodeShareUrl(
 async function encodeShareable(layout: RoomLayout, origin: string): Promise<string> {
   const shareable: RoomLayout = { ...layout };
   delete shareable.floorPlanImage;
+  delete shareable.floorPlanImageRef; // #936: nor its ref
   // Its calibration goes with it (#726).
   delete shareable.floorPlanTransform;
   // And its mode (#920): a kept copy's next upload starts as the drawing.

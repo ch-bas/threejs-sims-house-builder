@@ -1030,8 +1030,21 @@ Contact occlusion is baked, because screen-space AO cost 40 to 70 ms a frame (#7
 
 ## Known limitations
 
-- A large floor-plan image stored as base64 can exhaust the ~5 MB
-  `localStorage` quota; the save call catches and warns instead of crashing.
+- The floor-plan image is kept in IndexedDB (#936, `lib/plan-image-store.ts`,
+  written with `durability: 'strict'`). A save names it by its SHA-256 ref
+  only once it is stored and read back AND storage is persistent
+  (`navigator.storage.persisted()`, read only; asking stays with the
+  storage-care rule after a real edit): Chromium can evict IndexedDB while localStorage survives. On
+  storage that may be evicted the save stays inline, unless only the ref
+  fits (a ref beats no save). Without IndexedDB it stays inline as before,
+  and a large one can still exhaust the ~5 MB quota. Stored images are
+  never deleted yet: copies, recovered houses, restore points' refs, other
+  tabs and older builds may still name one. While a saved house waits for
+  its image, a whole-house load treats that house as the one it replaces
+  (asks, takes its restore point, copies the save aside) and edits of the
+  placeholder lot are dropped with a notice. An older build opens a save by
+  ref without its image (its schema drops the field) and, by the saved-by
+  stamp, asks before saving over it; "Save here anyway" there drops the ref.
 - On a desktop the walkthrough needs a click on the canvas to lock the
   pointer (touch screens drag to look instead).
 - No "rooms from enclosed walls" detection — interior walls are just

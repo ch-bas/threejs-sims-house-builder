@@ -4,12 +4,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { askConfirm } from '../lib/confirm-dialog';
 import {
+  DOWNLOAD_WITHOUT_PLAN_IMAGE,
   discardRecoveryCopy,
-  downloadRawLayout,
+  downloadStoredHouse,
   isRecoveryKey,
   readRecoveryCopies,
   readRecoveryCopy,
 } from '../lib/persistence';
+import { resolvePlanImage } from '../lib/plan-image-ref';
 import { confirmReplace } from '../lib/restore-point';
 import { PlanThumb } from './plan-thumb';
 import type { RecoveryCopy } from '../lib/persistence';
@@ -75,7 +77,8 @@ export function RecoveryEntry({ currentLayout, onLoad }: RecoveryEntryProps): JS
     // Read once more: the question gave another tab time to change it.
     const layout = readShown(shown);
     if (!layout) return;
-    onLoad(layout);
+    // Its floor-plan image, when the copy names it by ref (#936).
+    onLoad(await resolvePlanImage(layout));
     setStatus('Restored the recovered copy. Undo brings back the house it replaced.');
   };
 
@@ -108,6 +111,7 @@ export function RecoveryEntry({ currentLayout, onLoad }: RecoveryEntryProps): JS
           copy={copy}
           onRestore={() => void handleRestore(copy)}
           onDiscard={() => void handleDiscard(copy)}
+          onDownloaded={(whole) => setStatus(whole ? null : DOWNLOAD_WITHOUT_PLAN_IMAGE)}
         />
       ))}
     </div>
@@ -118,9 +122,11 @@ interface RecoveryCopyRowProps {
   copy: RecoveryCopy;
   onRestore(): void;
   onDiscard(): void;
+  /** `whole`: the file holds every floor-plan image the copy names (#936). */
+  onDownloaded(whole: boolean): void;
 }
 
-function RecoveryCopyRow({ copy, onRestore, onDiscard }: RecoveryCopyRowProps): JSX.Element {
+function RecoveryCopyRow({ copy, onRestore, onDiscard, onDownloaded }: RecoveryCopyRowProps): JSX.Element {
   const { layout } = copy;
   const loadThumb = useCallback(() => layout, [layout]);
   return (
@@ -150,7 +156,8 @@ function RecoveryCopyRow({ copy, onRestore, onDiscard }: RecoveryCopyRowProps): 
             size="sm"
             variant="ghost"
             className="h-6 px-2"
-            onClick={() => downloadRawLayout(copy.raw, 'recovered-house.json')}
+            // The file stands alone: a stored image goes in it (#936).
+            onClick={() => void downloadStoredHouse(copy.raw, 'recovered-house.json').then((whole) => onDownloaded(whole))}
           >
             Download
           </Button>

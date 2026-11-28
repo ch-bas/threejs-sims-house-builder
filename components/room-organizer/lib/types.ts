@@ -463,6 +463,13 @@ export interface RoomLayout {
   floors: FloorLayout[];
   roof?: RoofSpec;
   floorPlanImage?: string;
+  // --- #936 plan image store ---
+  /**
+   * The stored image's ref (`sha256-…`, lib/plan-image-store.ts) in place of
+   * `floorPlanImage`: saves name it, the house on screen holds the image.
+   */
+  floorPlanImageRef?: string;
+  // --- end #936 ---
   floorPlanOpacity?: number;
   floorPlanFitMode?: FloorPlanFitMode;
   /** The traced plan's calibration (#726); wins over the fit mode. */

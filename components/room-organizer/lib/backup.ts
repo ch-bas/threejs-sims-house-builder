@@ -18,6 +18,7 @@ import {
   readRecoveryCopies,
   sameLayoutContent,
 } from './persistence';
+import { PLAN_IMAGE_WAIT_MS, comparablePlanImage, storePlanImage } from './plan-image-ref';
 import { isUntouched } from './restore-point';
 import { parseStoredLayout } from './schema';
 import {
@@ -181,6 +182,49 @@ export function createBackup(current: RoomLayout | null, now: number = Date.now(
     settings,
   };
 }
+
+// --- #936 plan image store ---
+/**
+ * The backup as a file that stands alone (#936): every floor-plan image a
+ * stored house names by ref is put back in it. A ref that can't be read
+ * stays, as stored.
+ */
+export async function inlineBackupPlanImages(bundle: BackupBundle): Promise<BackupBundle> {
+  if (!backupNamesPlanImages(bundle)) return bundle;
+  const { inlinePlanImageRefs, inlineRawPlanImages } = await import('./plan-image-store');
+  const [main, library, received, recoveryCopies] = await Promise.all([
+    inlinePlanImageRefs(bundle.main),
+    inlinePlanImageRefs(bundle.library) as Promise<BackupLibraryEntry[]>,
+    inlinePlanImageRefs(bundle.received) as Promise<BackupReceivedEntry[]>,
+    Promise.all(bundle.recoveryCopies.map(async (copy) => ({ ...copy, raw: await inlineRawPlanImages(copy.raw) }))),
+  ]);
+  return { ...bundle, main, library, received, recoveryCopies };
+}
+
+/** Said when a backup went out with a floor-plan image it couldn't read (#936). */
+export const PLAN_IMAGES_NOT_IN_BACKUP =
+  'The backup was downloaded, but a floor-plan image couldn’t be read from this browser’s storage, so the file names it without holding it. Reload and back up again; until then this backup isn’t counted.';
+
+/** Whether a backup holds a floor-plan image only by ref (`inlineBackupPlanImages` then has work). */
+export function backupNamesPlanImages(bundle: BackupBundle): boolean {
+  // No quotes: a recovered copy's raw text holds them escaped.
+  return JSON.stringify(bundle).includes('floorPlanImageRef');
+}
+
+/**
+ * Put a backup's floor-plan images in the image store before its houses are
+ * saved (#936): the library copies then name them by ref, and a house the
+ * library already holds is known as the same one.
+ */
+export async function storeBackupPlanImages(backup: ParsedBackup): Promise<void> {
+  const images = new Set<string>();
+  for (const house of [backup.house, ...backup.library.map((entry) => entry.layout)]) {
+    if (house?.floorPlanImage) images.add(house.floorPlanImage);
+  }
+  // Bounded: a store that never opens can't hold up the restore.
+  await Promise.all([...images].map((image) => storePlanImage(image, PLAN_IMAGE_WAIT_MS)));
+}
+// --- end #936 ---
 
 /**
  * Saved layouts a backup can't carry because they don't open — listed ones
@@ -397,7 +441,8 @@ function libraryHolds(layout: RoomLayout): boolean {
   const unnamed = { ...layout, name: '' };
   return listSavedLayouts().some((entry) => {
     const stored = loadNamedLayout(entry.id);
-    return stored !== null && sameLayoutContent({ ...stored, name: '' }, unnamed);
+    // An image inline on one side and named by ref on the other is one (#936).
+    return stored !== null && sameLayoutContent(comparablePlanImage({ ...stored, name: '' }), comparablePlanImage(unnamed));
   });
 }
 
