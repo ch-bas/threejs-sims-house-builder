@@ -5,6 +5,7 @@ import { useEditorViewActions, useLengthUnit, useViewSettings } from '../context
 import { onRovingKeyDown } from '../hooks/roving-keys';
 import { useAppleKeys } from '../hooks/use-apple-keys';
 import { reopenFirstSteps } from '../hooks/use-first-steps';
+import { closeWhatsNew, openWhatsNew } from '../hooks/use-whats-new';
 import { APP_VERSION } from '../lib/app-version';
 import { LENGTH_UNITS, type LengthUnit } from '../lib/format';
 import { withShortcut } from '../lib/keymap';
@@ -182,10 +183,16 @@ export function ViewOptionsMenu({ id, anchorRef, onClose, onShowCard }: ViewOpti
         }}
         aside={
           <HelpEntries
-            onGettingStarted={() => {
+            onShow={(card) => {
               const hadFocus = menuRef.current?.contains(document.activeElement) ?? false;
               onClose();
-              reopenFirstSteps();
+              // The two cards share a place: the one asked for shows (#931).
+              if (card === 'whatsNew') {
+                openWhatsNew();
+              } else {
+                closeWhatsNew();
+                reopenFirstSteps();
+              }
               if (onShowCard) onShowCard(hadFocus);
               else if (hadFocus) anchorRef.current?.focus();
             }}
@@ -203,22 +210,34 @@ export function ViewOptionsMenu({ id, anchorRef, onClose, onShowCard }: ViewOpti
 }
 
 /**
- * Help (#931): the Getting started card and its tips again. On the Quality
- * heading's row in a box of no height (`.pc-help-entries`), so the menu
- * keeps its height with a mouse; a touch screen gives the button a 44 px
- * row of its own. The version it names is the one "What's new" counts from.
+ * Help (#931): the Getting started card and its tips again, and What's new.
+ * On the Quality heading's row in a box of no height (`.pc-help-entries`),
+ * so the menu keeps its height with a mouse (the View menu already fills a
+ * 900 px window); a touch screen gives the buttons a 44 px row of their own.
  */
-function HelpEntries({ onGettingStarted, onShortcuts }: { onGettingStarted(): void; onShortcuts(): void }): JSX.Element {
+function HelpEntries({ onShow, onShortcuts }: { onShow(card: 'gettingStarted' | 'whatsNew'): void; onShortcuts(): void }): JSX.Element {
   const mac = useAppleKeys();
   return (
-    <div role="group" aria-label="Help" className="pc-help-entries" style={{ gap: 6 }}>
+    <div role="group" aria-label="Help" className="pc-help-entries" style={{ gap: 6, whiteSpace: 'nowrap' }}>
       <button
         type="button"
         className="pc-tile pc-photo-entry"
-        title={`Show the Getting started card and its tips again (version ${APP_VERSION})`}
-        onClick={onGettingStarted}
+        // "Tips" keeps the three on one line; the name says it whole.
+        aria-label="Getting started tips"
+        title="Show the Getting started card and its tips again"
+        onClick={() => onShow('gettingStarted')}
       >
-        Getting started
+        Tips
+      </button>
+      <button
+        type="button"
+        className="pc-tile pc-photo-entry"
+        // "New" fits the row; the name says it whole.
+        aria-label="What’s new"
+        title={`What’s new in this version (${APP_VERSION})`}
+        onClick={() => onShow('whatsNew')}
+      >
+        New
       </button>
       {/* #932: the shortcut overlay, also on `?`; not on a phone (.pc-help-keys) */}
       <button type="button" className="pc-tile pc-photo-entry pc-help-keys" title={withShortcut('Show the keyboard shortcuts', 'shortcuts', mac)} onClick={onShortcuts}>

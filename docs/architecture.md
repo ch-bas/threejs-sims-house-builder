@@ -39,6 +39,8 @@ scripts/
 ├── add-csp.d.mts                        Types of add-csp.mjs's exports, for its test
 ├── build-sw.mjs                         Post-build: out/sw.js, the offline service worker: precaches the page, the shell and _next/static/ with a SHA-256 per file, hashed files cache first, the page network first; NEXT_PUBLIC_SERVICE_WORKER=off writes a worker that removes itself (#933)
 ├── build-sw.d.mts                       Types of build-sw.mjs's exports, for its test
+├── whats-new.mjs                        Build time (next.config.mjs): the What's new card's lines, the newest release's Added lines from CHANGELOG.md, five picked across the section, cut at a word; no changelog, no card (#931)
+├── whats-new.d.mts                      Types of whats-new.mjs's exports, for its test
 ├── third-party-notices.mjs              Post-build: out/third-party-licenses.txt, the licences of the shipped packages and assets (#569)
 ├── third-party-notices.d.mts            Types of third-party-notices.mjs's exports, for its test
 ├── licenses/                            Licence texts of the libraries inside Next's polyfills chunk (core-js, whatwg-fetch, object-assign), for third-party-notices.mjs
@@ -75,7 +77,8 @@ components/
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
     │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214); per-item build keys + diff (#404)
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
-    │   ├── app-version.ts               The build's version (stamped from package.json) and the stored last-seen version that "What's new" counts from (#931)
+    │   ├── app-version.ts               The build's version (stamped from package.json), the stored last-seen version (stamped once What's new has shown, or when there is nothing to tell), who is offered it and whether it is news (#931)
+    │   ├── whats-new.ts                 What's new lines (#931): the build-stamped string read and checked; imports nothing, loaded on demand in a chunk of its own
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── announce.ts                  The one screen-reader status line: `announce` (de-duped), `announceSettled` (held keys), the nudge/lock/undo wording (#929)
     │   ├── ar-view.ts                   AR view (#937): Quick Look detection (`relList.supports('ar')`), the USDZ blob (exporter loaded on the click), file name, failure wording, the AR link's image
@@ -304,6 +307,7 @@ components/
     │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
     │   ├── use-start-challenge.ts       A challenge brief's empty house through the whole-house load path (#909)
     │   ├── use-first-steps.ts           Getting started session: steps done (edits, `markFirstStep` for walk and share), stored with the offered/dismissed card (#721)
+    │   ├── use-whats-new.ts             What's new session (#931): closed, offered once after an update, or asked for from Help; `whatsNewMounts` keeps it out of tours, EXPLORE and photo mode
     │   ├── use-set-game-mode.ts         DESIGN / FURNISH / EXPLORE switch with what it brings along (mode panel, First steps card)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
@@ -388,6 +392,8 @@ components/
         ├── shortcuts-dialog.tsx         The `?` overlay: the key table in a focus-trapped modal, closed by ?, Escape, back or the backdrop (#932)
         ├── welcome-banner.tsx           First-run start chooser: start empty, a template (with its plan), or a random one (#721)
         ├── first-steps-card.tsx         Getting started checklist: each step arms its tool, the next one shows its tips; a thin occluding line on phones (#721)
+        ├── whats-new-card.tsx           What's new card (#931): loads the lines when it opens and shows them in Getting started's place (which steps aside); closes quietly when nothing is news
+        ├── hud-card.tsx                 The card frame Getting started and What's new share: heading, note, close button, a scene occluder
         ├── minimap.tsx
         ├── plan-thumb.tsx
         ├── achievements-panel.tsx
