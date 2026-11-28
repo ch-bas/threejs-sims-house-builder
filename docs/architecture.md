@@ -161,6 +161,7 @@ components/
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── room-score.ts                Room types from a zone's furniture and a five-check score (decor, window, lamp, no collisions, space) for Statistics (#613), the room goals (#903), the plan's stars line and the zone chip's hint (#905)
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
+    │   ├── shortcut-overlay.ts          Whether the `?` shortcut overlay is open: toggled by `?` and the Help menu; the ghost and wall-length keys give way to it (#932)
     │   ├── site.ts                      Sloped ground (garden items stand on it, #665), neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
     │   ├── sun-shadow.ts                Shadow-caster box + sun shadow-camera fit (#282)
@@ -378,6 +379,8 @@ components/
         ├── actions-panel.tsx
         ├── print-options.tsx            Print / PDF button and its folding options (paper, orientation, scale, outdoor, every floor)
         ├── shortcuts-panel.tsx          Shortcut sheet, drawn from the key table (lib/keymap) by context, platform-aware (#932)
+        ├── shortcuts-overlay.tsx        The `?` overlay's host (state in lib/shortcut-overlay); loads the dialog on first use (#932)
+        ├── shortcuts-dialog.tsx         The `?` overlay: the key table in a focus-trapped modal, closed by ?, Escape, back or the backdrop (#932)
         ├── welcome-banner.tsx           First-run start chooser: start empty, a template (with its plan), or a random one (#721)
         ├── first-steps-card.tsx         Getting started checklist: each step arms its tool, the next one shows its tips; a thin occluding line on phones (#721)
         ├── minimap.tsx

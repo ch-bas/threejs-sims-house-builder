@@ -2099,6 +2099,12 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
     content: none;
   }
 }
+/* The shortcut overlay's entry (#932): no keyboard on a phone. */
+@media (max-width: 768px), (max-height: 500px) {
+  .pc-help-keys {
+    display: none;
+  }
+}
 
 /* Catalogue colour variants (#621) */
 /* Swatch dots in the top-right corner of a tile whose entry comes in more

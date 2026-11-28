@@ -5,6 +5,7 @@ import { useLengthUnit } from '../contexts';
 import { useMediaQuery } from '../hooks/use-media-query';
 import { formatMetres, formatSize, lengthUnitSymbol } from '../lib/format';
 import { COARSE_POINTER_QUERY } from '../lib/hud-layout';
+import { isShortcutsOverlayOpen } from '../lib/shortcut-overlay';
 import { isTypingTarget } from '../lib/walk-input';
 import { parseWallLength, type WallSnapKind } from '../lib/wall-snap';
 import { Icon } from '../plotcraft/icon';
@@ -89,7 +90,8 @@ export function WallDrawChip({ status, onLength, onFieldOpen }: WallDrawChipProp
     if (!hasAnchor || open) return undefined;
     const onKeyDown = (event: KeyboardEvent): void => {
       const key = lengthKey(event);
-      if (key === null || isTypingTarget(event.target)) return;
+      // The `?` overlay (#932) holds the keys while it is open.
+      if (key === null || isTypingTarget(event.target) || isShortcutsOverlayOpen()) return;
       // Ahead of the shortcuts' own window listener.
       event.preventDefault();
       event.stopPropagation();
