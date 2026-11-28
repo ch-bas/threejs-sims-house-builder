@@ -8,6 +8,7 @@ import { cutoutFits, footprintOutline, isFootprintCutout } from './footprint';
 import { repairGrounds } from './grounds';
 import { isOpeningStyle } from './opening-style';
 import { MAX_DIMENSIONS_PER_FLOOR, MIN_DIMENSION_LENGTH, clampDimension, dimensionLength, isPinnedDimension } from './plan-dimensions';
+import { isPlanImageRef } from './plan-image-ref';
 import { clampRoofPitch } from './roof-shape';
 import { NEIGHBOUR_FLAGS, isStreetSeed, isTerrainY } from './site';
 import { isStairsLeadIn, isStairsShape } from './stairs';
@@ -303,6 +304,8 @@ export function isRoomLayout(value: unknown): value is RoomLayout {
   }
 
   if (v.floorPlanImage !== undefined && !isDataImageUrl(v.floorPlanImage)) return false;
+  // A stored plan image's ref (#936).
+  if (v.floorPlanImageRef !== undefined && !isPlanImageRef(v.floorPlanImageRef)) return false;
   // Opacity outside [0,1] is corruption, not preference — the UI slider only
   // produces this range and canvas globalAlpha silently misbehaves outside it.
   if (
@@ -395,6 +398,7 @@ const LAYOUT_KEYS = keysOf<RoomLayout>({
   floors: true,
   roof: true,
   floorPlanImage: true,
+  floorPlanImageRef: true,
   floorPlanOpacity: true,
   floorPlanFitMode: true,
   floorPlanTransform: true,

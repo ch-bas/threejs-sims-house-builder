@@ -59,6 +59,20 @@ export function isUntouched(layout: RoomLayout): boolean {
 
 const houseReplaced = createChannel<void>();
 
+// --- #936 plan image store ---
+/**
+ * The saved house while it waits for its floor-plan image (#936): the screen
+ * shows a placeholder lot, but this is the house a load would replace, so
+ * the question and the restore point are about it.
+ */
+let openingHouse: RoomLayout | null = null;
+
+/** The saved house is opening (or no longer: null). */
+export function setOpeningHouse(house: RoomLayout | null): void {
+  openingHouse = house;
+}
+// --- end #936 ---
+
 /** Runs whenever a whole-house load starts: a note about the last load is out of date (#647). */
 export function subscribeHouseReplaced(listener: () => void): () => void {
   return houseReplaced.subscribe(listener);
@@ -75,7 +89,9 @@ export function subscribeHouseReplaced(listener: () => void): () => void {
  * Empty houses are skipped so first-run users don't fill the ring with
  * blanks. Never throws: a failed snapshot must not block the replacement.
  */
-export function snapshotBeforeReplace(outgoing: RoomLayout | null | undefined): void {
+export function snapshotBeforeReplace(shownOutgoing: RoomLayout | null | undefined): void {
+  // A saved house still opening is the one replaced (#936), not the placeholder.
+  const outgoing = openingHouse ?? shownOutgoing;
   houseReplaced.emit();
   if (!outgoing) return;
   try {
@@ -106,10 +122,14 @@ export function confirmReplace(
     ask?: (question: ConfirmOptions) => Promise<boolean>;
   } = {}
 ): Promise<boolean> {
-  if (isUntouched(current)) return Promise.resolve(true);
+  // A saved house still opening is the current one (#936): undo can't bring it back.
+  const opening = openingHouse;
+  if (isUntouched(opening ?? current)) return Promise.resolve(true);
   return ask({
     title: `Replace your current house with ${incoming}?`,
-    body: `Undo restores it, and it is kept in Manage → Saved Layouts → History.${note}`,
+    body: opening
+      ? `Your saved house is still opening. It is kept in Manage → Saved Layouts → History.${note}`
+      : `Undo restores it, and it is kept in Manage → Saved Layouts → History.${note}`,
     confirmLabel: 'Replace',
   });
 }

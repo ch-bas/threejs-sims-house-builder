@@ -1,10 +1,24 @@
+import { notify } from './editor-notices';
 import { downloadBlob, downloadTextFile, exportFileName } from './plan-export/download';
+import { planImagePending, resolvePlanImage } from './plan-image-ref';
 import { MAX_LAYOUT_JSON_BYTES, parseStoredLayout } from './schema';
 import { zoneContains } from './zones';
 import type { FurnitureItem, RoomLayout, RoomZone } from './types';
 
 export function downloadLayoutAsJson(layout: RoomLayout): void {
-  downloadTextFile(exportFileName(layout.name, 'json'), 'application/json', JSON.stringify(layout, null, 2));
+  const write = (house: RoomLayout): void =>
+    downloadTextFile(exportFileName(house.name, 'json'), 'application/json', JSON.stringify(house, null, 2));
+  // The file stands alone: an image still only named by ref is fetched (#936).
+  if (!planImagePending(layout)) {
+    write(layout);
+    return;
+  }
+  void resolvePlanImage(layout).then((house) => {
+    write(house);
+    if (planImagePending(house)) {
+      notify('The file was saved without its floor-plan image, which couldn’t be read from this browser’s storage. Reload and export again.', 'error');
+    }
+  });
 }
 
 export async function readLayoutFromFile(file: File): Promise<RoomLayout> {

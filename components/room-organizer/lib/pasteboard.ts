@@ -230,6 +230,7 @@ export function addReceivedLayout(
   if (!storage) return null;
   const stored: RoomLayout = { ...layout };
   delete stored.floorPlanImage;
+  delete stored.floorPlanImageRef; // #936: nor its ref
   const json = JSON.stringify(stored);
 
   const board = readBoard(storage);
@@ -303,6 +304,7 @@ export function importReceivedLayouts(
   for (const { name, layout, receivedAt } of [...houses].sort((a, b) => b.receivedAt - a.receivedAt)) {
     const stored: RoomLayout = { ...layout };
     delete stored.floorPlanImage;
+    delete stored.floorPlanImageRef; // #936: nor its ref
     const json = JSON.stringify(stored);
     if (seen.has(json)) continue;
     if (entries.length >= MAX_RECEIVED_LAYOUTS) {

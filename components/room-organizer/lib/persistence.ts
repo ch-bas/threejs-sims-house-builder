@@ -1,4 +1,5 @@
 import { notify } from './editor-notices';
+import { comparablePlanImage, compactPlanImage, planStoragePersisted, storedPlanImageRef } from './plan-image-ref';
 import { isUntouched } from './restore-point';
 import { askToSaveHere, BUILD_VERSION, newerSaver, savingHereChosen, stampSavedBy } from './saved-by';
 import { localStorageOrNull, STORAGE_KEY } from './saved-house';
@@ -15,7 +16,9 @@ export {
   clearEditorCrashed,
   clearReloadAttempt,
   crashRecurredAfterReload,
+  DOWNLOAD_WITHOUT_PLAN_IMAGE,
   downloadRawLayout,
+  downloadStoredHouse,
   EDITOR_SETTLED_MS,
   editorHasCrashed,
   localStorageOrNull,
@@ -174,7 +177,8 @@ function sameStoredHouse(a: string, b: string): boolean {
   if (a === b) return true;
   const left = wholeLayout(a);
   const right = wholeLayout(b);
-  return left !== null && right !== null && sameLayoutContent(left, right);
+  // One house whether its plan image is inline or named by ref (#936).
+  return left !== null && right !== null && sameLayoutContent(comparablePlanImage(left), comparablePlanImage(right));
 }
 
 function newRecoveryKey(store: RawStore, now: number, slots: RecoverySlot[]): string {
@@ -286,6 +290,24 @@ export function keepStoredLayout(
   }
 }
 
+// --- #936 plan image store ---
+/**
+ * `keepStoredLayout` for a save read earlier (`raw`), whatever the main save
+ * holds now: the saved house that was still opening when another tab's save
+ * replaced it.
+ */
+export function keepHouseAside(raw: string, storage?: RawStore, now: number = Date.now()): 'kept' | 'nothing' | StorageErrorKind {
+  const target = storage ?? localStorageOrNull();
+  if (!target) return 'nothing';
+  try {
+    return keepRecoveryCopy(target, raw, now) ? 'kept' : 'nothing';
+  } catch (error) {
+    console.warn('Failed to keep the opening house aside:', error);
+    return classifyStorageError(error);
+  }
+}
+// --- end #936 ---
+
 /**
  * Why a save didn't reach storage (#472). `newer`: a newer build saved the
  * house, and this older one leaves it alone (#933).
@@ -319,9 +341,25 @@ export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore, ve
       void askToSaveHere(newer, version, updateWaiting);
       return { ok: false, reason: 'newer' };
     }
-    const json = JSON.stringify(layout);
-    // The house outranks everything else stored, kept versions too (#935).
-    const evicted = setItemEvictingSnapshots(target, STORAGE_KEY, json, { evictKept: true });
+    // A plan image already in the image store is saved as its ref (#936),
+    // once storage is persistent; otherwise it stays inline unless only the
+    // ref fits, before any kept version gives way: a ref beats no save.
+    const written = compactPlanImage(layout);
+    const byRef = compactPlanImage(layout, true);
+    let json = JSON.stringify(written);
+    let evicted: string[];
+    if (written.floorPlanImage !== undefined && byRef.floorPlanImage === undefined) {
+      try {
+        evicted = setItemEvictingSnapshots(target, STORAGE_KEY, json);
+      } catch (error) {
+        if (classifyStorageError(error) !== 'quota') throw error;
+        json = JSON.stringify(byRef);
+        evicted = setItemEvictingSnapshots(target, STORAGE_KEY, json, { evictKept: true });
+      }
+    } else {
+      // The house outranks everything else stored, kept versions too (#935).
+      evicted = setItemEvictingSnapshots(target, STORAGE_KEY, json, { evictKept: true });
+    }
     for (const label of evicted) {
       notify(
         label
@@ -339,6 +377,43 @@ export function saveLayout(layout: RoomLayout, storage?: VersionHistoryStore, ve
     return { ok: false, reason: classifyStorageError(error) };
   }
 }
+
+// --- #936 plan image store ---
+/**
+ * Swap the saved house's inline floor-plan image for its ref, once the image
+ * is confirmed in the image store (#936): the migration of a save made
+ * before the store, and the follow-up of a save written while the image was
+ * still being stored, once storage is persistent. Only that one field changes, on the stored JSON as it
+ * is, so the save stays the house it was whichever tab wrote it. Left alone
+ * when a newer build saved it. Returns the JSON written, or null.
+ */
+export function compactStoredHouse(storage?: VersionHistoryStore, version: string | null = BUILD_VERSION): string | null {
+  try {
+    const target = storage ?? localStorageOrNull();
+    // Only onto persistent storage: elsewhere the browser could evict the
+    // image and keep the save (the autosave forces a ref only when inline won't fit).
+    if (!target || !planStoragePersisted() || newerSaver(target, version) !== null) return null;
+    const raw = target.getItem(STORAGE_KEY);
+    if (!raw || !raw.includes('"floorPlanImage"')) return null;
+    const stored: unknown = JSON.parse(raw);
+    if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return null;
+    const image = (stored as Record<string, unknown>).floorPlanImage;
+    const ref = typeof image === 'string' ? storedPlanImageRef(image) : null;
+    if (!ref) return null;
+    const compact: Record<string, unknown> = { ...(stored as Record<string, unknown>), floorPlanImageRef: ref };
+    delete compact.floorPlanImage;
+    const json = JSON.stringify(compact);
+    // Smaller than what it replaces, so it needs no room.
+    target.setItem(STORAGE_KEY, json);
+    // An older build can't read the ref: it asks before saving over it.
+    stampSavedBy(target, version);
+    return json;
+  } catch {
+    // The inline copy stays: it is the house as it was.
+    return null;
+  }
+}
+// --- end #936 ---
 
 /** Every entry the saved house owns: the save, its restore points, its recovered copies. */
 function ownEntries(store: RawStore): Map<string, string> {

@@ -8,7 +8,8 @@ import {
 } from '../components/room-organizer/lib/chunk-reload';
 import {
   crashRecurredAfterReload,
-  downloadRawLayout,
+  DOWNLOAD_WITHOUT_PLAN_IMAGE,
+  downloadStoredHouse,
   leaveCrashedTour,
   noteEditorCrashed,
   noteReloadAttempt,
@@ -85,6 +86,8 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   const [suspectSave] = useState(() => !chunkFailure && !tourCrash && crashRecurredAfterReload());
   const [resetFailure, setResetFailure] = useState<'refused' | 'lost' | 'unavailable' | null>(null);
   const resetting = useRef(false);
+  // The download went out naming a floor-plan image it couldn't hold (#936).
+  const [downloadNote, setDownloadNote] = useState(false);
 
   const retryChunkLoad = () => {
     clearChunkReloadGuard();
@@ -134,7 +137,7 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
   // Once a reset lost the house from storage, the kept value is the only copy.
   const downloadHouse = () => {
     const raw = readStoredLayoutRaw() ?? storedRaw;
-    if (raw !== null) downloadRawLayout(raw, 'saved-house.json');
+    if (raw !== null) void downloadStoredHouse(raw, 'saved-house.json').then((whole) => setDownloadNote(!whole));
   };
 
   const offerReset = suspectSave && storedRaw !== null;
@@ -183,6 +186,11 @@ export default function Error({ error }: { error: Error & { digest?: string }; r
               : resetFailure === 'unavailable'
                 ? 'Couldn’t load what starting fresh needs, so nothing was changed. Download your house to keep it safe, then reload.'
                 : 'The browser’s storage failed while moving your house, so this page now holds the only copy. Download it before you leave.'}
+          </p>
+        )}
+        {downloadNote && (
+          <p role="status" style={bodyStyle}>
+            {DOWNLOAD_WITHOUT_PLAN_IMAGE}
           </p>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>

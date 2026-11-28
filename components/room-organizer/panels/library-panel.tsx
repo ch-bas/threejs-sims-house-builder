@@ -29,6 +29,7 @@ import {
   removeReceivedLayout,
   shareHashFromText,
 } from '../lib/pasteboard';
+import { planImagePending, planImageProblem, planImageProblemText, resolvePlanImage } from '../lib/plan-image-ref';
 import { confirmReplace, subscribeHouseReplaced } from '../lib/restore-point';
 import { newerLibraryNote } from '../lib/saved-by';
 import { MAX_NAME_LENGTH } from '../lib/schema';
@@ -309,16 +310,19 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     }
     if (!(await confirmReplace(currentLayout, `“${entry.name}”`))) return;
     // Read again: another tab may have saved over it while it asked.
-    const fresh = loadNamedLayout(entry.id);
-    if (!fresh) {
+    const read = loadNamedLayout(entry.id);
+    if (!read) {
       setLoaded({ section: 'saved', text: `Couldn’t open “${entry.name}” — the saved copy can’t be read.`, error: true });
       refresh();
       return;
     }
+    // Its floor-plan image, when the copy names it by ref (#936).
+    const fresh = await resolvePlanImage(read);
     onLoad(fresh);
     // Written by a newer version (#933): say what may be missing.
     const newer = newerLibraryNote(entry.savedBy);
-    setLoaded({ section: 'saved', text: `Loaded “${entry.name}”.${newer ? ` ${newer}` : ''} Undo brings back the house it replaced.` });
+    const noImage = planImagePending(fresh) ? ` ${planImageProblemText(planImageProblem(fresh.floorPlanImageRef))}` : '';
+    setLoaded({ section: 'saved', text: `Loaded “${entry.name}”.${newer ? ` ${newer}` : ''}${noImage} Undo brings back the house it replaced.` });
   };
 
   const handleRestore = async (summary: VersionSummary, read: (id: string) => RoomLayout | null = getSnapshot) => {
@@ -340,12 +344,20 @@ export function LibraryPanel({ currentLayout, onLoad }: LibraryPanelProps): JSX.
     // isn't enough, since unrenamed houses all share one name (#296).
     // The house on screen after the answer, not when it asked.
     const shown = layoutStore.getState().layout;
-    const restored: RoomLayout =
+    let restored: RoomLayout =
       shown.floorPlanImage &&
       summary.floorPlanFingerprint !== null &&
       summary.floorPlanFingerprint === floorPlanFingerprint(shown.floorPlanImage)
         ? { ...snapshot, floorPlanImage: shown.floorPlanImage }
         : snapshot;
+    // The point names its image's ref (#936): fetch it from the image store.
+    // A ref that can't be read now is kept unless the image is gone for good
+    // (and kept always when it is the house on screen's), so a save keeps it.
+    const ref = summary.floorPlanRef;
+    if (restored === snapshot && ref !== null) {
+      const resolved = await resolvePlanImage({ ...snapshot, floorPlanImageRef: ref });
+      if (!planImagePending(resolved) || shown.floorPlanImageRef === ref || planImageProblem(ref) !== 'gone') restored = resolved;
+    }
     // `onLoad` takes the forced restore point of the house on screen (#298,
     // #352) and applies via the same undoable path as a library/template
     // load (applyLayout without history.clear, #222) — one Ctrl+Z away.

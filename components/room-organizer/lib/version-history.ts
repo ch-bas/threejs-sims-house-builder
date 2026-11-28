@@ -1,5 +1,6 @@
 import { STORAGE_KEY } from './constants';
 import { randomId } from './ids';
+import { isPlanImageRef, storedPlanImageRef } from './plan-image-ref';
 import { parseStoredLayout } from './schema';
 import { classifyStorageError } from './storage-errors';
 import type { RoomLayout } from './types';
@@ -62,6 +63,8 @@ interface StoredEntry {
   hadFloorPlan?: boolean | undefined;
   /** Fingerprint of the floor-plan image the house carried (#296). */
   floorPlan?: string | undefined;
+  /** Its ref in the image store (#936): a restore can fetch it back. Never the image. */
+  floorPlanRef?: string | undefined;
   itemCount?: number | undefined;
   floorCount?: number | undefined;
   layout: unknown;
@@ -89,6 +92,8 @@ export interface VersionSummary {
   hadFloorPlan: boolean;
   /** Fingerprint of that image, or null — see `floorPlanFingerprint`. */
   floorPlanFingerprint: string | null;
+  /** That image's ref in the image store (#936), or null. */
+  floorPlanRef: string | null;
 }
 
 /** The slice of the Storage API this module needs; injectable for tests. */
@@ -153,6 +158,12 @@ function hashString(value: string): number {
 }
 
 const FINGERPRINT_SAMPLE = 4096;
+
+/** The ref of the house's floor-plan image, when it is in the image store (#936). */
+function planImageRefOf(layout: RoomLayout): string | undefined {
+  if (layout.floorPlanImage) return storedPlanImageRef(layout.floorPlanImage) ?? undefined;
+  return isPlanImageRef(layout.floorPlanImageRef) ? layout.floorPlanImageRef : undefined;
+}
 
 /**
  * Short fingerprint of a floor-plan data URL: its length plus a hash of its
@@ -253,6 +264,7 @@ function readRawEntries(
         name: optionalString(candidate.name) ?? optionalString(layout.name),
         hadFloorPlan: candidate.hadFloorPlan === true,
         floorPlan: optionalString(candidate.floorPlan),
+        floorPlanRef: isPlanImageRef(candidate.floorPlanRef) ? candidate.floorPlanRef : undefined,
         itemCount: optionalCount(candidate.itemCount),
         floorCount: optionalCount(candidate.floorCount),
         layout,
@@ -374,6 +386,7 @@ export function recordSnapshot(
 
   const snapshotted: RoomLayout = { ...layout };
   delete snapshotted.floorPlanImage;
+  delete snapshotted.floorPlanImageRef; // #936: nor its ref
   const layoutJson = JSON.stringify(snapshotted);
   // A kept version newer than the ring's newest of this house counts as the
   // newest (#935): keeping the newest point and leaving must not record the
@@ -403,8 +416,9 @@ export function recordSnapshot(
     savedAt: newest ? Math.max(at, newest.entry.savedAt + 1) : at,
     layoutId: layout.id,
     name: layout.name,
-    hadFloorPlan: Boolean(layout.floorPlanImage),
+    hadFloorPlan: Boolean(layout.floorPlanImage || layout.floorPlanImageRef),
     floorPlan: floorPlanFingerprint(layout.floorPlanImage) ?? undefined,
+    floorPlanRef: planImageRefOf(layout),
     itemCount: layout.floors.reduce((sum, floor) => sum + floor.items.length, 0),
     floorCount: layout.floors.length,
   };
@@ -453,6 +467,7 @@ function summarise(entry: StoredEntry, at: number): VersionSummary | null {
     layoutId: entry.layoutId ?? null,
     hadFloorPlan: entry.hadFloorPlan === true,
     floorPlanFingerprint: entry.floorPlan ?? null,
+    floorPlanRef: entry.floorPlanRef ?? null,
   };
 }
 
@@ -513,6 +528,7 @@ export function snapshotIsLayout(id: string, layout: RoomLayout, opts: VersionHi
   if (!stored) return false;
   const shown: RoomLayout = { ...layout };
   delete shown.floorPlanImage;
+  delete shown.floorPlanImageRef; // #936: nor its ref
   return JSON.stringify(stored.entry.layout) === JSON.stringify(shown);
 }
 
@@ -581,6 +597,7 @@ function importRingSnapshots(candidates: readonly unknown[], opts: VersionHistor
     if (ids.has(entry.id)) continue;
     const stored: RoomLayout = { ...layout };
     delete stored.floorPlanImage;
+    delete stored.floorPlanImageRef; // #936: nor its ref
     const layoutJson = JSON.stringify(stored);
     const held = [...local, ...keptSlots, ...incoming].some(
       (slot) => sameHouse(slot.entry, entry) && JSON.stringify(slot.entry.layout) === layoutJson
@@ -994,6 +1011,7 @@ export function keepLayout(layout: RoomLayout, opts: KeepOptions = {}): KeepResu
   const ref: HouseRef = { layoutId: layout.id, name: layout.name };
   const shown: RoomLayout = { ...layout };
   delete shown.floorPlanImage;
+  delete shown.floorPlanImageRef; // #936: nor its ref
   const json = JSON.stringify(shown);
   const kept = readKept(storage);
   if (kept.some((entry) => sameHouse(entry, ref) && JSON.stringify(entry.layout) === json)) {
@@ -1005,8 +1023,9 @@ export function keepLayout(layout: RoomLayout, opts: KeepOptions = {}): KeepResu
     savedAt: at,
     layoutId: layout.id,
     name: layout.name,
-    hadFloorPlan: Boolean(layout.floorPlanImage),
+    hadFloorPlan: Boolean(layout.floorPlanImage || layout.floorPlanImageRef),
     floorPlan: floorPlanFingerprint(layout.floorPlanImage) ?? undefined,
+    floorPlanRef: planImageRefOf(layout),
     itemCount: layout.floors.reduce((sum, floor) => sum + floor.items.length, 0),
     floorCount: layout.floors.length,
     layout: shown,
@@ -1208,6 +1227,7 @@ export function importKeptVersions(candidates: readonly unknown[], opts: KeepOpt
     if (ids.has(entry.id)) continue;
     const stored: RoomLayout = { ...layout };
     delete stored.floorPlanImage;
+    delete stored.floorPlanImageRef; // #936: nor its ref
     const layoutJson = JSON.stringify(stored);
     if ([...local, ...incoming].some((held) => sameHouse(held, entry) && JSON.stringify(held.layout) === layoutJson)) continue;
     const next: KeptEntry = { ...entry, savedAt: Math.min(entry.savedAt, at), keptAt: Math.min(entry.keptAt, at), layout: stored };

@@ -6,7 +6,7 @@ import {
   isChunkLoadError,
   reloadOnceForChunkError,
 } from '../components/room-organizer/lib/chunk-reload';
-import { downloadRawLayout, leaveCrashedTour, noteEditorCrashed, readStoredLayoutRaw } from '../components/room-organizer/lib/saved-house';
+import { DOWNLOAD_WITHOUT_PLAN_IMAGE, downloadStoredHouse, leaveCrashedTour, noteEditorCrashed, readStoredLayoutRaw } from '../components/room-organizer/lib/saved-house';
 
 // Global error boundary — catches errors thrown in the root layout itself (and
 // in app/error.tsx), so it must render its own <html>/<body>. Starting fresh
@@ -41,6 +41,8 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
   const [resetProblem, setResetProblem] = useState<string | null>(null);
   // Read before the reset: on a failed move this is the only copy left.
   const [lostRaw, setLostRaw] = useState<string | null>(null);
+  // The download went out naming a floor-plan image it couldn't hold (#936).
+  const [downloadNote, setDownloadNote] = useState(false);
   const resetting = useRef(false);
   const resetSavedLayout = async () => {
     if (resetting.current) return;
@@ -139,7 +141,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
           {lostRaw && (
             <button
               type="button"
-              onClick={() => downloadRawLayout(lostRaw, 'my-house.json')}
+              onClick={() => void downloadStoredHouse(lostRaw, 'my-house.json').then((whole) => setDownloadNote(!whole))}
               style={{
                 appearance: 'none',
                 cursor: 'pointer',
@@ -156,6 +158,11 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
             >
               Download my house
             </button>
+          )}
+          {downloadNote && (
+            <p role="status" style={{ margin: '12px 0 0', color: '#94a3b8', fontSize: 13, lineHeight: 1.5 }}>
+              {DOWNLOAD_WITHOUT_PLAN_IMAGE}
+            </p>
           )}
         </div>
       </body>

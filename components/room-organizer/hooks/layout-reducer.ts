@@ -20,6 +20,7 @@ import { INITIAL_GROUND_FLOOR, INITIAL_LAYOUT } from '../lib/initial-layout';
 import { isWallMounted, settleWallMountedItem, snapOpeningToWall, type WallGap } from '../lib/opening-snap';
 import { openingStylePatch } from '../lib/opening-style';
 import { MAX_DIMENSIONS_PER_FLOOR, MIN_DIMENSION_LENGTH, PIN_INDOOR_TOLERANCE, clampDimension, dimensionLength, dimensionOutsideWalls, dimensionsAfterFootprint, withDimensions } from '../lib/plan-dimensions';
+import { hasPlanImage } from '../lib/plan-image-ref';
 import { DEFAULT_ROOF_PITCH, clampRoofPitch, partyWallsHoldRidge } from '../lib/roof-shape';
 import { floorRooms } from '../lib/room-detect';
 import { planRoomTransfer, type RoomTransfer } from '../lib/room-transfer';
@@ -420,9 +421,11 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
       // A calibration belongs to its image (#726): another image, or none, drops it.
       if (image === null) {
         return withLayout(state, (layout) => {
-          if (layout.floorPlanImage === undefined && layout.floorPlanTransform === undefined && layout.floorPlanMode === undefined) return layout;
+          if (layout.floorPlanImage === undefined && layout.floorPlanImageRef === undefined && layout.floorPlanTransform === undefined && layout.floorPlanMode === undefined) return layout;
           const next = { ...layout };
           delete next.floorPlanImage;
+          // A stored image's ref goes with it (#936).
+          delete next.floorPlanImageRef;
           delete next.floorPlanTransform;
           // The next upload starts as the drawing again (#920).
           delete next.floorPlanMode;
@@ -433,6 +436,8 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         if (layout.floorPlanImage === image) return layout;
         const next = { ...layout, floorPlanImage: image };
         delete next.floorPlanTransform;
+        // The ref named the image this one replaces (#936).
+        delete next.floorPlanImageRef;
         return next;
       });
     }
@@ -446,7 +451,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
         }
         // Through the schema's repair, so the store never holds what a load would drop.
         const transform = repairFloorPlanTransform(action.transform);
-        if (!transform || !layout.floorPlanImage) return layout;
+        if (!transform || !hasPlanImage(layout)) return layout;
         const current = layout.floorPlanTransform;
         if (current && current.scale === transform.scale && current.offsetX === transform.offsetX && current.offsetZ === transform.offsetZ) return layout;
         return { ...layout, floorPlanTransform: transform };
@@ -465,7 +470,7 @@ function reduceLayout(state: LayoutState, action: LayoutAction): LayoutState {
     // The drawing or an underlay (#920): 'drawing' is stored as no key, as old saves have it.
     case 'setFloorPlanMode':
       return withLayout(state, (layout) => {
-        if (!layout.floorPlanImage) return layout;
+        if (!hasPlanImage(layout)) return layout;
         if (action.mode === 'underlay') return layout.floorPlanMode === 'underlay' ? layout : { ...layout, floorPlanMode: 'underlay' };
         // An explicit 'drawing' (a file can carry one) is the same picture: no change, no undo entry.
         return layout.floorPlanMode === undefined || layout.floorPlanMode === 'drawing' ? layout : withoutKey(layout, 'floorPlanMode');
@@ -1663,9 +1668,10 @@ function normaliseLayout(input: RoomLayout): RoomLayout {
   // A calibration belongs to its image (#726). Restore points keep it without
   // the image, for the History panel to re-attach both; a house that arrives
   // without its image leaves it behind here, on every whole-house load.
-  const calibrated = input.floorPlanTransform && !input.floorPlanImage ? withoutKey(input, 'floorPlanTransform') : input;
+  // A house naming its stored image (#936) still has it.
+  const calibrated = input.floorPlanTransform && !hasPlanImage(input) ? withoutKey(input, 'floorPlanTransform') : input;
   // Its mode too (#920): restore points keep it for the re-attach, done before this load.
-  const layout = calibrated.floorPlanMode !== undefined && !calibrated.floorPlanImage ? withoutKey(calibrated, 'floorPlanMode') : calibrated;
+  const layout = calibrated.floorPlanMode !== undefined && !hasPlanImage(calibrated) ? withoutKey(calibrated, 'floorPlanMode') : calibrated;
   const width = clampRoomDimension(layout.width);
   const height = clampRoomDimension(layout.height);
   return {

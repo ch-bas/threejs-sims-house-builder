@@ -586,6 +586,7 @@ describe('version-history — gate hygiene (#297)', () => {
         layoutId: null,
         hadFloorPlan: false,
         floorPlanFingerprint: null,
+        floorPlanRef: null,
       },
     ]);
     // Validation happens on restore.

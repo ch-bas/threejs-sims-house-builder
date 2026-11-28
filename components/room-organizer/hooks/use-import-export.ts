@@ -6,6 +6,7 @@ import {
   readLayoutFromFile,
 } from '../lib/file-io';
 import { exportFileName } from '../lib/plan-export/download';
+import { resolvePlanImage } from '../lib/plan-image-ref';
 import { confirmReplace, snapshotBeforeReplace } from '../lib/restore-point';
 import { encodeShareUrl } from '../lib/share';
 import {
@@ -169,7 +170,9 @@ export function useImportExport({
   const handleImport = useCallback(
     async (file: File) => {
       try {
-        const next = await readLayoutFromFile(file);
+        // A file naming its floor-plan image by ref (a stored house's raw
+        // download) gets it from this browser's image store, if it is there (#936).
+        const next = await resolvePlanImage(await readLayoutFromFile(file));
         if (!(await confirmReplace(layout, `the imported “${next.name}”`))) return false;
         // The house on screen after the answer, not when it asked.
         snapshotBeforeReplace(layoutStore.getState().layout);

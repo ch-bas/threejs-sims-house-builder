@@ -17,6 +17,7 @@ import { cutoutRefusal, itemsInCorner, outdoorItemsTakenIn, zonesInCorner } from
 import { notifyWithUndo } from '../lib/editor-notices';
 import { MIN_CUTOUT_SIZE, MIN_WING_SIZE } from '../lib/footprint';
 import { formatMetres, imperialStep, lengthInputValue, lengthRefusal, lengthUnitName, parseLength } from '../lib/format';
+import { planImagePending, planImageProblem, planImageProblemText } from '../lib/plan-image-ref';
 import { MAX_NAME_LENGTH } from '../lib/schema';
 import { MAX_STOREY_HEIGHT, MIN_STOREY_HEIGHT, storeyHeight } from '../lib/storeys';
 import { FLOOR_HEIGHT_METERS, type FloorPlanFitMode, type FootprintCorner, type FootprintCutout } from '../lib/types';
@@ -433,6 +434,17 @@ export function RoomSettingsPanel({ onFloorPlanUpload, onCalibrateStart }: RoomS
               </>
             ) : (
               <>
+                {/* #936: a stored image this browser couldn't read back. */}
+                {planImagePending(layout) && (
+                  <>
+                    <p role="status" className="text-xs text-muted-foreground">
+                      {planImageProblemText(planImageProblem(layout.floorPlanImageRef))}
+                    </p>
+                    <Button onClick={() => actions.setFloorPlan(null)} variant="outline" size="sm" className="w-full text-xs">
+                      Remove Floor Plan
+                    </Button>
+                  </>
+                )}
                 <input
                   ref={fileInputRef}
                   id={fileInputId}

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
 import { browserStorageManager } from '../hooks/use-storage-persist';
-import { backupFileName, createBackup, libraryHousesLeftOut } from '../lib/backup';
+import { PLAN_IMAGES_NOT_IN_BACKUP, backupFileName, backupNamesPlanImages, createBackup, inlineBackupPlanImages, libraryHousesLeftOut, type BackupBundle } from '../lib/backup';
 import { offerBackupRestore, plural, subscribeBackupRestored } from '../lib/backup-file';
 import { queryPersistence, readStorageCare, recordBackup, subscribeStorageCare, type StorageCare } from '../lib/backup-reminder';
 import { askConfirm } from '../lib/confirm-dialog';
@@ -138,7 +138,18 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
 
   const handleBackup = (): void => {
     const bundle = createBackup(currentLayout);
+    // Stored floor-plan images go into the file, so it stands alone (#936).
+    if (backupNamesPlanImages(bundle)) void inlineBackupPlanImages(bundle).then(finishBackup);
+    else finishBackup(bundle);
+  };
+  const finishBackup = (bundle: BackupBundle): void => {
     downloadTextFile(backupFileName(), 'application/json', JSON.stringify(bundle));
+    // A floor-plan image that couldn't be put in the file (#936): said, and
+    // the backup isn't counted as done.
+    if (backupNamesPlanImages(bundle)) {
+      notify(PLAN_IMAGES_NOT_IN_BACKUP, 'error');
+      return;
+    }
     // Recorded once the download has been handed to the browser: a page
     // can't tell whether the player then cancels the save dialog, so a
     // cancelled download still counts as a backup here.

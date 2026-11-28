@@ -42,6 +42,32 @@ export function downloadRawLayout(raw: string, fileName: string): void {
   downloadTextFile(fileName, 'application/json', raw);
 }
 
+// --- #936 plan image store ---
+/** Said when a downloaded house still names its floor-plan image (#936). */
+export const DOWNLOAD_WITHOUT_PLAN_IMAGE =
+  'The file names its floor-plan image without holding it: the image couldn’t be read from this browser’s storage. The house itself is all there.';
+
+/**
+ * `downloadRawLayout` for a file that must stand alone: a floor-plan image
+ * the stored house names by ref is put back in it. The image store loads
+ * only for a house that names one, and the raw text goes out whenever it
+ * can't be had. Resolves whether the file holds every image it names.
+ */
+export function downloadStoredHouse(raw: string, fileName: string): Promise<boolean> {
+  if (!raw.includes('"floorPlanImageRef"')) {
+    downloadRawLayout(raw, fileName);
+    return Promise.resolve(true);
+  }
+  return import('./plan-image-store')
+    .then(({ inlineRawPlanImages }) => inlineRawPlanImages(raw))
+    .catch(() => raw)
+    .then((text) => {
+      downloadRawLayout(text, fileName);
+      return !text.includes('"floorPlanImageRef"');
+    });
+}
+// --- end #936 ---
+
 /*
  * Whether the editor went down with an error (#568). The error screen notes it
  * while it renders, which is before the crashed editor's cleanup runs, so the

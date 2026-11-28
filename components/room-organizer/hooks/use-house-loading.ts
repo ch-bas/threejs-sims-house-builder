@@ -9,7 +9,7 @@ import type { RoomLayout } from '../lib/types';
 
 export interface UseHouseLoadingOptions {
   layout: RoomLayout;
-  actions: Pick<LayoutActions, 'applyLayout'>;
+  actions: Pick<LayoutActions, 'applyLayout' | 'setActiveFloorIndex'>;
   commitHistoryNow: () => void;
   clearHistory: (baseline: RoomLayout) => void;
   /** Drops the selection, the selected wall and the distance points. */
@@ -27,6 +27,8 @@ export interface HouseLoading {
   leaveTour(): void;
 }
 
+const readActiveFloorIndex = (): number => layoutStore.getState().activeFloorIndex;
+
 /**
  * The whole-house loads the editor makes on its own: the house the session
  * opens on (a share link's opens as a tour), a toured house kept (#722), and
@@ -42,9 +44,13 @@ export function useHouseLoading({
 }: UseHouseLoadingOptions): HouseLoading {
   const { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour } = useLayoutPersistence({
     layout,
+    activeFloorIndex: readActiveFloorIndex,
     onHydrate: useCallback(
-      (saved: RoomLayout) => {
+      (saved: RoomLayout, floorIndex?: number) => {
         actions.applyLayout(saved);
+        // A house that waited for its image opens on the storey it would
+        // have without the edits made meanwhile (#936).
+        if (floorIndex !== undefined) actions.setActiveFloorIndex(floorIndex);
         // The saved or shared house the session opens on earns nothing (#450).
         markLayoutLoaded();
         clearTransientSelection();
