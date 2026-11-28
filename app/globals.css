@@ -2100,9 +2100,10 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
     content: none;
   }
 }
-/* The shortcut overlay's entry (#932): no keyboard on a phone. */
+/* The shortcut overlay's entry (#932): no keyboard on a phone; nor the USDZ file outside AR (#937). */
 @media (max-width: 768px), (max-height: 500px) {
-  .pc-help-keys {
+  .pc-help-keys,
+  .pc-usdz-file {
     display: none;
   }
 }
