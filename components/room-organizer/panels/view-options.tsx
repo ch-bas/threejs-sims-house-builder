@@ -10,6 +10,7 @@ import { LENGTH_UNITS, type LengthUnit } from '../lib/format';
 import { withShortcut } from '../lib/keymap';
 import { enterPhotoMode } from '../lib/photo-mode';
 import { QUALITY_CHOICES, saveQualityChoice, type QualityChoice } from '../lib/render-quality';
+import { openShortcutsOverlay } from '../lib/shortcut-overlay';
 import { toggleViewOption, VIEW_OPTION_KEYS, type ViewOptionKey } from '../lib/view-options';
 import { Icon, type PlotcraftIconName } from '../plotcraft/icon';
 
@@ -188,6 +189,12 @@ export function ViewOptionsMenu({ id, anchorRef, onClose, onShowCard }: ViewOpti
               if (onShowCard) onShowCard(hadFocus);
               else if (hadFocus) anchorRef.current?.focus();
             }}
+            onShortcuts={() => {
+              // The overlay returns focus to the menu's button.
+              anchorRef.current?.focus();
+              onClose();
+              openShortcutsOverlay();
+            }}
           />
         }
       />
@@ -201,9 +208,10 @@ export function ViewOptionsMenu({ id, anchorRef, onClose, onShowCard }: ViewOpti
  * keeps its height with a mouse; a touch screen gives the button a 44 px
  * row of its own. The version it names is the one "What's new" counts from.
  */
-function HelpEntries({ onGettingStarted }: { onGettingStarted(): void }): JSX.Element {
+function HelpEntries({ onGettingStarted, onShortcuts }: { onGettingStarted(): void; onShortcuts(): void }): JSX.Element {
+  const mac = useAppleKeys();
   return (
-    <div role="group" aria-label="Help" className="pc-help-entries">
+    <div role="group" aria-label="Help" className="pc-help-entries" style={{ gap: 6 }}>
       <button
         type="button"
         className="pc-tile pc-photo-entry"
@@ -211,6 +219,10 @@ function HelpEntries({ onGettingStarted }: { onGettingStarted(): void }): JSX.El
         onClick={onGettingStarted}
       >
         Getting started
+      </button>
+      {/* #932: the shortcut overlay, also on `?`; not on a phone (.pc-help-keys) */}
+      <button type="button" className="pc-tile pc-photo-entry pc-help-keys" title={withShortcut('Show the keyboard shortcuts', 'shortcuts', mac)} onClick={onShortcuts}>
+        Keys
       </button>
     </div>
   );

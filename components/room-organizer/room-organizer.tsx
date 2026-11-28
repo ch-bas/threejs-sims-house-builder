@@ -70,6 +70,7 @@ import { loadQualityChoice } from './lib/render-quality';
 import { ROOF_EAVE_OVERHANG, roofPeakHeight } from './lib/roof-shape';
 import { activeStoreyRoomScores } from './lib/room-score';
 import { focusCoverFor } from './lib/scene-insets';
+import { toggleShortcutsOverlay } from './lib/shortcut-overlay';
 import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
@@ -95,6 +96,7 @@ import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
 import { PlacementHint } from './panels/placement-hint';
 import { PlanCalibrationChip } from './panels/plan-calibration-chip';
+import { ShortcutsOverlayHost } from './panels/shortcuts-overlay';
 import { SidebarDrawer } from './panels/sidebar-drawer';
 import { StatusToastHost } from './panels/status-toast';
 import { TouchModeToggle } from './panels/touch-mode-toggle';
@@ -1085,6 +1087,8 @@ export function RoomOrganizer(): JSX.Element {
       advanceTime,
       changeFloor,
       toggleSidebar: () => setSidebarCollapsed((c) => !c),
+      // #932: the `?` overlay
+      toggleShortcuts: toggleShortcutsOverlay,
       removeInteriorWall,
       toggleExteriorWall,
       // Only while a keyboard placement is pending, so Enter/Escape otherwise
@@ -1467,6 +1471,8 @@ export function RoomOrganizer(): JSX.Element {
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}
       <ConfirmDialogHost />
+      {/* #932: the `?` shortcut overlay, under a confirm */}
+      <ShortcutsOverlayHost />
       {fileDragging && <FileDropOverlay lockedReason={fileDropBlocked} />}
 
       {/* Achievement toast */}

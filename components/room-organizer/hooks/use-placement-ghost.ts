@@ -24,6 +24,7 @@ import {
   groundUnderPointer,
   invertClientToWorld,
 } from '../lib/placement-ghost';
+import { isShortcutsOverlayOpen } from '../lib/shortcut-overlay';
 import { isTypingTarget } from '../lib/walk-input';
 import { pointerOnCanvas } from '../three/drag-handlers';
 import { buildPlacementGhost, type PlacementGhostMesh } from '../three/placement-ghost';
@@ -518,8 +519,9 @@ export function usePlacementGhost(params: UsePlacementGhostParams): UsePlacement
     // a focused catalog tile's roving keys and the window shortcuts.
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.ctrlKey || event.metaKey || event.altKey || isTypingTarget(event.target)) return;
-      // An open question (#649) owns Enter and Escape until it is answered.
-      if (confirmOpen()) return;
+      // An open question (#649), or the `?` overlay (#932), owns the keys
+      // until it closes: nothing is placed or turned behind it.
+      if (confirmOpen() || isShortcutsOverlayOpen()) return;
       const key = event.key.toLowerCase();
       if (key !== GHOST_KEYS.turn && key !== GHOST_KEYS.put && key !== GHOST_KEYS.putToo && key !== GHOST_KEYS.end) return;
       // Enter and Space on a focused button (the hint's Cancel, Undo, …) belong

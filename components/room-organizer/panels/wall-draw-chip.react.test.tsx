@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { closeShortcutsOverlay, openShortcutsOverlay } from '../lib/shortcut-overlay';
 import { WallDrawChip, lengthKey } from './wall-draw-chip';
 
 afterEach(cleanup);
@@ -25,6 +26,19 @@ describe('WallDrawChip typed length (#723)', () => {
     expect(field().value).toBe('2');
     expect(event.defaultPrevented).toBe(true);
     expect(shortcut).not.toHaveBeenCalled();
+  });
+
+  it('leaves the digits alone while the shortcut overlay is open (#932)', () => {
+    render(<WallDrawChip status={{ hasAnchor: true, aimed: true }} onLength={() => true} />);
+    openShortcutsOverlay();
+    try {
+      expect(press('2').defaultPrevented).toBe(false);
+      expect(screen.queryByLabelText('Wall length in metres')).toBeNull();
+    } finally {
+      closeShortcutsOverlay();
+    }
+    press('2');
+    expect(field().value).toBe('2');
   });
 
   it('leaves the keys alone with no draft, on a repeat, and on chords', () => {

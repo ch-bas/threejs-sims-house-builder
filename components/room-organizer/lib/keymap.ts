@@ -38,6 +38,8 @@ export const EDIT_KEYS = {
   escape: 'Escape',
   tab: 'Tab',
   space: ' ',
+  /** Shift+/ on most layouts: `event.key` is the character, whatever made it. */
+  shortcuts: '?',
 } as const;
 
 /**
@@ -105,6 +107,7 @@ export const KEYMAP: readonly KeyBinding[] = [
   { id: 'time', label: 'Time of day', keys: [['['], [']']], context: 'edit' },
   { id: 'floor', label: 'Switch floor', keys: [['PageUp'], ['PageDown']], context: 'edit' },
   { id: 'panels', label: 'Show / hide panels', keys: [['P']], context: 'edit' },
+  { id: 'shortcuts', label: 'Show / hide these shortcuts', keys: [['?']], context: 'edit' },
   { id: 'wall-free', label: 'Draw free of the angle steps and grid', keys: [['Shift']], context: 'plan' },
   { id: 'wall-length', label: 'Type a wall length', keys: [['0–9']], context: 'plan' },
   { id: 'walk', label: 'Walk', keys: [['WASD'], ['Arrows']], context: 'walk' },
