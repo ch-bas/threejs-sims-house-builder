@@ -349,9 +349,10 @@ async function checkUpdate(launch, basePath) {
     other.on('request', (req) => {
       if (req.isNavigationRequest() && req.frame() === other.mainFrame()) otherLoads += 1;
     });
-    // A window of the site that runs nothing: a page of the app would reload
-    // itself (the head watchdog, 20 s without an editor).
-    await other.goto(`${home}/icon.svg`, { waitUntil: 'load' });
+    // The 404 page, open for longer than the head watchdog's 20 s: it must
+    // not reload itself either (it never starts the editor).
+    await other.goto(`${home}/404.html`, { waitUntil: 'load' });
+    const otherOpenedAt = Date.now();
     await page.bringToFront();
     workerUpdated = true;
     await within(page.evaluate(() => navigator.serviceWorker.getRegistration().then((registration) => registration?.update())), 30_000, undefined);
@@ -391,6 +392,8 @@ async function checkUpdate(launch, basePath) {
     // Only the newer build's cache is left: nothing stored vouches for an older build.
     const shells = await within(page.evaluate(() => caches.keys().then((names) => names.filter((n) => n.startsWith('pc-shell:')).length)), 10_000, 0);
     if (shells !== 1) fail(name, `expected the newer build's cache only, found ${shells}`);
+    // Past the head watchdog's 20 s, and the reload it would start.
+    await sleep(Math.max(0, 25_000 - (Date.now() - otherOpenedAt)));
     if (otherLoads !== 1) fail(name, `the other window was reloaded (${otherLoads} documents)`);
   } catch (err) {
     fail(name, err instanceof Error ? err.message.split('\n')[0] : String(err));

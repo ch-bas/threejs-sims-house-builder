@@ -19,7 +19,8 @@ differs from the catalogue.
 └── tailwind.config.ts, postcss.config.mjs
                                          Tailwind theme and the PostCSS pipeline (Tailwind, autoprefixer)
 app/                                     Next.js shell
-├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script
+├── chunk-recovery.ts                    The stale-chunk head script (#499): error listeners and the 20 s watchdog, which a page marked data-pc-no-watchdog (the 404 page) skips
+├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script (chunk-recovery.ts)
 ├── page.tsx                             Loads the editor (client only) and prefetches the 3D engine
 ├── globals.css                          Tailwind layers, the design tokens and the app-wide styles
 ├── ambient.d.ts                         Next's ambient types for a bare `tsc`, and global stylesheet imports
