@@ -1,3 +1,4 @@
+import { formatAge } from './format';
 import { safeGetItem, safeSetItem } from './safe-storage';
 
 /**
@@ -26,11 +27,19 @@ export interface StorageCare {
   persistDeniedAt: number | null;
   /** When the last backup file was written, or null for never. */
   lastBackupAt: number | null;
+  /** Local days (`dayKey`) with edits since the last backup. */
+  editDays: readonly string[];
+  /** When the backup reminder last showed, or null. */
+  remindedAt: number | null;
+  /** The player turned the reminder off (Storage & backup). */
+  remindersOff: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const EMPTY: StorageCare = { persist: null, persistDeniedAt: null, lastBackupAt: null };
+const EMPTY: StorageCare = { persist: null, persistDeniedAt: null, lastBackupAt: null, editDays: [], remindedAt: null, remindersOff: false };
+
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 function finiteOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -51,10 +60,14 @@ export function readStorageCare(storage?: Storage): StorageCare {
     return EMPTY;
   }
   if (!isRecord(parsed)) return EMPTY;
+  const days = Array.isArray(parsed.editDays) ? parsed.editDays : [];
   return {
     persist: parsed.persist === 'granted' ? 'granted' : null,
     persistDeniedAt: finiteOrNull(parsed.persistDeniedAt),
     lastBackupAt: finiteOrNull(parsed.lastBackupAt),
+    editDays: days.filter((day): day is string => typeof day === 'string' && DAY_KEY.test(day)).slice(-MAX_EDIT_DAYS),
+    remindedAt: finiteOrNull(parsed.remindedAt),
+    remindersOff: parsed.remindersOff === true,
   };
 }
 
@@ -75,9 +88,26 @@ function writeStorageCare(patch: Partial<StorageCare>, storage?: Storage): void 
   for (const listener of listeners) listener();
 }
 
-/** A backup file was just written. */
+/** A backup file was just written: edits count again from here. */
 export function recordBackup(at: number, storage?: Storage): void {
-  writeStorageCare({ lastBackupAt: at }, storage);
+  writeStorageCare({ lastBackupAt: at, editDays: [] }, storage);
+}
+
+/** The house was edited at `at`; written only on a day not yet counted. */
+export function recordEditDay(at: number, storage?: Storage): void {
+  const care = readStorageCare(storage);
+  const editDays = noteEditDay(care.editDays, at);
+  if (editDays !== care.editDays) writeStorageCare({ editDays }, storage);
+}
+
+/** The backup reminder showed at `at`: the next waits a week. */
+export function recordReminded(at: number, storage?: Storage): void {
+  writeStorageCare({ remindedAt: at }, storage);
+}
+
+/** The reminder switch in Storage & backup. */
+export function setBackupReminders(on: boolean, storage?: Storage): void {
+  writeStorageCare({ remindersOff: !on }, storage);
 }
 
 /** A no is kept only as its time (`persistDeniedAt`); a yes clears it. */
@@ -193,4 +223,30 @@ export function backupReminderDue(input: BackupReminderInput): boolean {
   }
   if (input.lastBackupAt === null) return input.editDays.length >= BACKUP_FIRST_AFTER_DAYS;
   return input.editDays.length > 0 && input.now - input.lastBackupAt > BACKUP_STALE_AFTER_MS;
+}
+
+/** `backupReminderDue` from the stored record; never once the player turned it off. */
+export function backupReminderDueFor(care: StorageCare, now: number, exploring: boolean): boolean {
+  if (care.remindersOff) return false;
+  return backupReminderDue({ now, lastBackupAt: care.lastBackupAt, editDays: care.editDays, lastRemindedAt: care.remindedAt, exploring });
+}
+
+/**
+ * Whether Add to Home Screen would keep the houses: Safari on iOS and
+ * iPadOS clears a site's storage after seven days without a visit unless it
+ * runs from the home screen. An iPad asks for the desktop site, so it reads
+ * as a Mac with a touch screen.
+ */
+export function homeScreenKeepsHouses(userAgent: string, maxTouchPoints: number, standalone: boolean): boolean {
+  if (standalone) return false;
+  return /\b(iPhone|iPad|iPod)\b/.test(userAgent) || (/\bMacintosh\b/.test(userAgent) && maxTouchPoints > 1);
+}
+
+/** What the reminder says: since when, why, and on iOS how to keep the houses for good. */
+export function backupReminderMessage(care: StorageCare, now: number, homeScreen: boolean): string {
+  const first =
+    care.lastBackupAt === null
+      ? 'Your houses are only in this browser. A backup file keeps a copy if it clears its data.'
+      : `Your last backup was ${formatAge(Math.max(0, now - care.lastBackupAt))}. Back up to keep your latest changes.`;
+  return homeScreen ? `${first} Add to Home Screen keeps your houses from being cleared.` : first;
 }

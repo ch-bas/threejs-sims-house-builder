@@ -3,19 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { backUpFromClick } from '../hooks/use-backup-reminder';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
 import { browserStorageManager } from '../hooks/use-storage-persist';
-import { PLAN_IMAGES_NOT_IN_BACKUP, backupFileName, backupNamesPlanImages, createBackup, inlineBackupPlanImages, libraryHousesLeftOut, type BackupBundle } from '../lib/backup';
-import { offerBackupRestore, plural, subscribeBackupRestored } from '../lib/backup-file';
-import { queryPersistence, readStorageCare, recordBackup, subscribeStorageCare, type StorageCare } from '../lib/backup-reminder';
+import { offerBackupRestore, subscribeBackupRestored } from '../lib/backup-file';
+import { queryPersistence, readStorageCare, setBackupReminders, subscribeStorageCare, type StorageCare } from '../lib/backup-reminder';
 import { askConfirm } from '../lib/confirm-dialog';
 import { subscribeCustomSets } from '../lib/custom-sets';
 import { notify } from '../lib/editor-notices';
 import { formatAge } from '../lib/format';
 import { deleteNamedLayout, listSavedLayouts, subscribeLibrary } from '../lib/library';
 import { localStorageOrNull } from '../lib/persistence';
-import { downloadTextFile } from '../lib/plan-export/download';
 import {
   STORAGE_QUOTA_CHARS,
   STORAGE_TENANTS,
@@ -136,32 +135,8 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
     changed();
   };
 
-  const handleBackup = (): void => {
-    const bundle = createBackup(currentLayout);
-    // Stored floor-plan images go into the file, so it stands alone (#936).
-    if (backupNamesPlanImages(bundle)) void inlineBackupPlanImages(bundle).then(finishBackup);
-    else finishBackup(bundle);
-  };
-  const finishBackup = (bundle: BackupBundle): void => {
-    downloadTextFile(backupFileName(), 'application/json', JSON.stringify(bundle));
-    // A floor-plan image that couldn't be put in the file (#936): said, and
-    // the backup isn't counted as done.
-    if (backupNamesPlanImages(bundle)) {
-      notify(PLAN_IMAGES_NOT_IN_BACKUP, 'error');
-      return;
-    }
-    // Recorded once the download has been handed to the browser: a page
-    // can't tell whether the player then cancels the save dialog, so a
-    // cancelled download still counts as a backup here.
-    recordBackup(Date.now());
-    const leftOut = libraryHousesLeftOut();
-    if (leftOut > 0) {
-      notify(
-        `${plural(leftOut, 'saved layout')} couldn’t be read and ${leftOut === 1 ? 'is' : 'are'} not in the backup. ${leftOut === 1 ? 'It stays' : 'They stay'} in this browser.`,
-        'info'
-      );
-    }
-  };
+  // #928: shared with the backup reminder's Back up button.
+  const handleBackup = (): void => backUpFromClick(currentLayout);
 
   const handleFile = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -274,6 +249,11 @@ export function StoragePanel({ currentLayout, onStorageChanged }: StoragePanelPr
             <p title={care.lastBackupAt === null ? undefined : new Date(care.lastBackupAt).toLocaleString()}>
               {care.lastBackupAt === null ? 'No backup yet' : `Last backup ${formatAge(Math.max(0, Date.now() - care.lastBackupAt))}`}
             </p>
+            {/* #928: the reminder can be turned off for good. */}
+            <label className="flex items-center gap-2" title="At most once a week, after edits on three days with no backup, or two weeks after the last one">
+              <input type="checkbox" checked={!care.remindersOff} onChange={(event) => setBackupReminders(event.target.checked)} />
+              Remind me to back up
+            </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Button
