@@ -78,6 +78,7 @@ components/
     │   ├── app-version.ts               The build's version (stamped from package.json) and the stored last-seen version that "What's new" counts from (#931)
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── announce.ts                  The one screen-reader status line: `announce` (de-duped), `announceSettled` (held keys), the nudge/lock/undo wording (#929)
+    │   ├── ar-view.ts                   AR view (#937): Quick Look detection (`relList.supports('ar')`), the USDZ blob (exporter loaded on the click), file name, failure wording, the AR link's image
     │   ├── achievements.ts              19 predicate-based achievements with count progress, four of them room goals read from `houseRoomScores` (#903); `achievementsEarned` (loaded / edit)
     │   ├── first-steps.ts               The Getting started card's five steps: progress from edits like achievements (loads do none), per-step tips, the stored record (card state, a boolean per step) (#721)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
@@ -223,6 +224,7 @@ components/
     │   ├── people-outfits.ts            Body regions from skin weights, outfits, hair on the head bone
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting); an upper storey's slab under its floor (#653)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
+    │   ├── usdz-export.ts               The export building as a 1:50 USDZ for AR Quick Look (#937): rigged people baked into their pose, mirrors folded into geometry, two-sided parts given an inside copy, three's USDZExporter
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
     │   ├── reveals.ts                   Window and door reveals in the outer walls: linings, and the set-back of the frame (#758)
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
@@ -279,6 +281,7 @@ components/
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
+    │   ├── use-usdz-export.ts           The USDZ button (#937): build, then a real `rel="ar"` link the player taps (blob URL revoked on rebuild, edit, unmount); one-tap download elsewhere
     │   ├── use-file-drop.ts             The page-wide drop target for house and backup files, and the installed app's launch queue (#934)
     │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob, downloaded or kept in the album (#626, #912); shot presets, with the scene's hour, weather and clock put back as it ends
     │   ├── use-photo-album.ts           One house's album photos, newest first, kept current across saves and deletes (#912)
