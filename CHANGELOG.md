@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.39.0] - 2026-11-28
+
+The **Experience & reach** milestone, second wave: the app keeps you in the loop and your work safer. A card says what's new after an update, a quiet weekly reminder suggests a backup, a waiting update is offered with one click, the camera glides between floors, `?` shows every shortcut, traced floor plans can live in the browser's larger storage, and an iPhone can show the house at table size in AR.
+
+### Added
+- A What's new card after each update; View options → Help → New opens it again ([#931](https://github.com/ch-bas/threejs-sims-house-builder/issues/931))
+- A weekly backup reminder with a one-click Back up (off in Storage & backup); on iPhone and iPad it also suggests Add to Home Screen ([#928](https://github.com/ch-bas/threejs-sims-house-builder/issues/928))
+- A new version offers Reload, saving your latest change first: never during a drag, a dialog, EXPLORE or photo mode; a tab left on an older version says so ([#933](https://github.com/ch-bas/threejs-sims-house-builder/issues/933))
+- Press `?` for an overlay of every keyboard shortcut (⌘ and ⇧ on a Mac); View options → Help → Keys opens it too ([#932](https://github.com/ch-bas/threejs-sims-house-builder/issues/932))
+- View in AR on iPhone and iPad: the house at table size (1:50) in AR Quick Look; elsewhere Download USDZ saves the same model ([#937](https://github.com/ch-bas/threejs-sims-house-builder/issues/937))
+
+### Changed
+- Switching floors glides the camera up or down to the new storey instead of cutting; with reduced motion it still cuts ([#930](https://github.com/ch-bas/threejs-sims-house-builder/issues/930))
+- A traced floor plan is also kept in the browser's IndexedDB; when the browser keeps the site's storage, or when the plan no longer fits, saves name it instead of holding it, so a large plan can't fill the 5 MB storage. Backups and exports still contain the image ([#936](https://github.com/ch-bas/threejs-sims-house-builder/issues/936))
+- View options → Help reads Tips, New and Keys
+
+### Fixed
+- The page-not-found page no longer reloads itself after 20 seconds
+
 ## [1.38.0] - 2026-11-22
 
 Two milestones in one release. **Building tools II** finishes the building tools: measure on the plan and pin the dimensions that matter, lay patios, gravel, decks and lawns, move, mirror or copy a whole room with its walls, fence the whole lot in one step, and trace walls over a floor plan. **Living house II** brings the house to life: walkers eat at the table, step out into the garden and say what they lack, the TV switches in EXPLORE, birds, crickets and doors join the ambience, photo mode gains presets and sharing, and challenge briefs earn a badge.
@@ -1073,7 +1092,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.38.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.39.0...HEAD
+[1.39.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.36.0...v1.37.0
 [1.36.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.35.0...v1.36.0
