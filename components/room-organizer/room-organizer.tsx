@@ -9,6 +9,7 @@ import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
 import { getGroundDrawKind, setGroundDrawKind, useGroundDrawKind } from './hooks/ground-draw';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
+import { useBackupReminder } from './hooks/use-backup-reminder';
 import { useCameraPad, useCameraPresets, useCameraTargetOnStorey } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
@@ -655,6 +656,8 @@ export function RoomOrganizer(): JSX.Element {
   );
   // L2 photo (#626): the canvas only orbits while the HUD is hidden.
   const photoActive = usePhotoModeActive();
+  // #928: suggest a backup now and then; not in EXPLORE, photo mode or over the drawer.
+  useBackupReminder(layout, exploring || photoActive || !sidebarCollapsed);
   const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, addFrameJob, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,

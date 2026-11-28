@@ -3,11 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EditorViewProvider } from '../contexts/editor-view-context';
 import { createEditorViewStore } from '../hooks/editor-view-store';
+import { BACKUP_FAILED_MESSAGE } from '../hooks/use-backup-reminder';
 import { autoAnswerConfirms, type AutoAnswer } from '../lib/__testfixtures__/confirm';
 import { makeFloor, makeItem, makeLayout, makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { createBackup } from '../lib/backup';
 import { readStorageCare } from '../lib/backup-reminder';
+import { subscribeNotices } from '../lib/editor-notices';
 import { deleteNamedLayout, listSavedLayouts, loadNamedLayout, saveNamedLayout } from '../lib/library';
+import { downloadTextFile } from '../lib/plan-export/download';
 import { listSnapshots, recordSnapshot } from '../lib/version-history';
 import { StoragePanel } from './storage-panel';
 import type { GameMode, RoomLayout } from '../lib/types';
@@ -143,11 +146,39 @@ describe('storage card (#615, #620)', () => {
       expect(screen.getByText('No backup yet')).toBeTruthy();
       await waitFor(() => expect(screen.getByText('May be cleared by the browser')).toBeTruthy());
       act(() => button(/Back up all/).click());
-      expect(screen.getByText('Last backup just now')).toBeTruthy();
+      await waitFor(() => expect(screen.getByText('Last backup just now')).toBeTruthy());
       expect(readStorageCare().lastBackupAt).not.toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('a backup file that couldn’t be written is not recorded, and says so (#928)', async () => {
+    vi.mocked(downloadTextFile).mockImplementationOnce(() => {
+      throw new Error('blocked');
+    });
+    const notices: string[] = [];
+    const unsubscribe = subscribeNotices((notice) => notices.push(notice.message));
+    try {
+      const { button } = setup();
+      act(() => button(/Back up all/).click());
+      await waitFor(() => expect(notices).toContain(BACKUP_FAILED_MESSAGE));
+      expect(readStorageCare().lastBackupAt).toBeNull();
+      expect(screen.getByText('No backup yet')).toBeTruthy();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('turns the backup reminder off and on again (#928)', () => {
+    setup();
+    const remind = screen.getByRole('checkbox', { name: 'Remind me to back up' }) as HTMLInputElement;
+    expect(remind.checked).toBe(true);
+    act(() => remind.click());
+    expect(readStorageCare().remindersOff).toBe(true);
+    expect(remind.checked).toBe(false);
+    act(() => remind.click());
+    expect(readStorageCare().remindersOff).toBe(false);
   });
 
   it('shows no keep line where the browser can’t say', () => {

@@ -183,6 +183,7 @@ function StatusToast({
     <div
       ref={toastRef}
       data-focus-companion={notice.action !== undefined || notice.copyText !== undefined ? '' : undefined}
+      data-notice-slot={notice.slot}
       className="pc-glass pc-glass--dark pc-status-toast"
       role={notice.tone === 'error' ? 'alert' : 'status'}
       onPointerEnter={() => setHovered(true)}
