@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.39.1] - 2026-11-28
+
+### Changed
+- Download USDZ is no longer offered on a phone that can't open AR; iPhone and iPad keep View in AR, desktops and tablets keep the download ([#937](https://github.com/ch-bas/threejs-sims-house-builder/issues/937))
+- The README shows the current editor: a new hero shot and a gallery of the house at night, a first-person walk, the 2D plan and a phone
+
 ## [1.39.0] - 2026-11-28
 
 The **Experience & reach** milestone, second wave: the app keeps you in the loop and your work safer. A card says what's new after an update, a quiet weekly reminder suggests a backup, a waiting update is offered with one click, the camera glides between floors, `?` shows every shortcut, traced floor plans can live in the browser's larger storage, and an iPhone can show the house at table size in AR.
@@ -1092,7 +1098,8 @@ Bug-fix release resolving all twelve confirmed findings from the August 2026 cod
 - Basic furniture placement and drag
 - Next.js 15 + React 18 + Tailwind CSS setup
 
-[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.39.0...HEAD
+[Unreleased]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.39.1...HEAD
+[1.39.1]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.39.0...v1.39.1
 [1.39.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.38.0...v1.39.0
 [1.38.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.37.0...v1.38.0
 [1.37.0]: https://github.com/ch-bas/threejs-sims-house-builder/compare/v1.36.0...v1.37.0
