@@ -5,7 +5,11 @@ import {
   loadSeenVersion,
   parseVersion,
   stampSeenVersion,
+  offersWhatsNew,
+  resetVersionSessionForTests,
+  settleSeenVersion,
   updatedSinceLastVisit,
+  versionSeenBefore,
 } from './app-version';
 
 function fakeStorage(initial: Record<string, string> = {}): { storage: Storage; map: Map<string, string> } {
@@ -81,5 +85,27 @@ describe('updatedSinceLastVisit', () => {
 
   it('never for a build without a version', () => {
     expect(updatedSinceLastVisit('1.35.0', '0.0.0-dev', true)).toBe(false);
+  });
+});
+
+describe('offering What’s new (#931)', () => {
+  it('only to a returning player, whatever the stamp says', () => {
+    expect(offersWhatsNew('1.37.0', '1.38.0', true)).toBe(true);
+    expect(offersWhatsNew(null, '1.38.0', true)).toBe(true);
+    // A first run (no built house, or the start chooser still to answer).
+    expect(offersWhatsNew('1.37.0', '1.38.0', false)).toBe(false);
+    expect(offersWhatsNew(null, '1.38.0', false)).toBe(false);
+    expect(offersWhatsNew('1.38.0', '1.38.0', true)).toBe(false);
+  });
+
+  it('reads the seen version without stamping; settling stamps it, and the session keeps the old one', () => {
+    resetVersionSessionForTests();
+    const { storage, map } = fakeStorage({ [SEEN_VERSION_STORAGE_KEY]: '1.37.0' });
+    expect(versionSeenBefore(storage)).toBe('1.37.0');
+    expect(map.get(SEEN_VERSION_STORAGE_KEY)).toBe('1.37.0');
+    settleSeenVersion('1.38.0', storage);
+    expect(map.get(SEEN_VERSION_STORAGE_KEY)).toBe('1.38.0');
+    expect(versionSeenBefore(storage)).toBe('1.37.0');
+    resetVersionSessionForTests();
   });
 });

@@ -29,6 +29,16 @@ export function opensOnStartChooser(dismissed: string | null, hash: string, save
   return house !== null && isUntouched(house);
 }
 
+/**
+ * A returning player (#931): this browser holds a house and the start
+ * chooser won't open over it. What's new greets them; a first run is the
+ * chooser's.
+ */
+export function isReturningVisit(): boolean {
+  const savedHouse = safeGetItem(HOUSE_KEY);
+  return savedHouse !== null && !opensOnStartChooser(safeGetItem(STORAGE_KEY), window.location.hash, savedHouse);
+}
+
 const THUMB_WIDTH = 132;
 const THUMB_HEIGHT = 84;
 

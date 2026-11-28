@@ -1,10 +1,14 @@
 import { readFileSync } from 'node:fs';
+import { whatsNewFromFile } from './scripts/whats-new.mjs';
 
 const isGitHubPages = process.env.GITHUB_PAGES === 'true';
 // The app's version, stamped into the bundle: what's new is told against
 // the last version this browser opened (#931), and a save records the
 // version that wrote it, so an older build won't save over it (#933).
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+// The "What's new" card's lines, from the changelog at build time (#931):
+// read only by the lazily loaded card, so they ride in its chunk.
+const whatsNew = JSON.stringify(whatsNewFromFile(() => readFileSync(new URL('./CHANGELOG.md', import.meta.url), 'utf8'), version));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -14,7 +18,7 @@ const nextConfig = {
   // Every viewport corner holds a HUD panel, so the dev-tools badge always
   // lands on a control (bottom-left: the mode buttons on mobile, #300).
   devIndicators: false,
-  env: { NEXT_PUBLIC_APP_VERSION: version },
+  env: { NEXT_PUBLIC_APP_VERSION: version, NEXT_PUBLIC_WHATS_NEW: whatsNew },
   // `npm run lint` is the lint gate (CI runs it with --max-warnings=0
   // before the build); Next's own pass during `next build` only ran it a
   // second time (#447).

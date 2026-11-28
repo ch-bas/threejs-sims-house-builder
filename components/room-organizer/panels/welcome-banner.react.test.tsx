@@ -5,7 +5,7 @@ import { resetFirstStepsForTests } from '../hooks/use-first-steps';
 import { ROOM_TEMPLATES } from '../lib/constants';
 import { INITIAL_LAYOUT } from '../lib/initial-layout';
 import { snapshotBeforeReplace } from '../lib/restore-point';
-import { opensOnStartChooser, WelcomeBanner } from './welcome-banner';
+import { isReturningVisit, opensOnStartChooser, WelcomeBanner } from './welcome-banner';
 
 const loadTemplate = vi.fn((_template: unknown) => Promise.resolve(true));
 vi.mock('../hooks/use-load-template', () => ({ useLoadTemplate: () => loadTemplate }));
@@ -87,6 +87,18 @@ describe('WelcomeBanner start chooser (#721)', () => {
     window.localStorage.setItem('standalone-room-organizer-layout', JSON.stringify(ROOM_TEMPLATES.studio));
     render(<WelcomeBanner />);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a returning visit needs a built house and the chooser answered (#931)', () => {
+    expect(isReturningVisit()).toBe(false);
+    // The untouched starting house: the chooser still opens over it.
+    window.localStorage.setItem('standalone-room-organizer-layout', JSON.stringify({ ...INITIAL_LAYOUT, id: 'house-fresh' }));
+    expect(isReturningVisit()).toBe(false);
+    window.localStorage.setItem(DISMISSED, '1');
+    expect(isReturningVisit()).toBe(true);
+    window.localStorage.clear();
+    window.localStorage.setItem('standalone-room-organizer-layout', JSON.stringify(ROOM_TEMPLATES.studio));
+    expect(isReturningVisit()).toBe(true);
   });
 
   it('does not show once dismissed', () => {

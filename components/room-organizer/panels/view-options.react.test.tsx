@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EditorViewProvider } from '../contexts/editor-view-context';
 import { createEditorViewStore } from '../hooks/editor-view-store';
 import { dismissFirstSteps, resetFirstStepsForTests, useFirstStepsAsked, useFirstStepsOffered } from '../hooks/use-first-steps';
+import { resetWhatsNewForTests, useWhatsNewState, type WhatsNewState } from '../hooks/use-whats-new';
 import { makeViewSettings } from '../lib/__testfixtures__/fixtures';
 import { FIRST_STEPS_STORAGE_KEY } from '../lib/first-steps';
 import { VIEW_OPTION_KEYS } from '../lib/view-options';
@@ -76,8 +77,8 @@ describe('ViewOptionsMenu (#341)', () => {
     const { onClose } = setup();
     render(<Probe />);
     expect(offered).toBe(false);
-    expect(screen.getByRole('button', { name: 'Getting started' }).title).toMatch(/version \d+\.\d+\.\d+/);
-    fireEvent.click(screen.getByRole('button', { name: 'Getting started' }));
+    expect(screen.getByRole('button', { name: 'What’s new' }).title).toMatch(/\(\d+\.\d+\.\d+\)/);
+    fireEvent.click(screen.getByRole('button', { name: 'Getting started tips' }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(offered).toBe(true);
     // Asked for: it mounts even over a house kept from a shared link.
@@ -85,5 +86,29 @@ describe('ViewOptionsMenu (#341)', () => {
     expect(JSON.parse(localStorage.getItem(FIRST_STEPS_STORAGE_KEY)!).card).toBe('offered');
     localStorage.clear();
     resetFirstStepsForTests();
+  });
+
+  it('Help opens What’s new, and Getting started takes its place back (#931)', () => {
+    localStorage.clear();
+    resetFirstStepsForTests();
+    resetWhatsNewForTests();
+    let state: WhatsNewState = 'closed';
+    let offered = false;
+    function Probe(): null {
+      state = useWhatsNewState();
+      offered = useFirstStepsOffered();
+      return null;
+    }
+    const { onClose } = setup();
+    render(<Probe />);
+    fireEvent.click(screen.getByRole('button', { name: 'What’s new' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(state).toBe('asked');
+    fireEvent.click(screen.getByRole('button', { name: 'Getting started tips' }));
+    expect(state).toBe('closed');
+    expect(offered).toBe(true);
+    localStorage.clear();
+    resetFirstStepsForTests();
+    resetWhatsNewForTests();
   });
 });

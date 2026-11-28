@@ -2081,10 +2081,11 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
 }
 
 /* Help in the View menu (#931): on the Quality heading's row without
-   making it taller; a touch screen gives the button a 44 px row instead. */
+   making it taller; a touch screen gives the buttons a 44 px row instead. */
 .pc-help-entries {
   display: flex;
   align-items: center;
+  gap: 6px;
   height: 0;
 }
 @media (pointer: coarse) {
@@ -2244,8 +2245,19 @@ html[data-photo] .pc-world [data-confirm-dialog] * {
   align-items: center;
   gap: 8px;
 }
+/* What's new on a phone (#931): full width between the pills and the
+   dock, scrolling inside, over the camera pad (32), under the sheet (36). */
+.pc-whats-new--compact {
+  z-index: 33;
+  left: calc(16px + env(safe-area-inset-left, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  width: auto;
+  max-height: calc(var(--pc-dock-top, 100dvh) - var(--pc-top-pills-bottom, 120px) - 20px);
+}
 html[data-sheet-open] .pc-first-steps--line,
-html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line {
+html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line,
+html[data-sheet-open] .pc-whats-new--compact,
+html:has(.pc-mode-panel[data-more-open]) .pc-whats-new--compact {
   display: none;
 }
 /* A landscape phone's dock is two columns: the line rides on the mode
@@ -2255,6 +2267,11 @@ html:has(.pc-mode-panel[data-more-open]) .pc-first-steps--line {
     top: calc(var(--pc-mode-top, 100dvh) - 48px);
     left: auto;
     width: min(380px, 45vw);
+  }
+  .pc-whats-new--compact {
+    left: auto;
+    width: min(380px, 45vw);
+    max-height: calc(var(--pc-mode-top, 100dvh) - var(--pc-top-pills-bottom, 120px) - 20px);
   }
 }
 

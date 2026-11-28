@@ -41,6 +41,7 @@ import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
+import { offerWhatsNew, useWhatsNewState, whatsNewMounts } from './hooks/use-whats-new';
 import {
   announce,
   announceSettled,
@@ -51,7 +52,7 @@ import {
   describePlacement,
   withdrawAnnouncement,
 } from './lib/announce';
-import { noteVersionOpened } from './lib/app-version';
+import { APP_VERSION, offersWhatsNew, settleSeenVersion, versionSeenBefore } from './lib/app-version';
 import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
@@ -103,7 +104,8 @@ import { TouchModeToggle } from './panels/touch-mode-toggle';
 import { TourBanner } from './panels/tour-banner';
 import { Viewport } from './panels/viewport';
 import { WallDisplayPill } from './panels/wall-display-pill';
-import { WelcomeBanner } from './panels/welcome-banner';
+import { WelcomeBanner, isReturningVisit } from './panels/welcome-banner';
+import { WhatsNewCard } from './panels/whats-new-card';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { revealSetbacks } from './three/reveals';
@@ -294,11 +296,6 @@ export function RoomOrganizer(): JSX.Element {
     if (!loadHapticsChoice()) setView((v) => ({ ...v, hapticsEnabled: false }));
   }, [setView]);
 
-  // This browser opened this version (#931): "What's new" counts from it.
-  useEffect(() => {
-    noteVersionOpened();
-  }, []);
-
   // The zone with handles on the plan (#628). The handles are zone mode's.
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   useEffect(() => {
@@ -407,6 +404,17 @@ export function RoomOrganizer(): JSX.Element {
   // The shared-link tour (#722): EXPLORE for as long as it lasts, then
   // DESIGN, whichever way it ends.
   const tourPhase = useTourPhase();
+  // #931: What's new for a returning player after an update. Not during a
+  // tour, which writes nothing to the visitor's storage (#722). The seen
+  // version is stamped now only when there is nothing to tell; otherwise
+  // once the card has shown or closed (use-whats-new).
+  useEffect(() => {
+    if (tourPhase === 'touring') return;
+    const seen = versionSeenBefore();
+    if (tourPhase === 'none' && offersWhatsNew(seen, APP_VERSION, isReturningVisit())) offerWhatsNew(seen);
+    else settleSeenVersion();
+  }, [tourPhase]);
+  const whatsNew = useWhatsNewState();
   const firstStepsAsked = useFirstStepsAsked();
   const touring = tourPhase === 'touring';
   const wasTouringRef = useRef(touring);
@@ -1450,6 +1458,12 @@ export function RoomOrganizer(): JSX.Element {
           onShareLink={stableShareLink}
           onSelectedWallChange={setSelectedWall}
         />
+      )}
+
+      {/* What's new (#931): after an update or from Help; never in a tour,
+          EXPLORE or photo mode (it waits them out). Its lines load on demand. */}
+      {whatsNewMounts({ state: whatsNew, tourPhase, ready: isReady && !error, exploring, photo: photoActive }) && (
+        <WhatsNewCard />
       )}
 
       {/* Keyboard-placement key hint (#168) */}

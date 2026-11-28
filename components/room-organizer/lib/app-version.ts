@@ -61,15 +61,46 @@ export function updatedSinceLastVisit(seenBefore: string | null, current: string
   return compareVersions(seen, now) < 0;
 }
 
+/**
+ * Whether the What's new card (#931) has news for this browser, given the
+ * release its lines describe (null: no lines). Asked for from Help, it
+ * always shows; after an update, only when that release is newer than the
+ * version seen before, so a fix-only release doesn't repeat the last card.
+ * The card is offered only on a browser that held a house.
+ */
+export function whatsNewIsNews(contentVersion: string | null, asked: boolean, seenBefore: string | null): boolean {
+  if (contentVersion === null) return false;
+  return asked || updatedSinceLastVisit(seenBefore, contentVersion, true);
+}
+
+/**
+ * Whether to offer What's new as the editor opens (#931): only to a
+ * returning player (a built house, the start chooser answered) after an
+ * update. A first run never: the chooser and Getting started come first.
+ */
+export function offersWhatsNew(seenBefore: string | null, current: string, returningVisit: boolean): boolean {
+  return returningVisit && updatedSinceLastVisit(seenBefore, current, true);
+}
+
 let sessionSeenBefore: string | null | undefined;
 
 /**
- * Once per page load: stamp this version and remember what was seen before
- * it, for whatever asks later in the session.
+ * Once per page load: the version this browser had seen before it, read
+ * (not stamped) on first ask and kept for the rest of the session.
  */
-export function noteVersionOpened(current: string = APP_VERSION): string | null {
-  if (sessionSeenBefore === undefined) sessionSeenBefore = stampSeenVersion(current);
+export function versionSeenBefore(storage?: Storage): string | null {
+  if (sessionSeenBefore === undefined) sessionSeenBefore = loadSeenVersion(storage);
   return sessionSeenBefore;
+}
+
+/**
+ * This build has been seen: stamp it (never backwards). Called when there
+ * is nothing to tell, or once What's new has shown or been dismissed, so a
+ * card never seen (EXPLORE all session, a failed load) is offered again.
+ */
+export function settleSeenVersion(current: string = APP_VERSION, storage?: Storage): void {
+  versionSeenBefore(storage);
+  stampSeenVersion(current, storage);
 }
 
 /** Tests only: a fresh page load. */
