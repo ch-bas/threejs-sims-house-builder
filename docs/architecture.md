@@ -37,7 +37,7 @@ scripts/
 ├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
 ├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445); script files narrowed to the basePath (#579)
 ├── add-csp.d.mts                        Types of add-csp.mjs's exports, for its test
-├── build-sw.mjs                         Post-build: out/sw.js, the offline service worker: precaches the page, the shell and _next/static/ with a SHA-256 per file, hashed files cache first, the page network first; NEXT_PUBLIC_SERVICE_WORKER=off writes a worker that removes itself (#933)
+├── build-sw.mjs                         Post-build: out/sw.js, the offline service worker: precaches the page, the shell and _next/static/ with a SHA-256 per file, hashed files cache first, the page network first; answers 'is-mine'; counts only windows under its scope; NEXT_PUBLIC_SERVICE_WORKER=off writes a worker that removes itself (#933)
 ├── build-sw.d.mts                       Types of build-sw.mjs's exports, for its test
 ├── whats-new.mjs                        Build time (next.config.mjs): the What's new card's lines, the newest release's Added lines from CHANGELOG.md, five picked across the section, cut at a word; no changelog, no card (#931)
 ├── whats-new.d.mts                      Types of whats-new.mjs's exports, for its test
@@ -104,7 +104,7 @@ components/
     │   ├── share-delivery.ts            Share-link delivery: share sheet on touch, clipboard inside the tap, copy field last; the house as a file when a link leaves part of it out (#934)
     │   ├── tour-session.ts              The shared-link tour's page phase (touring, kept, none), read from the hash on first use (#722)
     │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
-    │   ├── service-worker.ts            The offline worker's registration: production only, after the first frame; NEXT_PUBLIC_SERVICE_WORKER=off removes this site's worker and caches; a newer worker takes over once installed when this is the only tab (#933)
+    │   ├── service-worker.ts            The offline worker's registration: production only, after the first frame; NEXT_PUBLIC_SERVICE_WORKER=off removes this site's worker and caches; a newer worker takes over once installed when this is the only tab (#933); otherwise, unless the worker says the page is already of its build (is-mine), it is offered (`updateKind`: newer; or stale when another tab updated, or the page opened under a newer worker) and `applyUpdate` saves, sends skip-waiting and reloads once on controllerchange
     │   ├── saved-by.ts                  The version that last saved the house: an older build (an offline tab) asks before it saves over a newer one's, once a session (#933)
     │   ├── dev-diagnostics.ts           `?debug` flag + allocation-free renderer.info counters
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
@@ -327,6 +327,7 @@ components/
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
     │   ├── use-tour-phase.ts            The shared-link tour's phase as React state (#722)
     │   ├── use-service-worker.ts        Registers the offline worker once the first frame is on screen (#933)
+    │   ├── use-update-prompt.ts         "A new version is ready · Reload", or "This tab is on an older version" after another tab updated, only in a calm moment (no drag, dialog, text field, EXPLORE, photo mode, walk, ghost, wall draft or drawing), again after 30 min, 3 at most; Reload saves first and names a newer save (#933)
     │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)
     │   ├── use-refusal.ts               `refuse(message)` for store-reading panels: the refused cue (muted with the sounds) and an error notice (#588, #642)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)

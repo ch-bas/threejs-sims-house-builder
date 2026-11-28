@@ -18,7 +18,11 @@
 //    show the branded page with its link back to the builder;
 // 3. with the editor chunk answering 404, the page must reload exactly once
 //    and then show the error screen (the one-reload contract of #499);
-// 4. after the desktop load, once the service worker is active, a reload
+// 4. with a second window of the site open, a newer worker must wait, the
+//    editor must offer "A new version is ready" (not over the start
+//    chooser), and Reload must hand over and reload that page exactly once,
+//    the other window left alone (#933, from the local origin: see checkUpdate);
+// 5. after the desktop load, once the service worker is active, a reload
 //    with the network gone must open the editor from its precache (#933).
 //
 // Browser: `playwright` if installed (its own Chromium), else `playwright-core`
@@ -90,6 +94,19 @@ async function fileFor(urlPath) {
  * can't answer ends that response, never the run.
  */
 let served = 0;
+/** Set by the update check: sw.js is then served as a newer build's. */
+let workerUpdated = false;
+const IS_MINE_ANSWER = 'answer.postMessage(PRECACHE.includes(data.marker));';
+
+/**
+ * sw.js as a newer build's worker: a cache of its own (another build name),
+ * and no page of this build is its own.
+ */
+function newerWorker(source) {
+  const build = /const BUILD = "([0-9a-f]+)";/;
+  if (!source.includes(IS_MINE_ANSWER) || !build.test(source)) throw new Error('sw.js no longer reads as the smoke test expects');
+  return source.replace(IS_MINE_ANSWER, 'answer.postMessage(false); // smoke test: a newer build').replace(build, 'const BUILD = "$1-newer";');
+}
 
 function serve(basePath) {
   const server = createServer(async (req, res) => {
@@ -107,6 +124,9 @@ function serve(basePath) {
       const body = file ?? path.join(outDir, '404.html');
       res.writeHead(status, { 'content-type': TYPES[path.extname(body)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
       if (req.method === 'HEAD') return res.end();
+      // A newer build's worker for the update check (#933): the same precache,
+      // but it says the page isn't of its build, as a real newer build would.
+      if (workerUpdated && path.basename(body) === 'sw.js') return res.end(newerWorker(await readFile(body, 'utf8')));
       createReadStream(body)
         .on('error', () => (res.headersSent ? res.destroy() : plain(404)))
         .pipe(res);
@@ -285,8 +305,106 @@ async function checkForcedColours(page, name) {
   if (looks.on === looks.off) fail(name, `forced colours: the selected option of "${looks.group}" looks like the others (${looks.on})`);
 }
 
+/** Polls `test` in the page until it holds or `ms` pass; false then. */
+async function until(page, test, ms) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (await within(page.evaluate(test).catch(() => false), 5_000, false)) return true;
+    await sleep(250);
+  }
+  return false;
+}
+
 /**
- * 4. Offline (#933): once the service worker has installed, a reload with the
+ * 4. The update prompt (#933): with a second window of the site open, a newer
+ * worker can't take over by itself, so it waits and the editor offers it,
+ * but not over the start chooser (a modal). Reload must save, hand over and
+ * reload that page exactly once; the other window keeps its document.
+ *
+ * The browser fetches a worker's update itself, past Playwright's routing,
+ * so this check loads the site from the local server's own origin, with the
+ * CSP (which names the Pages origin) bypassed: the desktop check covers it.
+ */
+async function checkUpdate(launch, basePath) {
+  const name = 'update';
+  const offerName = 'Reload to open the new version';
+  const started = Date.now();
+  const browser = await launch();
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
+  const page = await context.newPage();
+  watch(page, name);
+  const home = `${site.local}${basePath}`;
+  let other = null;
+  try {
+    await page.goto(`${home}/`, { waitUntil: 'load' });
+    await page.waitForFunction(() => window.__pcReady === true, null, { timeout: READY_TIMEOUT_MS });
+    const ready = await within(page.evaluate(() => navigator.serviceWorker.ready.then(() => true)), READY_TIMEOUT_MS, false);
+    if (!ready) return fail(name, 'no service worker became active');
+    // A first visit isn't controlled: a reload puts the worker in charge.
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.__pcReady === true, null, { timeout: READY_TIMEOUT_MS });
+    if (!(await until(page, () => navigator.serviceWorker.controller !== null, 10_000))) return fail(name, 'the reloaded page is not controlled');
+    other = await context.newPage();
+    let otherLoads = 0;
+    other.on('request', (req) => {
+      if (req.isNavigationRequest() && req.frame() === other.mainFrame()) otherLoads += 1;
+    });
+    // A window of the site that runs nothing: a page of the app would reload
+    // itself (the head watchdog, 20 s without an editor).
+    await other.goto(`${home}/icon.svg`, { waitUntil: 'load' });
+    await page.bringToFront();
+    workerUpdated = true;
+    await within(page.evaluate(() => navigator.serviceWorker.getRegistration().then((registration) => registration?.update())), 30_000, undefined);
+    const waits = await until(page, () => navigator.serviceWorker.getRegistration().then((registration) => Boolean(registration?.waiting)), 30_000);
+    if (!waits) return fail(name, 'the newer worker did not install and wait');
+    trace(name, 'newer worker waiting');
+    const offer = page.getByRole('button', { name: offerName });
+    const chooser = page.getByRole('button', { name: 'Start empty' });
+    if (await chooser.isVisible()) {
+      // Well past the settle time: the offer never comes over a dialog.
+      await sleep(4_000);
+      if ((await offer.count()) !== 0) fail(name, 'offered over the start chooser');
+      await chooser.click();
+    }
+    await offer.waitFor({ timeout: 20_000 });
+    await screenshot(page, 'update-offer');
+    let loads = 0;
+    page.on('request', (req) => {
+      if (req.isNavigationRequest() && req.frame() === page.mainFrame()) loads += 1;
+    });
+    await offer.click();
+    await page.waitForFunction(() => window.__pcReady === true, null, { timeout: READY_TIMEOUT_MS });
+    // A second reload would land within this wait.
+    await sleep(SETTLE_MS);
+    trace(name, `${loads} document(s) after Reload`);
+    if (loads !== 1) fail(name, `expected one reload after Reload (1 document), saw ${loads}`);
+    // The page may be busy compiling shaders for a while: poll.
+    const inCharge = await until(
+      page,
+      () =>
+        navigator.serviceWorker
+          .getRegistration()
+          .then((registration) => !registration?.waiting && registration?.active?.state === 'activated' && navigator.serviceWorker.controller !== null),
+      READY_TIMEOUT_MS,
+    );
+    if (!inCharge) fail(name, 'the newer worker is not in charge after Reload');
+    // Only the newer build's cache is left: nothing stored vouches for an older build.
+    const shells = await within(page.evaluate(() => caches.keys().then((names) => names.filter((n) => n.startsWith('pc-shell:')).length)), 10_000, 0);
+    if (shells !== 1) fail(name, `expected the newer build's cache only, found ${shells}`);
+    if (otherLoads !== 1) fail(name, `the other window was reloaded (${otherLoads} documents)`);
+  } catch (err) {
+    fail(name, err instanceof Error ? err.message.split('\n')[0] : String(err));
+  } finally {
+    workerUpdated = false;
+    await screenshot(page, name);
+    await within(browser.close(), 5_000, undefined);
+    trace(name, 'closed');
+  }
+  return Date.now() - started;
+}
+
+/**
+ * 5. Offline (#933): once the service worker has installed, a reload with the
  * network gone must still open the editor. Every request to the site then
  * fails, routed or not, so only the worker's precache can answer.
  */
@@ -422,6 +540,7 @@ async function main() {
     await checkChunkReload(browser, origin, basePath);
     await browser.close();
     const desktop = await checkEditor(launch, origin, basePath, 'desktop', { viewport: { width: 1280, height: 800 } }, { offline: true });
+    const update = await checkUpdate(launch, basePath);
     const phone = process.env.SMOKE_PHONE
       ? await checkEditor(launch, origin, basePath, 'phone', {
           viewport: { width: 390, height: 664 },
@@ -432,7 +551,7 @@ async function main() {
       : null;
     process.stdout.write(
       `Smoke test of ${process.argv[2] ?? 'out'} at "${basePath || '/'}" with ${version}: ` +
-        `desktop ${desktop} ms${phone === null ? '' : `, phone ${phone} ms`}, ${Date.now() - started} ms in all\n`,
+        `desktop ${desktop} ms, update ${update} ms${phone === null ? '' : `, phone ${phone} ms`}, ${Date.now() - started} ms in all\n`,
     );
   } finally {
     await browser.close();

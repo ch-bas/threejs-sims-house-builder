@@ -40,6 +40,7 @@ import { useServiceWorker } from './hooks/use-service-worker';
 import { useAskToKeepStorage } from './hooks/use-storage-persist';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
+import { useUpdatePrompt } from './hooks/use-update-prompt';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
 import { offerWhatsNew, useWhatsNewState, whatsNewMounts } from './hooks/use-whats-new';
@@ -394,7 +395,7 @@ export function RoomOrganizer(): JSX.Element {
     selection: { allSelectedIds, selectOnly, setSelectedItemId, setExtraSelectedIds, setSelectedWall },
   });
 
-  const { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour } = useHouseLoading({
+  const { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave } = useHouseLoading({
     layout,
     actions,
     commitHistoryNow,
@@ -1160,6 +1161,14 @@ export function RoomOrganizer(): JSX.Element {
   // The wall gesture commits on release, like an item drag: what would change
   // the house under it waits.
   const isAnyHoldActive = useCallback(() => isDragActive() || isHoldingWall(), [isDragActive, isHoldingWall]);
+  // The update prompt (#933): never over a drag, EXPLORE, photo mode, the
+  // walk, a held ghost, a wall draft under way, or zone or ground drawing.
+  useUpdatePrompt({
+    calm: !exploring && !photoActive && !walkthroughActive && !ghost && wallDraft === null && !view.drawZoneMode && !groundDrawing,
+    isHoldActive: isAnyHoldActive,
+    flushSave,
+    playCue,
+  });
   useKeyboardShortcuts({
     selectedItem,
     selectedWall,
