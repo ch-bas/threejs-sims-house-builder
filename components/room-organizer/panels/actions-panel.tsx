@@ -391,7 +391,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                 onClick={usdz.build}
                 variant="outline"
                 size="sm"
-                className="col-span-2 text-xs"
+                // The file is for a desktop or tablet: a phone that can't open AR gets no button (.pc-usdz-file).
+                className={usdz.arView ? 'col-span-2 text-xs' : 'pc-usdz-file col-span-2 text-xs'}
                 // A second tap while it builds is ignored (the hook's guard): disabling would drop focus.
                 disabled={!isReady}
                 aria-busy={usdz.state.kind === 'building'}
