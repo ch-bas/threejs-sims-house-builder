@@ -16,7 +16,12 @@ link.
 
 **[Open the app](https://ch-bas.github.io/threejs-sims-house-builder/)**
 
-![The editor in 3D: a furnished two-storey house with the walls cut away on the camera side](docs/images/editor-3d.png)
+![The editor in 3D: a furnished two-storey house at golden hour with the walls cut away, and a garden with a patio, deck, pond and pool](docs/images/editor-3d.png)
+
+| | |
+|---|---|
+| ![The house at night with the lamps lit and residents walking through the kitchen and living room](docs/images/night.png) | ![Walking through the house in first person, across the living room to the garden doors](docs/images/explore.png) |
+| ![The 2D plan of the ground floor with rooms, door swings, stairs, furniture and garden surfaces](docs/images/plan-2d.png) | ![The same house on a phone, with the touch dock and the catalogue strip](docs/images/phone.png) |
 
 ## Features
 
@@ -34,13 +39,16 @@ link.
   seeded row of houses and a recessed entrance.
 - **Walkthrough**: walk the house in first person, up the stairs and out onto
   the street, with a thumb stick on touch screens. Animated people and walkers
-  share the house.
+  share the house: they cook, eat at the table, sleep and step out into the
+  garden.
 - **Light and weather**: a continuous time of day with sun shadows, a night sky
   and lamps, plus rain and snow. Wi-Fi and CCTV coverage overlays.
 - **Saving and sharing**: autosave, a saved-house library, share links and
   automatic restore points.
-- **Export**: JSON, inventory CSV, PNG, GLB, SVG and DXF plans, and print to
-  scale.
+- **Garden**: patios, gravel, decks and lawns, fences round the whole lot,
+  pools, ponds and planting.
+- **Export**: JSON, inventory CSV, PNG, GLB, USDZ, SVG and DXF plans, print to
+  scale, and View in AR on iPhone and iPad.
 - **Phones and tablets**: a docked touch HUD and a bottom-sheet item editor.
 
 ## Documentation
