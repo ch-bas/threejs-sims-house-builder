@@ -5,11 +5,12 @@ import { markLayoutLoaded } from './use-achievements';
 import { useLayoutPersistence, type SaveStatusStore } from './use-layout-persistence';
 import { layoutStore } from './use-layout-store';
 import type { LayoutActions } from './use-layout-state';
+import type { SaveFlush } from '../lib/service-worker';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseHouseLoadingOptions {
   layout: RoomLayout;
-  actions: Pick<LayoutActions, 'applyLayout'>;
+  actions: Pick<LayoutActions, 'applyLayout' | 'setActiveFloorIndex'>;
   commitHistoryNow: () => void;
   clearHistory: (baseline: RoomLayout) => void;
   /** Drops the selection, the selected wall and the distance points. */
@@ -25,7 +26,11 @@ export interface HouseLoading {
   tourHouse: RoomLayout | null;
   keepTourCopy(playCue: RefusedCue): void;
   leaveTour(): void;
+  /** Save a change still waiting for the autosave now (#933). */
+  flushSave(): SaveFlush;
 }
+
+const readActiveFloorIndex = (): number => layoutStore.getState().activeFloorIndex;
 
 /**
  * The whole-house loads the editor makes on its own: the house the session
@@ -40,11 +45,15 @@ export function useHouseLoading({
   clearHistory,
   clearTransientSelection,
 }: UseHouseLoadingOptions): HouseLoading {
-  const { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour } = useLayoutPersistence({
+  const { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave } = useLayoutPersistence({
     layout,
+    activeFloorIndex: readActiveFloorIndex,
     onHydrate: useCallback(
-      (saved: RoomLayout) => {
+      (saved: RoomLayout, floorIndex?: number) => {
         actions.applyLayout(saved);
+        // A house that waited for its image opens on the storey it would
+        // have without the edits made meanwhile (#936).
+        if (floorIndex !== undefined) actions.setActiveFloorIndex(floorIndex);
         // The saved or shared house the session opens on earns nothing (#450).
         markLayoutLoaded();
         clearTransientSelection();
@@ -92,5 +101,5 @@ export function useHouseLoading({
     clearRemoteLayout();
   }, [remoteLayout, layout, actions, commitHistoryNow, clearTransientSelection, clearRemoteLayout]);
 
-  return { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour };
+  return { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave };
 }

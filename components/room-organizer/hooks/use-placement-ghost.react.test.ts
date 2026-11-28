@@ -3,6 +3,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeCatalogItem, makeItem } from '../lib/__testfixtures__/fixtures';
 import { askConfirm, cancelPendingConfirms } from '../lib/confirm-dialog';
+import { closeShortcutsOverlay, openShortcutsOverlay } from '../lib/shortcut-overlay';
 import { usePlacementGhost, type GhostRunParams, type UsePlacementGhostParams } from './use-placement-ghost';
 import type { CatalogItem, FurnitureItem } from '../lib/types';
 
@@ -425,6 +426,27 @@ describe('usePlacementGhost (#463 d)', () => {
       document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     expect(endGhost).toHaveBeenCalled();
+  });
+
+  it('leaves Enter, Space, R and Escape to the open shortcut overlay (#932): nothing placed or bought behind it', () => {
+    const { place, endGhost } = setup();
+    openShortcutsOverlay();
+    try {
+      const keys = ['Enter', ' ', 'r', 'Escape'].map((key) => new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      act(() => {
+        for (const event of keys) document.body.dispatchEvent(event);
+      });
+      expect(place).not.toHaveBeenCalled();
+      expect(endGhost).not.toHaveBeenCalled();
+      // Escape went on to the dialog, untouched.
+      expect(keys.every((event) => !event.defaultPrevented)).toBe(true);
+    } finally {
+      closeShortcutsOverlay();
+    }
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(place).toHaveBeenCalledTimes(1);
   });
 
   it('stays in hand when a Shift placement asks first (the soft budget), and is put down without Shift (F4)', () => {

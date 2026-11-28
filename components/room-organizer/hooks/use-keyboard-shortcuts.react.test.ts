@@ -3,6 +3,7 @@ import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeItem } from '../lib/__testfixtures__/fixtures';
 import { KEYMAP } from '../lib/keymap';
+import { enterPhotoMode, leavePhotoMode } from '../lib/photo-mode';
 import { useKeyboardShortcuts, type KeyboardShortcutHandlers } from './use-keyboard-shortcuts';
 
 function makeHandlers(): { [K in keyof KeyboardShortcutHandlers]: ReturnType<typeof vi.fn> } {
@@ -30,6 +31,7 @@ function makeHandlers(): { [K in keyof KeyboardShortcutHandlers]: ReturnType<typ
     advanceTime: vi.fn(),
     changeFloor: vi.fn(),
     toggleSidebar: vi.fn(),
+    toggleShortcuts: vi.fn(),
   };
 }
 
@@ -492,7 +494,7 @@ describe('every key the shortcuts bind is in the key table (#932)', () => {
   it('presses every key, with and without Ctrl, ⌘ and Shift: each that does something is listed', () => {
     const listed = new Set(KEYMAP.filter((binding) => binding.context === 'edit').flatMap((binding) => binding.keys.map((chord) => chord.join('+'))));
     const named = ['Enter', 'Escape', 'Delete', 'Backspace', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', ' ', 'Home', 'End', 'F1'];
-    const printable = [...'abcdefghijklmnopqrstuvwxyz0123456789[]-=;\',./`'];
+    const printable = [...'abcdefghijklmnopqrstuvwxyz0123456789[]-=;\',./`?'];
     const bound: string[] = [];
     for (const placing of [false, true]) {
       for (const key of [...printable, ...named]) {
@@ -518,7 +520,7 @@ describe('every key the shortcuts bind is in the key table (#932)', () => {
   });
 
   it('every editing key in the table that the shortcuts own does something', () => {
-    const owned = ['Z', 'Y', 'D', 'C', 'V', 'R', 'U', 'F', '2', 'M', 'G', 'W', 'P', '[', ']', 'PageUp', 'PageDown', 'Delete', 'Backspace', 'Escape', 'Arrows'];
+    const owned = ['Z', 'Y', 'D', 'C', 'V', 'R', 'U', 'F', '2', 'M', 'G', 'W', 'P', '[', ']', '?', 'PageUp', 'PageDown', 'Delete', 'Backspace', 'Escape', 'Arrows'];
     for (const name of owned) {
       const binding = KEYMAP.find((entry) => entry.context === 'edit' && entry.keys.some((chord) => chord[chord.length - 1] === name));
       expect(binding, name).toBeDefined();
@@ -529,6 +531,49 @@ describe('every key the shortcuts bind is in the key table (#932)', () => {
       press(key, { ctrlKey: chord.includes('Mod'), shiftKey: chord.includes('Shift') });
       expect(calls().length, name).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('? opens the shortcut overlay (#932)', () => {
+  afterEach(() => {
+    cleanup();
+    leavePhotoMode();
+    document.body.innerHTML = '';
+  });
+
+  it('once per press, with or without Shift (layouts differ), never with Ctrl or ⌘', () => {
+    const { handlers } = setup(false);
+    const first = press('?', { shiftKey: true });
+    press('?', { shiftKey: true, repeat: true });
+    press('?');
+    press('?', { ctrlKey: true });
+    press('?', { metaKey: true });
+    expect(handlers.toggleShortcuts).toHaveBeenCalledTimes(2);
+    expect(first.defaultPrevented).toBe(true);
+  });
+
+  it('works in EXPLORE, but not while walking, typing or in photo mode', () => {
+    const exploring = setup(false, false, { exploring: true });
+    press('?');
+    expect(exploring.handlers.toggleShortcuts).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    const walking = setup(false, false, { walkthroughActive: true });
+    press('?');
+    expect(walking.handlers.toggleShortcuts).not.toHaveBeenCalled();
+    cleanup();
+
+    const typing = setup(false);
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true, cancelable: true }));
+    expect(typing.handlers.toggleShortcuts).not.toHaveBeenCalled();
+    cleanup();
+
+    const photo = setup(false);
+    enterPhotoMode();
+    press('?');
+    expect(photo.handlers.toggleShortcuts).not.toHaveBeenCalled();
   });
 });
 

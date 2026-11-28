@@ -459,6 +459,49 @@ describe('the generated worker', () => {
     expect(waiting.postMessage).not.toHaveBeenCalled();
   });
 
+  it('counts only this site\'s windows: a sibling site on the origin doesn\'t block a takeover', async () => {
+    const sw = harness(BUILD, SITE);
+    sw.windows.push({ id: 'tab', url: SCOPE, visibilityState: 'visible', navigate: vi.fn() });
+    sw.windows.push({ id: 'sibling', url: 'https://example.org/sibling/', visibilityState: 'visible', navigate: vi.fn() });
+    await sw.message({ type: 'take-over', marker: RUNTIME });
+    expect(sw.skipWaiting).toHaveBeenCalledOnce();
+  });
+
+  it('tells a page whether it is of this build', async () => {
+    const sw = harness(BUILD, SITE);
+    const ask = async (marker: string) => {
+      const channel = new MessageChannel();
+      const reply = new Promise((resolve) => (channel.port1.onmessage = (event) => resolve(event.data)));
+      await sw.message({ type: 'is-mine', marker }, [channel.port2]);
+      const answer = await reply;
+      channel.port1.close();
+      return answer;
+    };
+    expect(await ask(RUNTIME)).toBe(true);
+    expect(await ask('_next/static/chunks/webpack-other.js')).toBe(false);
+    expect(sw.skipWaiting).not.toHaveBeenCalled();
+  });
+
+  // Another site on the origin can create caches named like an older build's.
+  it('never serves anything from a forged older cache, and deletes it on activate, even with other tabs open', async () => {
+    const forged = new Map<string, Response>([
+      [`${SCOPE}_next/static/chunks/late.js`, new Response('window.pwned=1')],
+      [`${SCOPE}_next/static/chunks/a.js`, new Response('window.pwned=1')],
+      [`${SCOPE}pc-precache-hashes.json`, new Response(JSON.stringify({ '_next/static/chunks/late.js': sha256('window.pwned=1') }))],
+    ]);
+    const forgedName = `${PREFIX}x#${sha256('list')}`;
+    const sw = harness(BUILD, SITE, new Map([[forgedName, forged]]));
+    await sw.install();
+    sw.windows.push({ id: 'one', url: SCOPE, visibilityState: 'visible', navigate: vi.fn() });
+    sw.windows.push({ id: 'two', url: SCOPE, visibilityState: 'visible', navigate: vi.fn() });
+    expect(sw.fetched).toContain(`${SCOPE}_next/static/chunks/a.js`);
+    expect(await (await sw.fetch(`${SCOPE}_next/static/chunks/a.js`))?.text()).toBe('a');
+    // Another build's chunk is left to the network.
+    expect(await sw.fetch(`${SCOPE}_next/static/chunks/late.js`)).toBeUndefined();
+    await sw.activate();
+    expect(sw.stores.has(forgedName)).toBe(false);
+  });
+
   it('takes over when the waiting worker is told to, and says so', async () => {
     const sw = harness(BUILD, SITE);
     const channel = new MessageChannel();

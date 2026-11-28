@@ -19,7 +19,8 @@ differs from the catalogue.
 └── tailwind.config.ts, postcss.config.mjs
                                          Tailwind theme and the PostCSS pipeline (Tailwind, autoprefixer)
 app/                                     Next.js shell
-├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script
+├── chunk-recovery.ts                    The stale-chunk head script (#499): error listeners and the 20 s watchdog, which a page marked data-pc-no-watchdog (the 404 page) skips
+├── layout.tsx                           Root layout: metadata (title, preview, theme colour), fonts, the stale-chunk head script (chunk-recovery.ts)
 ├── page.tsx                             Loads the editor (client only) and prefetches the 3D engine
 ├── globals.css                          Tailwind layers, the design tokens and the app-wide styles
 ├── ambient.d.ts                         Next's ambient types for a bare `tsc`, and global stylesheet imports
@@ -37,8 +38,10 @@ scripts/
 ├── add-preloads.mjs                     Post-build: preloads app/page.tsx's editor and engine chunks from out/index.html, read from the loadable manifest (#731)
 ├── add-csp.mjs                          Post-build: the Content-Security-Policy meta, hashing each page's inline scripts (#445); script files narrowed to the basePath (#579)
 ├── add-csp.d.mts                        Types of add-csp.mjs's exports, for its test
-├── build-sw.mjs                         Post-build: out/sw.js, the offline service worker: precaches the page, the shell and _next/static/ with a SHA-256 per file, hashed files cache first, the page network first; NEXT_PUBLIC_SERVICE_WORKER=off writes a worker that removes itself (#933)
+├── build-sw.mjs                         Post-build: out/sw.js, the offline service worker: precaches the page, the shell and _next/static/ with a SHA-256 per file, hashed files cache first, the page network first; answers 'is-mine'; counts only windows under its scope; NEXT_PUBLIC_SERVICE_WORKER=off writes a worker that removes itself (#933)
 ├── build-sw.d.mts                       Types of build-sw.mjs's exports, for its test
+├── whats-new.mjs                        Build time (next.config.mjs): the What's new card's lines, the newest release's Added lines from CHANGELOG.md, five picked across the section, cut at a word; no changelog, no card (#931)
+├── whats-new.d.mts                      Types of whats-new.mjs's exports, for its test
 ├── third-party-notices.mjs              Post-build: out/third-party-licenses.txt, the licences of the shipped packages and assets (#569)
 ├── third-party-notices.d.mts            Types of third-party-notices.mjs's exports, for its test
 ├── licenses/                            Licence texts of the libraries inside Next's polyfills chunk (core-js, whatwg-fetch, object-assign), for third-party-notices.mjs
@@ -75,13 +78,15 @@ components/
     │   ├── mount-band.ts                Wall-hung decor family + an item's vertical mount band (#376)
     │   ├── furniture-scene.ts           Placed items + collision flags per rendered storey; furniture effect keys (#214); per-item build keys + diff (#404)
     │   ├── overlay-keys.ts              Label and Wi-Fi/vision-overlay effect keys: rebuild only when an overlay would change (#409)
-    │   ├── app-version.ts               The build's version (stamped from package.json) and the stored last-seen version that "What's new" counts from (#931)
+    │   ├── app-version.ts               The build's version (stamped from package.json), the stored last-seen version (stamped once What's new has shown, or when there is nothing to tell), who is offered it and whether it is news (#931)
+    │   ├── whats-new.ts                 What's new lines (#931): the build-stamped string read and checked; imports nothing, loaded on demand in a chunk of its own
     │   ├── alignment.ts                 Align/distribute pure functions
     │   ├── announce.ts                  The one screen-reader status line: `announce` (de-duped), `announceSettled` (held keys), the nudge/lock/undo wording (#929)
+    │   ├── ar-view.ts                   AR view (#937): Quick Look detection (`relList.supports('ar')`), the USDZ blob (exporter loaded on the click), file name, failure wording, the AR link's image
     │   ├── achievements.ts              19 predicate-based achievements with count progress, four of them room goals read from `houseRoomScores` (#903); `achievementsEarned` (loaded / edit)
     │   ├── first-steps.ts               The Getting started card's five steps: progress from edits like achievements (loads do none), per-step tips, the stored record (card state, a boolean per step) (#721)
     │   ├── cctv-models.ts               Real-world CCTV model specs for cameras
-    │   ├── camera-tween.ts              Eased camera moves for presets, Fit and Focus: arc round the target, reduced motion cuts (#930)
+    │   ├── camera-tween.ts              Eased camera moves for presets, Fit, Focus and floor switches: arc round the target, reduced motion cuts (#930)
     │   ├── camera-zoom.ts               Camera-pad zoom slider ↔ orbit distance (log scale) (#167)
     │   ├── scene-insets.ts              Visible canvas region beside the HUD + camera pose that fits the house in it
     │   ├── contact-shadow.ts            What a storey's baked floor contact map shows: item patches, wall bands, doors and holes wiped (#754)
@@ -100,7 +105,7 @@ components/
     │   ├── share-delivery.ts            Share-link delivery: share sheet on touch, clipboard inside the tap, copy field last; the house as a file when a link leaves part of it out (#934)
     │   ├── tour-session.ts              The shared-link tour's page phase (touring, kept, none), read from the hash on first use (#722)
     │   ├── chunk-reload.ts              Stale-chunk detection + the one-reload-per-window guard shared with the head script
-    │   ├── service-worker.ts            The offline worker's registration: production only, after the first frame; NEXT_PUBLIC_SERVICE_WORKER=off removes this site's worker and caches; a newer worker takes over once installed when this is the only tab (#933)
+    │   ├── service-worker.ts            The offline worker's registration: production only, after the first frame; NEXT_PUBLIC_SERVICE_WORKER=off removes this site's worker and caches; a newer worker takes over once installed when this is the only tab (#933); otherwise, unless the worker says the page is already of its build (is-mine), it is offered (`updateKind`: newer; or stale when another tab updated, or the page opened under a newer worker) and `applyUpdate` saves, sends skip-waiting and reloads once on controllerchange
     │   ├── saved-by.ts                  The version that last saved the house: an older build (an offline tab) asks before it saves over a newer one's, once a session (#933)
     │   ├── dev-diagnostics.ts           `?debug` flag + allocation-free renderer.info counters
     │   ├── pasteboard.ts                Gallery of houses received via share links (quota-safe)
@@ -113,7 +118,7 @@ components/
     │   ├── storage-errors.ts            Classifies a storage error: quota, blocked or unknown
     │   ├── storage-meter.ts             Characters per localStorage tenant (open house, library, restore points, recovery copies, sets, settings, other sites) for the Manage meter (#615)
     │   ├── backup.ts                    One-file backup of everything stored in this browser; versioned bundle, an add-only restore through the schema (#620); kept versions in a part of their own (#935)
-    │   ├── backup-reminder.ts           Keeping the houses (#928): the browser's persist answer and the last backup time (one small record), the backup-reminder rule over dates
+    │   ├── backup-reminder.ts           Keeping the houses (#928): the browser's persist answer, the last backup, edit days, reminder time and switch (one small record); the backup-reminder rule over dates and its text
     │   ├── backup-file.ts               Restoring a backup file: the question, the add-only restore and the notice, for the Restore button and a dropped file (#934)
     │   ├── themes.ts                    Theme definitions + applyTheme
     │   ├── modes.ts                     Which Build Tools each game mode shows (DESIGN / FURNISH)
@@ -138,6 +143,8 @@ components/
     │   ├── wall-snap.ts                 Wall endpoint snap: vertices, wall bodies, 15° steps, the 0.1 m grid; typed lengths (#723)
     │   ├── measure-snap.ts              The measure tool's snap (#921): corners, item centres and side middles, then item sides and wall faces; no clamp to the house
     │   ├── plan-dimensions.ts           Pinned dimensions (#921): validity, caps and clamps for the schema and reducer; ends on an outer wall follow a resize or a cut
+    │   ├── plan-image-ref.ts            The light half of the plan image store (#936): ref checks, the images this tab confirmed stored, a save's compact form; loads the store on first use
+    │   ├── plan-image-store.ts          Floor-plan images in IndexedDB keyed by SHA-256 (#936, loaded with import()): stored and read back before a save names one by ref, loads swap it back, files inline it; without IndexedDB it stays inline
     │   ├── opening-snap.ts              Door/window snap + shared wall-mount settle rule
     │   ├── walk-collision.ts            Walkthrough circle-vs-OBB slide against furniture, partitions, the shell (door gaps, porch) and the street; advanceWalker over walk-world; sightBlocked / buildSightWalls for line of sight
     │   ├── npc-bodies.ts                The player and the walkers as each other's obstacles: walker bodies for the player's resolve, the player's spot and seat for the walkers (#585)
@@ -161,6 +168,7 @@ components/
     │   ├── room-shapes.ts               Predefined room shape presets
     │   ├── room-score.ts                Room types from a zone's furniture and a five-check score (decor, window, lamp, no collisions, space) for Statistics (#613), the room goals (#903), the plan's stars line and the zone chip's hint (#905)
     │   ├── storeys.ts                   Per-storey heights: elevations, eaves, stair rise
+    │   ├── shortcut-overlay.ts          Whether the `?` shortcut overlay is open: toggled by `?` and the Help menu; the ghost and wall-length keys give way to it (#932)
     │   ├── site.ts                      Sloped ground (garden items stand on it, #665), neighbour flags, lot/road dimensions
     │   ├── street-row.ts                Seeded street generator: house specs + window rules
     │   ├── sun-shadow.ts                Shadow-caster box + sun shadow-camera fit (#282)
@@ -222,6 +230,7 @@ components/
     │   ├── people-outfits.ts            Body regions from skin weights, outfits, hair on the head bone
     │   ├── room-builder.ts              Floor + walls (yOffset, ghosting); an upper storey's slab under its floor (#653)
     │   ├── building-export.ts           The whole building as a named graph, for the GLB export
+    │   ├── usdz-export.ts               The export building as a 1:50 USDZ for AR Quick Look (#937): rigged people baked into their pose, mirrors folded into geometry, two-sided parts given an inside copy, three's USDZExporter
     │   ├── wall-openings.ts             Door / window → exterior wall cutouts
     │   ├── reveals.ts                   Window and door reveals in the outer walls: linings, and the set-back of the frame (#758)
     │   ├── interior-walls.ts            Drawn-segment interior walls with cutouts
@@ -278,6 +287,7 @@ components/
     │   ├── use-canvas-2d-interaction.ts 2D plan select/drag + zone-draw via the renderer's inverse transform
     │   ├── use-item-placement.ts        Snapping + wall-aware catalog placement
     │   ├── use-import-export.ts         Screenshot / GLB / share link / JSON import
+    │   ├── use-usdz-export.ts           The USDZ button (#937): build, then a real `rel="ar"` link the player taps (blob URL revoked on rebuild, edit, unmount); one-tap download elsewhere
     │   ├── use-file-drop.ts             The page-wide drop target for house and backup files, and the installed app's launch queue (#934)
     │   ├── use-photo-mode.ts            Photo mode: html[data-photo], the key guard, and the 2x capture through renderer.render + toBlob, downloaded or kept in the album (#626, #912); shot presets, with the scene's hour, weather and clock put back as it ends
     │   ├── use-photo-album.ts           One house's album photos, newest first, kept current across saves and deletes (#912)
@@ -286,7 +296,7 @@ components/
     │   ├── use-npcs.ts                  Animated walkers per storey (keyed by floor id, parked while not drawn): spawn, route-following step, re-route on floor edits; giving way, sitting, activities
     │   ├── use-weather.ts               Rain / snow clock on the frame budget
     │   ├── use-ambience.ts              Rain on the roof, footsteps, birds, crickets and doors in EXPLORE, the sound tile's third setting (#911): steps and calls on the frame budget, muted while hidden
-    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom
+    │   ├── use-camera-presets.ts        Iso/top/front/corner + fit + focus; frames the house on compact screens; the camera pad's orbit and zoom; the floor switch's eased slide to the new storey (#930)
     │   ├── plan-calibration.ts          The traced plan's calibration session (#726): points picked, length step, move step
     │   ├── ground-draw.ts               The garden-surface tool (#924): which kind a drag on the plan lays, or off
     │   ├── scene-occluders.ts           Reads the HUD occluder rects: the 3D free region, the 2D plan insets and padding, the plan-gesture flag
@@ -295,9 +305,11 @@ components/
     │   ├── use-history.ts               Snapshot undo/redo
     │   ├── use-achievements.ts          Unlock detection; `markLayoutLoaded()` after a whole-house load (#450)
     │   ├── use-storage-persist.ts       Asks `navigator.storage.persist()` after the first real edit of a session (not a load); a no is asked again, Firefox only after a week (#928)
+    │   ├── use-backup-reminder.ts       The backup reminder (#928): counts edit days, looks once a day per tab after the player pauses, waits out EXPLORE, photo mode, the drawer and modals, never in a tour; `downloadBackup` (async, records only a complete file), the one-file backup it and Storage & backup share
     │   ├── use-load-template.ts         A template over the house through the whole-house load path (Templates panel, start chooser)
     │   ├── use-start-challenge.ts       A challenge brief's empty house through the whole-house load path (#909)
     │   ├── use-first-steps.ts           Getting started session: steps done (edits, `markFirstStep` for walk and share), stored with the offered/dismissed card (#721)
+    │   ├── use-whats-new.ts             What's new session (#931): closed, offered once after an update, or asked for from Help; `whatsNewMounts` keeps it out of tours, EXPLORE and photo mode
     │   ├── use-set-game-mode.ts         DESIGN / FURNISH / EXPLORE switch with what it brings along (mode panel, First steps card)
     │   ├── use-recent-colors.ts         Persisted LRU colour palette
     │   ├── use-keyboard-shortcuts.ts    Centralised key handling
@@ -316,6 +328,7 @@ components/
     │   ├── use-exploring.ts             Whether the editor is in EXPLORE, and the hint on the house-editing controls it turns off (#643)
     │   ├── use-tour-phase.ts            The shared-link tour's phase as React state (#722)
     │   ├── use-service-worker.ts        Registers the offline worker once the first frame is on screen (#933)
+    │   ├── use-update-prompt.ts         "A new version is ready · Reload", or "This tab is on an older version" after another tab updated, only in a calm moment (no drag, dialog, text field, EXPLORE, photo mode, walk, ghost, wall draft or drawing), again after 30 min, 3 at most; Reload saves first and names a newer save (#933)
     │   ├── roving-keys.ts               The arrow keys of a tablist or radio group: one tab stop, arrows activate (#434, #646)
     │   ├── use-refusal.ts               `refuse(message)` for store-reading panels: the refused cue (muted with the sounds) and an error notice (#588, #642)
     │   ├── use-media-query.ts           matchMedia as a hook (false on the server)
@@ -360,7 +373,7 @@ components/
         ├── recovery-entry.tsx           History rows for kept recovery copies: restore, download, delete
         ├── sets-panel.tsx
         ├── statistics-panel.tsx
-        ├── storage-panel.tsx            Manage card: storage meter, delete restore points / saved layouts, back up and restore everything, kept-by-browser and last-backup lines (#615, #620, #928)
+        ├── storage-panel.tsx            Manage card: storage meter, delete restore points / saved layouts, back up and restore everything, kept-by-browser and last-backup lines, the reminder switch (#615, #620, #928)
         ├── file-drop-overlay.tsx        Shown while a file is dragged over the page: what dropping it does, or why it can't (#934)
         ├── header-stats.tsx
         ├── time-of-day-panel.tsx
@@ -378,8 +391,12 @@ components/
         ├── actions-panel.tsx
         ├── print-options.tsx            Print / PDF button and its folding options (paper, orientation, scale, outdoor, every floor)
         ├── shortcuts-panel.tsx          Shortcut sheet, drawn from the key table (lib/keymap) by context, platform-aware (#932)
+        ├── shortcuts-overlay.tsx        The `?` overlay's host (state in lib/shortcut-overlay); loads the dialog on first use (#932)
+        ├── shortcuts-dialog.tsx         The `?` overlay: the key table in a focus-trapped modal, closed by ?, Escape, back or the backdrop (#932)
         ├── welcome-banner.tsx           First-run start chooser: start empty, a template (with its plan), or a random one (#721)
         ├── first-steps-card.tsx         Getting started checklist: each step arms its tool, the next one shows its tips; a thin occluding line on phones (#721)
+        ├── whats-new-card.tsx           What's new card (#931): loads the lines when it opens and shows them in Getting started's place (which steps aside); closes quietly when nothing is news
+        ├── hud-card.tsx                 The card frame Getting started and What's new share: heading, note, close button, a scene occluder
         ├── minimap.tsx
         ├── plan-thumb.tsx
         ├── achievements-panel.tsx

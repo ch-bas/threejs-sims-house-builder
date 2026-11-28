@@ -15,6 +15,8 @@ export const metadata: Metadata = {
 export default function NotFound(): JSX.Element {
   return (
     <main
+      // No editor starts here: the head watchdog must not reload the page (app/chunk-recovery.ts).
+      data-pc-no-watchdog=""
       className="pc-world"
       style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', padding: 24 }}
     >

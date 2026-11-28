@@ -164,7 +164,7 @@ describe('the funds field (#609)', () => {
 });
 
 describe('Help in the View menu (#931)', () => {
-  it('Getting started closes the More tray, so the phone card shows at once', () => {
+  it('Getting started tips closes the More tray, so the phone card shows at once', () => {
     localStorage.clear();
     resetFirstStepsForTests();
     setup('build');
@@ -172,7 +172,7 @@ describe('Help in the View menu (#931)', () => {
     const panel = document.querySelector('.pc-mode-panel')!;
     expect(panel.hasAttribute('data-more-open')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'View options' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Getting started' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Getting started tips' }));
     expect(panel.hasAttribute('data-more-open')).toBe(false);
     expect(screen.queryByRole('group', { name: 'View options' })).toBeNull();
     localStorage.clear();

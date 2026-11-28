@@ -29,7 +29,7 @@ vi.mock('./use-achievements', () => ({ markLayoutLoaded: () => calls.push('markL
 function options(): UseHouseLoadingOptions {
   return {
     layout: makeLayout(),
-    actions: { applyLayout: () => calls.push('apply') },
+    actions: { applyLayout: () => calls.push('apply'), setActiveFloorIndex: (index: number) => calls.push(`floor:${index}`) },
     commitHistoryNow: () => calls.push('commit'),
     clearHistory: () => calls.push('clearHistory'),
     clearTransientSelection: () => calls.push('clearSelection'),
@@ -70,6 +70,13 @@ describe('useHouseLoading: the load rules, in order', () => {
     calls.length = 0;
     act(() => persistence.options?.onHydrate(makeLayout({ name: 'Saved' })));
     expect(calls).toEqual(['apply', 'markLoaded', 'clearSelection', 'clearHistory']);
+  });
+
+  it('a house that waited for its floor-plan image opens on the storey it would have (#936)', () => {
+    renderHook(() => useHouseLoading(options()));
+    expect(persistence.options?.activeFloorIndex?.()).toBe(0);
+    act(() => persistence.options?.onHydrate(makeLayout({ name: 'Saved' }), 0));
+    expect(calls).toEqual(['apply', 'floor:0', 'markLoaded', 'clearSelection', 'clearHistory']);
   });
 
   it('Keep a copy names History only when it holds the previous house', () => {

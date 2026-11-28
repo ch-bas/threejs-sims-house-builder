@@ -3,6 +3,7 @@ import {
   describeRestore,
   parseBackup,
   restoreBackup,
+  storeBackupPlanImages,
   summarizeBackup,
   type BackupSummary,
 } from './backup';
@@ -61,6 +62,8 @@ export async function offerBackupRestore(text: string, fileName: string, current
     confirmLabel: 'Restore',
   });
   if (!ok) return false;
+  // Its floor-plan images into the image store first (#936).
+  await storeBackupPlanImages(parsed.bundle);
   const report = restoreBackup(parsed.bundle, current());
   const missed =
     report.invalid > 0 ||

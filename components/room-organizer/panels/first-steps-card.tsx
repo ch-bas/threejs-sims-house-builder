@@ -15,10 +15,11 @@ import { armGhostPlacement, armKeyboardPlacement } from '../hooks/use-keyboard-p
 import { useMediaQuery } from '../hooks/use-media-query';
 import { usePhotoModeActive } from '../hooks/use-photo-mode';
 import { useSetGameMode } from '../hooks/use-set-game-mode';
+import { useWhatsNewState } from '../hooks/use-whats-new';
 import { FURNITURE_CATALOG } from '../lib/constants';
 import { FIRST_STEPS, firstStepTips, nextFirstStep, type FirstStepId } from '../lib/first-steps';
 import { COARSE_POINTER_QUERY, COMPACT_DOCK_QUERY } from '../lib/hud-layout';
-import { Icon } from '../plotcraft/icon';
+import { HudCard, HudCardClose, focusModePanel } from './hud-card';
 import type { CatalogItem } from '../lib/types';
 import type { SelectedWall } from '../lib/wall-sides';
 
@@ -51,6 +52,8 @@ export const FirstStepsCard = memo(function FirstStepsCard({ placeCatalogItem, o
   const touch = useMediaQuery(COARSE_POINTER_QUERY);
   const { selectOnly } = useSelection();
   const cardRef = useRef<HTMLElement>(null);
+  // What's new (#931) has the same place on screen: it goes first.
+  const whatsNew = useWhatsNewState();
 
   // EXPLORE is the walk through: doing it is the step.
   const walking = view.walkthroughMode && !view.view2D;
@@ -122,30 +125,16 @@ export const FirstStepsCard = memo(function FirstStepsCard({ placeCatalogItem, o
     const active = document.activeElement;
     const hadFocus = card !== null && active instanceof Node && card.contains(active);
     dismissFirstSteps();
-    if (!hadFocus) return;
-    const panel = document.querySelector('.pc-mode-panel');
-    (panel?.querySelector<HTMLElement>('button[aria-pressed="true"]') ?? panel?.querySelector<HTMLElement>('button:not(:disabled)'))?.focus();
+    if (hadFocus) focusModePanel();
   });
 
-  if (!offered || !isReady || error || walking || photo) return null;
+  if (!offered || !isReady || error || walking || photo || whatsNew !== 'closed') return null;
 
   const next = nextFirstStep(done);
   const count = FIRST_STEPS.filter((step) => done.has(step.id)).length;
   const progress = `${count} of ${FIRST_STEPS.length} done`;
 
-  const closeButton = (
-    <button
-      type="button"
-      onClick={dismiss}
-      onKeyDown={onStepKeyDown}
-      aria-label="Dismiss getting started"
-      title="Dismiss"
-      className="pc-tile"
-      style={{ width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', flexShrink: 0 }}
-    >
-      <Icon name="close" size={14} />
-    </button>
-  );
+  const closeButton = <HudCardClose label="Dismiss getting started" onClick={dismiss} onKeyDown={onStepKeyDown} />;
 
   if (compact) {
     return (
@@ -167,16 +156,15 @@ export const FirstStepsCard = memo(function FirstStepsCard({ placeCatalogItem, o
   }
 
   return (
-    <section ref={cardRef} aria-labelledby="pc-first-steps-title" className="pc-glass pc-glass--dark pc-first-steps" data-scene-occluder="">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <h2 id="pc-first-steps-title" className="pc-hud-header" style={{ fontSize: 11, margin: 0, flex: 1 }}>
-          Getting started
-        </h2>
-        <span className="pc-blurb" style={{ fontSize: 11 }}>
-          {progress}
-        </span>
-        {closeButton}
-      </div>
+    <HudCard
+      ref={cardRef}
+      titleId="pc-first-steps-title"
+      title="Getting started"
+      aside={progress}
+      label="Dismiss getting started"
+      onClick={dismiss}
+      onKeyDown={onStepKeyDown}
+    >
       <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {FIRST_STEPS.map((step) => {
           const isDone = done.has(step.id);
@@ -228,6 +216,6 @@ export const FirstStepsCard = memo(function FirstStepsCard({ placeCatalogItem, o
           All done. Enjoy the house!
         </p>
       )}
-    </section>
+    </HudCard>
   );
 });

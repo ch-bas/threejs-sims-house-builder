@@ -9,7 +9,8 @@ import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
 import { getGroundDrawKind, setGroundDrawKind, useGroundDrawKind } from './hooks/ground-draw';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
-import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
+import { useBackupReminder } from './hooks/use-backup-reminder';
+import { useCameraPad, useCameraPresets, useCameraTargetOnStorey } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
@@ -39,8 +40,10 @@ import { useServiceWorker } from './hooks/use-service-worker';
 import { useAskToKeepStorage } from './hooks/use-storage-persist';
 import { useThreeScene } from './hooks/use-three-scene';
 import { useTourPhase } from './hooks/use-tour-phase';
+import { useUpdatePrompt } from './hooks/use-update-prompt';
 import { useWallDraft } from './hooks/use-wall-draft';
 import { useWallEdit, type WallMovePreview } from './hooks/use-wall-edit';
+import { offerWhatsNew, useWhatsNewState, whatsNewMounts } from './hooks/use-whats-new';
 import {
   announce,
   announceSettled,
@@ -51,7 +54,7 @@ import {
   describePlacement,
   withdrawAnnouncement,
 } from './lib/announce';
-import { noteVersionOpened } from './lib/app-version';
+import { APP_VERSION, offersWhatsNew, settleSeenVersion, versionSeenBefore } from './lib/app-version';
 import { budgetOf, furnitureSpend } from './lib/budget';
 import { catalogItemFromDrag } from './lib/catalog-variants';
 import { collisionMessage } from './lib/collision-reason';
@@ -70,6 +73,7 @@ import { loadQualityChoice } from './lib/render-quality';
 import { ROOF_EAVE_OVERHANG, roofPeakHeight } from './lib/roof-shape';
 import { activeStoreyRoomScores } from './lib/room-score';
 import { focusCoverFor } from './lib/scene-insets';
+import { toggleShortcutsOverlay } from './lib/shortcut-overlay';
 import { gardenGroundY, groundHeightAt } from './lib/site';
 import { playSound, type SoundCue } from './lib/sounds';
 import { buildingHeight, floorElevation, interiorWallHeight, storeyHeight } from './lib/storeys';
@@ -95,13 +99,15 @@ import { ItemContextPopover } from './panels/item-context-popover';
 import { LotBadge } from './panels/lot-badge';
 import { PlacementHint } from './panels/placement-hint';
 import { PlanCalibrationChip } from './panels/plan-calibration-chip';
+import { ShortcutsOverlayHost } from './panels/shortcuts-overlay';
 import { SidebarDrawer } from './panels/sidebar-drawer';
 import { StatusToastHost } from './panels/status-toast';
 import { TouchModeToggle } from './panels/touch-mode-toggle';
 import { TourBanner } from './panels/tour-banner';
 import { Viewport } from './panels/viewport';
 import { WallDisplayPill } from './panels/wall-display-pill';
-import { WelcomeBanner } from './panels/welcome-banner';
+import { WelcomeBanner, isReturningVisit } from './panels/welcome-banner';
+import { WhatsNewCard } from './panels/whats-new-card';
 import { ZoneNameChip } from './panels/zone-name-chip';
 import { clearWallGhosts, renderWallGhosts } from './three/interior-walls';
 import { revealSetbacks } from './three/reveals';
@@ -292,11 +298,6 @@ export function RoomOrganizer(): JSX.Element {
     if (!loadHapticsChoice()) setView((v) => ({ ...v, hapticsEnabled: false }));
   }, [setView]);
 
-  // This browser opened this version (#931): "What's new" counts from it.
-  useEffect(() => {
-    noteVersionOpened();
-  }, []);
-
   // The zone with handles on the plan (#628). The handles are zone mode's.
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   useEffect(() => {
@@ -394,7 +395,7 @@ export function RoomOrganizer(): JSX.Element {
     selection: { allSelectedIds, selectOnly, setSelectedItemId, setExtraSelectedIds, setSelectedWall },
   });
 
-  const { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour } = useHouseLoading({
+  const { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave } = useHouseLoading({
     layout,
     actions,
     commitHistoryNow,
@@ -405,6 +406,17 @@ export function RoomOrganizer(): JSX.Element {
   // The shared-link tour (#722): EXPLORE for as long as it lasts, then
   // DESIGN, whichever way it ends.
   const tourPhase = useTourPhase();
+  // #931: What's new for a returning player after an update. Not during a
+  // tour, which writes nothing to the visitor's storage (#722). The seen
+  // version is stamped now only when there is nothing to tell; otherwise
+  // once the card has shown or closed (use-whats-new).
+  useEffect(() => {
+    if (tourPhase === 'touring') return;
+    const seen = versionSeenBefore();
+    if (tourPhase === 'none' && offersWhatsNew(seen, APP_VERSION, isReturningVisit())) offerWhatsNew(seen);
+    else settleSeenVersion();
+  }, [tourPhase]);
+  const whatsNew = useWhatsNewState();
   const firstStepsAsked = useFirstStepsAsked();
   const touring = tourPhase === 'touring';
   const wasTouringRef = useRef(touring);
@@ -645,6 +657,8 @@ export function RoomOrganizer(): JSX.Element {
   );
   // L2 photo (#626): the canvas only orbits while the HUD is hidden.
   const photoActive = usePhotoModeActive();
+  // #928: suggest a backup now and then; not in EXPLORE, photo mode or over the drawer.
+  useBackupReminder(layout, exploring || photoActive || !sidebarCollapsed);
   const { isReady, shadersWarming, error, invalidate, requestShadowUpdate, addDecorativeStep, addFrameJob, threeModuleRef, sceneRef, rendererRef, cameraRef, controlsRef, worldPositionFromClient } =
     useThreeScene({
       canvasRef,
@@ -1085,6 +1099,8 @@ export function RoomOrganizer(): JSX.Element {
       advanceTime,
       changeFloor,
       toggleSidebar: () => setSidebarCollapsed((c) => !c),
+      // #932: the `?` overlay
+      toggleShortcuts: toggleShortcutsOverlay,
       removeInteriorWall,
       toggleExteriorWall,
       // Only while a keyboard placement is pending, so Enter/Escape otherwise
@@ -1145,6 +1161,14 @@ export function RoomOrganizer(): JSX.Element {
   // The wall gesture commits on release, like an item drag: what would change
   // the house under it waits.
   const isAnyHoldActive = useCallback(() => isDragActive() || isHoldingWall(), [isDragActive, isHoldingWall]);
+  // The update prompt (#933): never over a drag, EXPLORE, photo mode, the
+  // walk, a held ghost, a wall draft under way, or zone or ground drawing.
+  useUpdatePrompt({
+    calm: !exploring && !photoActive && !walkthroughActive && !ghost && wallDraft === null && !view.drawZoneMode && !groundDrawing,
+    isHoldActive: isAnyHoldActive,
+    flushSave,
+    playCue,
+  });
   useKeyboardShortcuts({
     selectedItem,
     selectedWall,
@@ -1448,6 +1472,12 @@ export function RoomOrganizer(): JSX.Element {
         />
       )}
 
+      {/* What's new (#931): after an update or from Help; never in a tour,
+          EXPLORE or photo mode (it waits them out). Its lines load on demand. */}
+      {whatsNewMounts({ state: whatsNew, tourPhase, ready: isReady && !error, exploring, photo: photoActive }) && (
+        <WhatsNewCard />
+      )}
+
       {/* Keyboard-placement key hint (#168) */}
       <PlacementHint
         active={placingId !== null}
@@ -1467,6 +1497,8 @@ export function RoomOrganizer(): JSX.Element {
       <StatusToastHost />
       {/* In-app confirm, instead of window.confirm (#649) */}
       <ConfirmDialogHost />
+      {/* #932: the `?` shortcut overlay, under a confirm */}
+      <ShortcutsOverlayHost />
       {fileDragging && <FileDropOverlay lockedReason={fileDropBlocked} />}
 
       {/* Achievement toast */}
@@ -1523,44 +1555,18 @@ function SceneEffects(props: SceneEffectsProps): null {
   const lampsOff = useEditorView((state) => state.lampsOff);
   // TVs switched on in EXPLORE (#910).
   const tvsOn = useEditorView((state) => state.tvsOn);
-  useCameraTargetOnStorey(props, view.walkthroughMode && !view.view2D);
+  // Ahead of the scene effects (#393); a floor switch glides (#930).
+  const { layout, activeFloor, activeFloorIndex, cameraRef, controlsRef, invalidate } = props;
+  useCameraTargetOnStorey({
+    cameraRef,
+    controlsRef,
+    targetY: floorElevation(layout.floors, activeFloorIndex) + storeyHeight(activeFloor) / 2,
+    floorIndex: activeFloorIndex,
+    walkthroughActive: view.walkthroughMode && !view.view2D,
+    invalidate,
+  });
   useSceneEffects({ ...props, view, highlightedIds, lampsOff, tvsOn });
   return null;
-}
-
-// Slide the camera target to mid-height of the active storey — on a floor
-// switch, and when a storey height below or on it changes (#202). Declared
-// ahead of the scene effects, so the lamp pool is assigned around the new
-// storey's target, not the old one (#393).
-function useCameraTargetOnStorey(
-  { layout, activeFloor, activeFloorIndex, cameraRef, controlsRef, invalidate }: SceneEffectsProps,
-  walkthroughActive: boolean
-): void {
-  const cameraTargetY = floorElevation(layout.floors, activeFloorIndex) + storeyHeight(activeFloor) / 2;
-  useEffect(() => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
-    // An eased move lands first: its next frame would undo the slide (#930).
-    settleCameraMove(controls);
-    const dy = cameraTargetY - controls.target.y;
-    if (Math.abs(dy) < 0.01) return;
-    // Keep the orbit target on the new storey even mid-walkthrough, so the
-    // orbit camera aims right after an exit — but never touch the camera or
-    // run controls.update() while walkthrough owns it: update() has no
-    // `enabled` guard, so it re-aims the first-person camera at the orbit
-    // target and clamps it back into the polar cone (#114/#216). Walkthrough
-    // owns its own eye height.
-    controls.target.y = cameraTargetY;
-    if (!walkthroughActive) {
-      camera.position.y += dy;
-      controls.update();
-    }
-    // Defer painting to the next frame via invalidate(): a synchronous
-    // renderer.render here ran BEFORE the scene effects rebuilt the new
-    // floor, flashing the old floor's contents from the new camera (#216).
-    invalidate();
-  }, [cameraTargetY, walkthroughActive, cameraRef, controlsRef, invalidate]);
 }
 
 export default RoomOrganizer;

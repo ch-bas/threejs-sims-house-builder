@@ -1,12 +1,13 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useLengthUnit, useRoomEditor } from '../contexts';
 import { useSelection } from '../contexts';
 import { NOT_WHILE_EXPLORING, useExploring } from '../hooks/use-exploring';
 import { layoutStore } from '../hooks/use-layout-store';
+import { useUsdzExport } from '../hooks/use-usdz-export';
 import { HARD_BUDGET_SELL_BACK_NOTE, budgetOf, isHardBudgetOn } from '../lib/budget';
 import { askConfirm } from '../lib/confirm-dialog';
 import { notify, notifyWithUndo, removedMessage, removedNames } from '../lib/editor-notices';
@@ -55,6 +56,8 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
   const { selectOnly, setSelectedItemId, setExtraSelectedIds } = useSelection();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  // AR (#937): Quick Look where Safari offers it, a USDZ file elsewhere.
+  const usdz = useUsdzExport(layout);
 
   const hasItems = activeFloor.items.length > 0;
   const buildingHasItems = hasItems || layout.floors.some((floor) => floor.items.length > 0);
@@ -366,6 +369,36 @@ export function ActionsPanel(props: ActionsPanelProps): JSX.Element {
                   📐 DXF · all floors
                 </Button>
               </>
+            )}
+            {/* The house at 1:50 for AR (#937): Quick Look on iPhone and iPad
+                opens from the player's own tap on a real rel="ar" link, once
+                the model is built; elsewhere one tap saves the file. */}
+            {usdz.state.kind === 'ready' ? (
+              <a
+                rel="ar"
+                href={usdz.state.url}
+                download={usdz.state.fileName}
+                // Only iPhone and iPad show it: as tall as the drawer's touch buttons (44px).
+                className={buttonVariants({ variant: 'outline', size: null, className: 'col-span-2 h-11 gap-2 px-3 text-xs' })}
+              >
+                {/* Quick Look needs an <img> first child; a static export has no image optimiser. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={usdz.state.image} alt="" width={14} height={14} />
+                Open in AR
+              </a>
+            ) : (
+              <Button
+                onClick={usdz.build}
+                variant="outline"
+                size="sm"
+                className="col-span-2 text-xs"
+                // A second tap while it builds is ignored (the hook's guard): disabling would drop focus.
+                disabled={!isReady}
+                aria-busy={usdz.state.kind === 'building'}
+                title="The whole building at table size (1:50), for AR"
+              >
+                {usdz.state.kind === 'building' ? 'Preparing…' : usdz.arView ? '📱 View in AR' : '📦 Download USDZ'}
+              </Button>
             )}
             {/* Print to scale with paper / scale / floor options (#435, #405). */}
             <PrintPlanControl />

@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { ORBIT_LENS_SCALE, ORBIT_START, frameInRegion, houseFrameBox, type Vec3 } from '../lib/scene-insets';
-import { settleCameraMove, useCameraPad, useCameraPresets, type UseCameraPresetsOptions } from './use-camera-presets';
+import { cameraMoveEnd, settleCameraMove, useCameraPad, useCameraPresets, useCameraTargetOnStorey, type UseCameraPresetsOptions } from './use-camera-presets';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 // #608: the camera presets, item focus and the house framing, including the
@@ -482,5 +482,170 @@ describe('eased moves (#930)', () => {
     near(pose(r.camera), fit.position);
     near(r.controls.target, fit.target);
     vi.restoreAllMocks();
+  });
+});
+
+describe('floor switches (#930)', () => {
+  function frameJobs() {
+    const jobs = new Set<(now: number) => boolean>();
+    return {
+      jobs,
+      addFrameJob: (job: (now: number) => boolean) => {
+        jobs.add(job);
+        return () => {
+          jobs.delete(job);
+        };
+      },
+      run(now: number) {
+        for (const job of [...jobs]) if (!job(now)) jobs.delete(job);
+      },
+    };
+  }
+
+  interface StoreyProps {
+    targetY: number;
+    floorIndex: number;
+    walkthroughActive?: boolean;
+  }
+  /** The camera hook (optional) and the floor-switch slide on one rig, as the editor mounts them. */
+  function storey(r: Rig, presets: Partial<UseCameraPresetsOptions> | null) {
+    const loop = frameJobs();
+    if (presets) render(r, { active: true, addFrameJob: loop.addFrameJob, ...presets });
+    const slide = renderHook(
+      ({ targetY, floorIndex, walkthroughActive = false }: StoreyProps) =>
+        useCameraTargetOnStorey({
+          cameraRef: { current: r.camera },
+          controlsRef: { current: r.controls as unknown as OrbitControls },
+          targetY,
+          floorIndex,
+          walkthroughActive,
+          invalidate: r.invalidate,
+        }),
+      { initialProps: { targetY: 1.5, floorIndex: 0 } as StoreyProps }
+    );
+    return { loop, slide };
+  }
+
+  /** Where the old cut put the camera: `camera.y += dy`. */
+  function cutSlide(from: Rig, targetY: number): { position: Vec3; target: Vec3 } {
+    const dy = targetY - from.controls.target.y;
+    return {
+      position: [from.camera.position.x, from.camera.position.y + dy, from.camera.position.z],
+      target: [from.controls.target.x, targetY, from.controls.target.z],
+    };
+  }
+
+  beforeEach(() => setViewport(1440, 900));
+  afterEach(() => vi.restoreAllMocks());
+
+  it('glides to the new storey and ends where the cut put it; the lamp pool sees the end at once', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const r = rig();
+    r.controls.target.set(0, 1.5, 0);
+    const { loop, slide } = storey(r, {});
+    const expected = cutSlide(r, 4.5);
+    act(() => slide.rerender({ targetY: 4.5, floorIndex: 1 }));
+    expect(loop.jobs.size).toBe(1);
+    // Nothing has moved yet, but the move's end is known.
+    expect(r.controls.target.y).toBeCloseTo(1.5, 6);
+    expect(cameraMoveEnd(r.controls)?.target).toEqual(expected.target);
+    loop.run(100);
+    expect(r.controls.target.y).toBeGreaterThan(1.5);
+    expect(r.controls.target.y).toBeLessThan(4.5);
+    loop.run(400);
+    expect(loop.jobs.size).toBe(0);
+    expect(cameraMoveEnd(r.controls)).toBeNull();
+    near(pose(r.camera), expected.position);
+    near(r.controls.target, expected.target);
+  });
+
+  it('cuts on a storey height edit, with reduced motion, on the 2D plan and without the camera hook', () => {
+    const cases: Array<{ name: string; presets: Partial<UseCameraPresetsOptions> | null; next: StoreyProps; reduced?: boolean }> = [
+      { name: 'height edit', presets: {}, next: { targetY: 1.7, floorIndex: 0 } },
+      { name: 'reduced motion', presets: {}, next: { targetY: 4.5, floorIndex: 1 }, reduced: true },
+      { name: '2D plan', presets: { active: false }, next: { targetY: 4.5, floorIndex: 1 } },
+      { name: 'no hook', presets: null, next: { targetY: 4.5, floorIndex: 1 } },
+    ];
+    const matchMedia = window.matchMedia;
+    for (const { name, presets, next, reduced } of cases) {
+      if (reduced) {
+        window.matchMedia = ((query: string) => ({ matches: query.includes('reduce'), addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+      }
+      try {
+        const r = rig();
+        r.controls.target.set(0, 1.5, 0);
+        const { loop, slide } = storey(r, presets);
+        const expected = cutSlide(r, next.targetY);
+        act(() => slide.rerender(next));
+        expect(loop.jobs.size, name).toBe(0);
+        near(pose(r.camera), expected.position);
+        near(r.controls.target, expected.target);
+      } finally {
+        window.matchMedia = matchMedia;
+        cleanup();
+      }
+    }
+  });
+
+  it('mid-walkthrough moves only the orbit target, never the first-person camera', () => {
+    const r = rig();
+    r.controls.target.set(0, 1.5, 0);
+    const { loop, slide } = storey(r, { walkthroughActive: true });
+    const before = pose(r.camera);
+    act(() => slide.rerender({ targetY: 4.5, floorIndex: 1, walkthroughActive: true }));
+    expect(loop.jobs.size).toBe(0);
+    near(pose(r.camera), before);
+    expect(r.controls.target.y).toBeCloseTo(4.5, 6);
+    expect(r.controls.update).not.toHaveBeenCalled();
+  });
+
+  it('a press, a wheel or a key on the scene lands the slide: the target never stays between storeys', () => {
+    for (const input of ['pointerdown', 'wheel', 'keydown'] as const) {
+      vi.spyOn(performance, 'now').mockReturnValue(0);
+      const r = rig();
+      r.controls.target.set(0, 1.5, 0);
+      const canvas = canvasOf(1440, 900);
+      document.body.appendChild(canvas);
+      const expected = cutSlide(r, 4.5);
+      const { loop, slide } = storey(r, { canvasRef: { current: canvas } });
+      act(() => slide.rerender({ targetY: 4.5, floorIndex: 1 }));
+      loop.run(100);
+      expect(r.controls.target.y, input).toBeLessThan(4.5);
+      canvas.dispatchEvent(input === 'keydown' ? new KeyboardEvent('keydown', { key: 'a', bubbles: true }) : new Event(input, { bubbles: true }));
+      expect(loop.jobs.size, input).toBe(0);
+      expect(r.controls.target.y, input).toBeCloseTo(4.5, 6);
+      near(pose(r.camera), expected.position);
+      cleanup();
+      document.body.innerHTML = '';
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("a held key's repeats leave the glide running", () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const r = rig();
+    r.controls.target.set(0, 1.5, 0);
+    const { loop, slide } = storey(r, {});
+    act(() => slide.rerender({ targetY: 4.5, floorIndex: 1 }));
+    loop.run(100);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp', repeat: true, bubbles: true }));
+    expect(loop.jobs.size).toBe(1);
+    loop.run(1000);
+    expect(r.controls.target.y).toBeCloseTo(4.5, 6);
+  });
+
+  it('a switch mid-glide lands the first, and two quick switches end on the last storey', () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const r = rig();
+    r.controls.target.set(0, 1.5, 0);
+    const start = pose(r.camera);
+    const { loop, slide } = storey(r, {});
+    act(() => slide.rerender({ targetY: 4.5, floorIndex: 1 }));
+    loop.run(50);
+    act(() => slide.rerender({ targetY: 7.5, floorIndex: 2 }));
+    expect(loop.jobs.size).toBe(1);
+    loop.run(1000);
+    near(pose(r.camera), [start[0], start[1] + 6, start[2]]);
+    expect(r.controls.target.y).toBeCloseTo(7.5, 6);
   });
 });

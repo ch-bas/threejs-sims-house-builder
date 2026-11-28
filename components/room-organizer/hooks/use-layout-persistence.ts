@@ -8,14 +8,29 @@ import {
   EDITOR_SETTLED_MS,
   clearEditorCrashed,
   clearReloadAttempt,
+  compactStoredHouse,
   editorHasCrashed,
+  keepHouseAside,
   keepStoredLayout,
   loadLayout,
+  readStoredLayoutRaw,
   sameLayoutContent,
   saveLayout,
   saveOverStoredHouse,
 } from '../lib/persistence';
-import { isUntouched, snapshotBeforeReplace } from '../lib/restore-point';
+import {
+  comparablePlanImage,
+  pinPlanImage,
+  planImagePending,
+  planImageProblem,
+  planImageProblemText,
+  refreshPlanStoragePersisted,
+  resolvePlanImage,
+  storePlanImage,
+  storedPlanImageRef,
+  subscribePlanImageStored,
+} from '../lib/plan-image-ref';
+import { isUntouched, setOpeningHouse, snapshotBeforeReplace, subscribeHouseReplaced } from '../lib/restore-point';
 import { subscribeSaveHereChosen } from '../lib/saved-by';
 import { takeTourCrashNote } from '../lib/saved-house';
 import { parseStoredLayout } from '../lib/schema';
@@ -23,11 +38,19 @@ import { isShareHash, isShareHashWithinBudget, readShareHash, shareFailureMessag
 import { isTourSession, setTourPhase } from '../lib/tour-session';
 import { recordSnapshot } from '../lib/version-history';
 import type { SaveFailureReason } from '../lib/persistence';
+import type { SaveFlush } from '../lib/service-worker';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseLayoutPersistenceOptions {
   layout: RoomLayout;
-  onHydrate: (layout: RoomLayout) => void;
+  /**
+   * Open the stored house. `floorIndex` comes with a house that waited for
+   * its floor-plan image (#936): the storey it would have opened on, since an
+   * edit of the placeholder meanwhile (Add floor) may have moved the view.
+   */
+  onHydrate: (layout: RoomLayout, floorIndex?: number) => void;
+  /** The storey on screen now, read when a stored house starts waiting (#936). */
+  activeFloorIndex?: () => number;
   /**
    * Keep a copy of the toured house (#722), once it is saved: the rest of
    * the whole-house load (`commitNow`, `applyLayout`, `markLayoutLoaded`).
@@ -90,7 +113,18 @@ export interface UseLayoutPersistenceResult {
   keepTourCopy(playCue: RefusedCue): void;
   /** Leave the tour for the visitor's own house, or a fresh lot. */
   leaveTour(): void;
+  /**
+   * Save a change still waiting for the autosave now (#933, before an update
+   * reloads the page): 'newer' when a newer version's save refused it.
+   */
+  flushSave(): SaveFlush;
 }
+
+/** Said when a load replaced the saved house before it had opened (#936). */
+export const OPENING_HOUSE_KEPT =
+  'Your saved house was still opening, so a copy of it is kept in Manage → Saved Layouts → History.';
+/** Said when edits of the placeholder lot gave way to the saved house (#936). */
+export const EDITS_WHILE_OPENING = 'Your saved house finished opening, so changes made while it loaded weren’t kept.';
 
 const NO_ROOM_TO_KEEP_YOURS =
   'No room to keep a copy of your own house first, so nothing was changed. Free space in Manage → Storage (Build your own opens your house), then open the link again.';
@@ -112,12 +146,15 @@ export function useLayoutPersistence({
   layout,
   onHydrate,
   onKeepTourCopy,
+  activeFloorIndex,
   debounceMs = AUTOSAVE_DEBOUNCE_MS,
 }: UseLayoutPersistenceOptions): UseLayoutPersistenceResult {
   const hasHydratedRef = useRef(false);
   // Read when the visitor answers, which is after later renders.
   const onKeepTourCopyRef = useRef(onKeepTourCopy);
   onKeepTourCopyRef.current = onKeepTourCopy;
+  const activeFloorIndexRef = useRef(activeFloorIndex);
+  activeFloorIndexRef.current = activeFloorIndex;
   const [tourHouse, setTourHouse] = useState<RoomLayout | null>(null);
   // While set, autosave is suppressed until the layout moves past the stored
   // pre-hydration value — i.e. until the hydration dispatch has landed. This
@@ -127,6 +164,8 @@ export function useLayoutPersistence({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const pendingRef = useRef(false);
+  // Set by the flush effect below (#933).
+  const flushNowRef = useRef((): SaveFlush => (pendingRef.current ? 'failed' : 'saved'));
   // The last layout the editor survived (#568): one that crashed it must
   // never reach the save, or every reload crashes again. A crash in render or
   // in an effect unmounts the editor within the same task, so a layout only
@@ -152,13 +191,38 @@ export function useLayoutPersistence({
   // written over it until a copy succeeds.
   const mainSaveHeldRef = useRef(false);
   const [remoteLayout, setRemoteLayout] = useState<RoomLayout | null>(null);
+  // While set, the stored house is waiting for its floor-plan image (#936):
+  // nothing saves, since the house on screen isn't the stored one yet.
+  const resolvingRef = useRef(false);
+  // Bumped by each hydration, so an image read for an older one is dropped.
+  const hydrationRef = useRef(0);
+  // Bumped by each storage event, so a slower image read can't land late.
+  const remoteRef = useRef(0);
+  // The saved house waiting for its image, and its save as it was read: a
+  // load during the wait keeps that text aside, whatever storage holds by
+  // then (another tab's save, adopted). Until it is kept, the main save is
+  // held and the retry keeps `heldRawRef`.
+  const openingRef = useRef<RoomLayout | null>(null);
+  const openingRawRef = useRef<string | null>(null);
+  const heldRawRef = useRef<string | null>(null);
+  // False once unmounted: a late image read must not open a house then.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    // StrictMode's remount: the wait is still on.
+    if (resolvingRef.current && openingRef.current) setOpeningHouse(openingRef.current);
+    return () => {
+      mountedRef.current = false;
+      setOpeningHouse(null);
+    };
+  }, []);
 
   // "Save here anyway" over a newer version's house (#933): the edit waiting
   // since the refusal is saved at once, not at the next edit.
   useEffect(
     () =>
       subscribeSaveHereChosen(() => {
-        if (!pendingRef.current || mainSaveHeldRef.current || isTourSession()) return;
+        if (!pendingRef.current || mainSaveHeldRef.current || resolvingRef.current || isTourSession()) return;
         const result = saveLayout(layoutRef.current);
         if (!result.ok) {
           saveStatus.setState({ saveError: result.reason });
@@ -190,19 +254,37 @@ export function useLayoutPersistence({
         setRemoteLayout(null);
         return;
       }
-      try {
-        const parsed = parseStoredLayout(JSON.parse(event.newValue));
-        if (!parsed) return;
+      const compare = (parsed: RoomLayout): void => {
         // Both sides through the same schema pass, so defaults it fills in
-        // don't read as a difference.
+        // don't read as a difference; and both as a save writes them, so an
+        // image inline on one side and named by ref on the other is one (#936).
         const shown = layoutRef.current;
         const shownNormalised = parseStoredLayout(JSON.parse(JSON.stringify(shown))) ?? shown;
-        if (sameLayoutContent(parsed, shownNormalised)) {
+        if (sameLayoutContent(comparablePlanImage(parsed), comparablePlanImage(shownNormalised))) {
           // The other tab now holds what this one shows: any earlier notice is moot.
           setRemoteLayout(null);
           return;
         }
         setRemoteLayout(parsed);
+      };
+      const seen = ++remoteRef.current;
+      try {
+        const parsed = parseStoredLayout(JSON.parse(event.newValue));
+        if (!parsed) return;
+        if (!planImagePending(parsed)) {
+          compare(parsed);
+          return;
+        }
+        // The other tab saved its image by ref: fetch it, so adopting the
+        // house brings the image too.
+        void resolvePlanImage(parsed).then((resolved) => {
+          if (seen !== remoteRef.current || isTourSession()) return;
+          try {
+            compare(resolved);
+          } catch {
+            /* nothing to offer */
+          }
+        });
       } catch {
         /* another tab wrote something unreadable — nothing to offer */
       }
@@ -235,6 +317,47 @@ export function useLayoutPersistence({
   /** True when the stored house is the one on screen now. */
   const hydrateFromLocalSave = useCallback((): boolean => {
     const saved = loadLayout();
+    const hydration = ++hydrationRef.current;
+    if (saved && planImagePending(saved)) {
+      // The save names its floor-plan image (#936): open the house once the
+      // image is read, saving nothing meanwhile. An image that can't be read
+      // in time leaves the house without it, still naming it, so the next
+      // save keeps it and a reload tries again.
+      hydrationBaseRef.current = layoutRef.current;
+      resolvingRef.current = true;
+      // A load meanwhile replaces this house, not the placeholder on screen.
+      openingRef.current = saved;
+      openingRawRef.current = readStoredLayoutRaw();
+      setOpeningHouse(saved);
+      // The storey it opens on, whatever an edit meanwhile switches to.
+      const floorIndex = activeFloorIndexRef.current?.();
+      void resolvePlanImage(saved).then((resolved) => {
+        if (hydration !== hydrationRef.current || !mountedRef.current) return;
+        resolvingRef.current = false;
+        openingRef.current = null;
+        setOpeningHouse(null);
+        // Left for a tour while the image was read.
+        if (isTourSession()) return;
+        // Edits of the placeholder lot give way to the saved house: said.
+        const editedMeanwhile = !Object.is(layoutRef.current, hydrationBaseRef.current);
+        try {
+          onHydrate(resolved, floorIndex);
+        } catch (error) {
+          console.warn('Failed to apply saved layout:', error);
+          keepStoredHouseAside();
+          hydrationBaseRef.current = null;
+          return;
+        }
+        if (editedMeanwhile) notify(EDITS_WHILE_OPENING, 'info');
+        if (planImagePending(resolved)) {
+          notify(`The house opened without its floor plan. ${planImageProblemText(planImageProblem(resolved.floorPlanImageRef))}`, 'error');
+        }
+      });
+      return true;
+    }
+    resolvingRef.current = false;
+    openingRef.current = null;
+    setOpeningHouse(null);
     if (saved) {
       hydrationBaseRef.current = layoutRef.current;
       // A stored layout that parses but throws on apply must not
@@ -289,6 +412,11 @@ export function useLayoutPersistence({
       // The hash stays for the whole tour: a reload opens the tour again.
       setTourPhase('touring');
       hydrationBaseRef.current = null;
+      // A stored house still waiting for its image is not opened now (#936).
+      hydrationRef.current += 1;
+      resolvingRef.current = false;
+      openingRef.current = null;
+      setOpeningHouse(null);
       void readShareHash(hash).then((result) => {
         // Left for the visitor's own house while the link was opening.
         if (!isTourSession()) return;
@@ -366,6 +494,9 @@ export function useLayoutPersistence({
   useEffect(() => {
     // The toured house is someone else's: nothing saves until Keep a copy (#722).
     if (isTourSession()) return;
+    // The stored house is still opening (#936): an edit of the lot shown
+    // meanwhile must not save over it.
+    if (resolvingRef.current) return;
     if (hydrationBaseRef.current) {
       if (Object.is(layout, hydrationBaseRef.current)) return;
       // First layout change after hydration is the hydration dispatch itself,
@@ -381,11 +512,13 @@ export function useLayoutPersistence({
     const handle = window.setTimeout(() => {
       // Retried on every edit, so freeing space lets saving resume.
       if (mainSaveHeldRef.current) {
-        const outcome = keepStoredLayout();
+        const held = heldRawRef.current;
+        const outcome = held !== null ? keepHouseAside(held) : keepStoredLayout();
         if (outcome !== 'kept' && outcome !== 'nothing') {
           saveStatus.setState({ saveError: outcome });
           return;
         }
+        heldRawRef.current = null;
         mainSaveHeldRef.current = false;
       }
       const result = saveLayout(layout);
@@ -402,6 +535,9 @@ export function useLayoutPersistence({
         // worth a point — and since #342 each one is a new house, so each
         // fresh start would add one.
         if (!isUntouched(layout)) recordSnapshot(layout);
+        // Storage may have become persistent (the storage-care ask): then
+        // the stored image's inline copy can go (#936).
+        if (layout.floorPlanImage) refreshPlanStoragePersisted();
       } else {
         // Keep `saving`/pending truthy and flag the error so the HUD reports
         // the failure instead of a false "Saved". A later successful edit
@@ -411,6 +547,57 @@ export function useLayoutPersistence({
     }, debounceMs);
     return () => window.clearTimeout(handle);
   }, [layout, debounceMs, saveStatus]);
+
+  // --- #936 plan image store ---
+  // A floor-plan image moves into the image store as soon as the house
+  // holds it (an upload, an import, a save from before the store); once
+  // it is confirmed there, the save names it by ref instead.
+  useEffect(
+    () =>
+      subscribePlanImageStored(() => {
+        if (mainSaveHeldRef.current || resolvingRef.current || isTourSession()) return;
+        const json = compactStoredHouse();
+        if (json !== null) lastSavedJsonRef.current = json;
+      }),
+    []
+  );
+  // Another whole-house load (an import, a library load, another tab's
+  // version adopted) while the stored house waits for its image wins, as a
+  // load over that house: it asked about it and took its restore point
+  // (`setOpeningHouse`), and the stored house is copied aside before the
+  // load can save over it; if it can't be, the save is held. Then the
+  // waiting hydration is dropped and the load saves like any edit.
+  useEffect(
+    () =>
+      subscribeHouseReplaced(() => {
+        if (!resolvingRef.current) return;
+        hydrationRef.current += 1;
+        resolvingRef.current = false;
+        openingRef.current = null;
+        setOpeningHouse(null);
+        hydrationBaseRef.current = null;
+        // The save as it was when the wait began: another tab may have
+        // saved over it since (the load may be that tab's house, adopted).
+        const raw = openingRawRef.current;
+        openingRawRef.current = null;
+        const outcome = raw === null ? 'nothing' : keepHouseAside(raw);
+        if (outcome === 'kept') notify(OPENING_HOUSE_KEPT, 'info');
+        else if (outcome !== 'nothing') {
+          heldRawRef.current = raw;
+          mainSaveHeldRef.current = true;
+          saveStatus.setState({ saveError: outcome });
+        }
+      }),
+    [saveStatus]
+  );
+  const planImage = layout.floorPlanImage;
+  // The image on screen stays confirmed, however many others are stored.
+  useEffect(() => pinPlanImage(planImage ?? null), [planImage]);
+  useEffect(() => {
+    if (!planImage || isTourSession() || storedPlanImageRef(planImage)) return;
+    void storePlanImage(planImage);
+  }, [planImage]);
+  // --- end #936 ---
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -428,8 +615,11 @@ export function useLayoutPersistence({
     // A flush when the tab was hidden owes the page-away restore point to
     // the pagehide or unmount that may follow.
     let pointOwed = false;
-    const flush = (layout: RoomLayout | null, leaving: boolean) => {
-      if (mainSaveHeldRef.current || layout === null || isTourSession()) return;
+    // Returns why the owed save failed, if it did. Nothing is flushed while
+    // the saved house is still opening (#936).
+    const flush = (layout: RoomLayout | null, leaving: boolean): SaveFailureReason | null => {
+      if (mainSaveHeldRef.current || resolvingRef.current || layout === null || isTourSession()) return null;
+      let failed: SaveFailureReason | null = null;
       if (pendingRef.current) {
         const result = saveLayout(layout);
         // Still pending after a failure: a later flush, or the debounced
@@ -437,10 +627,12 @@ export function useLayoutPersistence({
         if (result.ok) {
           pendingRef.current = false;
           lastSavedJsonRef.current = result.json;
+        } else {
+          failed = result.reason;
         }
         pointOwed = true;
       }
-      if (!pointOwed || isUntouched(layout)) return;
+      if (!pointOwed || isUntouched(layout)) return failed;
       if (leaving) {
         // The page is going away — capture a restore point regardless of
         // the ring's 5-minute cadence (#231).
@@ -452,9 +644,18 @@ export function useLayoutPersistence({
         // after every edit can't push the older points out of the ring.
         recordSnapshot(layout);
       }
+      return failed;
+    };
+    // Before an update's reload (#933): the pagehide that follows records the point.
+    flushNowRef.current = () => {
+      const failed = flush(layoutRef.current, false);
+      if (!pendingRef.current || isTourSession()) return 'saved';
+      return failed === 'newer' ? 'newer' : 'failed';
     };
     // A crash has already removed these listeners: pagehide is never a crash.
-    const onPageHide = () => flush(layoutRef.current, true);
+    const onPageHide = () => {
+      flush(layoutRef.current, true);
+    };
     // Mobile browsers discard a background tab without firing pagehide;
     // hidden is the last signal they reliably send (#554). The save is
     // idempotent with a pagehide that follows, through `pendingRef`.
@@ -472,5 +673,7 @@ export function useLayoutPersistence({
     };
   }, []);
 
-  return { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour };
+  const flushSave = useCallback(() => flushNowRef.current(), []);
+
+  return { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave };
 }

@@ -1,3 +1,4 @@
+import { compactPlanImage } from './plan-image-ref';
 import { safeGetItem, safeRemoveItem } from './safe-storage';
 import { BUILD_VERSION } from './saved-by';
 import { localStorageOrNull } from './saved-house';
@@ -384,6 +385,7 @@ const INDEX_SLACK_CHARS = 64;
 function autosaveHeadroom(layout: RoomLayout): number {
   const withoutImage: Partial<RoomLayout> = { ...layout };
   delete withoutImage.floorPlanImage;
+  delete withoutImage.floorPlanImageRef;
   return Math.max(AUTOSAVE_HEADROOM_MIN_CHARS, JSON.stringify(withoutImage).length);
 }
 
@@ -495,22 +497,32 @@ function writeNamedLayout(layout: RoomLayout, name: string, opts: { savedAt?: nu
 
   // The house keeps its own id: the slug names the library slot, and two
   // houses saved under one name in turn are still different houses (#342).
-  const layoutCopy: RoomLayout = { ...layout, name: shown };
-  const json = JSON.stringify(layoutCopy);
+  // A plan image already in the image store is saved as its ref (#936)
+  // where storage is persistent: copies then share the one stored image.
+  // Elsewhere it stays inline unless only the ref leaves room (below).
+  const layoutCopy: RoomLayout = compactPlanImage({ ...layout, name: shown });
+  let json = JSON.stringify(layoutCopy);
   const previousBlob = safeGetItem(layoutKey(id));
   const movedBlob = move ? previousBlob : null;
   const legacyBlob = legacy ? safeGetItem(layoutKey(legacy.id)) : null;
 
   // What storage holds once the save is done, against now: net, so a re-save
   // that adds nothing is never refused.
-  const growth =
-    json.length -
+  const growthOf = (text: string): number =>
+    text.length -
     (previousBlob === null ? -layoutKey(id).length : previousBlob.length) +
     (move && movedBlob !== null ? layoutKey(move.to).length + movedBlob.length : 0) -
     (legacy && legacyBlob !== null ? layoutKey(legacy.id).length + legacyBlob.length : 0) +
     (plan.at >= 0 || legacy ? 0 : JSON.stringify(entry).length + INDEX_SLACK_CHARS);
-  const refusal = roomShortfall(storage, growth, autosaveHeadroom(layout));
-  if (refusal !== null) return { ok: false, reason: refusal };
+  let refusal = roomShortfall(storage, growthOf(json), autosaveHeadroom(layout));
+  if (refusal !== null) {
+    // No room inline: by ref, if the image is stored (#936).
+    const byRef = JSON.stringify(compactPlanImage({ ...layout, name: shown }, true));
+    if (byRef.length >= json.length) return { ok: false, reason: refusal };
+    refusal = roomShortfall(storage, growthOf(byRef), autosaveHeadroom(layout));
+    if (refusal !== null) return { ok: false, reason: refusal };
+    json = byRef;
+  }
 
   // A house of another name in this slot moves out first, as a step of its
   // own: once it is listed under its new slot, nothing that fails later can

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { EDIT_KEYS as K } from '../lib/keymap';
+import { isPhotoMode } from '../lib/photo-mode';
 import { isTypingTarget } from '../lib/walk-input';
 import type { FurnitureItem } from '../lib/types';
 import type { SelectedWall } from '../lib/wall-sides';
@@ -33,6 +34,8 @@ export interface KeyboardShortcutHandlers {
   advanceTime(deltaHours: number): void;
   changeFloor(delta: number): void;
   toggleSidebar(): void;
+  /** `?`: open or close the shortcut overlay (#932). */
+  toggleShortcuts(): void;
   /**
    * Keyboard placement (#168): both are passed only while an item placed from
    * a catalog tile is still being positioned. Enter then locks it in place and
@@ -198,6 +201,15 @@ export function useKeyboardShortcuts({
       // mid-walk, etc. (see #67). Undo/redo and Escape above still work; the
       // walkthrough hook owns its own Esc-to-exit handling.
       if (walkthroughActive) return;
+
+      // The shortcut overlay (#932): view-only, so EXPLORE and a tour get it
+      // too. Photo mode's key guard stops it before here; the check holds
+      // should that guard ever let a key by.
+      if (event.key === K.shortcuts) {
+        event.preventDefault();
+        if (!event.repeat && !isPhotoMode()) handlers.toggleShortcuts();
+        return;
+      }
 
       if (key === K.focus && selectedItem) {
         event.preventDefault();

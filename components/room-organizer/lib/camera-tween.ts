@@ -1,5 +1,5 @@
 /**
- * Eased camera moves (#930): a preset, Fit or Focus glides from the current
+ * Eased camera moves (#930): a preset, Fit, Focus or a floor switch glides from the current
  * pose to the new one instead of cutting. The orbit camera swings along an
  * arc around its (moving) target, so a preset a full side away goes round
  * the house rather than through it. Reduced motion keeps the cut.
@@ -117,5 +117,19 @@ export function createCameraTween(from: CameraPose, to: CameraPose, start: numbe
       if (progress >= 1) return { pose: to, done: true };
       return { pose: interpolatePose(from, to, easeOutCubic(progress)), done: false };
     },
+  };
+}
+
+/**
+ * A floor switch's end pose: the orbit target rises or drops to `targetY`
+ * (mid-height of the new storey) and the camera keeps its offset from it,
+ * so the view slides straight up or down. The pose the old cut left
+ * (`camera.y += dy`, then the controls re-aim).
+ */
+export function storeySlidePose(from: CameraPose, targetY: number): CameraPose {
+  const dy = targetY - from.target[1];
+  return {
+    position: [from.position[0], from.position[1] + dy, from.position[2]],
+    target: [from.target[0], targetY, from.target[2]],
   };
 }

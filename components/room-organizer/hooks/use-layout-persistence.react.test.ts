@@ -339,3 +339,41 @@ describe('useLayoutPersistence — no render per edit while saving (#480)', () =
     expect(renders).toBe(before);
   });
 });
+
+describe('useLayoutPersistence — flushSave before an update reload (#933)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const setup = () =>
+    renderHook(() => {
+      const [layout, setLayout] = useState(() => makeLayout({ name: 'Before' }));
+      return { setLayout, ...useLayoutPersistence({ layout, onHydrate: () => {}, debounceMs: 60_000 }) };
+    });
+
+  it('saves the change the autosave still owes at once', () => {
+    const { result } = setup();
+    expect(result.current.flushSave()).toBe('saved');
+    act(() => result.current.setLayout(makeLayout({ name: 'Edited' })));
+    expect(loadLayout()?.name).not.toBe('Edited');
+    expect(result.current.flushSave()).toBe('saved');
+    expect(loadLayout()?.name).toBe('Edited');
+  });
+
+  it('says false while the change can’t be saved', () => {
+    const { result } = setup();
+    act(() => result.current.setLayout(makeLayout({ name: 'Edited' })));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+    expect(result.current.flushSave()).toBe('failed');
+    setItem.mockRestore();
+    expect(result.current.flushSave()).toBe('saved');
+    expect(loadLayout()?.name).toBe('Edited');
+  });
+});
