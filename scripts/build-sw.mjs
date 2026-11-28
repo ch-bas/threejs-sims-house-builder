@@ -49,7 +49,19 @@
 //     build serves the load. A new window while another tab still runs the
 //     old build is not a reload, and takes nothing over.
 // So a single tab moves to the new build once its worker has installed.
-// With several tabs open, or when the install was cut short, an older build
+// Otherwise (several tabs, or a page of the older build) the page offers
+// "A new version is ready · Reload" (hooks/use-update-prompt.ts) unless this
+// worker says the page is already of its build ('is-mine'); the click saves,
+// then sends 'skip-waiting', which this worker obeys whatever tabs are open,
+// since the player asked, and the page reloads once on controllerchange.
+// That update also reaches the other open tabs: `activate` deletes the
+// older build's cache, as always (only bytes matching this worker's own
+// hashes are ever served from a cache, so nothing stored can vouch for
+// another build's files). A tab still running the older build then offers
+// "This tab is on an older version · Reload", and a chunk it loads late
+// comes from the network, where a deploy may have removed it: the
+// stale-chunk recovery (#499) reloads it.
+// With several tabs open and no click, or when the install was cut short, an older build
 // can still run offline after a newer one saved; the save stamp
 // (lib/saved-by.ts) then asks before that older build saves over it.
 //
@@ -256,6 +268,16 @@ const leaving = new Map();
 const LEAVING_MS = 10000;
 
 /**
+ * This site's windows. The origin is shared with sibling sites (and their
+ * frames), which clients.matchAll lists too when uncontrolled ones are asked
+ * for: only those under this worker's scope count.
+ */
+async function ourWindows(includeUncontrolled) {
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled });
+  return windows.filter((client) => typeof client.url === 'string' && client.url.startsWith(self.registration.scope));
+}
+
+/**
  * A navigation from the only open tab reloading itself while a new worker
  * waits: tell the new worker to take over, and resolve true once it has
  * agreed. The browser activates it as soon as this fetch is answered. A
@@ -268,7 +290,7 @@ async function handOver() {
   // Once per handover: a takeover that never comes can't loop the page.
   if (Date.now() - handedOverAt < HANDOVER_MS) return false;
   const alone = async () => {
-    const windows = await self.clients.matchAll({ type: 'window' });
+    const windows = await ourWindows(false);
     return windows.every((client) => Date.now() - (leaving.get(client.id) || -Infinity) < LEAVING_MS);
   };
   // The page's "leaving" message can arrive just after its navigation.
@@ -359,11 +381,17 @@ self.addEventListener('message', (event) => {
   // now if it is the only window (and so runs nothing older).
   if (data && data.type === 'take-over' && PRECACHE.includes(data.marker)) {
     event.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      ourWindows(true).then((windows) => {
         if (windows.length === 1) return self.skipWaiting();
         return undefined;
       })
     );
+    return;
+  }
+  // Whether a page is of this build (lib/service-worker.ts asks before offering an update).
+  if (data && data.type === 'is-mine') {
+    const answer = event.ports && event.ports[0];
+    if (answer) answer.postMessage(PRECACHE.includes(data.marker));
     return;
   }
   if (data !== 'skip-waiting') return;

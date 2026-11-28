@@ -38,6 +38,7 @@ import { isShareHash, isShareHashWithinBudget, readShareHash, shareFailureMessag
 import { isTourSession, setTourPhase } from '../lib/tour-session';
 import { recordSnapshot } from '../lib/version-history';
 import type { SaveFailureReason } from '../lib/persistence';
+import type { SaveFlush } from '../lib/service-worker';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseLayoutPersistenceOptions {
@@ -112,6 +113,11 @@ export interface UseLayoutPersistenceResult {
   keepTourCopy(playCue: RefusedCue): void;
   /** Leave the tour for the visitor's own house, or a fresh lot. */
   leaveTour(): void;
+  /**
+   * Save a change still waiting for the autosave now (#933, before an update
+   * reloads the page): 'newer' when a newer version's save refused it.
+   */
+  flushSave(): SaveFlush;
 }
 
 /** Said when a load replaced the saved house before it had opened (#936). */
@@ -158,6 +164,8 @@ export function useLayoutPersistence({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const pendingRef = useRef(false);
+  // Set by the flush effect below (#933).
+  const flushNowRef = useRef((): SaveFlush => (pendingRef.current ? 'failed' : 'saved'));
   // The last layout the editor survived (#568): one that crashed it must
   // never reach the save, or every reload crashes again. A crash in render or
   // in an effect unmounts the editor within the same task, so a layout only
@@ -607,8 +615,11 @@ export function useLayoutPersistence({
     // A flush when the tab was hidden owes the page-away restore point to
     // the pagehide or unmount that may follow.
     let pointOwed = false;
-    const flush = (layout: RoomLayout | null, leaving: boolean) => {
-      if (mainSaveHeldRef.current || resolvingRef.current || layout === null || isTourSession()) return;
+    // Returns why the owed save failed, if it did. Nothing is flushed while
+    // the saved house is still opening (#936).
+    const flush = (layout: RoomLayout | null, leaving: boolean): SaveFailureReason | null => {
+      if (mainSaveHeldRef.current || resolvingRef.current || layout === null || isTourSession()) return null;
+      let failed: SaveFailureReason | null = null;
       if (pendingRef.current) {
         const result = saveLayout(layout);
         // Still pending after a failure: a later flush, or the debounced
@@ -616,10 +627,12 @@ export function useLayoutPersistence({
         if (result.ok) {
           pendingRef.current = false;
           lastSavedJsonRef.current = result.json;
+        } else {
+          failed = result.reason;
         }
         pointOwed = true;
       }
-      if (!pointOwed || isUntouched(layout)) return;
+      if (!pointOwed || isUntouched(layout)) return failed;
       if (leaving) {
         // The page is going away — capture a restore point regardless of
         // the ring's 5-minute cadence (#231).
@@ -631,9 +644,18 @@ export function useLayoutPersistence({
         // after every edit can't push the older points out of the ring.
         recordSnapshot(layout);
       }
+      return failed;
+    };
+    // Before an update's reload (#933): the pagehide that follows records the point.
+    flushNowRef.current = () => {
+      const failed = flush(layoutRef.current, false);
+      if (!pendingRef.current || isTourSession()) return 'saved';
+      return failed === 'newer' ? 'newer' : 'failed';
     };
     // A crash has already removed these listeners: pagehide is never a crash.
-    const onPageHide = () => flush(layoutRef.current, true);
+    const onPageHide = () => {
+      flush(layoutRef.current, true);
+    };
     // Mobile browsers discard a background tab without firing pagehide;
     // hidden is the last signal they reliably send (#554). The save is
     // idempotent with a pagehide that follows, through `pendingRef`.
@@ -651,5 +673,7 @@ export function useLayoutPersistence({
     };
   }, []);
 
-  return { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour };
+  const flushSave = useCallback(() => flushNowRef.current(), []);
+
+  return { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave };
 }

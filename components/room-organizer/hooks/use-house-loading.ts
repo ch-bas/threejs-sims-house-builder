@@ -5,6 +5,7 @@ import { markLayoutLoaded } from './use-achievements';
 import { useLayoutPersistence, type SaveStatusStore } from './use-layout-persistence';
 import { layoutStore } from './use-layout-store';
 import type { LayoutActions } from './use-layout-state';
+import type { SaveFlush } from '../lib/service-worker';
 import type { RoomLayout } from '../lib/types';
 
 export interface UseHouseLoadingOptions {
@@ -25,6 +26,8 @@ export interface HouseLoading {
   tourHouse: RoomLayout | null;
   keepTourCopy(playCue: RefusedCue): void;
   leaveTour(): void;
+  /** Save a change still waiting for the autosave now (#933). */
+  flushSave(): SaveFlush;
 }
 
 const readActiveFloorIndex = (): number => layoutStore.getState().activeFloorIndex;
@@ -42,7 +45,7 @@ export function useHouseLoading({
   clearHistory,
   clearTransientSelection,
 }: UseHouseLoadingOptions): HouseLoading {
-  const { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour } = useLayoutPersistence({
+  const { saveStatus, remoteLayout, clearRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave } = useLayoutPersistence({
     layout,
     activeFloorIndex: readActiveFloorIndex,
     onHydrate: useCallback(
@@ -98,5 +101,5 @@ export function useHouseLoading({
     clearRemoteLayout();
   }, [remoteLayout, layout, actions, commitHistoryNow, clearTransientSelection, clearRemoteLayout]);
 
-  return { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour };
+  return { saveStatus, remoteLayout, clearRemoteLayout, adoptRemoteLayout, tourHouse, keepTourCopy, leaveTour, flushSave };
 }
