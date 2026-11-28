@@ -9,7 +9,7 @@ import { SelectionProvider } from './contexts/selection-context';
 import { catalogHighlightKey, createEditorViewStore, highlightIdsFromKey, loadLengthUnit, viewExceptTime } from './hooks/editor-view-store';
 import { getGroundDrawKind, setGroundDrawKind, useGroundDrawKind } from './hooks/ground-draw';
 import { markLayoutLoaded, useAchievements } from './hooks/use-achievements';
-import { settleCameraMove, useCameraPad, useCameraPresets } from './hooks/use-camera-presets';
+import { useCameraPad, useCameraPresets, useCameraTargetOnStorey } from './hooks/use-camera-presets';
 import { useCanvas2DInteraction } from './hooks/use-canvas-2d-interaction';
 import { useEdgeVar } from './hooks/use-edge-var';
 import { useEvent } from './hooks/use-event';
@@ -1523,44 +1523,18 @@ function SceneEffects(props: SceneEffectsProps): null {
   const lampsOff = useEditorView((state) => state.lampsOff);
   // TVs switched on in EXPLORE (#910).
   const tvsOn = useEditorView((state) => state.tvsOn);
-  useCameraTargetOnStorey(props, view.walkthroughMode && !view.view2D);
+  // Ahead of the scene effects (#393); a floor switch glides (#930).
+  const { layout, activeFloor, activeFloorIndex, cameraRef, controlsRef, invalidate } = props;
+  useCameraTargetOnStorey({
+    cameraRef,
+    controlsRef,
+    targetY: floorElevation(layout.floors, activeFloorIndex) + storeyHeight(activeFloor) / 2,
+    floorIndex: activeFloorIndex,
+    walkthroughActive: view.walkthroughMode && !view.view2D,
+    invalidate,
+  });
   useSceneEffects({ ...props, view, highlightedIds, lampsOff, tvsOn });
   return null;
-}
-
-// Slide the camera target to mid-height of the active storey — on a floor
-// switch, and when a storey height below or on it changes (#202). Declared
-// ahead of the scene effects, so the lamp pool is assigned around the new
-// storey's target, not the old one (#393).
-function useCameraTargetOnStorey(
-  { layout, activeFloor, activeFloorIndex, cameraRef, controlsRef, invalidate }: SceneEffectsProps,
-  walkthroughActive: boolean
-): void {
-  const cameraTargetY = floorElevation(layout.floors, activeFloorIndex) + storeyHeight(activeFloor) / 2;
-  useEffect(() => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
-    // An eased move lands first: its next frame would undo the slide (#930).
-    settleCameraMove(controls);
-    const dy = cameraTargetY - controls.target.y;
-    if (Math.abs(dy) < 0.01) return;
-    // Keep the orbit target on the new storey even mid-walkthrough, so the
-    // orbit camera aims right after an exit — but never touch the camera or
-    // run controls.update() while walkthrough owns it: update() has no
-    // `enabled` guard, so it re-aims the first-person camera at the orbit
-    // target and clamps it back into the polar cone (#114/#216). Walkthrough
-    // owns its own eye height.
-    controls.target.y = cameraTargetY;
-    if (!walkthroughActive) {
-      camera.position.y += dy;
-      controls.update();
-    }
-    // Defer painting to the next frame via invalidate(): a synchronous
-    // renderer.render here ran BEFORE the scene effects rebuilt the new
-    // floor, flashing the old floor's contents from the new camera (#216).
-    invalidate();
-  }, [cameraTargetY, walkthroughActive, cameraRef, controlsRef, invalidate]);
 }
 
 export default RoomOrganizer;

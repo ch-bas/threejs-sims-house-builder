@@ -64,6 +64,7 @@ import { applyTvScreens } from '../three/tv-screens';
 import { classifyOpeningOwners, computeFloorOpenings, computeWallOpenings, type OpeningOwner } from '../three/wall-openings';
 import { usePlanCalibration } from './plan-calibration';
 import { observeSceneOccluders, planFit } from './scene-occluders';
+import { cameraMoveEnd } from './use-camera-presets';
 import { currentQuality } from './use-three-scene';
 import type { StampGhost } from '../canvas-2d/plan-edit';
 import type { DetectedRoom } from '../lib/room-detect';
@@ -1011,6 +1012,9 @@ export function useSceneEffects({
     const lamps = JSON.parse(lampsKey) as LampLight[];
     const focusPoint = (): { x: number; y: number; z: number } => {
       const camera = cameraRef.current;
+      // Mid-glide, where the camera is headed: a floor switch lights the new storey (#930).
+      const ahead = walkthroughActive ? null : cameraMoveEnd(controlsRef.current)?.target;
+      if (ahead) return { x: ahead[0], y: ahead[1], z: ahead[2] };
       const target = walkthroughActive ? camera?.position : controlsRef.current?.target;
       return target ? { x: target.x, y: target.y, z: target.z } : { x: 0, y: 0, z: 0 };
     };
